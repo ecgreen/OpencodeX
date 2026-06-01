@@ -142,6 +142,12 @@ export const layer = Layer.effect(
             ),
             mode: "primary",
             native: true,
+            // Soft safety net. The session loop auto-continues while todos are
+            // pending so the model can finish long-running plans, but we also
+            // cap total steps per turn here so a runaway model still produces
+            // a final summary instead of looping forever. Power users can
+            // override `agent.build.steps` in config.
+            steps: 100,
           },
           plan: {
             name: "plan",

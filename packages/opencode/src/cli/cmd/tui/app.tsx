@@ -49,6 +49,7 @@ import { Session } from "@tui/routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
+import { PromptDraftsProvider } from "./component/prompt/drafts"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
@@ -75,6 +76,7 @@ import {
   newOpencodeXSessionInProjectDialog,
   OpencodeXSidebar,
 } from "./component/opencodex-sidebar"
+import { setPendingOpencodeXProjectSession } from "./component/opencodex-session-state"
 import {
   COMMAND_PALETTE_COMMAND,
   OPENCODE_BASE_MODE,
@@ -272,17 +274,19 @@ async function mountTui(input: TuiInput & { keymap: ReturnType<typeof createDefa
                               <ThemeProvider mode={mode}>
                                 <LocalProvider>
                                   <PromptStashProvider>
-                                    <DialogProvider>
-                                      <FrecencyProvider>
-                                        <PromptHistoryProvider>
-                                          <PromptRefProvider>
-                                            <EditorContextProvider>
-                                              <App onSnapshot={input.onSnapshot} />
-                                            </EditorContextProvider>
-                                          </PromptRefProvider>
-                                        </PromptHistoryProvider>
-                                      </FrecencyProvider>
-                                    </DialogProvider>
+                                    <PromptDraftsProvider>
+                                      <DialogProvider>
+                                        <FrecencyProvider>
+                                          <PromptHistoryProvider>
+                                            <PromptRefProvider>
+                                              <EditorContextProvider>
+                                                <App onSnapshot={input.onSnapshot} />
+                                              </EditorContextProvider>
+                                            </PromptRefProvider>
+                                          </PromptHistoryProvider>
+                                        </FrecencyProvider>
+                                      </DialogProvider>
+                                    </PromptDraftsProvider>
                                   </PromptStashProvider>
                                 </LocalProvider>
                               </ThemeProvider>
@@ -465,6 +469,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary),
   )
 
+  createEffect(() => {
+    if (route.data.type === "session") setPendingOpencodeXProjectSession(undefined)
+  })
+
   // Update terminal window title based on current route and session
   createEffect(() => {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
@@ -602,6 +610,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "new",
         slashAliases: ["clear"],
         run: () => {
+          setPendingOpencodeXProjectSession(undefined)
           route.navigate({
             type: "home",
           })
@@ -615,6 +624,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         category: "OpencodeX",
         slashName: "dashboard",
         run: () => {
+          setPendingOpencodeXProjectSession(undefined)
           route.navigate({
             type: "home",
           })

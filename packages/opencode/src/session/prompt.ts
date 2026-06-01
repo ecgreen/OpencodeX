@@ -61,6 +61,8 @@ import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { Todo } from "./todo"
+import { BackgroundJob } from "@/background/job"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -85,6 +87,62 @@ function isOrphanedInterruptedTool(part: SessionLegacy.ToolPart) {
   // cleanup() marks abandoned tool_use blocks this way after retries/aborts.
   // They are not pending work and must not trigger an assistant-prefill request.
   return part.state.status === "error" && part.state.metadata?.interrupted === true
+}
+
+const AUTO_CONTINUE_LIMIT = 3
+const UNFINISHED_TODO_STATUS = new Set(["pending", "in_progress"])
+
+type UnfinishedWork = {
+  todos: Todo.Info[]
+  backgroundJobs: BackgroundJob.Info[]
+}
+
+function hasVisibleText(message: SessionLegacy.WithParts | undefined) {
+  return (
+    message?.parts.some(
+      (part) => part.type === "text" && !part.synthetic && !part.ignored && part.text.trim().length > 0,
+    ) ?? false
+  )
+}
+
+function hasUnfinishedWork(work: UnfinishedWork) {
+  return work.todos.length > 0 || work.backgroundJobs.length > 0
+}
+
+function isSessionBackgroundJob(sessionID: SessionID, job: BackgroundJob.Info) {
+  if (job.status !== "running") return false
+  return job.metadata?.parentSessionId === sessionID || job.metadata?.sessionId === sessionID
+}
+
+function autoContinueReason(input: {
+  finish: SessionLegacy.Assistant["finish"]
+  visibleText: boolean
+  unfinished: UnfinishedWork
+}) {
+  if (!input.finish || input.visibleText) return undefined
+  if (["error", "unknown"].includes(input.finish)) return "empty_error" as const
+  if (hasUnfinishedWork(input.unfinished) && ["stop", "length"].includes(input.finish))
+    return "unfinished_work" as const
+  return undefined
+}
+
+function autoContinueText(reason: NonNullable<ReturnType<typeof autoContinueReason>>, unfinished: UnfinishedWork) {
+  if (reason === "empty_error" && !hasUnfinishedWork(unfinished)) {
+    return "<system-reminder>Your previous turn produced no output. Retry the last step or explain what is blocking you.</system-reminder>"
+  }
+  const detail = [
+    unfinished.todos.length > 0 ? `${unfinished.todos.length} todo(s) still pending or in progress` : undefined,
+    unfinished.backgroundJobs.length > 0 ? `${unfinished.backgroundJobs.length} background subagent task(s) still running` : undefined,
+  ]
+    .filter(Boolean)
+    .join("; ")
+  return [
+    "<system-reminder>",
+    `Your previous turn ended without a user-visible response while work is still unfinished${detail ? ` (${detail})` : ""}.`,
+    "Continue only the unfinished work. Do not repeat a previous final answer.",
+    "If there is nothing useful left to do, mark pending or in-progress todos completed or cancelled and give the final response.",
+    "</system-reminder>",
+  ].join("\n")
 }
 
 export interface Interface {
@@ -129,6 +187,8 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const background = yield* BackgroundJob.Service
+    const todo = yield* Todo.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -1265,6 +1325,7 @@ export const layer = Layer.effect(
         const slog = elog.with({ sessionID })
         let structured: unknown
         let step = 0
+        let autoContinues = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
@@ -1306,6 +1367,60 @@ export const layer = Layer.effect(
                 callID: orphan.callID,
               })
             }
+
+            // Visible final text exits normally; empty turns get a small retry budget.
+            const unfinished = {
+              todos: (yield* todo.get(sessionID)).filter((item) => UNFINISHED_TODO_STATUS.has(item.status)),
+              backgroundJobs: (yield* background.list()).filter((job) => isSessionBackgroundJob(sessionID, job)),
+            }
+            const reason = autoContinueReason({
+              finish: lastAssistant.finish,
+              visibleText: hasVisibleText(lastAssistantMsg),
+              unfinished,
+            })
+
+            if (reason) {
+              if (autoContinues >= AUTO_CONTINUE_LIMIT) {
+                yield* slog.warn("loop auto-continue limit reached", {
+                  messageID: lastAssistant.id,
+                  finish: lastAssistant.finish,
+                  reason,
+                  todos: unfinished.todos.length,
+                  backgroundJobs: unfinished.backgroundJobs.length,
+                  limit: AUTO_CONTINUE_LIMIT,
+                })
+              } else {
+                autoContinues++
+                yield* slog.info("loop auto-continue", {
+                  messageID: lastAssistant.id,
+                  finish: lastAssistant.finish,
+                  reason,
+                  attempt: autoContinues,
+                  limit: AUTO_CONTINUE_LIMIT,
+                  todos: unfinished.todos.length,
+                  backgroundJobs: unfinished.backgroundJobs.length,
+                })
+                const continueMsg: SessionLegacy.User = {
+                  id: MessageID.ascending(),
+                  sessionID,
+                  role: "user",
+                  time: { created: Date.now() },
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                }
+                yield* sessions.updateMessage(continueMsg)
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: continueMsg.id,
+                  sessionID,
+                  type: "text",
+                  text: autoContinueText(reason, unfinished),
+                  synthetic: true,
+                } satisfies SessionLegacy.TextPart)
+                continue
+              }
+            }
+
             yield* slog.info("exiting loop")
             break
           }
@@ -1362,6 +1477,7 @@ export const layer = Layer.effect(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(AppFileSystem.Service, fsys),
             Effect.provideService(Session.Service, sessions),
+            Effect.provideService(Database.Service, database),
           )
 
           const msg: SessionLegacy.Assistant = {
@@ -1442,8 +1558,6 @@ export const layer = Layer.effect(
                     "<system-reminder>",
                     "The user sent the following message:",
                     p.text,
-                    "",
-                    "Please address this message and continue with your tasks.",
                     "</system-reminder>",
                   ].join("\n")
                 }
@@ -1679,6 +1793,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(SessionRevert.defaultLayer),
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(Image.defaultLayer),
+    Layer.provide(Todo.defaultLayer),
+    Layer.provide(BackgroundJob.defaultLayer),
     Layer.provide(
       Layer.mergeAll(
         Agent.defaultLayer,

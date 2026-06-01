@@ -216,6 +216,8 @@ const Model = Schema.Struct({
   variant: optionalOmitUndefined(Schema.String),
 })
 
+export { Model }
+
 export const Metadata = Schema.Record(Schema.String, Schema.Any)
 
 export const Info = Schema.Struct({
@@ -480,6 +482,7 @@ export interface Interface {
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setModel: (input: { sessionID: SessionID; model: Info["model"] }) => Effect.Effect<void>
+  readonly setAgent: (input: { sessionID: SessionID; agent: Info["agent"] }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
@@ -838,6 +841,10 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { model: input.model, time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
 
+    const setAgent = Effect.fn("Session.setAgent")(function* (input: { sessionID: SessionID; agent: Info["agent"] }) {
+      yield* patch(input.sessionID, { agent: input.agent, time: { updated: Date.now() } }).pipe(Effect.orDie)
+    })
+
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
     })
@@ -993,6 +1000,7 @@ export const layer: Layer.Layer<
       get,
       setTitle,
       setModel,
+      setAgent,
       setArchived,
       setMetadata,
       setPermission,

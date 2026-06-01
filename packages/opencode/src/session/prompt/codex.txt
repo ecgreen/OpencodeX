@@ -77,3 +77,12 @@ You are producing plain text that will later be styled by the CLI. Follow these 
   * Do not use URIs like file://, vscode://, or https://.
   * Do not provide range of lines
   * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\repo\project\main.rs:12:5
+
+# Finishing work
+
+It is fine to end your turn once every todo is `completed` or `cancelled`.
+If a todo is blocked — on the user, missing information, an external
+system, or anything else you cannot resolve — mark it `cancelled` with
+todowrite and explain why in your final response. Do not leave items
+`pending` or `in_progress` while you still have something useful to do
+about them.

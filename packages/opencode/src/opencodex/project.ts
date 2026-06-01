@@ -5,7 +5,7 @@ import { ProjectV2 } from "@opencode-ai/core/project"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Identifier } from "@opencode-ai/core/util/identifier"
-import { MessageTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import { Context, Effect, Layer, Schema, Types } from "effect"
 import { inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
@@ -198,32 +198,6 @@ export const layer = Layer.effect(
       const trackedIDs = new Set(
         tracked.filter((session) => existingIDs.has(session.session_id)).map((session) => session.session_id),
       )
-      if (trackedIDs.size > 0) {
-        const messaged = new Set(
-          (
-            yield* db
-              .select({ session_id: MessageTable.session_id })
-              .from(MessageTable)
-              .where(inArray(MessageTable.session_id, [...trackedIDs]))
-              .all()
-              .pipe(Effect.orDie)
-          ).map((message) => message.session_id),
-        )
-        yield* Effect.forEach(
-          tracked.filter(
-            (session) =>
-              trackedIDs.has(session.session_id) &&
-              !messaged.has(session.session_id) &&
-              Date.now() - session.time_created > 60_000,
-          ),
-          (empty) =>
-            Effect.gen(function* () {
-              yield* sessions.remove(empty.session_id).pipe(Effect.ignore)
-              yield* OpencodeXProjectFolder.removeSession(db, empty.session_id)
-            }),
-          { concurrency: "unbounded", discard: true },
-        )
-      }
       return {
         id: row.id,
         name: row.name ?? undefined,
@@ -257,6 +231,19 @@ export const layer = Layer.effect(
       return yield* get(id)
     })
 
+    const metadata = Effect.fn("OpencodeXProject.metadata")(function* (projectID: string) {
+      const current = yield* OpencodeXProjectFolder.getProject(db, projectID)
+      if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(projectID) })
+      const folders = yield* OpencodeXProjectFolder.listFolders(db, projectID)
+      return {
+        opencodex: {
+          projectID,
+          ...(current.name ? { name: current.name } : {}),
+          folders: folders.map((folder) => folder.path),
+        },
+      }
+    })
+
     const update = Effect.fn("OpencodeXProject.update")(function* (input: UpdateInput) {
       const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
       if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
@@ -287,14 +274,6 @@ export const layer = Layer.effect(
       const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
       if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
       const directory = OpencodeXProjectFolder.normalizeFolderPath(input.directory)
-      const folders = yield* OpencodeXProjectFolder.listFolders(db, input.projectID)
-      const folder = OpencodeXProjectFolder.matchFolder(folders, directory)
-      if (!folder && folders.length > 0) {
-        return yield* new InvalidFolderError({
-          path: directory,
-          message: `Session directory is not inside project folders: ${directory}`,
-        })
-      }
       if (!(yield* fs.isDir(directory).pipe(Effect.orDie))) {
         return yield* new InvalidFolderError({
           path: directory,
@@ -307,17 +286,14 @@ export const layer = Layer.effect(
           title: input.title,
           agent: input.agent,
           model: input.model,
-          metadata: input.metadata,
+          metadata: {
+            ...input.metadata,
+            ...(yield* metadata(input.projectID)),
+          },
           permission: input.permission,
           workspaceID: input.workspaceID,
         }),
       )
-      if (folders.length > 0 && result.projectID !== current.project_id) {
-        return yield* new InvalidFolderError({
-          path: directory,
-          message: `Session resolved to a different project: ${result.projectID}`,
-        })
-      }
       yield* OpencodeXProjectFolder.addSession(db, {
         opencodexProjectID: input.projectID,
         sessionID: result.id,
@@ -330,6 +306,13 @@ export const layer = Layer.effect(
       const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
       if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
       const session = yield* sessions.get(input.sessionID)
+      yield* sessions.setMetadata({
+        sessionID: session.id,
+        metadata: {
+          ...session.metadata,
+          ...(yield* metadata(input.projectID)),
+        },
+      })
       yield* OpencodeXProjectFolder.addSession(db, {
         opencodexProjectID: input.projectID,
         sessionID: session.id,

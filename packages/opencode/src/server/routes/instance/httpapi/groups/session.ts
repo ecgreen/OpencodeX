@@ -49,6 +49,8 @@ export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
   metadata: Schema.optional(Session.Metadata),
   permission: Schema.optional(Permission.Ruleset),
+  model: Schema.optional(Schema.NullOr(Session.Model)),
+  agent: Schema.optional(Schema.NullOr(Schema.String)),
   time: Schema.optional(
     Schema.Struct({
       archived: Schema.optional(Session.ArchivedTimestamp),

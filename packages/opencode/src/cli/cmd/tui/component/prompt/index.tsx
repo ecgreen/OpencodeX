@@ -27,6 +27,7 @@ import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui
 import { MessageID, PartID } from "@/session/schema"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "./history"
+import { usePromptDrafts } from "./drafts"
 import { computePromptTraits } from "./traits"
 import { assign, expandPastedTextPlaceholders } from "./part"
 import { usePromptStash } from "./stash"
@@ -36,7 +37,7 @@ import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import * as Editor from "@tui/util/editor"
 import { useExit } from "../../context/exit"
 import * as Clipboard from "../../util/clipboard"
-import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, FilePart, Part, Session, UserMessage } from "@opencode-ai/sdk/v2"
 import { TuiEvent } from "../../event"
 import { iife } from "@/util/iife"
 import { Locale } from "@/util/locale"
@@ -62,6 +63,11 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { type WorkspaceStatus } from "../workspace-label"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../context/tui-config"
+import {
+  getPendingOpencodeXProjectSession,
+  setPendingOpencodeXProjectSession,
+} from "../opencodex-session-state"
+import { refreshOpencodeXSidebar } from "../opencodex-sidebar"
 
 export type PromptProps = {
   sessionID?: string
@@ -94,6 +100,41 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 const DRAFT_RETENTION_MIN_CHARS = 20
+
+function promptHistoryPart(part: Part): PromptInfo["parts"][number] | undefined {
+  if (part.type === "file") {
+    return {
+      type: "file",
+      mime: part.mime,
+      ...(part.filename !== undefined ? { filename: part.filename } : {}),
+      url: part.url,
+      ...(part.source !== undefined ? { source: structuredClone(part.source) } : {}),
+    }
+  }
+  if (part.type === "agent") {
+    return {
+      type: "agent",
+      name: part.name,
+      ...(part.source !== undefined ? { source: structuredClone(part.source) } : {}),
+    }
+  }
+  return undefined
+}
+
+function promptHistoryEntry(parts: Part[]): PromptInfo | undefined {
+  const input = parts
+    .filter((part) => part.type === "text" && !part.synthetic && !part.ignored)
+    .map((part) => part.text)
+    .join("\n")
+  const promptParts = parts
+    .map(promptHistoryPart)
+    .filter((part): part is PromptInfo["parts"][number] => part !== undefined)
+  if (input.length === 0 && promptParts.length === 0) return undefined
+  return {
+    input,
+    parts: promptParts,
+  }
+}
 
 function randomIndex(count: number) {
   if (count <= 0) return 0
@@ -130,8 +171,6 @@ function formatEditorContext(selection: EditorSelection) {
   return `<system-reminder>${ranges.join("\n")} This may or may not be relevant to the current task.</system-reminder>\n`
 }
 
-let stashed: { prompt: PromptInfo; cursor: number } | undefined
-
 export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
@@ -150,6 +189,7 @@ export function Prompt(props: PromptProps) {
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const history = usePromptHistory()
+  const drafts = usePromptDrafts()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
   const agentShortcut = useCommandShortcut("agent.cycle")
@@ -201,6 +241,7 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const hasRightContent = createMemo(() => Boolean(props.right))
+  const draftKey = createMemo(() => props.sessionID ?? "home")
 
   function selectWorkspace(selection: WorkspaceSelection | undefined) {
     setWorkspaceSelection(selection)
@@ -407,8 +448,8 @@ export function Prompt(props: PromptProps) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
         if (msg.model) {
-          local.model.set(msg.model)
-          local.model.variant.set(msg.model.variant)
+          local.model.set(msg.model, { persist: false })
+          local.model.variant.set(msg.model.variant, { persist: false })
         }
       }
     }
@@ -671,10 +712,7 @@ export function Prompt(props: PromptProps) {
       input.blur()
     },
     set(prompt) {
-      input.setText(prompt.input)
-      setStore("prompt", prompt)
-      restoreExtmarksFromParts(prompt.parts)
-      input.gotoBufferEnd()
+      applyPrompt(prompt)
     },
     reset() {
       input.clear()
@@ -683,6 +721,7 @@ export function Prompt(props: PromptProps) {
         input: "",
         parts: [],
       })
+      setStore("mode", "normal")
       setStore("extmarkToPartIndex", new Map())
     },
     submit() {
@@ -690,22 +729,89 @@ export function Prompt(props: PromptProps) {
     },
   }
 
-  onMount(() => {
-    const saved = stashed
-    stashed = undefined
-    if (store.prompt.input) return
-    if (saved && saved.prompt.input) {
-      input.setText(saved.prompt.input)
-      setStore("prompt", saved.prompt)
-      restoreExtmarksFromParts(saved.prompt.parts)
-      input.cursorOffset = saved.cursor
-    }
+  function applyPrompt(prompt: PromptInfo) {
+    input.setText(prompt.input)
+    setStore("prompt", prompt)
+    setStore("mode", prompt.mode ?? "normal")
+    restoreExtmarksFromParts(prompt.parts)
+    input.gotoBufferEnd()
+  }
+
+  let activeDraftKey: string | undefined
+  createEffect(
+    on(
+      () => [draftKey(), drafts.ready] as const,
+      ([key, ready]) => {
+        if (!ready) return
+        if (activeDraftKey === undefined) {
+          // First mount: seed from drafts if present, otherwise stay empty.
+          activeDraftKey = key
+          if (store.prompt.input) return
+          const saved = drafts.get(key)
+          if (!saved) return
+          applyPrompt(saved)
+          return
+        }
+        if (key === activeDraftKey) return
+
+        // Persist the prompt we are leaving under the key we are leaving.
+        const leaving = { ...unwrap(store.prompt), mode: store.mode }
+        if (leaving.input.length === 0 && leaving.parts.length === 0) {
+          drafts.clear(activeDraftKey)
+        } else {
+          drafts.set(activeDraftKey, leaving)
+        }
+
+        activeDraftKey = key
+
+        // Seed the new key's draft into the input.
+        const saved = drafts.get(key)
+        if (saved) {
+          applyPrompt(saved)
+        } else {
+          input.clear()
+          input.extmarks.clear()
+          setStore("prompt", { input: "", parts: [] })
+          setStore("mode", "normal")
+          setStore("extmarkToPartIndex", new Map())
+        }
+      },
+    ),
+  )
+
+  // Persist on every prompt change after the initial mount.
+  createEffect(
+    on(
+      () => [store.prompt, store.mode] as const,
+      ([current, mode]) => {
+        if (!drafts.ready) return
+        const key = activeDraftKey
+        if (!key) return
+        if (current.input.length === 0 && current.parts.length === 0) {
+          drafts.clear(key)
+          return
+        }
+        drafts.set(key, {
+          ...current,
+          mode,
+        })
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(() => {
+    const key = props.sessionID
+    if (!key) return
+    const entries = (sync.data.message[key] ?? [])
+      .filter((message): message is UserMessage => message.role === "user")
+      .map((message) => promptHistoryEntry(sync.data.part[message.id] ?? []))
+      .filter((entry): entry is PromptInfo => entry !== undefined)
+    history.seed(key, entries)
   })
 
   onCleanup(() => {
-    if (store.prompt.input) {
-      stashed = { prompt: unwrap(store.prompt), cursor: input.cursorOffset }
-    }
+    void drafts.flushNow()
     setInputTarget(undefined)
     props.ref?.(undefined)
   })
@@ -955,12 +1061,9 @@ export function Prompt(props: PromptProps) {
               return false
             }
 
-            const item = history.move(-1, input.plainText)
+            const item = history.move(draftKey(), -1, input.plainText)
             if (!item) return false
-            input.setText(item.input)
-            setStore("prompt", item)
-            setStore("mode", item.mode ?? "normal")
-            restoreExtmarksFromParts(item.parts)
+            applyPrompt(item)
             input.cursorOffset = 0
           },
         },
@@ -991,12 +1094,9 @@ export function Prompt(props: PromptProps) {
               return false
             }
 
-            const item = history.move(1, input.plainText)
+            const item = history.move(draftKey(), 1, input.plainText)
             if (!item) return false
-            input.setText(item.input)
-            setStore("prompt", item)
-            setStore("mode", item.mode ?? "normal")
-            restoreExtmarksFromParts(item.parts)
+            applyPrompt(item)
             input.cursorOffset = input.plainText.length
           },
         },
@@ -1084,21 +1184,42 @@ export function Prompt(props: PromptProps) {
         return undefined
       })
 
-      const res = await sdk.client.session.create({
-        workspace: workspaceID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          id: selectedModel.modelID,
-          variant,
-        },
-      })
+      const pendingOpencodeXProject = getPendingOpencodeXProjectSession()
+      const res = pendingOpencodeXProject
+        ? await sdk
+            .request<Session>("/experimental/opencodex/session", {
+              method: "POST",
+              body: JSON.stringify({
+                projectID: pendingOpencodeXProject.projectID,
+                directory: pendingOpencodeXProject.directory,
+                workspaceID,
+                agent: agent.name,
+                model: {
+                  providerID: selectedModel.providerID,
+                  id: selectedModel.modelID,
+                  variant,
+                },
+              }),
+            })
+            .then((session) => ({ data: session, error: undefined }))
+            .catch((error: Error) => ({ data: undefined, error }))
+        : await sdk.client.session.create({
+            workspace: workspaceID,
+            agent: agent.name,
+            model: {
+              providerID: selectedModel.providerID,
+              id: selectedModel.modelID,
+              variant,
+            },
+          })
 
-      if (res.error) {
+      if (res.error || !res.data) {
         console.log("Creating a session failed:", res.error)
 
         toast.show({
-          message: "Creating a session failed. Open console for more details.",
+          message: pendingOpencodeXProject
+            ? `Creating a project session failed: ${errorMessage(res.error ?? "no response")}`
+            : "Creating a session failed. Open console for more details.",
           variant: "error",
         })
 
@@ -1106,6 +1227,10 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      if (pendingOpencodeXProject) {
+        setPendingOpencodeXProjectSession(undefined)
+        refreshOpencodeXSidebar()
+      }
     }
 
     const messageID = MessageID.ascending()
@@ -1214,7 +1339,7 @@ export function Prompt(props: PromptProps) {
         .catch(() => {})
       if (editorParts.length > 0) editor.markSelectionSent()
     }
-    history.append({
+    history.append(draftKey(), {
       ...store.prompt,
       mode: currentMode,
     })
@@ -1224,6 +1349,7 @@ export function Prompt(props: PromptProps) {
       parts: [],
     })
     setStore("extmarkToPartIndex", new Map())
+    drafts.clear(draftKey())
     props.onSubmit?.()
 
     // temporary hack to make sure the message is sent
@@ -1385,7 +1511,7 @@ export function Prompt(props: PromptProps) {
 
   function clearPrompt() {
     if (store.prompt.input.trim().length >= DRAFT_RETENTION_MIN_CHARS || store.prompt.parts.length > 0) {
-      history.append({
+      history.append(draftKey(), {
         ...store.prompt,
         mode: store.mode,
       })

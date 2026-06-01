@@ -23,23 +23,46 @@ export function parseModel(model: string) {
   }
 }
 
+type ModelSelection = {
+  providerID: string
+  modelID: string
+}
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
     const sync = useSync()
     const sdk = useSDK()
     const toast = useToast()
+    const route = useRoute()
 
-    function isModelValid(model: { providerID: string; modelID: string }) {
+    function activeSessionID() {
+      return route.data.type === "session" ? route.data.sessionID : undefined
+    }
+
+    function isModelValid(model: ModelSelection) {
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
       return !!provider?.models[model.modelID]
     }
 
-    function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
-      for (const modelFn of modelFns) {
-        const model = modelFn()
-        if (!model) continue
-        if (isModelValid(model)) return model
+    function getFirstValidModel(...modelFns: (() => ModelSelection | undefined)[]) {
+      const model = modelFns.map((modelFn) => modelFn()).find((model) => model && isModelValid(model))
+      if (model) return model
+    }
+
+    function fromSessionModel(model: { providerID: string; id: string } | undefined) {
+      if (!model) return undefined
+      return {
+        providerID: model.providerID,
+        modelID: model.id,
+      }
+    }
+
+    function sessionModelPayload(model: ModelSelection, variant: string | undefined) {
+      return {
+        providerID: model.providerID,
+        id: model.modelID,
+        ...(variant && variant !== "default" ? { variant } : {}),
       }
     }
 
@@ -105,28 +128,20 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{
         ready: boolean
-        model: Record<
-          string,
-          {
-            providerID: string
-            modelID: string
-          }
-        >
-        recent: {
-          providerID: string
-          modelID: string
-        }[]
-        favorite: {
-          providerID: string
-          modelID: string
-        }[]
+        model: Record<string, ModelSelection>
+        session: Record<string, ModelSelection>
+        recent: ModelSelection[]
+        favorite: ModelSelection[]
         variant: Record<string, string | undefined>
+        sessionVariant: Record<string, string | undefined>
       }>({
         ready: false,
         model: {},
+        session: {},
         recent: [],
         favorite: [],
         variant: {},
+        sessionVariant: {},
       })
 
       const filePath = path.join(Global.Path.state, "model.json")
@@ -144,6 +159,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           recent: modelStore.recent,
           favorite: modelStore.favorite,
           variant: modelStore.variant,
+          session: modelStore.session,
+          sessionVariant: modelStore.sessionVariant,
         })
       }
 
@@ -152,6 +169,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (Array.isArray(x.recent)) setModelStore("recent", x.recent)
           if (Array.isArray(x.favorite)) setModelStore("favorite", x.favorite)
           if (typeof x.variant === "object" && x.variant !== null) setModelStore("variant", x.variant)
+          if (typeof x.session === "object" && x.session !== null) setModelStore("session", x.session)
+          if (typeof x.sessionVariant === "object" && x.sessionVariant !== null)
+            setModelStore("sessionVariant", x.sessionVariant)
         })
         .catch(() => {})
         .finally(() => {
@@ -160,6 +180,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
 
       const args = useArgs()
+      function persistSessionModel(model: ModelSelection, variant: string | undefined) {
+        const sessionID = activeSessionID()
+        if (!sessionID) return
+        void sdk
+          .request(`/session/${sessionID}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              model: sessionModelPayload(model, variant),
+            }),
+          })
+          .catch((error: unknown) => {
+            toast.show({
+              message: `Failed to save model for session: ${error instanceof Error ? error.message : String(error)}`,
+              variant: "warning",
+              duration: 3000,
+            })
+          })
+      }
+
       const fallbackModel = createMemo(() => {
         if (args.model) {
           const { providerID, modelID } = parseModel(args.model)
@@ -201,14 +240,40 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const currentModel = createMemo(() => {
         const a = agent.current()
+        const sessionID = activeSessionID()
+        const session = sessionID ? sync.session.get(sessionID) : undefined
         return (
           getFirstValidModel(
+            () => (sessionID ? modelStore.session[sessionID] : undefined),
+            () => fromSessionModel(session?.model),
             () => a && modelStore.model[a.name],
             () => a && a.model,
             fallbackModel,
           ) ?? undefined
         )
       })
+
+      function selectedVariant() {
+        const m = currentModel()
+        if (!m) return undefined
+        const sessionID = activeSessionID()
+        if (sessionID && modelStore.sessionVariant[sessionID] !== undefined)
+          return normalizeVariant(m, modelStore.sessionVariant[sessionID])
+        const session = sessionID ? sync.session.get(sessionID) : undefined
+        if (session?.model?.variant !== undefined) return normalizeVariant(m, session.model.variant)
+        if (sessionID) return undefined
+        const key = `${m.providerID}/${m.modelID}`
+        return normalizeVariant(m, modelStore.variant[key])
+      }
+
+      function normalizeVariant(model: ModelSelection, value: string | undefined) {
+        if (value === "default") return value
+        if (!value) return undefined
+        const provider = sync.data.provider.find((x) => x.id === model.providerID)
+        const variants = provider?.models[model.modelID]?.variants
+        if (!variants || !(value in variants)) return undefined
+        return value
+      }
 
       return {
         current: currentModel,
@@ -251,7 +316,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!val) return
           const a = agent.current()
           if (!a) return
+          const sessionID = activeSessionID()
+          if (sessionID) {
+            setModelStore("session", sessionID, { ...val })
+            save()
+            persistSessionModel(val, undefined)
+            return
+          }
           setModelStore("model", a.name, { ...val })
+          save()
         },
         cycleFavorite(direction: 1 | -1) {
           const favorites = modelStore.favorite.filter((item) => isModelValid(item))
@@ -279,16 +352,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!next) return
           const a = agent.current()
           if (!a) return
-          setModelStore("model", a.name, { ...next })
+          const sessionID = activeSessionID()
+          if (sessionID) setModelStore("session", sessionID, { ...next })
+          if (!sessionID) setModelStore("model", a.name, { ...next })
           const uniq = uniqueBy([next, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
           if (uniq.length > 10) uniq.pop()
           setModelStore(
             "recent",
             uniq.map((x) => ({ providerID: x.providerID, modelID: x.modelID })),
           )
+          if (sessionID) persistSessionModel(next, undefined)
           save()
         },
-        set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
+        set(model: ModelSelection, options?: { recent?: boolean; persist?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -300,7 +376,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             }
             const a = agent.current()
             if (!a) return
-            setModelStore("model", a.name, model)
+            const sessionID = activeSessionID()
+            if (sessionID) setModelStore("session", sessionID, model)
+            if (!sessionID) setModelStore("model", a.name, model)
+            save()
             if (options?.recent) {
               const uniq = uniqueBy([model, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
               if (uniq.length > 10) uniq.pop()
@@ -310,9 +389,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               )
               save()
             }
+            if (sessionID && options?.persist !== false) persistSessionModel(model, undefined)
           })
         },
-        toggleFavorite(model: { providerID: string; modelID: string }) {
+        toggleFavorite(model: ModelSelection) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -337,10 +417,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         variant: {
           selected() {
-            const m = currentModel()
-            if (!m) return undefined
-            const key = `${m.providerID}/${m.modelID}`
-            return modelStore.variant[key]
+            return selectedVariant()
           },
           current() {
             const v = this.selected()
@@ -356,9 +433,16 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             if (!info?.variants) return []
             return Object.keys(info.variants)
           },
-          set(value: string | undefined) {
+          set(value: string | undefined, options?: { persist?: boolean }) {
             const m = currentModel()
             if (!m) return
+            const sessionID = activeSessionID()
+            if (sessionID) {
+              setModelStore("sessionVariant", sessionID, value ?? "default")
+              if (options?.persist !== false) persistSessionModel(m, value)
+              save()
+              return
+            }
             const key = `${m.providerID}/${m.modelID}`
             setModelStore("variant", key, value ?? "default")
             save()
@@ -417,7 +501,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (state.pending) save()
         })
 
-      const route = useRoute()
       const event = useEvent()
 
       const slots = createMemo(() => {

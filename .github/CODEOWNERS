@@ -1,5 +1,4 @@
-# web + desktop packages
-packages/app/      @adamdotdevin
-packages/tauri/    @adamdotdevin
-packages/desktop/src-tauri/  @brendonovich
-packages/desktop/  @adamdotdevin
+# OpencodeX TUI ownership
+# TUI code (sidebar, prompt, themes) lives under packages/opencode/src/cli/cmd/tui/
+# Default ownership: everyone with write access
+*                                              @opencodex/maintainers

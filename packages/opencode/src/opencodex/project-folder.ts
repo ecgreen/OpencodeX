@@ -195,6 +195,15 @@ export function listSessionIDs(db: DatabaseService, opencodexProjectID: string) 
     .pipe(Effect.orDie)
 }
 
+export function getSessionProject(db: DatabaseService, sessionID: SessionID) {
+  return db
+    .select()
+    .from(OpencodeXProjectSessionTable)
+    .where(eq(OpencodeXProjectSessionTable.session_id, sessionID))
+    .get()
+    .pipe(Effect.orDie)
+}
+
 export function listAllSessionIDs(db: DatabaseService) {
   return db.select().from(OpencodeXProjectSessionTable).all().pipe(Effect.orDie)
 }

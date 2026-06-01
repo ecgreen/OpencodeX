@@ -226,6 +226,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(proc),
     Layer.provideMerge(registry),
     Layer.provideMerge(trunc),
+    Layer.provideMerge(todo),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
@@ -581,6 +582,96 @@ it.instance("static loop returns assistant text through local provider", () =>
     expect(result.parts.some((part) => part.type === "text" && part.text === "world")).toBe(true)
     expect(yield* llm.hits).toHaveLength(1)
     expect(yield* llm.pending).toBe(0)
+  }),
+)
+
+it.instance("loop auto-continues an empty stop finish when todos are unfinished", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const todo = yield* Todo.Service
+    const session = yield* sessions.create({
+      title: "Prompt provider unfinished",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "do the task" }],
+    })
+    yield* todo.update({
+      sessionID: session.id,
+      todos: [{ content: "finish the task", status: "pending", priority: "high" }],
+    })
+    yield* llm.push(reply().stop())
+    yield* llm.text("resumed")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(yield* llm.calls).toBe(2)
+    expect(result.info.role).toBe("assistant")
+    expect(result.parts.some((part) => part.type === "text" && part.text === "resumed")).toBe(true)
+  }),
+)
+
+it.instance("loop does not auto-continue visible final text even when todos are unfinished", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const todo = yield* Todo.Service
+    const session = yield* sessions.create({
+      title: "Prompt provider final text",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "do the task" }],
+    })
+    yield* todo.update({
+      sessionID: session.id,
+      todos: [{ content: "stale todo", status: "pending", priority: "medium" }],
+    })
+    yield* llm.text("final answer")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(yield* llm.calls).toBe(1)
+    expect(result.info.role).toBe("assistant")
+    expect(result.parts.some((part) => part.type === "text" && part.text === "final answer")).toBe(true)
+  }),
+)
+
+it.instance("loop caps repeated empty auto-continues", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const todo = yield* Todo.Service
+    const session = yield* sessions.create({
+      title: "Prompt provider empty cap",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "do the task" }],
+    })
+    yield* todo.update({
+      sessionID: session.id,
+      todos: [{ content: "still pending", status: "pending", priority: "high" }],
+    })
+    yield* llm.push(reply().stop(), reply().stop(), reply().stop(), reply().stop())
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(yield* llm.calls).toBe(4)
+    expect(result.info.role).toBe("assistant")
   }),
 )
 
