@@ -1231,6 +1231,13 @@ export function Prompt(props: PromptProps) {
         setPendingOpencodeXProjectSession(undefined)
         refreshOpencodeXSidebar()
       }
+      if (res.data.title.startsWith("New session - ")) {
+        const titleSource = store.prompt.input.trim()
+        const title = titleSource.length <= 40 ? titleSource : titleSource.slice(0, 40).trimEnd()
+        if (title) {
+          void sdk.client.session.update({ sessionID, title }).catch(() => {})
+        }
+      }
     }
 
     const messageID = MessageID.ascending()

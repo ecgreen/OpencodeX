@@ -493,6 +493,8 @@ export function OpencodeXSidebar() {
   const [open] = useOxSidebar()
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
   const [pinnedCollapsed, setPinnedCollapsed] = createSignal(false)
+  const [projectsCollapsed, setProjectsCollapsed] = createSignal(false)
+  const [sessionsCollapsed, setSessionsCollapsed] = createSignal(false)
   const [refresh, setRefresh] = createSignal(0)
 
   const refreshSidebar = () => setRefresh((value) => value + 1)
@@ -614,7 +616,7 @@ export function OpencodeXSidebar() {
     const active = createMemo(() => currentSessionID() === session.id)
     const title = createMemo(() => [sessionTitle(session, sync), input?.titleSuffix].filter(Boolean).join(" - "))
     const detail = createMemo(() => [input?.subtitle, modelLabel(session)].filter(Boolean).join(" - "))
-    const textColor = createMemo(() => statusColor(status()))
+    const textColor = createMemo(() => (status() === "dormant" && active() ? theme.text : statusColor(status())))
     const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
     const showDetailSpinner = createMemo(() => status() === "in_progress" && animationsEnabled())
     const spinnerDef = createMemo(() => {
@@ -750,9 +752,13 @@ export function OpencodeXSidebar() {
               </box>
             </Show>
             <Show when={(projects()?.length ?? 0) > 0}>
-              {sectionHeader("Projects")}
-            </Show>
-            <For each={projects() ?? []}>
+              <box flexDirection="column" flexShrink={0} paddingBottom={1}>
+                {sectionHeader("Projects", {
+                  collapsed: projectsCollapsed(),
+                  toggle: () => setProjectsCollapsed((value) => !value),
+                })}
+                <Show when={!projectsCollapsed()}>
+                  <For each={projects() ?? []}>
               {(project) => {
                 const projectSessions = createMemo(() =>
                   project.sessions
@@ -794,10 +800,18 @@ export function OpencodeXSidebar() {
                 )
               }}
             </For>
+                </Show>
+              </box>
+            </Show>
             <Show when={unassigned().length > 0}>
               <box flexDirection="column" flexShrink={0} paddingBottom={1}>
-                {sectionHeader("Sessions")}
-                <For each={unassigned()}>{(session) => sessionItem(session)}</For>
+                {sectionHeader("Sessions", {
+                  collapsed: sessionsCollapsed(),
+                  toggle: () => setSessionsCollapsed((value) => !value),
+                })}
+                <Show when={!sessionsCollapsed()}>
+                  <For each={unassigned()}>{(session) => sessionItem(session)}</For>
+                </Show>
               </box>
             </Show>
           </Show>

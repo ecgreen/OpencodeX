@@ -646,8 +646,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         title: "New session in project",
         suggested: true,
         category: "OpencodeX",
-        slashName: "ncip",
-        slashAliases: ["new-chat-in-project"],
+        slashName: "nsip",
+        slashAliases: ["new-session-in-project"],
         run: () => {
           void newOpencodeXSessionInProjectDialog({ sdk, dialog, theme, route, sync })
         },

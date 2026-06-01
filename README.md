@@ -1,35 +1,31 @@
 # OpencodeX
 
-OpencodeX is a terminal-native fork of [`opencode`](https://github.com/anomalyco/opencode). It is a **TUI-only** product: there is no web UI, no desktop app, no admin console — just a single, fast, keyboard-driven terminal workspace for running many AI coding conversations at once.
+**A terminal-native fork of [opencode](https://github.com/anomalyco/opencode) built for people who run lots of AI coding sessions at once.**
 
-The product direction is documented in [`docs/opencodex.md`](docs/opencodex.md). The short version: a left sidebar for fast conversation switching, a dashboard over every session you've ever started, resumable history shared with upstream `opencode`, concurrent agent instances, and a clear visual signal when a session is dormant, working, or blocked waiting for you.
+OpencodeX turns the opencode TUI into a true multi-session workspace. Instead of one conversation in one terminal, you get a persistent sidebar, a project system for keeping separate codebases apart, concurrent agents with live status, and a dashboard that knows about every session you've ever started. No browser, no Electron, no separate desktop app — just one fast, keyboard-driven binary that lives in your terminal.
 
-> Screenshots and animated GIFs will be added at `docs/screenshots/` once the visual pass is complete. The sections below mark where they will land.
+It's a drop-in replacement for the `opencode` CLI: same session format, same providers, same MCP servers, same plugins. Your existing history comes with you. You just get a much better cockpit to fly it from.
 
-## Why a TUI only fork
+> Want to see it first? Skip to [Screenshots](#screenshots) or jump straight to [Install](#install).
 
-The upstream `opencode` repository ships a web UI, a desktop wrapper, an admin console, Storybook, and analytics alongside the TUI. OpencodeX keeps the TUI and the supporting libraries it actually depends on, and removes the rest. The fork is built, installed, and run as a single terminal binary on every platform.
+## Why OpencodeX
 
-What that means in practice:
+If you use AI in your terminal every day, you've hit these problems:
 
-- `opencodex` is a single binary that runs the TUI.
-- A local server (the same one upstream `opencode` uses) runs in-process to back the TUI over a unix socket / named pipe.
-- No browser, no Electron, no Vite dev server, no Storybook runner is involved in the install, build, or runtime path.
-- Upstream `opencode` session data on disk is read directly so existing history is preserved.
+- You have six conversations going at once and the one that needs your attention is buried three screens deep.
+- You switch between a work repo, a side project, and a research scratchpad and their histories keep bleeding into each other.
+- An agent finished a task while you were in another window and you didn't notice for an hour.
+- A permission prompt is sitting in a session you can't see because the chat view is on something else.
 
-## What you get
+OpencodeX is the answer to all of those, without giving up the TUI. It is built on top of the opencode TUI you already know, with a sidebar that always shows what every session is doing, projects that keep your codebases separate, and live status colors that tell you where to look first.
 
-- **A persistent conversation sidebar** with live status colors and an animated whip indicator next to the model name when a session is running.
-- **A multi-session dashboard** for browsing every dormant, running, and blocked conversation in one place.
-- **A project system** that groups conversations under named, multi-folder worktrees so you can keep separate codebases in flight.
-- **Resumable sessions** — sessions created by upstream `opencode` are imported as-is; the same session id round-trips between the two CLIs.
-- **Concurrent agent instances** with input-needed detection, so blocked sessions jump out of the list.
-- **A model picker, provider picker, agent picker, MCP picker, theme picker, skill picker, and command palette** so the entire workflow is keyboard-navigable.
-- **The `opencode` plugin and SDK surfaces** are preserved, so community tools keep working.
+## What's new compared to upstream `opencode`
 
-## The sidebar
+Everything in this list sits **on top of** the upstream TUI. You keep every feature opencode already had.
 
-The sidebar (`Ctrl+S` to toggle) is the fastest way to move between conversations.
+### A persistent conversation sidebar
+
+Press `Ctrl+S` and a real sidebar appears on the left of the TUI. It stays there while you chat. Pinned sessions, project groups, and ungrouped sessions are all listed, with a live status dot on every row.
 
 ```
 ┌────────────────────────────────────────┐
@@ -42,7 +38,7 @@ The sidebar (`Ctrl+S` to toggle) is the fastest way to move between conversation
 │  Projects                              │
 │  ▾ manifold                            │
 │    • Ship input-needed-color fix       │
-│      ┊◇◆◇┊  claude-opus-4-5            │   ← in_progress (blue)
+│      ┊◇◆◇┊  claude-opus-4-5            │   <- in_progress (blue)
 │    • Add workspace API                 │
 │      gpt-5                             │
 │  Sessions                              │
@@ -51,184 +47,256 @@ The sidebar (`Ctrl+S` to toggle) is the fastest way to move between conversation
 └────────────────────────────────────────┘
 ```
 
-The dot to the left of each row is the session status:
+The dot to the left of each row tells you exactly what that session is doing:
 
-- **gray** — `dormant` (idle, no agent running)
-- **blue** — `in_progress` (an agent is producing output)
-- **orange** — `input_needed` (a permission or question is waiting for you)
+- **Gray** — `dormant` (idle, no agent running)
+- **Blue** — `in_progress` (an agent is producing output)
+- **Orange** — `input_needed` (a permission or question is waiting for you)
 
-The status color is applied to both the title row and the model-name sub-row so you can see at a glance which session needs attention, even when it is the currently selected row.
+The color is applied to both the title row and the model-name sub-row, so you can see at a glance which session needs attention — even when it is the one you're already looking at. When a session is running, an animated whip indicator next to the model name confirms it's actually doing work. Disable animations and the indicator collapses to a static glyph automatically.
 
-When a session is `in_progress` and animations are enabled (`animations_enabled` KV, default `true`), a narrow whip animation (4-cell "diamonds" style) is rendered next to the model name. Width 4 keeps the spinner readable inside the 36-column sidebar without truncating the model label. With animations disabled, the spinner falls back to a static `⋯` glyph in the same blue.
+### A multi-session dashboard
 
-> Screenshot placeholder: `docs/screenshots/sidebar-running.png`
->
-> Screenshot placeholder: `docs/screenshots/sidebar-input-needed.png`
+The dashboard is the first thing you see when you launch `opencodex`. It lists every conversation in the current project, grouped by recency and status, with a one-line preview of the last user message on each row. Press `o` from anywhere in the TUI to jump back to it. The dashboard and the sidebar share the same data source, so they stay in sync without manual refresh.
 
-## The dashboard
-
-The home screen (`o` from anywhere, or the first screen you see on launch) lists every conversation in the current project, grouped by recency and status. Each row shows the same status dot as the sidebar, plus a one-line preview of the last user message.
-
-The dashboard and the sidebar share the same data source (`@opencode-ai/core` + the local server) so they stay in sync without manual refresh.
-
-> Screenshot placeholder: `docs/screenshots/dashboard.png`
-
-## Project system
-
-A project is a named group of folders that share a session pool. The intent is to keep separate codebases from mixing their history while still being able to attach a conversation to multiple folders at once.
-
-- `+ project` in the sidebar header creates a new project.
-- `✎` on a project row edits its name and folder list (semicolon- or newline-separated).
-- `+` on a project row opens a fresh session bound to that project; the session is created in the project home and its working directory is set to the project root.
-- A "Move Session" action in the Manage Sessions dialog re-binds a conversation to a different project.
-- Deleting a project does **not** delete its sessions — they move into the unassigned list and remain resumable.
-
-> Screenshot placeholder: `docs/screenshots/project-create.png`
-
-## Resume and import
-
-Sessions created by upstream `opencode` are picked up automatically. The TUI reads the same `.opencode` storage on disk that upstream uses, so the same session id is recognized in both. Switching back to upstream `opencode` keeps your history.
-
-## Concurrent agents
-
-Multiple agent instances can be running at the same time. Each running session has its own status row, its own status color, and its own whip animation. When a session is blocked waiting for a permission grant or a user question, it flips to orange and the dot prefix changes; pressing `Enter` on a blocked session jumps straight to its prompt so you can answer.
-
-## The prompt and whip animation
-
-The prompt area (`packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`) uses a per-agent whip animation built from `createFrames({ color, style: "blocks", inactiveFactor: 0.6, minAlpha: 0.3 })` in `packages/opencode/src/cli/cmd/tui/ui/spinner.ts`. The spinner colors itself from the active agent's color and runs at 40 ms per frame. With `animations_enabled = false`, it falls back to a static `[⋯]` glyph.
-
-> Screenshot placeholder: `docs/screenshots/prompt-whip.png`
-
-The sidebar's new model-name spinner reuses the same primitives with a narrower width (4) and a "diamonds" style so the visual weight matches a sidebar row rather than a prompt footer.
-
-## Keybindings
-
-The default keybindings follow the upstream `opencode` TUI:
-
-| Key | Action |
-| --- | --- |
-| `Ctrl+S` | Toggle the sidebar |
-| `Enter` | Resume the selected session (or jump to its prompt if blocked) |
-| `n` | New session in the current project |
-| `Esc` | Cancel the current input or dismiss a dialog |
-| `Tab` / `Shift+Tab` | Cycle through the prompt, sidebar, and dashboard |
-| `o` | Open the dashboard |
-| `Ctrl+P` | Open the command palette |
-| `Ctrl+L` | Cycle the theme |
-| `q` | Quit (with confirmation if any session is running) |
-
-> The command palette is the authoritative source for the full keymap.
-
-## Install
-
-OpencodeX is built and installed from source. There is no npm / brew / winget release pipeline yet — that is intentional, the fork is currently internal.
-
-### Windows (from WSL — recommended)
-
-The build is cross-compiled from WSL to a Windows `.exe` so you can install on the Windows side without leaving Linux. Output lands in `artifacts/`.
-
-```bash
-bash build.sh                          # default: win32-x64-baseline
-bash build.sh --target win32-x64       # AVX2-capable machines
-bash build.sh --target win32-arm64     # Windows on ARM
-bash build.sh --clean                  # wipe the /tmp build dir first
+```
+  OpencodeX dashboard
+  ─────────────────────────────────────────────────────────────
+  ▾ Today
+    ● Refactor auth layer            claude-sonnet-4-5   2m ago
+       "split the token validator into its own module"
+    ● Ship input-needed-color fix    claude-opus-4-5     14m ago
+       "make the orange dot work for permission prompts"
+  ▸ Yesterday
+  ▸ Last week
+  ─────────────────────────────────────────────────────────────
+   n new  enter resume  ctrl+s sidebar  q quit
 ```
 
-Then from PowerShell:
-
-```powershell
-pwsh -File .\build-and-install.ps1
-```
-
-`build-and-install.ps1` reads the artifact that `build.sh` produced, copies it to `$env:LOCALAPPDATA\OpencodeX\opencodex.exe`, and adds that directory to the user `PATH`. The `install-windows.ps1` script does the same with no build step, useful for restoring from a known artifact.
-
-### Linux / macOS
-
-```bash
-bash build.sh --target linux-x64         # or darwin-arm64, darwin-x64, …
-sudo cp artifacts/opencodex-linux-x64 /usr/local/bin/opencodex
-```
-
-## First command
-
-```bash
-opencodex
-```
-
-`opencodex` opens the persistent conversation dashboard. Use `j` / `k` (or arrow keys) to choose a conversation, `Enter` to resume it, `n` for a new session, `Ctrl+S` for the sidebar, `q` to quit.
-
-For scripting, the dashboard is also exposed as JSON:
+For scripts and shell pipelines, the same dashboard is exposed as JSON:
 
 ```bash
 opencodex dashboard --format json
 ```
 
-## Development
+### A project system
 
-This repo follows upstream `opencode`'s Bun workspace setup.
+A project is a named group of folders that share a session pool. The intent is to keep separate codebases from mixing their history while still being able to attach a conversation to multiple folders at once. Each project also gets a home directory, so any new session in the project starts with the right working directory automatically.
+
+- `+ project` in the sidebar header creates a new project.
+- `✎` on a project row edits its name and folder list (semicolon- or newline-separated).
+- `+` on a project row opens a fresh session bound to that project.
+- A **Move Session** action in the Manage Sessions dialog rebinds a conversation to a different project.
+- Deleting a project does **not** delete its sessions. They move into the unassigned list and stay resumable.
+
+Projects are surfaced to the model too: when an agent is working inside a project, the active folder and the project's other configured folders are injected into its environment context, so the model always knows which workspaces it can touch.
+
+### Concurrent agent instances
+
+Multiple agent instances can be running at the same time. Each one has its own status row, its own status color, and its own whip animation. When a session blocks waiting for a permission grant or a user question, it flips to orange and a single press of `Enter` jumps you straight into its prompt so you can answer immediately. No more lost prompts.
+
+### Resumable, importable history
+
+OpencodeX reads the same on-disk session format as upstream `opencode`, so the same session id round-trips between the two CLIs. Switch back to upstream `opencode` and your history is still there. Switch back to OpencodeX and you pick up right where you left off. Sessions created before you ever installed OpencodeX are picked up automatically.
+
+### A complete picker suite
+
+Everything is keyboard-navigable. The TUI ships with:
+
+- A **model picker** (any provider, any model)
+- A **provider picker** (including your own custom providers)
+- An **agent picker** (subagents, custom agents, MCP-loaded agents)
+- An **MCP picker** (browse and toggle MCP servers on the fly)
+- A **theme picker** (cycle with `Ctrl+L`, theme list includes the full upstream set)
+- A **skill picker**
+- A **command palette** (`Ctrl+P`) that is the authoritative source for every keybinding
+
+### Plugin and SDK compatibility
+
+The `opencode` plugin surface and the JavaScript SDK are preserved end-to-end. Community tools, plugins, and integrations you already use keep working. OpencodeX adds a small set of namespaced overlay routes under `/experimental/opencodex/*` for the new project system, but everything else is identical to upstream.
+
+## Screenshots
+
+> Screenshot placeholders — drop captures into `docs/screenshots/` and they will appear here.
+>
+> - `docs/screenshots/dashboard.png` — the multi-session dashboard
+> - `docs/screenshots/sidebar-running.png` — sidebar with an in-progress session
+> - `docs/screenshots/sidebar-input-needed.png` — sidebar with a blocked session
+> - `docs/screenshots/project-create.png` — creating a new project
+> - `docs/screenshots/prompt-whip.png` — the prompt with its whip animation
+
+## Install
+
+OpencodeX ships as a single binary. There is no installer, no daemon, and no system service — just a file in your `PATH`. Pick the path for your platform.
+
+### macOS
+
+The recommended path is to build from source with the bundled script.
 
 ```bash
-bun install                              # install all workspace deps
-bun run --cwd packages/opencode typecheck
-bun dev                                  # TUI in dev mode (auto-reload on file change)
+git clone https://github.com/opencodex/opencodex.git
+cd opencodex
+bash build.sh --target darwin-arm64   # Apple Silicon
+# or
+bash build.sh --target darwin-x64     # Intel / Rosetta
+sudo cp artifacts/opencodex-darwin-arm64 /usr/local/bin/opencodex
 ```
 
-The TUI's only runtime dependency on the workspace is:
-
-- `@opencode-ai/core` — the agent runtime
-- `@opencode-ai/sdk` — the typed client the TUI uses to talk to the local server
-- `@opencode-ai/ui` — the shared component library
-- `@opencode-ai/llm`, `@opencode-ai/plugin`, `@opencode-ai/script`, `@opencode-ai/http-recorder` — supporting libraries
-
-Everything that is not on that list (web UI, desktop wrapper, admin console, Storybook, analytics) has been removed from this fork.
-
-### Lint and typecheck
-
-Per the project rules, the assistant does not run `bun typecheck`, `tsc`, or lint in this environment. Run them yourself in WSL before sending work for review.
+Then verify:
 
 ```bash
-bun run --cwd packages/opencode typecheck
+opencodex --version
 ```
 
-## Package layout
+### Linux
 
-```
-.
-├── packages/
-│   ├── opencode/          # the TUI (the product)
-│   ├── core/              # agent runtime
-│   ├── sdk/               # typed client (HTTP + websocket)
-│   ├── ui/                # shared TUI components
-│   ├── llm/               # LLM provider adapters
-│   ├── plugin/            # plugin runtime
-│   ├── script/            # build & release scripts
-│   ├── http-recorder/     # HTTP recording for replays
-│   ├── containers/        # container orchestration
-│   ├── extensions/        # editor integration adapters
-│   ├── identity/          # identity / auth helpers
-│   ├── function/          # function-calling utilities
-│   ├── enterprise/        # enterprise feature flags
-│   ├── slack/             # slack integration
-│   ├── effect-sqlite-node/      # sqlite-on-node effect
-│   ├── effect-drizzle-sqlite/   # drizzle-on-sqlite effect
-│   ├── cli/               # command-line tools
-│   └── docs/              # in-repo docs site
-├── docs/opencodex.md      # product direction
-├── build.sh               # cross-platform build (run from WSL for Windows)
-├── build-and-install.ps1  # install the built binary to $env:LOCALAPPDATA
-└── install-windows.ps1    # install from a prebuilt artifact
+```bash
+git clone https://github.com/opencodex/opencodex.git
+cd opencodex
+bash build.sh --target linux-x64
+# or, for older CPUs without AVX2:
+bash build.sh --target linux-x64-baseline
+sudo cp artifacts/opencodex-linux-x64 /usr/local/bin/opencodex
 ```
 
-The TUI is built and shipped as a single binary. None of the other packages in this list are bundled into the user's install — they exist to support the TUI build and to be importable by community tools.
+Verify:
+
+```bash
+opencodex --version
+```
+
+### Windows
+
+The Windows binary is cross-compiled from WSL so you do not have to leave Linux to build it. From a regular PowerShell window in the repo:
+
+```powershell
+pwsh -File .\build-and-install.ps1
+```
+
+That single command will build the Windows binary inside WSL and copy it to `%LOCALAPPDATA%\Programs\OpencodeX\opencodex.exe`, then add that directory to your user `PATH`. Restart your terminal, then verify:
+
+```powershell
+opencodex --version
+```
+
+If you already have a prebuilt artifact (for example, one shared by a teammate), you can skip the build step and install it directly:
+
+```powershell
+.\install-windows.ps1 -ArtifactPath .\artifacts\opencodex-windows-x64-baseline.zip
+```
+
+To uninstall later:
+
+```powershell
+.\install-windows.ps1 -Uninstall
+```
+
+### Build flags at a glance
+
+`build.sh` accepts a few options you may want to know about:
+
+| Flag | Effect |
+| --- | --- |
+| `--target <name>` | Build for a specific platform (defaults to `win32-x64-baseline`) |
+| `--minify` | Enable minification (off by default to avoid Bun compile quirks) |
+| `--clean` | Wipe the build cache in `/tmp` before starting |
+| `--help` | Show the full list of supported targets |
+
+Valid targets today: `win32-x64`, `win32-x64-baseline`, `win32-arm64`, `linux-x64`, `linux-x64-baseline`, `darwin-arm64`, `darwin-x64`.
+
+## First run
+
+Once `opencodex` is on your `PATH`, just run it:
+
+```bash
+opencodex
+```
+
+You will land in the dashboard. From there:
+
+- `j` / `k` (or the arrow keys) move the selection up and down
+- `Enter` resumes the selected session — or jumps to its prompt if it is blocked waiting for you
+- `n` starts a brand-new session in the current project
+- `Ctrl+S` toggles the sidebar
+- `o` (or `Ctrl+U` from anywhere) jumps back to the dashboard
+- `<leader>p` creates a new project
+- `Ctrl+O` opens the Manage Sessions dialog
+- `Ctrl+N` starts a new session bound to the current project
+- `Ctrl+P` opens the command palette — the authoritative source for the full keymap
+- `Ctrl+L` cycles themes
+- `q` quits (with a confirmation if any session is still running)
+
+The first time you run `opencodex`, you will be prompted to pick a provider and a model. After that, those choices are remembered, and you can change them any time from the pickers in the command palette.
+
+## Using the project system
+
+A typical first session with projects:
+
+1. Launch `opencodex`.
+2. Press `<leader>p` to create a project. Give it a name (for example, `work`) and one or more folder paths (semicolon- or newline-separated). These are the folders the model is allowed to read and edit when working in this project.
+3. The project appears in the sidebar. Press `+` next to it, or `n` while it is selected, to start a session bound to that project. The session's working directory is set to the project root automatically.
+4. Work as usual. When the model needs to look at a file, the configured folders are injected into its environment so it knows exactly what it can touch.
+5. To reorganize later, open **Manage Sessions** with `Ctrl+O` and use **Move Session** to re-bind a conversation to a different project, or `✎` on the project row to edit its folder list.
+
+Sessions that are not bound to a project still appear in the **Sessions** group in the sidebar and are fully resumable. Deleting a project moves its sessions back into the unassigned list — nothing is lost.
+
+## Using concurrent agents
+
+There is no special setup. Just start multiple sessions.
+
+- A running session shows a blue dot in the sidebar and an animated whip next to its model name.
+- A session that needs your input shows an orange dot. Press `Enter` on it to jump straight to its prompt.
+- A dormant session shows a gray dot. It is not using any resources.
+
+The dashboard groups them by recency, and the **Sessions** group in the sidebar lists every dormant one in the order it was last active, so picking up where you left off is a single keypress.
+
+## Keybindings
+
+The default keybindings:
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+S` | Toggle the sidebar |
+| `Ctrl+U` | Go to the OpencodeX dashboard |
+| `<leader>p` | Create a new project |
+| `Ctrl+O` | Manage sessions (move, delete, rebind) |
+| `Ctrl+N` | New session in the current project |
+| `Ctrl+P` | Open the command palette |
+| `Ctrl+L` | Cycle the theme |
+| `Enter` | Resume the selected session (or jump to its prompt if blocked) |
+| `n` | New session in the current project |
+| `Esc` | Cancel the current input or dismiss a dialog |
+| `Tab` / `Shift+Tab` | Cycle through the prompt, sidebar, and dashboard |
+| `o` | Open the dashboard |
+| `q` / `Ctrl+C` | Quit (with confirmation if any session is running) |
+
+The full keymap, including every upstream opencode binding, is available from the command palette (`Ctrl+P`).
+
+## Compatible with upstream `opencode`
+
+OpencodeX is a strict superset of the upstream TUI. Anything you can do in upstream `opencode`, you can do in OpencodeX, plus the sidebar, the dashboard, the project system, and the new overlay API. Sessions, plugins, MCP servers, providers, themes, and the JavaScript SDK all work unchanged. You can keep both installed and switch between them with no migration.
+
+## FAQ
+
+**Does this replace the upstream `opencode` CLI?**
+You can use either. Both binaries read and write the same session store, so you can move between them freely.
+
+**Do I lose my history if I switch back to upstream `opencode`?**
+No. The session format is the same. The same session id is recognized by both CLIs.
+
+**Do my existing opencode plugins still work?**
+Yes. The plugin surface and the JavaScript SDK are preserved end-to-end.
+
+**Where does my data live?**
+In the same on-disk location that upstream `opencode` uses, so existing backups and tools keep working.
+
+**Can I run OpencodeX and upstream `opencode` at the same time?**
+Yes, but you should avoid pointing both at the same session id simultaneously.
 
 ## Contributing
 
-1. Branch from `main`.
-2. Make your change. Run `bun run --cwd packages/opencode typecheck` in WSL before opening a PR.
-3. If you are adding a TUI feature, prefer the components in `packages/ui` so other parts of the TUI can reuse them.
-4. If you are adding a new keybinding, register it through the keybind registry used by the command palette so it is discoverable.
-5. Open a PR. Use the commit scopes `tui`, `opencode`, `sdk`, `ui`, `core`, `llm`, `plugin`, `script`, `docs`, or `infra` as appropriate.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) for development setup, style guide, and PR conventions. The default branch is `dev`; open PRs against it.
 
 ## License
 
-Same license as upstream `opencode` — see [`LICENSE`](LICENSE).
+MIT — same license as upstream `opencode`. See [`LICENSE`](LICENSE).
