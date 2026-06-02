@@ -387,7 +387,37 @@ For the TUI specifically:
 
 ## Releasing
 
-There is no release pipeline checked in yet — OpencodeX is currently internal. The local-only flow is:
+The release pipeline is `.github/workflows/release-cli.yml`. It builds the CLI from an Ubuntu runner, packages the generated binaries as `opencodex-*` assets, and uploads them with `install` and `install-windows.ps1` to a GitHub Release.
+
+To publish a release:
+
+1. Open the `release-cli` workflow in GitHub Actions.
+2. Run it manually with a version, or push a `vX.Y.Z` tag.
+3. Confirm the release contains:
+
+   ```text
+   install
+   install-windows.ps1
+   opencodex-linux-*.tar.gz
+   opencodex-darwin-*.zip
+   opencodex-windows-*.zip
+   SHA256SUMS
+   ```
+
+Once the release is published, users can install with:
+
+```bash
+curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
+```
+
+or on Windows:
+
+```powershell
+irm https://github.com/opencodex/opencodex/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
+pwsh -File .\install-windows.ps1
+```
+
+The local fallback flow is:
 
 1. Bump the version in `packages/opencode/package.json` (the value that ends up in `--version`).
 2. Build the targets you want to ship:

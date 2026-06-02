@@ -135,7 +135,54 @@ The home screen on a fresh launch: the sidebar is open on the left, the prompt i
 
 OpencodeX ships as a single binary. There is no installer, no daemon, and no system service — just a file in your `PATH`. Pick the path for your platform.
 
-### macOS
+### macOS and Linux
+
+The recommended path is the GitHub Release installer:
+
+```bash
+curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
+```
+
+Install a specific version with:
+
+```bash
+curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash -s -- --version 1.15.13
+```
+
+Then verify:
+
+```bash
+opencodex --version
+```
+
+### Windows
+
+From PowerShell:
+
+```powershell
+irm https://github.com/opencodex/opencodex/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
+pwsh -File .\install-windows.ps1
+```
+
+Install a specific version with:
+
+```powershell
+pwsh -File .\install-windows.ps1 -Version 1.15.13
+```
+
+Restart your terminal, then verify:
+
+```powershell
+opencodex --version
+```
+
+To uninstall later:
+
+```powershell
+.\install-windows.ps1 -Uninstall
+```
+
+### Build from source: macOS
 
 The recommended path is to build from source with the bundled script.
 
@@ -154,7 +201,7 @@ Then verify:
 opencodex --version
 ```
 
-### Linux
+### Build from source: Linux
 
 ```bash
 git clone https://github.com/opencodex/opencodex.git
@@ -171,7 +218,7 @@ Verify:
 opencodex --version
 ```
 
-### Windows
+### Build from source: Windows
 
 The Windows binary is cross-compiled from WSL so you do not have to leave Linux to build it. From a regular PowerShell window in the repo:
 
@@ -191,7 +238,7 @@ If you already have a prebuilt artifact (for example, one shared by a teammate),
 .\install-windows.ps1 -ArtifactPath .\artifacts\opencodex-windows-x64-baseline.zip
 ```
 
-To uninstall later:
+To uninstall a local Windows install later:
 
 ```powershell
 .\install-windows.ps1 -Uninstall

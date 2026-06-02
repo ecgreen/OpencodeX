@@ -1,0 +1,131 @@
+name: release-cli
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release. Defaults to packages/opencode/package.json."
+        required: false
+        type: string
+      draft:
+        description: "Create the GitHub Release as a draft."
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark the GitHub Release as a prerelease."
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+concurrency: release-cli-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build CLI release assets
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+            version="${version#v}"
+          else
+            version="$(node -p "require('./packages/opencode/package.json').version")"
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build all CLI targets
+        env:
+          OPENCODE_CHANNEL: latest
+          OPENCODE_VERSION: ${{ steps.version.outputs.version }}
+        run: bun ./packages/opencode/script/build.ts --skip-embed-web-ui --no-minify
+
+      - name: Package release assets
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip
+
+          mkdir -p release
+          cp install release/install
+          cp install-windows.ps1 release/install-windows.ps1
+          chmod 755 release/install
+
+          for dir in packages/opencode/dist/opencode-*; do
+            [[ -d "$dir/bin" ]] || continue
+
+            source_name="$(basename "$dir")"
+            asset_name="${source_name/opencode-/opencodex-}"
+            temp_dir="$(mktemp -d)"
+
+            if [[ "$asset_name" == opencodex-windows-* ]]; then
+              cp "$dir/bin/opencode.exe" "$temp_dir/opencodex.exe"
+              (cd "$temp_dir" && zip -q "$GITHUB_WORKSPACE/release/${asset_name}.zip" opencodex.exe)
+            elif [[ "$asset_name" == opencodex-linux-* ]]; then
+              cp "$dir/bin/opencode" "$temp_dir/opencodex"
+              chmod 755 "$temp_dir/opencodex"
+              tar -czf "release/${asset_name}.tar.gz" -C "$temp_dir" opencodex
+            else
+              cp "$dir/bin/opencode" "$temp_dir/opencodex"
+              chmod 755 "$temp_dir/opencodex"
+              (cd "$temp_dir" && zip -q "$GITHUB_WORKSPACE/release/${asset_name}.zip" opencodex)
+            fi
+
+            rm -rf "$temp_dir"
+          done
+
+          (cd release && sha256sum * > SHA256SUMS)
+          ls -lh release
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencodex-release-assets
+          path: release/*
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          INPUT_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          INPUT_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+        shell: bash
+        run: |
+          flags=()
+          if [[ "$INPUT_DRAFT" == "true" ]]; then
+            flags+=(--draft)
+          fi
+          if [[ "$INPUT_PRERELEASE" == "true" ]]; then
+            flags+=(--prerelease)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+            exit 0
+          fi
+
+          gh release create "$TAG" \
+            release/* \
+            --target "$GITHUB_SHA" \
+            --title "OpencodeX ${VERSION}" \
+            --notes "OpencodeX ${VERSION} CLI release assets." \
+            "${flags[@]}"

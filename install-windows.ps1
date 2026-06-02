@@ -1,13 +1,22 @@
 <#
 .SYNOPSIS
-    Installs the OpencodeX binary on Windows from a local build artifact.
+    Installs the OpencodeX binary on Windows.
 
 .DESCRIPTION
-    Extracts the built binary from the artifacts/ directory, installs it to
-    a user-local directory, adds it to PATH, and verifies the installation.
+    Downloads the matching release artifact from GitHub Releases, or extracts a
+    local build artifact, installs it to a user-local directory, adds it to PATH,
+    and verifies the installation.
 
 .PARAMETER ArtifactPath
-    Path to the artifact (.zip or .exe). Defaults to auto-detecting from artifacts/.
+    Path to a local artifact (.zip or .exe). Defaults to auto-detecting from
+    artifacts/, then downloading from GitHub Releases.
+
+.PARAMETER ReleaseRepo
+    GitHub repository that hosts release assets. Defaults to opencodex/opencodex.
+
+.PARAMETER Version
+    Release version to install. Defaults to latest. Accepts values with or without
+    a leading v, for example "1.15.13" or "v1.15.13".
 
 .PARAMETER InstallDir
     Installation directory. Defaults to $env:LOCALAPPDATA\Programs\OpencodeX.
@@ -23,7 +32,11 @@
 
 .EXAMPLE
     .\install-windows.ps1
-    # Auto-detects artifact, installs to default location
+    # Downloads latest release asset, installs to default location
+
+.EXAMPLE
+    .\install-windows.ps1 -Version 1.15.13
+    # Downloads a specific release asset
 
 .EXAMPLE
     .\install-windows.ps1 -ArtifactPath .\artifacts\opencodex-windows-x64-baseline.zip
@@ -37,6 +50,8 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactPath = "",
+    [string]$ReleaseRepo = "opencodex/opencodex",
+    [string]$Version = "latest",
     [string]$InstallDir = "",
     [string]$BinaryName = "opencodex.exe",
     [switch]$NoPathUpdate,
@@ -52,6 +67,48 @@ function Write-Step  { param([string]$msg) Write-Host "`n--- $msg ---" -Foregrou
 function Write-Ok    { param([string]$msg) Write-Host "  [OK] $msg" -ForegroundColor Green }
 function Write-Warn  { param([string]$msg) Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Err   { param([string]$msg) Write-Host "  [ERR] $msg" -ForegroundColor Red; exit 1 }
+
+function Test-Avx2 {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [System.Runtime.InteropServices.Architecture]::X64) {
+        return $false
+    }
+
+    try {
+        $type = Add-Type -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(int ProcessorFeature);' -Name Kernel32 -Namespace Win32 -PassThru
+        return $type::IsProcessorFeaturePresent(40)
+    } catch {
+        return $false
+    }
+}
+
+function Get-ReleaseAssetName {
+    $arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+        "Arm64" { "arm64" }
+        "X64" { "x64" }
+        default { Write-Err "Unsupported Windows architecture: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" }
+    }
+
+    $target = "windows-$arch"
+    if ($arch -eq "x64" -and -not (Test-Avx2)) {
+        $target = "$target-baseline"
+    }
+
+    return "opencodex-$target.zip"
+}
+
+function Get-ReleaseAssetUrl {
+    param([string]$AssetName)
+
+    if ($Version -eq "latest") {
+        return "https://github.com/$ReleaseRepo/releases/latest/download/$AssetName"
+    }
+
+    $tag = $Version
+    if (-not $tag.StartsWith("v")) {
+        $tag = "v$tag"
+    }
+    return "https://github.com/$ReleaseRepo/releases/download/$tag/$AssetName"
+}
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -103,13 +160,10 @@ Write-Step "Locating artifact"
 
 if (-not $ArtifactPath) {
     $artifactsDir = Join-Path $ScriptDir "artifacts"
-    if (-not (Test-Path $artifactsDir)) {
-        Write-Err "No artifacts/ directory found. Run build.sh in WSL first."
-    }
 
     # Prefer .zip, then .exe
-    $zips = @(Get-ChildItem -Path $artifactsDir -Filter "opencodex-windows-*.zip" -ErrorAction SilentlyContinue)
-    $exes = @(Get-ChildItem -Path $artifactsDir -Filter "opencodex-windows-*.exe" -ErrorAction SilentlyContinue)
+    $zips = if (Test-Path $artifactsDir) { @(Get-ChildItem -Path $artifactsDir -Filter "opencodex-windows-*.zip" -ErrorAction SilentlyContinue) } else { @() }
+    $exes = if (Test-Path $artifactsDir) { @(Get-ChildItem -Path $artifactsDir -Filter "opencodex-windows-*.exe" -ErrorAction SilentlyContinue) } else { @() }
 
     if ($zips.Count -gt 0) {
         # Pick the most recent zip
@@ -117,7 +171,19 @@ if (-not $ArtifactPath) {
     } elseif ($exes.Count -gt 0) {
         $ArtifactPath = ($exes | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
     } else {
-        Write-Err "No opencodex-windows-* artifact found in $artifactsDir. Run build.sh in WSL first."
+        $assetName = Get-ReleaseAssetName
+        $downloadUrl = Get-ReleaseAssetUrl -AssetName $assetName
+        $downloadDir = Join-Path $env:TEMP "opencodex-download"
+        New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+        $ArtifactPath = Join-Path $downloadDir $assetName
+
+        Write-Step "Downloading release artifact"
+        Write-Host "  $downloadUrl" -ForegroundColor DarkGray
+        try {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $ArtifactPath
+        } catch {
+            Write-Err "Failed to download $assetName from $ReleaseRepo. Release assets may not exist yet: $_"
+        }
     }
 }
 

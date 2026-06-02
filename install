@@ -23,8 +23,8 @@ Options:
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
-    curl -fsSL https://raw.githubusercontent.com/opencodex/opencodex/dev/install | bash
-    curl -fsSL https://raw.githubusercontent.com/opencodex/opencodex/dev/install | bash -s -- --version 1.0.180
+    curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
+    curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash -s -- --version 1.0.180
     ./install --binary /path/to/opencodex
 EOF
 }
@@ -104,7 +104,7 @@ else
 
     combo="$os-$arch"
     case "$combo" in
-      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
+      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64|windows-arm64)
         ;;
       *)
         echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}"
@@ -226,8 +226,6 @@ print_message() {
 
 check_version() {
     if command -v "$APP" >/dev/null 2>&1; then
-        app_path=$(which "$APP")
-
         ## Check the installed version
         installed_version=$("$APP" --version 2>/dev/null || echo "")
 
@@ -281,7 +279,7 @@ download_with_progress() {
     fi
 
     local tmp_dir=${TMPDIR:-/tmp}
-    local basename="${tmp_dir}/opencode_install_$$"
+    local basename="${tmp_dir}/${APP}_install_$$"
     local tracefile="${basename}.trace"
 
     rm -f "$tracefile"
@@ -335,7 +333,7 @@ download_and_install() {
     local tmp_dir="${TMPDIR:-/tmp}/${APP}_install_$$"
     mkdir -p "$tmp_dir"
 
-    if ! curl -fsI "$url" >/dev/null 2>&1; then
+    if ! curl -fsIL "$url" >/dev/null 2>&1; then
         url="$fallback_url"
         filename="$fallback_filename"
     fi
@@ -369,6 +367,11 @@ download_and_install() {
 
 install_from_binary() {
     print_message info "\n${MUTED}Installing ${NC}$APP ${MUTED}from: ${NC}$binary_path"
+    if [[ "$binary_path" == *.exe ]]; then
+        cp "$binary_path" "${INSTALL_DIR}/$APP.exe"
+        chmod 755 "${INSTALL_DIR}/$APP.exe"
+        return
+    fi
     cp "$binary_path" "${INSTALL_DIR}/$APP"
     chmod 755 "${INSTALL_DIR}/$APP"
 }
