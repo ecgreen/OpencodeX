@@ -43,8 +43,8 @@ export function activate(context: vscode.ExtensionContext) {
     const terminal = vscode.window.createTerminal({
       name: TERMINAL_NAME,
       iconPath: {
-        light: vscode.Uri.file(context.asAbsolutePath("images/button-dark.png")),
-        dark: vscode.Uri.file(context.asAbsolutePath("images/button-light.png")),
+        light: vscode.Uri.file(context.asAbsolutePath("images/button-light.png")),
+        dark: vscode.Uri.file(context.asAbsolutePath("images/button-dark.png")),
       },
       location: {
         viewColumn: vscode.ViewColumn.Beside,

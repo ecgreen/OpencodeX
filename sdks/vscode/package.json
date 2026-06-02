@@ -28,16 +28,16 @@
         "command": "opencodex.openTerminal",
         "title": "OpencodeX: Open OpencodeX",
         "icon": {
-          "light": "images/button-dark.png",
-          "dark": "images/button-light.png"
+          "light": "images/button-light.png",
+          "dark": "images/button-dark.png"
         }
       },
       {
         "command": "opencodex.openNewTerminal",
         "title": "OpencodeX: Open OpencodeX in New Tab",
         "icon": {
-          "light": "images/button-dark.png",
-          "dark": "images/button-light.png"
+          "light": "images/button-light.png",
+          "dark": "images/button-dark.png"
         }
       },
       {
@@ -67,6 +67,21 @@
           "description": "Automatically append the active file reference when opening OpencodeX."
         }
       }
+    },
+    "configurationDefaults": {
+      "terminal.integrated.commandsToSkipShell": [
+        "-workbench.action.quickOpen",
+        "-workbench.action.files.save",
+        "-workbench.action.files.openFile",
+        "-workbench.action.files.newUntitledFile",
+        "-workbench.action.terminal.focusFind",
+        "-workbench.action.quickOpenRecent",
+        "-workbench.action.showAllSymbols",
+        "-workbench.action.gotoLine",
+        "-editor.action.selectAll",
+        "-workbench.action.closeActiveEditor",
+        "-workbench.action.terminal.clear"
+      ]
     },
     "menus": {
       "editor/title": [

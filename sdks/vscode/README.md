@@ -67,6 +67,12 @@ If your command needs extra arguments before `--port`, use:
 }
 ```
 
+## Terminal Keybindings
+
+OpencodeX runs inside VS Code's integrated terminal, so the extension contributes defaults that let common TUI shortcuts reach the terminal instead of being intercepted by VS Code. This includes shortcuts such as `Ctrl+P`, `Ctrl+S`, `Ctrl+N`, `Ctrl+O`, `Ctrl+F`, and related modal/input bindings.
+
+If a shortcut is still intercepted, check whether your user or workspace settings define `terminal.integrated.commandsToSkipShell`; explicit settings can override extension defaults.
+
 ## Development Notes
 
 - The extension is intentionally thin: it opens the TUI in a terminal and sends context over the existing `/tui/append-prompt` endpoint.

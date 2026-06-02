@@ -1,23 +1,31 @@
 # OpencodeX
 
-**A terminal-native fork of [opencode](https://github.com/anomalyco/opencode) built for people who run lots of AI coding sessions at once.**
+**A terminal-native AI coding workspace for running, organizing, and supervising many agent sessions at once.**
 
-OpencodeX turns the opencode TUI into a true multi-session workspace. Instead of one conversation in one terminal, you get a persistent sidebar, a project system for keeping separate codebases apart, concurrent agents with live status, and a dashboard that knows about every session you've ever started. No browser, no Electron, no separate desktop app — just one fast, keyboard-driven binary that lives in your terminal.
+![OpencodeX home screen with the sidebar open, showing one session running, one awaiting feedback, and a stack of dormant sessions](Screenshots/InProgress-and-waiting.png)
 
-It's a drop-in replacement for the `opencode` CLI: same session format, same providers, same MCP servers, same plugins. Your existing history comes with you. You just get a much better cockpit to fly it from.
+OpencodeX extends [opencode](https://github.com/anomalyco/opencode) into a full multi-session command center for AI-assisted software work. It keeps the speed and focus of the terminal while adding the structure required to manage real projects: persistent navigation, project-scoped sessions, concurrent agent visibility, and a dashboard that makes every conversation easy to find again.
 
-> Want to see it first? Skip to [Screenshots](#screenshots) or jump straight to [Install](#install).
+It is designed for developers who use AI agents throughout the day: maintaining several repositories, delegating independent implementation tasks, reviewing blocked prompts, returning to prior investigations, and keeping work separated by project without opening a browser or desktop client.
 
-## Why OpencodeX
+OpencodeX remains compatible with upstream `opencode`: the same session format, providers, MCP servers, plugins, themes, and JavaScript SDK continue to work. Your existing history comes with you. OpencodeX adds the workspace layer around it.
 
-If you use AI in your terminal every day, you've hit these problems:
+## What OpencodeX provides
 
-- You have six conversations going at once and the one that needs your attention is buried three screens deep.
-- You switch between a work repo, a side project, and a research scratchpad and their histories keep bleeding into each other.
-- An agent finished a task while you were in another window and you didn't notice for an hour.
-- A permission prompt is sitting in a session you can't see because the chat view is on something else.
+- **A persistent session sidebar** that shows pinned work, project groups, unassigned sessions, and live agent status while you continue chatting.
+- **A project system** for grouping folders and conversations so different codebases, clients, experiments, or workstreams stay organized.
+- **Concurrent agent supervision** with status colors for idle, running, and blocked sessions, making it clear where attention is needed.
+- **A multi-session dashboard** for resuming prior work, scanning recent conversations, and returning to active sessions without losing context.
+- **Keyboard-first operation** with command palette access to models, providers, agents, MCP servers, themes, skills, sessions, and projects.
+- **Upstream compatibility** so existing opencode history and integrations continue to work without migration.
 
-OpencodeX is the answer to all of those, without giving up the TUI. It is built on top of the opencode TUI you already know, with a sidebar that always shows what every session is doing, projects that keep your codebases separate, and live status colors that tell you where to look first.
+## Use cases
+
+- Run one agent on a refactor, another on a bug investigation, and a third on documentation while monitoring all of them from the same terminal.
+- Keep work, side projects, research folders, and scratch repositories separated with project-scoped histories.
+- See immediately when a session is waiting for permission or a question, then jump directly to the blocked prompt.
+- Resume old conversations by project or recency instead of searching terminal scrollback or remembering session IDs.
+- Use the same providers, MCP servers, plugins, and SDK integrations you already rely on in upstream opencode.
 
 ## What's new compared to upstream `opencode`
 
@@ -84,8 +92,8 @@ opencodex dashboard --format json
 A project is a named group of folders that share a session pool. The intent is to keep separate codebases from mixing their history while still being able to attach a conversation to multiple folders at once. Each project also gets a home directory, so any new session in the project starts with the right working directory automatically.
 
 - `+ project` in the sidebar header creates a new project.
-- `✎` on a project row edits its name and folder list (semicolon- or newline-separated).
 - `+` on a project row opens a fresh session bound to that project.
+- **Manage Projects** edits project names, folder lists, deletion, and ordering.
 - A **Move Session** action in the Manage Sessions dialog rebinds a conversation to a different project.
 - Deleting a project does **not** delete its sessions. They move into the unassigned list and stay resumable.
 
@@ -115,9 +123,7 @@ Everything is keyboard-navigable. The TUI ships with:
 
 The `opencode` plugin surface and the JavaScript SDK are preserved end-to-end. Community tools, plugins, and integrations you already use keep working. OpencodeX adds a small set of namespaced overlay routes under `/experimental/opencodex/*` for the new project system, but everything else is identical to upstream.
 
-## Screenshots
-
-![OpencodeX home screen with the sidebar open, showing one session running, one awaiting feedback, and a stack of dormant sessions](Screenshots/InProgress-and-waiting.png)
+## Screenshot details
 
 The home screen on a fresh launch: the sidebar is open on the left, the prompt is empty and ready for a new session, and the sidebar gives you a live readout of every other conversation. In this capture:
 
@@ -236,7 +242,7 @@ A typical first session with projects:
 2. Press `<leader>p` to create a project. Give it a name (for example, `work`) and one or more folder paths (semicolon- or newline-separated). These are the folders the model is allowed to read and edit when working in this project.
 3. The project appears in the sidebar. Press `+` next to it, or `n` while it is selected, to start a session bound to that project. The session's working directory is set to the project root automatically.
 4. Work as usual. When the model needs to look at a file, the configured folders are injected into its environment so it knows exactly what it can touch.
-5. To reorganize later, open **Manage Sessions** with `Ctrl+O` and use **Move Session** to re-bind a conversation to a different project, or `✎` on the project row to edit its folder list.
+5. To reorganize later, open **Manage Sessions** with `Ctrl+O` and use **Move Session** to re-bind a conversation to a different project, or open **Manage Projects** to edit project names, folders, deletion, and ordering.
 
 Sessions that are not bound to a project still appear in the **Sessions** group in the sidebar and are fully resumable. Deleting a project moves its sessions back into the unassigned list — nothing is lost.
 
