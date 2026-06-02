@@ -55,6 +55,16 @@ export const OpencodeXApi = HttpApi.make("opencodex")
             summary: "Update OpencodeX project",
           }),
         ),
+        HttpApiEndpoint.post("reorderProjects", `${root}/project/reorder`, {
+          payload: OpencodeXProject.ReorderInput,
+          success: described(Schema.Array(OpencodeXProject.Info), "Reordered OpencodeX projects"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.project.reorder",
+            summary: "Reorder OpencodeX projects",
+          }),
+        ),
         HttpApiEndpoint.post("createSession", `${root}/session`, {
           payload: OpencodeXProject.CreateSessionInput,
           success: described(Session.Info, "Created session"),

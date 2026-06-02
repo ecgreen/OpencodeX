@@ -44,6 +44,11 @@ export const UpdateInput = Schema.Struct({
 }).annotate({ identifier: "OpencodeXProjectUpdateInput" })
 export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
 
+export const ReorderInput = Schema.Struct({
+  projectIDs: Schema.Array(Schema.String),
+}).annotate({ identifier: "OpencodeXProjectReorderInput" })
+export type ReorderInput = Types.DeepMutable<Schema.Schema.Type<typeof ReorderInput>>
+
 export const CreateSessionInput = Schema.Struct({
   projectID: Schema.String,
   directory: Schema.String,
@@ -102,6 +107,7 @@ export interface Interface {
   readonly validate: (input: ValidateInput) => Effect.Effect<Validation>
   readonly create: (input: CreateInput) => Effect.Effect<Info, InvalidFolderError | Project.NotFoundError>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, InvalidFolderError | Project.NotFoundError>
+  readonly reorder: (input: ReorderInput) => Effect.Effect<Info[]>
   readonly createSession: (
     input: CreateSessionInput,
   ) => Effect.Effect<Session.Info, InvalidFolderError | Project.NotFoundError>
@@ -270,6 +276,17 @@ export const layer = Layer.effect(
       return yield* get(input.projectID)
     })
 
+    const reorder = Effect.fn("OpencodeXProject.reorder")(function* (input: ReorderInput) {
+      const rows = yield* OpencodeXProjectFolder.listProjects(db)
+      const knownIDs = new Set(rows.map((row) => row.id))
+      const requestedIDs = [...new Set(input.projectIDs)].filter((id) => knownIDs.has(id))
+      yield* OpencodeXProjectFolder.reorderProjects(db, [
+        ...requestedIDs,
+        ...rows.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
+      ])
+      return yield* list()
+    })
+
     const createSession = Effect.fn("OpencodeXProject.createSession")(function* (input: CreateSessionInput) {
       const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
       if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
@@ -338,6 +355,7 @@ export const layer = Layer.effect(
       validate,
       create,
       update,
+      reorder,
       createSession,
       moveSession,
       removeProject,

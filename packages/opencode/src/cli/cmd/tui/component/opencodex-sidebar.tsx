@@ -109,6 +109,10 @@ function titleLabel(value: string, length: number) {
   return value.length > length ? value.slice(0, length - 3) + "..." : value
 }
 
+function projectTitle(project: OpencodeXProjectInfo) {
+  return project.name ?? project.project.name ?? project.project.worktree
+}
+
 function parseFolders(input: string) {
   return input
     .split(/\r?\n|;/)
@@ -179,54 +183,158 @@ export async function createOpencodeXProjectDialog(input: OpencodeXDialogContext
     .catch((error: Error) => DialogAlert.show(input.dialog, "Project Error", error.message))
 }
 
-export async function deleteOpencodeXProjectDialog(input: OpencodeXDialogContext) {
-  const projects = await input.sdk
-    .request<OpencodeXProjectInfo[]>("/experimental/opencodex/project")
-    .catch((error: Error) => {
-      void DialogAlert.show(input.dialog, "Delete Project", error.message)
+export function manageOpencodeXProjectsDialog(input: OpencodeXDialogContext) {
+  input.dialog.replace(() => <OpencodeXProjectManager />)
+}
+
+function OpencodeXProjectManager() {
+  const sync = useSync()
+  const sdk = useSDK()
+  const dialog = useDialog()
+  const { theme } = useTheme()
+  const [toDelete, setToDelete] = createSignal<string>()
+  const [currentProjectID, setCurrentProjectID] = createSignal<string>()
+  const [refresh, setRefresh] = createSignal(0)
+  const [projects, { refetch }] = createResource(refresh, () =>
+    sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"),
+  )
+  const sessionIDs = createMemo(
+    () => new Set(sync.data.session.filter((session) => !session.parentID).map((session) => session.id)),
+  )
+
+  const list = () => {
+    setRefresh((value) => value + 1)
+    void refetch()
+    refreshOpencodeXSidebar()
+  }
+
+  const options = createMemo(() =>
+    (projects() ?? []).map((project) => {
+      const count = project.sessions.filter((session) => sessionIDs().has(session.id)).length
+      const isDeleting = toDelete() === project.id
+      return {
+        title: isDeleting ? "Press delete again to confirm" : projectTitle(project),
+        value: project.id,
+        description: `${project.folders.length} folder${project.folders.length !== 1 ? "s" : ""}, ${count} conversation${count !== 1 ? "s" : ""}${project.sessions.some((session) => deriveStatus(session.id, sync) !== "dormant") ? ", active" : ""}`,
+        bg: isDeleting ? theme.error : undefined,
+        footer: project.folders[0]?.path ?? "",
+      }
+    }),
+  )
+
+  async function deleteProject(projectID: string) {
+    const removed = await sdk
+      .request<boolean>(`/experimental/opencodex/project/${projectID}`, { method: "DELETE" })
+      .catch((error: Error) => {
+        void DialogAlert.show(dialog, "Delete Project", error.message)
+      })
+    if (!removed) return
+    setToDelete(undefined)
+    setCurrentProjectID(undefined)
+    list()
+  }
+
+  async function renameProject(projectID: string) {
+    const project = (projects() ?? []).find((item) => item.id === projectID)
+    if (!project) return
+    const name = await DialogPrompt.show(dialog, "Project name", {
+      placeholder: "Optional display name",
+      value: project.name ?? "",
     })
-  if (!projects) return
-  if (projects.length === 0) {
-    await DialogAlert.show(input.dialog, "Delete Project", "There are no projects to delete.")
-    return
+    if (name === null) {
+      dialog.replace(() => <OpencodeXProjectManager />)
+      return
+    }
+    await sdk
+      .request<OpencodeXProjectInfo>(`/experimental/opencodex/project/${projectID}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      .then(() => {
+        setCurrentProjectID(projectID)
+        list()
+        dialog.replace(() => <OpencodeXProjectManager />)
+      })
+      .catch((error: Error) => DialogAlert.show(dialog, "Rename Project", error.message))
   }
-  const active = (project: OpencodeXProjectInfo) =>
-    input.sync ? project.sessions.some((session) => deriveStatus(session.id, input.sync!) !== "dormant") : false
-  const sessionCount = (project: OpencodeXProjectInfo) => {
-    if (!input.sync) return project.sessions.length
-    const sessionIDs = new Set(input.sync.data.session.filter((session) => !session.parentID).map((session) => session.id))
-    return project.sessions.filter((session) => sessionIDs.has(session.id)).length
+
+  async function reorderProject(projectID: string, offset: number) {
+    const ids = (projects() ?? []).map((project) => project.id)
+    const index = ids.indexOf(projectID)
+    const nextIndex = index + offset
+    if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return
+    const next = ids.map((id, itemIndex) =>
+      itemIndex === index ? ids[nextIndex] : itemIndex === nextIndex ? ids[index] : id,
+    )
+    await sdk
+      .request<OpencodeXProjectInfo[]>("/experimental/opencodex/project/reorder", {
+        method: "POST",
+        body: JSON.stringify({ projectIDs: next }),
+      })
+      .then(() => {
+        setCurrentProjectID(projectID)
+        setToDelete(undefined)
+        list()
+      })
+      .catch((error: Error) => DialogAlert.show(dialog, "Reorder Projects", error.message))
   }
-  input.dialog.replace(() => (
+
+  onMount(() => {
+    dialog.setSize("large")
+  })
+
+  return (
     <DialogSelect
-      title="Delete project"
-      options={projects.map((project) => {
-        const count = sessionCount(project)
-        return {
-          title: project.name ?? project.project.name ?? project.project.worktree,
-          value: project.id,
-          description: `${project.folders.length} folder${project.folders.length !== 1 ? "s" : ""}, ${count} conversation${count !== 1 ? "s" : ""}${active(project) ? ", active" : ""}`,
-          onSelect: (dialog) => {
-            dialog.clear()
-            void DialogConfirm.show(
-              dialog,
-              "Delete Project",
-              `Delete ${project.name ?? project.project.name ?? project.project.worktree}? Sessions are not deleted.`,
-            ).then((confirmed) => {
-              if (confirmed !== true) return
-              void input.sdk
-                .request<boolean>(`/experimental/opencodex/project/${project.id}`, { method: "DELETE" })
-                .then(() => {
-                  input.refetch?.()
-                  refreshOpencodeXSidebar()
-                })
-                .catch((error: Error) => DialogAlert.show(dialog, "Delete Project", error.message))
-            })
+      title="Manage Projects"
+      options={options()}
+      current={currentProjectID()}
+      onMove={(option) => {
+        setCurrentProjectID(option.value)
+        setToDelete(undefined)
+      }}
+      onSelect={(option) => {
+        setCurrentProjectID(option.value)
+        setToDelete(undefined)
+      }}
+      actions={[
+        {
+          command: "session.delete",
+          title: "delete",
+          onTrigger: (option) => {
+            if (toDelete() === option.value) {
+              void deleteProject(option.value)
+              return
+            }
+            setToDelete(option.value)
           },
-        }
-      })}
+        },
+        {
+          command: "session.rename",
+          title: "rename",
+          onTrigger: (option) => {
+            void renameProject(option.value)
+          },
+        },
+        {
+          command: "opencodex.project.move_up",
+          title: "up",
+          disabled: (projects() ?? []).length < 2,
+          onTrigger: (option) => {
+            void reorderProject(option.value, -1)
+          },
+        },
+        {
+          command: "opencodex.project.move_down",
+          title: "down",
+          disabled: (projects() ?? []).length < 2,
+          onTrigger: (option) => {
+            void reorderProject(option.value, 1)
+          },
+        },
+      ]}
+      footerHints={[{ title: "select", label: "enter" }]}
     />
-  ))
+  )
 }
 
 async function createProjectSession(input: OpencodeXDialogContext & { project: OpencodeXProjectInfo }) {
@@ -570,29 +678,6 @@ export function OpencodeXSidebar() {
     await createOpencodeXProjectDialog({ sdk, dialog, theme, refetch })
   }
 
-  async function editProject(project: OpencodeXProjectInfo) {
-    const name = await DialogPrompt.show(dialog, "Project name", {
-      placeholder: "Optional display name",
-      value: project.name ?? "",
-    })
-    if (name === null) return
-    const folders = await DialogPrompt.show(dialog, "Project folders", {
-      value: project.folders.map((folder) => folder.path).join("\n"),
-      description: () => <text fg={theme.textMuted}>Separate folders with semicolons or new lines.</text>,
-    })
-    dialog.clear()
-    if (folders === null) return
-    const parsed = parseFolders(folders)
-    if (!(await confirmValidFolders({ sdk, dialog, theme, refetch, folders: parsed, projectID: project.id }))) return
-    await sdk
-      .request<OpencodeXProjectInfo>(`/experimental/opencodex/project/${project.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name: name.trim(), folders: parsed }),
-      })
-      .then(() => refetch())
-      .catch((error: Error) => DialogAlert.show(dialog, "Project Error", error.message))
-  }
-
   async function createSession(project: OpencodeXProjectInfo) {
     await createProjectSession({ sdk, dialog, theme, route, sync, refetch, project })
   }
@@ -769,7 +854,7 @@ export function OpencodeXSidebar() {
                 const isCollapsed = createMemo(() => collapsed()[project.id] ?? false)
                 return (
                   <box flexDirection="column" flexShrink={0} paddingBottom={1}>
-                    <box paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
+                    <box paddingLeft={2} paddingRight={1} flexDirection="row" justifyContent="space-between">
                       <text
                         fg={theme.text}
                         onMouseUp={() => {
@@ -779,7 +864,6 @@ export function OpencodeXSidebar() {
                         <b>{isCollapsed() ? "▸" : "▾"} {titleLabel(project.name ?? project.project.name ?? project.project.worktree, 20)}</b>
                       </text>
                       <box flexDirection="row">
-                        {projectIconButton("✎", () => void editProject(project))}
                         {projectIconButton("+", () => void createSession(project))}
                       </box>
                     </box>

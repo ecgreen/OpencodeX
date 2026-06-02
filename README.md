@@ -117,13 +117,13 @@ The `opencode` plugin surface and the JavaScript SDK are preserved end-to-end. C
 
 ## Screenshots
 
-> Screenshot placeholders — drop captures into `docs/screenshots/` and they will appear here.
->
-> - `docs/screenshots/dashboard.png` — the multi-session dashboard
-> - `docs/screenshots/sidebar-running.png` — sidebar with an in-progress session
-> - `docs/screenshots/sidebar-input-needed.png` — sidebar with a blocked session
-> - `docs/screenshots/project-create.png` — creating a new project
-> - `docs/screenshots/prompt-whip.png` — the prompt with its whip animation
+![OpencodeX home screen with the sidebar open, showing one session running, one awaiting feedback, and a stack of dormant sessions](Screenshots/InProgress-and-waiting.png)
+
+The home screen on a fresh launch: the sidebar is open on the left, the prompt is empty and ready for a new session, and the sidebar gives you a live readout of every other conversation. In this capture:
+
+- One session is **active** — blue dot, whip animation on the model row, the agent is producing output.
+- One session is **awaiting feedback** — orange dot, it has a permission prompt or question waiting for you. A single `Enter` on that row jumps you straight into its prompt.
+- The rest are **dormant** — gray dots, no resources being used, fully resumable with one keypress.
 
 ## Install
 

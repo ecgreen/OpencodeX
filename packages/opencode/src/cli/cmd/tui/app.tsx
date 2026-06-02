@@ -71,7 +71,7 @@ import { FormatError, FormatUnknownError } from "@/cli/error"
 import { CommandPaletteDialog } from "./component/command-palette"
 import {
   createOpencodeXProjectDialog,
-  deleteOpencodeXProjectDialog,
+  manageOpencodeXProjectsDialog,
   manageOpencodeXSessionsDialog,
   newOpencodeXSessionInProjectDialog,
   OpencodeXSidebar,
@@ -107,9 +107,8 @@ const appGlobalBindingCommands = [
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
-  "opencodex.dashboard",
   "opencodex.project.create",
-  "opencodex.project.delete",
+  "opencodex.project.manage",
   "opencodex.session.manage",
   "opencodex.session.new_project",
   "model.cycle_recent",
@@ -618,20 +617,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         },
       },
       {
-        name: "opencodex.dashboard",
-        title: "Go to Dashboard",
-        suggested: true,
-        category: "OpencodeX",
-        slashName: "dashboard",
-        run: () => {
-          setPendingOpencodeXProjectSession(undefined)
-          route.navigate({
-            type: "home",
-          })
-          dialog.clear()
-        },
-      },
-      {
         name: "opencodex.project.create",
         title: "Create project",
         suggested: true,
@@ -662,12 +647,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         },
       },
       {
-        name: "opencodex.project.delete",
-        title: "Delete project",
+        name: "opencodex.project.manage",
+        title: "Manage projects",
         suggested: true,
         category: "OpencodeX",
         run: () => {
-          void deleteOpencodeXProjectDialog({ sdk, dialog, theme, sync })
+          manageOpencodeXProjectsDialog({ sdk, dialog, theme, sync })
         },
       },
       {

@@ -1,4 +1,4 @@
-import { index, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 import { ProjectTable } from "../project/sql"
 import { ProjectV2 } from "../project"
@@ -13,6 +13,7 @@ export const OpencodeXProjectTable = sqliteTable(
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
     name: text(),
+    sort_order: integer().notNull().default(0),
     ...Timestamps,
   },
   (table) => [index("opencodex_project_project_idx").on(table.project_id)],

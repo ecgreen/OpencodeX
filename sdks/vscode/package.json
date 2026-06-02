@@ -1,12 +1,12 @@
 {
-  "name": "opencode",
-  "displayName": "opencode",
-  "description": "opencode for VS Code",
-  "version": "1.15.13",
-  "publisher": "sst-dev",
+  "name": "opencodex",
+  "displayName": "OpencodeX",
+  "description": "OpencodeX for VS Code",
+  "version": "0.0.1",
+  "publisher": "ecgreen",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anomalyco/opencode"
+    "url": "https://github.com/ecgreen/OpencodeX"
   },
   "license": "MIT",
   "icon": "images/icon.png",
@@ -25,54 +25,77 @@
   "contributes": {
     "commands": [
       {
-        "command": "opencode.openTerminal",
-        "title": "Open opencode",
+        "command": "opencodex.openTerminal",
+        "title": "OpencodeX: Open OpencodeX",
         "icon": {
-          "light": "images/button-dark.svg",
-          "dark": "images/button-light.svg"
+          "light": "images/button-dark.png",
+          "dark": "images/button-light.png"
         }
       },
       {
-        "command": "opencode.openNewTerminal",
-        "title": "Open opencode in new tab",
+        "command": "opencodex.openNewTerminal",
+        "title": "OpencodeX: Open OpencodeX in New Tab",
         "icon": {
-          "light": "images/button-dark.svg",
-          "dark": "images/button-light.svg"
+          "light": "images/button-dark.png",
+          "dark": "images/button-light.png"
         }
       },
       {
-        "command": "opencode.addFilepathToTerminal",
-        "title": "Add Filepath to Terminal"
+        "command": "opencodex.addFilepathToTerminal",
+        "title": "OpencodeX: Add Filepath to Terminal"
       }
     ],
+    "configuration": {
+      "title": "OpencodeX",
+      "properties": {
+        "opencodex.command": {
+          "type": "string",
+          "default": "opencodex",
+          "description": "Shell command used to launch the OpencodeX TUI. For local testing this can be a wrapper command, for example a WSL command."
+        },
+        "opencodex.arguments": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional arguments passed before --port when launching OpencodeX."
+        },
+        "opencodex.autoAttachCurrentFile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically append the active file reference when opening OpencodeX."
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
-          "command": "opencode.openNewTerminal",
+          "command": "opencodex.openNewTerminal",
           "group": "navigation"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "opencode.openTerminal",
-        "title": "Run opencode",
+        "command": "opencodex.openTerminal",
+        "title": "Run OpencodeX",
         "key": "cmd+escape",
         "mac": "cmd+escape",
         "win": "ctrl+escape",
         "linux": "ctrl+escape"
       },
       {
-        "command": "opencode.openNewTerminal",
-        "title": "Run opencode",
+        "command": "opencodex.openNewTerminal",
+        "title": "Run OpencodeX",
         "key": "cmd+shift+escape",
         "mac": "cmd+shift+escape",
         "win": "ctrl+shift+escape",
         "linux": "ctrl+shift+escape"
       },
       {
-        "command": "opencode.addFilepathToTerminal",
-        "title": "opencode: Insert At-Mentioned",
+        "command": "opencodex.addFilepathToTerminal",
+        "title": "OpencodeX: Insert At-Mentioned",
         "key": "cmd+alt+k",
         "mac": "cmd+alt+k",
         "win": "ctrl+alt+K",
@@ -81,7 +104,7 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "bun run package",
+    "vscode:prepublish": "node -e \"require('fs').existsSync('dist/extension.js') || process.exit(1)\"",
     "compile": "bun run check-types && bun run lint && node esbuild.js",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",

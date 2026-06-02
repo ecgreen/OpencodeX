@@ -41,7 +41,12 @@ export function findFolder(db: DatabaseService, directory: string) {
 }
 
 export function listProjects(db: DatabaseService) {
-  return db.select().from(OpencodeXProjectTable).orderBy(OpencodeXProjectTable.time_updated).all().pipe(Effect.orDie)
+  return db
+    .select()
+    .from(OpencodeXProjectTable)
+    .orderBy(OpencodeXProjectTable.sort_order, OpencodeXProjectTable.time_created)
+    .all()
+    .pipe(Effect.orDie)
 }
 
 export function getProject(db: DatabaseService, opencodexProjectID: string) {
@@ -61,10 +66,30 @@ export function createProject(db: DatabaseService, input: { id: string; projectI
       id: input.id,
       project_id: input.projectID,
       name: input.name,
+      sort_order: now,
       time_created: now,
       time_updated: now,
     })
     .run()
+    .pipe(Effect.orDie)
+}
+
+export function reorderProjects(db: DatabaseService, projectIDs: string[]) {
+  return db
+    .transaction(
+      (tx) =>
+        Effect.forEach(
+          projectIDs,
+          (id, index) =>
+            tx
+              .update(OpencodeXProjectTable)
+              .set({ sort_order: index, time_updated: Date.now() })
+              .where(eq(OpencodeXProjectTable.id, id))
+              .run(),
+          { discard: true },
+        ),
+      { behavior: "immediate" },
+    )
     .pipe(Effect.orDie)
 }
 

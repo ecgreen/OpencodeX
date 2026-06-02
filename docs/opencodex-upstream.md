@@ -4,7 +4,7 @@ OpencodeX project support is intentionally implemented as an additive overlay so
 
 ## Core Overlay
 
-- `packages/core/src/opencodex/sql.ts` adds sidecar tables for OpencodeX projects, configured folders, and OpencodeX-owned sessions while keeping each OpencodeX project linked to upstream `project.id`.
+- `packages/core/src/opencodex/sql.ts` adds sidecar tables for OpencodeX projects, preferred project ordering, configured folders, and OpencodeX-owned sessions while keeping each OpencodeX project linked to upstream `project.id`.
 - `packages/core/src/database/migration/*opencodex*` creates and repairs those sidecar tables without changing upstream schemas.
 - `packages/opencode/src/opencodex/project-folder.ts` owns folder normalization, CRUD, and longest-prefix matching.
 - `packages/opencode/src/opencodex/project.ts` composes upstream project/session services for OpencodeX projects, optional folder validation, session membership/move/delete, and namespaced session creation.
@@ -20,6 +20,8 @@ OpencodeX project support is intentionally implemented as an additive overlay so
 - `packages/opencode/src/session/system.ts` injects the active folder and configured project folders into model environment context.
 - `packages/opencode/src/session/session.ts` adds an optional `projectID` filter for global session listing.
 - `packages/opencode/src/cli/cmd/tui/context/sdk.tsx` exposes an authenticated raw request helper for namespaced overlay routes.
+- `packages/opencode/src/cli/cmd/tui/app.tsx` registers OpencodeX commands through the app command seam.
+- `packages/opencode/src/cli/cmd/tui/config/keybind.ts` registers OpencodeX command keybindings.
 - `packages/opencode/src/cli/cmd/tui/component/opencodex-sidebar.tsx` mounts the project/session sidebar without reshaping upstream session data.
 
 ## After Upstream Merges

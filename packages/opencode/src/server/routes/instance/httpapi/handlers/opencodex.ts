@@ -51,6 +51,12 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* mapErrors(service.update({ ...ctx.payload, projectID: ctx.params.projectID }))
     })
 
+    const reorderProjects = Effect.fn("OpencodeXHttpApi.reorderProjects")(function* (ctx: {
+      payload: OpencodeXProject.ReorderInput
+    }) {
+      return yield* service.reorder(ctx.payload)
+    })
+
     const createSession = Effect.fn("OpencodeXHttpApi.createSession")(function* (ctx: {
       payload: OpencodeXProject.CreateSessionInput
     }) {
@@ -91,6 +97,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("createProject", createProject)
       .handle("validateProject", validateProject)
       .handle("updateProject", updateProject)
+      .handle("reorderProjects", reorderProjects)
       .handle("createSession", createSession)
       .handle("moveSession", moveSession)
       .handle("removeSession", removeSession)
