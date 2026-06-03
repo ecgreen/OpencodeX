@@ -470,9 +470,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const [sessionStore, setSessionStore] = createStore<{
         ready: boolean
         pinned: string[]
+        viewed: Record<string, number>
       }>({
         ready: false,
         pinned: [],
+        viewed: {},
       })
 
       const filePath = path.join(Global.Path.state, "session.json")
@@ -488,12 +490,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         state.pending = false
         void Filesystem.writeJson(filePath, {
           pinned: sessionStore.pinned,
+          viewed: sessionStore.viewed,
         })
       }
 
       Filesystem.readJson(filePath)
         .then((x: any) => {
           if (Array.isArray(x.pinned)) setSessionStore("pinned", x.pinned)
+          if (x.viewed && typeof x.viewed === "object") setSessionStore("viewed", x.viewed)
         })
         .catch(() => {})
         .finally(() => {
@@ -516,6 +520,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               sessionStore.pinned.filter((x) => x !== sessionID),
             )
           }
+          if (sessionStore.viewed[sessionID] !== undefined) setSessionStore("viewed", sessionID, 0)
           save()
         })
       }
@@ -534,6 +539,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         slots,
         isPinned(sessionID: string) {
           return sessionStore.pinned.includes(sessionID)
+        },
+        lastViewed(sessionID: string) {
+          return sessionStore.viewed[sessionID] ?? 0
+        },
+        markViewed(sessionID: string, time = Date.now()) {
+          setSessionStore("viewed", sessionID, time)
+          save()
         },
         togglePin(sessionID: string) {
           batch(() => {

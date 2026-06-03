@@ -886,3 +886,73 @@ export function GoLogo() {
   const base = tint(theme.background, theme.text, 0.62)
   return <Logo shape={go} ink={base} idle />
 }
+
+export function LogoShimmerText(props: { text: string; ink?: RGBA; attributes?: TextAttributes }) {
+  const { theme } = useTheme()
+  const [now, setNow] = createSignal(0)
+  let timer: ReturnType<typeof setInterval> | undefined
+
+  onMount(() => {
+    setNow(performance.now())
+    timer = setInterval(() => setNow(performance.now()), 16)
+    onCleanup(() => {
+      if (timer) clearInterval(timer)
+    })
+  })
+
+  const state = createMemo(() => {
+    const textWidth = Math.max(1, Array.from(props.text).length)
+    const cfg = {
+      ...shimmerConfig,
+      period: 3400,
+      rings: 1,
+      originX: -1,
+      originY: 1,
+      sweepFraction: 0.92,
+      ambientAmp: 0.24,
+      shadowMix: 0,
+      primaryMix: 0.42,
+    }
+    const reach = textWidth + cfg.tail * 2 + 3
+    const phase = (now() / cfg.period) % 1
+    const envelope = Math.sin((phase / cfg.sweepFraction) * Math.PI)
+    const eased = phase < cfg.sweepFraction ? envelope * envelope * (3 - 2 * envelope) : 0
+    const d = (phase / cfg.sweepFraction - cfg.ambientCenter) / cfg.ambientWidth
+    return {
+      cfg,
+      reach,
+      rings: 1,
+      active:
+        phase < cfg.sweepFraction
+          ? [
+              {
+                head: (phase / cfg.sweepFraction) * reach,
+                eased,
+                ambient: Math.abs(d) < 1 ? (1 - d * d) ** 2 * cfg.ambientAmp : 0,
+              },
+            ]
+          : [],
+    } satisfies IdleState
+  })
+
+  return (
+    <text attributes={props.attributes}>
+      <For each={Array.from(props.text)}>
+        {(char, index) => {
+          const color = createMemo(() => {
+            const base = props.ink ?? theme.text
+            if (char === " ") return base
+            const frame = { t: now(), list: [], hold: undefined, release: undefined, glow: undefined, spark: 0 }
+            const top = idle(index(), 0, frame, DEFAULT, state())
+            const bot = idle(index(), 1, frame, DEFAULT, state())
+            const peakMix = Math.min(1, (top.peak + bot.peak) / 2)
+            const primaryMix = Math.min(1, (top.primary + bot.primary) / 2)
+            const primary = primaryMix > 0 ? tint(base, theme.primary, primaryMix) : base
+            return peakMix > 0 ? tint(primary, PEAK, peakMix) : primary
+          })
+          return <span style={{ fg: color() }}>{char}</span>
+        }}
+      </For>
+    </text>
+  )
+}

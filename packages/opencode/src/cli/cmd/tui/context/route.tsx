@@ -19,7 +19,33 @@ export type PluginRoute = {
   data?: Record<string, unknown>
 }
 
-export type Route = HomeRoute | SessionRoute | PluginRoute
+export type OpencodeXDashboardRoute = {
+  type: "opencodex-dashboard"
+}
+
+export type OpencodeXSwarmsRoute = {
+  type: "opencodex-swarms"
+  swarmID?: string
+}
+
+export type OpencodeXSwarmCreateRoute = {
+  type: "opencodex-swarm-create"
+  swarmID?: string
+}
+
+export type OpencodeXViewRoute = {
+  type: "opencodex-view"
+  viewID: string
+}
+
+export type Route =
+  | HomeRoute
+  | SessionRoute
+  | PluginRoute
+  | OpencodeXDashboardRoute
+  | OpencodeXSwarmsRoute
+  | OpencodeXSwarmCreateRoute
+  | OpencodeXViewRoute
 
 export const { use: useRoute, provider: RouteProvider } = createSimpleContext({
   name: "Route",
@@ -32,13 +58,18 @@ export const { use: useRoute, provider: RouteProvider } = createSimpleContext({
               type: "home",
             }),
     )
+    const history: Route[] = []
 
     return {
       get data() {
         return store
       },
       navigate(route: Route) {
+        history.push({ ...store } as Route)
         setStore(reconcile(route))
+      },
+      back(fallback: Route) {
+        setStore(reconcile(history.pop() ?? fallback))
       },
     }
   },

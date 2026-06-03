@@ -63,15 +63,19 @@ export function CommandPaletteDialog() {
   let ref: DialogSelectRef<string>
   const list = () => {
     if (ref?.filter) return options()
+    const preserveSuggestedCategory = new Set(["OpencodeX", "Swarms", "Views"])
+    const suggested = options().filter((option) => option.suggested)
+    const suggestedOption = (option: ReturnType<typeof options>[number]) => ({
+      ...option,
+      value: `suggested:${option.value}`,
+      category: option.category && preserveSuggestedCategory.has(option.category) ? option.category : "Suggested",
+    })
     return [
-      ...options()
-        .filter((option) => option.suggested)
-        .map((option) => ({
-          ...option,
-          value: `suggested:${option.value}`,
-          category: option.category === "OpencodeX" ? "OpencodeX" : "Suggested",
-        })),
-      ...options().filter((option) => !(option.suggested && option.category === "OpencodeX")),
+      ...suggested.filter((option) => option.category === "OpencodeX").map(suggestedOption),
+      ...suggested.filter((option) => option.category === "Swarms").map(suggestedOption),
+      ...suggested.filter((option) => option.category === "Views").map(suggestedOption),
+      ...suggested.filter((option) => !option.category || !preserveSuggestedCategory.has(option.category)).map(suggestedOption),
+      ...options().filter((option) => !(option.suggested && option.category && preserveSuggestedCategory.has(option.category))),
     ]
   }
 

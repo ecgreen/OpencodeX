@@ -64,6 +64,7 @@ export const CreateSessionInput = Schema.Struct({
   metadata: Schema.optional(Session.Metadata),
   permission: Schema.optional(Permission.Ruleset),
   workspaceID: Schema.optional(WorkspaceV2.ID),
+  hidden: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "OpencodeXSessionCreateInput" })
 export type CreateSessionInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateSessionInput>>
 
@@ -92,6 +93,21 @@ export const Validation = Schema.Struct({
   folders: Schema.Array(ValidationFolder),
 }).annotate({ identifier: "OpencodeXProjectValidation" })
 export type Validation = Types.DeepMutable<Schema.Schema.Type<typeof Validation>>
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null
+}
+
+function mergeMetadata(input: { session?: Record<string, unknown>; project: Record<string, unknown> }) {
+  return {
+    ...input.session,
+    ...input.project,
+    opencodex: {
+      ...(isRecord(input.project.opencodex) ? input.project.opencodex : {}),
+      ...(isRecord(input.session?.opencodex) ? input.session.opencodex : {}),
+    },
+  }
+}
 
 export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderError>()(
   "OpencodeX.InvalidFolderError",
@@ -303,19 +319,18 @@ export const layer = Layer.effect(
           title: input.title,
           agent: input.agent,
           model: input.model,
-          metadata: {
-            ...input.metadata,
-            ...(yield* metadata(input.projectID)),
-          },
+          metadata: mergeMetadata({ session: input.metadata, project: yield* metadata(input.projectID) }),
           permission: input.permission,
           workspaceID: input.workspaceID,
         }),
       )
-      yield* OpencodeXProjectFolder.addSession(db, {
-        opencodexProjectID: input.projectID,
-        sessionID: result.id,
-        path: directory,
-      })
+      if (!input.hidden) {
+        yield* OpencodeXProjectFolder.addSession(db, {
+          opencodexProjectID: input.projectID,
+          sessionID: result.id,
+          path: directory,
+        })
+      }
       return result
     })
 
@@ -325,10 +340,7 @@ export const layer = Layer.effect(
       const session = yield* sessions.get(input.sessionID)
       yield* sessions.setMetadata({
         sessionID: session.id,
-        metadata: {
-          ...session.metadata,
-          ...(yield* metadata(input.projectID)),
-        },
+        metadata: mergeMetadata({ session: session.metadata, project: yield* metadata(input.projectID) }),
       })
       yield* OpencodeXProjectFolder.addSession(db, {
         opencodexProjectID: input.projectID,

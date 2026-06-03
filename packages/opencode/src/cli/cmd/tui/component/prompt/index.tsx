@@ -9,7 +9,7 @@ import {
   type Renderable,
 } from "@opentui/core"
 import type { CommandContext } from "@opentui/keymap"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
+import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, createResource } from "solid-js"
 import "opentui-spinner/solid"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -61,23 +61,36 @@ import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "@tui/context/args"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { type WorkspaceStatus } from "../workspace-label"
-import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
+import {
+  OPENCODE_BASE_MODE,
+  useBindings,
+  useCommandShortcut,
+  useCommandSlashes,
+  useLeaderActive,
+  useOpencodeKeymap,
+} from "../../keymap"
 import { useTuiConfig } from "../../context/tui-config"
 import {
   getPendingOpencodeXProjectSession,
+  getPendingOpencodeXSwarmTask,
   setPendingOpencodeXProjectSession,
+  setPendingOpencodeXSwarmTask,
 } from "../opencodex-session-state"
-import { refreshOpencodeXSidebar } from "../opencodex-sidebar"
+import { refreshOpencodeXSidebar, onOpencodeXRefresh } from "../opencodex-sidebar"
 
 export type PromptProps = {
   sessionID?: string
   visible?: boolean
   disabled?: boolean
+  useSessionContext?: boolean
+  onCustomSubmit?: (prompt: PromptInfo) => boolean | void | Promise<boolean | void>
   onSubmit?: () => void
   ref?: (ref: PromptRef | undefined) => void
   hint?: JSX.Element
   right?: JSX.Element
+  targetLabel?: string
   showPlaceholder?: boolean
+  draftKey?: string
   placeholders?: {
     normal?: string[]
     shell?: string[]
@@ -100,6 +113,59 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 const DRAFT_RETENTION_MIN_CHARS = 20
+
+type OpencodeXPromptProject = {
+  id: string
+  name?: string
+  project: {
+    id: string
+    name?: string
+    worktree: string
+  }
+  sessions: { id: string }[]
+}
+
+type OpencodeXPromptSwarm = {
+  id: string
+  title: string
+  synthesisSessionID?: string
+  runs?: {
+    id: string
+    orchestratorSessionID?: string
+    resultSessionID?: string
+    synthesisSessionID?: string
+    timeCreated?: number
+    timeUpdated?: number
+  }[]
+}
+
+function opencodeXProjectTitle(project: OpencodeXPromptProject) {
+  return project.name ?? project.project.name ?? project.project.worktree
+}
+
+function latestSwarmSessionID(swarm: OpencodeXPromptSwarm) {
+  const run = (swarm.runs ?? [])
+    .toSorted((a, b) => (b.timeUpdated ?? b.timeCreated ?? 0) - (a.timeUpdated ?? a.timeCreated ?? 0))[0]
+  return run?.resultSessionID ?? run?.synthesisSessionID ?? run?.orchestratorSessionID ?? swarm.synthesisSessionID
+}
+
+function promptSlash(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith("/")) return
+  const [name, ...rest] = trimmed.slice(1).split(/\s+/)
+  if (!name) return
+  return { name, arguments: rest.join(" ") }
+}
+
+function matchOpencodeXSwarm(swarms: OpencodeXPromptSwarm[], query: string) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return
+  return (
+    swarms.find((swarm) => swarm.id.toLowerCase() === needle) ??
+    swarms.find((swarm) => swarm.title.toLowerCase() === needle) ??
+    swarms.find((swarm) => swarm.title.toLowerCase().includes(needle) || swarm.id.toLowerCase().includes(needle))
+  )
+}
 
 function promptHistoryPart(part: Part): PromptInfo["parts"][number] | undefined {
   if (part.type === "file") {
@@ -194,6 +260,7 @@ export function Prompt(props: PromptProps) {
   const keymap = useOpencodeKeymap()
   const agentShortcut = useCommandShortcut("agent.cycle")
   const paletteShortcut = useCommandShortcut("command.palette.show")
+  const slashes = useCommandSlashes()
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const { theme, syntax } = useTheme()
@@ -239,9 +306,46 @@ export function Prompt(props: PromptProps) {
   const [workspaceCreatingDots, setWorkspaceCreatingDots] = createSignal(3)
   const [warpNotice, setWarpNotice] = createSignal<string>()
   const [cursorVersion, setCursorVersion] = createSignal(0)
-  const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const hasRightContent = createMemo(() => Boolean(props.right))
-  const draftKey = createMemo(() => props.sessionID ?? "home")
+  const draftKey = createMemo(() => props.draftKey ?? props.sessionID ?? "home")
+  const [opencodeXProjectsRefresh, setOpencodeXProjectsRefresh] = createSignal(0)
+  const [opencodeXProjects] = createResource(opencodeXProjectsRefresh, () =>
+    sdk
+      .request<OpencodeXPromptProject[]>("/experimental/opencodex/project")
+      .catch(() => [] as OpencodeXPromptProject[]),
+  )
+  const [opencodeXSwarms] = createResource(opencodeXProjectsRefresh, () =>
+    sdk
+      .request<OpencodeXPromptSwarm[]>("/experimental/opencodex/swarm")
+      .catch(() => [] as OpencodeXPromptSwarm[]),
+  )
+  const refreshOpencodeXProjects = () => setOpencodeXProjectsRefresh((value) => value + 1)
+  onCleanup(onOpencodeXRefresh(refreshOpencodeXProjects))
+  const currentOpencodeXProject = createMemo(() => {
+    const sessionID = props.sessionID
+    const projects = opencodeXProjects() ?? []
+    if (sessionID) return projects.find((project) => project.sessions.some((session) => session.id === sessionID))
+
+    const pending = getPendingOpencodeXProjectSession()
+    if (!pending) return undefined
+    return projects.find((project) => project.id === pending.projectID)
+  })
+  const currentOpencodeXProjectName = createMemo(() => {
+    const project = currentOpencodeXProject()
+    return project ? opencodeXProjectTitle(project) : undefined
+  })
+  const pendingSwarmTask = createMemo(() => getPendingOpencodeXSwarmTask())
+  const currentOpencodeXSwarmName = createMemo(() => {
+    if (props.targetLabel) return props.targetLabel
+    const pending = props.sessionID ? undefined : pendingSwarmTask()
+    if (pending) return pending.title
+    const session = props.sessionID ? sync.session.get(props.sessionID) : undefined
+    const opencodex = session?.metadata?.opencodex
+    if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
+    const swarmID = opencodex.swarmID
+    if (typeof swarmID !== "string") return undefined
+    return opencodeXSwarms()?.find((swarm) => swarm.id === swarmID)?.title
+  })
 
   function selectWorkspace(selection: WorkspaceSelection | undefined) {
     setWorkspaceSelection(selection)
@@ -383,6 +487,40 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
+  const sessionAgent = createMemo(() => {
+    if (!props.useSessionContext) return local.agent.current()
+    const name = lastUserMessage()?.agent ?? (props.sessionID ? sync.session.get(props.sessionID)?.agent : undefined)
+    return local.agent.list().find((agent) => agent.name === name) ?? local.agent.current()
+  })
+  const sessionModel = createMemo(() => {
+    if (!props.useSessionContext) return local.model.current()
+    const fromMessage = lastUserMessage()?.model
+    const fromSession = props.sessionID ? sync.session.get(props.sessionID)?.model : undefined
+    return [
+      fromMessage && { providerID: fromMessage.providerID, modelID: fromMessage.modelID },
+      fromSession && { providerID: fromSession.providerID, modelID: fromSession.id },
+    ]
+      .find((model) => model && sync.data.provider.some((provider) => provider.id === model.providerID && provider.models[model.modelID])) ?? local.model.current()
+  })
+  const sessionVariant = createMemo(() => {
+    if (!props.useSessionContext) return local.model.variant.current()
+    const model = sessionModel()
+    if (!model) return undefined
+    const value = lastUserMessage()?.model?.variant ?? (props.sessionID ? sync.session.get(props.sessionID)?.model?.variant : undefined)
+    if (!value || value === "default") return undefined
+    const variants = sync.data.provider.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.variants
+    if (!variants || !(value in variants)) return undefined
+    return value
+  })
+  const sessionModelLabel = createMemo(() => {
+    const model = sessionModel()
+    if (!model) return { provider: "Connect a provider", model: "No provider selected" }
+    const provider = sync.data.provider.find((item) => item.id === model.providerID)
+    return {
+      provider: provider?.name ?? model.providerID,
+      model: provider?.models[model.modelID]?.name ?? model.modelID,
+    }
+  })
 
   const usage = createMemo(() => {
     if (!props.sessionID) return
@@ -438,6 +576,7 @@ export function Prompt(props: PromptProps) {
     const msg = lastUserMessage()
 
     if (sessionID !== syncedSessionID) {
+      if (props.useSessionContext) return
       if (!sessionID || !msg) return
 
       syncedSessionID = sessionID
@@ -1136,14 +1275,145 @@ export function Prompt(props: PromptProps) {
     if (workspaceCreating()) return false
     if (auto()?.visible) return false
     if (!store.prompt.input) return false
-    const agent = local.agent.current()
-    if (!agent) return false
     const trimmed = store.prompt.input.trim()
     if (trimmed === "exit" || trimmed === "quit" || trimmed === ":q") {
       void exit()
       return true
     }
-    const selectedModel = local.model.current()
+    const slash = promptSlash(trimmed)
+    if (slash?.name === "swarm") {
+      if (!slash.arguments.trim()) {
+        keymap.dispatchCommand("opencodex.swarm.task")
+        clearPrompt()
+        input.clear()
+        return true
+      }
+      const swarms =
+        opencodeXSwarms() ??
+        (await sdk.request<OpencodeXPromptSwarm[]>("/experimental/opencodex/swarm").catch((error: Error) => {
+          toast.show({
+            message: `Loading swarms failed: ${errorMessage(error)}`,
+            variant: "error",
+          })
+        }))
+      const swarm = swarms ? matchOpencodeXSwarm(swarms, slash.arguments) : undefined
+      if (!swarm) {
+        toast.show({
+          message: `No swarm matched "${slash.arguments}".`,
+          variant: "warning",
+        })
+        return false
+      }
+      setPendingOpencodeXProjectSession(undefined)
+      setPendingOpencodeXSwarmTask({ swarmID: swarm.id, title: swarm.title })
+      clearPrompt()
+      input.clear()
+      route.navigate({ type: "home" })
+      return true
+    }
+    if (slash?.name === "open-swarm") {
+      if (!slash.arguments.trim()) {
+        keymap.dispatchCommand("opencodex.swarm.open")
+        clearPrompt()
+        input.clear()
+        return true
+      }
+      const swarms =
+        opencodeXSwarms() ??
+        (await sdk.request<OpencodeXPromptSwarm[]>("/experimental/opencodex/swarm").catch((error: Error) => {
+          toast.show({
+            message: `Loading swarms failed: ${errorMessage(error)}`,
+            variant: "error",
+          })
+        }))
+      const swarm = swarms ? matchOpencodeXSwarm(swarms, slash.arguments) : undefined
+      if (!swarm) {
+        toast.show({
+          message: `No swarm matched "${slash.arguments}".`,
+          variant: "warning",
+        })
+        return false
+      }
+      clearPrompt()
+      input.clear()
+      route.navigate({ type: "opencodex-swarms", swarmID: swarm.id })
+      return true
+    }
+    const paletteSlash = slashes().find(
+      (entry) => entry.display === trimmed || (entry.aliases ?? []).some((alias) => alias === trimmed),
+    )
+    if (paletteSlash) {
+      paletteSlash.onSelect()
+      clearPrompt()
+      input.clear()
+      return true
+    }
+    const pendingSwarm = getPendingOpencodeXSwarmTask()
+    if (!props.sessionID && pendingSwarm) {
+      const task = store.prompt.input.trim()
+      if (!task) return false
+      const swarm = await sdk
+        .request<OpencodeXPromptSwarm>(`/experimental/opencodex/swarm/${pendingSwarm.swarmID}/task`, {
+          method: "POST",
+          body: JSON.stringify({ prompt: task }),
+        })
+        .catch((error: Error) => {
+          toast.show({
+            message: `Assigning swarm task failed: ${errorMessage(error)}`,
+            variant: "error",
+          })
+        })
+      if (!swarm) return true
+      const sessionID = latestSwarmSessionID(swarm)
+      history.append(draftKey(), unwrap(store.prompt))
+      input.extmarks.clear()
+      setStore("prompt", {
+        input: "",
+        parts: [],
+      })
+      setStore("mode", "normal")
+      setStore("extmarkToPartIndex", new Map())
+      drafts.clear(draftKey())
+      input.clear()
+      setPendingOpencodeXSwarmTask(undefined)
+      refreshOpencodeXSidebar()
+      if (sessionID) route.navigate({ type: "session", sessionID })
+      return true
+    }
+    if (props.onCustomSubmit) {
+      let inputText = store.prompt.input
+      const allExtmarks = input.extmarks.getAllForTypeId(promptPartTypeId)
+      const sortedExtmarks = allExtmarks.sort((a: { start: number }, b: { start: number }) => b.start - a.start)
+      for (const extmark of sortedExtmarks) {
+        const partIndex = store.extmarkToPartIndex.get(extmark.id)
+        if (partIndex !== undefined) {
+          const part = store.prompt.parts[partIndex]
+          if (part?.type === "text" && part.text) {
+            const before = inputText.slice(0, extmark.start)
+            const after = inputText.slice(extmark.end)
+            inputText = before + part.text + after
+          }
+        }
+      }
+      const submitted = { ...unwrap(store.prompt), input: inputText, mode: store.mode }
+      const handled = await props.onCustomSubmit(submitted)
+      if (handled === false) return false
+      history.append(draftKey(), submitted)
+      input.extmarks.clear()
+      setStore("prompt", {
+        input: "",
+        parts: [],
+      })
+      setStore("mode", "normal")
+      setStore("extmarkToPartIndex", new Map())
+      drafts.clear(draftKey())
+      props.onSubmit?.()
+      input.clear()
+      return true
+    }
+    const agent = sessionAgent()
+    if (!agent) return false
+    const selectedModel = sessionModel()
     if (!selectedModel) {
       void promptModelWarning()
       return false
@@ -1173,7 +1443,7 @@ export function Prompt(props: PromptProps) {
       return false
     }
 
-    const variant = local.model.variant.current()
+    const variant = sessionVariant()
     let sessionID = props.sessionID
     if (sessionID == null) {
       const workspace = workspaceSelection()
@@ -1232,7 +1502,7 @@ export function Prompt(props: PromptProps) {
         refreshOpencodeXSidebar()
       }
       if (res.data.title.startsWith("New session - ")) {
-        const titleSource = store.prompt.input.trim()
+        const titleSource = store.prompt.input.trim().split(/\r?\n/)[0]?.trimEnd() ?? ""
         const title = titleSource.length <= 40 ? titleSource : titleSource.slice(0, 40).trimEnd()
         if (title) {
           void sdk.client.session.update({ sessionID, title }).catch(() => {})
@@ -1535,22 +1805,19 @@ export function Prompt(props: PromptProps) {
   const highlight = createMemo(() => {
     if (leader()) return theme.border
     if (store.mode === "shell") return theme.primary
-    const agent = local.agent.current()
+    const agent = sessionAgent()
     if (!agent) return theme.border
     return local.agent.color(agent.name)
   })
 
   const showVariant = createMemo(() => {
-    const variants = local.model.variant.list()
-    if (variants.length === 0) return false
-    const current = local.model.variant.current()
-    return !!current
+    return !!sessionVariant()
   })
 
-  const agentMetaAlpha = createFadeIn(() => !!local.agent.current(), animationsEnabled)
-  const modelMetaAlpha = createFadeIn(() => !!local.agent.current() && store.mode === "normal", animationsEnabled)
+  const agentMetaAlpha = createFadeIn(() => !!sessionAgent(), animationsEnabled)
+  const modelMetaAlpha = createFadeIn(() => !!sessionAgent() && store.mode === "normal", animationsEnabled)
   const variantMetaAlpha = createFadeIn(
-    () => !!local.agent.current() && store.mode === "normal" && showVariant(),
+    () => !!sessionAgent() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
   const borderHighlight = createMemo(() => tint(theme.border, highlight(), agentMetaAlpha()))
@@ -1593,7 +1860,7 @@ export function Prompt(props: PromptProps) {
     const agent =
       status().type !== "idle"
         ? (local.agent.list().find((a) => a.name === lastUserMessage()?.agent) ?? local.agent.current())
-        : local.agent.current()
+        : sessionAgent()
     const color = agent ? local.agent.color(agent.name) : theme.border
     return {
       frames: createFrames({
@@ -1617,16 +1884,22 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box
-          width="100%"
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
-        >
+        <box width="100%">
+          <Show when={currentOpencodeXProjectName()}>
+            {(name) => (
+              <box paddingLeft={2} paddingTop={1} flexShrink={0} flexDirection="row" gap={1}>
+                <text fg={theme.textMuted}>Working in</text>
+                <text fg={theme.text}>{name()}</text>
+              </box>
+            )}
+          </Show>
           <box
+            border={["left"]}
+            borderColor={borderHighlight()}
+            customBorderChars={{
+              ...SplitBorder.customBorderChars,
+              bottomLeft: "╹",
+            }}
             paddingLeft={2}
             paddingRight={2}
             paddingTop={1}
@@ -1710,33 +1983,48 @@ export function Prompt(props: PromptProps) {
             />
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1}>
-                <Show when={local.agent.current()} fallback={<box height={1} />}>
-                  {(agent) => (
-                    <>
-                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
-                      </text>
-                      <Show when={store.mode === "normal"}>
-                        <box flexDirection="row" gap={1}>
-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                          <text
-                            flexShrink={0}
-                            fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
-                          >
-                            {local.model.parsed().model}
+                <Show
+                  when={currentOpencodeXSwarmName()}
+                  fallback={
+                    <Show when={sessionAgent()} fallback={<box height={1} />}>
+                      {(agent) => (
+                        <>
+                          <text fg={fadeColor(highlight(), agentMetaAlpha())}>
+                            {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
                           </text>
-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
-                          <Show when={showVariant()}>
-                            <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
-                            <text>
-                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
-                                {local.model.variant.current()}
-                              </span>
-                            </text>
+                          <Show when={store.mode === "normal"}>
+                            <box flexDirection="row" gap={1}>
+                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                              <text
+                                flexShrink={0}
+                                fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
+                              >
+                                {sessionModelLabel().model}
+                              </text>
+                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{sessionModelLabel().provider}</text>
+                              <Show when={showVariant()}>
+                                <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                                <text>
+                                  <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
+                                    {sessionVariant()}
+                                  </span>
+                                </text>
+                              </Show>
+                            </box>
                           </Show>
-                        </box>
-                      </Show>
-                    </>
+                        </>
+                      )}
+                    </Show>
+                  }
+                >
+                  {(label) => (
+                    <box flexDirection="row" gap={1}>
+                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>Swarm</text>
+                      <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                      <text flexShrink={0} fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}>
+                        {label()}
+                      </text>
+                    </box>
                   )}
                 </Show>
               </box>

@@ -245,7 +245,9 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (oxSidebarOpen() ? OPENCODEX_SIDEBAR_WIDTH : 0) - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(() =>
+    Math.max(20, dimensions().width - (oxSidebarOpen() ? OPENCODEX_SIDEBAR_WIDTH : 0) - (sidebarVisible() ? 42 : 0) - 4),
+  )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -419,6 +421,10 @@ export function Session() {
   }
 
   const local = useLocal()
+
+  createEffect(() => {
+    local.session.markViewed(route.sessionID, Math.max(Date.now(), session()?.time.updated ?? 0))
+  })
 
   function enterChild(sessionID: string) {
     navigate({

@@ -75,7 +75,22 @@ import {
   manageOpencodeXSessionsDialog,
   newOpencodeXSessionInProjectDialog,
   OpencodeXSidebar,
+  focusOpencodeXSidebar,
 } from "./component/opencodex-sidebar"
+import {
+  createOpencodeXSwarmDialog,
+  OpencodeXDashboard,
+  OpencodeXSwarms,
+  selectOpencodeXSwarmDialog,
+  selectOpencodeXSwarmTaskDialog,
+} from "./component/opencodex-operations"
+import { OpencodeXViewRoute } from "./component/opencodex-views"
+import {
+  createOpencodeXViewDialog,
+  deleteOpencodeXViewDialog,
+  editOpencodeXViewDialog,
+  selectOpencodeXViewDialog,
+} from "./component/opencodex-view-dialog"
 import { setPendingOpencodeXProjectSession } from "./component/opencodex-session-state"
 import {
   COMMAND_PALETTE_COMMAND,
@@ -102,12 +117,18 @@ const appGlobalBindingCommands = [
   "session.quick_switch.8",
   "session.quick_switch.9",
   "opencodex.sidebar.toggle",
+  "opencodex.sidebar.focus",
 ] as const
 
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
   "opencodex.project.create",
+  "opencodex.dashboard.open",
+  "opencodex.swarm.list",
+  "opencodex.swarm.open",
+  "opencodex.swarm.create",
+  "opencodex.swarm.task",
   "opencodex.project.manage",
   "opencodex.session.manage",
   "opencodex.session.new_project",
@@ -256,7 +277,11 @@ async function mountTui(input: TuiInput & { keymap: ReturnType<typeof createDefa
                             type: "session",
                             sessionID: "dummy",
                           }
-                        : undefined
+                        : input.args.prompt
+                          ? undefined
+                          : {
+                              type: "opencodex-dashboard",
+                            }
                     }
                   >
                     <TuiConfigProvider config={input.config}>
@@ -391,7 +416,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const dialog = useDialog()
   const local = useLocal()
   const kv = useKV()
-  const [oxSidebarOpen, setOxSidebarOpen] = kv.signal<boolean>("ox_sidebar_visible", false)
+  const [, setOxSidebarOpen] = kv.signal<boolean>("ox_sidebar_visible", false)
   const keymap = useOpencodeKeymap()
   const event = useEvent()
   const sdk = useSDK()
@@ -478,6 +503,26 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
     if (route.data.type === "home") {
       renderer.setTerminalTitle("OpenCode")
+      return
+    }
+
+    if (route.data.type === "opencodex-dashboard") {
+      renderer.setTerminalTitle("OC | Operations")
+      return
+    }
+
+    if (route.data.type === "opencodex-swarms") {
+      renderer.setTerminalTitle("OC | Swarms")
+      return
+    }
+
+    if (route.data.type === "opencodex-swarm-create") {
+      renderer.setTerminalTitle("OC | Create Swarm")
+      return
+    }
+
+    if (route.data.type === "opencodex-view") {
+      renderer.setTerminalTitle("OC | View")
       return
     }
 
@@ -617,6 +662,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         },
       },
       {
+        name: "opencodex.dashboard.open",
+        title: "Open operations dashboard",
+        suggested: true,
+        category: "OpencodeX",
+        slashName: "dashboard",
+        slashAliases: ["ops", "operations", "opencodex"],
+        run: () => {
+          route.navigate({ type: "opencodex-dashboard" })
+          dialog.clear()
+        },
+      },
+      {
         name: "opencodex.project.create",
         title: "Create project",
         suggested: true,
@@ -624,6 +681,90 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "project",
         run: () => {
           void createOpencodeXProjectDialog({ sdk, dialog, theme })
+        },
+      },
+      {
+        name: "opencodex.swarm.list",
+        title: "Show swarms on dashboard",
+        suggested: true,
+        category: "Swarms",
+        slashName: "swarm-dash",
+        slashAliases: ["swarms", "swarm-list"],
+        run: () => {
+          route.navigate({ type: "opencodex-dashboard" })
+          dialog.clear()
+        },
+      },
+      {
+        name: "opencodex.swarm.open",
+        title: "Open swarm",
+        suggested: true,
+        category: "Swarms",
+        slashName: "open-swarm",
+        run: () => {
+          void selectOpencodeXSwarmDialog({ sdk, dialog, route })
+        },
+      },
+      {
+        name: "opencodex.swarm.create",
+        title: "Create swarm",
+        suggested: true,
+        category: "Swarms",
+        slashName: "new-swarm",
+        run: () => {
+          void createOpencodeXSwarmDialog({ sdk, dialog, route, theme })
+        },
+      },
+      {
+        name: "opencodex.swarm.task",
+        title: "New swarm task",
+        suggested: true,
+        category: "Swarms",
+        slashName: "swarm",
+        run: () => {
+          void selectOpencodeXSwarmTaskDialog({ sdk, dialog, route })
+        },
+      },
+      {
+        name: "opencodex.view.open",
+        title: "Open View",
+        suggested: true,
+        category: "Views",
+        slashName: "view",
+        slashAliases: ["views", "open-view"],
+        run: () => {
+          selectOpencodeXViewDialog({ sdk, dialog, route })
+        },
+      },
+      {
+        name: "opencodex.view.create",
+        title: "Create view",
+        suggested: true,
+        category: "Views",
+        slashName: "new-view",
+        slashAliases: ["create-view"],
+        run: () => {
+          void createOpencodeXViewDialog({ sdk, dialog, route })
+        },
+      },
+      {
+        name: "opencodex.view.edit",
+        title: "Edit view",
+        suggested: true,
+        category: "Views",
+        slashName: "edit-view",
+        run: () => {
+          void editOpencodeXViewDialog({ sdk, dialog, route })
+        },
+      },
+      {
+        name: "opencodex.view.delete",
+        title: "Delete view",
+        suggested: true,
+        category: "Views",
+        slashName: "delete-view",
+        run: () => {
+          deleteOpencodeXViewDialog({ sdk, dialog, route })
         },
       },
       {
@@ -662,6 +803,16 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         category: "OpencodeX",
         run: () => {
           setOxSidebarOpen((prev) => !prev)
+        },
+      },
+      {
+        name: "opencodex.sidebar.focus",
+        title: "Focus sidebar",
+        suggested: true,
+        category: "OpencodeX",
+        run: () => {
+          setOxSidebarOpen(true)
+          focusOpencodeXSidebar()
         },
       },
       {
@@ -1148,7 +1299,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       <Show when={ready()}>
         <box flexGrow={1} minHeight={0} flexDirection="row">
           <OpencodeXSidebar />
-          <box flexGrow={1} minHeight={0} flexDirection="column">
+          <box flexGrow={1} minHeight={0} minWidth={0} flexDirection="column">
             <Switch>
               <Match when={route.data.type === "home"}>
                 <Home />
@@ -1157,6 +1308,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
                 <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
                   {(_) => <Session />}
                 </Show>
+              </Match>
+              <Match when={route.data.type === "opencodex-dashboard"}>
+                <OpencodeXDashboard />
+              </Match>
+              <Match when={route.data.type === "opencodex-swarms"}>
+                <OpencodeXSwarms />
+              </Match>
+              <Match when={route.data.type === "opencodex-swarm-create"}>
+                <OpencodeXSwarms />
+              </Match>
+              <Match when={route.data.type === "opencodex-view"}>
+                <OpencodeXViewRoute />
               </Match>
             </Switch>
             {plugin()}

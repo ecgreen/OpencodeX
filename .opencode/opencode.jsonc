@@ -1,6 +1,32 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {},
+  "provider": {
+    "openai": {
+      "models": {
+        "gpt-5.5": {
+          "variants": {
+            "none": { "disabled": true },
+            "low": {
+              "reasoningEffort": "low",
+              "reasoningSummary": "auto",
+              "textVerbosity": "low",
+            },
+            "medium": {
+              "reasoningEffort": "medium",
+              "reasoningSummary": "auto",
+              "textVerbosity": "low",
+            },
+            "high": {
+              "reasoningEffort": "high",
+              "reasoningSummary": "auto",
+              "textVerbosity": "low",
+            },
+            "xhigh": { "disabled": true },
+          },
+        },
+      },
+    },
+  },
   "permission": {},
   "reference": {
     "effect": "github.com/Effect-TS/effect-smol",

@@ -27,5 +27,8 @@ export const migrations = (
     import("./migration/20260601010000_opencodex_project_identity"),
     import("./migration/20260601020000_repair_opencodex_project_folder_key"),
     import("./migration/20260601030000_opencodex_project_order"),
+    import("./migration/20260602000000_opencodex_jobs_swarms"),
+    import("./migration/20260602010000_opencodex_swarm_runs"),
+    import("./migration/20260602020000_opencodex_views"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

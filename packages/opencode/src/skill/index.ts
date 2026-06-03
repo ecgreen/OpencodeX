@@ -15,6 +15,15 @@ import { Glob } from "@opencode-ai/core/util/glob"
 import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
 import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with { type: "text" }
+import ORCHESTRATOR_SKILL_BODY from "./prompt/roles/orchestrator.md" with { type: "text" }
+import PRODUCT_MANAGER_SKILL_BODY from "./prompt/roles/product-manager.md" with { type: "text" }
+import ARCHITECT_SKILL_BODY from "./prompt/roles/architect.md" with { type: "text" }
+import SENIOR_ENGINEER_SKILL_BODY from "./prompt/roles/senior-engineer.md" with { type: "text" }
+import QA_ENGINEER_SKILL_BODY from "./prompt/roles/qa-engineer.md" with { type: "text" }
+import CODE_REVIEWER_SKILL_BODY from "./prompt/roles/code-reviewer.md" with { type: "text" }
+import RELEASE_ENGINEER_SKILL_BODY from "./prompt/roles/release-engineer.md" with { type: "text" }
+import DOCS_ENGINEER_SKILL_BODY from "./prompt/roles/docs-engineer.md" with { type: "text" }
+import SECURITY_REVIEWER_SKILL_BODY from "./prompt/roles/security-reviewer.md" with { type: "text" }
 import { isRecord } from "@/util/record"
 
 const log = Log.create({ service: "skill" })
@@ -32,6 +41,58 @@ const SKILL_PATTERN = "**/SKILL.md"
 const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-opencode"
 const CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION =
   "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
+const BUILTIN_SKILLS = [
+  {
+    name: CUSTOMIZE_OPENCODE_SKILL_NAME,
+    description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
+    content: CUSTOMIZE_OPENCODE_SKILL_BODY,
+  },
+  {
+    name: "orchestrator",
+    description: "Use when a swarm needs coordination, role sequencing, dependency management, and final synthesis planning.",
+    content: ORCHESTRATOR_SKILL_BODY,
+  },
+  {
+    name: "product-manager",
+    description: "Use when a swarm needs product framing, user workflows, acceptance criteria, priority calls, or scope tradeoffs before implementation.",
+    content: PRODUCT_MANAGER_SKILL_BODY,
+  },
+  {
+    name: "architect",
+    description: "Use when a swarm needs technical design, data model choices, integration boundaries, rollout strategy, or risk analysis.",
+    content: ARCHITECT_SKILL_BODY,
+  },
+  {
+    name: "senior-engineer",
+    description: "Use when a swarm needs implementation, code-level planning, refactoring, or concrete engineering execution.",
+    content: SENIOR_ENGINEER_SKILL_BODY,
+  },
+  {
+    name: "qa-engineer",
+    description: "Use when a swarm needs validation strategy, edge cases, regression coverage, manual test flows, or quality gates.",
+    content: QA_ENGINEER_SKILL_BODY,
+  },
+  {
+    name: "code-reviewer",
+    description: "Use when a swarm needs bug-focused review, regression analysis, missing tests, or maintainability feedback.",
+    content: CODE_REVIEWER_SKILL_BODY,
+  },
+  {
+    name: "release-engineer",
+    description: "Use when a swarm needs release planning, changelog review, packaging checks, rollout steps, or rollback planning.",
+    content: RELEASE_ENGINEER_SKILL_BODY,
+  },
+  {
+    name: "docs-engineer",
+    description: "Use when a swarm needs developer docs, user-facing guides, API documentation, migration notes, or release documentation.",
+    content: DOCS_ENGINEER_SKILL_BODY,
+  },
+  {
+    name: "security-reviewer",
+    description: "Use when a swarm needs security review, permission analysis, trust boundaries, secrets handling, or automation safety checks.",
+    content: SECURITY_REVIEWER_SKILL_BODY,
+  },
+]
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -273,13 +334,15 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
-        // Register the built-in skill BEFORE disk discovery so a user-disk
-        // skill with the same name can override it.
-        s.skills[CUSTOMIZE_OPENCODE_SKILL_NAME] = {
-          name: CUSTOMIZE_OPENCODE_SKILL_NAME,
-          description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
-          location: "<built-in>",
-          content: CUSTOMIZE_OPENCODE_SKILL_BODY,
+        // Register built-in skills BEFORE disk discovery so user/project disk
+        // skills with the same names can override them.
+        for (const skill of BUILTIN_SKILLS) {
+          s.skills[skill.name] = {
+            name: skill.name,
+            description: skill.description,
+            location: "<built-in>",
+            content: skill.content,
+          }
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s

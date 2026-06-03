@@ -25,6 +25,9 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { OpencodeXProject } from "@/opencodex/project"
+import { OpencodeXJob } from "@/opencodex/job"
+import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXView } from "@/opencodex/view"
 import { Installation } from "@/installation"
 import { InstanceLayer } from "@/project/instance-layer"
 import { Plugin } from "@/plugin"
@@ -208,7 +211,10 @@ export function createRoutes(
       Installation.defaultLayer,
       MCP.defaultLayer,
       ModelsDev.defaultLayer,
+      OpencodeXJob.defaultLayer,
       OpencodeXProject.defaultLayer,
+      OpencodeXSwarm.defaultLayer,
+      OpencodeXView.defaultLayer,
       Permission.defaultLayer,
       Plugin.defaultLayer,
       Project.defaultLayer,
