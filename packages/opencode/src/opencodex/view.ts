@@ -48,6 +48,11 @@ export const UpdateInput = Schema.Struct({
 }).annotate({ identifier: "OpencodeXViewUpdateInput" })
 export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
 
+export const ReorderInput = Schema.Struct({
+  viewIDs: Schema.Array(Schema.String),
+}).annotate({ identifier: "OpencodeXViewReorderInput" })
+export type ReorderInput = Types.DeepMutable<Schema.Schema.Type<typeof ReorderInput>>
+
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("OpencodeX.View.NotFoundError", {
   viewID: Schema.String,
 }) {}
@@ -61,6 +66,7 @@ export interface Interface {
   readonly get: (viewID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info, ValidationError | Session.NotFound>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError | ValidationError | Session.NotFound>
+  readonly reorder: (input: ReorderInput) => Effect.Effect<Info[]>
   readonly remove: (viewID: string) => Effect.Effect<boolean, NotFoundError>
 }
 
@@ -216,13 +222,38 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie, Effect.flatMap(hydrate))
     })
 
+    const reorder = Effect.fn("OpencodeXView.reorder")(function* (input: ReorderInput) {
+      const current = (
+        yield* db.select().from(OpencodeXViewTable).orderBy(OpencodeXViewTable.time_updated).all().pipe(Effect.orDie)
+      ).toReversed()
+      const knownIDs = new Set(current.map((row) => row.id))
+      const requestedIDs = [...new Set(input.viewIDs)].filter((id) => knownIDs.has(id))
+      const orderedIDs = [
+        ...requestedIDs,
+        ...current.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
+      ]
+      const now = Date.now()
+      yield* Effect.forEach(
+        orderedIDs.map((id, index) => ({ id, index })),
+        ({ id, index }) =>
+          db
+            .update(OpencodeXViewTable)
+            .set({ time_updated: now - index })
+            .where(eq(OpencodeXViewTable.id, id))
+            .run()
+            .pipe(Effect.orDie),
+        { discard: true },
+      )
+      return yield* list()
+    })
+
     const remove = Effect.fn("OpencodeXView.remove")(function* (viewID: string) {
       yield* get(viewID)
       yield* db.delete(OpencodeXViewTable).where(eq(OpencodeXViewTable.id, viewID)).run().pipe(Effect.orDie)
       return true
     })
 
-    return Service.of({ list, get, create, update, remove })
+    return Service.of({ list, get, create, update, reorder, remove })
   }),
 )
 

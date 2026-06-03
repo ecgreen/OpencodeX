@@ -11,6 +11,7 @@ import { DialogConfirm } from "@tui/ui/dialog-confirm"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { deriveStatus, statusColor } from "./opencodex-session-status"
+import { refreshOpencodeXSidebar } from "./opencodex-refresh"
 
 type OpencodeXView = {
   id: string
@@ -27,8 +28,19 @@ type OpencodeXProjectInfo = {
     name?: string
     worktree: string
   }
+  folders?: { path: string }[]
   sessions: Session[]
 }
+
+type NewSessionSelection = {
+  kind: "new"
+  id: string
+  projectID: string
+  projectLabel: string
+  directory: string
+}
+
+type ViewSelection = { kind: "existing"; sessionID: string } | NewSessionSelection
 
 type OpencodeXViewDialogContext = {
   sdk: ReturnType<typeof useSDK>
@@ -37,6 +49,7 @@ type OpencodeXViewDialogContext = {
   view?: OpencodeXView
   title?: string
   sessionIDs?: string[]
+  selection?: ViewSelection[]
   onCreated?: () => void
 }
 
@@ -107,6 +120,7 @@ function OpencodeXViewSelector(
           if (props.route?.data.type === "opencodex-view" && props.route.data.viewID === view.id) {
             props.route.navigate({ type: "opencodex-dashboard" })
           }
+          refreshOpencodeXSidebar()
           return
         }
         void createOpencodeXViewDialog({ ...props, view })
@@ -133,9 +147,27 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
   const local = useLocal()
   const { theme } = useTheme()
   const [title, setTitle] = createSignal(props.title ?? props.view?.title ?? "")
-  const [selected, setSelected] = createSignal([...(props.sessionIDs ?? props.view?.sessionIDs ?? [])].slice(0, 8))
+  const [selection, setSelection] = createSignal<ViewSelection[]>(
+    (
+      props.selection
+        ?? [...(props.sessionIDs ?? props.view?.sessionIDs ?? [])].map((sessionID): ViewSelection => ({
+          kind: "existing",
+          sessionID,
+        }))
+    ).slice(0, 8),
+  )
   const [projects] = createResource(() => props.sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"))
-  const selectedSet = createMemo(() => new Set(selected()))
+  const selectedSessionIDs = createMemo(() =>
+    selection()
+      .filter((item): item is { kind: "existing"; sessionID: string } => item.kind === "existing")
+      .map((item) => item.sessionID),
+  )
+  const selectedNewSessions = createMemo(() =>
+    selection().filter((item): item is NewSessionSelection => item.kind === "new"),
+  )
+  const selectedCount = createMemo(() => selection().length)
+  const remainingCount = createMemo(() => Math.max(0, 8 - selectedCount()))
+  const selectedSet = createMemo(() => new Set(selectedSessionIDs()))
   const sessionMap = createMemo(
     () => new Map(sync.data.session.filter((session) => !session.parentID).map((session) => [session.id, session])),
   )
@@ -173,7 +205,7 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
   )
   const pinnedIDs = createMemo(() => new Set(pinned().map((session) => session.id)))
   const selectedSessions = createMemo(() =>
-    selected()
+    selectedSessionIDs()
       .map((sessionID) => modalSessionByID().get(sessionID))
       .filter((session): session is Session => session !== undefined),
   )
@@ -194,7 +226,20 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
     }
   }
 
+  function buildNewSessionOption(slot: NewSessionSelection, index: number) {
+    return {
+      title: `New session ${index + 1} in ${slot.projectLabel}`,
+      value: slot.id,
+      category: "New Sessions",
+      description: slot.directory,
+      footer: "pending",
+      gutter: () => <text fg={theme.primary}>[x]</text>,
+      onSelect: () => setSelection((current) => current.filter((item) => item.kind !== "new" || item.id !== slot.id)),
+    }
+  }
+
   const options = createMemo(() => [
+    ...selectedNewSessions().map(buildNewSessionOption),
     ...pinned().map((session) => buildOption(session, "Pinned", projectLabelBySessionID().get(session.id))),
     ...projectSessionEntries()
       .filter((entry) => !pinnedIDs().has(entry.session.id))
@@ -202,6 +247,14 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
     ...unassigned()
       .filter((session) => !pinnedIDs().has(session.id))
       .map((session) => buildOption(session, "Sessions")),
+    {
+      title: "Add new project sessions",
+      category: "Action",
+      value: "add-new-sessions",
+      description: remainingCount() === 0 ? "View is full" : "Create blank sessions when saving",
+      gutter: () => <text fg={remainingCount() === 0 ? theme.textMuted : theme.primary}>+</text>,
+      onSelect: () => void addNewProjectSessions(),
+    },
     {
       title: "Rename view",
       category: "Action",
@@ -211,13 +264,13 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       onSelect: () => void renameView(),
     },
     {
-      title: selected().length === 0
+      title: selectedCount() === 0
         ? props.view ? "Select sessions before saving" : "Select sessions before creating"
         : props.view ? "Save changes" : "Create view",
       value: "save",
       category: "Action",
-      description: `${selected().length} selected`,
-      gutter: () => <text fg={selected().length === 0 ? theme.textMuted : theme.primary}>{">"}</text>,
+      description: `${selectedCount()} selected`,
+      gutter: () => <text fg={selectedCount() === 0 ? theme.textMuted : theme.primary}>{">"}</text>,
       onSelect: () => void saveView(),
     },
   ])
@@ -227,20 +280,90 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
   })
 
   function reopenPicker() {
-    props.dialog.replace(() => <OpencodeXViewSessionPicker {...props} title={title()} sessionIDs={selected()} />)
+    props.dialog.replace(() => <OpencodeXViewSessionPicker {...props} title={title()} selection={selection()} />)
   }
 
   async function toggle(sessionID: string) {
     if (selectedSet().has(sessionID)) {
-      setSelected((current) => current.filter((id) => id !== sessionID))
+      setSelection((current) => current.filter((item) => item.kind !== "existing" || item.sessionID !== sessionID))
       return
     }
-    if (selected().length >= 8) {
+    if (selectedCount() >= 8) {
       await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", "A view can include at most eight sessions.")
       reopenPicker()
       return
     }
-    setSelected((current) => [...current, sessionID])
+    setSelection((current) => [...current, { kind: "existing", sessionID }])
+  }
+
+  async function addNewProjectSessions() {
+    const available = remainingCount()
+    if (available === 0) {
+      await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", "A view can include at most eight sessions.")
+      reopenPicker()
+      return
+    }
+    let list = projects()
+    if (!list) {
+      list = await props.sdk
+        .request<OpencodeXProjectInfo[]>("/experimental/opencodex/project")
+        .catch(async (error: Error) => {
+          await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", error.message)
+          reopenPicker()
+          return undefined
+        })
+    }
+    if (!list) return
+    if (list.length === 0) {
+      await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", "Create a project before adding new project sessions.")
+      reopenPicker()
+      return
+    }
+    props.dialog.replace(() => (
+      <DialogSelect
+        title="New sessions project"
+        placeholder="Search projects"
+        options={list.map((project) => ({
+          title: projectLabel(project),
+          value: project.id,
+          description: `${project.sessions.length} session${project.sessions.length === 1 ? "" : "s"}`,
+          gutter: () => <text fg={theme.primary}>+</text>,
+          onSelect: () => void promptNewSessionCount(project, available),
+        }))}
+        footerHints={[{ title: "select", label: "enter" }]}
+      />
+    ))
+  }
+
+  async function promptNewSessionCount(project: OpencodeXProjectInfo, max: number) {
+    const value = await DialogPrompt.show(props.dialog, "New sessions", {
+      placeholder: `How many? 1-${max}`,
+      value: String(Math.min(4, max)),
+    })
+    if (value === null) {
+      reopenPicker()
+      return
+    }
+    const count = Number.parseInt(value.trim(), 10)
+    if (!Number.isInteger(count) || count < 1 || count > max) {
+      await DialogAlert.show(props.dialog, "New sessions", `Enter a number from 1 to ${max}.`)
+      reopenPicker()
+      return
+    }
+    const label = projectLabel(project)
+    const directory = project.folders?.[0]?.path ?? project.project.worktree
+    const stamp = Date.now()
+    setSelection((current) => [
+      ...current,
+      ...Array.from({ length: count }, (_, index): NewSessionSelection => ({
+        kind: "new",
+        id: `new:${project.id}:${stamp}:${index}`,
+        projectID: project.id,
+        projectLabel: label,
+        directory,
+      })),
+    ])
+    reopenPicker()
   }
 
   async function renameView() {
@@ -253,16 +376,46 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       return
     }
     setTitle(next.trim())
-    props.dialog.replace(() => <OpencodeXViewSessionPicker {...props} title={next.trim()} sessionIDs={selected()} />)
+    props.dialog.replace(() => <OpencodeXViewSessionPicker {...props} title={next.trim()} selection={selection()} />)
+  }
+
+  async function createSessionForSlot(slot: NewSessionSelection) {
+    return await props.sdk.request<Session>("/experimental/opencodex/session", {
+      method: "POST",
+      body: JSON.stringify({
+        projectID: slot.projectID,
+        directory: slot.directory,
+      }),
+    })
   }
 
   async function saveView() {
-    const sessionIDs = selected()
-    if (sessionIDs.length === 0) {
+    if (selectedCount() === 0) {
       await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", "Select at least one session.")
       reopenPicker()
       return
     }
+    const currentSelection = selection()
+    const resolvedSelection: ViewSelection[] = []
+    for (let index = 0; index < currentSelection.length; index++) {
+      const item = currentSelection[index]
+      if (!item) continue
+      if (item.kind === "existing") {
+        resolvedSelection.push(item)
+        continue
+      }
+      const session = await createSessionForSlot(item).catch(async (error: Error) => {
+        await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", error.message)
+        setSelection([...resolvedSelection, ...currentSelection.slice(index)])
+        reopenPicker()
+      })
+      if (!session) return
+      resolvedSelection.push({ kind: "existing", sessionID: session.id })
+    }
+    setSelection(resolvedSelection)
+    const sessionIDs = resolvedSelection
+      .filter((item): item is { kind: "existing"; sessionID: string } => item.kind === "existing")
+      .map((item) => item.sessionID)
     const first = selectedSessions()[0]
     const viewTitle = title() || (first && sessionIDs.length === 1 ? first.title : `${sessionIDs.length} session view`)
     const view = await props.sdk
@@ -279,13 +432,14 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       })
     if (!view) return
     props.dialog.clear()
+    refreshOpencodeXSidebar()
     props.onCreated?.()
     props.route?.navigate({ type: "opencodex-view", viewID: view.id })
   }
 
   return (
     <DialogSelect
-      title={`${props.view ? "Edit View" : "Select Sessions"} (${selected().length}/8)`}
+      title={`${props.view ? "Edit View" : "Select Sessions"} (${selectedCount()}/8)`}
       placeholder="Search sessions"
       options={options()}
       footerHints={[

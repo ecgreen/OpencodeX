@@ -1,5 +1,4 @@
 import { TextAttributes } from "@opentui/core"
-import { useTerminalDimensions } from "@opentui/solid"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 import { useDialog } from "@tui/ui/dialog"
 import { DialogAlert } from "@tui/ui/dialog-alert"
@@ -11,10 +10,10 @@ import { useRoute, useRouteData } from "@tui/context/route"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
-import { createEffect, createMemo, createResource, createSignal, For, onMount, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { useBindings } from "../keymap"
 import { useOxSidebar } from "./opencodex-sidebar"
-import { createOpencodeXViewDialog } from "./opencodex-view-dialog"
+import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
 import { deriveStatus, statusColor, statusLabel } from "./opencodex-session-status"
 
 type SyncContext = ReturnType<typeof useSync>
@@ -234,13 +233,11 @@ export function OpencodeXViewRoute() {
   const dialog = useDialog()
   const local = useLocal()
   const { theme } = useTheme()
-  const dimensions = useTerminalDimensions()
   const [, setOxSidebarOpen] = useOxSidebar()
-  const [refresh, setRefresh] = createSignal(0)
   const [localFocus, setLocalFocus] = createSignal<string>()
-  const [view] = createResource(
-    () => [route.viewID, refresh()] as const,
-    ([viewID]) => sdk.request<OpencodeXView>(`/experimental/opencodex/view/${viewID}`),
+  const [view, { refetch }] = createResource(
+    () => route.viewID,
+    (viewID) => sdk.request<OpencodeXView>(`/experimental/opencodex/view/${viewID}`),
   )
   const sessions = createMemo(() => {
     const byID = new Map(sync.data.session.map((session) => [session.id, session]))
@@ -268,6 +265,10 @@ export function OpencodeXViewRoute() {
     setOxSidebarOpen(true)
   })
 
+  onCleanup(onOpencodeXRefresh(() => {
+    if (router.data.type === "opencodex-view") void refetch()
+  }))
+
   function focus(sessionID: string) {
     if (focusedSessionID() === sessionID) return
     setLocalFocus(sessionID)
@@ -286,22 +287,6 @@ export function OpencodeXViewRoute() {
     focus(list[(index + offset + list.length) % list.length].id)
   }
 
-  function editView() {
-    const current = view()
-    if (!current) return
-    void createOpencodeXViewDialog({
-      sdk,
-      dialog,
-      route: router,
-      view: {
-        id: current.id,
-        title: current.title,
-        sessionIDs: current.sessionIDs,
-      },
-      onCreated: () => setRefresh((value) => value + 1),
-    })
-  }
-
   async function deleteView() {
     const current = view()
     if (!current) return
@@ -314,6 +299,7 @@ export function OpencodeXViewRoute() {
       })
     if (!removed) return
     router.navigate({ type: "opencodex-dashboard" })
+    refreshOpencodeXSidebar()
   }
 
   useBindings(() => ({
@@ -330,22 +316,7 @@ export function OpencodeXViewRoute() {
   }))
 
   return (
-    <box flexGrow={1} minHeight={0} flexDirection="column" paddingLeft={2} paddingRight={2} paddingTop={1} gap={1}>
-      <box flexShrink={0} flexDirection="row" justifyContent="space-between">
-        <box flexDirection="row" gap={2}>
-          <text attributes={TextAttributes.BOLD} fg={theme.text}>{view()?.title ?? "Multi-session view"}</text>
-          <text fg={theme.textMuted}>{sessions().length} pane{sessions().length === 1 ? "" : "s"}</text>
-        </box>
-        <box flexDirection="row" gap={2}>
-          <text fg={theme.textMuted}>{dimensions().width}x{dimensions().height}</text>
-          <text fg={theme.primary} onMouseUp={editView}>
-            edit
-          </text>
-          <text fg={theme.primary} onMouseUp={() => router.navigate({ type: "opencodex-dashboard" })}>
-            dashboard
-          </text>
-        </box>
-      </box>
+    <box flexGrow={1} minHeight={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
       <Show
         when={sessions().length > 0}
         fallback={

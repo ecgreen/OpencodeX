@@ -9,6 +9,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { Agent } from "@/agent/agent"
+import { BackgroundJob } from "@/background/job"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXProject } from "@/opencodex/project"
 import { Project } from "@/project/project"
@@ -168,6 +169,8 @@ export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInpu
 
 export const AssignTaskInput = Schema.Struct({
   prompt: Schema.String,
+  agent: Schema.optional(Schema.String),
+  variant: Schema.optional(Schema.String),
 }).annotate({ identifier: "OpencodeXSwarmAssignTaskInput" })
 export type AssignTaskInput = Types.DeepMutable<Schema.Schema.Type<typeof AssignTaskInput>>
 
@@ -465,6 +468,7 @@ function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Rol
         .filter((item): item is string => item !== undefined)
         .join("; "),
     ),
+    "Treat team members with different ids as separate resources, even when they share the same name or skill.",
     "",
     "Use the task tool to start private worker sessions for specific team members.",
     'When a role does not specify an agent, use the "general" subagent and include that role\'s instructions in the prompt.',
@@ -538,6 +542,7 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const projects = yield* OpencodeXProject.Service
     const jobs = yield* OpencodeXJob.Service
+    const background = yield* BackgroundJob.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
     const sessions = yield* Session.Service
@@ -902,7 +907,28 @@ export const layer = Layer.effect(
       return yield* get(swarmID)
     })
 
-    const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: string, promptText: string) {
+    const cancelSessionTree = Effect.fn("OpencodeXSwarm.cancelSessionTree")(function* (sessionID: string) {
+      const id = SessionID.make(sessionID)
+      yield* prompt.cancel(id).pipe(Effect.ignore)
+      const backgroundJobs = yield* background.list()
+      yield* Effect.forEach(
+        backgroundJobs.filter((job) => {
+          if (job.status !== "running") return false
+          if (job.id === sessionID) return true
+          if (job.metadata?.sessionId === sessionID) return true
+          return job.metadata?.parentSessionId === sessionID
+        }),
+        (job) => background.cancel(job.id),
+        { concurrency: "unbounded", discard: true },
+      )
+      const children = yield* sessions.children(id).pipe(Effect.catchCause(() => Effect.succeed([])))
+      yield* Effect.forEach(children, (child) => cancelSessionTree(child.id), { concurrency: "unbounded", discard: true })
+    })
+
+    const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (
+      swarmID: string,
+      input: { prompt: string; agent?: string; variant?: string },
+    ) {
       const swarm = yield* get(swarmID)
       if (swarm.status === "cancelled") return yield* new ValidationError({ message: "Cancelled swarms cannot run tasks." })
       const invalid = validateRoles(swarm.roles)
@@ -914,15 +940,22 @@ export const layer = Layer.effect(
       const runID = `swrn_${Identifier.ascending()}`
       const now = Date.now()
       const model = selectedRoleModel(orchestrator) ?? (yield* defaultModel())
-      const orchestratorAgent = orchestrator.agent ?? (yield* agents.defaultAgent().pipe(Effect.orDie))
+      const requestedAgent = input.agent
+        ? yield* agents.get(input.agent).pipe(
+            Effect.as(input.agent),
+            Effect.catchCause(() => Effect.succeed(undefined)),
+          )
+        : undefined
+      const orchestratorAgent = requestedAgent ?? orchestrator.agent ?? (yield* agents.defaultAgent().pipe(Effect.orDie))
       const session = yield* projects.createSession({
         projectID: swarm.projectID,
         directory,
-        title: `${swarm.title}: ${defaultTitle(promptText)}`,
+        title: `${swarm.title}: ${defaultTitle(input.prompt)}`,
         agent: orchestratorAgent,
         model: {
           providerID: model.providerID,
           id: model.modelID,
+          ...(input.variant ? { variant: input.variant } : {}),
         },
         metadata: {
           opencodex: {
@@ -943,8 +976,8 @@ export const layer = Layer.effect(
                   id: runID,
                   swarm_id: swarmID,
                   opencodex_project_id: swarm.projectID,
-                  title: defaultTitle(promptText),
-                  prompt: promptText,
+                  title: defaultTitle(input.prompt),
+                  prompt: input.prompt,
                   status: "running",
                   source: "swarm",
                   orchestrator_session_id: session.id,
@@ -957,8 +990,8 @@ export const layer = Layer.effect(
               yield* tx
                 .update(OpencodeXSwarmTable)
                 .set({
-                  title: swarm.title === "New swarm" ? defaultTitle(promptText) : undefined,
-                  prompt: promptText,
+                  title: swarm.title === "New swarm" ? defaultTitle(input.prompt) : undefined,
+                  prompt: input.prompt,
                   status: "running",
                   started_at: swarm.startedAt ?? now,
                   completed_at: undefined,
@@ -976,8 +1009,8 @@ export const layer = Layer.effect(
           id: runID,
           swarm_id: swarmID,
           opencodex_project_id: swarm.projectID,
-          title: defaultTitle(promptText),
-          prompt: promptText,
+          title: defaultTitle(input.prompt),
+          prompt: input.prompt,
           status: "running",
           source: "swarm",
           orchestrator_session_id: session.id,
@@ -1002,6 +1035,7 @@ export const layer = Layer.effect(
           sessionID: session.id,
           agent: orchestratorAgent,
           model,
+          variant: input.variant,
           parts: [
             {
               type: "text",
@@ -1050,16 +1084,16 @@ export const layer = Layer.effect(
     const start = Effect.fn("OpencodeXSwarm.start")(function* (swarmID: string) {
       const swarm = yield* get(swarmID)
       const planned = swarm.runs.find((run) => run.status === "planned")
-      if (planned) return yield* createRun(swarmID, planned.prompt)
+      if (planned) return yield* createRun(swarmID, { prompt: planned.prompt })
       if (!swarm.prompt.trim()) return yield* new ValidationError({ message: "Assign a task before starting this swarm." })
-      return yield* createRun(swarmID, swarm.prompt)
+      return yield* createRun(swarmID, { prompt: swarm.prompt })
     })
 
     const assignTask = Effect.fn("OpencodeXSwarm.assignTask")(function* (swarmID: string, input: AssignTaskInput) {
       const promptText = input.prompt.trim()
       if (!promptText) return yield* new ValidationError({ message: "Swarm run prompt cannot be empty." })
       yield* event(swarmID, { kind: "swarm.task.assigned", message: "Task assigned to swarm team" })
-      return yield* createRun(swarmID, promptText)
+      return yield* createRun(swarmID, { prompt: promptText, agent: input.agent, variant: input.variant })
     })
 
     const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
@@ -1075,12 +1109,12 @@ export const layer = Layer.effect(
         swarm.runs.filter((run) => run.status !== "completed" && run.status !== "cancelled"),
         (run) =>
           Effect.gen(function* () {
-            if (run.orchestratorSessionID) yield* prompt.cancel(SessionID.make(run.orchestratorSessionID)).pipe(Effect.ignore)
+            if (run.orchestratorSessionID) yield* cancelSessionTree(run.orchestratorSessionID)
             yield* Effect.forEach(
               run.agents.filter((agentRun) => agentRun.status !== "completed" && agentRun.status !== "cancelled"),
               (agentRun) =>
                 Effect.gen(function* () {
-                  if (agentRun.sessionID) yield* prompt.cancel(SessionID.make(agentRun.sessionID)).pipe(Effect.ignore)
+                  if (agentRun.sessionID) yield* cancelSessionTree(agentRun.sessionID)
                   if (agentRun.jobID) yield* jobs.cancel(agentRun.jobID).pipe(Effect.ignore)
                   yield* db
                     .update(OpencodeXSwarmAgentRunTable)
@@ -1104,7 +1138,7 @@ export const layer = Layer.effect(
         swarm.roles.filter((role) => role.status !== "completed" && role.status !== "cancelled"),
         (role) =>
           Effect.gen(function* () {
-            if (role.sessionID) yield* prompt.cancel(SessionID.make(role.sessionID)).pipe(Effect.ignore)
+            if (role.sessionID) yield* cancelSessionTree(role.sessionID)
             yield* db
               .update(OpencodeXSwarmRoleTable)
               .set({ status: "cancelled", time_updated: Date.now() })
@@ -1131,12 +1165,12 @@ export const layer = Layer.effect(
         swarm.runs,
         (run) =>
           Effect.gen(function* () {
-            if (run.orchestratorSessionID) yield* prompt.cancel(SessionID.make(run.orchestratorSessionID)).pipe(Effect.ignore)
+            if (run.orchestratorSessionID) yield* cancelSessionTree(run.orchestratorSessionID)
             yield* Effect.forEach(
               run.agents,
               (agentRun) =>
                 Effect.gen(function* () {
-                  if (agentRun.sessionID) yield* prompt.cancel(SessionID.make(agentRun.sessionID)).pipe(Effect.ignore)
+                  if (agentRun.sessionID) yield* cancelSessionTree(agentRun.sessionID)
                   if (agentRun.jobID) yield* jobs.cancel(agentRun.jobID).pipe(Effect.ignore)
                 }),
               { concurrency: "unbounded", discard: true },
@@ -1148,7 +1182,7 @@ export const layer = Layer.effect(
         swarm.roles.filter((role) => role.status !== "completed" && role.status !== "cancelled"),
         (role) =>
           Effect.gen(function* () {
-            if (role.sessionID) yield* prompt.cancel(SessionID.make(role.sessionID)).pipe(Effect.ignore)
+            if (role.sessionID) yield* cancelSessionTree(role.sessionID)
           }),
         { concurrency: "unbounded", discard: true },
       )
@@ -1237,6 +1271,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Agent.defaultLayer),
+  Layer.provide(BackgroundJob.defaultLayer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(OpencodeXJob.defaultLayer),
   Layer.provide(OpencodeXProject.defaultLayer),

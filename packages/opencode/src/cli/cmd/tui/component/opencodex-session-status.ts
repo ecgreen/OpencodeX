@@ -15,6 +15,13 @@ export function deriveStatus(sessionID: string, sync: ReturnType<typeof useSync>
   return "dormant"
 }
 
+export function deriveViewStatus(sessionIDs: readonly string[], sync: ReturnType<typeof useSync>): DerivedStatus {
+  const statuses = sessionIDs.map((sessionID) => deriveStatus(sessionID, sync))
+  if (statuses.includes("input_needed")) return "input_needed"
+  if (statuses.includes("in_progress")) return "in_progress"
+  return "dormant"
+}
+
 export function isActive(status: DerivedStatus) {
   return status !== "dormant"
 }

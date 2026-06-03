@@ -167,24 +167,79 @@ function matchOpencodeXSwarm(swarms: OpencodeXPromptSwarm[], query: string) {
   )
 }
 
-function promptHistoryPart(part: Part): PromptInfo["parts"][number] | undefined {
+function sessionOpencodeXSwarmID(session: Session | undefined) {
+  const opencodex = session?.metadata?.opencodex
+  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
+  return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
+}
+
+function promptHistoryPart(input: Part): PromptInfo["parts"][number] | undefined {
+  const part = unwrap(input)
   if (part.type === "file") {
     return {
       type: "file",
       mime: part.mime,
       ...(part.filename !== undefined ? { filename: part.filename } : {}),
       url: part.url,
-      ...(part.source !== undefined ? { source: structuredClone(part.source) } : {}),
+      ...(part.source !== undefined ? { source: promptHistoryFileSource(part.source) } : {}),
     }
   }
   if (part.type === "agent") {
     return {
       type: "agent",
       name: part.name,
-      ...(part.source !== undefined ? { source: structuredClone(part.source) } : {}),
+      ...(part.source !== undefined ? { source: promptHistoryAgentSource(part.source) } : {}),
     }
   }
   return undefined
+}
+
+function promptHistoryFileSource(source: NonNullable<Extract<Part, { type: "file" }>["source"]>) {
+  const text = {
+    value: source.text.value,
+    start: source.text.start,
+    end: source.text.end,
+  }
+  if (source.type === "file") {
+    return {
+      type: "file" as const,
+      path: source.path,
+      text,
+    }
+  }
+  if (source.type === "symbol") {
+    return {
+      type: "symbol" as const,
+      path: source.path,
+      range: {
+        start: {
+          line: source.range.start.line,
+          character: source.range.start.character,
+        },
+        end: {
+          line: source.range.end.line,
+          character: source.range.end.character,
+        },
+      },
+      name: source.name,
+      kind: source.kind,
+      text,
+    }
+  }
+  return {
+    type: "resource" as const,
+    clientName: source.clientName,
+    uri: source.uri,
+    text,
+  }
+}
+
+function promptHistoryAgentSource(source: NonNullable<Extract<Part, { type: "agent" }>["source"]>) {
+  return {
+    value: source.value,
+    start: source.start,
+    end: source.end,
+  }
 }
 
 function promptHistoryEntry(parts: Part[]): PromptInfo | undefined {
@@ -335,16 +390,33 @@ export function Prompt(props: PromptProps) {
     return project ? opencodeXProjectTitle(project) : undefined
   })
   const pendingSwarmTask = createMemo(() => getPendingOpencodeXSwarmTask())
+  const currentSessionSwarmID = createMemo(() => {
+    let session = props.sessionID ? sync.session.get(props.sessionID) : undefined
+    const seen = new Set<string>()
+    while (session && !seen.has(session.id)) {
+      seen.add(session.id)
+      const swarmID = sessionOpencodeXSwarmID(session)
+      if (swarmID) return swarmID
+      session = session.parentID ? sync.session.get(session.parentID) : undefined
+    }
+  })
+  const currentSessionSwarmState = createMemo(() => {
+    const swarmID = currentSessionSwarmID()
+    if (!swarmID) return undefined
+    const swarms = opencodeXSwarms()
+    if (!swarms) return { id: swarmID, title: undefined, loading: true, deleted: false }
+    const swarm = swarms.find((item) => item.id === swarmID)
+    return { id: swarmID, title: swarm?.title, loading: false, deleted: swarm === undefined }
+  })
+  const deletedSwarmSession = createMemo(() => currentSessionSwarmState()?.deleted === true)
   const currentOpencodeXSwarmName = createMemo(() => {
     if (props.targetLabel) return props.targetLabel
     const pending = props.sessionID ? undefined : pendingSwarmTask()
     if (pending) return pending.title
-    const session = props.sessionID ? sync.session.get(props.sessionID) : undefined
-    const opencodex = session?.metadata?.opencodex
-    if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
-    const swarmID = opencodex.swarmID
-    if (typeof swarmID !== "string") return undefined
-    return opencodeXSwarms()?.find((swarm) => swarm.id === swarmID)?.title
+    const state = currentSessionSwarmState()
+    if (!state) return undefined
+    if (state.deleted) return "Deleted swarm"
+    return state.title
   })
 
   function selectWorkspace(selection: WorkspaceSelection | undefined) {
@@ -656,7 +728,8 @@ export function Prompt(props: PromptProps) {
         name: "session.interrupt",
         category: "Session",
         hidden: true,
-        enabled: status().type !== "idle",
+        enabled:
+          status().type !== "idle" || (currentSessionSwarmID() !== undefined && !deletedSwarmSession()),
         run: () => {
           if (auto()?.visible) return
           if (!input.focused) return
@@ -674,6 +747,18 @@ export function Prompt(props: PromptProps) {
           }, 5000)
 
           if (store.interrupt >= 2) {
+            const swarmID = currentSessionSwarmID()
+            if (swarmID && !deletedSwarmSession()) {
+              void sdk
+                .request(`/experimental/opencodex/swarm/${swarmID}/cancel`, { method: "POST" })
+                .then(() => {
+                  toast.show({ message: "Swarm cancellation requested.", variant: "info" })
+                  refreshOpencodeXSidebar()
+                })
+                .catch((error: Error) => {
+                  toast.show({ message: `Cancelling swarm failed: ${errorMessage(error)}`, variant: "error" })
+                })
+            }
             void sdk.client.session.abort({
               sessionID: props.sessionID,
             })
@@ -1355,7 +1440,11 @@ export function Prompt(props: PromptProps) {
       const swarm = await sdk
         .request<OpencodeXPromptSwarm>(`/experimental/opencodex/swarm/${pendingSwarm.swarmID}/task`, {
           method: "POST",
-          body: JSON.stringify({ prompt: task }),
+          body: JSON.stringify({
+            prompt: task,
+            agent: sessionAgent()?.name,
+            variant: sessionVariant(),
+          }),
         })
         .catch((error: Error) => {
           toast.show({
@@ -1552,6 +1641,22 @@ export function Prompt(props: PromptProps) {
             },
           ]
         : []
+
+    const sessionCommandSlash = (() => {
+      if (store.mode === "shell") return false
+      if (!inputText.trimStart().startsWith("/")) return false
+      const firstLine = inputText.trimStart().split("\n")[0]
+      const command = firstLine.split(" ")[0]?.slice(1)
+      return !!command && sync.data.command.some((item) => item.name === command)
+    })()
+
+    if (deletedSwarmSession() && !sessionCommandSlash) {
+      toast.show({
+        message: "This swarm was deleted. The session is read-only; slash commands still work.",
+        variant: "warning",
+      })
+      return false
+    }
 
     if (store.mode === "shell") {
       void sdk.client.session.shell({
@@ -1824,6 +1929,7 @@ export function Prompt(props: PromptProps) {
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
+    if (deletedSwarmSession()) return "Deleted swarm session is read-only. Slash commands still work."
     if (store.mode === "shell") {
       if (!shell().length) return undefined
       const example = shell()[store.placeholder % shell().length]
@@ -2178,6 +2284,11 @@ export function Prompt(props: PromptProps) {
                   </text>
                 </box>
               )}
+            </Match>
+            <Match when={deletedSwarmSession()}>
+              <box paddingLeft={3}>
+                <text fg={theme.warning}>Deleted swarm session is read-only. Slash commands still work.</text>
+              </box>
             </Match>
             <Match when={true}>{props.hint ?? <text />}</Match>
           </Switch>

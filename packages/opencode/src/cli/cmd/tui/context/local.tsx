@@ -566,6 +566,64 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     })
 
+    const view = iife(() => {
+      const [viewStore, setViewStore] = createStore<{
+        ready: boolean
+        pinned: string[]
+      }>({
+        ready: false,
+        pinned: [],
+      })
+
+      const filePath = path.join(Global.Path.state, "view.json")
+      const state = {
+        pending: false,
+      }
+
+      function save() {
+        if (!viewStore.ready) {
+          state.pending = true
+          return
+        }
+        state.pending = false
+        void Filesystem.writeJson(filePath, {
+          pinned: viewStore.pinned,
+        })
+      }
+
+      Filesystem.readJson(filePath)
+        .then((x: any) => {
+          if (Array.isArray(x.pinned)) setViewStore("pinned", x.pinned)
+        })
+        .catch(() => {})
+        .finally(() => {
+          setViewStore("ready", true)
+          if (state.pending) save()
+        })
+
+      return {
+        get ready() {
+          return viewStore.ready
+        },
+        pinned() {
+          return viewStore.pinned
+        },
+        isPinned(viewID: string) {
+          return viewStore.pinned.includes(viewID)
+        },
+        togglePin(viewID: string) {
+          batch(() => {
+            const exists = viewStore.pinned.includes(viewID)
+            const next = exists
+              ? viewStore.pinned.filter((x) => x !== viewID)
+              : [...viewStore.pinned, viewID]
+            setViewStore("pinned", next)
+            save()
+          })
+        },
+      }
+    })
+
     const mcp = {
       isEnabled(name: string) {
         const status = sync.data.mcp[name]
@@ -599,6 +657,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       mcp,
       session,
+      view,
     }
     return result
   },

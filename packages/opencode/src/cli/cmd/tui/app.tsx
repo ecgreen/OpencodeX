@@ -132,6 +132,7 @@ const appBindingCommands = [
   "opencodex.project.manage",
   "opencodex.session.manage",
   "opencodex.session.new_project",
+  "opencodex.view.create",
   "model.cycle_recent",
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
@@ -744,7 +745,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "new-view",
         slashAliases: ["create-view"],
         run: () => {
-          void createOpencodeXViewDialog({ sdk, dialog, route })
+          void createOpencodeXViewDialog({
+            sdk,
+            dialog,
+            route,
+            sessionIDs: route.data.type === "session" ? [route.data.sessionID] : undefined,
+          })
         },
       },
       {

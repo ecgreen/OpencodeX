@@ -13,30 +13,39 @@ import { DialogSelect } from "@tui/ui/dialog-select"
 import { DialogSessionRename } from "@tui/component/dialog-session-rename"
 import { createColors, createFrames } from "@tui/ui/spinner"
 import "opentui-spinner/solid"
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  type JSX,
+} from "solid-js"
+import { RGBA, TextAttributes } from "@opentui/core"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { Part, Session } from "@opencode-ai/sdk/v2"
 import { usePromptRef } from "@tui/context/prompt"
 import { useBindings, useCommandShortcut } from "../keymap"
 import { getPendingOpencodeXProjectSession, setPendingOpencodeXProjectSession } from "./opencodex-session-state"
-import { NEW_RESULT_COLOR, deriveStatus, statusColor } from "./opencodex-session-status"
+import { NEW_RESULT_COLOR, deriveStatus, deriveViewStatus, statusColor, statusLabel, type DerivedStatus } from "./opencodex-session-status"
 import { createOpencodeXViewDialog } from "./opencodex-view-dialog"
+import { LogoShimmerText } from "./logo"
+import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
+import { isRecentSessionUpdate } from "./opencodex-session-recency"
+
+export { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
 
 export const OPENCODEX_SIDEBAR_WIDTH = 36
 const KV_KEY = "ox_sidebar_visible"
-const refreshOpencodeXSidebarHandlers = new Set<() => void>()
+const SIDEBAR_BACKGROUND = RGBA.fromInts(0, 0, 0, 255)
+const SIDEBAR_CARD_TITLE_WIDTH = 25
+const SIDEBAR_CARD_DETAIL_WIDTH = 25
+const SIDEBAR_CARD_PROGRESS_DETAIL_WIDTH = 21
 const focusOpencodeXSidebarHandlers = new Set<() => void>()
-
-export function refreshOpencodeXSidebar() {
-  refreshOpencodeXSidebarHandlers.forEach((handler) => handler())
-}
-
-export function onOpencodeXRefresh(handler: () => void) {
-  refreshOpencodeXSidebarHandlers.add(handler)
-  return () => {
-    refreshOpencodeXSidebarHandlers.delete(handler)
-  }
-}
 
 export function focusOpencodeXSidebar() {
   focusOpencodeXSidebarHandlers.forEach((handler) => handler())
@@ -77,6 +86,14 @@ type OpencodeXViewInfo = {
   sessionIDs: string[]
   focusedSessionID?: string
 }
+
+type SessionManagerOptionValue =
+  | { type: "session"; id: string }
+  | { type: "view"; id: string }
+
+type SidebarStatus = DerivedStatus | "review_ready" | "unviewed"
+
+const REVIEW_READY_COLOR = NEW_RESULT_COLOR
 
 type OpencodeXProjectValidation = {
   valid: boolean
@@ -146,6 +163,17 @@ function titleLabel(value: string, length: number) {
 
 function projectTitle(project: OpencodeXProjectInfo) {
   return project.name ?? project.project.name ?? project.project.worktree
+}
+
+function sidebarStatusColor(status: SidebarStatus) {
+  if (status === "unviewed" || status === "review_ready") return REVIEW_READY_COLOR
+  return statusColor(status)
+}
+
+function sidebarStatusLabel(status: SidebarStatus) {
+  if (status === "unviewed") return "waiting for user to view"
+  if (status === "review_ready") return "ready for review"
+  return statusLabel(status)
 }
 
 async function confirmValidFolders(input: OpencodeXDialogContext & { folders: string[]; projectID?: string }) {
@@ -343,10 +371,6 @@ function OpencodeXProjectManager() {
         setCurrentProjectID(option.value)
         setToDelete(undefined)
       }}
-      onSelect={(option) => {
-        setCurrentProjectID(option.value)
-        setToDelete(undefined)
-      }}
       actions={[
         {
           command: "session.delete",
@@ -390,7 +414,6 @@ function OpencodeXProjectManager() {
           },
         },
       ]}
-      footerHints={[{ title: "select", label: "enter" }]}
     />
   )
 }
@@ -475,45 +498,34 @@ function OpencodeXSessionManager() {
   const [projects, { refetch }] = createResource(refresh, () =>
     sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"),
   )
+  const [views, { refetch: refetchViews }] = createResource(refresh, () =>
+    sdk.request<OpencodeXViewInfo[]>("/experimental/opencodex/view"),
+  )
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
+  const currentOption = createMemo<SessionManagerOptionValue | undefined>(() => {
+    if (route.data.type === "session") return { type: "session", id: route.data.sessionID }
+    if (route.data.type === "opencodex-view") return { type: "view", id: route.data.viewID }
+    return undefined
+  })
   const sessionMap = createMemo(
     () => new Map(sync.data.session.filter((session) => !session.parentID).map((session) => [session.id, session])),
   )
   const mappedSessionIDs = createMemo(
     () => new Set((projects() ?? []).flatMap((project) => project.sessions.map((session) => session.id))),
   )
-  const projectSessionEntries = createMemo(() =>
-    (projects() ?? []).flatMap((project) =>
-      project.sessions
-        .map((session) => sessionMap().get(session.id) ?? session)
-        .toSorted((a, b) => b.time.updated - a.time.updated)
-        .map((session) => ({ session, project: projectLabel(project) })),
-    ),
-  )
-  const projectLabelBySessionID = createMemo(
-    () => new Map(projectSessionEntries().map((entry) => [entry.session.id, entry.project] as const)),
-  )
-  const modalSessionByID = createMemo(
-    () =>
-      new Map([
-        ...projectSessionEntries().map((entry) => [entry.session.id, entry.session] as const),
-        ...[...sessionMap().values()].map((session) => [session.id, session] as const),
-      ]),
-  )
+  const projectSessions = (project: OpencodeXProjectInfo) =>
+    project.sessions
+      .map((session) => sessionMap().get(session.id) ?? session)
+      .toSorted((a, b) => b.time.updated - a.time.updated)
   const unassigned = createMemo(() =>
     [...sessionMap().values()]
       .filter((session) => !mappedSessionIDs().has(session.id))
       .toSorted((a, b) => b.time.updated - a.time.updated),
   )
-  const pinned = createMemo(() =>
-    local.session
-      .pinned()
-      .map((sessionID) => modalSessionByID().get(sessionID))
-      .filter((session): session is Session => session !== undefined),
-  )
   const list = () => {
     setRefresh((value) => value + 1)
     void refetch()
+    void refetchViews()
     refreshOpencodeXSidebar()
   }
 
@@ -521,28 +533,87 @@ function OpencodeXSessionManager() {
     return project.name ?? project.project.name ?? project.project.worktree
   }
 
-  function buildOption(session: Session, category: string, footer?: string) {
-    const isDeleting = toDelete() === session.id
+  function categoryHeader(section: string | undefined, category: string): JSX.Element {
+    if (!section) {
+      return (
+        <text fg={theme.accent} attributes={TextAttributes.BOLD}>
+          {category}
+        </text>
+      )
+    }
+    return (
+      <box flexDirection="column">
+        <text fg={theme.accent} attributes={TextAttributes.BOLD}>
+          {section}
+        </text>
+        <text fg={theme.textMuted}>{category}</text>
+      </box>
+    )
+  }
+
+  function itemKey(value: SessionManagerOptionValue) {
+    return `${value.type}:${value.id}`
+  }
+
+  function buildOption(session: Session, category: string, categoryView: JSX.Element) {
+    const value: SessionManagerOptionValue = { type: "session", id: session.id }
+    const isDeleting = toDelete() === itemKey(value)
     return {
       title: isDeleting ? "Press delete again to confirm" : session.title,
-      value: session.id,
+      value,
       category,
+      categoryView,
       bg: isDeleting ? theme.error : undefined,
-      footer: footer ?? (local.session.isPinned(session.id) ? "pinned" : ""),
+      footer: local.session.isPinned(session.id) ? "pinned" : "",
       gutter: () => <text fg={statusColor(deriveStatus(session.id, sync))}>•</text>,
     }
   }
 
-  const pinnedIDs = createMemo(() => new Set(pinned().map((session) => session.id)))
-  const options = createMemo(() => [
-    ...pinned().map((session) => buildOption(session, "Pinned", projectLabelBySessionID().get(session.id))),
-    ...projectSessionEntries()
-      .filter((entry) => !pinnedIDs().has(entry.session.id))
-      .map((entry) => buildOption(entry.session, entry.project)),
-    ...unassigned()
-      .filter((session) => !pinnedIDs().has(session.id))
-      .map((session) => buildOption(session, "Sessions")),
-  ])
+  function buildViewOption(view: OpencodeXViewInfo) {
+    const value: SessionManagerOptionValue = { type: "view", id: view.id }
+    const isDeleting = toDelete() === itemKey(value)
+    return {
+      title: isDeleting ? "Press delete again to confirm" : view.title,
+      value,
+      category: "Views",
+      categoryView: categoryHeader(undefined, "Views"),
+      description: `${view.sessionIDs.length} session${view.sessionIDs.length === 1 ? "" : "s"}`,
+      bg: isDeleting ? theme.error : undefined,
+      footer: local.view.isPinned(view.id) ? "pinned" : "",
+      gutter: () => <text fg={theme.primary}>v</text>,
+    }
+  }
+
+  const options = createMemo(() => {
+    const result: Array<ReturnType<typeof buildOption> | ReturnType<typeof buildViewOption>> = []
+    const appendSection = (section: string, recent: boolean) => {
+      let first = true
+      const appendGroup = (category: string, sessions: Session[]) => {
+        if (sessions.length === 0) return
+        const sectionLabel = first ? section : undefined
+        first = false
+        const group = `${section} / ${category}`
+        const header = categoryHeader(sectionLabel, category)
+        result.push(...sessions.map((session) => buildOption(session, group, header)))
+      }
+
+      for (const project of projects() ?? []) {
+        appendGroup(
+          projectLabel(project),
+          projectSessions(project).filter((session) => isRecentSessionUpdate(session.time.updated) === recent),
+        )
+      }
+      appendGroup(
+        "No Project",
+        unassigned().filter((session) => isRecentSessionUpdate(session.time.updated) === recent),
+      )
+    }
+
+    appendSection("Recent Sessions", true)
+    result.push(...(views() ?? []).map((view) => buildViewOption(view)))
+    appendSection("Prior Sessions", false)
+    return result
+  })
 
   async function deleteSession(sessionID: string) {
     const removed = await sdk
@@ -557,6 +628,64 @@ function OpencodeXSessionManager() {
     if (currentSessionID() === sessionID) route.navigate({ type: "home" })
     list()
     setToDelete(undefined)
+  }
+
+  async function deleteView(viewID: string) {
+    const removed = await sdk
+      .request<boolean>(`/experimental/opencodex/view/${viewID}`, { method: "DELETE" })
+      .catch((error: Error) => {
+        void DialogAlert.show(dialog, "Delete View", error.message)
+      })
+    if (!removed) return
+    if (local.view.isPinned(viewID)) local.view.togglePin(viewID)
+    if (route.data.type === "opencodex-view" && route.data.viewID === viewID) {
+      route.navigate({ type: "opencodex-dashboard" })
+    }
+    list()
+    setToDelete(undefined)
+  }
+
+  async function renameView(viewID: string) {
+    const view = (views() ?? []).find((item) => item.id === viewID)
+    if (!view) return
+    const title = await DialogPrompt.show(dialog, "View name", {
+      placeholder: "View name",
+      value: view.title,
+    })
+    if (title === null) {
+      dialog.replace(() => <OpencodeXSessionManager />)
+      return
+    }
+    await sdk
+      .request<OpencodeXViewInfo>(`/experimental/opencodex/view/${viewID}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: title.trim() }),
+      })
+      .then(() => {
+        list()
+        dialog.replace(() => <OpencodeXSessionManager />)
+      })
+      .catch((error: Error) => DialogAlert.show(dialog, "Rename View", error.message))
+  }
+
+  async function reorderView(viewID: string, offset: number) {
+    const ids = (views() ?? []).map((view) => view.id)
+    const index = ids.indexOf(viewID)
+    const nextIndex = index + offset
+    if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return
+    const next = ids.map((id, itemIndex) =>
+      itemIndex === index ? ids[nextIndex] : itemIndex === nextIndex ? ids[index] : id,
+    )
+    await sdk
+      .request<OpencodeXViewInfo[]>("/experimental/opencodex/view/reorder", {
+        method: "POST",
+        body: JSON.stringify({ viewIDs: next }),
+      })
+      .then(() => {
+        setToDelete(undefined)
+        list()
+      })
+      .catch((error: Error) => DialogAlert.show(dialog, "Reorder Views", error.message))
   }
 
   function moveSession(sessionID: string) {
@@ -602,10 +731,11 @@ function OpencodeXSessionManager() {
     <DialogSelect
       title="Manage Sessions"
       options={options()}
-      current={currentSessionID()}
+      current={currentOption()}
       onMove={() => setToDelete(undefined)}
       onSelect={(option) => {
-        route.navigate({ type: "session", sessionID: option.value })
+        if (option.value.type === "view") route.navigate({ type: "opencodex-view", viewID: option.value.id })
+        else route.navigate({ type: "session", sessionID: option.value.id })
         dialog.clear()
       }}
       actions={[
@@ -613,25 +743,29 @@ function OpencodeXSessionManager() {
           command: "session.pin.toggle",
           title: "pin/unpin",
           onTrigger: (option) => {
-            local.session.togglePin(option.value)
+            if (option.value.type === "view") local.view.togglePin(option.value.id)
+            else local.session.togglePin(option.value.id)
           },
         },
         {
           command: "session.delete",
           title: "delete",
           onTrigger: (option) => {
-            if (toDelete() === option.value) {
-              void deleteSession(option.value)
+            const key = itemKey(option.value)
+            if (toDelete() === key) {
+              if (option.value.type === "view") void deleteView(option.value.id)
+              else void deleteSession(option.value.id)
               return
             }
-            setToDelete(option.value)
+            setToDelete(key)
           },
         },
         {
           command: "session.rename",
           title: "rename",
           onTrigger: (option) => {
-            dialog.replace(() => <DialogSessionRename session={option.value} />)
+            if (option.value.type === "view") void renameView(option.value.id)
+            else dialog.replace(() => <DialogSessionRename session={option.value.id} />)
           },
         },
         {
@@ -639,7 +773,23 @@ function OpencodeXSessionManager() {
           title: "move",
           disabled: (projects() ?? []).length === 0,
           onTrigger: (option) => {
-            moveSession(option.value)
+            if (option.value.type === "session") moveSession(option.value.id)
+          },
+        },
+        {
+          command: "opencodex.project.move_up",
+          title: "up",
+          disabled: (views() ?? []).length < 2,
+          onTrigger: (option) => {
+            if (option.value.type === "view") void reorderView(option.value.id, -1)
+          },
+        },
+        {
+          command: "opencodex.project.move_down",
+          title: "down",
+          disabled: (views() ?? []).length < 2,
+          onTrigger: (option) => {
+            if (option.value.type === "view") void reorderView(option.value.id, 1)
           },
         },
       ]}
@@ -663,6 +813,7 @@ export function OpencodeXSidebar() {
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
   const [projectsCollapsed, setProjectsCollapsed] = createSignal(false)
   const [sessionsCollapsed, setSessionsCollapsed] = createSignal(false)
+  const [priorSessionsCollapsed, setPriorSessionsCollapsed] = createSignal(true)
   const [viewsCollapsed, setViewsCollapsed] = createSignal(false)
   const [refresh, setRefresh] = createSignal(0)
   const [sidebarFocused, setSidebarFocused] = createSignal(false)
@@ -678,7 +829,7 @@ export function OpencodeXSidebar() {
   const [swarms] = createResource(refresh, () =>
     sdk.request<OpencodeXSwarmInfo[]>("/experimental/opencodex/swarm"),
   )
-  const [views, { refetch: refetchViews }] = createResource(refresh, () =>
+  const [views] = createResource(refresh, () =>
     sdk.request<OpencodeXViewInfo[]>("/experimental/opencodex/view"),
   )
 
@@ -724,11 +875,27 @@ export function OpencodeXSidebar() {
         ),
       ),
   )
-  const unassigned = createMemo(() => visibleSessions().filter((session) => !mappedSessionIDs().has(session.id)))
+  const projectTitleBySessionID = createMemo(
+    () =>
+      new Map(
+        (projects() ?? []).flatMap((project) =>
+          project.sessions.map((session) => [session.id, projectTitle(project)] as const),
+        ),
+      ),
+  )
+  const allSidebarSessions = createMemo(() =>
+    [...allSessionByID().values()].filter((session) => !session.parentID).toSorted((a, b) => b.time.updated - a.time.updated),
+  )
+  const recentSessions = createMemo(() => allSidebarSessions().filter((session) => isRecentSessionUpdate(session.time.updated)))
+  const priorSessions = createMemo(() => allSidebarSessions().filter((session) => !isRecentSessionUpdate(session.time.updated)))
+  const recentSessionIDs = createMemo(() => new Set(recentSessions().map((session) => session.id)))
+  const priorSessionIDs = createMemo(() => new Set(priorSessions().map((session) => session.id)))
+  const unassigned = createMemo(() => recentSessions().filter((session) => !mappedSessionIDs().has(session.id)))
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
   const currentViewID = createMemo(() => (route.data.type === "opencodex-view" ? route.data.viewID : undefined))
   const pendingProjectSession = createMemo(() => getPendingOpencodeXProjectSession())
   const activeRowID = createMemo(() => {
+    if (route.data.type === "opencodex-dashboard") return "nav:dashboard"
     if (route.data.type === "session") return `session:${route.data.sessionID}`
     if (route.data.type === "opencodex-view") return `view:${route.data.viewID}`
     if (route.data.type === "home" && pendingProjectSession()) return `pending:${pendingProjectSession()?.projectID}`
@@ -739,6 +906,7 @@ export function OpencodeXSidebar() {
     project.sessions
       .filter((session) => !missingSessionIDs().has(session.id))
       .map((session) => sessionByID().get(session.id) ?? session)
+      .filter((session) => recentSessionIDs().has(session.id))
 
   const toggleProject = (projectID: string) =>
     setCollapsed((state) => ({ ...state, [projectID]: !(state[projectID] ?? false) }))
@@ -747,6 +915,10 @@ export function OpencodeXSidebar() {
     setCollapsed((state) => ({ ...state, [projectID]: value }))
 
   const sidebarRows = createMemo((): SidebarRow[] => [
+    {
+      id: "nav:dashboard",
+      activate: () => route.navigate({ type: "opencodex-dashboard" }),
+    },
     {
       id: "section:projects",
       activate: () => setProjectsCollapsed((value) => !value),
@@ -849,7 +1021,22 @@ export function OpencodeXSidebar() {
               parentID: "section:views",
             },
           ]),
+    {
+      id: "section:prior-sessions",
+      activate: () => setPriorSessionsCollapsed((value) => !value),
+      collapse: () => setPriorSessionsCollapsed(true),
+      expand: () => setPriorSessionsCollapsed(false),
+      keepFocus: true,
+    },
+    ...(priorSessionsCollapsed()
+      ? []
+      : priorSessions().map((session) => ({
+          id: `session:${session.id}`,
+          activate: () => route.navigate({ type: "session", sessionID: session.id }),
+          parentID: "section:prior-sessions",
+        }))),
   ])
+  const scrollRows = createMemo(() => sidebarRows().filter((row) => row.id !== "nav:dashboard"))
 
   const selectedRow = createMemo(() => sidebarRows().find((row) => row.id === selectedRowID()))
 
@@ -873,10 +1060,6 @@ export function OpencodeXSidebar() {
       dialog,
       route,
       sessionIDs: currentSessionID() ? [currentSessionID()!] : undefined,
-      onCreated: () => {
-        refreshSidebar()
-        void refetchViews()
-      },
     })
   }
 
@@ -887,6 +1070,7 @@ export function OpencodeXSidebar() {
 
   function activeParentRowID() {
     if (route.data.type === "session") {
+      if (priorSessionIDs().has(route.data.sessionID)) return "section:prior-sessions"
       const projectID = projectIDBySessionID().get(route.data.sessionID)
       if (projectID && rowExists(`project:${projectID}`)) return `project:${projectID}`
       if (projectID) return "section:projects"
@@ -920,7 +1104,9 @@ export function OpencodeXSidebar() {
     if (rows.length === 0) return
     const current = rows.findIndex((row) => row.id === selectedRowID())
     const next = current < 0 ? 0 : (current + offset + rows.length) % rows.length
-    setSelectedRowID(rows[next]?.id)
+    const nextID = rows[next]?.id
+    setSelectedRowID(nextID)
+    scheduleSidebarScrollSync(nextID)
   }
 
   function exitSidebarFocus() {
@@ -932,13 +1118,15 @@ export function OpencodeXSidebar() {
     if (!open()) setOpen(true)
     setSidebarFocused(true)
     promptRef.current?.blur()
-    selectRow(selectedRowID() ?? activeRowID())
+    selectRow(activeRowID() ?? selectedRowID())
+    scheduleSidebarScrollSync()
   }
 
   function activateSelectedRow() {
     const row = selectedRow()
     if (!row) return
     row.activate()
+    scheduleSidebarScrollSync(row.id)
     if (!row.keepFocus) exitSidebarFocus()
   }
 
@@ -947,25 +1135,58 @@ export function OpencodeXSidebar() {
     if (!row) return
     if (row.collapse) {
       row.collapse()
+      scheduleSidebarScrollSync(row.id)
       return
     }
     const parent = sidebarRows().find((item) => item.id === row.parentID)
     if (!parent?.collapse) return
     setSelectedRowID(parent.id)
     parent.collapse()
+    scheduleSidebarScrollSync(parent.id)
   }
 
   function expandSelectedRow() {
-    selectedRow()?.expand?.()
+    const row = selectedRow()
+    row?.expand?.()
+    scheduleSidebarScrollSync(row?.id)
   }
 
   function clampSidebarScroll() {
-    setTimeout(() => {
-      const scroll = sidebarScroll
-      if (!scroll || scroll.isDestroyed) return
-      const maxScroll = Math.max(0, scroll.scrollHeight - scroll.height)
-      if (scroll.y > maxScroll) scroll.scrollTo(maxScroll)
-    }, 0)
+    const scroll = sidebarScroll
+    if (!scroll || scroll.isDestroyed) return
+    const maxScroll = Math.max(0, scroll.scrollHeight - (scroll.viewport?.height ?? scroll.height))
+    if (scroll.y > maxScroll) scroll.scrollTo(maxScroll)
+  }
+
+  function scrollSidebarRowIntoView(rowID?: string) {
+    const scroll = sidebarScroll
+    const targetID = rowID ?? selectedRowID()
+    if (!scroll || scroll.isDestroyed || !targetID) return
+    const target = scroll.getChildren().find((child: { id?: string }) => child.id === targetID)
+    if (!target) return
+    const viewportHeight = scroll.viewport?.height ?? scroll.height
+    const y = target.y - scroll.y
+    const bottom = y + Math.max(1, target.height ?? 1)
+    if (y < 0) {
+      scroll.scrollBy(y)
+      return
+    }
+    if (bottom > viewportHeight) scroll.scrollBy(bottom - viewportHeight)
+  }
+
+  function syncSidebarScroll(rowID?: string) {
+    clampSidebarScroll()
+    scrollSidebarRowIntoView(rowID)
+  }
+
+  function scheduleSidebarClamp() {
+    setTimeout(clampSidebarScroll, 0)
+    requestAnimationFrame(clampSidebarScroll)
+  }
+
+  function scheduleSidebarScrollSync(rowID?: string) {
+    setTimeout(() => syncSidebarScroll(rowID), 0)
+    requestAnimationFrame(() => syncSidebarScroll(rowID))
   }
 
   onCleanup(onOpencodeXSidebarFocus(enterSidebarFocus))
@@ -985,7 +1206,25 @@ export function OpencodeXSidebar() {
     selectRow(selectedRowID())
   })
 
-  createEffect(on(() => sidebarRows().map((row) => row.id).join("\n"), clampSidebarScroll))
+  createEffect(
+    on(
+      () => sidebarRows().map((row) => row.id).join("\n"),
+      () => {
+        if (sidebarFocused()) {
+          scheduleSidebarScrollSync()
+          return
+        }
+        scheduleSidebarClamp()
+      },
+    ),
+  )
+
+  createEffect(
+    on(selectedRowID, (rowID) => {
+      if (!sidebarFocused()) return
+      scheduleSidebarScrollSync(rowID)
+    }),
+  )
 
   useBindings(() => ({
     enabled: sidebarFocused(),
@@ -1046,8 +1285,43 @@ export function OpencodeXSidebar() {
   const isRowSelected = (rowID: string | undefined) => sidebarFocused() && rowID === selectedRowID()
   const rowBackground = (rowID: string | undefined, active: boolean) =>
     isRowSelected(rowID) || active ? (theme.backgroundMenu ?? theme.backgroundElement) : undefined
-  const rowTextColor = (rowID: string | undefined, fallback = theme.text) =>
-    isRowSelected(rowID) ? theme.primary : fallback
+  const rowCardBackground = (rowID: string | undefined, active: boolean) =>
+    isRowSelected(rowID) || active ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel
+  const rowTextColor = (rowID: string | undefined, fallback = theme.textMuted) =>
+    isRowSelected(rowID) ? theme.text : fallback
+
+  const dashboardItem = () => {
+    const rowID = "nav:dashboard"
+    const active = createMemo(() => route.data.type === "opencodex-dashboard")
+    return (
+      <box
+        id={rowID}
+        flexShrink={0}
+        marginBottom={1}
+        paddingTop={1}
+        paddingBottom={1}
+        paddingLeft={2}
+        paddingRight={2}
+        flexDirection="row"
+        alignItems="center"
+        backgroundColor={rowBackground(rowID, active())}
+        onMouseUp={() => {
+          setSelectedRowID(rowID)
+          route.navigate({ type: "opencodex-dashboard" })
+        }}
+      >
+        <text>
+          <span style={{ fg: theme.text }}>
+            <b>Opencode</b>
+          </span>
+          <span style={{ fg: theme.warning }}>
+            <b>X</b>
+          </span>
+        </text>
+        <text fg={theme.textMuted}> Dashboard</text>
+      </box>
+    )
+  }
 
   const sectionHeader = (title: string, input?: { collapsed: boolean; toggle(): void; action?: () => void; rowID?: string }) => (
     <box
@@ -1061,15 +1335,16 @@ export function OpencodeXSidebar() {
         if (!input) return
         setSelectedRowID(input.rowID)
         input.toggle()
+        scheduleSidebarScrollSync(input.rowID)
       }}
     >
       <box flexDirection="row" justifyContent="space-between">
-        <text fg={rowTextColor(input?.rowID)}>
+        <text fg={rowTextColor(input?.rowID, theme.text)}>
           <b>{input ? `${input.collapsed ? "[+] " : "[-] "}` : ""}{title}</b>
         </text>
-        {input?.action ? projectIconButton("+", input.action) : undefined}
+        {input?.action ? projectIconButton("+", input.action, rowTextColor(input.rowID, theme.textMuted)) : undefined}
       </box>
-      <text fg={theme.border}>---------------------------------</text>
+      <box width="100%" border={["bottom"]} borderColor={theme.borderSubtle} />
     </box>
   )
 
@@ -1080,11 +1355,16 @@ export function OpencodeXSidebar() {
     const title = createMemo(() => [sessionTitle(session, sync), input?.titleSuffix].filter(Boolean).join(" - "))
     const detail = createMemo(() => [input?.subtitle, sessionSwarmTitle(session, swarms() ?? []) ?? modelLabel(session)].filter(Boolean).join(" - "))
     const unviewed = createMemo(() => status() === "dormant" && session.time.updated > local.session.lastViewed(session.id))
+    const displayStatus = createMemo<SidebarStatus>(() => unviewed() ? "unviewed" : status())
+    const statusFg = createMemo(() => sidebarStatusColor(displayStatus()))
+    const attentionTitle = createMemo(() => displayStatus() === "unviewed" || displayStatus() === "review_ready")
     const textColor = createMemo(() => {
-      if (unviewed()) return NEW_RESULT_COLOR
-      return status() === "dormant" ? theme.text : statusColor(status())
+      if (attentionTitle()) return statusFg()
+      if (status() !== "dormant") return statusColor(status())
+      return active() ? theme.text : theme.textMuted
     })
     const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
+    const animatedTitle = createMemo(() => animationsEnabled() && (displayStatus() === "input_needed" || attentionTitle()))
     const showDetailProgress = createMemo(() => status() === "in_progress")
     const showDetailSpinner = createMemo(() => showDetailProgress() && animationsEnabled())
     const spinnerDef = createMemo(() => {
@@ -1112,31 +1392,54 @@ export function OpencodeXSidebar() {
         id={rowID}
         flexShrink={0}
         marginBottom={1}
-        paddingLeft={1}
-        paddingRight={1}
+        marginLeft={1}
+        marginRight={1}
         flexDirection="column"
-        backgroundColor={rowBackground(rowID, active())}
-        border={["left"]}
-        borderColor={isRowSelected(rowID) ? theme.primary : unviewed() ? NEW_RESULT_COLOR : statusColor(status())}
+        backgroundColor={rowCardBackground(rowID, active())}
         onMouseUp={() => {
           setSelectedRowID(rowID)
           route.navigate({ type: "session", sessionID: session.id })
         }}
       >
-        <box flexDirection="row" gap={1} alignItems="center">
-          <text fg={rowTextColor(rowID, textColor())}>{titleLabel(title(), 31)}</text>
-        </box>
-        <Show when={detail()}>
-          <box width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
-            <text fg={rowTextColor(rowID, textColor())}>{titleLabel(detail(), showDetailProgress() ? 27 : 31)}</text>
-            <Show when={!animationsEnabled() && status() === "in_progress"}>
-              <text fg={statusColor("in_progress")}>...</text>
-            </Show>
-            <Show when={showDetailSpinner()}>
-              <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+        <box flexDirection="column" border={["left"]} borderColor={attentionTitle() ? statusFg() : isRowSelected(rowID) ? theme.primary : statusFg()}>
+          <box height={1} paddingLeft={1} paddingRight={1} flexDirection="row" gap={1} alignItems="center">
+            <Show
+              when={animatedTitle()}
+              fallback={
+                <text
+                  attributes={TextAttributes.BOLD}
+                  fg={attentionTitle() ? statusFg() : rowTextColor(rowID, textColor())}
+                  overflow="hidden"
+                  wrapMode="none"
+                  truncate
+                >
+                  {titleLabel(title(), SIDEBAR_CARD_TITLE_WIDTH)}
+                </text>
+              }
+            >
+              <LogoShimmerText
+                text={titleLabel(title(), SIDEBAR_CARD_TITLE_WIDTH)}
+                ink={attentionTitle() ? statusFg() : rowTextColor(rowID, textColor())}
+                attributes={TextAttributes.BOLD}
+                wrapMode="none"
+                truncate
+              />
             </Show>
           </box>
-        </Show>
+          <Show when={detail()} fallback={<box height={1} paddingLeft={1} paddingRight={1} />}>
+            <box height={1} paddingLeft={1} paddingRight={1} width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+              <text fg={theme.textMuted} overflow="hidden" wrapMode="none" truncate flexShrink={1}>
+                {titleLabel(detail(), showDetailProgress() ? SIDEBAR_CARD_PROGRESS_DETAIL_WIDTH : SIDEBAR_CARD_DETAIL_WIDTH)}
+              </text>
+              <Show when={!animationsEnabled() && status() === "in_progress"}>
+                <text fg={statusColor("in_progress")}>...</text>
+              </Show>
+              <Show when={showDetailSpinner()}>
+                <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+              </Show>
+            </box>
+          </Show>
+        </box>
       </box>
     )
   }
@@ -1146,19 +1449,29 @@ export function OpencodeXSidebar() {
       id={rowID}
       flexShrink={0}
       marginBottom={1}
-      paddingLeft={1}
-      paddingRight={1}
+      marginLeft={1}
+      marginRight={1}
       flexDirection="column"
-      backgroundColor={rowBackground(rowID, route.data.type === "home")}
-      border={["left"]}
-      borderColor={isRowSelected(rowID) ? theme.primary : statusColor("dormant")}
+      backgroundColor={rowCardBackground(rowID, route.data.type === "home")}
       onMouseUp={() => {
         setSelectedRowID(rowID)
         route.navigate({ type: "home" })
       }}
     >
-      <box flexDirection="row" gap={1} alignItems="center">
-        <text fg={rowTextColor(rowID)}>{titleLabel("New session", 31)}</text>
+      <box flexDirection="column" border={["left"]} borderColor={isRowSelected(rowID) ? theme.primary : statusColor("dormant")}>
+        <box height={1} paddingLeft={1} paddingRight={1} flexDirection="row" gap={1} alignItems="center">
+          <text
+            fg={rowTextColor(rowID, route.data.type === "home" ? theme.text : theme.textMuted)}
+            overflow="hidden"
+            wrapMode="none"
+            truncate
+          >
+            {titleLabel("New session", SIDEBAR_CARD_TITLE_WIDTH)}
+          </text>
+        </box>
+        <box height={1} paddingLeft={1} paddingRight={1}>
+          <text fg={theme.textMuted} wrapMode="none">pending</text>
+        </box>
       </box>
     </box>
   )
@@ -1166,26 +1479,96 @@ export function OpencodeXSidebar() {
   const viewItem = (view: OpencodeXViewInfo) => {
     const rowID = `view:${view.id}`
     const active = createMemo(() => currentViewID() === view.id)
+    const sessionsByID = createMemo(() => new Map(sync.data.session.map((session) => [session.id, session])))
+    const status = createMemo<SidebarStatus>(() => {
+      const base = deriveViewStatus(view.sessionIDs, sync)
+      if (base !== "dormant") return base
+      const sessions = view.sessionIDs.map((sessionID) => sessionsByID().get(sessionID)).filter((session): session is Session => session !== undefined)
+      return sessions.some((session) => session.time.updated > local.session.lastViewed(session.id)) ? "unviewed" : "dormant"
+    })
+    const statusFg = createMemo(() => sidebarStatusColor(status()))
+    const statusText = createMemo(() => sidebarStatusLabel(status()))
+    const attentionTitle = createMemo(() => status() === "unviewed" || status() === "review_ready")
+    const textColor = createMemo(() => {
+      if (attentionTitle()) return statusFg()
+      if (status() !== "dormant") return statusFg()
+      return active() ? theme.text : theme.textMuted
+    })
+    const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
+    const animatedTitle = createMemo(() => animationsEnabled() && (status() === "input_needed" || attentionTitle()))
+    const showProgress = createMemo(() => status() === "in_progress")
+    const spinnerDef = createMemo(() => {
+      const color = statusColor("in_progress")
+      return {
+        frames: createFrames({
+          color,
+          width: 4,
+          style: "diamonds",
+          inactiveFactor: 0.5,
+          minAlpha: 0.3,
+        }),
+        color: createColors({
+          color,
+          width: 4,
+          style: "diamonds",
+          inactiveFactor: 0.5,
+          minAlpha: 0.3,
+        }),
+      }
+    })
     return (
       <box
         id={rowID}
         flexShrink={0}
         marginBottom={1}
-        paddingLeft={1}
-        paddingRight={1}
+        marginLeft={1}
+        marginRight={1}
         flexDirection="column"
-        backgroundColor={rowBackground(rowID, active())}
-        border={["left"]}
-        borderColor={active() || isRowSelected(rowID) ? theme.primary : theme.border}
+        backgroundColor={rowCardBackground(rowID, active())}
         onMouseUp={() => {
           setSelectedRowID(rowID)
           route.navigate({ type: "opencodex-view", viewID: view.id })
         }}
       >
-        <text fg={active() || isRowSelected(rowID) ? theme.primary : theme.text}>{titleLabel(view.title, 31)}</text>
-        <text fg={theme.textMuted}>
-          {view.sessionIDs.length} session{view.sessionIDs.length === 1 ? "" : "s"}
-        </text>
+        <box flexDirection="column" border={["left"]} borderColor={attentionTitle() ? statusFg() : isRowSelected(rowID) ? theme.primary : statusFg()}>
+          <box height={1} paddingLeft={1} paddingRight={1} flexDirection="row" gap={1} alignItems="center">
+            <Show
+              when={animatedTitle()}
+              fallback={
+                <text
+                  attributes={TextAttributes.BOLD}
+                  fg={attentionTitle() ? statusFg() : rowTextColor(rowID, textColor())}
+                  overflow="hidden"
+                  wrapMode="none"
+                  truncate
+                >
+                  {titleLabel(view.title, SIDEBAR_CARD_TITLE_WIDTH)}
+                </text>
+              }
+            >
+              <LogoShimmerText
+                text={titleLabel(view.title, SIDEBAR_CARD_TITLE_WIDTH)}
+                ink={attentionTitle() ? statusFg() : rowTextColor(rowID, textColor())}
+                attributes={TextAttributes.BOLD}
+                wrapMode="none"
+                truncate
+              />
+            </Show>
+          </box>
+          <box height={1} paddingLeft={1} paddingRight={1} width="100%" flexDirection="row" alignItems="center" justifyContent="space-between">
+            <text fg={theme.textMuted} wrapMode="none">
+              {view.sessionIDs.length} session{view.sessionIDs.length === 1 ? "" : "s"}
+            </text>
+            <Show
+              when={showProgress()}
+              fallback={<text fg={statusFg()} wrapMode="none">{titleLabel(statusText(), 17)}</text>}
+            >
+              <Show when={animationsEnabled()} fallback={<text fg={statusColor("in_progress")}>...</text>}>
+                <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+              </Show>
+            </Show>
+          </box>
+        </box>
       </box>
     )
   }
@@ -1194,29 +1577,36 @@ export function OpencodeXSidebar() {
     const rowID = `project:${project.id}`
     const isCollapsed = createMemo(() => collapsed()[project.id] ?? false)
     const childCount = createMemo(() => projectSessions(project).length + (pendingProjectSession()?.projectID === project.id ? 1 : 0))
+    const expandIcon = createMemo(() => (isCollapsed() ? "▸" : "▾"))
+    const label = createMemo(() => {
+      const count = ` (${childCount()})`
+      const maxWidth = 28
+      return `${titleLabel(projectTitle(project), maxWidth - count.length)}${count}`
+    })
     return (
       <box
         id={rowID}
         flexShrink={0}
-        marginBottom={isCollapsed() ? 1 : 0}
+        marginBottom={1}
         paddingLeft={1}
         paddingRight={1}
         flexDirection="row"
         justifyContent="space-between"
         backgroundColor={rowBackground(rowID, false)}
-        border={["left"]}
-        borderColor={isRowSelected(rowID) ? theme.primary : theme.border}
         onMouseUp={() => {
           setSelectedRowID(rowID)
           toggleProject(project.id)
+          scheduleSidebarScrollSync(rowID)
         }}
       >
-        <text fg={rowTextColor(rowID)}>
-          <b>{isCollapsed() ? "[+] " : "[-] "}{titleLabel(projectTitle(project), 21)}</b>
-        </text>
         <box flexDirection="row" gap={1}>
-          <text fg={theme.textMuted}>{childCount()}</text>
-          {projectIconButton("+", () => void createSession(project))}
+          <text fg={rowTextColor(rowID, theme.textMuted)}>{expandIcon()}</text>
+          <text fg={rowTextColor(rowID, theme.text)}>
+            <b>{label()}</b>
+          </text>
+        </box>
+        <box flexDirection="row">
+          {projectIconButton("+", () => void createSession(project), rowTextColor(rowID, theme.textMuted))}
         </box>
       </box>
     )
@@ -1238,11 +1628,11 @@ export function OpencodeXSidebar() {
       }}
     >
       <text fg={rowTextColor(rowID, theme.textMuted)}>{label}</text>
-      <text fg={isRowSelected(rowID) ? theme.primary : theme.textMuted}>{actionLabel}</text>
+      <text fg={isRowSelected(rowID) ? theme.text : theme.textMuted}>{actionLabel}</text>
     </box>
   )
 
-  const projectIconButton = (label: string, onPress: () => void) => (
+  const projectIconButton = (label: string, onPress: () => void, color = theme.textMuted) => (
     <box
       paddingLeft={1}
       paddingRight={1}
@@ -1252,7 +1642,7 @@ export function OpencodeXSidebar() {
         onPress()
       }}
     >
-      <text fg={theme.textMuted}>{label}</text>
+      <text fg={color}>{label}</text>
     </box>
   )
 
@@ -1266,10 +1656,17 @@ export function OpencodeXSidebar() {
       })
     }
     if (row.id === "section:sessions") {
-      return sectionHeader("Sessions", {
+      return sectionHeader("Recent Sessions", {
         collapsed: sessionsCollapsed(),
         toggle: () => setSessionsCollapsed((value) => !value),
         action: createBlankSession,
+        rowID: row.id,
+      })
+    }
+    if (row.id === "section:prior-sessions") {
+      return sectionHeader("Prior Sessions", {
+        collapsed: priorSessionsCollapsed(),
+        toggle: () => setPriorSessionsCollapsed((value) => !value),
         rowID: row.id,
       })
     }
@@ -1288,18 +1685,23 @@ export function OpencodeXSidebar() {
     if (row.id.startsWith("pending:")) return pendingSessionItem(row.id)
     if (row.id.startsWith("session:")) {
       const session = allSessionByID().get(row.id.slice("session:".length))
-      return session ? sessionItem(session, { rowID: row.id }) : <></>
+      return session
+        ? sessionItem(session, {
+            rowID: row.id,
+            subtitle: row.parentID === "section:prior-sessions" ? projectTitleBySessionID().get(session.id) : undefined,
+          })
+        : <></>
     }
     if (row.id.startsWith("view:")) {
       const view = (views() ?? []).find((item) => item.id === row.id.slice("view:".length))
       return view ? viewItem(view) : <></>
     }
     if (row.id === "empty:projects") return emptyItem(row.id, "No Projects", "+ Project", () => void createProject())
-    if (row.id === "empty:sessions") return emptyItem(row.id, "No Sessions", "+ Session", createBlankSession)
+    if (row.id === "empty:sessions") return emptyItem(row.id, "No Recent Sessions", "+ Session", createBlankSession)
     if (row.id === "empty:views") return emptyItem(row.id, "No Views", "+ View", createView)
     if (row.id.startsWith("empty:project:")) {
       const project = (projects() ?? []).find((item) => item.id === row.id.slice("empty:project:".length))
-      return project ? emptyItem(row.id, "No Sessions", "+ Session", () => void createSession(project)) : <></>
+      return project ? emptyItem(row.id, "No Recent Sessions", "+ Session", () => void createSession(project)) : <></>
     }
     return <></>
   }
@@ -1307,25 +1709,23 @@ export function OpencodeXSidebar() {
   return (
     <Show when={open()}>
       <box
-        backgroundColor={theme.backgroundPanel}
+        backgroundColor={SIDEBAR_BACKGROUND}
         width={OPENCODEX_SIDEBAR_WIDTH}
         height="100%"
         flexDirection="column"
         border={["right"]}
         borderColor={theme.border}
       >
-        <box flexShrink={0} paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} flexDirection="row">
-          <text onMouseUp={() => route.navigate({ type: "opencodex-dashboard" })}>
-            <span style={{ fg: theme.text }}>
-              <b>Opencode</b>
-            </span>
-            <span style={{ fg: theme.warning }}>
-              <b>X</b>
-            </span>
-          </text>
-        </box>
-        <scrollbox ref={(scroll) => (sidebarScroll = scroll)} flexGrow={1} minHeight={0}>
-          <For each={sidebarRows()}>{renderSidebarRow}</For>
+        {dashboardItem()}
+        <scrollbox
+          ref={(scroll) => (sidebarScroll = scroll)}
+          flexGrow={1}
+          minHeight={0}
+          verticalScrollbarOptions={{
+            visible: false,
+          }}
+        >
+          <For each={scrollRows()}>{renderSidebarRow}</For>
         </scrollbox>
         <box flexShrink={0} paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} flexDirection="column">
           <text fg={sidebarFocused() ? theme.primary : theme.textMuted}>

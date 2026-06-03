@@ -259,6 +259,12 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       )
     })
 
+    const reorderViews = Effect.fn("OpencodeXHttpApi.reorderViews")(function* (ctx: {
+      payload: OpencodeXView.ReorderInput
+    }) {
+      return yield* views.reorder(ctx.payload)
+    })
+
     const getView = Effect.fn("OpencodeXHttpApi.getView")(function* (ctx: {
       params: { viewID: string }
     }) {
@@ -309,6 +315,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("updateSwarmRole", updateSwarmRole)
       .handle("listViews", listViews)
       .handle("createView", createView)
+      .handle("reorderViews", reorderViews)
       .handle("getView", getView)
       .handle("updateView", updateView)
       .handle("removeView", removeView)

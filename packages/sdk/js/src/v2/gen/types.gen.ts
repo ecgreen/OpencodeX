@@ -2298,10 +2298,338 @@ export type Project = {
   sandboxes: Array<string>
 }
 
+export type OpencodeXProjectFolder = {
+  path: string
+}
+
+export type OpencodeXProject = {
+  id: string
+  name?: string
+  project: Project
+  folders: Array<OpencodeXProjectFolder>
+  sessions: Array<GlobalSession>
+}
+
+export type OpencodeXProjectCreateInput = {
+  name?: string
+  directory?: string
+  folders?: Array<string>
+}
+
+export type OpencodeXProjectValidateInput = {
+  projectID?: string
+  folders: Array<string>
+}
+
+export type OpencodeXProjectFolderValidation = {
+  input: string
+  path: string
+  valid: boolean
+  message?: string
+}
+
+export type OpencodeXProjectValidation = {
+  valid: boolean
+  folders: Array<OpencodeXProjectFolderValidation>
+}
+
 export type ProjectNotFoundError = {
   _tag: "ProjectNotFoundError"
   projectID: string
   message: string
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
+
+export type OpencodeXProjectReorderInput = {
+  projectIDs: Array<string>
+}
+
+export type OpencodeXSessionCreateInput = {
+  projectID: string
+  directory: string
+  title?: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  metadata?: {
+    [key: string]: unknown
+  }
+  permission?: PermissionRuleset
+  workspaceID?: string
+  hidden?: boolean
+}
+
+export type OpencodeXSessionMoveInput = {
+  projectID: string
+  sessionID: string
+}
+
+export type OpencodeXJob = {
+  id: string
+  kind: string
+  title?: string
+  status:
+    | "queued"
+    | "running"
+    | "input_needed"
+    | "approval_needed"
+    | "blocked"
+    | "failed"
+    | "completed"
+    | "cancelled"
+    | "stale"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  projectID?: string
+  sessionID?: string
+  parentJobID?: string
+  swarmID?: string
+  roleID?: string
+  agent?: string
+  providerID?: string
+  modelID?: string
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  statusReason?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXJobCreateInput = {
+  id?: string
+  kind: string
+  title?: string
+  status?:
+    | "queued"
+    | "running"
+    | "input_needed"
+    | "approval_needed"
+    | "blocked"
+    | "failed"
+    | "completed"
+    | "cancelled"
+    | "stale"
+  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  projectID?: string
+  sessionID?: string
+  parentJobID?: string
+  swarmID?: string
+  roleID?: string
+  agent?: string
+  providerID?: string
+  modelID?: string
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  statusReason?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmRole = {
+  id: string
+  swarmID: string
+  name: string
+  agent?: string
+  skill?: string
+  providerID?: string
+  modelID?: string
+  modelProfile?: string
+  status: "planned" | "queued" | "running" | "blocked" | "failed" | "completed" | "cancelled"
+  instructions: string
+  sortOrder: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  sessionID?: string
+  jobID?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmAgentRun = {
+  id: string
+  runID: string
+  swarmID: string
+  roleID?: string
+  status: "planned" | "queued" | "running" | "blocked" | "failed" | "completed" | "cancelled"
+  prompt: string
+  sessionID?: string
+  jobID?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmRun = {
+  id: string
+  swarmID: string
+  projectID?: string
+  title: string
+  prompt: string
+  status:
+    | "draft"
+    | "planned"
+    | "queued"
+    | "running"
+    | "approval_needed"
+    | "blocked"
+    | "failed"
+    | "completed"
+    | "cancelled"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  orchestratorSessionID?: string
+  resultSessionID?: string
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  metadata?: {
+    [key: string]: unknown
+  }
+  agents: Array<OpencodeXSwarmAgentRun>
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmEvent = {
+  id: string
+  swarmID: string
+  runID?: string
+  roleID?: string
+  sessionID?: string
+  kind: string
+  message: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarm = {
+  id: string
+  projectID: string
+  title: string
+  prompt: string
+  status:
+    | "draft"
+    | "planned"
+    | "queued"
+    | "running"
+    | "approval_needed"
+    | "blocked"
+    | "failed"
+    | "completed"
+    | "cancelled"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  createdBy?: string
+  synthesisSessionID?: string
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  metadata?: {
+    [key: string]: unknown
+  }
+  roles: Array<OpencodeXSwarmRole>
+  runs: Array<OpencodeXSwarmRun>
+  events: Array<OpencodeXSwarmEvent>
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmRoleInput = {
+  name: string
+  agent?: string
+  skill?: string
+  providerID?: string
+  modelID?: string
+  modelProfile?: string
+  instructions: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmCreateInput = {
+  projectID: string
+  title?: string
+  prompt?: string
+  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  createdBy?: string
+  roles?: Array<OpencodeXSwarmRoleInput>
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmUpdateInput = {
+  title?: string
+  roles?: Array<OpencodeXSwarmRoleInput>
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmAssignTaskInput = {
+  prompt: string
+}
+
+export type OpencodeXSwarmAddRoleInput = {
+  role: OpencodeXSwarmRoleInput
+}
+
+export type OpencodeXSwarmUpdateRoleInput = {
+  name?: string
+  agent?: string
+  skill?: string
+  providerID?: string
+  modelID?: string
+  modelProfile?: string
+  instructions?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXView = {
+  id: string
+  title: string
+  focusedSessionID?: string
+  layout: string
+  sessions: Array<GlobalSession>
+  sessionIDs: Array<string>
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXViewCreateInput = {
+  id?: string
+  title?: string
+  sessionIDs: Array<string>
+  focusedSessionID?: string
+  layout?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXViewReorderInput = {
+  viewIDs: Array<string>
 }
 
 export type PtyNotFoundError = {
@@ -2403,13 +2731,6 @@ export type ProviderAuthError1 = {
     field?: string
     message?: string
     kind?: string
-  }
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
   }
 }
 
@@ -6022,6 +6343,900 @@ export type McpDisconnectResponses = {
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
 
+export type OpencodexProjectListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project"
+}
+
+export type OpencodexProjectListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectListError = OpencodexProjectListErrors[keyof OpencodexProjectListErrors]
+
+export type OpencodexProjectListResponses = {
+  /**
+   * List of OpencodeX projects
+   */
+  200: Array<OpencodeXProject>
+}
+
+export type OpencodexProjectListResponse = OpencodexProjectListResponses[keyof OpencodexProjectListResponses]
+
+export type OpencodexProjectCreateData = {
+  body?: OpencodeXProjectCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project"
+}
+
+export type OpencodexProjectCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectCreateError = OpencodexProjectCreateErrors[keyof OpencodexProjectCreateErrors]
+
+export type OpencodexProjectCreateResponses = {
+  /**
+   * Created OpencodeX project
+   */
+  200: OpencodeXProject
+}
+
+export type OpencodexProjectCreateResponse = OpencodexProjectCreateResponses[keyof OpencodexProjectCreateResponses]
+
+export type OpencodexProjectValidateData = {
+  body?: OpencodeXProjectValidateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project/validate"
+}
+
+export type OpencodexProjectValidateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectValidateError = OpencodexProjectValidateErrors[keyof OpencodexProjectValidateErrors]
+
+export type OpencodexProjectValidateResponses = {
+  /**
+   * Validated OpencodeX project folders
+   */
+  200: OpencodeXProjectValidation
+}
+
+export type OpencodexProjectValidateResponse =
+  OpencodexProjectValidateResponses[keyof OpencodexProjectValidateResponses]
+
+export type OpencodexProjectDeleteData = {
+  body?: never
+  path: {
+    projectID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/project/{projectID}"
+}
+
+export type OpencodexProjectDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectDeleteError = OpencodexProjectDeleteErrors[keyof OpencodexProjectDeleteErrors]
+
+export type OpencodexProjectDeleteResponses = {
+  /**
+   * Deleted OpencodeX project
+   */
+  200: boolean
+}
+
+export type OpencodexProjectDeleteResponse = OpencodexProjectDeleteResponses[keyof OpencodexProjectDeleteResponses]
+
+export type OpencodexProjectUpdateData = {
+  body?: {
+    name?: string
+    folders?: Array<string>
+  }
+  path: {
+    projectID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/project/{projectID}"
+}
+
+export type OpencodexProjectUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError | NotFoundError
+   */
+  404: ProjectNotFoundError | NotFoundError
+}
+
+export type OpencodexProjectUpdateError = OpencodexProjectUpdateErrors[keyof OpencodexProjectUpdateErrors]
+
+export type OpencodexProjectUpdateResponses = {
+  /**
+   * Updated OpencodeX project
+   */
+  200: OpencodeXProject
+}
+
+export type OpencodexProjectUpdateResponse = OpencodexProjectUpdateResponses[keyof OpencodexProjectUpdateResponses]
+
+export type OpencodexProjectReorderData = {
+  body?: OpencodeXProjectReorderInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project/reorder"
+}
+
+export type OpencodexProjectReorderErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectReorderError = OpencodexProjectReorderErrors[keyof OpencodexProjectReorderErrors]
+
+export type OpencodexProjectReorderResponses = {
+  /**
+   * Reordered OpencodeX projects
+   */
+  200: Array<OpencodeXProject>
+}
+
+export type OpencodexProjectReorderResponse = OpencodexProjectReorderResponses[keyof OpencodexProjectReorderResponses]
+
+export type OpencodexSessionCreateData = {
+  body?: OpencodeXSessionCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/session"
+}
+
+export type OpencodexSessionCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexSessionCreateError = OpencodexSessionCreateErrors[keyof OpencodexSessionCreateErrors]
+
+export type OpencodexSessionCreateResponses = {
+  /**
+   * Created session
+   */
+  200: Session
+}
+
+export type OpencodexSessionCreateResponse = OpencodexSessionCreateResponses[keyof OpencodexSessionCreateResponses]
+
+export type OpencodexSessionMoveData = {
+  body?: OpencodeXSessionMoveInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/session/move"
+}
+
+export type OpencodexSessionMoveErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexSessionMoveError = OpencodexSessionMoveErrors[keyof OpencodexSessionMoveErrors]
+
+export type OpencodexSessionMoveResponses = {
+  /**
+   * Moved session
+   */
+  200: Session
+}
+
+export type OpencodexSessionMoveResponse = OpencodexSessionMoveResponses[keyof OpencodexSessionMoveResponses]
+
+export type OpencodexSessionDeleteData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/session/{sessionID}"
+}
+
+export type OpencodexSessionDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSessionDeleteError = OpencodexSessionDeleteErrors[keyof OpencodexSessionDeleteErrors]
+
+export type OpencodexSessionDeleteResponses = {
+  /**
+   * Deleted session
+   */
+  200: boolean
+}
+
+export type OpencodexSessionDeleteResponse = OpencodexSessionDeleteResponses[keyof OpencodexSessionDeleteResponses]
+
+export type OpencodexJobListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/job"
+}
+
+export type OpencodexJobListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexJobListError = OpencodexJobListErrors[keyof OpencodexJobListErrors]
+
+export type OpencodexJobListResponses = {
+  /**
+   * List OpencodeX jobs
+   */
+  200: Array<OpencodeXJob>
+}
+
+export type OpencodexJobListResponse = OpencodexJobListResponses[keyof OpencodexJobListResponses]
+
+export type OpencodexJobCreateData = {
+  body?: OpencodeXJobCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/job"
+}
+
+export type OpencodexJobCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexJobCreateError = OpencodexJobCreateErrors[keyof OpencodexJobCreateErrors]
+
+export type OpencodexJobCreateResponses = {
+  /**
+   * Created OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobCreateResponse = OpencodexJobCreateResponses[keyof OpencodexJobCreateResponses]
+
+export type OpencodexJobGetData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}"
+}
+
+export type OpencodexJobGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobGetError = OpencodexJobGetErrors[keyof OpencodexJobGetErrors]
+
+export type OpencodexJobGetResponses = {
+  /**
+   * OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobGetResponse = OpencodexJobGetResponses[keyof OpencodexJobGetResponses]
+
+export type OpencodexJobUpdateData = {
+  body?: {
+    title?: string
+    status?:
+      | "queued"
+      | "running"
+      | "input_needed"
+      | "approval_needed"
+      | "blocked"
+      | "failed"
+      | "completed"
+      | "cancelled"
+      | "stale"
+    sessionID?: string
+    startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    statusReason?: string
+    metadata?: {
+      [key: string]: unknown
+    }
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}"
+}
+
+export type OpencodexJobUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobUpdateError = OpencodexJobUpdateErrors[keyof OpencodexJobUpdateErrors]
+
+export type OpencodexJobUpdateResponses = {
+  /**
+   * Updated OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobUpdateResponse = OpencodexJobUpdateResponses[keyof OpencodexJobUpdateResponses]
+
+export type OpencodexJobCancelData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/cancel"
+}
+
+export type OpencodexJobCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobCancelError = OpencodexJobCancelErrors[keyof OpencodexJobCancelErrors]
+
+export type OpencodexJobCancelResponses = {
+  /**
+   * Cancelled OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobCancelResponse = OpencodexJobCancelResponses[keyof OpencodexJobCancelResponses]
+
+export type OpencodexSwarmListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/swarm"
+}
+
+export type OpencodexSwarmListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSwarmListError = OpencodexSwarmListErrors[keyof OpencodexSwarmListErrors]
+
+export type OpencodexSwarmListResponses = {
+  /**
+   * List OpencodeX swarms
+   */
+  200: Array<OpencodeXSwarm>
+}
+
+export type OpencodexSwarmListResponse = OpencodexSwarmListResponses[keyof OpencodexSwarmListResponses]
+
+export type OpencodexSwarmCreateData = {
+  body?: OpencodeXSwarmCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/swarm"
+}
+
+export type OpencodexSwarmCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexSwarmCreateError = OpencodexSwarmCreateErrors[keyof OpencodexSwarmCreateErrors]
+
+export type OpencodexSwarmCreateResponses = {
+  /**
+   * Created OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmCreateResponse = OpencodexSwarmCreateResponses[keyof OpencodexSwarmCreateResponses]
+
+export type OpencodexSwarmDeleteData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}"
+}
+
+export type OpencodexSwarmDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmDeleteError = OpencodexSwarmDeleteErrors[keyof OpencodexSwarmDeleteErrors]
+
+export type OpencodexSwarmDeleteResponses = {
+  /**
+   * Deleted OpencodeX swarm
+   */
+  200: boolean
+}
+
+export type OpencodexSwarmDeleteResponse = OpencodexSwarmDeleteResponses[keyof OpencodexSwarmDeleteResponses]
+
+export type OpencodexSwarmGetData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}"
+}
+
+export type OpencodexSwarmGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmGetError = OpencodexSwarmGetErrors[keyof OpencodexSwarmGetErrors]
+
+export type OpencodexSwarmGetResponses = {
+  /**
+   * OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmGetResponse = OpencodexSwarmGetResponses[keyof OpencodexSwarmGetResponses]
+
+export type OpencodexSwarmUpdateData = {
+  body?: OpencodeXSwarmUpdateInput
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}"
+}
+
+export type OpencodexSwarmUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmUpdateError = OpencodexSwarmUpdateErrors[keyof OpencodexSwarmUpdateErrors]
+
+export type OpencodexSwarmUpdateResponses = {
+  /**
+   * Updated OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmUpdateResponse = OpencodexSwarmUpdateResponses[keyof OpencodexSwarmUpdateResponses]
+
+export type OpencodexSwarmStartData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/start"
+}
+
+export type OpencodexSwarmStartErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmStartError = OpencodexSwarmStartErrors[keyof OpencodexSwarmStartErrors]
+
+export type OpencodexSwarmStartResponses = {
+  /**
+   * Started OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmStartResponse = OpencodexSwarmStartResponses[keyof OpencodexSwarmStartResponses]
+
+export type OpencodexSwarmTaskAssignData = {
+  body?: OpencodeXSwarmAssignTaskInput
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/task"
+}
+
+export type OpencodexSwarmTaskAssignErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmTaskAssignError = OpencodexSwarmTaskAssignErrors[keyof OpencodexSwarmTaskAssignErrors]
+
+export type OpencodexSwarmTaskAssignResponses = {
+  /**
+   * Assigned task to OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmTaskAssignResponse =
+  OpencodexSwarmTaskAssignResponses[keyof OpencodexSwarmTaskAssignResponses]
+
+export type OpencodexSwarmCancelData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/cancel"
+}
+
+export type OpencodexSwarmCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmCancelError = OpencodexSwarmCancelErrors[keyof OpencodexSwarmCancelErrors]
+
+export type OpencodexSwarmCancelResponses = {
+  /**
+   * Cancelled OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmCancelResponse = OpencodexSwarmCancelResponses[keyof OpencodexSwarmCancelResponses]
+
+export type OpencodexSwarmRoleAddData = {
+  body?: OpencodeXSwarmAddRoleInput
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/role"
+}
+
+export type OpencodexSwarmRoleAddErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmRoleAddError = OpencodexSwarmRoleAddErrors[keyof OpencodexSwarmRoleAddErrors]
+
+export type OpencodexSwarmRoleAddResponses = {
+  /**
+   * Updated OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmRoleAddResponse = OpencodexSwarmRoleAddResponses[keyof OpencodexSwarmRoleAddResponses]
+
+export type OpencodexSwarmRoleUpdateData = {
+  body?: OpencodeXSwarmUpdateRoleInput
+  path: {
+    swarmID: string
+    roleID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/role/{roleID}"
+}
+
+export type OpencodexSwarmRoleUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmRoleUpdateError = OpencodexSwarmRoleUpdateErrors[keyof OpencodexSwarmRoleUpdateErrors]
+
+export type OpencodexSwarmRoleUpdateResponses = {
+  /**
+   * Updated OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmRoleUpdateResponse =
+  OpencodexSwarmRoleUpdateResponses[keyof OpencodexSwarmRoleUpdateResponses]
+
+export type OpencodexViewListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/view"
+}
+
+export type OpencodexViewListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexViewListError = OpencodexViewListErrors[keyof OpencodexViewListErrors]
+
+export type OpencodexViewListResponses = {
+  /**
+   * List OpencodeX views
+   */
+  200: Array<OpencodeXView>
+}
+
+export type OpencodexViewListResponse = OpencodexViewListResponses[keyof OpencodexViewListResponses]
+
+export type OpencodexViewCreateData = {
+  body?: OpencodeXViewCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/view"
+}
+
+export type OpencodexViewCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexViewCreateError = OpencodexViewCreateErrors[keyof OpencodexViewCreateErrors]
+
+export type OpencodexViewCreateResponses = {
+  /**
+   * Created OpencodeX view
+   */
+  200: OpencodeXView
+}
+
+export type OpencodexViewCreateResponse = OpencodexViewCreateResponses[keyof OpencodexViewCreateResponses]
+
+export type OpencodexViewReorderData = {
+  body?: OpencodeXViewReorderInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/view/reorder"
+}
+
+export type OpencodexViewReorderErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexViewReorderError = OpencodexViewReorderErrors[keyof OpencodexViewReorderErrors]
+
+export type OpencodexViewReorderResponses = {
+  /**
+   * Reordered OpencodeX views
+   */
+  200: Array<OpencodeXView>
+}
+
+export type OpencodexViewReorderResponse = OpencodexViewReorderResponses[keyof OpencodexViewReorderResponses]
+
+export type OpencodexViewDeleteData = {
+  body?: never
+  path: {
+    viewID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/view/{viewID}"
+}
+
+export type OpencodexViewDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexViewDeleteError = OpencodexViewDeleteErrors[keyof OpencodexViewDeleteErrors]
+
+export type OpencodexViewDeleteResponses = {
+  /**
+   * Deleted OpencodeX view
+   */
+  200: boolean
+}
+
+export type OpencodexViewDeleteResponse = OpencodexViewDeleteResponses[keyof OpencodexViewDeleteResponses]
+
+export type OpencodexViewGetData = {
+  body?: never
+  path: {
+    viewID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/view/{viewID}"
+}
+
+export type OpencodexViewGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexViewGetError = OpencodexViewGetErrors[keyof OpencodexViewGetErrors]
+
+export type OpencodexViewGetResponses = {
+  /**
+   * OpencodeX view
+   */
+  200: OpencodeXView
+}
+
+export type OpencodexViewGetResponse = OpencodexViewGetResponses[keyof OpencodexViewGetResponses]
+
+export type OpencodexViewUpdateData = {
+  body?: {
+    title?: string
+    sessionIDs?: Array<string>
+    focusedSessionID?: string
+    layout?: string
+    metadata?: {
+      [key: string]: unknown
+    }
+  }
+  path: {
+    viewID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/view/{viewID}"
+}
+
+export type OpencodexViewUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexViewUpdateError = OpencodexViewUpdateErrors[keyof OpencodexViewUpdateErrors]
+
+export type OpencodexViewUpdateResponses = {
+  /**
+   * Updated OpencodeX view
+   */
+  200: OpencodeXView
+}
+
+export type OpencodexViewUpdateResponse = OpencodexViewUpdateResponses[keyof OpencodexViewUpdateResponses]
+
 export type ProjectListData = {
   body?: never
   path?: never
@@ -6883,6 +8098,12 @@ export type SessionUpdateData = {
       [key: string]: unknown
     }
     permission?: PermissionRuleset
+    model?: {
+      id: string
+      providerID: string
+      variant?: string
+    }
+    agent?: string
     time?: {
       archived?: number
     }

@@ -284,6 +284,16 @@ export const OpencodeXApi = HttpApi.make("opencodex")
             summary: "Create OpencodeX view",
           }),
         ),
+        HttpApiEndpoint.post("reorderViews", `${root}/view/reorder`, {
+          payload: OpencodeXView.ReorderInput,
+          success: described(Schema.Array(OpencodeXView.Info), "Reordered OpencodeX views"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.view.reorder",
+            summary: "Reorder OpencodeX views",
+          }),
+        ),
         HttpApiEndpoint.get("getView", `${root}/view/:viewID`, {
           params: { viewID: Schema.String },
           success: described(OpencodeXView.Info, "OpencodeX view"),

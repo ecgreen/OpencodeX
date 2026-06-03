@@ -22,13 +22,16 @@ import { useBindings, useCommandShortcut } from "../keymap"
 import { useTuiConfig } from "../context/tui-config"
 import { getScrollAcceleration } from "../util/scroll"
 import { Logo, LogoShimmerText } from "./logo"
-import { useOxSidebar } from "./opencodex-sidebar"
+import { createOpencodeXProjectDialog, useOxSidebar } from "./opencodex-sidebar"
 import { setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
 import { createOpencodeXViewDialog } from "./opencodex-view-dialog"
+import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
+import { isRecentSessionUpdate } from "./opencodex-session-recency"
 import {
   NEW_RESULT_COLOR,
   type DerivedStatus,
   deriveStatus,
+  deriveViewStatus,
   statusColor as derivedStatusColor,
   statusLabel,
 } from "./opencodex-session-status"
@@ -47,21 +50,31 @@ type OpencodeXProject = {
 
 type DashboardSession = ReturnType<typeof useSync>["data"]["session"][number]
 type DashboardStatus = DerivedStatus | "review_ready" | "unviewed"
-type DashboardSessionEntry = {
-  session: DashboardSession
-  status: DashboardStatus
+type DashboardRowKind = "session" | "swarm" | "view"
+
+type DashboardRow = {
+  id: string
+  kind: DashboardRowKind
+  title: string
+  subtitle?: string
+  projectID?: string
+  status: string
+  dashboardStatus?: DashboardStatus
+  reason?: string
+  timeUpdated: number
+  source?: string
+  session?: DashboardSession
+  swarm?: OpencodeXSwarm
+  view?: OpencodeXView
+  open: () => void
 }
 
 type DashboardProjectSummary = {
   project: OpencodeXProject
-  sessions: DashboardSessionEntry[]
+  rows: DashboardRow[]
+  sessionCount: number
   swarmCount: number
-  activeSwarmCount: number
   lastUpdated: number
-}
-
-type AttentionEntry = DashboardSessionEntry & {
-  reason: string
 }
 
 type OpencodeXSwarmRole = {
@@ -171,6 +184,12 @@ const swarmRouteBindingCommands = [
   "opencodex.swarm.route.refresh",
 ] as const
 
+const swarmNavigationRouteBindingCommands = [
+  ...swarmRouteBindingCommands,
+  "opencodex.swarm.route.left",
+  "opencodex.swarm.route.right",
+] as const
+
 type DashboardItem =
   | {
       id: string
@@ -191,12 +210,15 @@ type SwarmRolePreset = {
 }
 
 type SwarmRoleDraft = SwarmRolePreset & {
+  draftID: string
   selected?: boolean
   customInstructions: string
   providerID?: string
   modelID?: string
   existing?: boolean
 }
+
+let swarmRoleDraftID = 0
 
 type ModelSelection = {
   providerID: string
@@ -252,7 +274,7 @@ const SWARM_ROLE_PRESETS: SwarmRolePreset[] = [
   },
 ]
 
-const REVIEW_READY_PURPLE = RGBA.fromInts(192, 132, 252, 255)
+const REVIEW_READY_PURPLE = NEW_RESULT_COLOR
 
 function timeAgo(input: number) {
   const seconds = Math.max(0, Math.floor((Date.now() - input) / 1000))
@@ -388,8 +410,7 @@ function dashboardStatusColor(status: DashboardStatus) {
 }
 
 function dashboardStatusLabel(status: DashboardStatus) {
-  if (status === "unviewed") return "new result"
-  if (status === "review_ready") return "ready for review"
+  if (status === "unviewed" || status === "review_ready") return "Ready for review"
   return statusLabel(status)
 }
 
@@ -397,39 +418,58 @@ function isUnviewed(session: DashboardSession, local: ReturnType<typeof useLocal
   return session.time.updated > local.session.lastViewed(session.id)
 }
 
-function dashboardSessionEntry(session: DashboardSession, sync: ReturnType<typeof useSync>, local: ReturnType<typeof useLocal>): DashboardSessionEntry {
-  const status = deriveStatus(session.id, sync)
-  return {
-    session,
-    status: status === "dormant" && isUnviewed(session, local) ? "unviewed" : status,
-  }
+function pathShortName(input: string) {
+  return input.split(/[\\/]/).filter(Boolean).at(-1) ?? input
 }
 
-function attentionReason(entry: DashboardSessionEntry, sync: ReturnType<typeof useSync>) {
-  const permissions = sync.data.permission[entry.session.id] ?? []
+function dashboardSessionStatus(session: DashboardSession, sync: ReturnType<typeof useSync>, local: ReturnType<typeof useLocal>): DashboardStatus {
+  const status = deriveStatus(session.id, sync)
+  return status === "dormant" && isUnviewed(session, local) ? "unviewed" : status
+}
+
+function dashboardViewStatus(
+  view: OpencodeXView,
+  sessions: ReadonlyMap<string, DashboardSession>,
+  sync: ReturnType<typeof useSync>,
+  local: ReturnType<typeof useLocal>,
+): DashboardStatus {
+  const status = deriveViewStatus(view.sessionIDs, sync)
+  if (status !== "dormant") return status
+  const viewSessions = view.sessionIDs.map((sessionID) => sessions.get(sessionID)).filter((session): session is DashboardSession => session !== undefined)
+  return viewSessions.some((session) => isUnviewed(session, local)) ? "unviewed" : "dormant"
+}
+
+function sessionAttentionReason(session: DashboardSession, status: DashboardStatus, sync: ReturnType<typeof useSync>) {
+  const permissions = sync.data.permission[session.id] ?? []
   if (permissions.length > 0) return `${permissions.length} permission request${permissions.length === 1 ? "" : "s"}`
-  const questions = sync.data.question[entry.session.id] ?? []
+  const questions = sync.data.question[session.id] ?? []
   if (questions.length > 0) return `${questions.length} question${questions.length === 1 ? "" : "s"} waiting`
-  if (entry.status === "unviewed") return "new result since last viewed"
-  if (entry.status === "review_ready") return "ready for review"
+  if (status === "unviewed") return "new result since last viewed"
+  if (status === "review_ready") return "ready for review"
+  return undefined
+}
+
+function swarmAttentionReason(status: string) {
+  if (status === "approval_needed") return "approval needed"
+  if (status === "input_needed") return "input needed"
+  if (status === "blocked") return "blocked"
+  if (status === "failed") return "failed"
   return undefined
 }
 
 function projectSummaryStatus(summary: DashboardProjectSummary): DashboardStatus {
-  if (summary.sessions.some((entry) => entry.status === "input_needed")) return "input_needed"
-  if (summary.sessions.some((entry) => entry.status === "in_progress") || summary.activeSwarmCount > 0) return "in_progress"
-  if (summary.sessions.some((entry) => entry.status === "unviewed")) return "unviewed"
+  if (summary.rows.some((row) => ["input_needed", "approval_needed", "blocked", "failed"].includes(row.status))) return "input_needed"
+  if (summary.rows.some((row) => ["in_progress", "running", "queued"].includes(row.status))) return "in_progress"
+  if (summary.rows.some((row) => row.status === "unviewed")) return "unviewed"
   return "dormant"
 }
 
-function projectSummaryLabel(summary: DashboardProjectSummary) {
-  const input = summary.sessions.filter((entry) => entry.status === "input_needed").length
-  if (input > 0) return `${input} need input`
-  const running = summary.sessions.filter((entry) => entry.status === "in_progress").length + summary.activeSwarmCount
-  if (running > 0) return `${running} running`
-  const unviewed = summary.sessions.filter((entry) => entry.status === "unviewed").length
-  if (unviewed > 0) return `${unviewed} new`
-  return "quiet"
+function dashboardRowColor(row: DashboardRow, theme: ReturnType<typeof useTheme>["theme"]) {
+  return row.dashboardStatus ? dashboardStatusColor(row.dashboardStatus) : statusColor(row.status, theme)
+}
+
+function dashboardRowStatusLabel(row: DashboardRow) {
+  return row.dashboardStatus ? dashboardStatusLabel(row.dashboardStatus) : row.status
 }
 
 function truncate(input: string | undefined, length: number) {
@@ -459,6 +499,7 @@ function modelDisplay(
 function createRoleDraft(preset: SwarmRolePreset, model?: { providerID: string; modelID: string }): SwarmRoleDraft {
   return {
     ...preset,
+    draftID: `${preset.skill}:${++swarmRoleDraftID}`,
     customInstructions: "",
     providerID: model?.providerID,
     modelID: model?.modelID,
@@ -467,6 +508,7 @@ function createRoleDraft(preset: SwarmRolePreset, model?: { providerID: string; 
 
 function roleDraftFromSwarmRole(role: OpencodeXSwarmRole): SwarmRoleDraft {
   return {
+    draftID: role.id,
     name: role.name,
     skill: role.skill ?? role.agent ?? role.name.trim().toLowerCase().replace(/\s+/g, "-"),
     description: role.instructions,
@@ -483,17 +525,6 @@ function roleInstructions(role: SwarmRoleDraft) {
   const custom = role.customInstructions.trim()
   if (!custom) return base
   return `${base}\n\nAdditional custom instructions:\n${custom}`
-}
-
-function GradientTitle(props: { text: string; active: boolean }) {
-  if (!props.active) return <text attributes={TextAttributes.BOLD} fg={dashboardStatusColor("review_ready")}>{props.text}</text>
-  const midpoint = Math.ceil(props.text.length / 2)
-  return (
-    <text attributes={TextAttributes.BOLD}>
-      <span style={{ fg: RGBA.fromInts(147, 197, 253, 255) }}>{props.text.slice(0, midpoint)}</span>
-      <span style={{ fg: RGBA.fromInts(103, 232, 249, 255) }}>{props.text.slice(midpoint)}</span>
-    </text>
-  )
 }
 
 export async function createOpencodeXSwarmDialog(input: {
@@ -679,7 +710,7 @@ function EmptyRow(props: { text: string }) {
   return <text fg={theme.textMuted}>{props.text}</text>
 }
 
-function SwarmCard(props: { swarm: OpencodeXSwarm; projects: OpencodeXProject[]; width: number; displayStatus?: string; selected?: boolean }) {
+function SwarmCard(props: { swarm: OpencodeXSwarm; projects: OpencodeXProject[]; width: number; displayStatus?: string; selected?: boolean; showStatusDot?: boolean }) {
   const { theme } = useTheme()
   const route = useRoute()
   const status = createMemo(() => props.displayStatus ?? swarmDisplayStatus(props.swarm))
@@ -699,8 +730,10 @@ function SwarmCard(props: { swarm: OpencodeXSwarm; projects: OpencodeXProject[];
       onMouseUp={() => route.navigate({ type: "opencodex-swarms", swarmID: props.swarm.id })}
     >
       <box flexDirection="row" gap={1} alignItems="center">
-        <text fg={statusColor(status(), theme)}>{statusDot(status())}</text>
-        <text attributes={TextAttributes.BOLD} fg={theme.text}>{truncate(props.swarm.title, props.width - 7)}</text>
+        <Show when={props.showStatusDot !== false}>
+          <text fg={statusColor(status(), theme)}>{statusDot(status())}</text>
+        </Show>
+        <text attributes={TextAttributes.BOLD} fg={theme.text}>{truncate(props.swarm.title, props.showStatusDot === false ? props.width - 4 : props.width - 7)}</text>
       </box>
       <text fg={theme.textMuted}>{truncate(`${projectTitle(props.projects, props.swarm.projectID)} - ${swarmRunLabel(props.swarm)}`, props.width - 4)}</text>
       <box width="100%" flexDirection="row" justifyContent="space-between">
@@ -879,7 +912,9 @@ function SessionCard(props: {
       .filter(Boolean)
       .join(" - "),
   )
-  const defaultTitleColor = createMemo(() => status() === "in_progress" ? dashboardStatusColor(status()) : theme.text)
+  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed"].includes(status()))
+  const titleColor = createMemo(() => status() === "review_ready" || status() === "unviewed" ? dashboardStatusColor(status()) : theme.text)
+  const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(status()) : titleColor())
   return (
     <box
       width={props.width}
@@ -896,19 +931,14 @@ function SessionCard(props: {
     >
       <box flexDirection="row" gap={1} alignItems="center">
         <Show
-          when={status() === "review_ready" || status() === "unviewed"}
-          fallback={<text attributes={TextAttributes.BOLD} fg={defaultTitleColor()}>{truncate(props.session.title, props.width - 4)}</text>}
+          when={animatedTitle()}
+          fallback={<text attributes={TextAttributes.BOLD} fg={titleColor()}>{truncate(props.session.title, props.width - 4)}</text>}
         >
-          <Show
-            when={status() === "unviewed"}
-            fallback={<GradientTitle text={truncate(props.session.title, props.width - 7)} active />}
-          >
-            <LogoShimmerText
-              text={truncate(props.session.title, props.width - 7)}
-              ink={NEW_RESULT_COLOR}
-              attributes={TextAttributes.BOLD}
-            />
-          </Show>
+          <LogoShimmerText
+            text={truncate(props.session.title, props.width - 7)}
+            ink={titleInk()}
+            attributes={TextAttributes.BOLD}
+          />
         </Show>
       </box>
       <Show when={detail()}>
@@ -931,9 +961,10 @@ function ProjectCard(props: {
 }) {
   const { theme } = useTheme()
   const status = createMemo(() => projectSummaryStatus(props.summary))
-  const folder = createMemo(() => props.summary.project.folders?.[0]?.path ?? props.summary.project.project.worktree)
+  const folder = createMemo(() => pathShortName(props.summary.project.folders?.[0]?.path ?? props.summary.project.project.worktree))
   const title = createMemo(() => props.summary.project.name ?? props.summary.project.project.name ?? props.summary.project.project.worktree)
-  const sessionCount = createMemo(() => props.summary.sessions.length)
+  const attentionCount = createMemo(() => props.summary.rows.filter((row) => row.reason).length)
+  const runningCount = createMemo(() => props.summary.rows.filter((row) => ["in_progress", "running", "queued"].includes(row.status)).length)
   const swarmText = createMemo(() =>
     props.summary.swarmCount === 0
       ? "no swarms"
@@ -948,41 +979,49 @@ function ProjectCard(props: {
       paddingRight={1}
       paddingTop={1}
       paddingBottom={1}
-      backgroundColor={props.selected || props.active ? theme.backgroundMenu ?? theme.backgroundElement : theme.backgroundPanel}
+      backgroundColor={props.active || props.selected ? theme.backgroundMenu ?? theme.backgroundElement : theme.backgroundPanel}
       border={["left"]}
-      borderColor={props.selected ? theme.primary : dashboardStatusColor(status())}
+      borderColor={props.selected || props.active ? theme.primary : dashboardStatusColor(status())}
       onMouseUp={props.onSelect}
     >
-      <text attributes={TextAttributes.BOLD} fg={props.active ? theme.primary : theme.text}>
-        {truncate(title(), props.width - 4)}
-      </text>
+      <box width="100%" flexDirection="row" justifyContent="space-between">
+        <text attributes={TextAttributes.BOLD} fg={props.active ? theme.primary : theme.text}>
+          {truncate(title(), props.width - 13)}
+        </text>
+        <text fg={props.active ? theme.primary : theme.textMuted}>PROJECT</text>
+      </box>
       <text fg={theme.textMuted}>
-        {truncate(`${sessionCount()} session${sessionCount() === 1 ? "" : "s"} - ${swarmText()}`, props.width - 4)}
+        {truncate(`${props.summary.sessionCount} session${props.summary.sessionCount === 1 ? "" : "s"} - ${swarmText()}`, props.width - 4)}
       </text>
-      <text fg={theme.textMuted}>{truncate(folder(), props.width - 4)}</text>
+      <box width="100%" flexDirection="row" justifyContent="space-between">
+        <text fg={theme.textMuted}>{truncate(folder(), Math.max(8, props.width - 18))}</text>
+        <text fg={attentionCount() > 0 ? dashboardStatusColor("input_needed") : runningCount() > 0 ? dashboardStatusColor("in_progress") : theme.textMuted}>
+          {attentionCount() > 0 ? `${attentionCount()} attention` : runningCount() > 0 ? `${runningCount()} active` : "ready"}
+        </text>
+      </box>
       <box width="100%" flexDirection="row" justifyContent="space-between">
         <text fg={theme.textMuted}>{props.summary.lastUpdated > 0 ? timeAgo(props.summary.lastUpdated) : "no activity"}</text>
-        <text fg={dashboardStatusColor(status())}>{projectSummaryLabel(props.summary)}</text>
+        <text attributes={props.active || props.selected ? TextAttributes.BOLD : undefined} fg={props.active || props.selected ? theme.primary : theme.textMuted}>
+          {props.active ? "focused" : props.selected ? "enter focus" : "focus"}
+        </text>
       </box>
     </box>
   )
 }
 
 function AttentionCard(props: {
-  entry: AttentionEntry
-  projects: OpencodeXProject[]
-  swarms: OpencodeXSwarm[]
+  row: DashboardRow
   width: number
   selected?: boolean
 }) {
   const { theme } = useTheme()
-  const route = useRoute()
-  const project = createMemo(() => projectForSession(props.projects, props.entry.session.id))
-  const detail = createMemo(() =>
-    [project() ? projectTitle(props.projects, project()!.id) : undefined, sessionSwarmTitle(props.entry.session, props.swarms) ?? modelLabel(props.entry.session)]
-      .filter(Boolean)
-      .join(" - "),
+  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed"].includes(props.row.dashboardStatus ?? ""))
+  const titleColor = createMemo(() =>
+    props.row.dashboardStatus === "review_ready" || props.row.dashboardStatus === "unviewed"
+      ? dashboardRowColor(props.row, theme)
+      : theme.text,
   )
+  const titleInk = createMemo(() => animatedTitle() ? dashboardRowColor(props.row, theme) : titleColor())
   return (
     <box
       width={props.width}
@@ -994,29 +1033,33 @@ function AttentionCard(props: {
       paddingBottom={1}
       backgroundColor={props.selected ? theme.backgroundMenu ?? theme.backgroundElement : theme.backgroundPanel}
       border={["left"]}
-      borderColor={props.selected ? theme.primary : dashboardStatusColor(props.entry.status)}
-      onMouseUp={() => route.navigate({ type: "session", sessionID: props.entry.session.id })}
+      borderColor={props.selected ? theme.primary : dashboardRowColor(props.row, theme)}
+      onMouseUp={props.row.open}
     >
-      <text attributes={TextAttributes.BOLD} fg={dashboardStatusColor(props.entry.status)}>
-        {truncate(props.entry.reason, props.width - 4)}
-      </text>
-      <text fg={theme.text}>{truncate(props.entry.session.title, props.width - 4)}</text>
-      <Show when={detail()}>
-        <text fg={theme.textMuted}>{truncate(detail(), props.width - 4)}</text>
+      <Show
+        when={animatedTitle()}
+        fallback={<text attributes={TextAttributes.BOLD} fg={titleColor()}>{truncate(props.row.title, props.width - 4)}</text>}
+      >
+        <LogoShimmerText text={truncate(props.row.title, props.width - 7)} ink={titleInk()} attributes={TextAttributes.BOLD} />
+      </Show>
+      <Show when={props.row.subtitle}>
+        {(subtitle) => <text fg={theme.textMuted}>{truncate(subtitle(), props.width - 4)}</text>}
       </Show>
       <box width="100%" flexDirection="row" justifyContent="space-between">
-        <text fg={theme.textMuted}>{timeAgo(props.entry.session.time.updated)}</text>
-        <text fg={dashboardStatusColor(props.entry.status)}>{dashboardStatusLabel(props.entry.status)}</text>
+        <text fg={theme.textMuted}>{timeAgo(props.row.timeUpdated)}</text>
+        <text fg={dashboardRowColor(props.row, theme)}>{dashboardRowStatusLabel(props.row)}</text>
       </box>
     </box>
   )
 }
 
-function ViewCard(props: { view?: OpencodeXView; width: number; create?: boolean; selected?: boolean; onCreate?: () => void }) {
+function ViewCard(props: { view: OpencodeXView; status: DashboardStatus; width: number; selected?: boolean }) {
   const { theme } = useTheme()
   const route = useRoute()
-  const title = createMemo(() => props.view?.title ?? "Create view")
-  const sessionCount = createMemo(() => props.view?.sessionIDs.length ?? 0)
+  const sessionCount = createMemo(() => props.view.sessionIDs.length)
+  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed"].includes(props.status))
+  const titleColor = createMemo(() => props.status === "review_ready" || props.status === "unviewed" ? dashboardStatusColor(props.status) : theme.text)
+  const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(props.status) : titleColor())
   return (
     <box
       width={props.width}
@@ -1028,25 +1071,24 @@ function ViewCard(props: { view?: OpencodeXView; width: number; create?: boolean
       paddingBottom={1}
       backgroundColor={props.selected ? theme.backgroundMenu ?? theme.backgroundElement : theme.backgroundPanel}
       border={["left"]}
-      borderColor={props.selected ? theme.primary : props.create ? theme.success : theme.primary}
+      borderColor={props.selected ? theme.primary : dashboardStatusColor(props.status)}
       onMouseUp={() => {
-        if (props.create) {
-          props.onCreate?.()
-          return
-        }
-        if (props.view) route.navigate({ type: "opencodex-view", viewID: props.view.id })
+        route.navigate({ type: "opencodex-view", viewID: props.view.id })
       }}
     >
-      <text attributes={TextAttributes.BOLD} fg={props.create ? theme.success : theme.text}>
-        {truncate(title(), props.width - 4)}
-      </text>
+      <Show
+        when={animatedTitle()}
+        fallback={<text attributes={TextAttributes.BOLD} fg={titleColor()}>{truncate(props.view.title, props.width - 4)}</text>}
+      >
+        <LogoShimmerText text={truncate(props.view.title, props.width - 7)} ink={titleInk()} attributes={TextAttributes.BOLD} />
+      </Show>
       <text fg={theme.textMuted}>
-        {props.create ? "1-8 sessions" : `${sessionCount()} session${sessionCount() === 1 ? "" : "s"}`}
+        {`${sessionCount()} session${sessionCount() === 1 ? "" : "s"}`}
       </text>
       <box width="100%" flexDirection="row" justifyContent="space-between">
-        <text fg={theme.textMuted}>{props.create ? "Create a multi-session view" : props.view ? timeAgo(props.view.timeUpdated) : ""}</text>
+        <text fg={theme.textMuted}>{timeAgo(props.view.timeUpdated)}</text>
         <box flexDirection="row" gap={1}>
-          <text fg={props.create ? theme.success : theme.primary}>{props.create ? "new" : "open"}</text>
+          <SessionFooterStatus status={props.status} />
         </box>
       </box>
     </box>
@@ -1057,29 +1099,77 @@ function EmptyCreateCard(props: {
   title: string
   description: string
   width: number
+  actionLabel?: string
   selected?: boolean
   onCreate: () => void
 }) {
   const { theme } = useTheme()
   return (
     <box
-      width={props.width}
+      width="100%"
+      maxWidth={Math.max(48, props.width * 2)}
       flexShrink={0}
-      flexDirection="column"
-      paddingLeft={1}
-      paddingRight={1}
+      flexDirection="row"
+      gap={1}
+      paddingLeft={2}
+      paddingRight={2}
       paddingTop={1}
       paddingBottom={1}
-      backgroundColor={props.selected ? theme.backgroundMenu ?? theme.backgroundElement : theme.backgroundPanel}
-      border={["left"]}
-      borderColor={props.selected ? theme.primary : theme.success}
+      backgroundColor={props.selected ? theme.backgroundMenu ?? theme.backgroundElement : undefined}
+      border={["top", "bottom"]}
+      borderColor={props.selected ? theme.primary : theme.border}
       onMouseUp={() => props.onCreate()}
     >
-      <text attributes={TextAttributes.BOLD} fg={theme.success}>{props.title}</text>
-      <text fg={theme.textMuted}>{truncate(props.description, props.width - 4)}</text>
-      <box width="100%" flexDirection="row" justifyContent="flex-end">
-        <text fg={theme.success}>new</text>
+      <text attributes={TextAttributes.BOLD} fg={props.selected ? theme.primary : theme.success}>+</text>
+      <box flexGrow={1} minWidth={0} flexDirection="column">
+        <text attributes={TextAttributes.BOLD} fg={theme.text}>{props.title}</text>
+        <text fg={theme.textMuted}>{truncate(props.description, Math.max(24, props.width * 2 - 12))}</text>
       </box>
+      <text fg={props.selected ? theme.primary : theme.textMuted}>
+        {props.selected ? `enter ${props.actionLabel ?? "create"}` : props.actionLabel ?? "create"}
+      </text>
+    </box>
+  )
+}
+
+function DashboardCreateBar(props: {
+  actions: {
+    id: string
+    title: string
+    description: string
+    tone: RGBA
+    selected?: boolean
+    onSelect: () => void
+  }[]
+}) {
+  const { theme } = useTheme()
+  return (
+    <box flexShrink={0} flexDirection="row" flexWrap="wrap" gap={1}>
+      <For each={props.actions}>
+        {(action) => (
+          <box
+            width={24}
+            flexShrink={0}
+            flexDirection="column"
+            paddingLeft={1}
+            paddingRight={1}
+            paddingTop={1}
+            paddingBottom={1}
+            backgroundColor={action.selected ? theme.backgroundMenu ?? theme.backgroundElement : theme.backgroundPanel}
+            border={["left"]}
+            borderColor={action.selected ? theme.primary : action.tone}
+            onMouseUp={action.onSelect}
+          >
+            <box width="100%" flexDirection="row" justifyContent="space-between">
+              <text attributes={TextAttributes.BOLD} fg={action.selected ? theme.primary : theme.text}>
+                {action.title}
+              </text>
+              <text attributes={TextAttributes.BOLD} fg={action.selected ? theme.primary : action.tone}>+</text>
+            </box>
+            <text fg={theme.textMuted}>{truncate(action.description, 20)}</text>
+          </box>
+        )}
+      </For>
     </box>
   )
 }
@@ -1101,11 +1191,13 @@ export function OpencodeXDashboard() {
   const [projectsCollapsed, setProjectsCollapsed] = createSignal(false)
   const [attentionCollapsed, setAttentionCollapsed] = createSignal(false)
   const [sessionsCollapsed, setSessionsCollapsed] = createSignal(false)
+  const [priorSessionsCollapsed, setPriorSessionsCollapsed] = createSignal(true)
   const [swarmsCollapsed, setSwarmsCollapsed] = createSignal(false)
   const [viewsCollapsed, setViewsCollapsed] = createSignal(false)
-  const [projects] = createResource(refresh, () => sdk.request<OpencodeXProject[]>("/experimental/opencodex/project"))
+  const [projects, { refetch: refetchProjects }] = createResource(refresh, () => sdk.request<OpencodeXProject[]>("/experimental/opencodex/project"))
   const [swarms] = createResource(refresh, () => sdk.request<OpencodeXSwarm[]>("/experimental/opencodex/swarm"))
   const [views] = createResource(refresh, () => sdk.request<OpencodeXView[]>("/experimental/opencodex/view"))
+  const refreshDashboard = () => setRefresh((value) => value + 1)
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const cardWidth = createMemo(() => {
     if (dimensions().width >= 150) return 42
@@ -1115,7 +1207,7 @@ export function OpencodeXDashboard() {
   const paletteShortcut = useCommandShortcut("command.palette.show")
   const shortcutHint = createMemo(() =>
     [
-      "arrows/j/k select",
+      "arrows/h/j/k/l move grid",
       "enter open",
       paletteShortcut() && `${paletteShortcut()} commands`,
     ].filter(Boolean).join("  "),
@@ -1125,9 +1217,11 @@ export function OpencodeXDashboard() {
     setOxSidebarOpen(true)
     promptRef.current?.blur()
     promptRef.set(undefined)
-    const timer = setInterval(() => setRefresh((value) => value + 1), 2500)
+    const timer = setInterval(refreshDashboard, 2500)
     onCleanup(() => clearInterval(timer))
   })
+
+  onCleanup(onOpencodeXRefresh(refreshDashboard))
 
   const topLevelSessions = createMemo(() => {
     const byID = new Map<string, DashboardSession>()
@@ -1142,20 +1236,6 @@ export function OpencodeXDashboard() {
     return [...byID.values()]
   })
   const selectedProject = createMemo(() => (projects() ?? []).find((project) => project.id === selectedProjectID()))
-  const selectedProjectSessionIDs = createMemo(() => new Set(selectedProject()?.sessions.map((session) => session.id) ?? []))
-  const allDashboardSessions = createMemo(() =>
-    topLevelSessions()
-      .map((session) => dashboardSessionEntry(session, sync, local))
-      .toSorted((a, b) => b.session.time.updated - a.session.time.updated)
-  )
-  const sessionInScope = (session: DashboardSession) => !selectedProjectID() || selectedProjectSessionIDs().has(session.id)
-  const dashboardSessions = createMemo(() => allDashboardSessions().filter((entry) => sessionInScope(entry.session)))
-  const sortedSwarms = createMemo(() =>
-    (swarms() ?? [])
-      .filter((swarm) => !selectedProjectID() || swarm.projectID === selectedProjectID())
-      .toSorted((a, b) => swarmDisplayTimeUpdated(b) - swarmDisplayTimeUpdated(a)),
-  )
-  const sortedViews = createMemo(() => (views() ?? []).toSorted((a, b) => b.timeUpdated - a.timeUpdated))
   const displaySwarmStatus = (swarm: OpencodeXSwarm) => {
     const active = swarmRuns(swarm).find((run) => {
       const sessionID = swarmRunSessionID(run)
@@ -1169,31 +1249,95 @@ export function OpencodeXDashboard() {
     const status = swarmDisplayStatus(swarm)
     return status === "running" ? "dormant" : status
   }
+  const allDashboardRows = createMemo<DashboardRow[]>(() => {
+    const list = projects() ?? []
+    const sessionByID = new Map(topLevelSessions().map((session) => [session.id, session]))
+    const sessionRows = topLevelSessions().map((session) => {
+      const project = projectForSession(list, session.id)
+      const status = dashboardSessionStatus(session, sync, local)
+      return {
+        id: `session:${session.id}`,
+        kind: "session" as const,
+        title: session.title,
+        subtitle: [
+          project ? projectTitle(list, project.id) : undefined,
+          sessionSwarmTitle(session, swarms() ?? []) ?? modelLabel(session),
+        ].filter(Boolean).join(" - "),
+        projectID: project?.id,
+        status,
+        dashboardStatus: status,
+        reason: sessionAttentionReason(session, status, sync),
+        timeUpdated: session.time.updated,
+        source: sessionSwarmID(session) ? "swarm" : "manual",
+        session,
+        open: () => route.navigate({ type: "session", sessionID: session.id }),
+      }
+    })
+    const swarmRows = (swarms() ?? []).map((swarm) => {
+      const status = displaySwarmStatus(swarm)
+      return {
+        id: `swarm:${swarm.id}`,
+        kind: "swarm" as const,
+        title: swarm.title,
+        subtitle: `${projectTitle(list, swarm.projectID)} - ${swarmRunLabel(swarm)}`,
+        projectID: swarm.projectID,
+        status,
+        reason: swarmAttentionReason(status),
+        timeUpdated: swarmDisplayTimeUpdated(swarm),
+        source: swarm.source,
+        swarm,
+        open: () => route.navigate({ type: "opencodex-swarms", swarmID: swarm.id }),
+      }
+    })
+    const viewRows = (views() ?? []).map((view) => {
+      const project = list.find((item) => item.sessions.some((session) => view.sessionIDs.includes(session.id)))
+      const status = dashboardViewStatus(view, sessionByID, sync, local)
+      return {
+        id: `view:${view.id}`,
+        kind: "view" as const,
+        title: view.title,
+        subtitle: `${view.sessionIDs.length} session${view.sessionIDs.length === 1 ? "" : "s"}`,
+        projectID: project?.id,
+        status,
+        dashboardStatus: status,
+        timeUpdated: view.timeUpdated,
+        source: "manual",
+        view,
+        open: () => route.navigate({ type: "opencodex-view", viewID: view.id }),
+      }
+    })
+    return [...sessionRows, ...swarmRows, ...viewRows].toSorted((a, b) => b.timeUpdated - a.timeUpdated)
+  })
+  const dashboardRows = createMemo(() => allDashboardRows().filter((row) => !selectedProjectID() || row.projectID === selectedProjectID()))
+  const dashboardSessionRows = createMemo(() =>
+    dashboardRows().filter((row): row is DashboardRow & { session: DashboardSession } => row.kind === "session" && row.session !== undefined),
+  )
+  const recentDashboardSessionRows = createMemo(() => dashboardSessionRows().filter((row) => isRecentSessionUpdate(row.timeUpdated)))
+  const priorDashboardSessionRows = createMemo(() => dashboardSessionRows().filter((row) => !isRecentSessionUpdate(row.timeUpdated)))
+  const dashboardSwarmRows = createMemo(() =>
+    dashboardRows().filter((row): row is DashboardRow & { swarm: OpencodeXSwarm } => row.kind === "swarm" && row.swarm !== undefined),
+  )
+  const dashboardViewRows = createMemo(() =>
+    dashboardRows().filter((row): row is DashboardRow & { view: OpencodeXView } => row.kind === "view" && row.view !== undefined),
+  )
   const projectSummaries = createMemo(() =>
     (projects() ?? [])
       .map((project) => {
-        const sessionIDs = new Set(project.sessions.map((session) => session.id))
-        const sessions = allDashboardSessions().filter((entry) => sessionIDs.has(entry.session.id))
-        const projectSwarms = (swarms() ?? []).filter((swarm) => swarm.projectID === project.id)
+        const rows = allDashboardRows().filter((row) => row.projectID === project.id)
         return {
           project,
-          sessions,
-          swarmCount: projectSwarms.length,
-          activeSwarmCount: projectSwarms.filter((swarm) => isActiveSwarm(displaySwarmStatus(swarm))).length,
-          lastUpdated: Math.max(
-            0,
-            ...sessions.map((entry) => entry.session.time.updated),
-            ...projectSwarms.map(swarmDisplayTimeUpdated),
-          ),
+          rows,
+          sessionCount: rows.filter((row) => row.kind === "session").length,
+          swarmCount: rows.filter((row) => row.kind === "swarm").length,
+          lastUpdated: Math.max(0, ...rows.map((row) => row.timeUpdated)),
         }
       })
       .toSorted((a, b) => b.lastUpdated - a.lastUpdated),
   )
-  const attentionEntries = createMemo(() =>
-    dashboardSessions()
-      .map((entry) => ({ ...entry, reason: attentionReason(entry, sync) }))
-      .filter((entry): entry is AttentionEntry => entry.reason !== undefined)
-      .toSorted((a, b) => b.session.time.updated - a.session.time.updated),
+  const attentionRows = createMemo(() =>
+    dashboardRows()
+      .filter((row): row is DashboardRow & { reason: string } => row.reason !== undefined)
+      .toSorted((a, b) => b.timeUpdated - a.timeUpdated),
   )
   const createSession = () => {
     const project = selectedProject()
@@ -1203,6 +1347,17 @@ export function OpencodeXDashboard() {
     route.navigate({ type: "home" })
     dialog.clear()
   }
+  const createProject = () => {
+    void createOpencodeXProjectDialog({
+      sdk,
+      dialog,
+      theme,
+      refetch: () => {
+        setRefresh((value) => value + 1)
+        void refetchProjects()
+      },
+    })
+  }
   const createSwarm = () => route.navigate({ type: "opencodex-swarm-create" })
   const clearProject = () => setSelectedProjectID(undefined)
   const selectProject = (projectID: string) => setSelectedProjectID((current) => current === projectID ? undefined : projectID)
@@ -1211,10 +1366,44 @@ export function OpencodeXDashboard() {
       sdk,
       dialog,
       route,
-      sessionIDs: dashboardSessions().slice(0, 4).map((entry) => entry.session.id),
-      onCreated: () => setRefresh((value) => value + 1),
+      sessionIDs: recentDashboardSessionRows().slice(0, 4).map((row) => row.session.id),
     })
+  const createActions = createMemo(() => [
+    {
+      id: "action:create-project",
+      title: "Project",
+      description: "Group work",
+      tone: theme.warning,
+      onSelect: createProject,
+    },
+    {
+      id: "action:create-session",
+      title: "Session",
+      description: selectedProject() ? "In focus" : "New chat",
+      tone: dashboardStatusColor("dormant"),
+      onSelect: createSession,
+    },
+    {
+      id: "action:create-swarm",
+      title: "Swarm",
+      description: "Agent team",
+      tone: theme.success,
+      onSelect: createSwarm,
+    },
+    {
+      id: "action:create-view",
+      title: "View",
+      description: "Multi-session",
+      tone: theme.info,
+      onSelect: () => void createView(),
+    },
+  ])
   const dashboardItems = createMemo<DashboardItem[]>(() => [
+    ...createActions().map((action) => ({
+      id: action.id,
+      kind: "item" as const,
+      action: action.onSelect,
+    })),
     { id: "section:projects", kind: "section", action: () => setProjectsCollapsed((value) => !value) },
     ...(selectedProjectID()
       ? [{ id: "action:clear-project", kind: "item" as const, action: clearProject }]
@@ -1227,65 +1416,163 @@ export function OpencodeXDashboard() {
             kind: "item" as const,
             action: () => selectProject(summary.project.id),
           }))
-        : [{ id: "empty:projects", kind: "item" as const, action: () => setOxSidebarOpen(true) }]),
+        : [{ id: "empty:projects", kind: "item" as const, action: createProject }]),
     { id: "section:attention", kind: "section", action: () => setAttentionCollapsed((value) => !value) },
     ...(attentionCollapsed()
       ? []
-      : attentionEntries().map((entry) => ({
-          id: `attention:${entry.session.id}`,
+      : attentionRows().map((row) => ({
+          id: `attention:${row.id}`,
           kind: "item" as const,
-          action: () => route.navigate({ type: "session", sessionID: entry.session.id }),
+          action: row.open,
         }))),
     { id: "section:sessions", kind: "section", action: () => setSessionsCollapsed((value) => !value) },
-    ...(dashboardSessions().length > 0
-      ? [{ id: "action:new-session", kind: "item" as const, action: createSession }]
-      : []),
     ...(sessionsCollapsed()
       ? []
-      : dashboardSessions().length > 0
-        ? dashboardSessions().map((entry) => ({
-            id: `session:${entry.session.id}`,
+      : recentDashboardSessionRows().length > 0
+        ? recentDashboardSessionRows().map((row) => ({
+            id: row.id,
             kind: "item" as const,
-            action: () => route.navigate({ type: "session", sessionID: entry.session.id }),
+            action: row.open,
           }))
         : [{ id: "empty:sessions", kind: "item" as const, action: createSession }]),
     { id: "section:swarms", kind: "section", action: () => setSwarmsCollapsed((value) => !value) },
-    ...(sortedSwarms().length > 0
-      ? [{ id: "action:new-swarm", kind: "item" as const, action: createSwarm }]
-      : []),
     ...(swarmsCollapsed()
       ? []
-      : sortedSwarms().length > 0
-        ? sortedSwarms().map((swarm) => ({
-            id: `swarm:${swarm.id}`,
+      : dashboardSwarmRows().length > 0
+        ? dashboardSwarmRows().map((row) => ({
+            id: row.id,
             kind: "item" as const,
-            action: () => route.navigate({ type: "opencodex-swarms", swarmID: swarm.id }),
+            action: row.open,
           }))
         : [{ id: "empty:swarms", kind: "item" as const, action: createSwarm }]),
     { id: "section:views", kind: "section", action: () => setViewsCollapsed((value) => !value) },
-    ...(sortedViews().length > 0
-      ? [{ id: "action:new-view", kind: "item" as const, action: () => void createView() }]
-      : []),
     ...(viewsCollapsed()
       ? []
-      : sortedViews().length > 0
-        ? sortedViews().map((view) => ({
-            id: `view:${view.id}`,
+      : dashboardViewRows().length > 0
+        ? dashboardViewRows().map((row) => ({
+            id: row.id,
             kind: "item" as const,
-            action: () => route.navigate({ type: "opencodex-view", viewID: view.id }),
+            action: row.open,
           }))
         : [{ id: "empty:views", kind: "item" as const, action: () => void createView() }]),
+    { id: "section:prior-sessions", kind: "section", action: () => setPriorSessionsCollapsed((value) => !value) },
+    ...(priorSessionsCollapsed()
+      ? []
+      : priorDashboardSessionRows().map((row) => ({
+          id: row.id,
+          kind: "item" as const,
+          action: row.open,
+        }))),
   ])
+  const dashboardNavigationRows = createMemo(() => {
+    const contentWidth = Math.max(1, dimensions().width - 4)
+    const createColumns = Math.max(1, Math.floor((contentWidth + 1) / (24 + 1)))
+    const columns = Math.max(1, Math.floor((contentWidth + 1) / (cardWidth() + 1)))
+    const rows: string[][] = []
+    const pushGrid = (ids: string[], count: number) => {
+      for (let index = 0; index < ids.length; index += count) rows.push(ids.slice(index, index + count))
+    }
+
+    pushGrid(createActions().map((action) => action.id), createColumns)
+    rows.push(["section:projects", ...(selectedProjectID() ? ["action:clear-project"] : [])])
+    if (!projectsCollapsed()) {
+      pushGrid(
+        projectSummaries().length > 0
+          ? projectSummaries().map((summary) => `project:${summary.project.id}`)
+          : ["empty:projects"],
+        columns,
+      )
+    }
+
+    rows.push(["section:attention"])
+    if (!attentionCollapsed() && attentionRows().length > 0) {
+      pushGrid(attentionRows().map((row) => `attention:${row.id}`), columns)
+    }
+
+    rows.push(["section:sessions"])
+    if (!sessionsCollapsed()) {
+      pushGrid(
+        recentDashboardSessionRows().length > 0 ? recentDashboardSessionRows().map((row) => row.id) : ["empty:sessions"],
+        columns,
+      )
+    }
+
+    rows.push(["section:swarms"])
+    if (!swarmsCollapsed()) {
+      pushGrid(
+        dashboardSwarmRows().length > 0 ? dashboardSwarmRows().map((row) => row.id) : ["empty:swarms"],
+        columns,
+      )
+    }
+
+    rows.push(["section:views"])
+    if (!viewsCollapsed()) {
+      pushGrid(
+        dashboardViewRows().length > 0 ? dashboardViewRows().map((row) => row.id) : ["empty:views"],
+        columns,
+      )
+    }
+
+    rows.push(["section:prior-sessions"])
+    if (!priorSessionsCollapsed() && priorDashboardSessionRows().length > 0) {
+      pushGrid(priorDashboardSessionRows().map((row) => row.id), columns)
+    }
+
+    return rows.filter((row) => row.length > 0)
+  })
   const selectedItem = createMemo(() => dashboardItems()[selected()] ?? dashboardItems()[0])
   const isSelected = (id: string) => selectedItem()?.id === id
   const selectByID = (id: string) => {
     const index = dashboardItems().findIndex((item) => item.id === id)
     if (index >= 0) setSelected(index)
   }
-  const move = (offset: number) => {
+  const moveLinear = (offset: number) => {
     const items = dashboardItems()
     if (items.length === 0) return
     setSelected((selected() + offset + items.length) % items.length)
+  }
+  const selectedPosition = () => {
+    const id = selectedItem()?.id
+    if (!id) return
+    for (const [row, ids] of dashboardNavigationRows().entries()) {
+      const column = ids.indexOf(id)
+      if (column >= 0) return { row, column }
+    }
+  }
+  const moveHorizontal = (offset: -1 | 1) => {
+    const rows = dashboardNavigationRows()
+    const position = selectedPosition()
+    if (!position || rows.length === 0) {
+      moveLinear(offset)
+      return
+    }
+    const current = rows[position.row]
+    if (!current) return
+    if (offset < 0 && position.column > 0) {
+      selectByID(current[position.column - 1]!)
+      return
+    }
+    if (offset > 0 && position.column < current.length - 1) {
+      selectByID(current[position.column + 1]!)
+      return
+    }
+
+    const row = (position.row + offset + rows.length) % rows.length
+    const target = rows[row]
+    if (!target) return
+    selectByID(offset < 0 ? target[target.length - 1]! : target[0]!)
+  }
+  const moveVertical = (offset: -1 | 1) => {
+    const rows = dashboardNavigationRows()
+    const position = selectedPosition()
+    if (!position || rows.length === 0) {
+      moveLinear(offset)
+      return
+    }
+    const row = (position.row + offset + rows.length) % rows.length
+    const target = rows[row]
+    if (!target) return
+    selectByID(target[Math.min(position.column, target.length - 1)]!)
   }
   const openSelected = () => {
     selectedItem()?.action()
@@ -1304,14 +1591,18 @@ export function OpencodeXDashboard() {
   useBindings(() => ({
     enabled: route.data.type === "opencodex-dashboard" && dialog.stack.length === 0,
     commands: [
-      { name: "opencodex.dashboard.route.up", title: "Select previous dashboard item", category: "OpencodeX", run: () => move(-1) },
-      { name: "opencodex.dashboard.route.down", title: "Select next dashboard item", category: "OpencodeX", run: () => move(1) },
+      { name: "opencodex.dashboard.route.up", title: "Select dashboard item above", category: "OpencodeX", run: () => moveVertical(-1) },
+      { name: "opencodex.dashboard.route.down", title: "Select dashboard item below", category: "OpencodeX", run: () => moveVertical(1) },
+      { name: "opencodex.dashboard.route.left", title: "Select dashboard item left", category: "OpencodeX", run: () => moveHorizontal(-1) },
+      { name: "opencodex.dashboard.route.right", title: "Select dashboard item right", category: "OpencodeX", run: () => moveHorizontal(1) },
       { name: "opencodex.dashboard.route.open", title: "Open dashboard item", category: "OpencodeX", run: openSelected },
-      { name: "opencodex.dashboard.route.refresh", title: "Refresh dashboard", category: "OpencodeX", run: () => setRefresh((value) => value + 1) },
+      { name: "opencodex.dashboard.route.refresh", title: "Refresh dashboard", category: "OpencodeX", run: refreshDashboard },
     ],
     bindings: [
-      { key: "up,k", desc: "Select previous", group: "OpencodeX", cmd: () => move(-1) },
-      { key: "down,j", desc: "Select next", group: "OpencodeX", cmd: () => move(1) },
+      { key: "up,k", desc: "Select above", group: "OpencodeX", cmd: () => moveVertical(-1) },
+      { key: "down,j", desc: "Select below", group: "OpencodeX", cmd: () => moveVertical(1) },
+      { key: "left,h", desc: "Select left", group: "OpencodeX", cmd: () => moveHorizontal(-1) },
+      { key: "right,l", desc: "Select right", group: "OpencodeX", cmd: () => moveHorizontal(1) },
       { key: "return,space", desc: "Open selected item", group: "OpencodeX", cmd: openSelected },
     ],
   }))
@@ -1320,6 +1611,12 @@ export function OpencodeXDashboard() {
     <box flexGrow={1} minHeight={0} flexDirection="column" paddingLeft={2} paddingRight={2} paddingTop={1} gap={1}>
       <box flexGrow={1} minHeight={0} flexDirection="column" gap={1}>
         <TopLogoNav onSelect={() => route.navigate({ type: "opencodex-dashboard" })} />
+        <DashboardCreateBar
+          actions={createActions().map((action) => ({
+            ...action,
+            selected: isSelected(action.id),
+          }))}
+        />
         <scrollbox
           flexGrow={1}
           minHeight={0}
@@ -1346,11 +1643,12 @@ export function OpencodeXDashboard() {
                 when={projectSummaries().length > 0}
                 fallback={
                   <EmptyCreateCard
-                    title="Use sidebar projects"
-                    description="Open the sidebar project tools."
+                    title="Create project"
+                    description="Group sessions, swarms, and views around a workspace."
                     width={cardWidth()}
+                    actionLabel="create"
                     selected={isSelected("empty:projects")}
-                    onCreate={() => setOxSidebarOpen(true)}
+                    onCreate={createProject}
                   />
                 }
               >
@@ -1371,7 +1669,7 @@ export function OpencodeXDashboard() {
 
           <Section
             title="Attention Needed"
-            count={attentionEntries().length}
+            count={attentionRows().length}
             collapsible
             collapsed={attentionCollapsed()}
             selected={isSelected("section:attention")}
@@ -1379,18 +1677,16 @@ export function OpencodeXDashboard() {
             onToggle={() => setAttentionCollapsed((value) => !value)}
           >
             <Show
-              when={attentionEntries().length > 0}
+              when={attentionRows().length > 0}
               fallback={<EmptyRow text={selectedProject() ? "Nothing needs attention in this project." : "Nothing needs attention right now."} />}
             >
               <CardGrid>
-                <For each={attentionEntries()}>
-                  {(entry) => (
+                <For each={attentionRows()}>
+                  {(row) => (
                     <AttentionCard
-                      entry={entry}
-                      projects={projects() ?? []}
-                      swarms={swarms() ?? []}
+                      row={row}
                       width={cardWidth()}
-                      selected={isSelected(`attention:${entry.session.id}`)}
+                      selected={isSelected(`attention:${row.id}`)}
                     />
                   )}
                 </For>
@@ -1399,18 +1695,17 @@ export function OpencodeXDashboard() {
           </Section>
 
           <Section
-            title="Sessions"
-            count={dashboardSessions().length}
+            title="Recent Sessions"
+            count={recentDashboardSessionRows().length}
             collapsible
             collapsed={sessionsCollapsed()}
             selected={isSelected("section:sessions")}
             onSelect={() => selectByID("section:sessions")}
             onToggle={() => setSessionsCollapsed((value) => !value)}
-            action={dashboardSessions().length > 0 ? { label: "+ New session", selected: isSelected("action:new-session"), onSelect: createSession } : undefined}
           >
               <CardGrid>
                 <Show
-                  when={dashboardSessions().length > 0}
+                  when={recentDashboardSessionRows().length > 0}
                   fallback={
                     <EmptyCreateCard
                       title="Create session"
@@ -1421,15 +1716,15 @@ export function OpencodeXDashboard() {
                     />
                   }
                 >
-                  <For each={dashboardSessions()}>
-                    {(entry) => (
+                  <For each={recentDashboardSessionRows()}>
+                    {(row) => (
                       <SessionCard
-                        session={entry.session}
+                        session={row.session}
                         projects={projects() ?? []}
                         swarms={swarms() ?? []}
                         width={cardWidth()}
-                        displayStatus={entry.status}
-                        selected={isSelected(`session:${entry.session.id}`)}
+                        displayStatus={row.dashboardStatus}
+                        selected={isSelected(row.id)}
                       />
                     )}
                   </For>
@@ -1439,17 +1734,16 @@ export function OpencodeXDashboard() {
 
           <Section
             title="Swarms"
-            count={sortedSwarms().length}
+            count={dashboardSwarmRows().length}
             collapsible
             collapsed={swarmsCollapsed()}
             selected={isSelected("section:swarms")}
             onSelect={() => selectByID("section:swarms")}
             onToggle={() => setSwarmsCollapsed((value) => !value)}
-            action={sortedSwarms().length > 0 ? { label: "+ New swarm", selected: isSelected("action:new-swarm"), onSelect: createSwarm } : undefined}
           >
             <CardGrid>
               <Show
-                when={sortedSwarms().length > 0}
+                when={dashboardSwarmRows().length > 0}
                 fallback={
                   <EmptyCreateCard
                     title="Create swarm"
@@ -1460,14 +1754,15 @@ export function OpencodeXDashboard() {
                   />
                 }
               >
-                <For each={sortedSwarms()}>
-                  {(swarm) => (
+                <For each={dashboardSwarmRows()}>
+                  {(row) => (
                     <SwarmCard
-                      swarm={swarm}
+                      swarm={row.swarm}
                       projects={projects() ?? []}
                       width={cardWidth()}
-                      displayStatus={displaySwarmStatus(swarm)}
-                      selected={isSelected(`swarm:${swarm.id}`)}
+                      displayStatus={row.status}
+                      selected={isSelected(row.id)}
+                      showStatusDot={false}
                     />
                   )}
                 </For>
@@ -1477,37 +1772,66 @@ export function OpencodeXDashboard() {
 
           <Section
             title="Views"
-            count={sortedViews().length}
+            count={dashboardViewRows().length}
             collapsible
             collapsed={viewsCollapsed()}
             selected={isSelected("section:views")}
             onSelect={() => selectByID("section:views")}
             onToggle={() => setViewsCollapsed((value) => !value)}
-            action={sortedViews().length > 0 ? { label: "+ New view", selected: isSelected("action:new-view"), onSelect: () => void createView() } : undefined}
           >
             <CardGrid>
               <Show
-                when={sortedViews().length > 0}
+                when={dashboardViewRows().length > 0}
                 fallback={
-                  <ViewCard
+                  <EmptyCreateCard
+                    title="Create view"
+                    description="Build a focused multi-session view."
                     width={cardWidth()}
-                    create
+                    actionLabel="create"
                     selected={isSelected("empty:views")}
                     onCreate={() => void createView()}
                   />
                 }
               >
-                <For each={sortedViews()}>
-                  {(view) => (
+                <For each={dashboardViewRows()}>
+                  {(row) => (
                     <ViewCard
-                      view={view}
+                      view={row.view}
+                      status={row.dashboardStatus ?? "dormant"}
                       width={cardWidth()}
-                      selected={isSelected(`view:${view.id}`)}
+                      selected={isSelected(row.id)}
                     />
                   )}
                 </For>
               </Show>
             </CardGrid>
+          </Section>
+
+          <Section
+            title="Prior Sessions"
+            count={priorDashboardSessionRows().length}
+            collapsible
+            collapsed={priorSessionsCollapsed()}
+            selected={isSelected("section:prior-sessions")}
+            onSelect={() => selectByID("section:prior-sessions")}
+            onToggle={() => setPriorSessionsCollapsed((value) => !value)}
+          >
+            <Show when={priorDashboardSessionRows().length > 0} fallback={<EmptyRow text="No prior sessions." />}>
+              <CardGrid>
+                <For each={priorDashboardSessionRows()}>
+                  {(row) => (
+                    <SessionCard
+                      session={row.session}
+                      projects={projects() ?? []}
+                      swarms={swarms() ?? []}
+                      width={cardWidth()}
+                      displayStatus={row.dashboardStatus}
+                      selected={isSelected(row.id)}
+                    />
+                  )}
+                </For>
+              </CardGrid>
+            </Show>
           </Section>
         </scrollbox>
       </box>
@@ -1647,7 +1971,7 @@ function SwarmAddAgentCard(props: {
         </text>
       </box>
       <text fg={theme.textMuted}>
-        {props.disabled ? "All predefined roles are already assigned." : "Choose a specialist role, model, and custom instructions."}
+        {props.disabled ? "No predefined specialist roles are available." : "Choose a specialist role, model, and custom instructions."}
       </text>
     </box>
   )
@@ -1685,10 +2009,7 @@ function OpencodeXSwarmCreate() {
   })
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const selectedRoles = createMemo(() => roles())
-  const availableRoles = createMemo(() => {
-    const assigned = new Set(roles().map((role) => role.skill))
-    return SWARM_ROLE_PRESETS.filter((role) => !assigned.has(role.skill))
-  })
+  const availableRoles = createMemo(() => SWARM_ROLE_PRESETS)
   const editorItems = createMemo(() => [
     ...(!editing() ? [{ id: "project", action: selectProject }] : []),
     { id: "title", action: editTitle },
@@ -1696,10 +2017,10 @@ function OpencodeXSwarmCreate() {
     { id: "orchestrator-model", action: () => selectModel("orchestrator") },
     { id: "orchestrator-instructions", action: () => editInstructions("orchestrator") },
     ...roles().flatMap((role) => [
-      { id: `role:${role.skill}`, action: () => editInstructions(role.skill) },
-      { id: `role-model:${role.skill}`, action: () => selectModel(role.skill) },
-      { id: `role-instructions:${role.skill}`, action: () => editInstructions(role.skill) },
-      { id: `role-remove:${role.skill}`, action: () => removeRole(role.skill) },
+      { id: `role:${role.draftID}`, action: () => editInstructions(role.draftID) },
+      { id: `role-model:${role.draftID}`, action: () => selectModel(role.draftID) },
+      { id: `role-instructions:${role.draftID}`, action: () => editInstructions(role.draftID) },
+      { id: `role-remove:${role.draftID}`, action: () => removeRole(role.draftID) },
     ]),
     { id: "add-agent", action: () => void addAgent() },
     { id: "create", action: saveSwarm },
@@ -1739,16 +2060,16 @@ function OpencodeXSwarmCreate() {
     editorItems()[selected()]?.action()
   }
 
-  function updateRole(skill: string, update: (role: SwarmRoleDraft) => SwarmRoleDraft) {
-    if (skill === "orchestrator") {
+  function updateRole(roleID: string, update: (role: SwarmRoleDraft) => SwarmRoleDraft) {
+    if (roleID === "orchestrator") {
       setOrchestrator((role) => update(role))
       return
     }
-    setRoles((items) => items.map((role) => (role.skill === skill ? update(role) : role)))
+    setRoles((items) => items.map((role) => (role.draftID === roleID ? update(role) : role)))
   }
 
-  function removeRole(skill: string) {
-    setRoles((items) => items.filter((role) => role.skill !== skill))
+  function removeRole(roleID: string) {
+    setRoles((items) => items.filter((role) => role.draftID !== roleID))
   }
 
   function cancelCreate() {
@@ -1778,7 +2099,7 @@ function OpencodeXSwarmCreate() {
   function selectAgentRole() {
     const list = availableRoles()
     if (list.length === 0) {
-      void DialogAlert.show(dialog, "Add Specialist", "All predefined roles are already assigned.")
+      void DialogAlert.show(dialog, "Add Specialist", "No predefined specialist roles are available.")
       return Promise.resolve(undefined)
     }
     return new Promise<SwarmRolePreset | undefined>((resolve) => {
@@ -1874,26 +2195,26 @@ function OpencodeXSwarmCreate() {
     setOrchestrator((role) => ({ ...role, name }))
   }
 
-  function selectModel(skill: string) {
-    const role = skill === "orchestrator" ? orchestrator() : roles().find((item) => item.skill === skill)
+  function selectModel(roleID: string) {
+    const role = roleID === "orchestrator" ? orchestrator() : roles().find((item) => item.draftID === roleID)
     if (!role) return
     dialog.replace(() => (
       <DialogModel
         current={role.providerID && role.modelID ? { providerID: role.providerID, modelID: role.modelID } : undefined}
-        onSelect={(model) => updateRole(skill, (item) => ({ ...item, providerID: model.providerID, modelID: model.modelID }))}
+        onSelect={(model) => updateRole(roleID, (item) => ({ ...item, providerID: model.providerID, modelID: model.modelID }))}
       />
     ))
   }
 
-  async function editInstructions(skill: string) {
-    const role = skill === "orchestrator" ? orchestrator() : roles().find((item) => item.skill === skill)
+  async function editInstructions(roleID: string) {
+    const role = roleID === "orchestrator" ? orchestrator() : roles().find((item) => item.draftID === roleID)
     if (!role) return
     const value = await DialogPrompt.show(dialog, `${role.name} instructions`, {
       placeholder: "Optional custom instructions",
       value: role.customInstructions,
       description: () => <text fg={theme.textMuted}>Default guidance comes from {role.skill}.md; this field appends extra instructions.</text>,
     })
-    if (value !== null) updateRole(skill, (item) => ({ ...item, customInstructions: value }))
+    if (value !== null) updateRole(roleID, (item) => ({ ...item, customInstructions: value }))
   }
 
   async function saveSwarm() {
@@ -2039,20 +2360,20 @@ function OpencodeXSwarmCreate() {
                     <SwarmRoleDraftCard
                       role={role}
                       selected={
-                        isSelected(`role:${role.skill}`) ||
-                        isSelected(`role-model:${role.skill}`) ||
-                        isSelected(`role-instructions:${role.skill}`) ||
-                        isSelected(`role-remove:${role.skill}`)
+                        isSelected(`role:${role.draftID}`) ||
+                        isSelected(`role-model:${role.draftID}`) ||
+                        isSelected(`role-instructions:${role.draftID}`) ||
+                        isSelected(`role-remove:${role.draftID}`)
                       }
-                      selectedModel={isSelected(`role-model:${role.skill}`)}
-                      selectedInstructions={isSelected(`role:${role.skill}`) || isSelected(`role-instructions:${role.skill}`)}
-                      selectedRemove={isSelected(`role-remove:${role.skill}`)}
+                      selectedModel={isSelected(`role-model:${role.draftID}`)}
+                      selectedInstructions={isSelected(`role:${role.draftID}`) || isSelected(`role-instructions:${role.draftID}`)}
+                      selectedRemove={isSelected(`role-remove:${role.draftID}`)}
                       providers={sync.data.provider}
                       modelRequired
-                      onSelect={() => void editInstructions(role.skill)}
-                      onModel={() => selectModel(role.skill)}
-                      onInstructions={() => void editInstructions(role.skill)}
-                      onRemove={() => removeRole(role.skill)}
+                      onSelect={() => void editInstructions(role.draftID)}
+                      onModel={() => selectModel(role.draftID)}
+                      onInstructions={() => void editInstructions(role.draftID)}
+                      onRemove={() => removeRole(role.draftID)}
                     />
                   )}
                 </For>
@@ -2099,6 +2420,7 @@ function OpencodeXSwarmCreate() {
 export function OpencodeXSwarms() {
   const sdk = useSDK()
   const sync = useSync()
+  const local = useLocal()
   const route = useRoute()
   const dialog = useDialog()
   const { theme } = useTheme()
@@ -2168,6 +2490,15 @@ export function OpencodeXSwarms() {
   const dashboardShortcut = useCommandShortcut("opencodex.swarm.route.dashboard")
   const refreshShortcut = useCommandShortcut("opencodex.swarm.route.refresh")
   const shortcutHint = createMemo(() => {
+    if (route.data.type === "opencodex-swarms" && route.data.swarmID) {
+      return [
+        "arrows/h/j/k/l move",
+        "enter open",
+        createSwarmShortcut() && `${createSwarmShortcut()} new task`,
+        dashboardShortcut() && `${dashboardShortcut()} dashboard`,
+        refreshShortcut() && `${refreshShortcut()} refresh`,
+      ].filter(Boolean).join("  ")
+    }
     const select = [previousSwarmShortcut(), nextSwarmShortcut()].filter(Boolean).join("/")
     return [
       select && `${select} select`,
@@ -2183,6 +2514,12 @@ export function OpencodeXSwarms() {
 
   createEffect(() => {
     if (route.data.type === "opencodex-swarms" && !route.data.swarmID) route.navigate({ type: "opencodex-dashboard" })
+  })
+
+  createEffect(() => {
+    if (route.data.type !== "opencodex-swarms" || !route.data.swarmID) return
+    promptRef.current?.blur()
+    promptRef.set(undefined)
   })
 
   createEffect(() => {
@@ -2215,7 +2552,11 @@ export function OpencodeXSwarms() {
     const updated = await sdk
       .request<OpencodeXSwarm>(`/experimental/opencodex/swarm/${swarm.id}/task`, {
         method: "POST",
-        body: JSON.stringify({ prompt: runPrompt }),
+        body: JSON.stringify({
+          prompt: runPrompt,
+          agent: local.agent.current()?.name,
+          variant: local.model.variant.current(),
+        }),
       })
       .catch((error: Error) => {
         void DialogAlert.show(dialog, "Assign Task", error.message)
@@ -2223,15 +2564,75 @@ export function OpencodeXSwarms() {
     if (!updated) return false
     setRefresh((value) => value + 1)
     void refetch()
+    refreshOpencodeXSidebar()
     route.navigate({ type: "opencodex-swarms", swarmID: updated.id })
     return true
   }
 
+  const detailItems = createMemo(() => ["new", ...currentRuns().map((run) => run.id)])
+  const detailNavigationRows = createMemo(() => {
+    const contentWidth = Math.max(1, dimensions().width - 4)
+    const columns = Math.max(1, Math.floor((contentWidth + 1) / (cardWidth() + 1)))
+    const rows: string[][] = [["new"]]
+    const runs = currentRuns().map((run) => run.id)
+    for (let index = 0; index < runs.length; index += columns) rows.push(runs.slice(index, index + columns))
+    return rows.filter((row) => row.length > 0)
+  })
+  const selectDetailByID = (id: string) => {
+    if (detailItems().includes(id)) setSelectedRunID(id)
+  }
+  const selectedDetailPosition = () => {
+    const id = selectedRunID()
+    for (const [row, ids] of detailNavigationRows().entries()) {
+      const column = ids.indexOf(id)
+      if (column >= 0) return { row, column }
+    }
+  }
+  const moveDetailLinear = (offset: -1 | 1) => {
+    const items = detailItems()
+    if (items.length === 0) return
+    const index = Math.max(0, items.indexOf(selectedRunID()))
+    setSelectedRunID(items[(index + offset + items.length) % items.length] ?? "new")
+  }
+  const moveDetailHorizontal = (offset: -1 | 1) => {
+    const rows = detailNavigationRows()
+    const position = selectedDetailPosition()
+    if (!position || rows.length === 0) {
+      moveDetailLinear(offset)
+      return
+    }
+    const current = rows[position.row]
+    if (!current) return
+    if (offset < 0 && position.column > 0) {
+      selectDetailByID(current[position.column - 1]!)
+      return
+    }
+    if (offset > 0 && position.column < current.length - 1) {
+      selectDetailByID(current[position.column + 1]!)
+      return
+    }
+
+    const row = (position.row + offset + rows.length) % rows.length
+    const target = rows[row]
+    if (!target) return
+    selectDetailByID(offset < 0 ? target[target.length - 1]! : target[0]!)
+  }
+  const moveDetailVertical = (offset: -1 | 1) => {
+    const rows = detailNavigationRows()
+    const position = selectedDetailPosition()
+    if (!position || rows.length === 0) {
+      moveDetailLinear(offset)
+      return
+    }
+    const row = (position.row + offset + rows.length) % rows.length
+    const target = rows[row]
+    if (!target) return
+    selectDetailByID(target[Math.min(position.column, target.length - 1)]!)
+  }
+
   function select(offset: number) {
     if (route.data.type === "opencodex-swarms" && route.data.swarmID) {
-      const options = ["new", ...currentRuns().map((run) => run.id)]
-      const index = Math.max(0, options.indexOf(selectedRunID()))
-      setSelectedRunID(options[Math.min(Math.max(index + offset, 0), options.length - 1)] ?? "new")
+      moveDetailVertical(offset < 0 ? -1 : 1)
       return
     }
     if (visibleList().length === 0) return
@@ -2317,7 +2718,21 @@ export function OpencodeXSwarms() {
     if (!removed) return
     setRefresh((value) => value + 1)
     void refetch()
+    refreshOpencodeXSidebar()
     back()
+  }
+
+  async function cancelSwarm(swarm: OpencodeXSwarm | undefined) {
+    if (!swarm || !isActiveSwarm(displaySwarmStatus(swarm))) return
+    const cancelled = await sdk
+      .request<OpencodeXSwarm>(`/experimental/opencodex/swarm/${swarm.id}/cancel`, { method: "POST" })
+      .catch((error: Error) => {
+        void DialogAlert.show(dialog, "Cancel Swarm", error.message)
+      })
+    if (!cancelled) return
+    setRefresh((value) => value + 1)
+    void refetch()
+    refreshOpencodeXSidebar()
   }
 
   useBindings(() => ({
@@ -2325,15 +2740,39 @@ export function OpencodeXSwarms() {
     commands: [
       {
         name: "opencodex.swarm.route.up",
-        title: "Select previous swarm",
+        title: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select detail item above" : "Select previous swarm",
         category: "OpencodeX",
         run: () => select(-1),
       },
       {
         name: "opencodex.swarm.route.down",
-        title: "Select next swarm",
+        title: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select detail item below" : "Select next swarm",
         category: "OpencodeX",
         run: () => select(1),
+      },
+      {
+        name: "opencodex.swarm.route.left",
+        title: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select detail item left" : "Select previous swarm",
+        category: "OpencodeX",
+        run: () => {
+          if (route.data.type === "opencodex-swarms" && route.data.swarmID) {
+            moveDetailHorizontal(-1)
+            return
+          }
+          select(-1)
+        },
+      },
+      {
+        name: "opencodex.swarm.route.right",
+        title: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select detail item right" : "Select next swarm",
+        category: "OpencodeX",
+        run: () => {
+          if (route.data.type === "opencodex-swarms" && route.data.swarmID) {
+            moveDetailHorizontal(1)
+            return
+          }
+          select(1)
+        },
       },
       {
         name: "opencodex.swarm.route.open",
@@ -2378,11 +2817,41 @@ export function OpencodeXSwarms() {
         category: "OpencodeX",
         run: () => setRefresh((value) => value + 1),
       },
+      {
+        name: "opencodex.swarm.route.cancel",
+        title: "Cancel selected swarm",
+        category: "OpencodeX",
+        run: () => void cancelSwarm(current()),
+      },
     ],
     bindings: [
-      ...tuiConfig.keybinds.gather("opencodex.swarm.route", swarmRouteBindingCommands),
-      { key: "up,k", desc: "Select previous", group: "OpencodeX", cmd: () => select(-1) },
-      { key: "down,j", desc: "Select next", group: "OpencodeX", cmd: () => select(1) },
+      ...tuiConfig.keybinds.gather("opencodex.swarm.route", swarmNavigationRouteBindingCommands),
+      { key: "up,k", desc: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select above" : "Select previous", group: "OpencodeX", cmd: () => select(-1) },
+      { key: "down,j", desc: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select below" : "Select next", group: "OpencodeX", cmd: () => select(1) },
+      {
+        key: "left,h",
+        desc: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select left" : "Select previous",
+        group: "OpencodeX",
+        cmd: () => {
+          if (route.data.type === "opencodex-swarms" && route.data.swarmID) {
+            moveDetailHorizontal(-1)
+            return
+          }
+          select(-1)
+        },
+      },
+      {
+        key: "right,l",
+        desc: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Select right" : "Select next",
+        group: "OpencodeX",
+        cmd: () => {
+          if (route.data.type === "opencodex-swarms" && route.data.swarmID) {
+            moveDetailHorizontal(1)
+            return
+          }
+          select(1)
+        },
+      },
       {
         key: "return,space",
         desc: route.data.type === "opencodex-swarms" && route.data.swarmID ? "Open selected task" : "Open selected swarm",
@@ -2496,6 +2965,11 @@ export function OpencodeXSwarms() {
                           >
                             edit
                           </text>
+                          <Show when={isActiveSwarm(displaySwarmStatus(swarm()))}>
+                            <text fg={theme.warning} onMouseUp={() => void cancelSwarm(swarm())}>
+                              cancel
+                            </text>
+                          </Show>
                           <text fg={theme.error} onMouseUp={() => void removeSwarm(swarm())}>
                             delete
                           </text>
@@ -2534,7 +3008,7 @@ export function OpencodeXSwarms() {
               title="Tasks"
               count={currentRuns().length}
               collapsible
-              action={{ label: "+ New Task", onSelect: () => newTask(current()) }}
+              action={{ label: "+ New Task", selected: selectedRunID() === "new", onSelect: () => newTask(current()) }}
             >
               <Show when={current()} fallback={<EmptyRow text="Swarm not found." />}>
                 <Show when={currentRuns().length > 0} fallback={<EmptyRow text="No tasks assigned yet." />}>

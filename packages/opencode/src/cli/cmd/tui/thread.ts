@@ -9,8 +9,6 @@ import { errorMessage } from "@/util/error"
 import { withTimeout } from "@/util/timeout"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
-import type { GlobalEvent } from "@opencode-ai/sdk/v2"
-import type { EventSource } from "./context/sdk"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { writeHeapSnapshot } from "v8"
 import { TuiConfig } from "./config/tui"
@@ -21,39 +19,10 @@ import {
   sanitizedProcessEnv,
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
+import { coordinatorHeaders, resolveLocalCoordinator, startCoordinatorClientLease } from "./coordinator-registry"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
-}
-
-type RpcClient = ReturnType<typeof Rpc.client<typeof rpc>>
-
-function createWorkerFetch(client: RpcClient): typeof fetch {
-  const fn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init)
-    const body = request.body ? await request.text() : undefined
-    const result = await client.call("fetch", {
-      url: request.url,
-      method: request.method,
-      headers: Object.fromEntries(request.headers.entries()),
-      body,
-    })
-    return new Response(result.body, {
-      status: result.status,
-      headers: result.headers,
-    })
-  }
-  return fn as typeof fetch
-}
-
-function createEventSource(client: RpcClient): EventSource {
-  return {
-    subscribe: async (handler) => {
-      return client.on<GlobalEvent>("global.event", (e) => {
-        handler(e)
-      })
-    },
-  }
 }
 
 async function target() {
@@ -127,10 +96,9 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      // Resolve relative --project paths from PWD, then use the real cwd after
-      // chdir so the thread and worker share the same directory key.
+      // Resolve relative --project paths from PWD, then use the real cwd for
+      // local coordinator discovery and API directory routing.
       const next = resolveThreadDirectory(args.project)
-      const file = await target()
       try {
         process.chdir(next)
       } catch {
@@ -138,54 +106,6 @@ export const TuiThreadCommand = cmd({
         return
       }
       const cwd = Filesystem.resolve(process.cwd())
-      const env = sanitizedProcessEnv({
-        [OPENCODE_PROCESS_ROLE]: "worker",
-        [OPENCODE_RUN_ID]: ensureRunID(),
-      })
-
-      const worker = new Worker(file, {
-        env,
-      })
-      worker.onerror = (e) => {
-        Log.Default.error("thread error", {
-          message: e.message,
-          filename: e.filename,
-          lineno: e.lineno,
-          colno: e.colno,
-          error: e.error,
-        })
-      }
-
-      const client = Rpc.client<typeof rpc>(worker)
-      const error = (e: unknown) => {
-        Log.Default.error("process error", { error: errorMessage(e) })
-      }
-      const reload = () => {
-        client.call("reload", undefined).catch((err) => {
-          Log.Default.warn("worker reload failed", {
-            error: errorMessage(err),
-          })
-        })
-      }
-      process.on("uncaughtException", error)
-      process.on("unhandledRejection", error)
-      process.on("SIGUSR2", reload)
-
-      let stopped = false
-      const stop = async () => {
-        if (stopped) return
-        stopped = true
-        process.off("uncaughtException", error)
-        process.off("unhandledRejection", error)
-        process.off("SIGUSR2", reload)
-        await withTimeout(client.call("shutdown", undefined), 5000).catch((error) => {
-          Log.Default.warn("worker shutdown failed", {
-            error: errorMessage(error),
-          })
-        })
-        worker.terminate()
-      }
-
       const prompt = await input(args.prompt)
       const config = await TuiConfig.get()
 
@@ -198,17 +118,86 @@ export const TuiThreadCommand = cmd({
         network.port !== 0 ||
         network.hostname !== "127.0.0.1"
 
-      const transport = external
-        ? {
-            url: (await client.call("server", network)).url,
-            fetch: undefined,
-            events: undefined,
-          }
-        : {
-            url: "http://opencode.internal",
-            fetch: createWorkerFetch(client),
-            events: createEventSource(client),
-          }
+      let stop = async () => {}
+      let onSnapshot = async () => [writeHeapSnapshot("tui.heapsnapshot")]
+
+      const transport: {
+        url: string
+        fetch?: typeof fetch
+        headers?: RequestInit["headers"]
+      } = external
+        ? await (async () => {
+            const env = sanitizedProcessEnv({
+              [OPENCODE_PROCESS_ROLE]: "worker",
+              [OPENCODE_RUN_ID]: ensureRunID(),
+            })
+
+            const file = await target()
+            const worker = new Worker(file, { env })
+            worker.onerror = (e) => {
+              Log.Default.error("thread error", {
+                message: e.message,
+                filename: e.filename,
+                lineno: e.lineno,
+                colno: e.colno,
+                error: e.error,
+              })
+            }
+
+            const client = Rpc.client<typeof rpc>(worker)
+            const error = (e: unknown) => {
+              Log.Default.error("process error", { error: errorMessage(e) })
+            }
+            const reload = () => {
+              client.call("reload", undefined).catch((err) => {
+                Log.Default.warn("worker reload failed", {
+                  error: errorMessage(err),
+                })
+              })
+            }
+            process.on("uncaughtException", error)
+            process.on("unhandledRejection", error)
+            process.on("SIGUSR2", reload)
+
+            let stopped = false
+            stop = async () => {
+              if (stopped) return
+              stopped = true
+              process.off("uncaughtException", error)
+              process.off("unhandledRejection", error)
+              process.off("SIGUSR2", reload)
+              await withTimeout(client.call("shutdown", undefined), 5000).catch((error) => {
+                Log.Default.warn("worker shutdown failed", {
+                  error: errorMessage(error),
+                })
+              })
+              worker.terminate()
+            }
+            onSnapshot = async () => {
+              const tui = writeHeapSnapshot("tui.heapsnapshot")
+              const server = await client.call("snapshot", undefined)
+              return [tui, server]
+            }
+
+            setTimeout(() => {
+              client.call("checkUpgrade", { directory: cwd }).catch(() => {})
+            }, 1000).unref?.()
+
+            return {
+              url: (await client.call("server", network)).url,
+            }
+          })()
+        : await (async () => {
+            const coordinator = await resolveLocalCoordinator(cwd)
+            const lease = startCoordinatorClientLease(coordinator.key)
+            stop = async () => {
+              lease.dispose()
+            }
+            return {
+              url: coordinator.url,
+              headers: coordinatorHeaders(coordinator),
+            }
+          })()
 
       try {
         await validateSession({
@@ -216,16 +205,14 @@ export const TuiThreadCommand = cmd({
           sessionID: args.session,
           directory: cwd,
           fetch: transport.fetch,
+          headers: transport.headers,
         })
       } catch (error) {
         UI.error(errorMessage(error))
         process.exitCode = 1
+        await stop()
         return
       }
-
-      setTimeout(() => {
-        client.call("checkUpgrade", { directory: cwd }).catch(() => {})
-      }, 1000).unref?.()
 
       try {
         const { createTuiRenderer, tui } = await import("./app")
@@ -233,15 +220,11 @@ export const TuiThreadCommand = cmd({
         const handle = tui({
           url: transport.url,
           renderer,
-          async onSnapshot() {
-            const tui = writeHeapSnapshot("tui.heapsnapshot")
-            const server = await client.call("snapshot", undefined)
-            return [tui, server]
-          },
+          onSnapshot,
           config,
           directory: cwd,
           fetch: transport.fetch,
-          events: transport.events,
+          headers: transport.headers,
           args: {
             continue: args.continue,
             sessionID: args.session,

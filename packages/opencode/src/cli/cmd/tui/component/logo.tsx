@@ -887,7 +887,13 @@ export function GoLogo() {
   return <Logo shape={go} ink={base} idle />
 }
 
-export function LogoShimmerText(props: { text: string; ink?: RGBA; attributes?: TextAttributes }) {
+export function LogoShimmerText(props: {
+  text: string
+  ink?: RGBA
+  attributes?: TextAttributes
+  wrapMode?: "none" | "word" | "char"
+  truncate?: boolean
+}) {
   const { theme } = useTheme()
   const [now, setNow] = createSignal(0)
   let timer: ReturnType<typeof setInterval> | undefined
@@ -936,7 +942,7 @@ export function LogoShimmerText(props: { text: string; ink?: RGBA; attributes?: 
   })
 
   return (
-    <text attributes={props.attributes}>
+    <text attributes={props.attributes} wrapMode={props.wrapMode} truncate={props.truncate}>
       <For each={Array.from(props.text)}>
         {(char, index) => {
           const color = createMemo(() => {

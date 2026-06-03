@@ -92,7 +92,9 @@ async function selectDashboardItem(items: DashboardItem[]) {
   const render = () => {
     stdout.write("\x1b[2J\x1b[H")
     stdout.write("OpencodeX\n")
-    stdout.write("\x1b[2mPersistent conversation dashboard. Enter opens a conversation; n starts a new one; q exits.\x1b[0m\n\n")
+    stdout.write(
+      "\x1b[2mPersistent conversation dashboard. Arrow keys move; Enter opens a conversation; n starts a new one; q exits.\x1b[0m\n\n",
+    )
 
     for (const [index, item] of items.entries()) {
       const active = index === selected
@@ -119,28 +121,57 @@ async function selectDashboardItem(items: DashboardItem[]) {
       resolve(item)
     }
 
+    const move = (delta: number) => {
+      const next = Math.max(0, Math.min(items.length - 1, selected + delta))
+      if (next === selected) return false
+      selected = next
+      return true
+    }
+
     const onData = (chunk: string) => {
-      if (chunk === "\u0003" || chunk === "q" || chunk === "\x1b") {
+      let shouldRender = false
+
+      for (let index = 0; index < chunk.length; index++) {
+        const key = chunk[index]
+        if (key === "\u0003" || key === "q") {
+          cleanup()
+          return
+        }
+        if (key === "\r" || key === "\n") {
+          cleanup(items[selected])
+          return
+        }
+        if (key === "n") {
+          cleanup({ type: "new" })
+          return
+        }
+        if (key === "k" || key === "h") {
+          shouldRender = move(-1) || shouldRender
+          continue
+        }
+        if (key === "j" || key === "l") {
+          shouldRender = move(1) || shouldRender
+          continue
+        }
+        if (key !== "\x1b") continue
+
+        const arrow = chunk.slice(index, index + 3)
+        if (arrow === "\x1b[A" || arrow === "\x1b[D") {
+          shouldRender = move(-1) || shouldRender
+          index += 2
+          continue
+        }
+        if (arrow === "\x1b[B" || arrow === "\x1b[C") {
+          shouldRender = move(1) || shouldRender
+          index += 2
+          continue
+        }
+
         cleanup()
         return
       }
-      if (chunk === "\r" || chunk === "\n") {
-        cleanup(items[selected])
-        return
-      }
-      if (chunk === "n") {
-        cleanup({ type: "new" })
-        return
-      }
-      if (chunk === "\x1b[A" || chunk === "k") {
-        selected = Math.max(0, selected - 1)
-        render()
-        return
-      }
-      if (chunk === "\x1b[B" || chunk === "j") {
-        selected = Math.min(items.length - 1, selected + 1)
-        render()
-      }
+
+      if (shouldRender) render()
     }
 
     stdin.on("data", onData)
