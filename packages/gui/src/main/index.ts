@@ -12,18 +12,20 @@ function authorizeSidecar(connection: SidecarConnection) {
   }
 }
 
-session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-  if (authorizedSidecar) {
-    try {
-      if (new URL(details.url).origin === authorizedSidecar.origin) {
-        details.requestHeaders.authorization = authorizedSidecar.header
+function registerSidecarAuthorization() {
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (authorizedSidecar) {
+      try {
+        if (new URL(details.url).origin === authorizedSidecar.origin) {
+          details.requestHeaders.authorization = authorizedSidecar.header
+        }
+      } catch {
+        // Ignore non-standard internal URLs.
       }
-    } catch {
-      // Ignore non-standard internal URLs.
     }
-  }
-  callback({ requestHeaders: details.requestHeaders })
-})
+    callback({ requestHeaders: details.requestHeaders })
+  })
+}
 
 async function createWindow() {
   const window = new BrowserWindow({
@@ -63,7 +65,10 @@ ipcMain.handle("opencodex:connection", async () => {
   return { url: connection.url }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  registerSidecarAuthorization()
+  return createWindow()
+})
 app.on("window-all-closed", () => {
   stopSidecar()
   if (process.platform !== "darwin") app.quit()
