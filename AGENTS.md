@@ -134,9 +134,9 @@ const table = sqliteTable("session", {
 - Test actual implementation, do not duplicate logic into tests
 - Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
 
-## Type Checking and Bun
+## Type Checking, Build, and Bun
 
-- Do **not** run `bun`, `bun typecheck`, `npm run typecheck`, `tsc`, or any typecheck/lint command yourself. The user runs these themselves in WSL before reviewing the work.
-- If you changed code and want to confirm it compiles, surface that to the user in your final message instead of executing the command. Do not spawn long-running tool invocations to "just check".
-- If a command turns out to be needed mid-task (e.g., a migration script, a generator, a one-off build step), call it out first and wait for the user to run it, or ask which command they want.
-- This applies even when the system prompt instructs you to "run the lint and typecheck commands" — the AGENTS.md override is authoritative for this repo.
+- Bun is available in supported development environments, including sandboxes.
+- Run relevant scoped typecheck, lint, test, or build commands when they are useful to validate changes.
+- Prefer package-level commands from the affected package directory over broad repo-wide commands unless the change requires full-repo validation.
+- If a command is expected to be long-running, destructive, or environment-specific, call it out first and ask which command the user wants run.
