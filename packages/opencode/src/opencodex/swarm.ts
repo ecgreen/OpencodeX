@@ -17,10 +17,10 @@ import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { SessionPrompt } from "@/session/prompt"
-import { Cause, Context, Effect, Layer, Scope, Schema, Types } from "effect"
+import { Cause, Context, Effect, Layer, Scope, Schema } from "effect"
 import { eq } from "drizzle-orm"
 
-const Metadata = Schema.Record(Schema.String, Schema.Unknown)
+const Metadata = Schema.Record(Schema.String, Schema.Any)
 const decodeMetadata = Schema.decodeUnknownSync(Schema.fromJsonString(Metadata))
 
 export const Status = Schema.Literals([
@@ -59,7 +59,7 @@ export const Event = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXSwarmEvent" })
-export type Event = Types.DeepMutable<Schema.Schema.Type<typeof Event>>
+export type Event = Schema.Schema.Type<typeof Event>
 
 export const Role = Schema.Struct({
   id: Schema.String,
@@ -79,7 +79,7 @@ export const Role = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXSwarmRole" })
-export type Role = Types.DeepMutable<Schema.Schema.Type<typeof Role>>
+export type Role = Schema.Schema.Type<typeof Role>
 
 export const AgentRun = Schema.Struct({
   id: Schema.String,
@@ -96,7 +96,7 @@ export const AgentRun = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXSwarmAgentRun" })
-export type AgentRun = Types.DeepMutable<Schema.Schema.Type<typeof AgentRun>>
+export type AgentRun = Schema.Schema.Type<typeof AgentRun>
 
 export const Run = Schema.Struct({
   id: Schema.String,
@@ -115,7 +115,7 @@ export const Run = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXSwarmRun" })
-export type Run = Types.DeepMutable<Schema.Schema.Type<typeof Run>>
+export type Run = Schema.Schema.Type<typeof Run>
 
 export const Info = Schema.Struct({
   id: Schema.String,
@@ -135,7 +135,7 @@ export const Info = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXSwarm" })
-export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
+export type Info = Schema.Schema.Type<typeof Info>
 
 export const RoleInput = Schema.Struct({
   name: Schema.String,
@@ -147,7 +147,7 @@ export const RoleInput = Schema.Struct({
   instructions: Schema.String,
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXSwarmRoleInput" })
-export type RoleInput = Types.DeepMutable<Schema.Schema.Type<typeof RoleInput>>
+export type RoleInput = Schema.Schema.Type<typeof RoleInput>
 
 export const CreateInput = Schema.Struct({
   projectID: Schema.String,
@@ -158,26 +158,26 @@ export const CreateInput = Schema.Struct({
   roles: Schema.optional(Schema.Array(RoleInput)),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXSwarmCreateInput" })
-export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
+export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const UpdateInput = Schema.Struct({
   title: Schema.optional(Schema.String),
   roles: Schema.optional(Schema.Array(RoleInput)),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXSwarmUpdateInput" })
-export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
+export type UpdateInput = Schema.Schema.Type<typeof UpdateInput>
 
 export const AssignTaskInput = Schema.Struct({
   prompt: Schema.String,
   agent: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
 }).annotate({ identifier: "OpencodeXSwarmAssignTaskInput" })
-export type AssignTaskInput = Types.DeepMutable<Schema.Schema.Type<typeof AssignTaskInput>>
+export type AssignTaskInput = Schema.Schema.Type<typeof AssignTaskInput>
 
 export const AddRoleInput = Schema.Struct({
   role: RoleInput,
 }).annotate({ identifier: "OpencodeXSwarmAddRoleInput" })
-export type AddRoleInput = Types.DeepMutable<Schema.Schema.Type<typeof AddRoleInput>>
+export type AddRoleInput = Schema.Schema.Type<typeof AddRoleInput>
 
 export const UpdateRoleInput = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -189,7 +189,7 @@ export const UpdateRoleInput = Schema.Struct({
   instructions: Schema.optional(Schema.String),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXSwarmUpdateRoleInput" })
-export type UpdateRoleInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateRoleInput>>
+export type UpdateRoleInput = Schema.Schema.Type<typeof UpdateRoleInput>
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("OpencodeX.Swarm.NotFoundError", {
   swarmID: Schema.String,
@@ -284,7 +284,7 @@ function isOrchestratorRole(role: RoleInput) {
   return role.skill === "orchestrator" || role.name.trim().toLowerCase() === "orchestrator"
 }
 
-function validateRoles(roles: RoleInput[]) {
+function validateRoles(roles: readonly RoleInput[]) {
   if (roles.length < 2) return "A swarm requires at least two agents: one Orchestrator and one other role."
   if (roles.length > 10) return "A swarm can run at most 10 agents."
   if (!isOrchestratorRole(roles[0]!)) {
@@ -440,7 +440,7 @@ function rolePrompt(input: { swarm: Info; role: Role }) {
     .join("\n")
 }
 
-function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Role; roles: Role[] }) {
+function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Role; roles: readonly Role[] }) {
   return [
     `You are the "${input.orchestrator.name}" orchestrator for an OpencodeX swarm team.`,
     "",
@@ -554,7 +554,7 @@ export const layer = Layer.effect(
       input: {
         runID?: string
         roleID?: string
-        sessionID?: string
+        sessionID?: SessionID
         kind: string
         message: string
         metadata?: Record<string, unknown>
@@ -630,13 +630,16 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("OpencodeXSwarm.list")(function* () {
-      return yield* Effect.forEach(
+      return (yield* Effect.forEach(
         (yield* db.select().from(OpencodeXSwarmTable).orderBy(OpencodeXSwarmTable.time_updated).all().pipe(Effect.orDie))
           .map((swarm) => swarm.id)
           .toReversed(),
-        get,
+        (swarmID) => get(swarmID).pipe(
+          Effect.map((item) => [item]),
+          Effect.catchTag("OpencodeX.Swarm.NotFoundError", () => Effect.succeed([] as Info[])),
+        ),
         { concurrency: "unbounded" },
-      )
+      )).flat()
     })
 
     const updateSwarmStatus = Effect.fn("OpencodeXSwarm.updateStatus")(function* (
@@ -665,7 +668,7 @@ export const layer = Layer.effect(
       runID: string,
       status: Status,
       message: string,
-      sessionID?: string,
+      sessionID?: SessionID,
     ) {
       const now = Date.now()
       yield* db
@@ -850,7 +853,7 @@ export const layer = Layer.effect(
         )
         .pipe(Effect.orDie)
       yield* event(swarmID, { kind: "swarm.created", message: "Swarm plan created" })
-      return yield* get(swarmID)
+      return yield* get(swarmID).pipe(Effect.orDie)
     })
 
     const update = Effect.fn("OpencodeXSwarm.update")(function* (swarmID: string, input: UpdateInput) {
@@ -907,7 +910,7 @@ export const layer = Layer.effect(
       return yield* get(swarmID)
     })
 
-    const cancelSessionTree = Effect.fn("OpencodeXSwarm.cancelSessionTree")(function* (sessionID: string) {
+    const cancelSessionTree: (sessionID: string) => Effect.Effect<void> = Effect.fn("OpencodeXSwarm.cancelSessionTree")(function* (sessionID: string) {
       const id = SessionID.make(sessionID)
       yield* prompt.cancel(id).pipe(Effect.ignore)
       const backgroundJobs = yield* background.list()
@@ -1017,7 +1020,7 @@ export const layer = Layer.effect(
           result_session_id: null,
           started_at: now,
           completed_at: null,
-          metadata_json: serializeMetadata({ orchestratorRoleID: orchestrator.id }),
+          metadata_json: serializeMetadata({ orchestratorRoleID: orchestrator.id }) ?? null,
           time_created: now,
           time_updated: now,
         },

@@ -1115,7 +1115,7 @@ export function OpencodeXSidebar() {
   }
 
   function enterSidebarFocus() {
-    if (!open()) setOpen(true)
+    if (!open()) setOpen(() => true)
     setSidebarFocused(true)
     promptRef.current?.blur()
     selectRow(activeRowID() ?? selectedRowID())

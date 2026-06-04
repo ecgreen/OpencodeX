@@ -74,7 +74,7 @@ export function createProject(db: DatabaseService, input: { id: string; projectI
     .pipe(Effect.orDie)
 }
 
-export function reorderProjects(db: DatabaseService, projectIDs: string[]) {
+export function reorderProjects(db: DatabaseService, projectIDs: readonly string[]) {
   return db
     .transaction(
       (tx) =>
@@ -133,7 +133,7 @@ export function listFoldersForOpencodeProjects(db: DatabaseService, projectIDs: 
 
 export function replaceFolders(
   db: DatabaseService,
-  input: { opencodexProjectID: string; projectID: ProjectV2.ID; folders: string[] },
+  input: { opencodexProjectID: string; projectID: ProjectV2.ID; folders: readonly string[] },
 ) {
   const now = Date.now()
   const paths = [...new Set(input.folders.map(normalizeFolderPath))]

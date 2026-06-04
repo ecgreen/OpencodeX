@@ -36,6 +36,7 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { OpencodeXProject } from "@/opencodex/project"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -68,8 +69,11 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
+    )
+    .pipe(
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
+      Layer.provide(Layer.mock(OpencodeXProject.Service)({})),
     )
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 

@@ -44,6 +44,7 @@ export const OpencodeXProjectSessionTable = sqliteTable(
   "opencodex_project_session",
   {
     session_id: text()
+      .$type<SessionSchema.ID>()
       .primaryKey()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     opencodex_project_id: text()

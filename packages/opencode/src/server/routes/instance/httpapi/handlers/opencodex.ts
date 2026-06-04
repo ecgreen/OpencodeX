@@ -254,8 +254,9 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     const createView = Effect.fn("OpencodeXHttpApi.createView")(function* (ctx: {
       payload: OpencodeXView.CreateInput
     }) {
-      return yield* mapViewErrors(
-        views.create(ctx.payload).pipe(Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." })))),
+      return yield* views.create(ctx.payload).pipe(
+        Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." }))),
+        Effect.catchTag("OpencodeX.View.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
       )
     })
 

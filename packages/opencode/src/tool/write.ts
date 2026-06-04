@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import * as path from "path"
+import { stat } from "fs/promises"
 import { Effect } from "effect"
 import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
@@ -44,6 +45,10 @@ export const WriteTool = Tool.define(
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
           const exists = yield* fs.existsSafe(filepath)
+          if (exists) {
+            const info = yield* Effect.promise(() => stat(filepath))
+            if ((info.mode & 0o222) === 0) throw new Error(`File is not writable: ${filepath}`)
+          }
           const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "" }
           const next = Bom.split(params.content)
           const desiredBom = source.bom || next.bom

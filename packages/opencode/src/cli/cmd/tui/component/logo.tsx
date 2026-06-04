@@ -890,7 +890,7 @@ export function GoLogo() {
 export function LogoShimmerText(props: {
   text: string
   ink?: RGBA
-  attributes?: TextAttributes
+  attributes?: typeof TextAttributes.BOLD
   wrapMode?: "none" | "word" | "char"
   truncate?: boolean
 }) {

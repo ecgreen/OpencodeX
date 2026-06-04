@@ -82,6 +82,9 @@ delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
 // Use in-memory sqlite
 process.env["OPENCODE_DB"] = ":memory:"
 
+const { ensureSolidTransformPlugin } = await import("@opentui/solid/bun-plugin")
+ensureSolidTransformPlugin()
+
 // Now safe to import from src/
 const { Log } = await import("@opencode-ai/core/util/log")
 const { initProjectors } = await import("../src/server/projectors")

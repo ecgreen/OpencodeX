@@ -1,0 +1,40 @@
+diff --git a/package.json b/package.json
+index 3c962b3..8ee6b01 100644
+--- a/package.json
++++ b/package.json
+@@ -38,8 +38,14 @@
+       "import": "./components.js",
+       "require": "./components.js"
+     },
+-    "./jsx-runtime": "./jsx-runtime.d.ts",
+-    "./jsx-dev-runtime": "./jsx-runtime.d.ts"
++    "./jsx-runtime": {
++      "types": "./jsx-runtime.d.ts",
++      "import": "./jsx-runtime.js"
++    },
++    "./jsx-dev-runtime": {
++      "types": "./jsx-runtime.d.ts",
++      "import": "./jsx-runtime.js"
++    }
+   },
+   "dependencies": {
+     "@babel/core": "7.28.0",
+diff --git a/jsx-runtime.js b/jsx-runtime.js
+new file mode 100644
+index 0000000..f5d3f14
+--- /dev/null
++++ b/jsx-runtime.js
+@@ -0,0 +1,13 @@
++import { createComponent, createElement, spread } from "./index.js"
++
++function jsx(type, props) {
++  if (typeof type === "function") return createComponent(type, props ?? {})
++  const element = createElement(type)
++  spread(element, props ?? {}, false)
++  return element
++}
++
++export { jsx }
++export const jsxs = jsx
++export const jsxDEV = jsx
++export const Fragment = (props) => props.children

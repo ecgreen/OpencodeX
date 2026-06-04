@@ -244,7 +244,7 @@ function promptHistoryAgentSource(source: NonNullable<Extract<Part, { type: "age
 
 function promptHistoryEntry(parts: Part[]): PromptInfo | undefined {
   const input = parts
-    .filter((part) => part.type === "text" && !part.synthetic && !part.ignored)
+    .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && !part.synthetic && !part.ignored)
     .map((part) => part.text)
     .join("\n")
   const promptParts = parts

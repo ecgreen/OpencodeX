@@ -1,10 +1,11 @@
 import { OpencodeXJobTable } from "@opencode-ai/core/opencodex/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { Identifier } from "@opencode-ai/core/util/identifier"
-import { Context, Effect, Layer, Schema, Types } from "effect"
+import { SessionID } from "@/session/schema"
+import { Context, Effect, Layer, Schema } from "effect"
 import { eq } from "drizzle-orm"
 
-const Metadata = Schema.Record(Schema.String, Schema.Unknown)
+const Metadata = Schema.Record(Schema.String, Schema.Any)
 const decodeMetadata = Schema.decodeUnknownSync(Schema.fromJsonString(Metadata))
 
 export const Status = Schema.Literals([
@@ -30,7 +31,7 @@ export const Info = Schema.Struct({
   status: Status,
   source: Source,
   projectID: Schema.optional(Schema.String),
-  sessionID: Schema.optional(Schema.String),
+  sessionID: Schema.optional(SessionID),
   parentJobID: Schema.optional(Schema.String),
   swarmID: Schema.optional(Schema.String),
   roleID: Schema.optional(Schema.String),
@@ -44,7 +45,7 @@ export const Info = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXJob" })
-export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
+export type Info = Schema.Schema.Type<typeof Info>
 
 export const CreateInput = Schema.Struct({
   id: Schema.optional(Schema.String),
@@ -53,7 +54,7 @@ export const CreateInput = Schema.Struct({
   status: Schema.optional(Status),
   source: Schema.optional(Source),
   projectID: Schema.optional(Schema.String),
-  sessionID: Schema.optional(Schema.String),
+  sessionID: Schema.optional(SessionID),
   parentJobID: Schema.optional(Schema.String),
   swarmID: Schema.optional(Schema.String),
   roleID: Schema.optional(Schema.String),
@@ -64,19 +65,19 @@ export const CreateInput = Schema.Struct({
   statusReason: Schema.optional(Schema.String),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXJobCreateInput" })
-export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
+export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const UpdateInput = Schema.Struct({
   id: Schema.String,
   title: Schema.optional(Schema.String),
   status: Schema.optional(Status),
-  sessionID: Schema.optional(Schema.String),
+  sessionID: Schema.optional(SessionID),
   startedAt: Schema.optional(Schema.Number),
   completedAt: Schema.optional(Schema.Number),
   statusReason: Schema.optional(Schema.String),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXJobUpdateInput" })
-export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
+export type UpdateInput = Schema.Schema.Type<typeof UpdateInput>
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("OpencodeX.Job.NotFoundError", {
   jobID: Schema.String,

@@ -39,7 +39,7 @@ export function Home() {
 
   onMount(() => {
     editor.clearSelection()
-    setOxSidebarOpen(true) // Ensure sidebar is always open by default on dashboard
+    setOxSidebarOpen(() => true) // Ensure sidebar is always open by default on dashboard
   })
 
   const bind = (r: PromptRef | undefined) => {

@@ -817,7 +817,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         suggested: true,
         category: "OpencodeX",
         run: () => {
-          setOxSidebarOpen(true)
+          setOxSidebarOpen(() => true)
           focusOpencodeXSidebar()
         },
       },

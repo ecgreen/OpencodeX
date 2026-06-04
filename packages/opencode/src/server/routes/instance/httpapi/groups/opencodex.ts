@@ -24,7 +24,7 @@ export const OpencodeXApi = HttpApi.make("opencodex")
       .add(
         HttpApiEndpoint.get("listProjects", `${root}/project`, {
           success: described(Schema.Array(OpencodeXProject.Info), "List of OpencodeX projects"),
-          error: HttpApiError.BadRequest,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "opencodex.project.list",
@@ -34,7 +34,7 @@ export const OpencodeXApi = HttpApi.make("opencodex")
         HttpApiEndpoint.post("createProject", `${root}/project`, {
           payload: OpencodeXProject.CreateInput,
           success: described(OpencodeXProject.Info, "Created OpencodeX project"),
-          error: HttpApiError.BadRequest,
+          error: [HttpApiError.BadRequest, ProjectNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "opencodex.project.create",
@@ -55,7 +55,7 @@ export const OpencodeXApi = HttpApi.make("opencodex")
           params: { projectID: Schema.String },
           payload: UpdateProjectPayload,
           success: described(OpencodeXProject.Info, "Updated OpencodeX project"),
-          error: [HttpApiError.BadRequest, ProjectNotFoundError, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ProjectNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "opencodex.project.update",
@@ -75,7 +75,7 @@ export const OpencodeXApi = HttpApi.make("opencodex")
         HttpApiEndpoint.post("createSession", `${root}/session`, {
           payload: OpencodeXProject.CreateSessionInput,
           success: described(Session.Info, "Created session"),
-          error: [HttpApiError.BadRequest, ProjectNotFoundError],
+          error: [HttpApiError.BadRequest, ProjectNotFoundError, ApiNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "opencodex.session.create",
@@ -85,7 +85,7 @@ export const OpencodeXApi = HttpApi.make("opencodex")
         HttpApiEndpoint.post("moveSession", `${root}/session/move`, {
           payload: OpencodeXProject.MoveSessionInput,
           success: described(Session.Info, "Moved session"),
-          error: [HttpApiError.BadRequest, ProjectNotFoundError],
+          error: [HttpApiError.BadRequest, ProjectNotFoundError, ApiNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "opencodex.session.move",

@@ -83,6 +83,7 @@ type OpencodeXSwarmRole = {
   status: string
   agent?: string
   skill?: string
+  instructions: string
   providerID?: string
   modelID?: string
   modelProfile?: string
@@ -1214,7 +1215,7 @@ export function OpencodeXDashboard() {
   )
 
   onMount(() => {
-    setOxSidebarOpen(true)
+    setOxSidebarOpen(() => true)
     promptRef.current?.blur()
     promptRef.set(undefined)
     const timer = setInterval(refreshDashboard, 2500)
@@ -2032,7 +2033,7 @@ function OpencodeXSwarmCreate() {
   })
 
   onMount(() => {
-    setOxSidebarOpen(true)
+    setOxSidebarOpen(() => true)
   })
 
   createEffect(() => {
@@ -2532,7 +2533,7 @@ export function OpencodeXSwarms() {
   })
 
   onMount(() => {
-    setOxSidebarOpen(true)
+    setOxSidebarOpen(() => true)
     const timer = setInterval(() => setRefresh((value) => value + 1), 2500)
     onCleanup(() => clearInterval(timer))
   })

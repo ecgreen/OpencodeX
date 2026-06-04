@@ -34,29 +34,6 @@ describe("tool.skill", () => {
     Effect.gen(function* () {
       const dir = (yield* TestInstance).directory
       const skill = path.join(dir, ".opencode", "skill", "tool-skill")
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(skill, "SKILL.md"),
-          `---
-name: tool-skill
-description: Skill for tool tests.
----
-
-# Tool Skill
-
-Use this skill.
-`,
-        ),
-      )
-      yield* Effect.promise(() => Bun.write(path.join(skill, "scripts", "demo.txt"), "demo"))
-
-      const home = process.env.OPENCODE_TEST_HOME
-      process.env.OPENCODE_TEST_HOME = dir
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          process.env.OPENCODE_TEST_HOME = home
-        }),
-      )
 
       const registry = yield* ToolRegistry.Service
       const agent = { name: "build", mode: "primary" as const, permission: [], options: {} }
@@ -88,6 +65,26 @@ Use this skill.
       expect(result.output).toContain(`Base directory for this skill: ${pathToFileURL(skill).href}`)
       expect(result.output).toContain(`<file>${file}</file>`)
     }),
+    {
+      config: { skills: { paths: [".opencode/skill"] } },
+      init: (dir) =>
+        Effect.promise(async () => {
+          const skill = path.join(dir, ".opencode", "skill", "tool-skill")
+          await Bun.write(
+            path.join(skill, "SKILL.md"),
+            `---
+name: tool-skill
+description: Skill for tool tests.
+---
+
+# Tool Skill
+
+Use this skill.
+`,
+          )
+          await Bun.write(path.join(skill, "scripts", "demo.txt"), "demo")
+        }),
+    },
   )
 
   it.instance("execute preserves not found message", () =>

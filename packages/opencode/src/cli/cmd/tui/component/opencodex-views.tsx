@@ -262,7 +262,7 @@ export function OpencodeXViewRoute() {
   })
 
   onMount(() => {
-    setOxSidebarOpen(true)
+    setOxSidebarOpen(() => true)
   })
 
   onCleanup(onOpencodeXRefresh(() => {

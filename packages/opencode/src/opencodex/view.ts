@@ -3,17 +3,17 @@ import { Database } from "@opencode-ai/core/database/database"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
-import { Context, Effect, Layer, Schema, Types } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { eq } from "drizzle-orm"
 
-const Metadata = Schema.Record(Schema.String, Schema.Unknown)
+const Metadata = Schema.Record(Schema.String, Schema.Any)
 const decodeMetadata = Schema.decodeUnknownSync(Schema.fromJsonString(Metadata))
 
 export const SessionAssignment = Schema.Struct({
   sessionID: SessionID,
   sortOrder: Schema.Number,
 }).annotate({ identifier: "OpencodeXViewSessionAssignment" })
-export type SessionAssignment = Types.DeepMutable<Schema.Schema.Type<typeof SessionAssignment>>
+export type SessionAssignment = Schema.Schema.Type<typeof SessionAssignment>
 
 export const Info = Schema.Struct({
   id: Schema.String,
@@ -26,7 +26,7 @@ export const Info = Schema.Struct({
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXView" })
-export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
+export type Info = Schema.Schema.Type<typeof Info>
 
 export const CreateInput = Schema.Struct({
   id: Schema.optional(Schema.String),
@@ -36,7 +36,7 @@ export const CreateInput = Schema.Struct({
   layout: Schema.optional(Schema.String),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXViewCreateInput" })
-export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
+export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const UpdateInput = Schema.Struct({
   id: Schema.String,
@@ -46,12 +46,12 @@ export const UpdateInput = Schema.Struct({
   layout: Schema.optional(Schema.String),
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXViewUpdateInput" })
-export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
+export type UpdateInput = Schema.Schema.Type<typeof UpdateInput>
 
 export const ReorderInput = Schema.Struct({
   viewIDs: Schema.Array(Schema.String),
 }).annotate({ identifier: "OpencodeXViewReorderInput" })
-export type ReorderInput = Types.DeepMutable<Schema.Schema.Type<typeof ReorderInput>>
+export type ReorderInput = Schema.Schema.Type<typeof ReorderInput>
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("OpencodeX.View.NotFoundError", {
   viewID: Schema.String,
@@ -76,11 +76,11 @@ function serializeMetadata(metadata: Record<string, unknown> | undefined) {
   return metadata ? JSON.stringify(metadata) : undefined
 }
 
-function normalizeSessionIDs(sessionIDs: SessionID[]) {
+function normalizeSessionIDs(sessionIDs: readonly SessionID[]) {
   return [...new Set(sessionIDs)]
 }
 
-function validateSessionIDs(sessionIDs: SessionID[]) {
+function validateSessionIDs(sessionIDs: readonly SessionID[]) {
   const normalized = normalizeSessionIDs(sessionIDs)
   if (normalized.length === 0) {
     return Effect.fail(new ValidationError({ message: "A view needs at least one session." }))
@@ -127,7 +127,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (viewID: string, sessionIDs: SessionID[]) {
+    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (viewID: string, sessionIDs: readonly SessionID[]) {
       const normalized = yield* validateSessionIDs(sessionIDs)
       yield* Effect.forEach(normalized, (sessionID) => session.get(sessionID), { concurrency: "unbounded", discard: true })
       const now = Date.now()
@@ -196,7 +196,7 @@ export const layer = Layer.effect(
         .run()
         .pipe(Effect.orDie)
       yield* replaceSessions(id, sessionIDs)
-      return yield* get(id)
+      return yield* get(id).pipe(Effect.orDie)
     })
 
     const update = Effect.fn("OpencodeXView.update")(function* (input: UpdateInput) {

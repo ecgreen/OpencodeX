@@ -6,9 +6,10 @@ import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Context, Effect, Layer, Schema, Types } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
+import { InstanceBootstrap } from "@/project/bootstrap"
 import { Project } from "@/project/project"
 import { InstanceStore } from "@/project/instance-store"
 import { Session } from "@/session/session"
@@ -19,7 +20,7 @@ import { OpencodeXProjectFolder } from "./project-folder"
 export const Folder = Schema.Struct({
   path: Schema.String,
 }).annotate({ identifier: "OpencodeXProjectFolder" })
-export type Folder = Types.DeepMutable<Schema.Schema.Type<typeof Folder>>
+export type Folder = Schema.Schema.Type<typeof Folder>
 
 export const Info = Schema.Struct({
   id: Schema.String,
@@ -28,26 +29,26 @@ export const Info = Schema.Struct({
   folders: Schema.Array(Folder),
   sessions: Schema.Array(Session.GlobalInfo),
 }).annotate({ identifier: "OpencodeXProject" })
-export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
+export type Info = Schema.Schema.Type<typeof Info>
 
 export const CreateInput = Schema.Struct({
   name: Schema.optional(Schema.String),
   directory: Schema.optional(Schema.String),
   folders: Schema.optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "OpencodeXProjectCreateInput" })
-export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
+export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const UpdateInput = Schema.Struct({
   projectID: Schema.String,
   name: Schema.optional(Schema.String),
   folders: Schema.optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "OpencodeXProjectUpdateInput" })
-export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
+export type UpdateInput = Schema.Schema.Type<typeof UpdateInput>
 
 export const ReorderInput = Schema.Struct({
   projectIDs: Schema.Array(Schema.String),
 }).annotate({ identifier: "OpencodeXProjectReorderInput" })
-export type ReorderInput = Types.DeepMutable<Schema.Schema.Type<typeof ReorderInput>>
+export type ReorderInput = Schema.Schema.Type<typeof ReorderInput>
 
 export const CreateSessionInput = Schema.Struct({
   projectID: Schema.String,
@@ -66,19 +67,19 @@ export const CreateSessionInput = Schema.Struct({
   workspaceID: Schema.optional(WorkspaceV2.ID),
   hidden: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "OpencodeXSessionCreateInput" })
-export type CreateSessionInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateSessionInput>>
+export type CreateSessionInput = Schema.Schema.Type<typeof CreateSessionInput>
 
 export const MoveSessionInput = Schema.Struct({
   projectID: Schema.String,
   sessionID: SessionID,
 }).annotate({ identifier: "OpencodeXSessionMoveInput" })
-export type MoveSessionInput = Types.DeepMutable<Schema.Schema.Type<typeof MoveSessionInput>>
+export type MoveSessionInput = Schema.Schema.Type<typeof MoveSessionInput>
 
 export const ValidateInput = Schema.Struct({
   projectID: Schema.optional(Schema.String),
   folders: Schema.Array(Schema.String),
 }).annotate({ identifier: "OpencodeXProjectValidateInput" })
-export type ValidateInput = Types.DeepMutable<Schema.Schema.Type<typeof ValidateInput>>
+export type ValidateInput = Schema.Schema.Type<typeof ValidateInput>
 
 export const ValidationFolder = Schema.Struct({
   input: Schema.String,
@@ -86,13 +87,13 @@ export const ValidationFolder = Schema.Struct({
   valid: Schema.Boolean,
   message: Schema.optional(Schema.String),
 }).annotate({ identifier: "OpencodeXProjectFolderValidation" })
-export type ValidationFolder = Types.DeepMutable<Schema.Schema.Type<typeof ValidationFolder>>
+export type ValidationFolder = Schema.Schema.Type<typeof ValidationFolder>
 
 export const Validation = Schema.Struct({
   valid: Schema.Boolean,
   folders: Schema.Array(ValidationFolder),
 }).annotate({ identifier: "OpencodeXProjectValidation" })
-export type Validation = Types.DeepMutable<Schema.Schema.Type<typeof Validation>>
+export type Validation = Schema.Schema.Type<typeof Validation>
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null
@@ -188,7 +189,7 @@ export const layer = Layer.effect(
       if (invalid) {
         return yield* new InvalidFolderError({
           path: invalid.path,
-          message: invalid.message ?? `Invalid project folder: ${invalid.path}`,
+          message: "message" in invalid ? invalid.message : `Invalid project folder: ${invalid.path}`,
         })
       }
       return paths
@@ -232,9 +233,12 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("OpencodeXProject.list")(function* () {
-      return yield* Effect.forEach(yield* OpencodeXProjectFolder.listProjects(db), hydrate, {
+      return (yield* Effect.forEach(yield* OpencodeXProjectFolder.listProjects(db), (row) => hydrate(row).pipe(
+        Effect.map((item) => [item]),
+        Effect.catchTag("Project.NotFoundError", () => Effect.succeed([] as Info[])),
+      ), {
         concurrency: "unbounded",
-      })
+      })).flat()
     })
 
     const get = Effect.fn("OpencodeXProject.get")(function* (projectID: string) {
@@ -320,7 +324,7 @@ export const layer = Layer.effect(
           agent: input.agent,
           model: input.model,
           metadata: mergeMetadata({ session: input.metadata, project: yield* metadata(input.projectID) }),
-          permission: input.permission,
+          permission: input.permission?.map((rule) => ({ ...rule })),
           workspaceID: input.workspaceID,
         }),
       )
@@ -382,7 +386,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Project.defaultLayer),
   Layer.provide(Session.defaultLayer),
   Layer.provide(SessionShare.defaultLayer),
-  Layer.provide(InstanceStore.defaultLayer),
+  Layer.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))),
 )
 
 export const use = serviceUse(Service)

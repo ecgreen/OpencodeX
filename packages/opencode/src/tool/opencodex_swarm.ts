@@ -86,7 +86,7 @@ function isOrchestratorRole(role: Schema.Schema.Type<typeof RoleInput>) {
   return role.skill === "orchestrator" || role.name.trim().toLowerCase() === "orchestrator"
 }
 
-function validateRoles(roles: Schema.Schema.Type<typeof RoleInput>[]) {
+function validateRoles(roles: readonly Schema.Schema.Type<typeof RoleInput>[]) {
   if (roles.length < 2) return "A swarm requires at least two agents: one Orchestrator and one other role."
   if (roles.length > 10) return "A swarm can run at most 10 agents."
   if (!isOrchestratorRole(roles[0]!)) return "A swarm requires the first role to be the Orchestrator."

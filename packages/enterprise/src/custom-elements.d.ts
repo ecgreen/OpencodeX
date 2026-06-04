@@ -1,1 +1,1 @@
-import "../../ui/src/custom-elements"
+/// <reference path="../../ui/src/custom-elements.d.ts" />
