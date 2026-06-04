@@ -91,7 +91,7 @@ import {
   editOpencodeXViewDialog,
   selectOpencodeXViewDialog,
 } from "./component/opencodex-view-dialog"
-import { setPendingOpencodeXProjectSession } from "./component/opencodex-session-state"
+import { setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "./component/opencodex-session-state"
 import {
   COMMAND_PALETTE_COMMAND,
   OPENCODE_BASE_MODE,
@@ -409,6 +409,12 @@ async function waitUntilDone(ready: Promise<void>, exited: Promise<void>) {
   await exited
 }
 
+function sessionOpencodeXSwarmID(session: { metadata?: Record<string, any> } | undefined) {
+  const opencodex = session?.metadata?.opencodex
+  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
+  return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
+}
+
 function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const tuiConfig = useTuiConfig()
   const route = useRoute()
@@ -495,8 +501,34 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
 
   createEffect(() => {
-    if (route.data.type === "session") setPendingOpencodeXProjectSession(undefined)
+    if (route.data.type === "session") {
+      setPendingOpencodeXProjectSession(undefined)
+      setPendingOpencodeXSwarmTask(undefined)
+    }
   })
+
+  const activeStartedSwarmSession = createMemo(() => {
+    if (route.data.type !== "session") return false
+    const sessionID = route.data.sessionID
+    const hasUserMessage = (sync.data.message[sessionID] ?? []).some((message) => message.role === "user")
+    if (!hasUserMessage) return false
+    let session = sync.session.get(sessionID)
+    const seen = new Set<string>()
+    while (session && !seen.has(session.id)) {
+      seen.add(session.id)
+      if (sessionOpencodeXSwarmID(session)) return true
+      session = session.parentID ? sync.session.get(session.parentID) : undefined
+    }
+    return false
+  })
+
+  function warnStartedSwarmSwitch() {
+    toast.show({
+      message: "Started swarm sessions cannot switch model or swarm.",
+      variant: "warning",
+      duration: 3000,
+    })
+  }
 
   // Update terminal window title based on current route and session
   createEffect(() => {
@@ -656,6 +688,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashAliases: ["clear"],
         run: () => {
           setPendingOpencodeXProjectSession(undefined)
+          setPendingOpencodeXSwarmTask(undefined)
           route.navigate({
             type: "home",
           })
@@ -723,6 +756,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         category: "Swarms",
         slashName: "swarm",
         run: () => {
+          if (activeStartedSwarmSession()) {
+            warnStartedSwarmSwitch()
+            return
+          }
           void selectOpencodeXSwarmTaskDialog({ sdk, dialog, route })
         },
       },
@@ -861,6 +898,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         category: "Agent",
         slashName: "models",
         run: () => {
+          if (activeStartedSwarmSession()) {
+            warnStartedSwarmSwitch()
+            return
+          }
           dialog.replace(() => <DialogModel />)
         },
       },

@@ -48,3 +48,7 @@ bun run --cwd packages/gui prepare:sidecar
 ```
 
 Set `OPENCODEX_GUI_SIDECAR_TARGET` when packaging a non-native target, for example `opencode-windows-x64` or `opencode-darwin-arm64`.
+
+## Windows Local Install
+
+Use `bun run --cwd packages/gui install:local:win` to install and launch the local NSIS build. The packaged GUI executable is named `opencodex-gui.exe` on Windows to avoid colliding with TUI/CLI process names. The install script only stops installed GUI executables by full path. Do not use broad process-name commands such as `Stop-Process -Name OpencodeX`, because that can match and disrupt a running OpencodeX TUI/CLI session.

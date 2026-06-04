@@ -13,6 +13,8 @@
     "typecheck": "tsgo --noEmit && tsgo -p tsconfig.main.json --noEmit && tsgo -p tsconfig.preload.json --noEmit",
     "prepare:sidecar": "bun run scripts/copy-sidecar.ts",
     "package": "bun run build && bun run prepare:sidecar && electron-builder --dir --config.win.signAndEditExecutable=false",
+    "dist:local:win": "bun run build && bun run prepare:sidecar && electron-builder --win nsis --config.win.signAndEditExecutable=false",
+    "install:local:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-windows.ps1 -Launch",
     "dist": "bun run build && bun run prepare:sidecar && electron-builder"
   },
   "dependencies": {
@@ -36,6 +38,7 @@
   "build": {
     "appId": "ai.opencodex.gui",
     "productName": "OpencodeX",
+    "executableName": "opencodex-gui",
     "directories": {
       "output": "release"
     },

@@ -1,6 +1,8 @@
 import { AppProcess } from "@opencode-ai/core/process"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import path from "path"
 
 const cfg = [
   "--no-optional-locks",
@@ -73,6 +75,7 @@ export interface Options {
 
 export interface Interface {
   readonly run: (args: string[], opts: Options) => Effect.Effect<Result>
+  readonly gitDir: (cwd: string) => Effect.Effect<string | undefined>
   readonly branch: (cwd: string) => Effect.Effect<string | undefined>
   readonly prefix: (cwd: string) => Effect.Effect<string>
   readonly defaultBranch: (cwd: string) => Effect.Effect<Base | undefined>
@@ -103,6 +106,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const appProcess = yield* AppProcess.Service
+    const fs = yield* AppFileSystem.Service
     const encoder = new TextEncoder()
     const stdin = (text: string) => Stream.make(encoder.encode(text))
 
@@ -134,26 +138,26 @@ export const layer = Layer.effect(
       return (yield* run(args, opts)).text()
     })
 
-    const lines = Effect.fn("Git.lines")(function* (args: string[], opts: Options) {
-      return (yield* text(args, opts))
-        .split(/\r?\n/)
-        .map((item) => item.trim())
-        .filter(Boolean)
+    const repository = Effect.fnUntraced(function* (cwd: string) {
+      return yield* resolveRepository(fs, cwd)
     })
 
-    const refs = Effect.fnUntraced(function* (cwd: string) {
-      return yield* lines(["for-each-ref", "--format=%(refname:short)", "refs/heads"], { cwd })
+    const gitDir = Effect.fn("Git.gitDir")(function* (cwd: string) {
+      return (yield* repository(cwd))?.gitDir
     })
 
-    const configured = Effect.fnUntraced(function* (cwd: string, list: string[]) {
-      const result = yield* run(["config", "init.defaultBranch"], { cwd })
-      const name = out(result)
+    const refs = Effect.fnUntraced(function* (store: string) {
+      return yield* readRefs(fs, store, "refs/heads")
+    })
+
+    const configured = Effect.fnUntraced(function* (store: string, list: string[]) {
+      const name = yield* readConfigValue(fs, store, "init", undefined, "defaultBranch")
       if (!name || !list.includes(name)) return
       return { name, ref: name } satisfies Base
     })
 
-    const primary = Effect.fnUntraced(function* (cwd: string) {
-      const list = yield* lines(["remote"], { cwd })
+    const primary = Effect.fnUntraced(function* (store: string) {
+      const list = yield* readRemotes(fs, store)
       if (list.includes("origin")) return "origin"
       if (list.length === 1) return list[0]
       if (list.includes("upstream")) return "upstream"
@@ -161,10 +165,9 @@ export const layer = Layer.effect(
     })
 
     const branch = Effect.fn("Git.branch")(function* (cwd: string) {
-      const result = yield* run(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd })
-      if (result.exitCode !== 0) return
-      const text = out(result)
-      return text || undefined
+      const repo = yield* repository(cwd)
+      if (!repo) return
+      return yield* readHeadBranch(fs, repo.gitDir)
     })
 
     const prefix = Effect.fn("Git.prefix")(function* (cwd: string) {
@@ -174,18 +177,17 @@ export const layer = Layer.effect(
     })
 
     const defaultBranch = Effect.fn("Git.defaultBranch")(function* (cwd: string) {
-      const remote = yield* primary(cwd)
+      const repo = yield* repository(cwd)
+      if (!repo) return
+
+      const remote = yield* primary(repo.store)
       if (remote) {
-        const head = yield* run(["symbolic-ref", `refs/remotes/${remote}/HEAD`], { cwd })
-        if (head.exitCode === 0) {
-          const ref = out(head).replace(/^refs\/remotes\//, "")
-          const name = ref.startsWith(`${remote}/`) ? ref.slice(`${remote}/`.length) : ""
-          if (name) return { name, ref } satisfies Base
-        }
+        const head = yield* readRemoteHead(fs, repo.store, remote)
+        if (head) return head
       }
 
-      const list = yield* refs(cwd)
-      const next = yield* configured(cwd, list)
+      const list = yield* refs(repo.store)
+      const next = yield* configured(repo.store, list)
       if (next) return next
       if (list.includes("main")) return { name: "main", ref: "main" } satisfies Base
       if (list.includes("master")) return { name: "master", ref: "master" } satisfies Base
@@ -324,6 +326,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       run,
+      gitDir,
       branch,
       prefix,
       defaultBranch,
@@ -342,6 +345,153 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(AppProcess.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(AppProcess.defaultLayer),
+  Layer.provide(AppFileSystem.defaultLayer),
+)
 
 export * as Git from "."
+
+interface Repository {
+  readonly gitDir: string
+  readonly store: string
+}
+
+const gitdirPattern = /^gitdir:\s*(.+)$/i
+const sectionPattern = /^\s*\[([^\]\s]+)(?:\s+"(.+)")?\]\s*$/
+const keyValuePattern = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/
+
+function resolveRepository(fs: AppFileSystem.Interface, cwd: string) {
+  return Effect.gen(function* () {
+    const dotgit = yield* fs.up({ targets: [".git"], start: cwd }).pipe(
+      Effect.map((matches) => matches[0]),
+      Effect.catch(() => Effect.succeed(undefined)),
+    )
+    if (!dotgit) return undefined
+
+    const gitDir = yield* resolveGitDir(fs, path.dirname(dotgit), dotgit)
+    if (!gitDir) return undefined
+    const store = yield* resolveCommonDir(fs, gitDir)
+    return { gitDir, store } satisfies Repository
+  })
+}
+
+function resolveGitDir(fs: AppFileSystem.Interface, cwd: string, dotgit: string) {
+  return Effect.gen(function* () {
+    if (yield* fs.isDir(dotgit)) return AppFileSystem.resolve(dotgit)
+
+    const content = yield* readFileString(fs, dotgit)
+    const match = content?.match(gitdirPattern)
+    if (!match) return undefined
+    return AppFileSystem.resolve(resolvePath(cwd, match[1]!))
+  })
+}
+
+function resolveCommonDir(fs: AppFileSystem.Interface, gitDir: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(gitDir, "commondir"))
+    return content ? AppFileSystem.resolve(resolvePath(gitDir, content)) : AppFileSystem.resolve(gitDir)
+  })
+}
+
+function readHeadBranch(fs: AppFileSystem.Interface, gitDir: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(gitDir, "HEAD"))
+    return parseHead(content, "refs/heads/")
+  })
+}
+
+function readRemoteHead(fs: AppFileSystem.Interface, store: string, remote: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(store, "refs", "remotes", remote, "HEAD"))
+    const ref = parseHead(content, "refs/remotes/")
+    if (!ref?.startsWith(`${remote}/`)) return undefined
+    return { name: ref.slice(remote.length + 1), ref } satisfies Base
+  })
+}
+
+function readRemotes(fs: AppFileSystem.Interface, store: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(store, "config"))
+    if (!content) return []
+    return content.split(/\r?\n/).reduce<string[]>((acc, line) => {
+      const section = line.match(sectionPattern)
+      if (!section || section[1]! !== "remote" || !section[2]) return acc
+      return acc.includes(section[2]) ? acc : [...acc, section[2]]
+    }, [])
+  })
+}
+
+function readConfigValue(
+  fs: AppFileSystem.Interface,
+  store: string,
+  sectionName: string,
+  subsection: string | undefined,
+  key: string,
+) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(store, "config"))
+    if (!content) return undefined
+
+    return content.split(/\r?\n/).reduce<{ section?: string; subsection?: string; value?: string }>((acc, line) => {
+      const section = line.match(sectionPattern)
+      if (section?.[2]) return { section: section[1]!, subsection: section[2] }
+      if (section) return { section: section[1]! }
+      if (acc.section !== sectionName || acc.subsection !== subsection) return acc
+
+      const keyValue = line.match(keyValuePattern)
+      if (!keyValue || keyValue[1]?.trim() !== key) return acc
+      const value = keyValue[2]?.trim()
+      return value ? { ...acc, value } : acc
+    }, {}).value
+  })
+}
+
+function readRefs(fs: AppFileSystem.Interface, store: string, refPrefix: string) {
+  return Effect.gen(function* () {
+    const loose = yield* readLooseRefs(fs, path.join(store, ...refPrefix.split("/")))
+    const packed = yield* readPackedRefs(fs, store, refPrefix)
+    return [...new Set([...loose, ...packed])].toSorted()
+  })
+}
+
+function readLooseRefs(fs: AppFileSystem.Interface, dir: string) {
+  return Effect.gen(function* () {
+    return (yield* fs.glob("**", { cwd: dir, include: "file" }).pipe(Effect.catch(() => Effect.succeed([])))).map(
+      (ref) => ref.replaceAll("\\", "/"),
+    )
+  })
+}
+
+function readPackedRefs(fs: AppFileSystem.Interface, store: string, refPrefix: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(store, "packed-refs"))
+    if (!content) return []
+    return content
+      .split(/\r?\n/)
+      .filter((line) => line && !line.startsWith("#") && !line.startsWith("^"))
+      .flatMap((line) => {
+        const ref = line.split(" ")[1]
+        if (!ref?.startsWith(`${refPrefix}/`)) return []
+        return [ref.slice(refPrefix.length + 1)]
+      })
+  })
+}
+
+function readFileString(fs: AppFileSystem.Interface, file: string) {
+  return fs.readFileStringSafe(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+}
+
+function parseHead(content: string | undefined, prefix: string) {
+  const ref = content?.trim().match(/^ref:\s*(.+)$/)?.[1]
+  if (!ref?.startsWith(prefix)) return undefined
+  return ref.slice(prefix.length)
+}
+
+function resolvePath(cwd: string, value: string) {
+  const trimmed = value.replace(/[\r\n]+$/, "")
+  if (!trimmed) return cwd
+  const normalized = AppFileSystem.windowsPath(trimmed)
+  if (path.isAbsolute(normalized)) return path.normalize(normalized)
+  return path.resolve(cwd, normalized)
+}

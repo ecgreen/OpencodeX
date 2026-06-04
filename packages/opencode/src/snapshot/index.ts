@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
+import { Effect, Layer, Schema, Semaphore, Context } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
@@ -709,16 +709,6 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               }),
             )
           })
-
-          yield* cleanup().pipe(
-            Effect.catchCause((cause) => {
-              log.error("cleanup loop failed", { cause: Cause.pretty(cause) })
-              return Effect.void
-            }),
-            Effect.repeat(Schedule.spaced(Duration.hours(1))),
-            Effect.delay(Duration.minutes(1)),
-            Effect.forkScoped,
-          )
 
           return { cleanup, track, patch, restore, revert, diff, diffFull }
         }),

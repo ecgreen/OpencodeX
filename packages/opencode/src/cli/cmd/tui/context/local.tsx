@@ -58,6 +58,30 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     }
 
+    function sessionSwarmID(session: { metadata?: Record<string, unknown> } | undefined) {
+      const opencodex = session?.metadata?.opencodex
+      if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
+      return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
+    }
+
+    function activeSessionSwarmID() {
+      const sessionID = activeSessionID()
+      let session = sessionID ? sync.session.get(sessionID) : undefined
+      const seen = new Set<string>()
+      while (session && !seen.has(session.id)) {
+        seen.add(session.id)
+        const swarmID = sessionSwarmID(session)
+        if (swarmID) return swarmID
+        session = session.parentID ? sync.session.get(session.parentID) : undefined
+      }
+    }
+
+    function activeSessionHasUserMessage() {
+      const sessionID = activeSessionID()
+      if (!sessionID) return false
+      return (sync.data.message[sessionID] ?? []).some((message) => message.role === "user")
+    }
+
     function sessionModelPayload(model: ModelSelection, variant: string | undefined) {
       return {
         providerID: model.providerID,
@@ -275,6 +299,21 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         return value
       }
 
+      function sameModel(a: ModelSelection | undefined, b: ModelSelection | undefined) {
+        return a?.providerID === b?.providerID && a?.modelID === b?.modelID
+      }
+
+      function canChangeModel(next?: ModelSelection) {
+        if (!activeSessionSwarmID() || !activeSessionHasUserMessage()) return true
+        if (sameModel(currentModel(), next)) return true
+        toast.show({
+          message: "Started swarm sessions keep their assigned model.",
+          variant: "warning",
+          duration: 3000,
+        })
+        return false
+      }
+
       return {
         current: currentModel,
         get ready() {
@@ -314,6 +353,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (next >= recent.length) next = 0
           const val = recent[next]
           if (!val) return
+          if (!canChangeModel(val)) return
           const a = agent.current()
           if (!a) return
           const sessionID = activeSessionID()
@@ -350,6 +390,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
           const next = favorites[index]
           if (!next) return
+          if (!canChangeModel(next)) return
           const a = agent.current()
           if (!a) return
           const sessionID = activeSessionID()
@@ -364,7 +405,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (sessionID) persistSessionModel(next, undefined)
           save()
         },
-        set(model: ModelSelection, options?: { recent?: boolean; persist?: boolean }) {
+        set(model: ModelSelection, options?: { recent?: boolean; persist?: boolean; force?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -374,6 +415,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               })
               return
             }
+            if (!options?.force && !canChangeModel(model)) return
             const a = agent.current()
             if (!a) return
             const sessionID = activeSessionID()

@@ -235,7 +235,7 @@ function spawnCoordinator(directory: string, key: string) {
   const command = cliCommand()
   const child = spawn(command[0], [...command.slice(1), "internal-tui-coordinator", directory, "--key", key], {
     cwd: directory,
-    detached: true,
+    detached: process.platform !== "win32",
     stdio: "ignore",
     windowsHide: true,
     env: {

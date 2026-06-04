@@ -35,7 +35,7 @@ import { NEW_RESULT_COLOR, deriveStatus, deriveViewStatus, statusColor, statusLa
 import { createOpencodeXViewDialog } from "./opencodex-view-dialog"
 import { LogoShimmerText } from "./logo"
 import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
-import { isRecentSessionUpdate } from "./opencodex-session-recency"
+import { isRecentSessionUpdate, recentProjectItems } from "./opencodex-session-recency"
 
 export { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
 
@@ -888,7 +888,6 @@ export function OpencodeXSidebar() {
   )
   const recentSessions = createMemo(() => allSidebarSessions().filter((session) => isRecentSessionUpdate(session.time.updated)))
   const priorSessions = createMemo(() => allSidebarSessions().filter((session) => !isRecentSessionUpdate(session.time.updated)))
-  const recentSessionIDs = createMemo(() => new Set(recentSessions().map((session) => session.id)))
   const priorSessionIDs = createMemo(() => new Set(priorSessions().map((session) => session.id)))
   const unassigned = createMemo(() => recentSessions().filter((session) => !mappedSessionIDs().has(session.id)))
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
@@ -903,10 +902,12 @@ export function OpencodeXSidebar() {
   })
 
   const projectSessions = (project: OpencodeXProjectInfo) =>
-    project.sessions
-      .filter((session) => !missingSessionIDs().has(session.id))
-      .map((session) => sessionByID().get(session.id) ?? session)
-      .filter((session) => recentSessionIDs().has(session.id))
+    recentProjectItems(
+      project.sessions
+        .filter((session) => !missingSessionIDs().has(session.id))
+        .map((session) => sessionByID().get(session.id) ?? session),
+      (session) => session.time.updated,
+    )
 
   const toggleProject = (projectID: string) =>
     setCollapsed((state) => ({ ...state, [projectID]: !(state[projectID] ?? false) }))

@@ -26,7 +26,7 @@ import { createOpencodeXProjectDialog, useOxSidebar } from "./opencodex-sidebar"
 import { setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
 import { createOpencodeXViewDialog } from "./opencodex-view-dialog"
 import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
-import { isRecentSessionUpdate } from "./opencodex-session-recency"
+import { isRecentSessionUpdate, recentProjectItems } from "./opencodex-session-recency"
 import {
   NEW_RESULT_COLOR,
   type DerivedStatus,
@@ -1313,8 +1313,19 @@ export function OpencodeXDashboard() {
   const dashboardSessionRows = createMemo(() =>
     dashboardRows().filter((row): row is DashboardRow & { session: DashboardSession } => row.kind === "session" && row.session !== undefined),
   )
-  const recentDashboardSessionRows = createMemo(() => dashboardSessionRows().filter((row) => isRecentSessionUpdate(row.timeUpdated)))
-  const priorDashboardSessionRows = createMemo(() => dashboardSessionRows().filter((row) => !isRecentSessionUpdate(row.timeUpdated)))
+  const primaryDashboardSessionRows = createMemo(() =>
+    selectedProjectID()
+      ? recentProjectItems(dashboardSessionRows(), (row) => row.timeUpdated)
+      : dashboardSessionRows().filter((row) => isRecentSessionUpdate(row.timeUpdated)),
+  )
+  const primaryDashboardSessionIDs = createMemo(() => new Set(primaryDashboardSessionRows().map((row) => row.id)))
+  const priorDashboardSessionRows = createMemo(() =>
+    selectedProjectID()
+      ? dashboardSessionRows().filter((row) => !primaryDashboardSessionIDs().has(row.id))
+      : dashboardSessionRows().filter((row) => !isRecentSessionUpdate(row.timeUpdated)),
+  )
+  const sessionSectionTitle = createMemo(() => selectedProjectID() ? "Recent Project Sessions" : "Recent Sessions")
+  const priorSessionSectionTitle = createMemo(() => selectedProjectID() ? "Older Project Sessions" : "Prior Sessions")
   const dashboardSwarmRows = createMemo(() =>
     dashboardRows().filter((row): row is DashboardRow & { swarm: OpencodeXSwarm } => row.kind === "swarm" && row.swarm !== undefined),
   )
@@ -1367,7 +1378,7 @@ export function OpencodeXDashboard() {
       sdk,
       dialog,
       route,
-      sessionIDs: recentDashboardSessionRows().slice(0, 4).map((row) => row.session.id),
+      sessionIDs: primaryDashboardSessionRows().slice(0, 4).map((row) => row.session.id),
     })
   const createActions = createMemo(() => [
     {
@@ -1429,8 +1440,8 @@ export function OpencodeXDashboard() {
     { id: "section:sessions", kind: "section", action: () => setSessionsCollapsed((value) => !value) },
     ...(sessionsCollapsed()
       ? []
-      : recentDashboardSessionRows().length > 0
-        ? recentDashboardSessionRows().map((row) => ({
+      : primaryDashboardSessionRows().length > 0
+        ? primaryDashboardSessionRows().map((row) => ({
             id: row.id,
             kind: "item" as const,
             action: row.open,
@@ -1493,7 +1504,7 @@ export function OpencodeXDashboard() {
     rows.push(["section:sessions"])
     if (!sessionsCollapsed()) {
       pushGrid(
-        recentDashboardSessionRows().length > 0 ? recentDashboardSessionRows().map((row) => row.id) : ["empty:sessions"],
+        primaryDashboardSessionRows().length > 0 ? primaryDashboardSessionRows().map((row) => row.id) : ["empty:sessions"],
         columns,
       )
     }
@@ -1696,8 +1707,8 @@ export function OpencodeXDashboard() {
           </Section>
 
           <Section
-            title="Recent Sessions"
-            count={recentDashboardSessionRows().length}
+            title={sessionSectionTitle()}
+            count={primaryDashboardSessionRows().length}
             collapsible
             collapsed={sessionsCollapsed()}
             selected={isSelected("section:sessions")}
@@ -1706,7 +1717,7 @@ export function OpencodeXDashboard() {
           >
               <CardGrid>
                 <Show
-                  when={recentDashboardSessionRows().length > 0}
+                  when={primaryDashboardSessionRows().length > 0}
                   fallback={
                     <EmptyCreateCard
                       title="Create session"
@@ -1717,7 +1728,7 @@ export function OpencodeXDashboard() {
                     />
                   }
                 >
-                  <For each={recentDashboardSessionRows()}>
+                  <For each={primaryDashboardSessionRows()}>
                     {(row) => (
                       <SessionCard
                         session={row.session}
@@ -1809,7 +1820,7 @@ export function OpencodeXDashboard() {
           </Section>
 
           <Section
-            title="Prior Sessions"
+            title={priorSessionSectionTitle()}
             count={priorDashboardSessionRows().length}
             collapsible
             collapsed={priorSessionsCollapsed()}

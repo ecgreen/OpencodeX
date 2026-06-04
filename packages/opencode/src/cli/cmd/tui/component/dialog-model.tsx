@@ -8,6 +8,7 @@ import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
+import { setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
 
 type ModelSelection = {
   providerID: string
@@ -140,6 +141,7 @@ export function DialogModel(props: { providerID?: string; current?: ModelSelecti
       dialog.clear()
       return
     }
+    setPendingOpencodeXSwarmTask(undefined)
     local.model.set(next, { recent: true })
     const list = local.model.variant.list()
     const cur = local.model.variant.selected()

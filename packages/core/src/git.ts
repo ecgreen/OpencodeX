@@ -2,10 +2,8 @@ export * as Git from "./git"
 
 import path from "path"
 import { Context, Effect, Layer } from "effect"
-import { ChildProcess } from "effect/unstable/process"
 import { AbsolutePath } from "./schema"
 import { AppFileSystem } from "./filesystem"
-import { AppProcess } from "./process"
 
 export interface Repo {
   /**
@@ -29,7 +27,6 @@ export interface Repo {
 export interface Interface {
   readonly find: (input: AbsolutePath) => Effect.Effect<Repo | undefined>
   readonly remote: (repo: Repo, name?: string) => Effect.Effect<string | undefined>
-  readonly roots: (repo: Repo) => Effect.Effect<string[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/GitV2") {}
@@ -38,7 +35,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* AppFileSystem.Service
-    const proc = yield* AppProcess.Service
 
     const find = Effect.fn("Git.find")(function* (input: AbsolutePath) {
       const dotgit = yield* fs.up({ targets: [".git"], start: input }).pipe(
@@ -48,61 +44,70 @@ export const layer = Layer.effect(
       if (!dotgit) return undefined
 
       const cwd = path.dirname(dotgit)
-      const git = run(cwd, proc)
-      const topLevel = yield* git(["rev-parse", "--show-toplevel"])
-      const commonDir = yield* git(["rev-parse", "--git-common-dir"])
-      if (commonDir.exitCode !== 0) return undefined
+      const gitDir = yield* resolveGitDir(fs, cwd, dotgit)
+      if (!gitDir) return undefined
 
       return {
-        directory: AbsolutePath.make(topLevel.exitCode === 0 ? resolvePath(cwd, topLevel.text) : cwd),
-        store: AbsolutePath.make(resolvePath(cwd, commonDir.text)),
+        directory: AbsolutePath.make(AppFileSystem.resolve(cwd)),
+        store: AbsolutePath.make(yield* resolveCommonDir(fs, gitDir)),
       } satisfies Repo
     })
 
     const remote = Effect.fn("Git.remote")(function* (repo: Repo, name = "origin") {
-      const result = yield* run(repo.directory, proc)(["remote", "get-url", name])
-      if (result.exitCode !== 0) return undefined
-      return result.text.trim() || undefined
+      return yield* readRemoteUrl(fs, repo.store, name)
     })
 
-    const roots = Effect.fn("Git.roots")(function* (repo: Repo) {
-      const result = yield* run(repo.directory, proc)(["rev-list", "--max-parents=0", "HEAD"])
-      if (result.exitCode !== 0) return []
-      return result.text
-        .split("\n")
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .toSorted()
-    })
-
-    return Service.of({ find, remote, roots })
+    return Service.of({ find, remote })
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(AppFileSystem.defaultLayer),
-  Layer.provide(AppProcess.defaultLayer),
-)
+export const defaultLayer = layer.pipe(Layer.provide(AppFileSystem.defaultLayer))
 
-interface Result {
-  readonly exitCode: number
-  readonly text: string
+const gitdirPattern = /^gitdir:\s*(.+)$/i
+const sectionPattern = /^\s*\[([^\]]+)\]\s*$/
+const remoteSectionPattern = /^remote\s+"(.+)"$/
+const keyValuePattern = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/
+
+function resolveGitDir(fs: AppFileSystem.Interface, cwd: string, dotgit: string) {
+  return Effect.gen(function* () {
+    if (yield* fs.isDir(dotgit)) return AppFileSystem.resolve(dotgit)
+
+    const content = yield* readFileString(fs, dotgit)
+    const match = content?.match(gitdirPattern)
+    if (!match) return undefined
+    return AppFileSystem.resolve(resolvePath(cwd, match[1]!))
+  })
 }
 
-function run(cwd: string, proc: AppProcess.Interface) {
-  return (args: string[]) =>
-    proc
-      .run(
-        ChildProcess.make("git", args, {
-          cwd,
-          extendEnv: true,
-          stdin: "ignore",
-        }),
-      )
-      .pipe(
-        Effect.map((result) => ({ exitCode: result.exitCode, text: result.stdout.toString("utf8") }) satisfies Result),
-        Effect.catch(() => Effect.succeed({ exitCode: 1, text: "" } satisfies Result)),
-      )
+function resolveCommonDir(fs: AppFileSystem.Interface, gitDir: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(gitDir, "commondir"))
+    return content ? AppFileSystem.resolve(resolvePath(gitDir, content)) : AppFileSystem.resolve(gitDir)
+  })
+}
+
+function readRemoteUrl(fs: AppFileSystem.Interface, gitDir: string, name: string) {
+  return Effect.gen(function* () {
+    const content = yield* readFileString(fs, path.join(gitDir, "config"))
+    if (!content) return undefined
+
+    return content.split(/\r?\n/).reduce<{ section?: string; url?: string }>((acc, line) => {
+      const section = line.match(sectionPattern)
+      if (section) return { section: section[1]! }
+
+      const remote = acc.section?.match(remoteSectionPattern)
+      if (!remote || remote[1]! !== name) return acc
+
+      const keyValue = line.match(keyValuePattern)
+      if (!keyValue || keyValue[1]?.trim() !== "url") return acc
+      const url = keyValue[2]?.trim()
+      return url ? { ...acc, url } : acc
+    }, {}).url
+  })
+}
+
+function readFileString(fs: AppFileSystem.Interface, file: string) {
+  return fs.readFileStringSafe(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
 }
 
 function resolvePath(cwd: string, value: string) {

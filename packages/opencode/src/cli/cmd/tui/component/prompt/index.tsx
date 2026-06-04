@@ -559,6 +559,7 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
+  const startedSwarmSession = createMemo(() => currentSessionSwarmID() !== undefined && lastUserMessage() !== undefined)
   const sessionAgent = createMemo(() => {
     if (!props.useSessionContext) return local.agent.current()
     const name = lastUserMessage()?.agent ?? (props.sessionID ? sync.session.get(props.sessionID)?.agent : undefined)
@@ -659,7 +660,7 @@ export function Prompt(props: PromptProps) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
         if (msg.model) {
-          local.model.set(msg.model, { persist: false })
+          local.model.set(msg.model, { persist: false, force: true })
           local.model.variant.set(msg.model.variant, { persist: false })
         }
       }
@@ -1367,6 +1368,14 @@ export function Prompt(props: PromptProps) {
     }
     const slash = promptSlash(trimmed)
     if (slash?.name === "swarm") {
+      if (startedSwarmSession()) {
+        toast.show({
+          message: "Started swarm sessions cannot switch model or swarm.",
+          variant: "warning",
+          duration: 3000,
+        })
+        return false
+      }
       if (!slash.arguments.trim()) {
         keymap.dispatchCommand("opencodex.swarm.task")
         clearPrompt()

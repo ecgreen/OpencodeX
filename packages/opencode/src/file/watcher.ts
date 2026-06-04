@@ -130,10 +130,7 @@ export const layer = Layer.effect(
           }
 
           if (ctx.project.vcs === "git") {
-            const result = yield* git.run(["rev-parse", "--git-dir"], {
-              cwd: ctx.worktree,
-            })
-            const resolved = result.exitCode === 0 ? path.resolve(ctx.worktree, result.text().trim()) : undefined
+            const resolved = yield* git.gitDir(ctx.worktree)
             const vcsDir = resolved ? yield* Effect.promise(() => realpath(resolved).catch(() => resolved)) : undefined
             if (
               vcsDir &&

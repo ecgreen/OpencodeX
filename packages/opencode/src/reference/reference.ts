@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Context, Layer, Scope } from "effect"
+import { Effect, Context, Layer } from "effect"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 import { Config } from "@/config/config"
@@ -185,7 +185,6 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const cache = yield* RepositoryCache.Service
-    const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
 
     const state = yield* InstanceState.make<State>(
@@ -206,7 +205,7 @@ export const layer = Layer.effect(
     return Service.of({
       init: Effect.fn("Reference.init")(function* () {
         if (!flags.experimentalScout) return
-        yield* InstanceState.useEffect(state, (s) => s.materializeAll).pipe(Effect.forkIn(scope), Effect.asVoid)
+        yield* InstanceState.get(state)
       }),
       list: Effect.fn("Reference.list")(function* () {
         return yield* InstanceState.use(state, (s) => s.references)
