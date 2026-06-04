@@ -12,7 +12,7 @@
     "build": "vite --configLoader runner build && tsgo -p tsconfig.main.json && tsgo -p tsconfig.preload.json",
     "typecheck": "tsgo --noEmit && tsgo -p tsconfig.main.json --noEmit && tsgo -p tsconfig.preload.json --noEmit",
     "prepare:sidecar": "bun run scripts/copy-sidecar.ts",
-    "package": "bun run build && bun run prepare:sidecar && electron-builder --dir",
+    "package": "bun run build && bun run prepare:sidecar && electron-builder --dir --config.win.signAndEditExecutable=false",
     "dist": "bun run build && bun run prepare:sidecar && electron-builder"
   },
   "dependencies": {
