@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@opencode-ai/gui",
+  "version": "1.15.13",
+  "private": true,
+  "type": "module",
+  "description": "Premium cross-platform GUI shell for OpencodeX.",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "vite --configLoader runner --host 127.0.0.1",
+    "dev:electron": "concurrently -k \"bun run dev\" \"wait-on tcp:5173 && electron .\"",
+    "build": "vite --configLoader runner build && tsgo -p tsconfig.main.json && tsgo -p tsconfig.preload.json",
+    "typecheck": "tsgo --noEmit && tsgo -p tsconfig.main.json --noEmit && tsgo -p tsconfig.preload.json --noEmit",
+    "prepare:sidecar": "bun run scripts/copy-sidecar.ts",
+    "package": "bun run build && bun run prepare:sidecar && electron-builder --dir",
+    "dist": "bun run build && bun run prepare:sidecar && electron-builder"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "workspace:*",
+    "@opencode-ai/ui": "workspace:*",
+    "@solidjs/router": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "solid-js": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-solid": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "concurrently": "^9.2.1",
+    "electron": "^39.2.4",
+    "electron-builder": "^26.0.12",
+    "typescript": "catalog:",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "ai.opencodex.gui",
+    "productName": "OpencodeX",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/sidecar",
+        "to": "sidecar",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    }
+  }
+}
