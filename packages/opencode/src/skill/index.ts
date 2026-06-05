@@ -17,6 +17,7 @@ import { Discovery } from "./discovery"
 import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with { type: "text" }
 import ORCHESTRATOR_SKILL_BODY from "./prompt/roles/orchestrator.md" with { type: "text" }
 import PRODUCT_MANAGER_SKILL_BODY from "./prompt/roles/product-manager.md" with { type: "text" }
+import DESIGNER_SKILL_BODY from "./prompt/roles/designer.md" with { type: "text" }
 import ARCHITECT_SKILL_BODY from "./prompt/roles/architect.md" with { type: "text" }
 import SENIOR_ENGINEER_SKILL_BODY from "./prompt/roles/senior-engineer.md" with { type: "text" }
 import QA_ENGINEER_SKILL_BODY from "./prompt/roles/qa-engineer.md" with { type: "text" }
@@ -56,6 +57,11 @@ const BUILTIN_SKILLS = [
     name: "product-manager",
     description: "Use when a swarm needs product framing, user workflows, acceptance criteria, priority calls, or scope tradeoffs before implementation.",
     content: PRODUCT_MANAGER_SKILL_BODY,
+  },
+  {
+    name: "designer",
+    description: "Use when a swarm needs deep UI/UX analysis, interaction design, visual hierarchy, usability tradeoffs, or design guidance before implementation.",
+    content: DESIGNER_SKILL_BODY,
   },
   {
     name: "architect",

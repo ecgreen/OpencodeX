@@ -176,6 +176,10 @@ const swarmRunPlaceholder = {
   shell: ["git status", "pwd", "rg TODO"],
 }
 
+function opencodeXSwarmExecutionMode(agentName?: string) {
+  return agentName === "plan" ? "plan" : "build"
+}
+
 const swarmRouteBindingCommands = [
   "opencodex.swarm.route.up",
   "opencodex.swarm.route.down",
@@ -237,6 +241,11 @@ const SWARM_ROLE_PRESETS: SwarmRolePreset[] = [
     name: "Product Manager",
     skill: "product-manager",
     description: "Frames goals, workflows, acceptance criteria, and tradeoffs.",
+  },
+  {
+    name: "Designer",
+    skill: "designer",
+    description: "Reviews UI/UX flows, visual hierarchy, interaction states, and accessibility.",
   },
   {
     name: "Architect",
@@ -402,6 +411,10 @@ function sessionSwarmTitle(session: DashboardSession, swarms: OpencodeXSwarm[]) 
   const swarmID = sessionSwarmID(session)
   if (!swarmID) return undefined
   return swarms.find((swarm) => swarm.id === swarmID)?.title
+}
+
+function isGenericDashboardSession(session: DashboardSession) {
+  return !session.parentID && !sessionSwarmID(session)
 }
 
 function dashboardStatusColor(status: DashboardStatus) {
@@ -1228,11 +1241,11 @@ export function OpencodeXDashboard() {
     const byID = new Map<string, DashboardSession>()
     for (const project of projects() ?? []) {
       for (const session of project.sessions) {
-        if (!session.parentID) byID.set(session.id, session)
+        if (isGenericDashboardSession(session)) byID.set(session.id, session)
       }
     }
     for (const session of sync.data.session) {
-      if (!session.parentID) byID.set(session.id, session)
+      if (isGenericDashboardSession(session)) byID.set(session.id, session)
     }
     return [...byID.values()]
   })
@@ -2567,6 +2580,7 @@ export function OpencodeXSwarms() {
         body: JSON.stringify({
           prompt: runPrompt,
           agent: local.agent.current()?.name,
+          mode: opencodeXSwarmExecutionMode(local.agent.current()?.name),
           variant: local.model.variant.current(),
         }),
       })

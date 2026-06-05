@@ -8,6 +8,7 @@ export type SidecarConnection = {
   url: string
   username: string
   password: string
+  directory: string
 }
 
 type SidecarState = {
@@ -41,23 +42,28 @@ function serverArgs() {
   return ["serve", "--hostname", "127.0.0.1", "--port", "0"]
 }
 
+function workingDirectory() {
+  return process.env.OPENCODEX_GUI_DIRECTORY ?? process.env.INIT_CWD ?? process.cwd()
+}
+
 export function startSidecar() {
   if (state.connection) return Promise.resolve(state.connection)
   if (state.startup) return state.startup
 
   const username = "opencode"
   const password = randomBytes(24).toString("base64url")
+  const directory = workingDirectory()
   let child: ChildProcessWithoutNullStreams
   try {
     child = spawn(command(), serverArgs(), {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      OPENCODE_CLI_NAME: "opencodex",
-      OPENCODE_SERVER_USERNAME: username,
-      OPENCODE_SERVER_PASSWORD: password,
-    },
-    windowsHide: true,
+      cwd: directory,
+      env: {
+        ...process.env,
+        OPENCODE_CLI_NAME: "opencodex",
+        OPENCODE_SERVER_USERNAME: username,
+        OPENCODE_SERVER_PASSWORD: password,
+      },
+      windowsHide: true,
     })
   } catch (error) {
     return Promise.reject(error)
@@ -96,7 +102,7 @@ export function startSidecar() {
     function inspect(chunk: Buffer) {
       const text = chunk.toString("utf8")
       const match = LISTENING.exec(text)
-      if (match) finish({ url: match[1], username, password })
+      if (match) finish({ url: match[1], username, password, directory })
     }
 
     child.stdout.on("data", inspect)

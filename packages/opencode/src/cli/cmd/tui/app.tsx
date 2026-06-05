@@ -965,6 +965,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         category: "Agent",
         hidden: true,
         run: () => {
+          const current = promptRef.current
+          if (current?.focused && current.cycleAgent) {
+            current.cycleAgent(1)
+            return
+          }
           local.agent.move(1)
         },
       },
@@ -992,6 +997,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         category: "Agent",
         hidden: true,
         run: () => {
+          const current = promptRef.current
+          if (current?.focused && current.cycleAgent) {
+            current.cycleAgent(-1)
+            return
+          }
           local.agent.move(-1)
         },
       },

@@ -28,7 +28,7 @@ export const Parameters = Schema.Struct({
   }),
   roles: Schema.optional(Schema.Array(RoleInput)).annotate({
     description:
-      "Optional explicit role plan. If omitted, OpenCodeX creates an orchestrator plus product manager, architect, senior engineer, QA, and reviewer roles.",
+      "Optional explicit role plan. If omitted, OpenCodeX creates an orchestrator plus product manager, designer, architect, senior engineer, QA, and reviewer roles.",
   }),
 })
 
@@ -52,12 +52,17 @@ function defaultRoles(prompt: string): Schema.Schema.Type<typeof RoleInput>[] {
     {
       name: "Orchestrator",
       skill: "orchestrator",
-      instructions: `Coordinate the swarm, identify dependencies between roles, and produce a handoff that explains how the role outputs should be combined for this request:\n\n${prompt}`,
+      instructions: `Coordinate the swarm, send discovery work to Product Manager and Designer when relevant, convert their findings into detailed engineering tickets, identify dependencies between roles, and produce a final handoff for this request:\n\n${prompt}`,
     },
     {
       name: "Product Manager",
       skill: "product-manager",
       instructions: `Clarify the product goal, user workflows, acceptance criteria, and tradeoffs for this request:\n\n${prompt}`,
+    },
+    {
+      name: "Designer",
+      skill: "designer",
+      instructions: `Analyze the UI and UX implications for this request, including flows, layout, interaction states, accessibility, and ticket-ready design requirements:\n\n${prompt}`,
     },
     {
       name: "Architect",
@@ -67,7 +72,7 @@ function defaultRoles(prompt: string): Schema.Schema.Type<typeof RoleInput>[] {
     {
       name: "Senior Engineer",
       skill: "senior-engineer",
-      instructions: `Plan or implement the engineering work for this request, using architect and PM handoffs when available:\n\n${prompt}`,
+      instructions: `Plan or implement the engineering work for this request, using orchestrator tickets plus Product Manager, Designer, and Architect handoffs when available:\n\n${prompt}`,
     },
     {
       name: "QA Engineer",

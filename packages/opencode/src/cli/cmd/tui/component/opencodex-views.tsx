@@ -310,8 +310,8 @@ export function OpencodeXViewRoute() {
       { name: "opencodex.view.delete_current", title: "Delete current view", category: "Views", hidden: true, run: () => void deleteView() },
     ],
     bindings: [
-      { key: "tab,right,l", desc: "Focus next pane", group: "OpencodeX View", cmd: () => move(1) },
-      { key: "shift+tab,left,h", desc: "Focus previous pane", group: "OpencodeX View", cmd: () => move(-1) },
+      { key: "right", desc: "Focus next pane", group: "OpencodeX View", cmd: () => move(1) },
+      { key: "left", desc: "Focus previous pane", group: "OpencodeX View", cmd: () => move(-1) },
     ],
   }))
 

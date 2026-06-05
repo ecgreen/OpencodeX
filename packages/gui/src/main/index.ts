@@ -1,5 +1,5 @@
 import path from "node:path"
-import { app, BrowserWindow, ipcMain, session, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron"
 import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
 
 const isDev = !app.isPackaged
@@ -35,6 +35,7 @@ async function createWindow() {
     minHeight: 680,
     title: "OpencodeX",
     backgroundColor: "#090a0f",
+    frame: false,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -62,7 +63,25 @@ async function createWindow() {
 ipcMain.handle("opencodex:connection", async () => {
   const connection = await startSidecar()
   authorizeSidecar(connection)
-  return { url: connection.url }
+  return { url: connection.url, directory: connection.directory }
+})
+
+ipcMain.handle("opencodex:window", (event, action: "minimize" | "maximize" | "close") => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window) return
+  if (action === "minimize") window.minimize()
+  if (action === "maximize") {
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+  }
+  if (action === "close") window.close()
+})
+
+ipcMain.handle("opencodex:folder", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory", "createDirectory"],
+  })
+  return result.canceled ? undefined : result.filePaths[0]
 })
 
 app.whenReady().then(() => {

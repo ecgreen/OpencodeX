@@ -170,6 +170,7 @@ export type UpdateInput = Schema.Schema.Type<typeof UpdateInput>
 export const AssignTaskInput = Schema.Struct({
   prompt: Schema.String,
   agent: Schema.optional(Schema.String),
+  mode: Schema.optional(Schema.Union([Schema.Literal("build"), Schema.Literal("plan")])),
   variant: Schema.optional(Schema.String),
 }).annotate({ identifier: "OpencodeXSwarmAssignTaskInput" })
 export type AssignTaskInput = Schema.Schema.Type<typeof AssignTaskInput>
@@ -239,8 +240,8 @@ function defaultRoles(prompt?: string): RoleInput[] {
       name: "Orchestrator",
       skill: "orchestrator",
       instructions: task
-        ? `Coordinate the swarm, identify dependencies between roles, and produce a handoff that explains how the role outputs should be combined for this request:\n\n${task}`
-        : "Coordinate the swarm, identify dependencies between roles, and produce a final handoff for assigned tasks.",
+        ? `Coordinate the swarm, send discovery work to Product Manager and Designer when relevant, convert their findings into detailed engineering tickets, identify dependencies between roles, and produce a final handoff for this request:\n\n${task}`
+        : "Coordinate the swarm, send discovery work to Product Manager and Designer when relevant, convert their findings into detailed engineering tickets, identify dependencies between roles, and produce a final handoff for assigned tasks.",
     },
     {
       name: "Product Manager",
@@ -248,6 +249,13 @@ function defaultRoles(prompt?: string): RoleInput[] {
       instructions: task
         ? `Clarify the product goal, user workflows, acceptance criteria, and tradeoffs for this request:\n\n${task}`
         : "Clarify the product goal, user workflows, acceptance criteria, and tradeoffs for assigned tasks.",
+    },
+    {
+      name: "Designer",
+      skill: "designer",
+      instructions: task
+        ? `Analyze the UI and UX implications for this request, including flows, layout, interaction states, accessibility, and ticket-ready design requirements:\n\n${task}`
+        : "Analyze UI and UX implications for assigned tasks, including flows, layout, interaction states, accessibility, and ticket-ready design requirements.",
     },
     {
       name: "Architect",
@@ -260,8 +268,8 @@ function defaultRoles(prompt?: string): RoleInput[] {
       name: "Senior Engineer",
       skill: "senior-engineer",
       instructions: task
-        ? `Plan or implement the engineering work for this request, using architect and PM handoffs when available:\n\n${task}`
-        : "Plan or implement engineering work for assigned tasks, using architect and PM handoffs when available.",
+        ? `Plan or implement the engineering work for this request, using orchestrator tickets plus Product Manager, Designer, and Architect handoffs when available:\n\n${task}`
+        : "Plan or implement engineering work for assigned tasks, using orchestrator tickets plus Product Manager, Designer, and Architect handoffs when available.",
     },
     {
       name: "QA Engineer",
@@ -440,12 +448,42 @@ function rolePrompt(input: { swarm: Info; role: Role }) {
     .join("\n")
 }
 
-function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Role; roles: readonly Role[] }) {
+function executionMode(input: { agent?: string; mode?: "build" | "plan" }) {
+  return input.mode ?? (input.agent === "plan" ? "plan" : "build")
+}
+
+function executionModeInstructions(mode: "build" | "plan") {
+  if (mode === "plan") {
+    return [
+      "Execution mode: PLAN.",
+      "The user wants a plan for review before execution.",
+      "Never make code changes in plan mode. Do not edit files, write files, run destructive commands, or ask subagents to make code changes.",
+      "When coordinating with subagents, explicitly tell them this is plan mode and require planning, analysis, review, or ticket output only.",
+      "End with a reviewable plan, risks, open questions, and recommended next action for user approval.",
+    ]
+  }
+  return [
+    "Execution mode: BUILD.",
+    "The user wants the swarm to execute approved work.",
+    "When coordinating with subagents, explicitly tell them this is build mode and whether that subagent may edit files or should only review, validate, or plan.",
+    "Build mode may make code changes when needed, but still requires role handoffs, validation, and review evidence before completion.",
+  ]
+}
+
+function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Role; roles: readonly Role[]; mode: "build" | "plan" }) {
   return [
     `You are the "${input.orchestrator.name}" orchestrator for an OpencodeX swarm team.`,
     "",
+    input.orchestrator.skill ? `Use the "${input.orchestrator.skill}" role skill if it is available.` : undefined,
+    ...executionModeInstructions(input.mode),
+    "",
     "The user can only query you. Specialist agents are private workers behind you.",
     "Break the request into role-specific prompts, delegate only to the team members needed, relay useful findings between workers, and synthesize the final answer for the user.",
+    "Do not behave like a solo engineer when a swarm exists. Maintain a delegation ledger that records assignment, expected output, status, result, and follow-up owner for every role you use or skip.",
+    "Duplicate same-skill roles are allowed. Before delegating to duplicates, assign each one a temporary working title, non-overlapping scope boundary, expected output, and merge order; record those assignments in the delegation ledger.",
+    "For user-visible product work, start by delegating discovery to Product Manager and Designer. Combine their findings with Architect constraints into detailed engineering tickets before sending work to Senior Engineer.",
+    "Engineering tickets should include goal, scope, requirements, UX states, technical constraints, acceptance criteria, dependencies, risks, suggested validation, and owner.",
+    "Before completion, require build, QA, and review evidence when those roles are relevant. If a gate is skipped, explain why and create a follow-up ticket.",
     "If a worker needs user input, decide whether the question is truly blocking; ask the user yourself only when needed.",
     "",
     "Swarm team:",
@@ -469,21 +507,28 @@ function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Rol
         .join("; "),
     ),
     "Treat team members with different ids as separate resources, even when they share the same name or skill.",
+    "If team members share the same name or skill, disambiguate them in your own plan before starting workers; do not send identical broad prompts to duplicate roles.",
     "",
     "Use the task tool to start private worker sessions for specific team members.",
     'When a role does not specify an agent, use the "general" subagent and include that role\'s instructions in the prompt.',
+    "When delegating, include the role identity, user goal, current stage, relevant prior handoffs, exact scope, non-goals, expected deliverable, verification expectation, and whether the worker may edit files.",
     "Use background=true for independent work when that option is available; otherwise use foreground delegation for the most important worker first.",
     "Do not tell the user to inspect worker sessions. Summarize worker findings yourself.",
     "",
     "When complete, provide:",
     "Decision summary:",
     "Work completed:",
+    "Delegation ledger:",
+    "Engineering tickets:",
+    "Stage gates:",
     "Key role findings:",
     "Risks:",
     "Open questions:",
     "Recommended next action:",
     "Artifacts:",
-  ].join("\n")
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n")
 }
 
 function messageText(message: { parts: { type: string; text?: string; synthetic?: boolean }[] }) {
@@ -736,6 +781,7 @@ export const layer = Layer.effect(
           providerID: synthesisModel.providerID,
           id: synthesisModel.modelID,
         },
+        hidden: true,
         metadata: {
           opencodex: {
             swarmID,
@@ -930,7 +976,7 @@ export const layer = Layer.effect(
 
     const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (
       swarmID: string,
-      input: { prompt: string; agent?: string; variant?: string },
+      input: { prompt: string; agent?: string; mode?: "build" | "plan"; variant?: string },
     ) {
       const swarm = yield* get(swarmID)
       if (swarm.status === "cancelled") return yield* new ValidationError({ message: "Cancelled swarms cannot run tasks." })
@@ -942,6 +988,7 @@ export const layer = Layer.effect(
       const directory = project.folders[0]?.path ?? project.project.worktree
       const runID = `swrn_${Identifier.ascending()}`
       const now = Date.now()
+      const mode = executionMode(input)
       const model = selectedRoleModel(orchestrator) ?? (yield* defaultModel())
       const requestedAgent = input.agent
         ? yield* agents.get(input.agent).pipe(
@@ -960,6 +1007,7 @@ export const layer = Layer.effect(
           id: model.modelID,
           ...(input.variant ? { variant: input.variant } : {}),
         },
+        hidden: true,
         metadata: {
           opencodex: {
             swarmID,
@@ -985,7 +1033,7 @@ export const layer = Layer.effect(
                   source: "swarm",
                   orchestrator_session_id: session.id,
                   started_at: now,
-                  metadata_json: serializeMetadata({ orchestratorRoleID: orchestrator.id }),
+                  metadata_json: serializeMetadata({ orchestratorRoleID: orchestrator.id, executionMode: mode }),
                   time_created: now,
                   time_updated: now,
                 })
@@ -1020,7 +1068,7 @@ export const layer = Layer.effect(
           result_session_id: null,
           started_at: now,
           completed_at: null,
-          metadata_json: serializeMetadata({ orchestratorRoleID: orchestrator.id }) ?? null,
+          metadata_json: serializeMetadata({ orchestratorRoleID: orchestrator.id, executionMode: mode }) ?? null,
           time_created: now,
           time_updated: now,
         },
@@ -1042,7 +1090,7 @@ export const layer = Layer.effect(
           parts: [
             {
               type: "text",
-              text: orchestratorRunPrompt({ swarm, run, orchestrator, roles: swarm.roles }),
+              text: orchestratorRunPrompt({ swarm, run, orchestrator, roles: swarm.roles, mode }),
             },
           ],
         })
@@ -1096,7 +1144,7 @@ export const layer = Layer.effect(
       const promptText = input.prompt.trim()
       if (!promptText) return yield* new ValidationError({ message: "Swarm run prompt cannot be empty." })
       yield* event(swarmID, { kind: "swarm.task.assigned", message: "Task assigned to swarm team" })
-      return yield* createRun(swarmID, { prompt: promptText, agent: input.agent, variant: input.variant })
+      return yield* createRun(swarmID, { prompt: promptText, agent: input.agent, mode: input.mode, variant: input.variant })
     })
 
     const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {

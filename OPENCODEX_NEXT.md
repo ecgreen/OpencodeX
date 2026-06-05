@@ -21,7 +21,7 @@ It should let a developer:
 - See every active, blocked, failed, queued, and completed agent run at a glance.
 - Run many sessions side by side without losing important output or blocked prompts.
 - Start a swarm from a complex prompt and watch specialized agents divide the work.
-- Assign roles such as product manager, architect, senior engineer, QA engineer, and code reviewer.
+- Assign roles such as product manager, designer, architect, senior engineer, QA engineer, and code reviewer.
 - Route different roles to different models or model profiles.
 - Turn project learnings into reviewable memory, `AGENTS.md` updates, or project-local skills.
 - Schedule, trigger, and resume work while keeping unattended actions governed by policy.
@@ -52,7 +52,7 @@ A swarm is not just a long prompt with subagents. It is a durable job with a goa
 
 ### Build Role Skills As Product Assets
 
-Role-specific `SKILL.md` files should be first-class assets that teach agents how to act as product managers, architects, senior engineers, QA engineers, code reviewers, release managers, and domain specialists. These should be inspectable, versioned, and project-overridable.
+Role-specific `SKILL.md` files should be first-class assets that teach agents how to act as product managers, designers, architects, senior engineers, QA engineers, code reviewers, release managers, and domain specialists. These should be inspectable, versioned, and project-overridable.
 
 ## Current Integration Points
 
@@ -520,7 +520,7 @@ Type: skills, product, prompt engineering
 
 Problem:
 
-Swarm quality depends on role clarity. Generic subagents will not reliably behave like product managers, architects, QA engineers, or reviewers without strong role instructions.
+Swarm quality depends on role clarity. Generic subagents will not reliably behave like product managers, designers, architects, QA engineers, or reviewers without strong role instructions.
 
 User story:
 
@@ -530,6 +530,7 @@ Specification:
 
 - Add built-in role skill files:
   - product-manager/SKILL.md
+  - designer/SKILL.md
   - architect/SKILL.md
   - senior-engineer/SKILL.md
   - qa-engineer/SKILL.md
@@ -581,6 +582,7 @@ Specification:
 
 - Add optional built-in agent templates:
   - `pm`
+  - `designer`
   - `architect`
   - `engineer`
   - `qa`

@@ -78,5 +78,5 @@ if ($Launch) {
     throw "Installed OpencodeX GUI executable was not found."
   }
 
-  Start-Process -FilePath $app
+  Start-Process -FilePath $app -WorkingDirectory (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..\.."))
 }

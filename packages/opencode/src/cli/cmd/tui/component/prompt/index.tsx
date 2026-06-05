@@ -105,6 +105,7 @@ export type PromptRef = {
   blur(): void
   focus(): void
   submit(): void
+  cycleAgent?(direction: 1 | -1): void
 }
 
 const money = new Intl.NumberFormat("en-US", {
@@ -137,6 +138,28 @@ type OpencodeXPromptSwarm = {
     timeCreated?: number
     timeUpdated?: number
   }[]
+}
+
+type OpencodeXSwarmExecutionMode = "build" | "plan"
+
+function opencodeXSwarmExecutionMode(agentName?: string): OpencodeXSwarmExecutionMode {
+  return agentName === "plan" ? "plan" : "build"
+}
+
+function opencodeXSwarmModeInstructions(mode: OpencodeXSwarmExecutionMode) {
+  if (mode === "plan") {
+    return [
+      "OpencodeX swarm execution mode: PLAN.",
+      "The user is asking the swarm to produce a plan for review before execution.",
+      "Do not make code changes, write files, run destructive commands, or ask subagents to edit files in plan mode.",
+      "When delegating, tell every subagent this is plan mode and require planning/review output only.",
+    ].join("\n")
+  }
+  return [
+    "OpencodeX swarm execution mode: BUILD.",
+    "The user is asking the swarm to execute approved work, make changes when needed, and validate the result.",
+    "When delegating, tell every subagent this is build mode and whether that subagent may edit files or should only review/validate.",
+  ].join("\n")
 }
 
 function opencodeXProjectTitle(project: OpencodeXPromptProject) {
@@ -562,16 +585,24 @@ export function Prompt(props: PromptProps) {
   const startedSwarmSession = createMemo(() => currentSessionSwarmID() !== undefined && lastUserMessage() !== undefined)
   const sessionAgent = createMemo(() => {
     if (!props.useSessionContext) return local.agent.current()
+    const selected = local.agent.currentForSession(props.sessionID)
+    if (selected) return selected
     const name = lastUserMessage()?.agent ?? (props.sessionID ? sync.session.get(props.sessionID)?.agent : undefined)
     return local.agent.list().find((agent) => agent.name === name) ?? local.agent.current()
+  })
+  const effectivePromptAgent = createMemo(() => {
+    if (currentSessionSwarmID() !== undefined) return local.agent.current() ?? sessionAgent()
+    return sessionAgent()
   })
   const sessionModel = createMemo(() => {
     if (!props.useSessionContext) return local.model.current()
     const fromMessage = lastUserMessage()?.model
     const fromSession = props.sessionID ? sync.session.get(props.sessionID)?.model : undefined
+    const selectedAgent = local.agent.currentForSession(props.sessionID)
     return [
       fromMessage && { providerID: fromMessage.providerID, modelID: fromMessage.modelID },
       fromSession && { providerID: fromSession.providerID, modelID: fromSession.id },
+      selectedAgent?.model && { providerID: selectedAgent.model.providerID, modelID: selectedAgent.model.modelID },
     ]
       .find((model) => model && sync.data.provider.some((provider) => provider.id === model.providerID && provider.models[model.modelID])) ?? local.model.current()
   })
@@ -951,6 +982,13 @@ export function Prompt(props: PromptProps) {
     },
     submit() {
       void submit()
+    },
+    cycleAgent(direction) {
+      if (props.sessionID && props.useSessionContext) {
+        local.agent.moveSession(props.sessionID, direction, sessionAgent()?.name)
+        return
+      }
+      local.agent.move(direction)
     },
   }
 
@@ -1451,7 +1489,8 @@ export function Prompt(props: PromptProps) {
           method: "POST",
           body: JSON.stringify({
             prompt: task,
-            agent: sessionAgent()?.name,
+            agent: effectivePromptAgent()?.name,
+            mode: opencodeXSwarmExecutionMode(effectivePromptAgent()?.name),
             variant: sessionVariant(),
           }),
         })
@@ -1509,7 +1548,7 @@ export function Prompt(props: PromptProps) {
       input.clear()
       return true
     }
-    const agent = sessionAgent()
+    const agent = effectivePromptAgent()
     if (!agent) return false
     const selectedModel = sessionModel()
     if (!selectedModel) {
@@ -1650,6 +1689,21 @@ export function Prompt(props: PromptProps) {
             },
           ]
         : []
+    const swarmMode = currentSessionSwarmID() !== undefined ? opencodeXSwarmExecutionMode(agent.name) : undefined
+    const swarmModeParts = swarmMode
+      ? [
+          {
+            id: PartID.ascending(),
+            type: "text" as const,
+            text: opencodeXSwarmModeInstructions(swarmMode),
+            synthetic: true,
+            metadata: {
+              kind: "opencodex_swarm_execution_mode",
+              mode: swarmMode,
+            },
+          },
+        ]
+      : []
 
     const sessionCommandSlash = (() => {
       if (store.mode === "shell") return false
@@ -1718,6 +1772,7 @@ export function Prompt(props: PromptProps) {
           model: selectedModel,
           variant,
           parts: [
+            ...swarmModeParts,
             ...editorParts,
             {
               id: PartID.ascending(),
@@ -2101,7 +2156,7 @@ export function Prompt(props: PromptProps) {
                 <Show
                   when={currentOpencodeXSwarmName()}
                   fallback={
-                    <Show when={sessionAgent()} fallback={<box height={1} />}>
+                    <Show when={effectivePromptAgent()} fallback={<box height={1} />}>
                       {(agent) => (
                         <>
                           <text fg={fadeColor(highlight(), agentMetaAlpha())}>
@@ -2133,13 +2188,27 @@ export function Prompt(props: PromptProps) {
                   }
                 >
                   {(label) => (
-                    <box flexDirection="row" gap={1}>
-                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>Swarm</text>
-                      <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                      <text flexShrink={0} fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}>
-                        {label()}
-                      </text>
-                    </box>
+                    <Show when={effectivePromptAgent()} fallback={<box height={1} />}>
+                      {(agent) => (
+                        <box flexDirection="row" gap={1}>
+                          <text fg={fadeColor(highlight(), agentMetaAlpha())}>
+                            {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                          </text>
+                          <Show when={store.mode === "normal"}>
+                            <box flexDirection="row" gap={1}>
+                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                              <text
+                                flexShrink={0}
+                                fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
+                              >
+                                {label()}
+                              </text>
+                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>Swarm</text>
+                            </box>
+                          </Show>
+                        </box>
+                      )}
+                    </Show>
                   )}
                 </Show>
               </box>

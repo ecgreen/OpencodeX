@@ -95,6 +95,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const visibleAgents = createMemo(() => sync.data.agent.filter((x) => !x.hidden))
       const [agentStore, setAgentStore] = createStore({
         current: undefined as string | undefined,
+        session: {} as Record<string, string | undefined>,
       })
       const { theme } = useTheme()
       const colors = createMemo(() => [
@@ -113,6 +114,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         current() {
           return agents().find((x) => x.name === agentStore.current) ?? agents().at(0)
         },
+        currentForSession(sessionID: string | undefined) {
+          if (!sessionID) return undefined
+          return agents().find((x) => x.name === agentStore.session[sessionID])
+        },
         set(name: string) {
           if (!agents().some((x) => x.name === name))
             return toast.show({
@@ -121,6 +126,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               duration: 3000,
             })
           setAgentStore("current", name)
+        },
+        setSession(sessionID: string, name: string) {
+          if (!agents().some((x) => x.name === name))
+            return toast.show({
+              variant: "warning",
+              message: `Agent not found: ${name}`,
+              duration: 3000,
+            })
+          setAgentStore("session", sessionID, name)
         },
         move(direction: 1 | -1) {
           batch(() => {
@@ -131,6 +145,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             if (next >= agents().length) next = 0
             const value = agents()[next]
             setAgentStore("current", value.name)
+          })
+        },
+        moveSession(sessionID: string, direction: 1 | -1, currentName?: string) {
+          batch(() => {
+            const current = agents().find((x) => x.name === currentName) ?? this.currentForSession(sessionID) ?? this.current()
+            if (!current) return
+            let next = agents().findIndex((x) => x.name === current.name) + direction
+            if (next < 0) next = agents().length - 1
+            if (next >= agents().length) next = 0
+            const value = agents()[next]
+            setAgentStore("session", sessionID, value.name)
           })
         },
         color(name: string) {

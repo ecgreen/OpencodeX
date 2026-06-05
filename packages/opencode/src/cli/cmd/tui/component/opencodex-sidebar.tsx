@@ -139,6 +139,10 @@ function sessionSwarmID(session: Session) {
   return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
 }
 
+function isSwarmSession(session: Session) {
+  return sessionSwarmID(session) !== undefined
+}
+
 function sessionSwarmTitle(session: Session, swarms: OpencodeXSwarmInfo[]) {
   const swarmID = sessionSwarmID(session)
   if (!swarmID) return undefined
@@ -508,13 +512,14 @@ function OpencodeXSessionManager() {
     return undefined
   })
   const sessionMap = createMemo(
-    () => new Map(sync.data.session.filter((session) => !session.parentID).map((session) => [session.id, session])),
+    () => new Map(sync.data.session.filter((session) => !session.parentID && !isSwarmSession(session)).map((session) => [session.id, session])),
   )
   const mappedSessionIDs = createMemo(
     () => new Set((projects() ?? []).flatMap((project) => project.sessions.map((session) => session.id))),
   )
   const projectSessions = (project: OpencodeXProjectInfo) =>
     project.sessions
+      .filter((session) => !isSwarmSession(session))
       .map((session) => sessionMap().get(session.id) ?? session)
       .toSorted((a, b) => b.time.updated - a.time.updated)
   const unassigned = createMemo(() =>
@@ -586,6 +591,7 @@ function OpencodeXSessionManager() {
 
   const options = createMemo(() => {
     const result: Array<ReturnType<typeof buildOption> | ReturnType<typeof buildViewOption>> = []
+    const now = Date.now()
     const appendSection = (section: string, recent: boolean) => {
       let first = true
       const appendGroup = (category: string, sessions: Session[]) => {
@@ -598,14 +604,17 @@ function OpencodeXSessionManager() {
       }
 
       for (const project of projects() ?? []) {
+        const sessions = projectSessions(project)
+        const recentSessions = recentProjectItems(sessions, (session) => session.time.updated, now)
+        const recentSessionIDs = new Set(recentSessions.map((session) => session.id))
         appendGroup(
           projectLabel(project),
-          projectSessions(project).filter((session) => isRecentSessionUpdate(session.time.updated) === recent),
+          recent ? recentSessions : sessions.filter((session) => !recentSessionIDs.has(session.id)),
         )
       }
       appendGroup(
         "No Project",
-        unassigned().filter((session) => isRecentSessionUpdate(session.time.updated) === recent),
+        unassigned().filter((session) => isRecentSessionUpdate(session.time.updated, now) === recent),
       )
     }
 
@@ -864,9 +873,6 @@ export function OpencodeXSidebar() {
       ]),
   )
 
-  const mappedSessionIDs = createMemo(
-    () => new Set((projects() ?? []).flatMap((project) => project.sessions.map((session) => session.id))),
-  )
   const projectIDBySessionID = createMemo(
     () =>
       new Map(
@@ -884,18 +890,24 @@ export function OpencodeXSidebar() {
       ),
   )
   const allSidebarSessions = createMemo(() =>
-    [...allSessionByID().values()].filter((session) => !session.parentID).toSorted((a, b) => b.time.updated - a.time.updated),
+    [...allSessionByID().values()].filter((session) => !session.parentID && !isSwarmSession(session)).toSorted((a, b) => b.time.updated - a.time.updated),
   )
   const recentSessions = createMemo(() => allSidebarSessions().filter((session) => isRecentSessionUpdate(session.time.updated)))
   const priorSessions = createMemo(() => allSidebarSessions().filter((session) => !isRecentSessionUpdate(session.time.updated)))
+  const recentSessionIDs = createMemo(() => new Set(recentSessions().map((session) => session.id)))
   const priorSessionIDs = createMemo(() => new Set(priorSessions().map((session) => session.id)))
-  const unassigned = createMemo(() => recentSessions().filter((session) => !mappedSessionIDs().has(session.id)))
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
   const currentViewID = createMemo(() => (route.data.type === "opencodex-view" ? route.data.viewID : undefined))
   const pendingProjectSession = createMemo(() => getPendingOpencodeXProjectSession())
   const activeRowID = createMemo(() => {
     if (route.data.type === "opencodex-dashboard") return "nav:dashboard"
-    if (route.data.type === "session") return `session:${route.data.sessionID}`
+    if (route.data.type === "session") {
+      if (recentSessionIDs().has(route.data.sessionID)) return `recent-session:${route.data.sessionID}`
+      if (priorSessionIDs().has(route.data.sessionID)) return `prior-session:${route.data.sessionID}`
+      const projectID = projectIDBySessionID().get(route.data.sessionID)
+      if (projectID) return `project-session:${projectID}:${route.data.sessionID}`
+      return `session:${route.data.sessionID}`
+    }
     if (route.data.type === "opencodex-view") return `view:${route.data.viewID}`
     if (route.data.type === "home" && pendingProjectSession()) return `pending:${pendingProjectSession()?.projectID}`
     return undefined
@@ -905,9 +917,23 @@ export function OpencodeXSidebar() {
     recentProjectItems(
       project.sessions
         .filter((session) => !missingSessionIDs().has(session.id))
+        .filter((session) => !isSwarmSession(session))
         .map((session) => sessionByID().get(session.id) ?? session),
       (session) => session.time.updated,
     )
+
+  function sessionRowID(section: "project" | "recent" | "prior", sessionID: string, projectID?: string) {
+    if (section === "project") return `project-session:${projectID}:${sessionID}`
+    if (section === "recent") return `recent-session:${sessionID}`
+    return `prior-session:${sessionID}`
+  }
+
+  function sessionIDFromRow(rowID: string) {
+    if (rowID.startsWith("session:")) return rowID.slice("session:".length)
+    if (rowID.startsWith("recent-session:")) return rowID.slice("recent-session:".length)
+    if (rowID.startsWith("prior-session:")) return rowID.slice("prior-session:".length)
+    if (rowID.startsWith("project-session:")) return rowID.slice(rowID.lastIndexOf(":") + 1)
+  }
 
   const toggleProject = (projectID: string) =>
     setCollapsed((state) => ({ ...state, [projectID]: !(state[projectID] ?? false) }))
@@ -951,7 +977,7 @@ export function OpencodeXSidebar() {
                   ]
                 : []),
               ...projectSessions(project).map((session) => ({
-                id: `session:${session.id}`,
+                id: sessionRowID("project", session.id, project.id),
                 activate: () => route.navigate({ type: "session", sessionID: session.id }),
                 parentID,
               })),
@@ -987,9 +1013,9 @@ export function OpencodeXSidebar() {
     },
     ...(sessionsCollapsed()
       ? []
-      : unassigned().length > 0
-        ? unassigned().map((session) => ({
-            id: `session:${session.id}`,
+      : recentSessions().length > 0
+        ? recentSessions().map((session) => ({
+            id: sessionRowID("recent", session.id),
             activate: () => route.navigate({ type: "session", sessionID: session.id }),
             parentID: "section:sessions",
           }))
@@ -1032,7 +1058,7 @@ export function OpencodeXSidebar() {
     ...(priorSessionsCollapsed()
       ? []
       : priorSessions().map((session) => ({
-          id: `session:${session.id}`,
+          id: sessionRowID("prior", session.id),
           activate: () => route.navigate({ type: "session", sessionID: session.id }),
           parentID: "section:prior-sessions",
         }))),
@@ -1071,6 +1097,7 @@ export function OpencodeXSidebar() {
 
   function activeParentRowID() {
     if (route.data.type === "session") {
+      if (recentSessionIDs().has(route.data.sessionID)) return "section:sessions"
       if (priorSessionIDs().has(route.data.sessionID)) return "section:prior-sessions"
       const projectID = projectIDBySessionID().get(route.data.sessionID)
       if (projectID && rowExists(`project:${projectID}`)) return `project:${projectID}`
@@ -1684,12 +1711,13 @@ export function OpencodeXSidebar() {
       return project ? projectItem(project) : <></>
     }
     if (row.id.startsWith("pending:")) return pendingSessionItem(row.id)
-    if (row.id.startsWith("session:")) {
-      const session = allSessionByID().get(row.id.slice("session:".length))
+    if (row.id.startsWith("session:") || row.id.startsWith("recent-session:") || row.id.startsWith("prior-session:") || row.id.startsWith("project-session:")) {
+      const sessionID = sessionIDFromRow(row.id)
+      const session = sessionID ? allSessionByID().get(sessionID) : undefined
       return session
         ? sessionItem(session, {
             rowID: row.id,
-            subtitle: row.parentID === "section:prior-sessions" ? projectTitleBySessionID().get(session.id) : undefined,
+            subtitle: row.parentID === "section:prior-sessions" || row.parentID === "section:sessions" ? projectTitleBySessionID().get(session.id) : undefined,
           })
         : <></>
     }

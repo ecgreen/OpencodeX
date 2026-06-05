@@ -1,0 +1,53 @@
+{
+  "url": "http://127.0.0.1:41987",
+  "directory": "C:\\Work\\OpencodeX",
+  "write": true,
+  "checks": [
+    {
+      "name": "snapshot loads",
+      "pass": true,
+      "details": {
+        "projects": 0,
+        "sessions": 0,
+        "permissions": 0,
+        "questions": 0,
+        "swarms": 0,
+        "views": 0
+      }
+    },
+    {
+      "name": "project create returns id",
+      "pass": true,
+      "details": {
+        "projectID": "opx_e944a421e001qajo2Ouq3BEEhR"
+      }
+    },
+    {
+      "name": "project session create returns id",
+      "pass": true,
+      "details": {
+        "sessionID": "ses_16bb5bdd1ffe3e41NDZGFSpano"
+      }
+    },
+    {
+      "name": "swarm create completed",
+      "pass": true,
+      "details": {}
+    },
+    {
+      "name": "view create completed",
+      "pass": true,
+      "details": {}
+    },
+    {
+      "name": "post-check snapshot loads",
+      "pass": true,
+      "details": {
+        "projects": 1,
+        "sessions": 1,
+        "swarms": 1,
+        "views": 1
+      }
+    }
+  ]
+}

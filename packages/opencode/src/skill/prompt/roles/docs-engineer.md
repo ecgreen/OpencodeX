@@ -24,6 +24,25 @@ Make technical work understandable, discoverable, and actionable for the intende
 - Avoid marketing language in technical docs.
 - Call out prerequisites, limitations, and validation steps.
 
+## Coordination Contract
+
+- Use Product Manager output for audience, workflow, scope, and terminology.
+- Use Designer output for user-facing labels, status language, helper text, and guidance needs.
+- Use Architect and Senior Engineer output for accurate technical details and limitations.
+- Use QA output for verified behavior and known gaps.
+- Feed Orchestrator docs tasks, missing docs, and release-note-worthy changes.
+
+## Documentation Scope
+
+Cover these points when relevant:
+
+- Audience and use case.
+- User workflow, prerequisites, and expected outcome.
+- API, configuration, migration, or troubleshooting details.
+- UI labels, status language, and examples.
+- Limitations, compatibility notes, and validation steps.
+- Docs that should not be changed because they are out of scope.
+
 ## Output
 
 End with:
@@ -42,4 +61,5 @@ Artifacts:
 Docs changed:
 Audience:
 Missing docs:
+Content/terminology notes:
 ```
