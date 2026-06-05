@@ -2,8 +2,19 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { batch, onCleanup, onMount } from "solid-js"
+
+const LIVE_SYNC_INTERVAL_MS = 500
+const SEEN_EVENT_ID_LIMIT = 2_000
+
+type SyncHistoryCursor = Record<string, number>
+type SyncHistoryEvent = {
+  id: string
+  aggregate_id: string
+  seq: number
+  type: string
+  data: Record<string, unknown>
+}
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -54,9 +65,15 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     let queue: GlobalEvent[] = []
     let timer: Timer | undefined
+    let historyTimer: Timer | undefined
     let last = 0
     const retryDelay = 1000
     const maxRetryDelay = 30000
+    let syncHistoryCursor: SyncHistoryCursor = {}
+    let syncHistoryPrimed = false
+    let syncHistoryRunning = false
+    const seenEventIDs = new Set<string>()
+    const seenEventIDOrder: string[] = []
 
     const flush = () => {
       if (queue.length === 0) return
@@ -73,6 +90,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
 
     const handleEvent = (event: GlobalEvent) => {
+      if (!rememberGlobalEvent(event)) return
       queue.push(event)
       const elapsed = Date.now() - last
 
@@ -84,6 +102,91 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         return
       }
       flush()
+    }
+
+    function rememberGlobalEvent(event: GlobalEvent) {
+      const id = globalEventID(event)
+      return id ? rememberEventID(id) : true
+    }
+
+    function rememberEventID(id: string) {
+      if (seenEventIDs.has(id)) return false
+      seenEventIDs.add(id)
+      seenEventIDOrder.push(id)
+      while (seenEventIDOrder.length > SEEN_EVENT_ID_LIMIT) {
+        const stale = seenEventIDOrder.shift()
+        if (stale) seenEventIDs.delete(stale)
+      }
+      return true
+    }
+
+    function globalEventID(event: GlobalEvent) {
+      const id = (event.payload as { id?: string }).id
+      return typeof id === "string" ? id : undefined
+    }
+
+    function syncHistoryEventToGlobalEvent(event: SyncHistoryEvent): GlobalEvent {
+      return {
+        directory: "global",
+        payload: { id: event.id, type: "sync", name: event.type, seq: event.seq, aggregateID: event.aggregate_id, data: event.data },
+      } as GlobalEvent
+    }
+
+    async function syncPersistedHistory() {
+      if (syncHistoryRunning) return
+      syncHistoryRunning = true
+      try {
+        let events: SyncHistoryEvent[]
+        try {
+          events = await sdk.sync.history.list({ directory: props.directory, body: syncHistoryCursor }).then((x) => x.data ?? [])
+        } catch {
+          return
+        }
+        if (events.length === 0) {
+          syncHistoryPrimed = true
+          return
+        }
+
+        const nextCursor = { ...syncHistoryCursor }
+        for (const event of events) nextCursor[event.aggregate_id] = Math.max(nextCursor[event.aggregate_id] ?? 0, event.seq)
+        syncHistoryCursor = nextCursor
+
+        if (!syncHistoryPrimed) {
+          const initialStatusIDs = latestSessionStatusEventIDs(events)
+          for (const event of events) {
+            if (initialStatusIDs.has(event.id)) handleEvent(syncHistoryEventToGlobalEvent(event))
+            else rememberEventID(event.id)
+          }
+          syncHistoryPrimed = true
+          return
+        }
+
+        for (const event of events) handleEvent(syncHistoryEventToGlobalEvent(event))
+      } finally {
+        syncHistoryRunning = false
+      }
+    }
+
+    function startHistoryPolling() {
+      if (historyTimer) return
+      const tick = () => {
+        void syncPersistedHistory().finally(() => {
+          if (!abort.signal.aborted) historyTimer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
+        })
+      }
+      historyTimer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
+    }
+
+    function latestSessionStatusEventIDs(events: SyncHistoryEvent[]) {
+      const latest = new Map<string, string>()
+      for (const event of events) {
+        if (syncHistoryEventKind(event) === "session.status") latest.set(event.aggregate_id, event.id)
+      }
+      return new Set(latest.values())
+    }
+
+    function syncHistoryEventKind(event: SyncHistoryEvent) {
+      return event.type.replace(/\.\d+$/, "")
     }
 
     function startSSE() {
@@ -100,11 +203,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
             sseMaxRetryAttempts: 0,
           })
 
-          if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
-            // Start syncing workspaces, it's important to do this after
-            // we've started listening to events
-            await sdk.sync.start().catch(() => {})
-          }
+          // Start syncing after listening, then poll persisted sync history as
+          // a safety net for missed or cross-process events.
+          await sdk.sync.start().catch(() => {})
+          startHistoryPolling()
 
           for await (const event of events.stream) {
             if (ctrl.signal.aborted) break
@@ -128,11 +230,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         const unsub = await props.events.subscribe(handleEvent)
         onCleanup(unsub)
 
-        if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
-          // Start syncing workspaces, it's important to do this after
-          // we've started listening to events
-          await sdk.sync.start().catch(() => {})
-        }
+        // Start syncing after listening, then poll persisted sync history as a
+        // safety net for missed or cross-process events.
+        await sdk.sync.start().catch(() => {})
+        startHistoryPolling()
       } else {
         startSSE()
       }
@@ -142,6 +243,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       abort.abort()
       sse?.abort()
       if (timer) clearTimeout(timer)
+      if (historyTimer) clearTimeout(historyTimer)
     })
 
     return {

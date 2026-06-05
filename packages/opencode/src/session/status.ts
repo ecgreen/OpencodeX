@@ -34,6 +34,10 @@ export type Info = Schema.Schema.Type<typeof Info>
 export const Event = {
   Status: EventV2.define({
     type: "session.status",
+    sync: {
+      aggregate: "sessionID",
+      version: 1,
+    },
     schema: {
       sessionID: SessionID,
       status: Info,
@@ -65,6 +69,21 @@ export const layer = Layer.effect(
       Effect.fn("SessionStatus.state")(() => Effect.succeed(new Map<SessionID, Info>())),
     )
 
+    const apply = Effect.fn("SessionStatus.apply")(function* (sessionID: SessionID, status: Info) {
+      const data = yield* InstanceState.get(state)
+      if (status.type === "idle") data.delete(sessionID)
+      else data.set(sessionID, status)
+    })
+
+    const unsubscribe = yield* events.listen((event) =>
+      Effect.gen(function* () {
+        if (event.type !== Event.Status.type) return
+        const data = event.data as { sessionID: SessionID; status: Info }
+        yield* apply(data.sessionID, data.status)
+      }),
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+
     const get = Effect.fn("SessionStatus.get")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       return data.get(sessionID) ?? { type: "idle" as const }
@@ -75,14 +94,13 @@ export const layer = Layer.effect(
     })
 
     const set = Effect.fn("SessionStatus.set")(function* (sessionID: SessionID, status: Info) {
-      const data = yield* InstanceState.get(state)
       yield* events.publish(Event.Status, { sessionID, status })
       if (status.type === "idle") {
         yield* events.publish(Event.Idle, { sessionID })
-        data.delete(sessionID)
+        yield* apply(sessionID, status)
         return
       }
-      data.set(sessionID, status)
+      yield* apply(sessionID, status)
     })
 
     return Service.of({ get, list, set })

@@ -12,7 +12,17 @@ export function deriveStatus(sessionID: string, sync: ReturnType<typeof useSync>
   if (permissions.length > 0 || questions.length > 0) return "input_needed"
   const status = sync.data.session_status[sessionID]
   if (status?.type === "busy" || status?.type === "retry") return "in_progress"
+  if (isLikelyActiveSession(sessionID, sync)) return "in_progress"
   return "dormant"
+}
+
+function isLikelyActiveSession(sessionID: string, sync: ReturnType<typeof useSync>) {
+  const lastAssistant = (sync.data.message[sessionID] ?? []).toReversed().find((message) => message.role === "assistant")
+  if (!lastAssistant || lastAssistant.time.completed || lastAssistant.finish) return false
+  const parts = sync.data.part[lastAssistant.id] ?? []
+  if (parts.some((part) => part.type === "tool" && part.state.status === "running")) return true
+  if (parts.some((part) => part.type === "step-start") && !parts.some((part) => part.type === "step-finish")) return true
+  return parts.length > 0
 }
 
 export function deriveViewStatus(sessionIDs: readonly string[], sync: ReturnType<typeof useSync>): DerivedStatus {

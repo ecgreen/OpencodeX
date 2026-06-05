@@ -28,8 +28,18 @@ type OpencodeXView = {
   layout: string
   sessions: SyncSession[]
   sessionIDs: string[]
+  metadata?: Record<string, unknown>
   timeUpdated: number
 }
+
+type PendingViewSession = {
+  id: string
+  projectID?: string
+  projectLabel?: string
+  directory?: string
+}
+
+type ViewItem = { kind: "session"; session: SyncSession } | { kind: "pending"; slot: PendingViewSession }
 
 type LayoutNode =
   | number
@@ -104,6 +114,44 @@ function partText(part: SyncPart) {
   return ""
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function pendingViewSessions(view?: Pick<OpencodeXView, "metadata">): PendingViewSession[] {
+  const opencodex = view?.metadata?.opencodex
+  if (!isRecord(opencodex) || !Array.isArray(opencodex.pendingSessions)) return []
+  return opencodex.pendingSessions.flatMap((item): PendingViewSession[] => {
+    if (!isRecord(item) || typeof item.id !== "string") return []
+    return [
+      {
+        id: item.id,
+        projectID: typeof item.projectID === "string" ? item.projectID : undefined,
+        projectLabel: typeof item.projectLabel === "string" ? item.projectLabel : undefined,
+        directory: typeof item.directory === "string" ? item.directory : undefined,
+      },
+    ]
+  })
+}
+
+function metadataWithPendingSessions(metadata: Record<string, unknown> | undefined, pending: PendingViewSession[]) {
+  const next = { ...(metadata ?? {}) }
+  const opencodex = isRecord(next.opencodex) ? { ...next.opencodex } : {}
+  if (pending.length > 0) {
+    opencodex.pendingSessions = pending
+    next.opencodex = opencodex
+    return next
+  }
+  delete opencodex.pendingSessions
+  if (Object.keys(opencodex).length > 0) next.opencodex = opencodex
+  else delete next.opencodex
+  return next
+}
+
+function itemID(item: ViewItem) {
+  return item.kind === "session" ? item.session.id : item.slot.id
+}
+
 function messageText(message: SyncMessage, parts: SyncPart[]) {
   const text = parts
     .map(partText)
@@ -115,18 +163,23 @@ function messageText(message: SyncMessage, parts: SyncPart[]) {
 
 function ViewPane(props: {
   viewID: string
-  session: SyncSession
+  item: ViewItem
   focused: () => boolean
   onFocus: () => void
+  onSessionCreated: (slot: PendingViewSession, session: SyncSession) => Promise<void>
 }) {
   const sync = useSync()
+  const sdk = useSDK()
   const promptRef = usePromptRef()
   const route = useRoute()
   const { theme } = useTheme()
   const [ref, setRef] = createSignal<PromptRef>()
-  const messages = createMemo(() => sync.data.message[props.session.id] ?? [])
+  const session = createMemo(() => props.item.kind === "session" ? props.item.session : undefined)
+  const pending = createMemo(() => props.item.kind === "pending" ? props.item.slot : undefined)
+  const id = createMemo(() => itemID(props.item))
+  const messages = createMemo(() => session() ? sync.data.message[session()!.id] ?? [] : [])
   const recent = createMemo(() => messages().slice(Math.max(0, messages().length - 24)))
-  const status = createMemo(() => deriveStatus(props.session.id, sync))
+  const status = createMemo(() => session() ? deriveStatus(session()!.id, sync) : "dormant")
 
   createEffect(() => {
     const current = ref()
@@ -136,8 +189,37 @@ function ViewPane(props: {
   })
 
   onMount(() => {
-    void sync.session.sync(props.session.id)
+    const current = session()
+    if (current) void sync.session.sync(current.id)
   })
+
+  async function createSession(input: { workspaceID?: string; agent: string; model: { providerID: string; id: string; variant?: string } }) {
+    const slot = pending()
+    if (!slot) return undefined
+    if (slot.projectID) {
+      return await sdk.request<SyncSession>("/experimental/opencodex/session", {
+        method: "POST",
+        body: JSON.stringify({
+          projectID: slot.projectID,
+          directory: slot.directory,
+          ...input,
+        }),
+      })
+    }
+    const result = await sdk.client.session.create({
+      workspace: input.workspaceID,
+      agent: input.agent,
+      model: input.model,
+    })
+    if (result.error) throw result.error
+    return result.data
+  }
+
+  async function handleSessionCreated(created: SyncSession) {
+    const slot = pending()
+    if (!slot) return
+    await props.onSessionCreated(slot, created)
+  }
 
   return (
     <box
@@ -154,12 +236,12 @@ function ViewPane(props: {
     >
       <box flexShrink={0} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
         <text attributes={props.focused() ? TextAttributes.BOLD : undefined} fg={props.focused() ? theme.primary : theme.text}>
-          {truncate(props.session.title, 42)}
+          {truncate(session()?.title ?? "New session", 42)}
         </text>
         <text fg={statusColor(status())}>{statusLabel(status())}</text>
       </box>
       <scrollbox flexGrow={1} minHeight={0} paddingLeft={1} paddingRight={1} stickyScroll={true} stickyStart="bottom">
-        <Show when={recent().length > 0} fallback={<text fg={theme.textMuted}>No messages yet.</text>}>
+        <Show when={recent().length > 0} fallback={<text fg={theme.textMuted}>{pending() ? "This pane will create a session when you send a prompt." : "No messages yet."}</text>}>
           <For each={recent()}>
             {(message) => {
               const text = createMemo(() => messageText(message, sync.data.part[message.id] ?? []))
@@ -180,18 +262,25 @@ function ViewPane(props: {
       <box flexShrink={0} paddingLeft={1} paddingRight={1}>
         <Prompt
           ref={setRef}
-          sessionID={props.session.id}
+          sessionID={session()?.id}
           disabled={!props.focused()}
-          useSessionContext
-          draftKey={`opencodex-view:${props.viewID}:${props.session.id}`}
+          useSessionContext={props.item.kind === "session"}
+          draftKey={`opencodex-view:${props.viewID}:${id()}`}
+          createSession={pending() ? createSession : undefined}
+          onSessionCreated={pending() ? handleSessionCreated : undefined}
+          stayOnSessionCreated={props.item.kind === "pending"}
           showPlaceholder={props.focused()}
         />
       </box>
       <box flexShrink={0} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
-        <text fg={theme.textMuted}>{truncate(props.session.directory, 52)}</text>
-        <text fg={theme.textMuted} onMouseUp={() => route.navigate({ type: "session", sessionID: props.session.id })}>
-          open
-        </text>
+        <text fg={theme.textMuted}>{truncate(session()?.directory ?? pending()?.directory ?? "No project", 52)}</text>
+        <Show when={session()}>
+          {(current) => (
+            <text fg={theme.textMuted} onMouseUp={() => route.navigate({ type: "session", sessionID: current().id })}>
+              open
+            </text>
+          )}
+        </Show>
       </box>
     </box>
   )
@@ -199,20 +288,22 @@ function ViewPane(props: {
 
 function renderLayout(input: {
   node: LayoutNode
-  sessions: SyncSession[]
+  items: ViewItem[]
   viewID: string
-  focusedSessionID: () => string | undefined
-  focus: (sessionID: string) => void
+  focusedItemID: () => string | undefined
+  focus: (id: string) => void
+  onSessionCreated: (slot: PendingViewSession, session: SyncSession) => Promise<void>
 }): JSX.Element {
   if (typeof input.node === "number") {
-    const session = input.sessions[input.node]
-    if (!session) return <></>
+    const item = input.items[input.node]
+    if (!item) return <></>
     return (
       <ViewPane
         viewID={input.viewID}
-        session={session}
-        focused={() => input.focusedSessionID() === session.id}
-        onFocus={() => input.focus(session.id)}
+        item={item}
+        focused={() => input.focusedItemID() === itemID(item)}
+        onFocus={() => input.focus(itemID(item))}
+        onSessionCreated={input.onSessionCreated}
       />
     )
   }
@@ -246,13 +337,25 @@ export function OpencodeXViewRoute() {
       .filter((session): session is SyncSession => session !== undefined)
       .slice(0, 8)
   })
-  const focusedSessionID = createMemo(() => localFocus() ?? view()?.focusedSessionID ?? sessions()[0]?.id)
-  const layout = createMemo(() => viewLayout(sessions().length))
+  const items = createMemo<ViewItem[]>(() => [
+    ...sessions().map((session): ViewItem => ({ kind: "session", session })),
+    ...pendingViewSessions(view()).map((slot): ViewItem => ({ kind: "pending", slot })),
+  ].slice(0, 8))
+  const focusedItemID = createMemo(() => {
+    const known = new Set(items().map(itemID))
+    const local = localFocus()
+    if (local && known.has(local)) return local
+    const focused = view()?.focusedSessionID
+    if (focused && known.has(focused)) return focused
+    return items()[0] ? itemID(items()[0]) : undefined
+  })
+  const layout = createMemo(() => viewLayout(items().length))
 
   createEffect(() => {
-    const focused = focusedSessionID()
-    if (!focused || sessions().some((session) => session.id === focused)) return
-    setLocalFocus(sessions()[0]?.id)
+    const focused = focusedItemID()
+    if (!focused || items().some((item) => itemID(item) === focused)) return
+    const first = items()[0]
+    setLocalFocus(first ? itemID(first) : undefined)
   })
 
   createEffect(() => {
@@ -269,22 +372,45 @@ export function OpencodeXViewRoute() {
     if (router.data.type === "opencodex-view") void refetch()
   }))
 
-  function focus(sessionID: string) {
-    if (focusedSessionID() === sessionID) return
-    setLocalFocus(sessionID)
+  function focus(id: string) {
+    if (focusedItemID() === id) return
+    setLocalFocus(id)
+    const item = items().find((item) => itemID(item) === id)
+    if (item?.kind !== "session") return
     void sdk
       .request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
         method: "PATCH",
-        body: JSON.stringify({ focusedSessionID: sessionID }),
+        body: JSON.stringify({ focusedSessionID: item.session.id }),
       })
       .catch(() => {})
   }
 
   function move(offset: number) {
-    const list = sessions()
+    const list = items()
     if (list.length === 0) return
-    const index = Math.max(0, list.findIndex((session) => session.id === focusedSessionID()))
-    focus(list[(index + offset + list.length) % list.length].id)
+    const index = Math.max(0, list.findIndex((item) => itemID(item) === focusedItemID()))
+    focus(itemID(list[(index + offset + list.length) % list.length]))
+  }
+
+  async function materializePendingSession(slot: PendingViewSession, session: SyncSession) {
+    const current = view()
+    const pending = pendingViewSessions(current).filter((item) => item.id !== slot.id)
+    const sessionIDs = [...(current?.sessionIDs ?? []).filter((sessionID) => sessionID !== session.id), session.id]
+    await sdk.request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        sessionIDs,
+        focusedSessionID: session.id,
+        metadata: metadataWithPendingSessions(current?.metadata, pending),
+      }),
+    }).catch(async (error: Error) => {
+      await sdk.request<boolean>(`/experimental/opencodex/session/${session.id}`, { method: "DELETE" }).catch(() => undefined)
+      throw error
+    })
+    setLocalFocus(session.id)
+    void sync.session.sync(session.id)
+    await refetch()
+    refreshOpencodeXSidebar()
   }
 
   async function deleteView() {
@@ -318,7 +444,7 @@ export function OpencodeXViewRoute() {
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" paddingLeft={2} paddingRight={2}>
       <Show
-        when={sessions().length > 0}
+        when={items().length > 0}
         fallback={
           <box flexGrow={1} alignItems="center" justifyContent="center">
             <text fg={theme.textMuted}>This view has no available sessions.</text>
@@ -327,10 +453,11 @@ export function OpencodeXViewRoute() {
       >
         {renderLayout({
           node: layout(),
-          sessions: sessions(),
+          items: items(),
           viewID: route.viewID,
-          focusedSessionID,
+          focusedItemID,
           focus,
+          onSessionCreated: materializePendingSession,
         })}
       </Show>
       <Toast />

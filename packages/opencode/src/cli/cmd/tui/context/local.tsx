@@ -229,9 +229,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
 
       const args = useArgs()
-      function persistSessionModel(model: ModelSelection, variant: string | undefined) {
-        const sessionID = activeSessionID()
-        if (!sessionID) return
+      function persistSessionModelForSession(sessionID: string, model: ModelSelection, variant: string | undefined) {
         void sdk
           .request(`/session/${sessionID}`, {
             method: "PATCH",
@@ -246,6 +244,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               duration: 3000,
             })
           })
+      }
+
+      function persistSessionModel(model: ModelSelection, variant: string | undefined) {
+        const sessionID = activeSessionID()
+        if (!sessionID) return
+        persistSessionModelForSession(sessionID, model, variant)
       }
 
       const fallbackModel = createMemo(() => {
@@ -322,6 +326,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const variants = provider?.models[model.modelID]?.variants
         if (!variants || !(value in variants)) return undefined
         return value
+      }
+
+      function variantListForModel(model: ModelSelection) {
+        const provider = sync.data.provider.find((x) => x.id === model.providerID)
+        const info = provider?.models[model.modelID]
+        if (!info?.variants) return []
+        return Object.keys(info.variants)
       }
 
       function sameModel(a: ModelSelection | undefined, b: ModelSelection | undefined) {
@@ -486,32 +497,48 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           selected() {
             return selectedVariant()
           },
+          selectedForSession(sessionID: string, model: ModelSelection, fallback?: string) {
+            if (modelStore.sessionVariant[sessionID] !== undefined) return normalizeVariant(model, modelStore.sessionVariant[sessionID])
+            if (fallback !== undefined) return normalizeVariant(model, fallback)
+            const session = sync.session.get(sessionID)
+            if (session?.model?.variant !== undefined) return normalizeVariant(model, session.model.variant)
+            return undefined
+          },
           current() {
             const v = this.selected()
             if (!v) return undefined
             if (!this.list().includes(v)) return undefined
             return v
           },
+          currentForSession(sessionID: string, model: ModelSelection, fallback?: string) {
+            const v = this.selectedForSession(sessionID, model, fallback)
+            if (!v) return undefined
+            if (!variantListForModel(model).includes(v)) return undefined
+            return v
+          },
           list() {
             const m = currentModel()
             if (!m) return []
-            const provider = sync.data.provider.find((x) => x.id === m.providerID)
-            const info = provider?.models[m.modelID]
-            if (!info?.variants) return []
-            return Object.keys(info.variants)
+            return variantListForModel(m)
+          },
+          listForModel(model: ModelSelection) {
+            return variantListForModel(model)
           },
           set(value: string | undefined, options?: { persist?: boolean }) {
             const m = currentModel()
             if (!m) return
             const sessionID = activeSessionID()
             if (sessionID) {
-              setModelStore("sessionVariant", sessionID, value ?? "default")
-              if (options?.persist !== false) persistSessionModel(m, value)
-              save()
+              this.setForSession(sessionID, m, value, options)
               return
             }
             const key = `${m.providerID}/${m.modelID}`
             setModelStore("variant", key, value ?? "default")
+            save()
+          },
+          setForSession(sessionID: string, model: ModelSelection, value: string | undefined, options?: { persist?: boolean }) {
+            setModelStore("sessionVariant", sessionID, value ?? "default")
+            if (options?.persist !== false) persistSessionModelForSession(sessionID, model, value)
             save()
           },
           cycle() {
@@ -528,6 +555,20 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               return
             }
             this.set(variants[index + 1])
+          },
+          cycleForSession(sessionID: string, model: ModelSelection, current?: string) {
+            const variants = variantListForModel(model)
+            if (variants.length === 0) return
+            if (!current) {
+              this.setForSession(sessionID, model, variants[0])
+              return
+            }
+            const index = variants.indexOf(current)
+            if (index === -1 || index === variants.length - 1) {
+              this.setForSession(sessionID, model, undefined)
+              return
+            }
+            this.setForSession(sessionID, model, variants[index + 1])
           },
         },
       }

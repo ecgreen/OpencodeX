@@ -83,6 +83,13 @@ export type PromptProps = {
   visible?: boolean
   disabled?: boolean
   useSessionContext?: boolean
+  createSession?: (input: {
+    workspaceID?: string
+    agent: string
+    model: { providerID: string; id: string; variant?: string }
+  }) => Promise<Session | undefined>
+  onSessionCreated?: (session: Session) => void | Promise<void>
+  stayOnSessionCreated?: boolean
   onCustomSubmit?: (prompt: PromptInfo) => boolean | void | Promise<boolean | void>
   onSubmit?: () => void
   ref?: (ref: PromptRef | undefined) => void
@@ -106,6 +113,7 @@ export type PromptRef = {
   focus(): void
   submit(): void
   cycleAgent?(direction: 1 | -1): void
+  cycleVariant?(): void
 }
 
 const money = new Intl.NumberFormat("en-US", {
@@ -609,12 +617,9 @@ export function Prompt(props: PromptProps) {
   const sessionVariant = createMemo(() => {
     if (!props.useSessionContext) return local.model.variant.current()
     const model = sessionModel()
-    if (!model) return undefined
+    if (!model || !props.sessionID) return undefined
     const value = lastUserMessage()?.model?.variant ?? (props.sessionID ? sync.session.get(props.sessionID)?.model?.variant : undefined)
-    if (!value || value === "default") return undefined
-    const variants = sync.data.provider.find((provider) => provider.id === model.providerID)?.models[model.modelID]?.variants
-    if (!variants || !(value in variants)) return undefined
-    return value
+    return local.model.variant.currentForSession(props.sessionID, model, value)
   })
   const sessionModelLabel = createMemo(() => {
     const model = sessionModel()
@@ -989,6 +994,15 @@ export function Prompt(props: PromptProps) {
         return
       }
       local.agent.move(direction)
+    },
+    cycleVariant() {
+      if (props.sessionID && props.useSessionContext) {
+        const model = sessionModel()
+        if (!model) return
+        local.model.variant.cycleForSession(props.sessionID, model, sessionVariant())
+        return
+      }
+      local.model.variant.cycle()
     },
   }
 
@@ -1592,20 +1606,27 @@ export function Prompt(props: PromptProps) {
       })
 
       const pendingOpencodeXProject = getPendingOpencodeXProjectSession()
-      const res = pendingOpencodeXProject
+      const createInput = {
+        workspaceID,
+        agent: agent.name,
+        model: {
+          providerID: selectedModel.providerID,
+          id: selectedModel.modelID,
+          variant,
+        },
+      }
+      const res = props.createSession
+        ? await props.createSession(createInput)
+            .then((session) => ({ data: session, error: undefined }))
+            .catch((error: Error) => ({ data: undefined, error }))
+        : pendingOpencodeXProject
         ? await sdk
             .request<Session>("/experimental/opencodex/session", {
               method: "POST",
               body: JSON.stringify({
                 projectID: pendingOpencodeXProject.projectID,
                 directory: pendingOpencodeXProject.directory,
-                workspaceID,
-                agent: agent.name,
-                model: {
-                  providerID: selectedModel.providerID,
-                  id: selectedModel.modelID,
-                  variant,
-                },
+                ...createInput,
               }),
             })
             .then((session) => ({ data: session, error: undefined }))
@@ -1634,6 +1655,7 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      await props.onSessionCreated?.(res.data)
       if (pendingOpencodeXProject) {
         setPendingOpencodeXProjectSession(undefined)
         refreshOpencodeXSidebar()
@@ -1799,7 +1821,7 @@ export function Prompt(props: PromptProps) {
     props.onSubmit?.()
 
     // temporary hack to make sure the message is sent
-    if (!props.sessionID) {
+    if (!props.sessionID && !props.stayOnSessionCreated) {
       if (editorParts.length > 0) editor.preserveSelectionFromNewSession()
       setTimeout(() => {
         route.navigate({

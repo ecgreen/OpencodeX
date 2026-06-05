@@ -17,6 +17,7 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./client"
+import { messageCursorBefore } from "./message-window"
 import { displayMessageText } from "./message-text"
 
 export type MessageBundle = {
@@ -26,8 +27,17 @@ export type MessageBundle = {
 
 export type SessionData = {
   messages: MessageBundle[]
+  messageCursor?: string
+  messageTailDetached?: boolean
   todos: Todo[]
   diffs: SnapshotFileDiff[]
+}
+
+export type SessionLoadOptions = {
+  messageLimit?: number
+  messageRenderBudget?: number
+  messageBefore?: string
+  includeSideData?: boolean
 }
 
 export type GuiSnapshot = {
@@ -43,18 +53,18 @@ export type GuiSnapshot = {
   views: OpencodeXView[]
 }
 
-const SESSION_LIST_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+export type SessionCardSnapshot = Pick<GuiSnapshot, "projects" | "sessions" | "sessionStatus" | "permissions" | "questions">
 
-export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
+const SESSION_LIST_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const ID_RANDOM_BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+let lastClientMessageIDTimestamp = 0
+let clientMessageIDCounter = 0
+
+export async function loadSessionCards(gui: GuiClient): Promise<SessionCardSnapshot> {
   const sessionQuery = await sessionListQuery(gui)
-  const [projects, sessions, providers, agents, swarms, jobs, views] = await Promise.all([
+  const [projects, sessions] = await Promise.all([
     gui.client.opencodex.project.list().then((x) => x.data ?? []),
     gui.client.session.list({ start: Date.now() - SESSION_LIST_WINDOW_MS, ...sessionQuery }).then((x) => x.data ?? []),
-    gui.client.config.providers({ directory: gui.directory || undefined }).then((x) => x.data?.providers ?? []),
-    gui.client.app.agents({ directory: gui.directory || undefined }).then((x) => x.data ?? []),
-    gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
-    gui.client.opencodex.job.list().then((x) => x.data ?? []),
-    gui.client.opencodex.view.list().then((x) => x.data ?? []),
   ])
   const merged = mergeSessions(sessions, projects)
   const directories = Array.from(new Set([gui.directory, ...merged.map((session) => session.directory)].filter(Boolean)))
@@ -71,9 +81,24 @@ export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
   return {
     projects,
     sessions: merged,
-    sessionStatus: { ...(await inferRunningSessionStatus(gui, merged, sessionStatus)), ...sessionStatus },
+    sessionStatus,
     permissions,
     questions,
+  }
+}
+
+export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
+  const [cards, providers, agents, swarms, jobs, views] = await Promise.all([
+    loadSessionCards(gui),
+    gui.client.config.providers({ directory: gui.directory || undefined }).then((x) => x.data?.providers ?? []),
+    gui.client.app.agents({ directory: gui.directory || undefined }).then((x) => x.data ?? []),
+    gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
+    gui.client.opencodex.job.list().then((x) => x.data ?? []),
+    gui.client.opencodex.view.list().then((x) => x.data ?? []),
+  ])
+
+  return {
+    ...cards,
     providers,
     agents,
     swarms,
@@ -82,16 +107,34 @@ export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
   }
 }
 
-export async function loadSession(gui: GuiClient, sessionID: string, directory?: string): Promise<SessionData> {
-  const [messages, todos, diffs] = await Promise.all([
-    gui.client.session.messages({ sessionID, directory: directory || gui.directory || undefined, limit: 200 }),
-    gui.client.session.todo({ sessionID, directory: directory || gui.directory || undefined }),
-    gui.client.session.diff({ sessionID, directory: directory || gui.directory || undefined }),
+export async function loadSession(gui: GuiClient, sessionID: string, directory?: string, options: SessionLoadOptions = {}): Promise<SessionData> {
+  const queryDirectory = directory || gui.directory || undefined
+  const [messagePage, todos, diffs] = await Promise.all([
+    loadSessionMessages(gui, sessionID, directory, { limit: options.messageLimit ?? 200, renderBudget: options.messageRenderBudget, before: options.messageBefore }),
+    options.includeSideData === false ? Promise.resolve({ data: [] as Todo[] }) : gui.client.session.todo({ sessionID, directory: queryDirectory }),
+    options.includeSideData === false ? Promise.resolve({ data: [] as SnapshotFileDiff[] }) : gui.client.session.diff({ sessionID, directory: queryDirectory }),
   ])
   return {
-    messages: normalizeMessageText((messages.data ?? []) as MessageBundle[]),
+    messages: messagePage.messages,
+    messageCursor: messagePage.cursor,
     todos: todos.data ?? [],
     diffs: diffs.data ?? [],
+  }
+}
+
+export async function loadSessionMessages(gui: GuiClient, sessionID: string, directory: string | undefined, options: { limit: number; renderBudget?: number; before?: string }) {
+  const response = await gui.client.session.messages({
+    sessionID,
+    directory: directory || gui.directory || undefined,
+    limit: options.renderBudget === undefined ? options.limit + 1 : options.limit,
+    renderBudget: options.renderBudget,
+    before: options.before,
+  })
+  const messages = normalizeMessageText((response.data ?? []) as MessageBundle[])
+  const visible = options.renderBudget === undefined ? messages.slice(-options.limit) : messages
+  return {
+    messages: visible,
+    cursor: options.renderBudget === undefined && visible.length < messages.length && visible[0] ? messageCursorBefore(visible[0]) : response.response?.headers.get("x-next-cursor") ?? undefined,
   }
 }
 
@@ -114,12 +157,31 @@ export async function sendPrompt(
   return gui.client.session.promptAsync({
     sessionID,
     directory: options.directory || gui.directory || undefined,
-    messageID: crypto.randomUUID(),
+    messageID: createClientMessageID(),
     agent: options.agent,
     model: options.model,
     variant: options.variant,
     parts: [{ type: "text", text }],
   }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+function createClientMessageID() {
+  const timestamp = Date.now()
+  const counter = timestamp === lastClientMessageIDTimestamp ? clientMessageIDCounter + 1 : 1
+  lastClientMessageIDTimestamp = timestamp
+  clientMessageIDCounter = counter
+  return `msg_${encodedIDTime(timestamp, counter)}${randomBase62(14)}`
+}
+
+function encodedIDTime(timestamp: number, counter: number) {
+  const mask = (BigInt(1) << BigInt(48)) - BigInt(1)
+  return ((BigInt(timestamp) * BigInt(0x1000) + BigInt(counter)) & mask).toString(16).padStart(12, "0")
+}
+
+function randomBase62(length: number) {
+  const bytes = new Uint8Array(length)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => ID_RANDOM_BASE62.charAt(byte % ID_RANDOM_BASE62.length)).join("")
 }
 
 export async function abortSession(gui: GuiClient, sessionID: string, directory?: string) {
@@ -245,6 +307,14 @@ export async function reorderViews(gui: GuiClient, viewIDs: string[]) {
   return gui.client.opencodex.view.reorder({ opencodeXViewReorderInput: { viewIDs } }, { headers: authHeaders(gui), throwOnError: true })
 }
 
+export async function updateViewFocus(gui: GuiClient, viewID: string, focusedSessionID: string) {
+  return gui.client.opencodex.view.update({ viewID, focusedSessionID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function updateView(gui: GuiClient, viewID: string, input: { sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
+  return gui.client.opencodex.view.update({ viewID, ...input }, { headers: authHeaders(gui), throwOnError: true })
+}
+
 export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) => void) {
   const controller = new AbortController()
   void (async () => {
@@ -270,7 +340,20 @@ function mergeSessions(sessions: Session[], projects: OpencodeXProject[]) {
     new Map(
       [...sessions, ...projects.flatMap((project) => project.sessions as Session[])].map((session) => [session.id, session]),
     ).values(),
-  ).toSorted((a, b) => b.time.updated - a.time.updated)
+  ).filter(isRenderableSession).toSorted((a, b) => b.time.updated - a.time.updated)
+}
+
+export function isRenderableSession(session: Session) {
+  if (session.parentID) return true
+  if (session.model || session.summary || session.share || session.revert) return true
+  const tokens = session.tokens
+  if (tokens && tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write > 0) return true
+  if ((session.cost ?? 0) > 0) return true
+  return !isPlaceholderTitle(session.title)
+}
+
+function isPlaceholderTitle(title: string) {
+  return title === "New session" || /^New session - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(title)
 }
 
 async function sessionListQuery(gui: GuiClient): Promise<{ scope?: "project"; path?: string }> {
@@ -302,31 +385,6 @@ function normalizePath(value: string) {
 
 function hasWindowsDrive(value: string) {
   return /^[a-zA-Z]:\//.test(value)
-}
-
-async function inferRunningSessionStatus(gui: GuiClient, sessions: Session[], sessionStatus: Record<string, SessionStatus>) {
-  const candidates = sessions
-    .filter((session) => !session.parentID && !sessionStatus[session.id] && session.time.updated >= Date.now() - 6 * 60 * 60 * 1000)
-    .toSorted((a, b) => b.time.updated - a.time.updated)
-    .slice(0, 60)
-  const entries = await Promise.all(
-    candidates.map((session) =>
-      gui.client.session
-        .messages({ sessionID: session.id, directory: session.directory || gui.directory || undefined, limit: 6 })
-        .then((response): [string, SessionStatus] | undefined => (hasUnfinishedStep((response.data ?? []) as MessageBundle[]) ? [session.id, { type: "busy" }] : undefined))
-        .catch(() => undefined),
-    ),
-  )
-  return Object.fromEntries(entries.filter((entry): entry is [string, SessionStatus] => entry !== undefined))
-}
-
-function hasUnfinishedStep(messages: MessageBundle[]) {
-  return messages.toReversed().some((message) => {
-    if (message.info.role !== "assistant") return false
-    if (message.info.time.completed || "finish" in message.info && message.info.finish) return false
-    if (!message.parts.some((part) => part.type === "step-start")) return true
-    return !message.parts.some((part) => part.type === "step-finish")
-  })
 }
 
 function authHeaders(gui: GuiClient) {

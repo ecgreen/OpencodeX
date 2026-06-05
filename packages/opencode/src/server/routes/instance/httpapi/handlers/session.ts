@@ -106,6 +106,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       query: typeof MessagesQuery.Type
     }) {
       if (ctx.query.before && ctx.query.limit === undefined) return yield* new HttpApiError.BadRequest({})
+      if (ctx.query.renderBudget !== undefined && (!ctx.query.limit || ctx.query.limit <= 0)) return yield* new HttpApiError.BadRequest({})
       if (ctx.query.before) {
         const before = ctx.query.before
         yield* Effect.try({
@@ -119,11 +120,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
 
       const page = yield* SessionError.mapStorageNotFound(
-        MessageV2.page({
-          sessionID: ctx.params.sessionID,
-          limit: ctx.query.limit,
-          before: ctx.query.before,
-        }),
+        ctx.query.renderBudget === undefined
+          ? MessageV2.page({
+            sessionID: ctx.params.sessionID,
+            limit: ctx.query.limit,
+            before: ctx.query.before,
+          })
+          : MessageV2.pageByRenderBudget({
+            sessionID: ctx.params.sessionID,
+            renderBudget: ctx.query.renderBudget,
+            limit: ctx.query.limit,
+            before: ctx.query.before,
+          }),
       )
       if (!page.cursor) return page.items
 
@@ -132,6 +140,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       // header echoes the real origin instead of a hard-coded localhost.
       const url = Option.getOrElse(HttpServerRequest.toURL(request), () => new URL(request.url, "http://localhost"))
       url.searchParams.set("limit", ctx.query.limit.toString())
+      if (ctx.query.renderBudget !== undefined) url.searchParams.set("renderBudget", ctx.query.renderBudget.toString())
       url.searchParams.set("before", page.cursor)
       return HttpServerResponse.jsonUnsafe(page.items, {
         headers: {

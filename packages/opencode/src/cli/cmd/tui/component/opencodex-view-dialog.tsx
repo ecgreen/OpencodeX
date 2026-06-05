@@ -17,6 +17,7 @@ type OpencodeXView = {
   id: string
   title?: string
   sessionIDs?: string[]
+  metadata?: Record<string, unknown>
   timeUpdated?: number
 }
 
@@ -42,6 +43,8 @@ type NewSessionSelection = {
 
 type ViewSelection = { kind: "existing"; sessionID: string } | NewSessionSelection
 
+type PendingViewSession = NewSessionSelection
+
 type OpencodeXViewDialogContext = {
   sdk: ReturnType<typeof useSDK>
   dialog: ReturnType<typeof useDialog>
@@ -61,6 +64,41 @@ function errorText(error: unknown) {
   if (error instanceof Error) return error.message
   if (typeof error === "string") return error
   return String(error)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function pendingViewSessions(view?: Pick<OpencodeXView, "metadata">): PendingViewSession[] {
+  const opencodex = view?.metadata?.opencodex
+  if (!isRecord(opencodex) || !Array.isArray(opencodex.pendingSessions)) return []
+  return opencodex.pendingSessions.flatMap((item): PendingViewSession[] => {
+    if (!isRecord(item) || typeof item.id !== "string") return []
+    return [
+      {
+        kind: "new",
+        id: item.id,
+        projectID: typeof item.projectID === "string" ? item.projectID : undefined,
+        projectLabel: typeof item.projectLabel === "string" ? item.projectLabel : undefined,
+        directory: typeof item.directory === "string" ? item.directory : undefined,
+      },
+    ]
+  })
+}
+
+function metadataWithPendingSessions(metadata: Record<string, unknown> | undefined, pending: PendingViewSession[]) {
+  const next = { ...(metadata ?? {}) }
+  const opencodex = isRecord(next.opencodex) ? { ...next.opencodex } : {}
+  if (pending.length > 0) {
+    opencodex.pendingSessions = pending.map(({ kind: _kind, ...slot }) => slot)
+    next.opencodex = opencodex
+    return next
+  }
+  delete opencodex.pendingSessions
+  if (Object.keys(opencodex).length > 0) next.opencodex = opencodex
+  else delete next.opencodex
+  return next
 }
 
 export function selectOpencodeXViewDialog(input: Pick<OpencodeXViewDialogContext, "sdk" | "dialog" | "route">) {
@@ -159,7 +197,7 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
         ?? [...(props.sessionIDs ?? props.view?.sessionIDs ?? [])].map((sessionID): ViewSelection => ({
           kind: "existing",
           sessionID,
-        }))
+        })).concat(pendingViewSessions(props.view))
     ).slice(0, 8),
   )
   const [projects] = createResource(() => props.sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"))
@@ -257,7 +295,7 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       title: "Add new sessions",
       category: "Action",
       value: "add-new-sessions",
-      description: remainingCount() === 0 ? "View is full" : "Create blank sessions when saving",
+      description: remainingCount() === 0 ? "View is full" : "Reserve empty panes without creating sessions",
       gutter: () => <text fg={remainingCount() === 0 ? theme.textMuted : theme.primary}>+</text>,
       onSelect: () => void addNewSessions(),
     },
@@ -392,21 +430,6 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
     props.dialog.replace(() => <OpencodeXViewSessionPicker {...props} title={next.trim()} selection={selection()} />)
   }
 
-  async function createSessionForSlot(slot: NewSessionSelection) {
-    if (slot.projectID) {
-      return await props.sdk.request<Session>("/experimental/opencodex/session", {
-        method: "POST",
-        body: JSON.stringify({
-          projectID: slot.projectID,
-          directory: slot.directory,
-        }),
-      })
-    }
-    const result = await props.sdk.client.session.create({})
-    if (result.error || !result.data) throw new Error(errorText(result.error ?? "no response"))
-    return result.data
-  }
-
   async function saveView() {
     if (selectedCount() === 0) {
       await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", "Select at least one session.")
@@ -414,34 +437,19 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       return
     }
     const currentSelection = selection()
-    const resolvedSelection: ViewSelection[] = []
-    for (let index = 0; index < currentSelection.length; index++) {
-      const item = currentSelection[index]
-      if (!item) continue
-      if (item.kind === "existing") {
-        resolvedSelection.push(item)
-        continue
-      }
-      const session = await createSessionForSlot(item).catch(async (error: Error) => {
-        await DialogAlert.show(props.dialog, props.view ? "Edit View" : "Create View", error.message)
-        setSelection([...resolvedSelection, ...currentSelection.slice(index)])
-        reopenPicker()
-      })
-      if (!session) return
-      resolvedSelection.push({ kind: "existing", sessionID: session.id })
-    }
-    setSelection(resolvedSelection)
-    const sessionIDs = resolvedSelection
+    const sessionIDs = currentSelection
       .filter((item): item is { kind: "existing"; sessionID: string } => item.kind === "existing")
       .map((item) => item.sessionID)
+    const pending = currentSelection.filter((item): item is PendingViewSession => item.kind === "new")
     const first = selectedSessions()[0]
-    const viewTitle = title() || (first && sessionIDs.length === 1 ? first.title : `${sessionIDs.length} session view`)
+    const viewTitle = title() || (first && selectedCount() === 1 ? first.title : `${selectedCount()} session view`)
     const view = await props.sdk
       .request<OpencodeXView>(props.view ? `/experimental/opencodex/view/${props.view.id}` : "/experimental/opencodex/view", {
         method: props.view ? "PATCH" : "POST",
         body: JSON.stringify({
           title: viewTitle,
           sessionIDs,
+          metadata: metadataWithPendingSessions(props.view?.metadata, pending),
         }),
       })
       .catch(async (error: Error) => {

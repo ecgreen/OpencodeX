@@ -8,6 +8,7 @@ import {
   deleteProject,
   deleteSession,
   loadSession,
+  loadSessionCards,
   loadSnapshot,
   moveSession,
   renameProject,
@@ -25,7 +26,7 @@ describe("GUI store backend parity", () => {
 
     expect(calls).toContain("permission.list")
     expect(calls).toContain("question.list")
-    expect(calls.slice(0, 9)).toEqual([
+    expect(calls).toEqual(expect.arrayContaining([
       "project.current",
       "project.list",
       "session.list",
@@ -35,12 +36,31 @@ describe("GUI store backend parity", () => {
       "job.list",
       "view.list",
       "session.status",
-    ])
+    ]))
+    expect(calls).not.toContain("session.messages:session-list")
     expect(snapshot.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
     expect(snapshot.permissions).toHaveLength(1)
     expect(snapshot.questions).toHaveLength(1)
     expect(snapshot.providers[0]?.id).toBe("anthropic")
     expect(snapshot.agents[0]?.name).toBe("build")
+  })
+
+  test("loads lightweight session card state without session content", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+    const cards = await loadSessionCards(gui)
+
+    expect(calls).toContain("project.list")
+    expect(calls).toContain("session.list")
+    expect(calls).toContain("session.status")
+    expect(calls).toContain("permission.list")
+    expect(calls).toContain("question.list")
+    expect(calls).not.toContain("session.messages:session-list")
+    expect(calls).not.toContain("config.providers")
+    expect(calls).not.toContain("app.agents")
+    expect(calls).not.toContain("job.list")
+    expect(calls).not.toContain("view.list")
+    expect(cards.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
   })
 
   test("sends create and prompt payloads through existing APIs", async () => {
@@ -62,6 +82,7 @@ describe("GUI store backend parity", () => {
     expect(calls).toContain("swarm.create:project-1")
     expect(calls).toContain("view.create:session-list")
     expect(calls).toContain("session.promptAsync:session-list:hello:build:anthropic/claude-sonnet:fast")
+    expect(calls.find((call) => call.startsWith("session.promptAsync.messageID:"))).toMatch(/^session\.promptAsync\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
   })
 
   test("loads TUI-style session bundle", async () => {
@@ -70,12 +91,103 @@ describe("GUI store backend parity", () => {
     const data = await loadSession(gui, "session-list")
 
     expect(calls).toContain("session.messages:session-list")
+    expect(calls).toContain("session.messages.limit:201")
     expect(calls).toContain("session.todo:session-list")
     expect(calls).toContain("session.diff:session-list")
     expect(data.messages).toHaveLength(1)
     expect(data.messages[0]?.parts[0]).toMatchObject({ type: "text", text: "hello" })
     expect(data.todos[0].content).toBe("Ship GUI")
     expect(data.diffs[0].file).toBe("packages/gui/src/renderer/src/app.tsx")
+  })
+
+  test("loads lightweight view session bundle", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+    const data = await loadSession(gui, "session-list", undefined, { messageLimit: 48, includeSideData: false })
+
+    expect(calls).toContain("session.messages:session-list")
+    expect(calls).toContain("session.messages.limit:49")
+    expect(calls).not.toContain("session.todo:session-list")
+    expect(calls).not.toContain("session.diff:session-list")
+    expect(data.messages).toHaveLength(1)
+    expect(data.todos).toHaveLength(0)
+    expect(data.diffs).toHaveLength(0)
+  })
+
+  test("loads budgeted session messages without extra count overfetch", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+    const data = await loadSession(gui, "session-list", undefined, { messageLimit: 96, messageRenderBudget: 28_000, includeSideData: false })
+
+    expect(calls).toContain("session.messages:session-list")
+    expect(calls).toContain("session.messages.limit:96")
+    expect(calls).toContain("session.messages.renderBudget:28000")
+    expect(calls).not.toContain("session.messages.limit:97")
+    expect(data.messages).toHaveLength(1)
+  })
+
+  test("loads paged session messages with cursor", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+    const data = await loadSession(gui, "session-list", undefined, { messageLimit: 48, messageRenderBudget: 14_000, messageBefore: "cursor-1", includeSideData: false })
+
+    expect(calls).toContain("session.messages.limit:48")
+    expect(calls).toContain("session.messages.renderBudget:14000")
+    expect(calls).toContain("session.messages.before:cursor-1")
+    expect(data.messageCursor).toBe("next-cursor")
+  })
+
+  test("synthesizes cursor when a page has more messages than the rendered limit", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls, {
+      headerCursor: null,
+      messages: {
+        "session-list": [message("m1", 1), message("m2", 2), message("m3", 3)],
+      },
+    })
+    const data = await loadSession(gui, "session-list", undefined, { messageLimit: 2, includeSideData: false })
+
+    expect(calls).toContain("session.messages.limit:3")
+    expect(data.messages.map((item) => item.info.id)).toEqual(["m2", "m3"])
+    expect(data.messageCursor).toBeTruthy()
+  })
+
+  test("does not infer running when backend status is idle or omitted", async () => {
+    const now = Date.now()
+    const calls: string[] = []
+    const gui = fakeGui(calls, {
+      sessionStatus: {},
+      updated: now,
+      messages: {
+        "session-list": [
+          {
+            info: { id: "assistant-old", sessionID: "session-list", role: "assistant", time: { created: now - 2_000 } },
+            parts: [{ type: "step-start" }],
+          },
+          {
+            info: { id: "assistant-new", sessionID: "session-list", role: "assistant", finish: "stop", time: { created: now - 1_000, completed: now } },
+            parts: [{ type: "step-start" }, { type: "step-finish" }],
+          },
+        ],
+      },
+    })
+
+    const snapshot = await loadSnapshot(gui)
+
+    expect(snapshot.sessionStatus["session-list"]).toBeUndefined()
+  })
+
+  test("uses backend busy status as authoritative", async () => {
+    const now = Date.now()
+    const calls: string[] = []
+    const gui = fakeGui(calls, {
+      sessionStatus: { "session-list": { type: "busy" } },
+      updated: now,
+    })
+
+    const snapshot = await loadSnapshot(gui)
+
+    expect(snapshot.sessionStatus["session-list"]).toEqual({ type: "busy" })
   })
 
   test("sends project/session CRUD payloads through existing APIs", async () => {
@@ -100,9 +212,9 @@ describe("GUI store backend parity", () => {
   })
 })
 
-function fakeGui(calls: string[]) {
-  const sessionList = session("session-list", 1)
-  const projectSession = session("project-session", 2)
+function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unknown>; messages?: Record<string, unknown[]>; updated?: number; headerCursor?: string | null } = {}) {
+  const sessionList = session("session-list", options.updated ?? 1)
+  const projectSession = session("project-session", options.updated ?? 2)
   return {
     directory: "C:/Work/OpencodeX",
     url: "http://127.0.0.1:4096",
@@ -254,15 +366,21 @@ function fakeGui(calls: string[]) {
         },
         status: async () => {
           calls.push("session.status")
-          return { data: { "session-list": { type: "idle" } } }
+          return { data: options.sessionStatus ?? { "session-list": { type: "idle" } } }
         },
-        promptAsync: async (input: { sessionID: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: Array<{ type: string; text?: string }> }) => {
+        promptAsync: async (input: { sessionID: string; messageID?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: Array<{ type: string; text?: string }> }) => {
           calls.push(`session.promptAsync:${input.sessionID}:${input.parts?.[0]?.text}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}:${input.variant ?? ""}`)
+          calls.push(`session.promptAsync.messageID:${input.messageID ?? ""}`)
           return { data: true }
         },
-        messages: async (input: { sessionID: string }) => {
+        messages: async (input: { sessionID: string; limit?: number; renderBudget?: number; before?: string }) => {
           calls.push(`session.messages:${input.sessionID}`)
-          return { data: [{ info: sessionList, parts: [{ id: "part-1", sessionID: input.sessionID, messageID: sessionList.id, type: "text", text: JSON.stringify({ final: "hello" }) }] }] }
+          calls.push(`session.messages.limit:${input.limit ?? ""}`)
+          calls.push(`session.messages.renderBudget:${input.renderBudget ?? ""}`)
+          calls.push(`session.messages.before:${input.before ?? ""}`)
+          const response = { headers: { get: (name: string) => name.toLowerCase() === "x-next-cursor" ? options.headerCursor === undefined ? "next-cursor" : options.headerCursor : null } }
+          if (options.messages?.[input.sessionID]) return { data: options.messages[input.sessionID], response }
+          return { data: [{ info: sessionList, parts: [{ id: "part-1", sessionID: input.sessionID, messageID: sessionList.id, type: "text", text: JSON.stringify({ final: "hello" }) }] }], response }
         },
         todo: async (input: { sessionID: string }) => {
           calls.push(`session.todo:${input.sessionID}`)
@@ -310,6 +428,13 @@ function fakeGui(calls: string[]) {
       },
     },
   } as unknown as GuiClient
+}
+
+function message(id: string, created: number) {
+  return {
+    info: { id, sessionID: "session-list", role: "user", time: { created } },
+    parts: [],
+  }
 }
 
 function session(id: string, updated: number) {

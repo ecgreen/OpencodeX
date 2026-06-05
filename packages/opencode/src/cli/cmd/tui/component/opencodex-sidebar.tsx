@@ -143,6 +143,19 @@ function isSwarmSession(session: Session) {
   return sessionSwarmID(session) !== undefined
 }
 
+function isPlaceholderTitle(title: string) {
+  return title === "New session" || /^New session - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(title)
+}
+
+function isEmptyPlaceholderSession(session: Session) {
+  if (session.parentID) return false
+  if (session.model || session.summary || session.share || session.revert) return false
+  const tokens = session.tokens
+  if (tokens && tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write > 0) return false
+  if ((session.cost ?? 0) > 0) return false
+  return isPlaceholderTitle(session.title)
+}
+
 function sessionSwarmTitle(session: Session, swarms: OpencodeXSwarmInfo[]) {
   const swarmID = sessionSwarmID(session)
   if (!swarmID) return undefined
@@ -890,7 +903,9 @@ export function OpencodeXSidebar() {
       ),
   )
   const allSidebarSessions = createMemo(() =>
-    [...allSessionByID().values()].filter((session) => !session.parentID && !isSwarmSession(session)).toSorted((a, b) => b.time.updated - a.time.updated),
+    [...allSessionByID().values()]
+      .filter((session) => !session.parentID && !isSwarmSession(session) && !isEmptyPlaceholderSession(session))
+      .toSorted((a, b) => b.time.updated - a.time.updated),
   )
   const recentSessions = createMemo(() => allSidebarSessions().filter((session) => isRecentSessionUpdate(session.time.updated)))
   const priorSessions = createMemo(() => allSidebarSessions().filter((session) => !isRecentSessionUpdate(session.time.updated)))
@@ -918,6 +933,7 @@ export function OpencodeXSidebar() {
       project.sessions
         .filter((session) => !missingSessionIDs().has(session.id))
         .filter((session) => !isSwarmSession(session))
+        .filter((session) => !isEmptyPlaceholderSession(session))
         .map((session) => sessionByID().get(session.id) ?? session),
       (session) => session.time.updated,
     )

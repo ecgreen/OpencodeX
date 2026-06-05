@@ -1,14 +1,15 @@
 import type { JSX } from "solid-js"
-import type { Agent, AssistantMessage, GlobalEvent, Part, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Agent, AssistantMessage, GlobalEvent, Message, OpencodeXView, Part, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./lib/client"
 import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import { Mark } from "@opencode-ai/ui/logo"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { CodeBlock } from "@opencode-ai/ui/code-block"
 import { File as FileDiffView } from "@opencode-ai/ui/file"
 import { connectGuiClient } from "./lib/client"
 import { compactPath, formatRelative, title } from "./lib/format"
+import { markMessageTailDetached, prependOlderMessages, trimToLiveTail, type MessageWindow } from "./lib/message-window"
 import { displayMessageText } from "./lib/message-text"
 import {
   abortSession,
@@ -19,6 +20,8 @@ import {
   deleteProject,
   deleteSession,
   loadSession,
+  loadSessionCards,
+  loadSessionMessages,
   loadSnapshot,
   moveSession,
   rejectQuestion,
@@ -30,17 +33,21 @@ import {
   replyQuestion,
   sendPrompt,
   subscribeEvents,
+  updateView,
   updateProjectFolders,
+  updateViewFocus,
   validateProjectFolders,
+  isRenderableSession,
 } from "./lib/store"
 
 type Route =
   | { name: "dashboard" }
   | { name: "sessions" }
+  | { name: "new-session"; projectID?: string; directory?: string }
   | { name: "projects" }
   | { name: "session"; sessionID: string }
   | { name: "swarms" }
-  | { name: "views" }
+  | { name: "views"; viewID?: string }
   | { name: "settings" }
   | { name: "status" }
 
@@ -73,8 +80,17 @@ const NAV_ITEMS = [
 
 const GLOBAL_SHORTCUT_KEYS = new Set(["b", "/", "n", "p", "r", "d", "1", "2", "3", "4", "5", "6"])
 const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
+const SESSION_MESSAGE_PAGE_LIMIT = 96
+const VIEW_MESSAGE_PAGE_LIMIT = 48
+const SESSION_MESSAGE_WINDOW: MessageWindow = { count: 96, budget: 28_000 }
+const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 14_000 }
+const LIVE_SYNC_INTERVAL_MS = 500
+const SNAPSHOT_SYNC_INTERVAL_MS = 5_000
+const SIDEBAR_ACTIVE_WINDOW_MS = 15 * 60 * 1000
 const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
+const SEEN_EVENT_ID_LIMIT = 2_000
 const PROJECT_RECENT_SESSION_LIMIT = 4
+const PENDING_SESSION_ID = "pending:new-session"
 const TUI_COMMAND_SHORTCUTS: Record<string, string> = {
   "session.list": "Ctrl+X L",
   "session.new": "Ctrl+X N",
@@ -101,12 +117,24 @@ const TUI_COMMAND_SHORTCUTS: Record<string, string> = {
 type RailSectionName = "projects" | "recent" | "swarms" | "views"
 type DragTarget = { type: "project"; id: string } | { type: "view"; id: string }
 type SidebarSessionSource = "project" | "recent"
+type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
+type PendingViewSession = {
+  id: string
+  projectID?: string
+  projectLabel?: string
+  directory?: string
+}
+type ViewItem = { kind: "session"; session: Session } | { kind: "pending"; slot: PendingViewSession }
+type DerivedSessionStatus = "dormant" | "in_progress" | "input_needed" | "ready_for_review" | "failed"
 
 export function App() {
   const [client, setClient] = createSignal<GuiClient>()
   const [snapshot, setSnapshot] = createSignal<GuiSnapshot>()
   const [route, setRoute] = createSignal<Route>({ name: "dashboard" })
   const [sessionData, setSessionData] = createSignal<SessionData>(EMPTY_SESSION_DATA)
+  const [viewSessionData, setViewSessionData] = createSignal<Record<string, SessionData>>({})
+  const [viewSessionLoadedTimes, setViewSessionLoadedTimes] = createSignal<Record<string, number>>({})
+  const [viewLoadingSessions, setViewLoadingSessions] = createSignal<Record<string, boolean>>({})
   const [sessionDataSessionID, setSessionDataSessionID] = createSignal("")
   const [loading, setLoading] = createSignal("Starting sidecar")
   const [error, setError] = createSignal<string>()
@@ -124,12 +152,30 @@ export function App() {
   const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>({})
   const [sidebarSessionSource, setSidebarSessionSource] = createSignal<{ sessionID: string; source: SidebarSessionSource }>()
   const [viewedSessions, setViewedSessions] = createSignal(readViewedSessions())
+  const [readyReviewSessions, setReadyReviewSessions] = createSignal<Record<string, number>>({})
+  const [viewAgents, setViewAgents] = createSignal<Record<string, string>>({})
+  const [viewModels, setViewModels] = createSignal<Record<string, string>>({})
+  const [viewVariants, setViewVariants] = createSignal<Record<string, string>>({})
+  const [focusedViewSessionID, setFocusedViewSessionID] = createSignal("")
+  const [viewComposerFocusRequest, setViewComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
   const [recentModels, setRecentModels] = createSignal(readRecentModels())
   const [dragTarget, setDragTarget] = createSignal<DragTarget>()
   let sessionSyncRequestID = 0
+  let sessionDataLoadedTime = 0
+  let lastActiveViewMembershipKey = ""
+  let viewComposerFocusToken = 0
+  let viewFocusPersistTimer: ReturnType<typeof setTimeout> | undefined
+  const seenEventIDs = new Set<string>()
+  const seenEventIDOrder: string[] = []
+  let liveSyncRunning = false
+  let lastSnapshotSync = 0
+  const transcriptFollowBottom = new Map<string, boolean>()
 
   const selectedSession = createMemo(() => {
     const current = route()
+    if (current.name === "new-session") {
+      return pendingSession(current.directory ?? snapshot()?.projects[0]?.folders[0]?.path ?? client()?.directory ?? "")
+    }
     if (current.name !== "session") return
     return snapshot()?.sessions.find((session) => session.id === current.sessionID)
   })
@@ -139,7 +185,41 @@ export function App() {
     return current.sessionID
   })
   const activeSessionData = createMemo(() => sessionDataSessionID() === activeSessionID() ? sessionData() : EMPTY_SESSION_DATA)
-  const activeSessionLoading = createMemo(() => loadingSessionID() === activeSessionID() && sessionDataSessionID() !== activeSessionID())
+  const activeSessionLoading = createMemo(() => Boolean(activeSessionID()) && sessionDataSessionID() !== activeSessionID())
+  const activeView = createMemo(() => {
+    const current = route()
+    if (current.name !== "views") return
+    return (snapshot()?.views ?? []).find((view) => view.id === current.viewID) ?? snapshot()?.views[0]
+  })
+  const activeViewSessions = createMemo(() => {
+    const byID = new Map((snapshot()?.sessions ?? []).map((session) => [session.id, session]))
+    return (activeView()?.sessionIDs ?? [])
+      .map((sessionID) => byID.get(sessionID))
+      .filter((session): session is Session => session !== undefined)
+      .slice(0, 8)
+  })
+  const activeViewItems = createMemo<ViewItem[]>(() => [
+    ...activeViewSessions().map((session): ViewItem => ({ kind: "session", session })),
+    ...pendingViewSessions(activeView()).map((slot): ViewItem => ({ kind: "pending", slot })),
+  ].slice(0, 8))
+  const activeViewLoadKey = createMemo(() => {
+    const view = activeView()
+    if (!view) return ""
+    return [view.id, ...activeViewSessions().map((session) => `${session.id}:${session.directory ?? ""}:${session.time.updated}`)].join("\n")
+  })
+  const activeViewMembershipKey = createMemo(() => {
+    const view = activeView()
+    if (!view) return ""
+    return [view.id, ...activeViewItems().map((item) => viewItemID(item))].join("\n")
+  })
+  const activeViewFocusedSessionID = createMemo(() => {
+    const local = focusedViewSessionID()
+    if (local && activeViewItems().some((item) => viewItemID(item) === local)) return local
+    const persisted = activeView()?.focusedSessionID
+    if (persisted && activeViewItems().some((item) => viewItemID(item) === persisted)) return persisted
+    const first = activeViewItems()[0]
+    return first ? viewItemID(first) : ""
+  })
   const selectedPermissions = createMemo(() => {
     const session = selectedSession()
     if (!session) return []
@@ -153,13 +233,23 @@ export function App() {
   const visibleSessions = createMemo(() => tuiSidebarSessions(snapshot()))
   const recentSessions = createMemo(() => visibleSessions().filter((session) => isRecentSessionUpdate(session.time.updated)))
 
-  async function refresh(options?: { confirmIdleSessionID?: string }) {
+  async function refresh(options: { preserveSessionStatus?: boolean } = {}) {
     const gui = client()
     if (!gui) return
+    const currentStatus = snapshot()?.sessionStatus ?? {}
     const next = await loadSnapshot(gui)
-    setSnapshot((current) =>
-      current ? { ...next, sessionStatus: confirmedSessionStatus(current.sessionStatus, next.sessionStatus, options?.confirmIdleSessionID) } : next,
-    )
+    setSnapshot(options.preserveSessionStatus ? { ...next, sessionStatus: { ...currentStatus, ...next.sessionStatus } } : next)
+    const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
+    if (models.join("\n") === recentModels().join("\n")) return
+    setRecentModels(models)
+    writeRecentModels(models)
+  }
+
+  async function refreshSessionCards() {
+    const gui = client()
+    if (!gui) return
+    const next = await loadSessionCards(gui)
+    setSnapshot((current) => current ? { ...current, ...next } : current)
     const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
     if (models.join("\n") === recentModels().join("\n")) return
     setRecentModels(models)
@@ -190,23 +280,89 @@ export function App() {
     return new Promise<string | undefined>((resolve) => setDialog({ type: "choice", ...input, resolve }))
   }
 
-  async function syncSession(sessionID: string) {
+  async function syncSession(sessionID: string, options: { force?: boolean } = {}) {
     const gui = client()
     if (!gui) return
+    const session = snapshot()?.sessions.find((item) => item.id === sessionID)
+    if (!options.force && sessionDataSessionID() === sessionID && session && sessionDataLoadedTime >= session.time.updated) return
     const requestID = ++sessionSyncRequestID
     setLoadingSessionID(sessionID)
     try {
-      const data = await loadSession(gui, sessionID, snapshot()?.sessions.find((session) => session.id === sessionID)?.directory)
+      const data = trimToLiveTail(await loadSession(gui, sessionID, session?.directory, { messageLimit: SESSION_MESSAGE_PAGE_LIMIT, messageRenderBudget: SESSION_MESSAGE_WINDOW.budget }), SESSION_MESSAGE_WINDOW)
       if (requestID !== sessionSyncRequestID) return
       const current = route()
       if (current.name !== "session" || current.sessionID !== sessionID) return
       setSessionData(data)
       setSessionDataSessionID(sessionID)
+      sessionDataLoadedTime = session?.time.updated ?? Date.now()
     } catch (cause) {
-      if (requestID === sessionSyncRequestID) setNotice(cause instanceof Error ? cause.message : String(cause))
+      if (requestID === sessionSyncRequestID) {
+        setNotice(cause instanceof Error ? cause.message : String(cause))
+        setSessionData(EMPTY_SESSION_DATA)
+        setSessionDataSessionID(sessionID)
+      }
     } finally {
       if (requestID === sessionSyncRequestID && loadingSessionID() === sessionID) setLoadingSessionID("")
     }
+  }
+
+  async function syncViewSession(session: Session, options: { force?: boolean } = {}) {
+    const gui = client()
+    if (!gui) return
+    if (!options.force && viewSessionData()[session.id] && (viewSessionLoadedTimes()[session.id] ?? 0) >= session.time.updated) return
+    setViewLoadingSessions((current) => ({ ...current, [session.id]: true }))
+    try {
+      const data = trimToLiveTail(await loadSession(gui, session.id, session.directory, { messageLimit: VIEW_MESSAGE_PAGE_LIMIT, messageRenderBudget: VIEW_MESSAGE_WINDOW.budget, includeSideData: false }), VIEW_MESSAGE_WINDOW)
+      setViewSessionData((current) => ({ ...current, [session.id]: data }))
+      setViewSessionLoadedTimes((current) => ({ ...current, [session.id]: session.time.updated }))
+    } finally {
+      setViewLoadingSessions((current) => ({ ...current, [session.id]: false }))
+    }
+  }
+
+  async function loadOlderSessionMessages(sessionID: string, before: string) {
+    const gui = client()
+    if (!gui || sessionDataSessionID() !== sessionID) return
+    const session = snapshot()?.sessions.find((item) => item.id === sessionID)
+    const page = await loadSessionMessages(gui, sessionID, session?.directory, { limit: SESSION_MESSAGE_PAGE_LIMIT, renderBudget: SESSION_MESSAGE_WINDOW.budget, before })
+    setSessionData((data) => sessionDataSessionID() === sessionID ? prependOlderMessages(data, page) : data)
+  }
+
+  async function loadOlderViewSessionMessages(sessionID: string, before: string) {
+    const gui = client()
+    if (!gui) return
+    const session = snapshot()?.sessions.find((item) => item.id === sessionID)
+    if (!session) return
+    const page = await loadSessionMessages(gui, sessionID, session.directory, { limit: VIEW_MESSAGE_PAGE_LIMIT, renderBudget: VIEW_MESSAGE_WINDOW.budget, before })
+    setViewSessionData((current) => ({
+      ...current,
+      [sessionID]: prependOlderMessages(current[sessionID] ?? EMPTY_SESSION_DATA, page),
+    }))
+  }
+
+  async function reloadLatestSessionMessages(sessionID: string) {
+    await syncSession(sessionID, { force: true })
+  }
+
+  async function reloadLatestViewSessionMessages(sessionID: string) {
+    const session = snapshot()?.sessions.find((item) => item.id === sessionID)
+    if (!session) return
+    await syncViewSession(session, { force: true })
+  }
+
+  function setSessionFollowingBottom(sessionID: string, value: boolean) {
+    transcriptFollowBottom.set(sessionID, value)
+  }
+
+  function sessionFollowingBottom(sessionID: string) {
+    return transcriptFollowBottom.get(sessionID) ?? true
+  }
+
+  async function syncActiveViewSessions() {
+    const sessions = activeViewSessions()
+    const focused = sessions.find((session) => session.id === activeViewFocusedSessionID())
+    if (focused) await syncViewSession(focused)
+    await Promise.all(sessions.filter((session) => session.id !== focused?.id).map((session) => syncViewSession(session)))
   }
 
   function applySessionStatusEvent(sessionID: string, status: NonNullable<GuiSnapshot["sessionStatus"][string]>) {
@@ -222,27 +378,209 @@ export function App() {
     })
   }
 
-  onMount(async () => {
+  async function syncLiveServerState() {
+    const gui = client()
+    if (!gui || liveSyncRunning) return
+    liveSyncRunning = true
     try {
-      const gui = await connectGuiClient()
-      setClient(gui)
-      setLoading("Loading workspace")
-      await refresh()
-      const unsubscribe = subscribeEvents(gui, (event) => {
-        if (event.payload.type === "session.status") {
-          if (event.payload.properties.status.type === "idle") void refresh({ confirmIdleSessionID: event.payload.properties.sessionID })
-          else applySessionStatusEvent(event.payload.properties.sessionID, event.payload.properties.status)
-        }
-        else void refresh()
-        const current = route()
-        const sessionID = eventSessionID(event)
-        if (current.name === "session" && sessionID === current.sessionID) void syncSession(current.sessionID)
-      })
-      onCleanup(unsubscribe)
-      setLoading("")
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      const now = Date.now()
+      const current = route()
+      if (current.name === "session") {
+        const session = snapshot()?.sessions.find((item) => item.id === current.sessionID)
+        const data = sessionDataSessionID() === current.sessionID ? sessionData() : undefined
+        if (sessionFollowingBottom(current.sessionID) && (!session || shouldPollVisibleSession(session, data))) await syncSession(current.sessionID, { force: true })
+      }
+      if (current.name === "views") {
+        await Promise.all(
+          activeViewSessions()
+            .filter((session) => sessionFollowingBottom(session.id))
+            .filter((session) => shouldPollVisibleSession(session, viewSessionData()[session.id]))
+            .map((session) => syncViewSession(session, { force: true })),
+        )
+      }
+      if (now - lastSnapshotSync >= SNAPSHOT_SYNC_INTERVAL_MS) {
+        lastSnapshotSync = now
+        await refreshSessionCards()
+      }
+    } finally {
+      liveSyncRunning = false
     }
+  }
+
+  function shouldPollVisibleSession(session: Session, data?: SessionData) {
+    const status = snapshot()?.sessionStatus[session.id]?.type
+    if (status === "busy" || status === "retry") return true
+    return data ? isLikelyActiveSession(session, data) : false
+  }
+
+  function clearSessionReadyForReview(sessionID: string) {
+    setReadyReviewSessions((current) => {
+      if (!(sessionID in current)) return current
+      const next = { ...current }
+      delete next[sessionID]
+      return next
+    })
+  }
+
+  function applySessionDataEvent(event: GlobalEvent) {
+    if (!isSessionDataEvent(event)) return false
+    const sessionIDs = sessionDataEventSessionIDs(event)
+
+    const current = route()
+    if (current.name === "session" && sessionIDs.has(current.sessionID)) {
+      const sessionID = current.sessionID
+      setSessionData((data) =>
+        patchBoundedSessionData(
+          sessionDataSessionID() === sessionID ? data : EMPTY_SESSION_DATA,
+          event,
+          SESSION_MESSAGE_WINDOW,
+          sessionFollowingBottom(sessionID),
+        )
+      )
+      setSessionDataSessionID(sessionID)
+      sessionDataLoadedTime = Date.now()
+    }
+
+    if (current.name === "views") {
+      const visible = activeViewSessions().filter((session) => sessionIDs.has(session.id))
+      if (visible.length > 0) {
+        setViewSessionData((data) => {
+          const next = { ...data }
+          for (const session of visible) {
+            next[session.id] = patchBoundedSessionData(
+              next[session.id] ?? EMPTY_SESSION_DATA,
+              event,
+              VIEW_MESSAGE_WINDOW,
+              sessionFollowingBottom(session.id),
+            )
+          }
+          return next
+        })
+        setViewSessionLoadedTimes((data) => {
+          const next = { ...data }
+          const now = Date.now()
+          for (const session of visible) next[session.id] = now
+          return next
+        })
+      }
+    }
+
+    return true
+  }
+
+  function sessionDataEventSessionIDs(event: GlobalEvent) {
+    const sessionID = eventSessionID(event)
+    if (sessionID) return new Set([sessionID])
+
+    const aggregateID = eventAggregateID(event)
+    if (aggregateID) {
+      const current = route()
+      if (current.name === "session" && current.sessionID === aggregateID) return new Set([aggregateID])
+      if (current.name === "views" && activeViewSessions().some((session) => session.id === aggregateID)) return new Set([aggregateID])
+    }
+
+    const messageID = eventMessageID(event)
+    if (!messageID) return new Set<string>()
+
+    const result = new Set<string>()
+    const loadedSessionID = sessionDataSessionID()
+    if (loadedSessionID && sessionData().messages.some((bundle) => bundle.info.id === messageID)) result.add(loadedSessionID)
+
+    for (const [viewSessionID, data] of Object.entries(viewSessionData())) {
+      if (data.messages.some((bundle) => bundle.info.id === messageID)) result.add(viewSessionID)
+    }
+
+    return result
+  }
+
+  function applySnapshotEvent(event: GlobalEvent) {
+    if (!isSnapshotPatchEvent(event)) return false
+    setSnapshot((current) => current ? patchSnapshot(current, event) : current)
+    return true
+  }
+
+  function handleGlobalEvent(event: GlobalEvent) {
+    if (!rememberGlobalEvent(event)) return
+    const kind = eventKind(event)
+    const properties = eventData(event)
+    const sessionID = eventSessionID(event)
+
+    if (kind === "session.status" && properties) {
+      const statusEvent = properties as { sessionID: string; status: NonNullable<GuiSnapshot["sessionStatus"][string]> }
+      applySessionStatusEvent(statusEvent.sessionID, statusEvent.status)
+      if (statusEvent.status.type === "idle") syncVisibleSession(statusEvent.sessionID)
+      return
+    }
+
+    if (kind === "session.idle" && sessionID) {
+      applySessionStatusEvent(sessionID, { type: "idle" })
+      syncVisibleSession(sessionID)
+      return
+    }
+
+    if (applySessionDataEvent(event) || applySnapshotEvent(event) || isHighFrequencySessionEvent(event)) return
+
+    void refresh({ preserveSessionStatus: true })
+    if (sessionID) syncVisibleSession(sessionID)
+  }
+
+  function rememberGlobalEvent(event: GlobalEvent) {
+    const id = globalEventID(event)
+    return id ? rememberEventID(id) : true
+  }
+
+  function rememberEventID(id: string) {
+    if (seenEventIDs.has(id)) return false
+    seenEventIDs.add(id)
+    seenEventIDOrder.push(id)
+    while (seenEventIDOrder.length > SEEN_EVENT_ID_LIMIT) {
+      const stale = seenEventIDOrder.shift()
+      if (stale) seenEventIDs.delete(stale)
+    }
+    return true
+  }
+
+  function syncVisibleSession(sessionID: string) {
+    const current = route()
+    if (current.name === "session" && sessionID === current.sessionID && sessionFollowingBottom(sessionID)) void syncSession(current.sessionID, { force: true })
+    if (current.name === "views" && activeViewSessions().some((session) => session.id === sessionID)) {
+      const session = activeViewSessions().find((item) => item.id === sessionID)
+      if (session && sessionFollowingBottom(sessionID)) void syncViewSession(session, { force: true })
+    }
+  }
+
+  onMount(() => {
+    let unsubscribe: (() => void) | undefined
+    onCleanup(() => unsubscribe?.())
+
+    void (async () => {
+      try {
+        const gui = await connectGuiClient()
+        setClient(gui)
+        setLoading("Loading workspace")
+        await refresh()
+        unsubscribe = subscribeEvents(gui, handleGlobalEvent)
+        setLoading("")
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    })()
+  })
+
+  onMount(() => {
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      if (disposed) return
+      void syncLiveServerState().finally(() => {
+        if (!disposed) timer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
+      })
+    }
+    timer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
+    onCleanup(() => {
+      disposed = true
+      if (timer) clearTimeout(timer)
+    })
   })
 
   onMount(() => {
@@ -304,16 +642,42 @@ export function App() {
 
   createEffect(() => {
     const current = route()
-    if (current.name === "session") void syncSession(current.sessionID)
+    if (current.name === "session" && client()) untrack(() => { void syncSession(current.sessionID) })
   })
 
   createEffect(() => {
+    const current = route()
+    const view = activeView()
+    if (current.name !== "views" || !view) return
+    if (current.viewID !== view.id) setRoute({ name: "views", viewID: view.id })
+  })
+
+  createEffect(() => {
+    const current = route()
+    const loadKey = activeViewLoadKey()
+    const membershipKey = activeViewMembershipKey()
+    if (current.name !== "views" || !loadKey || !client()) return
+    if (membershipKey !== lastActiveViewMembershipKey) {
+      lastActiveViewMembershipKey = membershipKey
+      setFocusedViewSessionID("")
+    }
+    untrack(() => { void syncActiveViewSessions() })
+  })
+
+  createEffect(() => {
+    if (route().name !== "session") return
     const session = selectedSession()
     if (!session) return
     markSessionViewed(session.id, Math.max(Date.now(), session.time.updated))
   })
 
   createEffect(() => {
+    if (route().name !== "views") return
+    activeViewSessions().forEach((session) => markSessionViewed(session.id, Math.max(Date.now(), session.time.updated)))
+  })
+
+  createEffect(() => {
+    if (route().name !== "session") return
     const session = selectedSession()
     if (!session || selectionSessionID() === session.id) return
     setSelectionSessionID(session.id)
@@ -328,26 +692,114 @@ export function App() {
     if (model) setSelectedModel(model)
   })
 
-  async function submitPrompt(event: SubmitEvent) {
+  async function submitPrompt(event: SubmitEvent, value?: string) {
     event.preventDefault()
     const gui = client()
+    const current = route()
     const session = selectedSession()
-    const text = prompt().trim()
+    const text = (value ?? prompt()).trim()
     if (!gui || !session || !text) return
     if (selectedPermissions().length > 0 || selectedQuestions().length > 0) return
     const model = parseModelValue(selectedModel())
     setPrompt("")
     setLoadingSessionID(session.id)
-    await sendPrompt(gui, session.id, text, {
-      directory: session.directory,
+    const created = current.name === "new-session"
+      ? await createSession(gui, {
+          projectID: current.projectID,
+          directory: session.directory,
+        })
+      : undefined
+    const target = created?.data ?? session
+    await sendPrompt(gui, target.id, text, {
+      directory: target.directory,
       agent: selectedAgent() || undefined,
       model,
       variant: selectedVariant() || undefined,
     })
     if (selectedModel()) rememberModel(selectedModel())
-    await syncSession(session.id)
+    await syncSession(target.id, { force: true })
+    await refresh()
+    if (created?.data?.id) setRoute({ name: "session", sessionID: created.data.id })
+  }
+
+  async function submitViewPrompt(event: SubmitEvent, item: ViewItem, value: string) {
+    event.preventDefault()
+    const gui = client()
+    const draftID = viewItemID(item)
+    const text = value.trim()
+    if (!gui || !text) return
+    const draftSession = viewItemSession(item, gui.directory)
+    const model = parseModelValue(viewModelValue(draftSession))
+    setViewLoadingSessions((current) => ({ ...current, [draftID]: true }))
+    const pendingDirectory = item.kind === "pending" ? item.slot.directory ?? gui.directory : undefined
+    if (item.kind === "pending" && !pendingDirectory) return alert("No directory available for this pending view session.")
+    const created = item.kind === "pending"
+      ? await createSession(gui, {
+          projectID: item.slot.projectID,
+          directory: pendingDirectory!,
+        })
+      : undefined
+    const target = created?.data ?? draftSession
+    if (item.kind === "pending") {
+      const view = activeView()
+      if (!created?.data || !view) return
+      const pending = pendingViewSessions(view).filter((slot) => slot.id !== item.slot.id)
+      await updateView(gui, view.id, {
+        sessionIDs: [...view.sessionIDs.filter((sessionID) => sessionID !== created.data!.id), created.data.id],
+        focusedSessionID: created.data.id,
+        metadata: metadataWithPendingSessions(view.metadata, pending),
+      }).catch(async (error: Error) => {
+        await deleteSession(gui, created.data!.id).catch(() => undefined)
+        throw error
+      })
+      setFocusedViewSessionID(created.data.id)
+    }
+    await sendPrompt(gui, target.id, text, {
+      directory: target.directory,
+      agent: viewAgentValue(draftSession) || undefined,
+      model,
+      variant: viewVariantValue(draftSession) || undefined,
+    })
+    if (viewModelValue(draftSession)) rememberModel(viewModelValue(draftSession))
+    await syncViewSession(target, { force: true })
     await refresh()
   }
+
+  function viewAgentValue(session: Session) {
+    return viewAgents()[session.id] ?? session.agent ?? ""
+  }
+
+  function viewModelValue(session: Session) {
+    return viewModels()[session.id] ?? (session.model ? modelValue(session.model.providerID, session.model.id) : selectedModel())
+  }
+
+  function viewVariantValue(session: Session) {
+    return viewVariants()[session.id] ?? session.model?.variant ?? ""
+  }
+
+  function focusViewSession(sessionID: string, options: { focusComposer?: boolean } = {}) {
+    const view = activeView()
+    if (!view) return
+    if (activeViewFocusedSessionID() === sessionID) return
+    setFocusedViewSessionID(sessionID)
+    if (options.focusComposer) setViewComposerFocusRequest({ sessionID, token: ++viewComposerFocusToken })
+    scheduleViewFocusPersistence(view, sessionID)
+  }
+
+  function scheduleViewFocusPersistence(view: OpencodeXView, sessionID: string) {
+    if (!activeViewSessions().some((session) => session.id === sessionID)) return
+    if (viewFocusPersistTimer) clearTimeout(viewFocusPersistTimer)
+    viewFocusPersistTimer = setTimeout(() => {
+      viewFocusPersistTimer = undefined
+      const gui = client()
+      if (!gui) return
+      void updateViewFocus(gui, view.id, sessionID).catch(() => undefined)
+    }, 150)
+  }
+
+  onCleanup(() => {
+    if (viewFocusPersistTimer) clearTimeout(viewFocusPersistTimer)
+  })
 
   function rememberModel(value: string) {
     const next = mergeRecentModels([value], recentModels())
@@ -356,6 +808,7 @@ export function App() {
   }
 
   function markSessionViewed(sessionID: string, time: number) {
+    clearSessionReadyForReview(sessionID)
     if ((viewedSessions()[sessionID] ?? 0) >= time) return
     const next = { ...viewedSessions(), [sessionID]: time }
     setViewedSessions(next)
@@ -384,6 +837,12 @@ export function App() {
     if (activeSessionID() !== sessionID) return false
     if (selected?.sessionID !== sessionID) return source === "project"
     return selected.source === source
+  }
+
+  function sidebarLastViewed(session: Session) {
+    const viewed = viewedSessions()[session.id] ?? 0
+    if (route().name === "views" && activeViewSessions().some((item) => item.id === session.id)) return Math.max(viewed, session.time.updated)
+    return viewed
   }
 
   async function handleAbortSession(sessionID: string) {
@@ -506,7 +965,7 @@ export function App() {
 
   function focusComposer() {
     const current = route()
-    if (current.name !== "session" && visibleSessions().length > 0) setRoute({ name: "session", sessionID: visibleSessions()[0].id })
+    if (current.name !== "session" && current.name !== "new-session" && visibleSessions().length > 0) setRoute({ name: "session", sessionID: visibleSessions()[0].id })
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus())
   }
 
@@ -603,14 +1062,9 @@ export function App() {
     if (!gui) return
     const target = directory ?? snapshot()?.projects[0]?.folders[0]?.path ?? gui.directory
     if (!target) return
-    const response = await createSession(gui, {
-      projectID,
-      directory: target,
-      title: "New session",
-    })
-    await refresh()
-    const sessionID = response.data?.id
-    if (sessionID) setRoute({ name: "session", sessionID })
+    setPrompt("")
+    setRoute({ name: "new-session", projectID, directory: target })
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus())
   }
 
   async function handleCreateSwarm() {
@@ -1073,30 +1527,24 @@ export function App() {
                   onDrop={(event) => void runAction(() => handleDropProject(project.id, dropPlacement(event)))}
                 >
                   <div class="project-heading">
-                    <button
-                      class="drag-handle"
-                      draggable
-                      title="Drag to reorder project. Alt+Up/Down also moves it."
-                      aria-label="Reorder project with drag or Alt+ArrowUp and Alt+ArrowDown"
-                      onDragStart={(event) => startDrag(event, { type: "project", id: project.id })}
-                      onDragEnd={() => setDragTarget(undefined)}
-                      onKeyDown={(event) => {
-                        if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
-                        event.preventDefault()
-                        void runAction(() => handleMoveProject(project.id, event.key === "ArrowUp" ? -1 : 1))
-                      }}
-                    ><Icon name="grip" /></button>
-                    <button class="project-toggle" aria-expanded={projectExpanded(project.id)} onClick={() => toggleProject(project.id)}>{projectExpanded(project.id) ? "-" : "+"}</button>
-                    <button title="Open project group" onClick={() => setRoute({ name: "projects" })}>{title(project.name ?? project.project.name)}</button>
-                    <button title="New session in project" onClick={() => void runAction(() => handleCreateSession(project.id, project.folders[0]?.path))}>+</button>
+                    <button class="project-toggle" title={`${projectExpanded(project.id) ? "Collapse" : "Expand"} project`} aria-expanded={projectExpanded(project.id)} onClick={() => toggleProject(project.id)}><Icon name={projectExpanded(project.id) ? "folder-open" : "folder"} /></button>
+                    <button class="project-title" title={`${projectExpanded(project.id) ? "Collapse" : "Expand"} project`} aria-expanded={projectExpanded(project.id)} onClick={() => toggleProject(project.id)}>{title(project.name ?? project.project.name)}</button>
+                    <button class="project-new" title="New session in project" onClick={() => void runAction(() => handleCreateSession(project.id, project.folders[0]?.path))}>+ New</button>
                   </div>
-                  <Show when={projectExpanded(project.id)}>
-                    <For each={recentProjectSessions(projectSessions(project, snapshot()))}>
-                      {(session) => (
-                        <SidebarSessionLink session={session} snapshot={snapshot()} lastViewed={viewedSessions()[session.id] ?? 0} active={sidebarSessionActive(session.id, "project")} nested onClick={() => openSidebarSession(session.id, "project")} />
-                      )}
-                    </For>
-                  </Show>
+                  <div class="project-sessions" classList={{ collapsed: !projectExpanded(project.id) }}>
+                    <div>
+                      <For each={recentProjectSessions(projectSessions(project, snapshot()))} fallback={(
+                        <div class="project-empty">
+                          <span>No sessions in this project yet.</span>
+                          <button onClick={() => void runAction(() => handleCreateSession(project.id, project.folders[0]?.path))}>Create session</button>
+                        </div>
+                      )}>
+                        {(session) => (
+                          <SidebarSessionLink session={session} snapshot={snapshot()} readyReviewSessions={readyReviewSessions()} lastViewed={sidebarLastViewed(session)} active={sidebarSessionActive(session.id, "project")} nested onClick={() => openSidebarSession(session.id, "project")} />
+                        )}
+                      </For>
+                    </div>
+                  </div>
                 </div>
               )}
             </For>
@@ -1104,13 +1552,8 @@ export function App() {
           <RailSection title="Recent Sessions" count={recentSessions().length} collapsed={railSections().recent} toggle={() => toggleRailSection("recent")} action={() => void runAction(() => handleCreateSession())}>
             <For each={recentSessions()}>
               {(session) => (
-                <SidebarSessionLink session={session} snapshot={snapshot()} lastViewed={viewedSessions()[session.id] ?? 0} active={sidebarSessionActive(session.id, "recent")} onClick={() => openSidebarSession(session.id, "recent")} />
+                <SidebarSessionLink session={session} snapshot={snapshot()} readyReviewSessions={readyReviewSessions()} lastViewed={sidebarLastViewed(session)} active={sidebarSessionActive(session.id, "recent")} onClick={() => openSidebarSession(session.id, "recent")} />
               )}
-            </For>
-          </RailSection>
-          <RailSection title="Swarms" count={(snapshot()?.swarms ?? []).length} collapsed={railSections().swarms} toggle={() => toggleRailSection("swarms")} action={() => void runAction(handleCreateSwarm)}>
-            <For each={(snapshot()?.swarms ?? []).slice(0, 8)}>
-              {(swarm) => <button title={`${title(swarm.title)} - ${swarm.status}`} class="session-link" onClick={() => setRoute({ name: "swarms" })}><span>{title(swarm.title)}</span><small>{swarm.status}</small></button>}
             </For>
           </RailSection>
           <RailSection title="Views" count={(snapshot()?.views ?? []).length} collapsed={railSections().views} toggle={() => toggleRailSection("views")} action={() => void runAction(handleCreateView)}>
@@ -1130,7 +1573,7 @@ export function App() {
                       void runAction(() => handleMoveView(view.id, event.key === "ArrowUp" ? -1 : 1))
                     }}
                   ><Icon name="grip" /></button>
-                  <button title={`${title(view.title)} - ${view.sessionIDs.length} sessions`} class="session-link" onClick={() => setRoute({ name: "views" })}><span>{title(view.title)}</span><small>{view.sessionIDs.length} sessions</small></button>
+                  <button title={`${title(view.title)} - ${viewSessionCount(view)} sessions`} class="session-link" onClick={() => setRoute({ name: "views", viewID: view.id })}><span>{title(view.title)}</span><small>{viewSessionCount(view)} sessions</small></button>
                 </div>
               )}
             </For>
@@ -1152,6 +1595,7 @@ export function App() {
             <Match when={route().name === "dashboard"}>
               <Dashboard
                 snapshot={snapshot()}
+                readyReviewSessions={readyReviewSessions()}
                 setRoute={setRoute}
                 refresh={refresh}
                 createProject={() => void runAction(handleCreateProject)}
@@ -1163,7 +1607,7 @@ export function App() {
                 deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
               />
             </Match>
-            <Match when={route().name === "session"}>
+            <Match when={route().name === "session" || route().name === "new-session"}>
               <SessionPage
                 session={selectedSession()}
                 data={activeSessionData()}
@@ -1193,7 +1637,12 @@ export function App() {
                 renameSession={(session) => void runAction(() => handleRenameSession(session))}
                 moveSession={(session) => void runAction(() => handleMoveSession(session))}
                 deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
-                status={selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
+                status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
+                pending={route().name === "new-session"}
+                messageWindow={SESSION_MESSAGE_WINDOW}
+                loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
+                reloadLatestMessages={() => selectedSession() ? runAction(() => reloadLatestSessionMessages(selectedSession()!.id)) : Promise.resolve()}
+                onFollowBottomChange={(sessionID, value) => setSessionFollowingBottom(sessionID, value)}
               />
             </Match>
             <Match when={route().name === "sessions"}>
@@ -1206,7 +1655,41 @@ export function App() {
               <CollectionPage title="Swarms" count={snapshot()?.swarms.length ?? 0} description="Create, run, cancel, and inspect orchestrated swarm work through existing OpencodeX endpoints." />
             </Match>
             <Match when={route().name === "views"}>
-              <CollectionPage title="Multi-Session Views" count={snapshot()?.views.length ?? 0} description="Open up to eight sessions together with per-pane focus and prompt targeting." />
+              <ViewsPage
+                snapshot={snapshot()}
+                view={activeView()}
+                items={activeViewItems()}
+                focusedSessionID={activeViewFocusedSessionID}
+                composerFocusRequest={viewComposerFocusRequest}
+                data={viewSessionData()}
+                loading={viewLoadingSessions()}
+                providers={snapshot()?.providers ?? []}
+                agents={snapshot()?.agents ?? []}
+                recentModels={recentModels()}
+                selectedAgent={(session) => viewAgentValue(session)}
+                setSelectedAgent={(sessionID, value) => setViewAgents((current) => ({ ...current, [sessionID]: value }))}
+                selectedModel={(session) => viewModelValue(session)}
+                setSelectedModel={(sessionID, value) => {
+                  setViewModels((current) => ({ ...current, [sessionID]: value }))
+                  if (value) rememberModel(value)
+                }}
+                selectedVariant={(session) => viewVariantValue(session)}
+                setSelectedVariant={(sessionID, value) => setViewVariants((current) => ({ ...current, [sessionID]: value }))}
+                permissions={(sessionID) => snapshot()?.permissions.filter((request) => request.sessionID === sessionID) ?? []}
+                questions={(sessionID) => snapshot()?.questions.filter((request) => request.sessionID === sessionID) ?? []}
+                focus={(sessionID, focusComposer) => focusViewSession(sessionID, { focusComposer })}
+                submit={(event, item, text) => void runAction(() => submitViewPrompt(event, item, text))}
+                replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
+                replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
+                rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
+                abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
+                renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                loadOlderMessages={(sessionID, cursor) => runAction(() => loadOlderViewSessionMessages(sessionID, cursor))}
+                reloadLatestMessages={(sessionID) => runAction(() => reloadLatestViewSessionMessages(sessionID))}
+                onFollowBottomChange={(sessionID, value) => setSessionFollowingBottom(sessionID, value)}
+              />
             </Match>
             <Match when={route().name === "status"}>
               <StatusPage snapshot={snapshot()} />
@@ -1444,7 +1927,10 @@ function Icon(props: { name: string }) {
   const paths: Record<string, JSX.Element> = {
     activity: <path d="M3 12h4l2-7 4 14 2-7h5" />,
     dashboard: <path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z" />,
+    chevronDown: <path d="M6 9l6 6 6-6" />,
+    chevronRight: <path d="M9 6l6 6-6 6" />,
     folder: <path d="M3 7h7l2 2h9v10H3z" />,
+    "folder-open": <path d="M3 8h6.5l2 2H21M3 8v11h16l2-9H8l-2 3H3" />,
     grip: <path d="M8 5h.01M8 12h.01M8 19h.01M16 5h.01M16 12h.01M16 19h.01" />,
     more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
     panel: <path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 5v14M6 9h.01M6 12h.01M6 15h.01" />,
@@ -1463,24 +1949,30 @@ function Icon(props: { name: string }) {
   )
 }
 
+function DisclosureChevron() {
+  return <span class="output-chevron"><Icon name="chevronRight" /></span>
+}
+
 function RailSection(props: { title: string; count: number; collapsed: boolean; toggle: () => void; action: () => void; children: JSX.Element }) {
   return (
     <section class="rail-section">
       <header>
         <button class="section-toggle" aria-expanded={!props.collapsed} onClick={props.toggle}>
-          <span>{props.collapsed ? "+" : "-"}</span>
-          <strong>{props.title}</strong>
-          <small>{props.count}</small>
+          <span class="section-chevron"><Icon name={props.collapsed ? "chevronRight" : "chevronDown"} /></span>
+          <strong>{props.title} <span class="section-count">({props.count})</span></strong>
         </button>
-        <button title={`Create ${props.title}`} aria-label={`Create ${props.title}`} onClick={props.action}>+</button>
+        <button class="section-new" title={`Create ${props.title}`} aria-label={`Create ${props.title}`} onClick={props.action}>+ New</button>
       </header>
-      <Show when={!props.collapsed}>{props.children}</Show>
+      <div class="rail-section-content" classList={{ collapsed: props.collapsed }}>
+        <div>{props.children}</div>
+      </div>
     </section>
   )
 }
 
 function Dashboard(props: {
   snapshot?: GuiSnapshot
+  readyReviewSessions: Record<string, number>
   setRoute: (route: Route) => void
   refresh: () => void
   createProject: () => void
@@ -1496,26 +1988,26 @@ function Dashboard(props: {
   const priorSessions = createMemo(() => sessions().filter((session) => !isRecentSessionUpdate(session.time.updated)))
   const attentionJobs = createMemo(() => (props.snapshot?.jobs ?? []).filter((job) => ["input_needed", "approval_needed", "blocked", "failed"].includes(job.status)).slice(0, 8))
   const attentionCount = createMemo(() => (props.snapshot?.permissions.length ?? 0) + (props.snapshot?.questions.length ?? 0) + attentionJobs().length)
-  const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
+  const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({ swarms: true, prior: true })
   const toggleSection = (section: string) => setCollapsed((value) => ({ ...value, [section]: !value[section] }))
   return (
     <div class="page dashboard-page">
       <OpencodeXLogo />
       <section class="dashboard-actions" aria-label="Create new OpencodeX items">
-        <DashboardActionCard title="Create Project" description="Group sessions, swarms, and views around a workspace." meta={`${props.snapshot?.projects.length ?? 0} projects`} tone="primary" onClick={props.createProject} />
-        <DashboardActionCard title="New Session" description="Start a fresh agent chat in the current workspace." meta={`${sessions().length} sessions`} tone="blue" onClick={() => props.createSession()} />
-        <DashboardActionCard title="Create Swarm" description="Build an AI team with orchestrator and specialist roles." meta={`${props.snapshot?.swarms.length ?? 0} swarms`} tone="warning" onClick={props.createSwarm} />
-        <DashboardActionCard title="Create View" description="Open a focused multi-session view for parallel work." meta={`${props.snapshot?.views.length ?? 0} views`} tone="info" onClick={props.createView} />
+        <DashboardActionCard title="Project" description="Group work" meta={`${props.snapshot?.projects.length ?? 0} projects`} tone="primary" onClick={props.createProject} />
+        <DashboardActionCard title="Session" description="New chat" meta={`${sessions().length} sessions`} tone="blue" onClick={() => props.createSession()} />
+        <DashboardActionCard title="Swarm" description="Agent team" meta={`${props.snapshot?.swarms.length ?? 0} swarms`} tone="warning" onClick={props.createSwarm} />
+        <DashboardActionCard title="View" description="Multi-session" meta={`${props.snapshot?.views.length ?? 0} views`} tone="info" onClick={props.createView} />
       </section>
       <section class="dashboard-sections">
-        <DashboardSection title="Projects" count={props.snapshot?.projects.length ?? 0} collapsed={!!collapsed().projects} onToggle={() => toggleSection("projects")} action="Refresh" onAction={props.refresh}>
+        <DashboardSection title="Projects" count={props.snapshot?.projects.length ?? 0} collapsed={!!collapsed().projects} onToggle={() => toggleSection("projects")}>
           <div class="dashboard-card-grid">
           <For each={(props.snapshot?.projects ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create project" description="Group sessions, swarms, and views around a workspace." onClick={props.createProject} />}>
             {(project) => (
               <article class="dashboard-item-card project-card">
                 <div>
                   <strong>{title(project.name ?? project.project.name)}</strong>
-                  <span>{project.folders.length} folders · {projectSessions(project, props.snapshot).length} sessions</span>
+                  <span>{projectSessions(project, props.snapshot).length} sessions - {projectSwarms(project, props.snapshot).length} swarms</span>
                 </div>
                 <div class="row-actions">
                   <small>{compactPath(project.folders[0]?.path)}</small>
@@ -1524,6 +2016,23 @@ function Dashboard(props: {
                   <button onClick={() => props.editProjectFolders(project.id, project.folders.map((folder) => folder.path))}>Folders</button>
                   <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}>Delete</button>
                 </div>
+              </article>
+            )}
+          </For>
+          </div>
+        </DashboardSection>
+        <DashboardSection title="Swarms" count={props.snapshot?.swarms.length ?? 0} collapsed={!!collapsed().swarms} onToggle={() => toggleSection("swarms")}>
+          <div class="dashboard-card-grid">
+          <For each={(props.snapshot?.swarms ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create swarm" description="Build an Agent team." onClick={props.createSwarm} />}>
+            {(swarm) => (
+              <article class="dashboard-item-card">
+                <div>
+                  <strong>{title(swarm.title)}</strong>
+                  <span>{swarm.roles.length} roles · {swarm.runs.length} runs</span>
+                </div>
+                <footer>
+                  <small>{formatRelative(swarm.timeUpdated)}</small>
+                </footer>
               </article>
             )}
           </For>
@@ -1571,34 +2080,16 @@ function Dashboard(props: {
           <div class="dashboard-card-grid">
           <For each={recentSessions()} fallback={<EmptyCreateDashboardCard title="Create session" description="Start a new chat from the dashboard." onClick={() => props.createSession()} />}>
             {(session) => (
-              <button class="dashboard-item-card interactive" onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
+              <button class="dashboard-item-card dashboard-status-card interactive" classList={{ [`status-${sidebarStatus(props.snapshot, session, props.readyReviewSessions).replaceAll("_", "-")}`]: true }} onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
                 <div>
                   <strong>{title(session.title)}</strong>
-                  <span>{compactPath(session.directory)}</span>
                 </div>
                 <footer>
-                  <small>{formatRelative(session.time.updated)}</small>
-                  <StatusPill status={props.snapshot?.sessionStatus[session.id]?.type ?? "idle"} />
+                  <small>{dashboardSessionMeta(session, props.snapshot)}</small>
                 </footer>
+                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "input_needed" || sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(sidebarStatus(props.snapshot, session, props.readyReviewSessions))} /></Show>
               </button>
-            )}
-          </For>
-          </div>
-        </DashboardSection>
-        <DashboardSection title="Swarms" count={props.snapshot?.swarms.length ?? 0} collapsed={!!collapsed().swarms} onToggle={() => toggleSection("swarms")}>
-          <div class="dashboard-card-grid">
-          <For each={(props.snapshot?.swarms ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create swarm" description="Build an Agent team." onClick={props.createSwarm} />}>
-            {(swarm) => (
-              <article class="dashboard-item-card">
-                <div>
-                  <strong>{title(swarm.title)}</strong>
-                  <span>{swarm.roles.length} roles · {swarm.runs.length} runs</span>
-                </div>
-                <footer>
-                  <small>{formatRelative(swarm.timeUpdated)}</small>
-                  <StatusPill status={swarm.status} />
-                </footer>
-              </article>
             )}
           </For>
           </div>
@@ -1607,12 +2098,16 @@ function Dashboard(props: {
           <div class="dashboard-card-grid">
           <For each={(props.snapshot?.views ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create view" description="Build a focused multi-session view." onClick={props.createView} />}>
             {(view) => (
-              <article class="dashboard-item-card">
+              <article class="dashboard-item-card dashboard-status-card" classList={{ [`status-${viewDashboardStatus(view, props.snapshot, props.readyReviewSessions).replaceAll("_", "-")}`]: true }}>
                 <div>
                   <strong>{title(view.title)}</strong>
-                  <span>{view.sessionIDs.length} sessions</span>
+                  <span>{viewSessionCount(view)} sessions</span>
                 </div>
-                <small>{formatRelative(view.timeUpdated)}</small>
+                <footer>
+                  <small>{formatRelative(view.timeUpdated)}</small>
+                </footer>
+                <Show when={viewDashboardStatus(view, props.snapshot, props.readyReviewSessions) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+                <Show when={viewDashboardStatus(view, props.snapshot, props.readyReviewSessions) === "input_needed" || viewDashboardStatus(view, props.snapshot, props.readyReviewSessions) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(viewDashboardStatus(view, props.snapshot, props.readyReviewSessions))} /></Show>
               </article>
             )}
           </For>
@@ -1622,12 +2117,15 @@ function Dashboard(props: {
           <div class="dashboard-card-grid compact">
           <For each={priorSessions()} fallback={<Empty text="No prior sessions." />}>
             {(session) => (
-              <button class="dashboard-item-card interactive compact" onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
+              <button class="dashboard-item-card dashboard-status-card interactive compact" classList={{ [`status-${sidebarStatus(props.snapshot, session, props.readyReviewSessions).replaceAll("_", "-")}`]: true }} onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
                 <div>
                   <strong>{title(session.title)}</strong>
-                  <span>{compactPath(session.directory)}</span>
                 </div>
-                <small>{formatRelative(session.time.updated)}</small>
+                <footer>
+                  <small>{dashboardSessionMeta(session, props.snapshot)}</small>
+                </footer>
+                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "input_needed" || sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(sidebarStatus(props.snapshot, session, props.readyReviewSessions))} /></Show>
               </button>
             )}
           </For>
@@ -1654,15 +2152,18 @@ function DashboardSection(props: { title: string; count: number; collapsed: bool
     <section class="dashboard-section">
       <header>
         <div>
-          <button class="section-collapse" aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.title}`} aria-expanded={!props.collapsed} onClick={props.onToggle}>{props.collapsed ? "+" : "-"}</button>
-          <h2>{props.title}</h2>
-          <span>{props.count}</span>
+          <button class="section-collapse" aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.title}`} aria-expanded={!props.collapsed} onClick={props.onToggle}>
+            <span class="section-chevron"><Icon name={props.collapsed ? "chevronRight" : "chevronDown"} /></span>
+            <strong>{props.title} <span class="section-count">({props.count})</span></strong>
+          </button>
         </div>
         <Show when={props.action && props.onAction}>
           <button class="secondary" onClick={props.onAction}>{props.action}</button>
         </Show>
       </header>
-      <Show when={!props.collapsed}>{props.children}</Show>
+      <div class="dashboard-section-content" classList={{ collapsed: props.collapsed }}>
+        <div>{props.children}</div>
+      </div>
     </section>
   )
 }
@@ -1889,7 +2390,7 @@ function SessionPage(props: {
   setSelectedModel: (value: string) => void
   selectedVariant: string
   setSelectedVariant: (value: string) => void
-  submit: (event: SubmitEvent) => void
+  submit: (event: SubmitEvent, text: string) => void
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
@@ -1900,26 +2401,21 @@ function SessionPage(props: {
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   status?: string
+  pending?: boolean
+  composerFocusToken?: () => number
+  messageWindow: MessageWindow
+  loadOlderMessages?: (cursor: string) => Promise<void>
+  reloadLatestMessages?: () => Promise<void>
+  onFollowBottomChange?: (sessionID: string, value: boolean) => void
 }) {
-  const TRANSCRIPT_BOTTOM_THRESHOLD = 4
   const session = () => props.session
   const blocked = () => props.permissions.length > 0 || props.questions.length > 0
-  let transcript: HTMLElement | undefined
-  let transcriptContent: HTMLDivElement | undefined
-  let transcriptSessionID: string | undefined
-  let transcriptAutoScroll = true
-  let transcriptInitialScrollSessionID: string | undefined
-  let transcriptInitialScrollUntil = 0
-  let transcriptProgrammaticScroll = false
-  let transcriptScrollFrame: number | undefined
-  let transcriptLastScrollTop = 0
-  let transcriptUserScrollIntent = false
-  let transcriptUserScrollTimer: ReturnType<typeof setTimeout> | undefined
-  let transcriptProgrammaticScrollTimer: ReturnType<typeof setTimeout> | undefined
+  let transcriptExpandedSessionID = ""
   let composerTextarea: HTMLTextAreaElement | undefined
   const [modelPickerOpen, setModelPickerOpen] = createSignal(false)
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
   const [modelQuery, setModelQuery] = createSignal("")
+  const [draftPrompt, setDraftPrompt] = createSignal(props.prompt)
   const modelOptions = createMemo(() =>
     props.providers.flatMap((provider) =>
       Object.values(provider.models)
@@ -1966,6 +2462,7 @@ function SessionPage(props: {
   const mode = createMemo(() => props.selectedAgent === "plan" ? "plan" : "build")
   const running = createMemo(() => props.status === "busy" || props.status === "retry")
   const sessionStarted = createMemo(() => props.loading || props.data.messages.length > 0 || props.status === "busy" || props.status === "retry" || blocked())
+  const draftText = createMemo(() => draftPrompt().trim())
   const usageLabel = createMemo(() => {
     const last = props.data.messages.findLast((bundle) => isAssistantMessage(bundle.info) && bundle.info.tokens.output > 0)?.info
     if (!last || !isAssistantMessage(last)) return
@@ -1996,171 +2493,92 @@ function SessionPage(props: {
     setVariantPickerOpen(false)
     setModelQuery("")
   }
-  const transcriptNearBottom = (element: HTMLElement) => element.scrollHeight - element.clientHeight - element.scrollTop <= TRANSCRIPT_BOTTOM_THRESHOLD
-  const cancelInitialTranscriptScroll = () => {
-    transcriptInitialScrollSessionID = undefined
-    transcriptInitialScrollUntil = 0
-  }
-  const markTranscriptUserScrollIntent = () => {
-    if (transcriptProgrammaticScroll) return
-    transcriptUserScrollIntent = true
-    if (transcriptUserScrollTimer) clearTimeout(transcriptUserScrollTimer)
-    transcriptUserScrollTimer = setTimeout(() => {
-      transcriptUserScrollIntent = false
-      transcriptUserScrollTimer = undefined
-    }, 700)
-  }
-  const handleTranscriptScroll = () => {
-    if (!transcript) return
-    const atBottom = transcriptNearBottom(transcript)
-    const scrollTop = transcript.scrollTop
-    const scrollTopChanged = Math.abs(scrollTop - transcriptLastScrollTop) > 1
-    const initialPending = transcriptInitialScrollSessionID === transcriptSessionID && performance.now() <= transcriptInitialScrollUntil
-    transcriptLastScrollTop = scrollTop
-    if (transcriptProgrammaticScroll) {
-      transcriptAutoScroll = atBottom
-      return
-    }
-    if (transcriptUserScrollIntent || (scrollTopChanged && !initialPending)) {
-      transcriptAutoScroll = atBottom
-      if (!atBottom) cancelInitialTranscriptScroll()
-      if (transcriptUserScrollIntent) markTranscriptUserScrollIntent()
-      return
-    }
-    if (atBottom) transcriptAutoScroll = true
-  }
-  const scrollTranscriptToBottom = () => {
-    if (!transcript) return
-    transcript.scrollTop = transcript.scrollHeight
-    transcriptLastScrollTop = transcript.scrollTop
-    transcriptAutoScroll = transcriptNearBottom(transcript)
-  }
-  const scheduleTranscriptScroll = (force: boolean) => {
-    if (!transcript) return
-    if (!force && (!running() || !transcriptAutoScroll)) return
-    if (transcriptScrollFrame !== undefined) cancelAnimationFrame(transcriptScrollFrame)
-    transcriptScrollFrame = requestAnimationFrame(() => {
-      transcriptScrollFrame = undefined
-      if (!transcript) return
-      if (!force && (!running() || !transcriptAutoScroll)) return
-      transcriptProgrammaticScroll = true
-      if (transcriptProgrammaticScrollTimer) clearTimeout(transcriptProgrammaticScrollTimer)
-      scrollTranscriptToBottom()
-      requestAnimationFrame(() => {
-        if (!transcript) return
-        if (force || (running() && transcriptAutoScroll)) scrollTranscriptToBottom()
-        transcriptProgrammaticScrollTimer = setTimeout(() => {
-          transcriptProgrammaticScroll = false
-          transcriptProgrammaticScrollTimer = undefined
-        }, 80)
-      })
-    })
-  }
-  onMount(() => {
-    if (!transcriptContent) return
-    const observer = new ResizeObserver(() => {
-      const initial = transcriptInitialScrollSessionID === transcriptSessionID && performance.now() <= transcriptInitialScrollUntil
-      if (initial) {
-        scheduleTranscriptScroll(true)
-        return
-      }
-      if (transcriptInitialScrollSessionID && performance.now() > transcriptInitialScrollUntil) cancelInitialTranscriptScroll()
-      if (running() && transcriptAutoScroll) scheduleTranscriptScroll(false)
-    })
-    observer.observe(transcriptContent)
-    onCleanup(() => observer.disconnect())
-  })
-  onCleanup(() => {
-    if (transcriptScrollFrame !== undefined) cancelAnimationFrame(transcriptScrollFrame)
-    if (transcriptUserScrollTimer) clearTimeout(transcriptUserScrollTimer)
-    if (transcriptProgrammaticScrollTimer) clearTimeout(transcriptProgrammaticScrollTimer)
-  })
-  createEffect(() => {
-    props.prompt
+  const resizeComposer = () => {
     if (!composerTextarea) return
     composerTextarea.style.height = "auto"
     composerTextarea.style.height = `${composerTextarea.scrollHeight}px`
+  }
+  const submitComposer = (event: SubmitEvent) => {
+    event.preventDefault()
+    const text = draftText()
+    if (blocked() || !text) return
+    setDraftPrompt("")
+    requestAnimationFrame(resizeComposer)
+    props.submit(event, text)
+  }
+  createEffect(() => {
+    draftPrompt()
+    resizeComposer()
   })
   createEffect(() => {
-    const id = props.session?.id
-    const count = props.data.messages.reduce((total, message) => total + message.parts.length, 0)
-    if (!id && count === 0) return
-    const sessionChanged = id !== transcriptSessionID
-    transcriptSessionID = id
-    if (sessionChanged) {
-      transcriptAutoScroll = true
-      transcriptInitialScrollSessionID = id
-      transcriptInitialScrollUntil = performance.now() + 1_200
-      scheduleTranscriptScroll(true)
-      return
-    }
-    if (transcriptInitialScrollSessionID === id) {
-      if (performance.now() <= transcriptInitialScrollUntil) scheduleTranscriptScroll(true)
-      else cancelInitialTranscriptScroll()
-      return
-    }
-    if (running() && transcriptAutoScroll) scheduleTranscriptScroll(false)
+    const token = props.composerFocusToken?.() ?? 0
+    if (!token) return
+    requestAnimationFrame(() => {
+      if (props.composerFocusToken?.() !== token || !composerTextarea || composerTextarea.disabled) return
+      composerTextarea.focus({ preventScroll: true })
+    })
+  })
+  createEffect(() => {
+    const id = props.session?.id ?? ""
+    if (id === transcriptExpandedSessionID) return
+    transcriptExpandedSessionID = id
+    setDraftPrompt(props.prompt)
   })
   return (
     <div class="page session-page" classList={{ "session-empty": !sessionStarted() }}>
       <Show when={session()} fallback={<Empty text="Session not found" />}>
         {(selected) => (
           <>
-            <header class="session-toolbar">
-              <div class="session-titleline">
-                <div>
-                  <h1>{title(selected().title)}</h1>
-                  <p>{compactPath(selected().directory)}</p>
-                </div>
-              </div>
-              <div class="session-actions compact">
-                <Show when={props.status === "busy" || props.status === "retry" || blocked()}>
-                  <button class="icon-button" title="Interrupt session" aria-label="Interrupt session" onClick={() => props.abortSession(selected().id)}><Icon name="stop" /></button>
-                </Show>
-                <StatusPill status={blocked() ? "input_needed" : props.status ?? "idle"} />
-                <details class="overflow-menu">
-                  <summary title="Session actions" aria-label="Session actions"><Icon name="more" /></summary>
+            <div class="session-page-top">
+              <header class="session-toolbar">
+                <div class="session-titleline">
                   <div>
-                    <button type="button" onClick={() => props.renameSession(selected())}>Rename</button>
-                    <button type="button" onClick={() => props.moveSession(selected())}>Move to project</button>
-                    <button type="button" class="danger" onClick={() => props.deleteSession(selected())}>Delete</button>
+                    <h1>{title(selected().title)}</h1>
+                    <p>{compactPath(selected().directory)}</p>
                   </div>
-                </details>
-              </div>
-            </header>
-            <For each={props.permissions}>
-              {(request) => <PermissionPanel request={request} tool={permissionToolPart(request, props.data.messages)} reply={props.replyPermission} />}
-            </For>
-            <For each={props.questions}>
-              {(request) => <QuestionPanel request={request} reply={props.replyQuestion} reject={props.rejectQuestion} />}
-            </For>
-            <section class="transcript" ref={transcript} onScroll={handleTranscriptScroll} onWheel={markTranscriptUserScrollIntent} onPointerDown={markTranscriptUserScrollIntent} onTouchStart={markTranscriptUserScrollIntent} onTouchMove={markTranscriptUserScrollIntent}>
-              <div class="transcript-content" ref={transcriptContent}>
-                <SessionSideData todos={props.data.todos} diffs={props.data.diffs} />
-                <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
-                  <For each={props.data.messages} fallback={<SessionEmptyState />}>
-                    {(bundle) => (
-                      <article class={`message ${bundle.info.role}`}>
-                        <header>{bundle.info.role}</header>
-                        <For each={groupTranscriptParts(bundle.parts)}>
-                          {(item) => <DisplayPartView item={item} />}
-                        </For>
-                      </article>
-                    )}
-                  </For>
-                </Show>
-              </div>
-            </section>
-            <form class="composer" onSubmit={props.submit}>
+                </div>
+                <div class="session-actions compact">
+                  <Show when={props.status === "busy" || props.status === "retry" || blocked()}>
+                    <button class="icon-button" title="Interrupt session" aria-label="Interrupt session" onClick={() => props.abortSession(selected().id)}><Icon name="stop" /></button>
+                  </Show>
+                  <StatusPill status={blocked() ? "input_needed" : props.status ?? "idle"} />
+                  <Show when={!props.pending}>
+                    <details class="overflow-menu">
+                      <summary title="Session actions" aria-label="Session actions"><Icon name="more" /></summary>
+                      <div>
+                        <button type="button" onClick={() => props.renameSession(selected())}>Rename</button>
+                        <button type="button" onClick={() => props.moveSession(selected())}>Move to project</button>
+                        <button type="button" class="danger" onClick={() => props.deleteSession(selected())}>Delete</button>
+                      </div>
+                    </details>
+                  </Show>
+                </div>
+              </header>
+              <For each={props.permissions}>
+                {(request) => <PermissionPanel request={request} tool={permissionToolPart(request, props.data.messages)} reply={props.replyPermission} />}
+              </For>
+              <For each={props.questions}>
+                {(request) => <QuestionPanel request={request} reply={props.replyQuestion} reject={props.rejectQuestion} />}
+              </For>
+            </div>
+            <TranscriptPanel
+              sessionID={selected().id}
+              data={props.data}
+              loading={props.loading}
+              running={running()}
+              messageWindow={props.messageWindow}
+              loadOlderMessages={props.loadOlderMessages}
+              reloadLatestMessages={props.reloadLatestMessages}
+              onFollowBottomChange={props.onFollowBottomChange}
+            />
+            <form class="composer" onSubmit={submitComposer}>
               <div class={`composer-input ${mode()}`}>
                 <textarea
                   ref={composerTextarea}
                   disabled={blocked()}
-                  value={props.prompt}
+                  value={draftPrompt()}
                   onInput={(event) => {
-                    props.setPrompt(event.currentTarget.value)
-                    event.currentTarget.style.height = "auto"
-                    event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`
+                    setDraftPrompt(event.currentTarget.value)
                   }}
                   onKeyDown={(event) => {
                     if (event.ctrlKey && event.key.toLowerCase() === "t") {
@@ -2218,7 +2636,7 @@ function SessionPage(props: {
                       </div>
                     </Show>
                   </div>
-                  <button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={blocked() || props.prompt.trim().length === 0}>
+                  <button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={blocked() || draftText().length === 0}>
                     <Icon name="send" />
                   </button>
                 </div>
@@ -2281,6 +2699,203 @@ function SessionPage(props: {
 }
 
 type ModelPickerOption = { provider: Provider; model: Provider["models"][string] }
+
+function TranscriptPanel(props: {
+  sessionID: string
+  data: SessionData
+  loading: boolean
+  running: boolean
+  messageWindow: MessageWindow
+  loadOlderMessages?: (cursor: string) => Promise<void>
+  reloadLatestMessages?: () => Promise<void>
+  onFollowBottomChange?: (sessionID: string, value: boolean) => void
+}) {
+  const TRANSCRIPT_BOTTOM_THRESHOLD = 8
+  let transcript: HTMLElement | undefined
+  let followFrame: number | undefined
+  let bottomFrame: number | undefined
+  let activeSessionID = ""
+  let observedRenderKey = ""
+  let followingBottom = true
+  let topFrame: number | undefined
+  let bottomStableFrames = 0
+  let bottomStableTarget = 0
+  let bottomFrameBudget = 0
+  let bottomLastHeight = -1
+  const [olderMessagesLoading, setOlderMessagesLoading] = createSignal(false)
+  const [latestMessagesLoading, setLatestMessagesLoading] = createSignal(false)
+  const visibleMessages = createMemo(() => props.data.messages)
+  const visiblePartCount = createMemo(() => visibleMessages().reduce((total, message) => total + message.parts.length, 0))
+  const renderKey = createMemo(() => [
+    props.sessionID,
+    props.loading ? "loading" : "ready",
+    visibleMessages()[0]?.info.id ?? "",
+    visibleMessages().at(-1)?.info.id ?? "",
+    visiblePartCount(),
+    props.data.messageTailDetached ? "detached" : "latest",
+  ].join("\0"))
+  const nearBottom = () => transcript ? transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= TRANSCRIPT_BOTTOM_THRESHOLD : true
+  const setFollowingBottom = (value: boolean) => {
+    followingBottom = value && props.data.messageTailDetached !== true
+    props.onFollowBottomChange?.(props.sessionID, followingBottom)
+  }
+  const forceFollowingBottom = () => {
+    followingBottom = true
+    props.onFollowBottomChange?.(props.sessionID, true)
+  }
+  const cancelBottomScroll = () => {
+    if (bottomFrame === undefined) return
+    cancelAnimationFrame(bottomFrame)
+    bottomFrame = undefined
+    bottomStableFrames = 0
+    bottomFrameBudget = 0
+  }
+  const cancelTopScroll = () => {
+    if (topFrame === undefined) return
+    cancelAnimationFrame(topFrame)
+    topFrame = undefined
+  }
+  const updateFollowingFromScroll = () => {
+    setFollowingBottom(nearBottom())
+  }
+  const scheduleFollowingUpdate = () => {
+    if (followFrame !== undefined) return
+    followFrame = requestAnimationFrame(() => {
+      followFrame = undefined
+      updateFollowingFromScroll()
+    })
+  }
+  const scrollToBottom = () => {
+    if (!transcript) return
+    transcript.scrollTop = transcript.scrollHeight
+    setFollowingBottom(nearBottom())
+  }
+  const continueBottomScroll = (key: string) => {
+    bottomFrame = requestAnimationFrame(() => {
+      bottomFrame = undefined
+      if (renderKey() !== key || !followingBottom || props.data.messageTailDetached) return
+      const height = transcript?.scrollHeight ?? 0
+      scrollToBottom()
+      bottomStableFrames = height === bottomLastHeight ? bottomStableFrames + 1 : 0
+      bottomLastHeight = height
+      bottomFrameBudget -= 1
+      if (bottomFrameBudget > 0 && bottomStableFrames < bottomStableTarget) continueBottomScroll(key)
+    })
+  }
+  const scheduleBottomScroll = (key: string, stableFrames: number, frameBudget: number) => {
+    cancelBottomScroll()
+    bottomStableFrames = 0
+    bottomStableTarget = stableFrames
+    bottomFrameBudget = frameBudget
+    bottomLastHeight = -1
+    continueBottomScroll(key)
+  }
+  const handleUserScrollIntent = () => {
+    cancelBottomScroll()
+    scheduleFollowingUpdate()
+  }
+  const loadOlderMessages = async () => {
+    const cursor = props.data.messageCursor
+    if (!cursor || !props.loadOlderMessages || olderMessagesLoading()) return
+    const restoreTop = transcript?.scrollTop ?? 0
+    const restoreHeight = transcript?.scrollHeight ?? 0
+    cancelBottomScroll()
+    setFollowingBottom(false)
+    setOlderMessagesLoading(true)
+    await props.loadOlderMessages(cursor).finally(() => {
+      setOlderMessagesLoading(false)
+      cancelTopScroll()
+      topFrame = requestAnimationFrame(() => {
+        topFrame = undefined
+        if (transcript) transcript.scrollTop = restoreTop + Math.max(0, transcript.scrollHeight - restoreHeight)
+        updateFollowingFromScroll()
+      })
+    })
+  }
+  const reloadLatestMessages = async () => {
+    if (!props.reloadLatestMessages || latestMessagesLoading()) return
+    cancelBottomScroll()
+    forceFollowingBottom()
+    setLatestMessagesLoading(true)
+    await props.reloadLatestMessages().finally(() => {
+      setLatestMessagesLoading(false)
+      scheduleBottomScroll(renderKey(), 10, 90)
+    })
+  }
+  const handleScroll = () => {
+    if (!nearBottom()) {
+      cancelBottomScroll()
+      if (followingBottom) setFollowingBottom(false)
+    }
+    scheduleFollowingUpdate()
+  }
+
+  onCleanup(() => {
+    cancelBottomScroll()
+    cancelTopScroll()
+    if (followFrame !== undefined) cancelAnimationFrame(followFrame)
+  })
+  createEffect(() => {
+    const key = renderKey()
+    const sessionChanged = activeSessionID !== props.sessionID
+    activeSessionID = props.sessionID
+    if (sessionChanged) {
+      observedRenderKey = ""
+      setFollowingBottom(props.data.messageTailDetached !== true)
+    }
+    if (props.data.messageTailDetached) {
+      observedRenderKey = key
+      setFollowingBottom(false)
+      return
+    }
+    if (props.loading || visibleMessages().length === 0) return
+    if (!observedRenderKey) {
+      observedRenderKey = key
+      setFollowingBottom(true)
+      scheduleBottomScroll(key, 10, 90)
+      return
+    }
+    if (observedRenderKey === key) return
+    observedRenderKey = key
+    if (followingBottom) scheduleBottomScroll(key, props.running ? 2 : 1, props.running ? 12 : 4)
+  })
+
+  return (
+    <section class="transcript" ref={transcript} onScroll={handleScroll} onWheel={handleUserScrollIntent} onPointerDown={handleUserScrollIntent} onTouchStart={handleUserScrollIntent}>
+      <div class="transcript-content">
+        <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
+          <Show when={props.data.messageCursor}>
+            <Show when={olderMessagesLoading()} fallback={
+              <button type="button" class="transcript-window-button" onClick={() => void loadOlderMessages()}>
+                Load more
+              </button>
+            }>
+              <div class="transcript-page-loader" aria-live="polite" aria-busy="true">
+                <span class="session-loading-spinner" />
+                <span>Loading older messages...</span>
+              </div>
+            </Show>
+          </Show>
+          <For each={visibleMessages()} fallback={<SessionEmptyState />}>
+            {(bundle) => (
+              <article class={`message ${bundle.info.role}`}>
+                <header>{bundle.info.role}</header>
+                <For each={groupTranscriptParts(bundle.parts)}>
+                  {(item) => <DisplayPartView item={item} />}
+                </For>
+              </article>
+            )}
+          </For>
+          <Show when={props.data.messageTailDetached}>
+            <button type="button" class="transcript-window-button transcript-latest-button" disabled={latestMessagesLoading()} onClick={() => void reloadLatestMessages()}>
+              {latestMessagesLoading() ? "Loading latest messages..." : "Jump to latest messages"}
+            </button>
+          </Show>
+        </Show>
+      </div>
+    </section>
+  )
+}
 
 function ModelPickerSection(props: { title: string; selectedModel: string; options: ModelPickerOption[]; select: (providerID: string, modelID: string) => void }) {
   return (
@@ -2446,48 +3061,6 @@ function QuestionPanel(props: { request: QuestionRequest; reply: (request: Quest
   )
 }
 
-function SessionSideData(props: { todos: Todo[]; diffs: SnapshotFileDiff[] }) {
-  return (
-    <Show when={props.todos.length > 0 || props.diffs.length > 0}>
-      <section class="session-side-data">
-        <Show when={props.todos.length > 0}>
-          <div>
-            <h3>Todos</h3>
-            <For each={props.todos}>
-              {(todo) => (
-                <div class={`todo-item ${todo.status}`}>
-                  <span>{todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "•" : " "}</span>
-                  <strong>{todo.content}</strong>
-                  <small>{todo.priority}</small>
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
-        <Show when={props.diffs.length > 0}>
-          <div>
-            <h3>File Changes</h3>
-            <For each={props.diffs}>
-              {(diff) => (
-                <details class="diff-item">
-                  <summary>
-                    <span>{diff.status ?? "modified"}</span>
-                    <strong>{diff.file ?? "Unknown file"}</strong>
-                    <small>+{diff.additions} -{diff.deletions}</small>
-                  </summary>
-                  <Show when={diff.patch}>
-                    <pre>{diff.patch}</pre>
-                  </Show>
-                </details>
-              )}
-            </For>
-          </div>
-        </Show>
-      </section>
-    </Show>
-  )
-}
-
 type ToolPart = Extract<Part, { type: "tool" }>
 type DisplayPart = { type: "part"; part: Part } | { type: "tool-group"; tool: string; parts: ToolPart[] }
 
@@ -2538,8 +3111,9 @@ function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" 
   return (
     <details class={`part tool tool-group ${status()}`} open>
       <summary>
+        <DisclosureChevron />
         <strong>{toolGroupTitle(props.item.tool, props.item.parts)}</strong>
-        <span>{status()}</span>
+        <span class="tool-status">{status()}</span>
       </summary>
       <div class="tool-group-list">
         <For each={props.item.parts}>
@@ -2612,14 +3186,17 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
   const text = createMemo(() => {
     if ("synthetic" in props.part && props.part.synthetic) return ""
     if ("ignored" in props.part && props.part.ignored) return ""
-    return displayMessageText(props.part.text).trim()
+    return props.part.text.trim()
   })
   return (
     <Show when={text()}>
       <div class={`part text ${props.part.type}`}>
         <Show when={props.part.type === "reasoning"} fallback={<Markdown text={text()} cacheKey={props.part.id} streaming={false} />}>
           <details class="thinking-block" open>
-            <summary>Thinking</summary>
+            <summary>
+              <DisclosureChevron />
+              <span>Thinking</span>
+            </summary>
             <Markdown text={text()} cacheKey={props.part.id} streaming={false} />
           </details>
         </Show>
@@ -2632,30 +3209,38 @@ function ToolPartView(props: { part: Extract<Part, { type: "tool" }> }) {
   const state = () => props.part.state
   const input = createMemo(() => toolStateInput(state()))
   const metadata = createMemo(() => toolMetadata(state()) ?? {})
-  const output = createMemo(() => toolVisibleOutput(props.part.tool, state(), metadata()))
   const error = createMemo(() => toolError(state()))
   const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata()))
-  const open = createMemo(() => state().status === "running" || state().status === "error" || Boolean(output() || toolHasRichDetails(props.part.tool, metadata(), input())))
-  const showRaw = createMemo(() => shouldShowRawToolData(props.part.tool, input(), metadata()))
+  const defaultOpen = createMemo(() => props.part.tool === "todowrite" || state().status === "running" || state().status === "error")
+  const [expanded, setExpanded] = createSignal(defaultOpen())
+  createEffect(() => {
+    if (defaultOpen()) setExpanded(true)
+  })
   return (
-    <details class={`part tool ${state().status}`} open={open()}>
+    <details class={`part tool ${state().status}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>
+        <DisclosureChevron />
         <strong>{title()}</strong>
-        <span>{state().status}</span>
+        <span class="tool-status">{state().status}</span>
       </summary>
-      <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} />
-      <Show when={showRaw()}>
-        <details class="tool-raw">
-          <summary>Raw tool data</summary>
-          <Show when={Object.keys(input()).length > 0}>
-            <label>Input</label>
-            <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
-          </Show>
-          <Show when={Object.keys(metadata()).length > 0}>
-            <label>Metadata</label>
-            <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
-          </Show>
-        </details>
+      <Show when={expanded()}>
+        <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={toolVisibleOutput(props.part.tool, state(), metadata())} error={error()} />
+        <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
+          <details class="tool-raw">
+            <summary>
+              <DisclosureChevron />
+              <span>Raw tool data</span>
+            </summary>
+            <Show when={Object.keys(input()).length > 0}>
+              <label>Input</label>
+              <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
+            </Show>
+            <Show when={Object.keys(metadata()).length > 0}>
+              <label>Metadata</label>
+              <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
+            </Show>
+          </details>
+        </Show>
       </Show>
     </details>
   )
@@ -3134,8 +3719,63 @@ function parseModelValue(value: string) {
   return { providerID: value.slice(0, index), modelID: value.slice(index + 1) }
 }
 
+function pendingSession(directory: string): Session {
+  const now = Date.now()
+  return {
+    id: PENDING_SESSION_ID,
+    slug: PENDING_SESSION_ID,
+    projectID: "",
+    directory,
+    title: "New session",
+    version: "pending",
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: now, updated: now },
+  }
+}
+
+function viewItemSession(item: ViewItem, fallbackDirectory?: string): Session {
+  if (item.kind === "session") return item.session
+  return pendingSession(item.slot.directory ?? fallbackDirectory ?? "")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function pendingViewSessions(view?: Pick<OpencodeXView, "metadata">): PendingViewSession[] {
+  const opencodex = view?.metadata?.opencodex
+  if (!isRecord(opencodex) || !Array.isArray(opencodex.pendingSessions)) return []
+  return opencodex.pendingSessions.flatMap((item): PendingViewSession[] => {
+    if (!isRecord(item) || typeof item.id !== "string") return []
+    return [{
+      id: item.id,
+      projectID: typeof item.projectID === "string" ? item.projectID : undefined,
+      projectLabel: typeof item.projectLabel === "string" ? item.projectLabel : undefined,
+      directory: typeof item.directory === "string" ? item.directory : undefined,
+    }]
+  })
+}
+
+function metadataWithPendingSessions(metadata: Record<string, unknown> | undefined, pending: PendingViewSession[]) {
+  const next = { ...(metadata ?? {}) }
+  const opencodex = isRecord(next.opencodex) ? { ...next.opencodex } : {}
+  if (pending.length > 0) {
+    opencodex.pendingSessions = pending
+    next.opencodex = opencodex
+    return next
+  }
+  delete opencodex.pendingSessions
+  if (Object.keys(opencodex).length > 0) next.opencodex = opencodex
+  else delete next.opencodex
+  return next
+}
+
+function viewItemID(item: ViewItem) {
+  return item.kind === "session" ? item.session.id : item.slot.id
+}
+
 function isTUISidebarSession(session: Session) {
-  return !session.parentID && !isSwarmSession(session)
+  return !session.parentID && !isSwarmSession(session) && isRenderableSession(session)
 }
 
 function isSwarmSession(session: Session) {
@@ -3152,7 +3792,36 @@ function projectSessions(project: GuiSnapshot["projects"][number], snapshot?: Gu
   return project.sessions
     .filter(isTUISidebarSession)
     .map((session) => byID.get(session.id) ?? session)
+    .filter(isTUISidebarSession)
     .toSorted((a, b) => b.time.updated - a.time.updated)
+}
+
+function projectSwarms(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
+  return (snapshot?.swarms ?? []).filter((swarm) => swarm.projectID === project.id)
+}
+
+function sessionProjectName(session: Session, snapshot?: GuiSnapshot) {
+  const project = (snapshot?.projects ?? []).find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
+  if (!project) return
+  return title(project.name ?? project.project.name)
+}
+
+function dashboardSessionMeta(session: Session, snapshot?: GuiSnapshot) {
+  const project = sessionProjectName(session, snapshot)
+  return [formatRelative(session.time.updated), project].filter(Boolean).join(" - ")
+}
+
+function viewSessionCount(view: OpencodeXView) {
+  return view.sessionIDs.length + pendingViewSessions(view).length
+}
+
+function viewDashboardStatus(view: GuiSnapshot["views"][number], snapshot?: GuiSnapshot, readyReviewSessions: Record<string, number> = {}): DerivedSessionStatus {
+  const sessions = new Map(tuiSidebarSessions(snapshot).map((session) => [session.id, session]))
+  const statuses = view.sessionIDs.map((sessionID) => sessions.get(sessionID)).filter((session): session is Session => Boolean(session)).map((session) => sidebarStatus(snapshot, session, readyReviewSessions))
+  if (statuses.includes("input_needed")) return "input_needed"
+  if (statuses.includes("in_progress")) return "in_progress"
+  if (statuses.includes("ready_for_review")) return "ready_for_review"
+  return "dormant"
 }
 
 function isRecentSessionUpdate(timeUpdated: number, now = Date.now()) {
@@ -3165,29 +3834,38 @@ function recentProjectSessions(sessions: Session[]) {
   return recent.length >= PROJECT_RECENT_SESSION_LIMIT ? recent : sorted.slice(0, PROJECT_RECENT_SESSION_LIMIT)
 }
 
-function sidebarStatus(snapshot: GuiSnapshot | undefined, session: Session) {
+function isRunningBackendStatus(status: string | undefined) {
+  return status === "busy" || status === "retry"
+}
+
+function sidebarStatus(snapshot: GuiSnapshot | undefined, session: Session, readyReviewSessions: Record<string, number> = {}): DerivedSessionStatus {
   if ((snapshot?.permissions ?? []).some((request) => request.sessionID === session.id) || (snapshot?.questions ?? []).some((request) => request.sessionID === session.id)) return "input_needed"
   const status = snapshot?.sessionStatus[session.id]?.type
-  if (status === "busy" || status === "retry") return "in_progress"
+  if (isRunningBackendStatus(status)) return "in_progress"
+  if (readyReviewSessions[session.id]) return "ready_for_review"
   return "dormant"
 }
 
-function sidebarDisplayStatus(snapshot: GuiSnapshot | undefined, session: Session, lastViewed: number) {
-  const status = sidebarStatus(snapshot, session)
-  if (status === "dormant" && session.time.updated > lastViewed) return "unviewed"
-  return status
+function isLikelyActiveSession(session: Session, data: SessionData) {
+  const lastAssistant = data.messages.toReversed().find((bundle): bundle is MessageBundle & { info: AssistantMessage } => isAssistantMessage(bundle.info))
+  const lastActivity = Math.max(session.time.updated, lastAssistant?.info.time.created ?? 0)
+  if (lastActivity < Date.now() - SIDEBAR_ACTIVE_WINDOW_MS) return false
+  if (!lastAssistant || lastAssistant.info.time.completed || "finish" in lastAssistant.info && lastAssistant.info.finish) return false
+  if (lastAssistant.parts.some((part) => part.type === "tool" && part.state.status === "running")) return true
+  if (lastAssistant.parts.some((part) => part.type === "step-start") && !lastAssistant.parts.some((part) => part.type === "step-finish")) return true
+  return lastAssistant.parts.length > 0
 }
 
 function sidebarStatusLabel(status: string) {
   if (status === "in_progress") return "running"
   if (status === "input_needed") return "needs input"
-  if (status === "unviewed") return "waiting for user to view"
+  if (status === "ready_for_review") return "ready for review"
   if (status === "failed") return "failed"
   return "idle"
 }
 
-function SidebarSessionLink(props: { session: Session; snapshot?: GuiSnapshot; lastViewed: number; active: boolean; nested?: boolean; onClick: () => void }) {
-  const status = createMemo(() => sidebarDisplayStatus(props.snapshot, props.session, props.lastViewed))
+function SidebarSessionLink(props: { session: Session; snapshot?: GuiSnapshot; readyReviewSessions: Record<string, number>; lastViewed: number; active: boolean; nested?: boolean; onClick: () => void }) {
+  const status = createMemo(() => sidebarStatus(props.snapshot, props.session, props.readyReviewSessions))
   const subtitle = createMemo(() => [props.session.model?.id?.slice((props.session.model?.id ?? "").lastIndexOf("/") + 1), formatRelative(props.session.time.updated)].filter(Boolean).join(" - "))
   return (
     <button
@@ -3201,7 +3879,7 @@ function SidebarSessionLink(props: { session: Session; snapshot?: GuiSnapshot; l
         <span>{subtitle()}</span>
       </small>
       <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
-      <Show when={status() === "input_needed"}><span class="status-glyph" aria-label={sidebarStatusLabel(status())} /></Show>
+      <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(status())} /></Show>
     </button>
   )
 }
@@ -3233,25 +3911,347 @@ function StatusDot(props: { status: string }) {
   return <span class={`status-dot ${props.status.replaceAll("_", "-")}`} aria-label={props.status} />
 }
 
-function confirmedSessionStatus(current: GuiSnapshot["sessionStatus"], next: GuiSnapshot["sessionStatus"], idleSessionID?: string) {
-  const status = { ...current, ...next }
-  if (idleSessionID && !next[idleSessionID]) delete status[idleSessionID]
-  return status
+const pendingLiveParts = new Map<string, Part[]>()
+const pendingLivePartDeltas = new Map<string, Map<string, string>>()
+
+type SessionDataPatchOptions = {
+  appendMissingMessages?: boolean
+}
+
+function isSessionDataEvent(event: GlobalEvent) {
+  const kind = eventKind(event)
+  return kind === "message.updated"
+    || kind === "message.removed"
+    || kind === "message.part.updated"
+    || kind === "message.part.removed"
+    || kind === "message.part.delta"
+    || kind === "todo.updated"
+    || kind === "session.diff"
+}
+
+function isSnapshotPatchEvent(event: GlobalEvent) {
+  const kind = eventKind(event)
+  return kind === "session.updated"
+    || kind === "session.deleted"
+    || kind === "permission.asked"
+    || kind === "permission.replied"
+    || kind === "question.asked"
+    || kind === "question.replied"
+    || kind === "question.rejected"
+}
+
+function isHighFrequencySessionEvent(event: GlobalEvent) {
+  return eventKind(event).startsWith("session.next.")
+}
+
+function patchBoundedSessionData(data: SessionData, event: GlobalEvent, limit: MessageWindow, followingBottom: boolean): SessionData {
+  if (!followingBottom || data.messageTailDetached) {
+    const next = patchSessionData(data, event, { appendMissingMessages: false })
+    return eventWouldAppendMissingMessage(data, event) ? markMessageTailDetached(next) : next
+  }
+  return trimToLiveTail(patchSessionData(data, event), limit)
+}
+
+function patchSessionData(data: SessionData, event: GlobalEvent, options: SessionDataPatchOptions = {}): SessionData {
+  const properties = eventData(event)
+  if (!properties) return data
+  switch (eventKind(event)) {
+    case "message.updated":
+      return { ...data, messages: upsertMessage(data.messages, (properties as { info: Message }).info, options) }
+    case "message.removed": {
+      forgetPendingMessageParts((properties as { messageID: string }).messageID)
+      return { ...data, messages: data.messages.filter((bundle) => bundle.info.id !== (properties as { messageID: string }).messageID) }
+    }
+    case "message.part.updated":
+      return { ...data, messages: upsertPart(data.messages, normalizeLivePart((properties as { part: Part }).part), options) }
+    case "message.part.removed": {
+      const removed = properties as { messageID: string; partID: string }
+      forgetPendingPart(removed.messageID, removed.partID)
+      return { ...data, messages: removePart(data.messages, (properties as { messageID: string; partID: string }).messageID, (properties as { messageID: string; partID: string }).partID) }
+    }
+    case "message.part.delta":
+      return { ...data, messages: applyPartDelta(data.messages, (properties as { messageID: string; partID: string; field: string; delta: string }).messageID, (properties as { messageID: string; partID: string; field: string; delta: string }).partID, (properties as { messageID: string; partID: string; field: string; delta: string }).field, (properties as { messageID: string; partID: string; field: string; delta: string }).delta, options) }
+    case "todo.updated":
+      return { ...data, todos: (properties as { todos: Todo[] }).todos }
+    case "session.diff":
+      return { ...data, diffs: (properties as { diff: SnapshotFileDiff[] }).diff }
+    default:
+      return data
+  }
+}
+
+function upsertMessage(messages: MessageBundle[], info: Message, options: SessionDataPatchOptions = {}) {
+  const index = messages.findIndex((bundle) => bundle.info.id === info.id)
+  if (index < 0 && options.appendMissingMessages === false) {
+    forgetPendingMessageParts(info.id)
+    return messages
+  }
+  const pendingParts = takePendingParts(info.id)
+  const next = index >= 0
+    ? messages.map((bundle, i) => i === index ? { ...bundle, info, parts: mergePartLists(bundle.parts, pendingParts) } : bundle)
+    : [...messages, { info, parts: pendingParts }]
+  return sortMessageBundles(next)
+}
+
+function upsertPart(messages: MessageBundle[], part: Part, options: SessionDataPatchOptions = {}) {
+  const nextPart = applyPendingDeltasToPart(part)
+  let found = false
+  const next = messages.map((bundle) => {
+    if (bundle.info.id !== nextPart.messageID) return bundle
+    found = true
+    forgetPendingPart(nextPart.messageID, nextPart.id)
+    const parts = upsertPartList(bundle.parts, nextPart)
+    return { ...bundle, parts }
+  })
+  if (found) return next
+  if (options.appendMissingMessages === false) return messages
+  rememberPendingPart(nextPart)
+  return messages
+}
+
+function removePart(messages: MessageBundle[], messageID: string, partID: string) {
+  return messages.map((bundle) => bundle.info.id === messageID
+    ? { ...bundle, parts: bundle.parts.filter((part) => part.id !== partID) }
+    : bundle)
+}
+
+function applyPartDelta(messages: MessageBundle[], messageID: string, partID: string, field: string, delta: string, options: SessionDataPatchOptions = {}) {
+  if (field !== "text") {
+    if (options.appendMissingMessages !== false) rememberPendingPartDelta(messageID, partID, field, delta)
+    return messages
+  }
+  let found = false
+  const next = messages.map((bundle) => {
+    if (bundle.info.id !== messageID) return bundle
+    return {
+      ...bundle,
+      parts: bundle.parts.map((part) => {
+        if (part.id !== partID || (part.type !== "text" && part.type !== "reasoning")) return part
+        found = true
+        return { ...part, text: part.text + delta } as Part
+      }),
+    }
+  })
+  if (!found && options.appendMissingMessages !== false) rememberPendingPartDelta(messageID, partID, field, delta)
+  return next
+}
+
+function normalizeLivePart(part: Part): Part {
+  if (part.type !== "text" && part.type !== "reasoning") return part
+  return { ...part, text: displayMessageText(part.text) } as Part
+}
+
+function mergePartLists(parts: Part[], incoming: Part[]) {
+  if (incoming.length === 0) return parts
+  let next = parts
+  for (const part of incoming) next = upsertPartList(next, part)
+  return next
+}
+
+function upsertPartList(parts: Part[], part: Part) {
+  const index = parts.findIndex((item) => item.id === part.id)
+  const next = index >= 0
+    ? parts.map((item, i) => i === index ? part : item)
+    : [...parts, part]
+  return sortParts(next)
+}
+
+function sortParts(parts: Part[]) {
+  return parts.toSorted((a, b) => a.id.localeCompare(b.id))
+}
+
+function rememberPendingPart(part: Part) {
+  pendingLiveParts.set(part.messageID, upsertPartList(pendingLiveParts.get(part.messageID) ?? [], part))
+}
+
+function takePendingParts(messageID: string) {
+  const parts = pendingLiveParts.get(messageID) ?? []
+  pendingLiveParts.delete(messageID)
+  return parts
+}
+
+function forgetPendingMessageParts(messageID: string) {
+  pendingLiveParts.delete(messageID)
+  pendingLivePartDeltas.delete(messageID)
+}
+
+function forgetPendingPart(messageID: string, partID: string) {
+  const parts = pendingLiveParts.get(messageID)
+  if (parts) {
+    const next = parts.filter((part) => part.id !== partID)
+    if (next.length > 0) pendingLiveParts.set(messageID, next)
+    else pendingLiveParts.delete(messageID)
+  }
+  const deltas = pendingLivePartDeltas.get(messageID)
+  if (!deltas) return
+  for (const key of deltas.keys()) {
+    if (key.startsWith(`${partID}\0`)) deltas.delete(key)
+  }
+  if (deltas.size === 0) pendingLivePartDeltas.delete(messageID)
+}
+
+function rememberPendingPartDelta(messageID: string, partID: string, field: string, delta: string) {
+  const pending = pendingLiveParts.get(messageID)
+  if (pending?.some((part) => part.id === partID)) {
+    pendingLiveParts.set(messageID, pending.map((part) => part.id === partID ? applyDeltaToPart(part, field, delta) : part))
+    return
+  }
+  const deltas = pendingLivePartDeltas.get(messageID) ?? new Map<string, string>()
+  const key = pendingDeltaKey(partID, field)
+  deltas.set(key, (deltas.get(key) ?? "") + delta)
+  pendingLivePartDeltas.set(messageID, deltas)
+}
+
+function applyPendingDeltasToPart(part: Part): Part {
+  const deltas = pendingLivePartDeltas.get(part.messageID)
+  if (!deltas) return part
+  let next = part
+  for (const [key, delta] of deltas) {
+    const [partID, field] = key.split("\0")
+    if (partID !== part.id || !field) continue
+    next = applyDeltaToPart(next, field, delta)
+    deltas.delete(key)
+  }
+  if (deltas.size === 0) pendingLivePartDeltas.delete(part.messageID)
+  return next
+}
+
+function applyDeltaToPart(part: Part, field: string, delta: string): Part {
+  if (field !== "text" || (part.type !== "text" && part.type !== "reasoning")) return part
+  return { ...part, text: part.text + delta } as Part
+}
+
+function pendingDeltaKey(partID: string, field: string) {
+  return `${partID}\0${field}`
+}
+
+function sortMessageBundles(messages: MessageBundle[]) {
+  return messages.toSorted((a, b) => (a.info.time.created ?? 0) - (b.info.time.created ?? 0))
+}
+
+function eventWouldAppendMissingMessage(data: SessionData, event: GlobalEvent) {
+  const properties = eventData(event)
+  if (!properties) return false
+  const kind = eventKind(event)
+  if (kind === "message.updated") return !data.messages.some((bundle) => bundle.info.id === (properties as { info: Message }).info.id)
+  if (kind === "message.part.updated") return !data.messages.some((bundle) => bundle.info.id === (properties as { part: Part }).part.messageID)
+  if (kind === "message.part.delta") return !data.messages.some((bundle) => bundle.info.id === (properties as { messageID: string }).messageID)
+  return false
+}
+
+function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSnapshot {
+  const properties = eventData(event)
+  if (!properties) return snapshot
+  switch (eventKind(event)) {
+    case "session.updated":
+      return patchSnapshotSession(snapshot, (properties as { info: Session }).info)
+    case "session.deleted": {
+      const deletedSessionID = (properties as { sessionID: string }).sessionID
+      return {
+        ...snapshot,
+        sessions: snapshot.sessions.filter((session) => session.id !== deletedSessionID),
+        projects: snapshot.projects.map((project) => ({
+          ...project,
+          sessions: project.sessions.filter((session) => session.id !== deletedSessionID),
+        })),
+        sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== deletedSessionID)),
+        permissions: snapshot.permissions.filter((request) => request.sessionID !== deletedSessionID),
+        questions: snapshot.questions.filter((request) => request.sessionID !== deletedSessionID),
+      }
+    }
+    case "permission.asked": {
+      const requestProperties = properties as PermissionRequest
+      const request: PermissionRequest = {
+        id: requestProperties.id,
+        sessionID: requestProperties.sessionID,
+        permission: requestProperties.permission,
+        patterns: requestProperties.patterns,
+        metadata: requestProperties.metadata,
+        always: requestProperties.always,
+        tool: requestProperties.tool,
+      }
+      return { ...snapshot, permissions: upsertByID(snapshot.permissions, request) }
+    }
+    case "permission.replied":
+      return { ...snapshot, permissions: snapshot.permissions.filter((request) => request.id !== (properties as { requestID: string }).requestID) }
+    case "question.asked": {
+      const requestProperties = properties as QuestionRequest
+      const request: QuestionRequest = {
+        id: requestProperties.id,
+        sessionID: requestProperties.sessionID,
+        questions: requestProperties.questions,
+        tool: requestProperties.tool,
+      }
+      return { ...snapshot, questions: upsertByID(snapshot.questions, request) }
+    }
+    case "question.replied":
+    case "question.rejected":
+      return { ...snapshot, questions: snapshot.questions.filter((request) => request.id !== (properties as { requestID: string }).requestID) }
+    default:
+      return snapshot
+  }
+}
+
+function patchSnapshotSession(snapshot: GuiSnapshot, info: Session): GuiSnapshot {
+  return {
+    ...snapshot,
+    sessions: upsertSession(snapshot.sessions, info),
+  }
+}
+
+function upsertSession(sessions: Session[], session: Session) {
+  if (!isRenderableSession(session)) return sessions.filter((item) => item.id !== session.id)
+  const index = sessions.findIndex((item) => item.id === session.id)
+  const next = index >= 0 ? sessions.map((item, i) => i === index ? session : item) : [...sessions, session]
+  return next.toSorted((a, b) => b.time.updated - a.time.updated)
+}
+
+function upsertByID<T extends { id: string }>(items: T[], item: T) {
+  return items.some((current) => current.id === item.id)
+    ? items.map((current) => current.id === item.id ? item : current)
+    : [...items, item]
+}
+
+function eventKind(event: GlobalEvent) {
+  const payload = event.payload as { type: string; name?: string }
+  return payload.type === "sync" && payload.name ? payload.name.replace(/\.\d+$/, "") : payload.type
+}
+
+function eventData(event: GlobalEvent) {
+  const payload = event.payload as { properties?: Record<string, unknown>; data?: Record<string, unknown> }
+  return payload.properties ?? payload.data
+}
+
+function globalEventID(event: GlobalEvent) {
+  const id = (event.payload as { id?: string }).id
+  return typeof id === "string" ? id : undefined
+}
+
+function eventAggregateID(event: GlobalEvent) {
+  const id = (event.payload as { aggregateID?: string }).aggregateID
+  return typeof id === "string" ? id : undefined
 }
 
 function eventSessionID(event: GlobalEvent) {
-  if ("properties" in event.payload) {
-    const sessionID = sessionIDFrom(event.payload.properties)
-    if (sessionID) return sessionID
-  }
-  if (!("data" in event.payload)) return
-  return sessionIDFrom(event.payload.data)
+  return sessionIDFrom(eventData(event))
+}
+
+function eventMessageID(event: GlobalEvent) {
+  return messageIDFrom(eventData(event))
 }
 
 function sessionIDFrom(value: unknown) {
-  if (typeof value !== "object" || value === null || !("sessionID" in value)) return
-  const sessionID = value.sessionID
-  return typeof sessionID === "string" ? sessionID : undefined
+  if (!isRecordValue(value)) return
+  if (typeof value.sessionID === "string") return value.sessionID
+  if (isRecordValue(value.info) && typeof value.info.sessionID === "string") return value.info.sessionID
+  if (isRecordValue(value.part) && typeof value.part.sessionID === "string") return value.part.sessionID
+}
+
+function messageIDFrom(value: unknown) {
+  if (!isRecordValue(value)) return
+  if (typeof value.messageID === "string") return value.messageID
+  if (isRecordValue(value.info) && typeof value.info.id === "string") return value.info.id
+  if (isRecordValue(value.part) && typeof value.part.messageID === "string") return value.part.messageID
 }
 
 function recentModelsFromSessions(sessions: Session[]) {
@@ -3366,6 +4366,255 @@ function ProjectCollectionPage(props: { snapshot?: GuiSnapshot; createSession: (
   )
 }
 
+function ViewsPage(props: {
+  snapshot?: GuiSnapshot
+  view?: OpencodeXView
+  items: ViewItem[]
+  focusedSessionID: () => string
+  composerFocusRequest: () => { sessionID: string; token: number }
+  data: Record<string, SessionData>
+  loading: Record<string, boolean>
+  providers: Provider[]
+  agents: Agent[]
+  recentModels: string[]
+  selectedAgent: (session: Session) => string
+  setSelectedAgent: (sessionID: string, value: string) => void
+  selectedModel: (session: Session) => string
+  setSelectedModel: (sessionID: string, value: string) => void
+  selectedVariant: (session: Session) => string
+  setSelectedVariant: (sessionID: string, value: string) => void
+  permissions: (sessionID: string) => PermissionRequest[]
+  questions: (sessionID: string) => QuestionRequest[]
+  focus: (sessionID: string, focusComposer: boolean) => void
+  submit: (event: SubmitEvent, item: ViewItem, text: string) => void
+  replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
+  replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
+  rejectQuestion: (request: QuestionRequest) => void
+  abortSession: (sessionID: string) => void
+  renameSession: (session: Session) => void
+  moveSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
+  reloadLatestMessages: (sessionID: string) => Promise<void>
+  onFollowBottomChange: (sessionID: string, value: boolean) => void
+}) {
+  const layout = createMemo(() => viewLayout(props.items.length))
+  return (
+    <div class="page views-page">
+      <Show when={props.view} fallback={<Empty text="Create a view to work across multiple sessions." />}>
+        <Show when={props.items.length > 0} fallback={<Empty text="This view has no available sessions." />}>
+          {renderViewLayout({
+            node: layout(),
+            items: props.items,
+            focusedSessionID: props.focusedSessionID,
+            composerFocusRequest: props.composerFocusRequest,
+            data: props.data,
+            loading: props.loading,
+            providers: props.providers,
+            agents: props.agents,
+            recentModels: props.recentModels,
+            selectedAgent: props.selectedAgent,
+            setSelectedAgent: props.setSelectedAgent,
+            selectedModel: props.selectedModel,
+            setSelectedModel: props.setSelectedModel,
+            selectedVariant: props.selectedVariant,
+            setSelectedVariant: props.setSelectedVariant,
+            permissions: props.permissions,
+            questions: props.questions,
+            focus: props.focus,
+            submit: props.submit,
+            replyPermission: props.replyPermission,
+            replyQuestion: props.replyQuestion,
+            rejectQuestion: props.rejectQuestion,
+            abortSession: props.abortSession,
+            renameSession: props.renameSession,
+            moveSession: props.moveSession,
+            deleteSession: props.deleteSession,
+            loadOlderMessages: props.loadOlderMessages,
+            reloadLatestMessages: props.reloadLatestMessages,
+            onFollowBottomChange: props.onFollowBottomChange,
+            snapshot: props.snapshot,
+          })}
+        </Show>
+      </Show>
+    </div>
+  )
+}
+
+function viewLayout(count: number): LayoutNode {
+  if (count <= 1) return 0
+  if (count === 2) return { direction: "row", children: [0, 1] }
+  if (count === 3) return { direction: "row", children: [0, { direction: "column", children: [1, 2] }] }
+  if (count === 4) return { direction: "column", children: [{ direction: "row", children: [0, 1] }, { direction: "row", children: [2, 3] }] }
+  if (count === 5) return { direction: "row", children: [{ direction: "column", children: [0, 1, 2] }, { direction: "column", children: [3, 4] }] }
+  if (count === 6) return { direction: "column", children: [{ direction: "row", children: [0, 1, 2] }, { direction: "row", children: [3, 4, 5] }] }
+  if (count === 7) return { direction: "row", children: [{ direction: "column", children: [0, 1, 2, 3] }, { direction: "column", children: [4, 5, 6] }] }
+  return { direction: "column", children: [{ direction: "row", children: [0, 1, 2, 3] }, { direction: "row", children: [4, 5, 6, 7] }] }
+}
+
+function renderViewLayout(input: {
+  node: LayoutNode
+  items: ViewItem[]
+  focusedSessionID: () => string
+  composerFocusRequest: () => { sessionID: string; token: number }
+  data: Record<string, SessionData>
+  loading: Record<string, boolean>
+  providers: Provider[]
+  agents: Agent[]
+  recentModels: string[]
+  selectedAgent: (session: Session) => string
+  setSelectedAgent: (sessionID: string, value: string) => void
+  selectedModel: (session: Session) => string
+  setSelectedModel: (sessionID: string, value: string) => void
+  selectedVariant: (session: Session) => string
+  setSelectedVariant: (sessionID: string, value: string) => void
+  permissions: (sessionID: string) => PermissionRequest[]
+  questions: (sessionID: string) => QuestionRequest[]
+  focus: (sessionID: string, focusComposer: boolean) => void
+  submit: (event: SubmitEvent, item: ViewItem, text: string) => void
+  replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
+  replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
+  rejectQuestion: (request: QuestionRequest) => void
+  abortSession: (sessionID: string) => void
+  renameSession: (session: Session) => void
+  moveSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
+  reloadLatestMessages: (sessionID: string) => Promise<void>
+  onFollowBottomChange: (sessionID: string, value: boolean) => void
+  snapshot?: GuiSnapshot
+}): JSX.Element {
+  if (typeof input.node === "number") {
+    const item = input.items[input.node]
+    if (!item) return <></>
+    const session = viewItemSession(item)
+    const id = viewItemID(item)
+    return (
+      <ViewPane
+        session={session}
+        pending={item.kind === "pending"}
+        focused={() => input.focusedSessionID() === id}
+        composerFocusToken={() => {
+          const request = input.composerFocusRequest()
+          return request.sessionID === id ? request.token : 0
+        }}
+        data={item.kind === "session" ? input.data[id] ?? EMPTY_SESSION_DATA : EMPTY_SESSION_DATA}
+        loading={input.loading[id] === true}
+        status={item.kind === "session" ? input.snapshot?.sessionStatus[id]?.type ?? "idle" : "idle"}
+        providers={input.providers}
+        agents={input.agents}
+        recentModels={input.recentModels}
+        selectedAgent={input.selectedAgent(session)}
+        setSelectedAgent={(value) => input.setSelectedAgent(id, value)}
+        selectedModel={input.selectedModel(session)}
+        setSelectedModel={(value) => input.setSelectedModel(id, value)}
+        selectedVariant={input.selectedVariant(session)}
+        setSelectedVariant={(value) => input.setSelectedVariant(id, value)}
+        permissions={item.kind === "session" ? input.permissions(id) : []}
+        questions={item.kind === "session" ? input.questions(id) : []}
+        focus={(focusComposer) => input.focus(id, focusComposer)}
+        submit={(event, text) => input.submit(event, item, text)}
+        replyPermission={input.replyPermission}
+        replyQuestion={input.replyQuestion}
+        rejectQuestion={input.rejectQuestion}
+        abortSession={input.abortSession}
+        renameSession={input.renameSession}
+        moveSession={input.moveSession}
+        deleteSession={input.deleteSession}
+        loadOlderMessages={(cursor) => input.loadOlderMessages(id, cursor)}
+        reloadLatestMessages={() => input.reloadLatestMessages(id)}
+        onFollowBottomChange={input.onFollowBottomChange}
+      />
+    )
+  }
+  return (
+    <div class={`view-layout-group ${input.node.direction}`}>
+      <For each={input.node.children}>{(node) => renderViewLayout({ ...input, node })}</For>
+    </div>
+  )
+}
+
+function ViewPane(props: {
+  session: Session
+  pending?: boolean
+  focused: () => boolean
+  composerFocusToken: () => number
+  data: SessionData
+  loading: boolean
+  status: string
+  providers: Provider[]
+  agents: Agent[]
+  recentModels: string[]
+  selectedAgent: string
+  setSelectedAgent: (value: string) => void
+  selectedModel: string
+  setSelectedModel: (value: string) => void
+  selectedVariant: string
+  setSelectedVariant: (value: string) => void
+  permissions: PermissionRequest[]
+  questions: QuestionRequest[]
+  focus: (focusComposer: boolean) => void
+  submit: (event: SubmitEvent, text: string) => void
+  replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
+  replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
+  rejectQuestion: (request: QuestionRequest) => void
+  abortSession: (sessionID: string) => void
+  renameSession: (session: Session) => void
+  moveSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  loadOlderMessages: (cursor: string) => Promise<void>
+  reloadLatestMessages: () => Promise<void>
+  onFollowBottomChange: (sessionID: string, value: boolean) => void
+}) {
+  const handlePointerDown = (event: PointerEvent) => {
+    if (event.button !== 0 || props.focused()) return
+    props.focus(shouldAutoFocusViewComposer(event))
+  }
+  return (
+    <article class="view-pane" classList={{ focused: props.focused() }} onPointerDown={handlePointerDown}>
+      <SessionPage
+        session={props.session}
+        data={props.data}
+        loading={props.loading}
+        prompt=""
+        setPrompt={() => undefined}
+        providers={props.providers}
+        agents={props.agents}
+        selectedAgent={props.selectedAgent}
+        setSelectedAgent={props.setSelectedAgent}
+        selectedModel={props.selectedModel}
+        recentModels={props.recentModels}
+        setSelectedModel={props.setSelectedModel}
+        selectedVariant={props.selectedVariant}
+        setSelectedVariant={props.setSelectedVariant}
+        submit={props.submit}
+        permissions={props.permissions}
+        questions={props.questions}
+        replyPermission={props.replyPermission}
+        replyQuestion={props.replyQuestion}
+        rejectQuestion={props.rejectQuestion}
+        abortSession={props.abortSession}
+        renameSession={props.renameSession}
+        moveSession={props.moveSession}
+        deleteSession={props.deleteSession}
+        status={props.status}
+        pending={props.pending}
+        composerFocusToken={props.composerFocusToken}
+        messageWindow={VIEW_MESSAGE_WINDOW}
+        loadOlderMessages={props.loadOlderMessages}
+        reloadLatestMessages={props.reloadLatestMessages}
+        onFollowBottomChange={props.onFollowBottomChange}
+      />
+    </article>
+  )
+}
+
+function shouldAutoFocusViewComposer(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Element)) return true
+  return !target.closest("button, input, textarea, select, a, summary, [contenteditable='true'], [role='button'], [role='option']")
+}
+
 function StatusPage(props: { snapshot?: GuiSnapshot }) {
   const activeProviders = createMemo(() => props.snapshot?.providers.filter((provider) => Object.values(provider.models).some((model) => model.status !== "deprecated")).length ?? 0)
   return (
@@ -3404,16 +4653,14 @@ function Metric(props: { label: string; value: number }) {
 }
 
 function StatusPill(props: { status: string }) {
-  return <span class={`status ${props.status.replaceAll("_", "-")}`}>{props.status}</span>
+  return <span class={`status ${props.status.replaceAll("_", "-").replaceAll(" ", "-")}`}>{props.status}</span>
 }
 
 function TranscriptLoadingState() {
   return (
-    <div class="session-empty-state loading">
-      <span class="session-empty-orb" />
-      <p class="eyebrow">Loading transcript</p>
-      <h2>Pulling this session into view</h2>
-      <p>Messages, todos, and file changes are loading from the sidecar.</p>
+    <div class="session-loading-state" aria-live="polite" aria-busy="true">
+      <span class="session-loading-spinner" />
+      <p>Loading...</p>
     </div>
   )
 }

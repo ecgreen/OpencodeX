@@ -1472,6 +1472,7 @@ export type GlobalEvent = {
     | SyncEventMessageRemoved
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
+    | SyncEventSessionStatus
 }
 
 /**
@@ -2310,10 +2311,23 @@ export type OpencodeXProject = {
   sessions: Array<GlobalSession>
 }
 
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
+
 export type OpencodeXProjectCreateInput = {
   name?: string
   directory?: string
   folders?: Array<string>
+}
+
+export type ProjectNotFoundError = {
+  _tag: "ProjectNotFoundError"
+  projectID: string
+  message: string
 }
 
 export type OpencodeXProjectValidateInput = {
@@ -2331,19 +2345,6 @@ export type OpencodeXProjectFolderValidation = {
 export type OpencodeXProjectValidation = {
   valid: boolean
   folders: Array<OpencodeXProjectFolderValidation>
-}
-
-export type ProjectNotFoundError = {
-  _tag: "ProjectNotFoundError"
-  projectID: string
-  message: string
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
-  }
 }
 
 export type OpencodeXProjectReorderInput = {
@@ -2584,6 +2585,9 @@ export type OpencodeXSwarmUpdateInput = {
 
 export type OpencodeXSwarmAssignTaskInput = {
   prompt: string
+  agent?: string
+  mode?: "build" | "plan"
+  variant?: string
 }
 
 export type OpencodeXSwarmAddRoleInput = {
@@ -3645,6 +3649,18 @@ export type SyncEventMessagePartRemoved = {
     sessionID: string
     messageID: string
     partID: string
+  }
+}
+
+export type SyncEventSessionStatus = {
+  type: "sync"
+  name: "session.status.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    status: SessionStatus
   }
 }
 
@@ -6355,6 +6371,10 @@ export type OpencodexProjectListErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
 }
 
 export type OpencodexProjectListError = OpencodexProjectListErrors[keyof OpencodexProjectListErrors]
@@ -6380,6 +6400,10 @@ export type OpencodexProjectCreateErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
 }
 
 export type OpencodexProjectCreateError = OpencodexProjectCreateErrors[keyof OpencodexProjectCreateErrors]
@@ -6464,9 +6488,9 @@ export type OpencodexProjectUpdateErrors = {
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
   /**
-   * ProjectNotFoundError | NotFoundError
+   * ProjectNotFoundError
    */
-  404: ProjectNotFoundError | NotFoundError
+  404: ProjectNotFoundError
 }
 
 export type OpencodexProjectUpdateError = OpencodexProjectUpdateErrors[keyof OpencodexProjectUpdateErrors]
@@ -6518,9 +6542,9 @@ export type OpencodexSessionCreateErrors = {
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
   /**
-   * ProjectNotFoundError
+   * ProjectNotFoundError | NotFoundError
    */
-  404: ProjectNotFoundError
+  404: ProjectNotFoundError | NotFoundError
 }
 
 export type OpencodexSessionCreateError = OpencodexSessionCreateErrors[keyof OpencodexSessionCreateErrors]
@@ -6547,9 +6571,9 @@ export type OpencodexSessionMoveErrors = {
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
   /**
-   * ProjectNotFoundError
+   * ProjectNotFoundError | NotFoundError
    */
-  404: ProjectNotFoundError
+  404: ProjectNotFoundError | NotFoundError
 }
 
 export type OpencodexSessionMoveError = OpencodexSessionMoveErrors[keyof OpencodexSessionMoveErrors]
@@ -8248,6 +8272,7 @@ export type SessionMessagesData = {
     directory?: string
     workspace?: string
     limit?: number
+    renderBudget?: number
     before?: string
   }
   url: "/session/{sessionID}/message"

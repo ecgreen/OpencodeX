@@ -978,6 +978,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         title: "Variant cycle",
         category: "Agent",
         run: () => {
+          const current = promptRef.current
+          if (current?.focused && current.cycleVariant) {
+            current.cycleVariant()
+            return
+          }
           local.model.variant.cycle()
         },
       },

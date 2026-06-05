@@ -9,6 +9,17 @@ import { eq } from "drizzle-orm"
 const Metadata = Schema.Record(Schema.String, Schema.Any)
 const decodeMetadata = Schema.decodeUnknownSync(Schema.fromJsonString(Metadata))
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function hasPendingSessions(metadata: Record<string, unknown> | undefined) {
+  const opencodex = metadata?.opencodex
+  if (!isRecord(opencodex)) return false
+  const pending = opencodex.pendingSessions
+  return Array.isArray(pending) && pending.length > 0
+}
+
 export const SessionAssignment = Schema.Struct({
   sessionID: SessionID,
   sortOrder: Schema.Number,
@@ -80,9 +91,9 @@ function normalizeSessionIDs(sessionIDs: readonly SessionID[]) {
   return [...new Set(sessionIDs)]
 }
 
-function validateSessionIDs(sessionIDs: readonly SessionID[]) {
+function validateSessionIDs(sessionIDs: readonly SessionID[], options?: { allowEmpty?: boolean }) {
   const normalized = normalizeSessionIDs(sessionIDs)
-  if (normalized.length === 0) {
+  if (normalized.length === 0 && !options?.allowEmpty) {
     return Effect.fail(new ValidationError({ message: "A view needs at least one session." }))
   }
   if (normalized.length > 8) {
@@ -127,8 +138,8 @@ export const layer = Layer.effect(
       }
     })
 
-    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (viewID: string, sessionIDs: readonly SessionID[]) {
-      const normalized = yield* validateSessionIDs(sessionIDs)
+    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (viewID: string, sessionIDs: readonly SessionID[], options?: { allowEmpty?: boolean }) {
+      const normalized = yield* validateSessionIDs(sessionIDs, options)
       yield* Effect.forEach(normalized, (sessionID) => session.get(sessionID), { concurrency: "unbounded", discard: true })
       const now = Date.now()
       yield* db
@@ -136,18 +147,20 @@ export const layer = Layer.effect(
           (tx) =>
             Effect.gen(function* () {
               yield* tx.delete(OpencodeXViewSessionTable).where(eq(OpencodeXViewSessionTable.view_id, viewID)).run()
-              yield* tx
-                .insert(OpencodeXViewSessionTable)
-                .values(
-                  normalized.map((sessionID, index) => ({
-                    view_id: viewID,
-                    session_id: sessionID,
-                    sort_order: index,
-                    time_created: now,
-                    time_updated: now,
-                  })),
-                )
-                .run()
+              if (normalized.length > 0) {
+                yield* tx
+                  .insert(OpencodeXViewSessionTable)
+                  .values(
+                    normalized.map((sessionID, index) => ({
+                      view_id: viewID,
+                      session_id: sessionID,
+                      sort_order: index,
+                      time_created: now,
+                      time_updated: now,
+                    })),
+                  )
+                  .run()
+              }
             }),
           { behavior: "immediate" },
         )
@@ -175,7 +188,7 @@ export const layer = Layer.effect(
     })
 
     const create = Effect.fn("OpencodeXView.create")(function* (input: CreateInput) {
-      const sessionIDs = yield* validateSessionIDs(input.sessionIDs)
+      const sessionIDs = yield* validateSessionIDs(input.sessionIDs, { allowEmpty: hasPendingSessions(input.metadata) })
       const focusedSessionID = input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
         ? input.focusedSessionID
         : sessionIDs[0]
@@ -195,13 +208,16 @@ export const layer = Layer.effect(
         })
         .run()
         .pipe(Effect.orDie)
-      yield* replaceSessions(id, sessionIDs)
+      yield* replaceSessions(id, sessionIDs, { allowEmpty: hasPendingSessions(input.metadata) })
       return yield* get(id).pipe(Effect.orDie)
     })
 
     const update = Effect.fn("OpencodeXView.update")(function* (input: UpdateInput) {
       const current = yield* get(input.id)
-      const sessionIDs = input.sessionIDs ? yield* replaceSessions(input.id, input.sessionIDs) : current.sessionIDs
+      const metadata = input.metadata ?? current.metadata
+      const sessionIDs = input.sessionIDs
+        ? yield* replaceSessions(input.id, input.sessionIDs, { allowEmpty: hasPendingSessions(metadata) })
+        : current.sessionIDs
       const focusedSessionID = input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
         ? input.focusedSessionID
         : current.focusedSessionID && sessionIDs.includes(current.focusedSessionID)

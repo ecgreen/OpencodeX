@@ -12,12 +12,9 @@ export function useEvent() {
 
   function subscribe(handler: (event: Event, metadata: EventMetadata) => void) {
     return sdk.event.on("event", (event) => {
-      if (event.payload.type === "sync") {
-        return
-      }
-
       if (event.directory === "global" || event.project === project.project()) {
-        handler(event.payload, { workspace: event.workspace })
+        const payload = normalizeGlobalPayload(event.payload)
+        if (payload) handler(payload, { workspace: event.workspace })
       }
     })
   }
@@ -36,4 +33,18 @@ export function useEvent() {
     subscribe,
     on,
   }
+}
+
+function normalizeGlobalPayload(payload: unknown): Event | undefined {
+  if (!isRecord(payload)) return
+  if (payload.type === "sync") {
+    const name = typeof payload.name === "string" ? payload.name.replace(/\.\d+$/, "") : undefined
+    if (!name) return
+    return { id: payload.id, type: name, properties: payload.data } as Event
+  }
+  return payload as Event
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }

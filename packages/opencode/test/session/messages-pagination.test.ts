@@ -33,6 +33,7 @@ const fill = Effect.fn("Test.fill")(function* (
   sessionID: SessionID,
   count: number,
   time = (i: number) => Date.now() + i,
+  text = (i: number) => `m${i}`,
 ) {
   const session = yield* SessionNs.Service
   const ids = [] as MessageID[]
@@ -54,7 +55,7 @@ const fill = Effect.fn("Test.fill")(function* (
       sessionID,
       messageID: id,
       type: "text",
-      text: `m${i}`,
+      text: text(i),
     })
   }
   return ids
@@ -302,6 +303,57 @@ describe("MessageV2.page", () => {
         expect(result.items.map((item) => item.info.id)).toEqual(ids)
         expect(result.more).toBe(false)
         expect(result.cursor).toBeUndefined()
+      }),
+    ),
+  )
+
+  it.instance("budgeted pages include more short messages than heavy messages", () =>
+    withSession(({ session }) =>
+      Effect.gen(function* () {
+        const short = yield* session.create({})
+        const heavy = yield* session.create({})
+        yield* fill(short.id, 6)
+        yield* fill(heavy.id, 6, (i: number) => Date.now() + i, () => "x".repeat(1_800))
+
+        const shortPage = yield* MessageV2.pageByRenderBudget({ sessionID: short.id, limit: 10, renderBudget: 2_500 })
+        const heavyPage = yield* MessageV2.pageByRenderBudget({ sessionID: heavy.id, limit: 10, renderBudget: 2_500 })
+
+        expect(shortPage.items.length).toBeGreaterThan(heavyPage.items.length)
+        expect(shortPage.more).toBe(true)
+        expect(heavyPage.more).toBe(true)
+
+        yield* session.remove(short.id)
+        yield* session.remove(heavy.id)
+      }),
+    ),
+  )
+
+  it.instance("budgeted pages keep the newest oversized message", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const ids = yield* fill(sessionID, 3, (i: number) => Date.now() + i, (i: number) => i === 2 ? "x".repeat(10_000) : `m${i}`)
+
+        const result = yield* MessageV2.pageByRenderBudget({ sessionID, limit: 10, renderBudget: 100 })
+
+        expect(result.items.map((item) => item.info.id)).toEqual(ids.slice(-1))
+        expect(result.more).toBe(true)
+        expect(result.cursor).toBeTruthy()
+      }),
+    ),
+  )
+
+  it.instance("budgeted pages page backward with cursors", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const ids = yield* fill(sessionID, 6)
+
+        const a = yield* MessageV2.pageByRenderBudget({ sessionID, limit: 10, renderBudget: 1_500 })
+        expect(a.items.map((item) => item.info.id)).toEqual(ids.slice(-2))
+        expect(a.cursor).toBeTruthy()
+
+        const b = yield* MessageV2.pageByRenderBudget({ sessionID, limit: 10, renderBudget: 1_500, before: a.cursor })
+        expect(b.items.map((item) => item.info.id)).toEqual(ids.slice(-4, -2))
+        expect(b.cursor).toBeTruthy()
       }),
     ),
   )
