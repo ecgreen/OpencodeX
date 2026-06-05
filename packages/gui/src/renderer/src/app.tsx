@@ -1,10 +1,12 @@
 import type { JSX } from "solid-js"
-import type { Agent, GlobalEvent, Part, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Agent, AssistantMessage, GlobalEvent, Part, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./lib/client"
 import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { Mark } from "@opencode-ai/ui/logo"
 import { Markdown } from "@opencode-ai/ui/markdown"
+import { CodeBlock } from "@opencode-ai/ui/code-block"
+import { File as FileDiffView } from "@opencode-ai/ui/file"
 import { connectGuiClient } from "./lib/client"
 import { compactPath, formatRelative, title } from "./lib/format"
 import { displayMessageText } from "./lib/message-text"
@@ -45,6 +47,19 @@ type Route =
 type DialogState =
   | { type: "text"; title: string; message?: string; value?: string; multiline?: boolean; resolve: (value: string | undefined) => void }
   | { type: "confirm"; title: string; message: string; confirm?: string; resolve: (value: boolean) => void }
+  | { type: "choice"; title: string; message?: string; options: ChoiceOption[]; resolve: (value: string | undefined) => void }
+
+type ChoiceOption = { value: string; title: string; description?: string; meta?: string }
+type PaletteCommand = {
+  name: string
+  title: string
+  category: string
+  description?: string
+  shortcut?: string
+  suggested?: boolean
+  disabled?: string
+  run: () => void | Promise<void>
+}
 
 const NAV_ITEMS = [
   { name: "dashboard", label: "Dashboard", icon: "dashboard", shortcut: "Ctrl+D", description: "Workspace command center" },
@@ -56,10 +71,32 @@ const NAV_ITEMS = [
   { name: "settings", label: "Settings", icon: "settings", shortcut: "Ctrl+6", description: "Preferences and provider setup" },
 ] as const
 
-const GLOBAL_SHORTCUT_KEYS = new Set(["b", "/", "n", "r", "d", "1", "2", "3", "4", "5", "6"])
+const GLOBAL_SHORTCUT_KEYS = new Set(["b", "/", "n", "p", "r", "d", "1", "2", "3", "4", "5", "6"])
 const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
 const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
 const PROJECT_RECENT_SESSION_LIMIT = 4
+const TUI_COMMAND_SHORTCUTS: Record<string, string> = {
+  "session.list": "Ctrl+X L",
+  "session.new": "Ctrl+X N",
+  "opencodex.dashboard.open": "Ctrl+L",
+  "opencodex.project.create": "Ctrl+X P",
+  "opencodex.session.manage": "Ctrl+O",
+  "opencodex.project.manage": "Ctrl+U",
+  "opencodex.session.new_project": "Ctrl+N",
+  "opencodex.sidebar.toggle": "Ctrl+S",
+  "opencodex.sidebar.focus": "Ctrl+X F",
+  "opencodex.swarm.list": "Super+Shift+D / Ctrl+X W",
+  "opencodex.swarm.open": "Super+Shift+O",
+  "opencodex.swarm.create": "Super+Shift+N",
+  "opencodex.swarm.task": "Super+Shift+T",
+  "opencodex.view.create": "Ctrl+X V",
+  "model.list": "Ctrl+X M",
+  "agent.list": "Ctrl+X A",
+  "variant.cycle": "Ctrl+T",
+  "opencode.status": "Ctrl+X S",
+  "theme.switch": "Ctrl+X T",
+  "app.exit": "Ctrl+C / Ctrl+D / Ctrl+X Q",
+}
 
 type RailSectionName = "projects" | "recent" | "swarms" | "views"
 type DragTarget = { type: "project"; id: string } | { type: "view"; id: string }
@@ -80,6 +117,7 @@ export function App() {
   const [selectedVariant, setSelectedVariant] = createSignal("")
   const [notice, setNotice] = createSignal("")
   const [dialog, setDialog] = createSignal<DialogState>()
+  const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
   const [railCollapsed, setRailCollapsed] = createSignal(false)
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
   const [railSections, setRailSections] = createSignal<Record<RailSectionName, boolean>>({ projects: false, recent: false, swarms: false, views: true })
@@ -148,6 +186,10 @@ export function App() {
     return new Promise<boolean>((resolve) => setDialog({ type: "confirm", ...input, resolve }))
   }
 
+  function askChoice(input: { title: string; message?: string; options: ChoiceOption[] }) {
+    return new Promise<string | undefined>((resolve) => setDialog({ type: "choice", ...input, resolve }))
+  }
+
   async function syncSession(sessionID: string) {
     const gui = client()
     if (!gui) return
@@ -207,12 +249,26 @@ export function App() {
     const handleKeydown = (event: KeyboardEvent) => {
       const editing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement
       const key = event.key.toLowerCase()
+      if (event.key === "Escape" && !dialog()) {
+        const session = selectedSession()
+        const status = session ? snapshot()?.sessionStatus[session.id]?.type : undefined
+        if (session && (status === "busy" || status === "retry")) {
+          event.preventDefault()
+          void runAction(() => handleAbortSession(session.id))
+          return
+        }
+      }
       if (event.key === "Escape" && notice()) {
         event.preventDefault()
         setNotice("")
         return
       }
       if (!(event.ctrlKey || event.metaKey)) return
+      if (key === "p") {
+        event.preventDefault()
+        if (!dialog()) setCommandPaletteOpen(true)
+        return
+      }
       if (dialog() || editing) {
         if (GLOBAL_SHORTCUT_KEYS.has(key)) event.preventDefault()
         return
@@ -365,6 +421,104 @@ export function App() {
     await deleteSession(gui, session.id)
     await refresh()
     setRoute({ name: "dashboard" })
+  }
+
+  async function handleSwitchSession() {
+    const sessions = tuiSidebarSessions(snapshot())
+    if (sessions.length === 0) return alert("No sessions available.")
+    const sessionID = await askChoice({
+      title: "Switch Session",
+      message: "Choose a session to open.",
+      options: sessions.map((session) => ({
+        value: session.id,
+        title: title(session.title),
+        description: compactPath(session.directory),
+        meta: formatRelative(session.time.updated),
+      })),
+    })
+    if (sessionID) setRoute({ name: "session", sessionID })
+  }
+
+  async function handleSwitchModel() {
+    const providers = snapshot()?.providers ?? []
+    const options = modelPickerOptions(providers)
+    if (options.length === 0) return alert("No models available.")
+    const value = await askChoice({
+      title: "Switch Model",
+      message: "Choose the model used for the active composer.",
+      options: options.map((option) => ({
+        value: modelValue(option.provider.id, option.model.id),
+        title: option.model.name ?? option.model.id,
+        description: option.provider.name,
+        meta: isFreeOpencodeModel(option.provider, option.model) ? "Free" : undefined,
+      })),
+    })
+    if (!value) return
+    setSelectedModel(value)
+    setSelectedVariant("")
+    rememberModel(value)
+  }
+
+  async function handleSwitchAgent() {
+    const agents = (snapshot()?.agents ?? []).filter((agent) => !agent.hidden && agent.mode !== "subagent")
+    if (agents.length === 0) return alert("No agents available.")
+    const agent = await askChoice({
+      title: "Switch Agent",
+      message: "Choose the agent used for the active composer.",
+      options: agents.map((item) => ({
+        value: item.name,
+        title: item.name,
+        description: item.description,
+        meta: item.mode,
+      })),
+    })
+    if (agent) setSelectedAgent(agent)
+  }
+
+  async function handleSwitchVariant() {
+    const variants = selectedModelVariants(snapshot()?.providers ?? [], selectedModel())
+    if (variants.length === 0) return alert("The selected model does not expose variants.")
+    const variant = await askChoice({
+      title: "Switch Model Variant",
+      message: "Choose the model variant used for the active composer.",
+      options: [
+        { value: "", title: "Default", description: "Use the provider default variant" },
+        ...variants.map((item) => ({ value: item, title: item })),
+      ],
+    })
+    if (variant !== undefined) setSelectedVariant(variant)
+  }
+
+  function cycleVariant() {
+    const variants = selectedModelVariants(snapshot()?.providers ?? [], selectedModel())
+    if (variants.length === 0) return alert("The selected model does not expose variants.")
+    const options = ["", ...variants]
+    const index = options.indexOf(selectedVariant())
+    setSelectedVariant(options[index >= 0 ? (index + 1) % options.length : 1])
+  }
+
+  async function copyWorkspacePath() {
+    const path = selectedSession()?.directory || client()?.directory
+    if (!path) return alert("No workspace path available.")
+    await navigator.clipboard.writeText(path)
+    alert("Copied workspace path.")
+  }
+
+  function focusComposer() {
+    const current = route()
+    if (current.name !== "session" && visibleSessions().length > 0) setRoute({ name: "session", sessionID: visibleSessions()[0].id })
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus())
+  }
+
+  function showHelp() {
+    alert([
+      "Ctrl+P opens commands.",
+      "Ctrl+/ focuses the composer.",
+      "Ctrl+N creates a session.",
+      "Ctrl+R refreshes.",
+      "Ctrl+B toggles the sidebar.",
+      "Ctrl+D and Ctrl+1-6 navigate sections.",
+    ].join("\n"))
   }
 
   async function handlePermission(request: PermissionRequest, reply: "once" | "always" | "reject") {
@@ -555,6 +709,322 @@ export function App() {
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
   }
+
+  const paletteCommands = createMemo<PaletteCommand[]>(() => [
+    {
+      name: "session.list",
+      title: "Switch session",
+      category: "Session",
+      description: `${visibleSessions().length} available sessions`,
+      suggested: visibleSessions().length > 0,
+      run: handleSwitchSession,
+    },
+    {
+      name: "session.new",
+      title: "New session",
+      category: "Session",
+      suggested: route().name === "session",
+      run: () => handleCreateSession(),
+    },
+    {
+      name: "opencodex.dashboard.open",
+      title: "Open operations dashboard",
+      category: "OpencodeX",
+      suggested: true,
+      run: () => { setRoute({ name: "dashboard" }) },
+    },
+    {
+      name: "opencodex.project.create",
+      title: "Create project",
+      category: "OpencodeX",
+      suggested: true,
+      run: handleCreateProject,
+    },
+    {
+      name: "opencodex.session.new_project",
+      title: "New session in project",
+      category: "OpencodeX",
+      suggested: true,
+      run: async () => {
+        const projects = snapshot()?.projects ?? []
+        if (projects.length === 0) return alert("Create or load a project before creating a project session.")
+        const projectID = await chooseProjectID(projects)
+        const project = projects.find((item) => item.id === projectID)
+        if (project) await handleCreateSession(project.id, project.folders[0]?.path)
+      },
+    },
+    {
+      name: "opencodex.session.manage",
+      title: "Manage sessions",
+      category: "OpencodeX",
+      run: () => { setRoute({ name: "sessions" }) },
+    },
+    {
+      name: "opencodex.project.manage",
+      title: "Manage projects",
+      category: "OpencodeX",
+      run: () => { setRoute({ name: "projects" }) },
+    },
+    {
+      name: "opencodex.sidebar.toggle",
+      title: "Toggle sidebar",
+      category: "OpencodeX",
+      suggested: true,
+      run: () => { setRailCollapsed((prev) => !prev) },
+    },
+    {
+      name: "opencodex.sidebar.focus",
+      title: "Focus sidebar",
+      category: "OpencodeX",
+      suggested: true,
+      run: () => {
+        setRailCollapsed(false)
+        requestAnimationFrame(() => document.querySelector<HTMLElement>(".rail button")?.focus())
+      },
+    },
+    {
+      name: "opencodex.swarm.list",
+      title: "Show swarms on dashboard",
+      category: "Swarms",
+      suggested: true,
+      run: () => { setRoute({ name: "swarms" }) },
+    },
+    {
+      name: "opencodex.swarm.open",
+      title: "Open swarm",
+      category: "Swarms",
+      suggested: true,
+      run: () => { setRoute({ name: "swarms" }) },
+    },
+    {
+      name: "opencodex.swarm.create",
+      title: "Create swarm",
+      category: "Swarms",
+      suggested: true,
+      run: handleCreateSwarm,
+    },
+    {
+      name: "opencodex.swarm.task",
+      title: "New swarm task",
+      category: "Swarms",
+      suggested: true,
+      disabled: "GUI swarm task picker is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "opencodex.view.open",
+      title: "Open view",
+      category: "Views",
+      suggested: true,
+      run: () => { setRoute({ name: "views" }) },
+    },
+    {
+      name: "opencodex.view.create",
+      title: "Create view",
+      category: "Views",
+      suggested: true,
+      run: handleCreateView,
+    },
+    {
+      name: "opencodex.view.edit",
+      title: "Edit view",
+      category: "Views",
+      suggested: true,
+      disabled: "GUI view editing is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "opencodex.view.delete",
+      title: "Delete view",
+      category: "Views",
+      suggested: true,
+      disabled: "GUI view deletion is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "workspace.copy_path",
+      title: "Copy worktree path",
+      category: "Workspace",
+      description: selectedSession()?.directory || client()?.directory,
+      run: copyWorkspacePath,
+    },
+    {
+      name: "workspace.list",
+      title: "Manage workspaces",
+      category: "Workspace",
+      disabled: "GUI workspace management is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "model.list",
+      title: "Switch model",
+      category: "Agent",
+      suggested: true,
+      run: handleSwitchModel,
+    },
+    {
+      name: "agent.list",
+      title: "Switch agent",
+      category: "Agent",
+      run: handleSwitchAgent,
+    },
+    {
+      name: "mcp.list",
+      title: "Toggle MCPs",
+      category: "Agent",
+      disabled: "GUI MCP toggles are not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "variant.cycle",
+      title: "Variant cycle",
+      category: "Agent",
+      run: cycleVariant,
+    },
+    {
+      name: "variant.list",
+      title: "Switch model variant",
+      category: "Agent",
+      disabled: selectedModelVariants(snapshot()?.providers ?? [], selectedModel()).length === 0 ? "The selected model does not expose variants." : undefined,
+      run: handleSwitchVariant,
+    },
+    {
+      name: "provider.connect",
+      title: "Connect provider",
+      category: "Provider",
+      disabled: "GUI provider connection flow is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "console.org.switch",
+      title: "Switch org",
+      category: "Provider",
+      disabled: "GUI console org switching is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "opencode.status",
+      title: "View status",
+      category: "System",
+      run: () => { setRoute({ name: "status" }) },
+    },
+    {
+      name: "theme.switch",
+      title: "Switch theme",
+      category: "System",
+      disabled: "GUI theme picker is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "theme.switch_mode",
+      title: "Switch theme mode",
+      category: "System",
+      disabled: "GUI theme mode switching is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "theme.mode.lock",
+      title: "Lock theme mode",
+      category: "System",
+      disabled: "GUI theme mode locking is not implemented yet.",
+      run: () => {},
+    },
+    {
+      name: "help.show",
+      title: "Help",
+      category: "System",
+      run: showHelp,
+    },
+    {
+      name: "docs.open",
+      title: "Open docs",
+      category: "System",
+      run: () => { window.open("https://opencode.ai/docs", "_blank", "noopener,noreferrer") },
+    },
+    {
+      name: "app.exit",
+      title: "Exit the app",
+      category: "System",
+      run: () => void window.opencodex?.window("close"),
+    },
+    {
+      name: "app.debug",
+      title: "Toggle debug panel",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.console",
+      title: "Toggle console",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.heap_snapshot",
+      title: "Write heap snapshot",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "terminal.title.toggle",
+      title: "Toggle terminal title",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.toggle.animations",
+      title: "Toggle animations",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.toggle.file_context",
+      title: "Toggle file context",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.toggle.diffwrap",
+      title: "Toggle diff wrapping",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.toggle.paste_summary",
+      title: "Toggle paste summary",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "app.toggle.session_directory_filter",
+      title: "Toggle session directory filtering",
+      category: "System",
+      disabled: "TUI-only command.",
+      run: () => {},
+    },
+    {
+      name: "gui.composer.focus",
+      title: "Focus composer",
+      category: "System",
+      shortcut: "Ctrl+/",
+      run: focusComposer,
+    },
+    {
+      name: "gui.refresh",
+      title: "Refresh GUI snapshot",
+      category: "System",
+      shortcut: "Ctrl+R",
+      run: refresh,
+    },
+  ])
 
   return (
     <div class="app-shell" classList={{ "rail-collapsed": railCollapsed() }}>
@@ -747,28 +1217,172 @@ export function App() {
           </Switch>
         </Show>
       </main>
+      <CommandPaletteModal
+        open={commandPaletteOpen()}
+        commands={paletteCommands()}
+        close={() => setCommandPaletteOpen(false)}
+        run={(command) => {
+          setCommandPaletteOpen(false)
+          void runAction(async () => { await command.run() })
+        }}
+      />
       <DialogModal dialog={dialog()} close={() => setDialog(undefined)} />
     </div>
   )
 }
 
+function CommandPaletteModal(props: { open: boolean; commands: PaletteCommand[]; close: () => void; run: (command: PaletteCommand) => void }) {
+  const [query, setQuery] = createSignal("")
+  const [selected, setSelected] = createSignal(0)
+  let input: HTMLInputElement | undefined
+  const visible = createMemo(() => {
+    const needle = query().trim().toLowerCase()
+    const commands = props.commands.filter((command) => {
+      if (!needle) return true
+      return [command.title, command.category, command.description, command.name].filter(Boolean).join(" ").toLowerCase().includes(needle)
+    })
+    if (needle) return commands
+    const preserveSuggestedCategory = new Set(["OpencodeX", "Swarms", "Views"])
+    const suggested = commands.filter((command) => command.suggested)
+    return [
+      ...suggested.filter((command) => command.category === "OpencodeX"),
+      ...suggested.filter((command) => command.category === "Swarms"),
+      ...suggested.filter((command) => command.category === "Views"),
+      ...suggested.filter((command) => !preserveSuggestedCategory.has(command.category)),
+      ...commands.filter((command) => !(command.suggested && preserveSuggestedCategory.has(command.category))),
+    ]
+  })
+  createEffect(() => {
+    if (!props.open) return
+    setQuery("")
+    setSelected(0)
+    requestAnimationFrame(() => input?.focus())
+  })
+  createEffect(() => {
+    const count = visible().length
+    if (selected() >= count) setSelected(Math.max(0, count - 1))
+  })
+  function select(offset: number) {
+    const count = visible().length
+    if (count === 0) return
+    setSelected((current) => (current + offset + count) % count)
+  }
+  function submit() {
+    const command = visible()[selected()]
+    if (!command) return
+    if (command.disabled) {
+      setQuery(command.disabled)
+      return
+    }
+    props.run(command)
+  }
+  return (
+    <Show when={props.open}>
+      <div class="dialog-backdrop command-palette-backdrop" onMouseDown={props.close}>
+        <section class="command-palette-modal" onMouseDown={(event) => event.stopPropagation()}>
+          <header>
+            <div>
+              <h2>Commands</h2>
+              <p>Search actions, then press Enter.</p>
+            </div>
+            <button type="button" aria-label="Close command palette" onClick={props.close}>×</button>
+          </header>
+          <input
+            ref={input}
+            value={query()}
+            onInput={(event) => {
+              setQuery(event.currentTarget.value)
+              setSelected(0)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault()
+                props.close()
+                return
+              }
+              if (event.key === "ArrowDown") {
+                event.preventDefault()
+                select(1)
+                return
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault()
+                select(-1)
+                return
+              }
+              if (event.key === "Enter") {
+                event.preventDefault()
+                submit()
+              }
+            }}
+            placeholder="Search commands"
+          />
+          <div class="command-palette-list" role="listbox" aria-label="Commands">
+            <For each={visible()} fallback={<p class="command-palette-empty">No matching commands.</p>}>
+              {(command, index) => {
+                const shortcut = () => command.shortcut ?? TUI_COMMAND_SHORTCUTS[command.name]
+                const detail = () => command.disabled ?? command.description
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected() === index()}
+                    disabled={!!command.disabled}
+                    classList={{ selected: selected() === index(), suggested: !!command.suggested }}
+                    title={command.disabled}
+                    onMouseEnter={() => setSelected(index())}
+                    onClick={() => props.run(command)}
+                  >
+                    <span class="command-palette-category">{command.suggested && !query() ? suggestedCategory(command.category) : command.category}</span>
+                    <strong>{command.title}</strong>
+                    <Show when={detail()}>{(value) => <small>{value()}</small>}</Show>
+                    <Show when={shortcut()}>{(value) => <kbd>{value()}</kbd>}</Show>
+                  </button>
+                )
+              }}
+            </For>
+          </div>
+        </section>
+      </div>
+    </Show>
+  )
+}
+
+function suggestedCategory(category: string) {
+  return category === "OpencodeX" || category === "Swarms" || category === "Views" ? category : "Suggested"
+}
+
 function DialogModal(props: { dialog?: DialogState; close: () => void }) {
   const [value, setValue] = createSignal("")
+  const choiceOptions = createMemo(() => {
+    const current = props.dialog
+    if (current?.type !== "choice") return []
+    const needle = value().trim().toLowerCase()
+    if (!needle) return current.options
+    return current.options.filter((option) => [option.title, option.description, option.meta, option.value].filter(Boolean).join(" ").toLowerCase().includes(needle))
+  })
   createEffect(() => setValue(props.dialog?.type === "text" ? props.dialog.value ?? "" : ""))
   function cancel() {
     const current = props.dialog
     props.close()
     if (!current) return
-    if (current.type === "text") current.resolve(undefined)
-    else current.resolve(false)
+    if (current.type === "confirm") current.resolve(false)
+    else current.resolve(undefined)
+  }
+  function choose(value: string) {
+    const current = props.dialog
+    props.close()
+    if (current?.type === "choice") current.resolve(value)
   }
   function submit(event: SubmitEvent) {
     event.preventDefault()
     const current = props.dialog
+    const choice = current?.type === "choice" ? choiceOptions()[0]?.value : undefined
     props.close()
     if (!current) return
     if (current.type === "text") current.resolve(value())
-    else current.resolve(true)
+    else if (current.type === "confirm") current.resolve(true)
+    else current.resolve(choice)
   }
   return (
     <Show when={props.dialog}>
@@ -784,9 +1398,23 @@ function DialogModal(props: { dialog?: DialogState; close: () => void }) {
                 <textarea value={value()} onInput={(event) => setValue(event.currentTarget.value)} autofocus />
               </Show>
             </Show>
+            <Show when={current().type === "choice"}>
+              <input value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="Search options" autofocus />
+              <div class="choice-list">
+                <For each={choiceOptions()} fallback={<p>No matching options.</p>}>
+                  {(option) => (
+                    <button type="button" onClick={() => choose(option.value)}>
+                      <strong>{option.title}</strong>
+                      <Show when={option.meta}><small>{option.meta}</small></Show>
+                      <Show when={option.description}><span>{option.description}</span></Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
             <div class="dialog-actions">
               <button type="button" class="secondary" onClick={cancel}>Cancel</button>
-              <button type="submit" class="primary">{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : "Save"}</button>
+              <button type="submit" class="primary">{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : "Save"}</button>
             </div>
           </form>
         </div>
@@ -1232,6 +1860,20 @@ function rgbToCss(rgb: Rgb) {
   return `rgb(${Math.round(rgb.r)}, ${Math.round(rgb.g)}, ${Math.round(rgb.b)})`
 }
 
+function isAssistantMessage(message: MessageBundle["info"]): message is AssistantMessage {
+  return message.role === "assistant"
+}
+
+function formatTokenCount(tokens: number) {
+  if (tokens >= 1_000_000) return `${trimCompactNumber(tokens / 1_000_000)}m`
+  if (tokens >= 1_000) return `${trimCompactNumber(tokens / 1_000)}k`
+  return tokens.toLocaleString()
+}
+
+function trimCompactNumber(value: number) {
+  return value >= 100 ? Math.round(value).toString() : value.toFixed(1).replace(/\.0$/, "")
+}
+
 function SessionPage(props: {
   session?: Session
   data: SessionData
@@ -1259,9 +1901,21 @@ function SessionPage(props: {
   deleteSession: (session: Session) => void
   status?: string
 }) {
+  const TRANSCRIPT_BOTTOM_THRESHOLD = 4
   const session = () => props.session
   const blocked = () => props.permissions.length > 0 || props.questions.length > 0
   let transcript: HTMLElement | undefined
+  let transcriptContent: HTMLDivElement | undefined
+  let transcriptSessionID: string | undefined
+  let transcriptAutoScroll = true
+  let transcriptInitialScrollSessionID: string | undefined
+  let transcriptInitialScrollUntil = 0
+  let transcriptProgrammaticScroll = false
+  let transcriptScrollFrame: number | undefined
+  let transcriptLastScrollTop = 0
+  let transcriptUserScrollIntent = false
+  let transcriptUserScrollTimer: ReturnType<typeof setTimeout> | undefined
+  let transcriptProgrammaticScrollTimer: ReturnType<typeof setTimeout> | undefined
   let composerTextarea: HTMLTextAreaElement | undefined
   const [modelPickerOpen, setModelPickerOpen] = createSignal(false)
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
@@ -1310,7 +1964,17 @@ function SessionPage(props: {
   })
   const variants = createMemo(() => Object.keys(activeModel()?.variants ?? {}))
   const mode = createMemo(() => props.selectedAgent === "plan" ? "plan" : "build")
+  const running = createMemo(() => props.status === "busy" || props.status === "retry")
   const sessionStarted = createMemo(() => props.loading || props.data.messages.length > 0 || props.status === "busy" || props.status === "retry" || blocked())
+  const usageLabel = createMemo(() => {
+    const last = props.data.messages.findLast((bundle) => isAssistantMessage(bundle.info) && bundle.info.tokens.output > 0)?.info
+    if (!last || !isAssistantMessage(last)) return
+    const tokens = last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+    if (tokens <= 0) return
+    const limit = props.providers.find((provider) => provider.id === last.providerID)?.models[last.modelID]?.limit.context
+    const pct = limit ? ` (${Math.round((tokens / limit) * 100)}%)` : ""
+    return `${formatTokenCount(tokens)}${pct}`
+  })
   const modelLabel = () => props.selectedModel && activeProvider() && activeModel() ? `${activeModel()!.name ?? activeModel()!.id} ${activeProvider()!.name}` : "Select model"
   const variantLabel = () => props.selectedVariant || "Default"
   const toggleMode = () => props.setSelectedAgent(mode() === "plan" ? "build" : "plan")
@@ -1332,6 +1996,85 @@ function SessionPage(props: {
     setVariantPickerOpen(false)
     setModelQuery("")
   }
+  const transcriptNearBottom = (element: HTMLElement) => element.scrollHeight - element.clientHeight - element.scrollTop <= TRANSCRIPT_BOTTOM_THRESHOLD
+  const cancelInitialTranscriptScroll = () => {
+    transcriptInitialScrollSessionID = undefined
+    transcriptInitialScrollUntil = 0
+  }
+  const markTranscriptUserScrollIntent = () => {
+    if (transcriptProgrammaticScroll) return
+    transcriptUserScrollIntent = true
+    if (transcriptUserScrollTimer) clearTimeout(transcriptUserScrollTimer)
+    transcriptUserScrollTimer = setTimeout(() => {
+      transcriptUserScrollIntent = false
+      transcriptUserScrollTimer = undefined
+    }, 700)
+  }
+  const handleTranscriptScroll = () => {
+    if (!transcript) return
+    const atBottom = transcriptNearBottom(transcript)
+    const scrollTop = transcript.scrollTop
+    const scrollTopChanged = Math.abs(scrollTop - transcriptLastScrollTop) > 1
+    const initialPending = transcriptInitialScrollSessionID === transcriptSessionID && performance.now() <= transcriptInitialScrollUntil
+    transcriptLastScrollTop = scrollTop
+    if (transcriptProgrammaticScroll) {
+      transcriptAutoScroll = atBottom
+      return
+    }
+    if (transcriptUserScrollIntent || (scrollTopChanged && !initialPending)) {
+      transcriptAutoScroll = atBottom
+      if (!atBottom) cancelInitialTranscriptScroll()
+      if (transcriptUserScrollIntent) markTranscriptUserScrollIntent()
+      return
+    }
+    if (atBottom) transcriptAutoScroll = true
+  }
+  const scrollTranscriptToBottom = () => {
+    if (!transcript) return
+    transcript.scrollTop = transcript.scrollHeight
+    transcriptLastScrollTop = transcript.scrollTop
+    transcriptAutoScroll = transcriptNearBottom(transcript)
+  }
+  const scheduleTranscriptScroll = (force: boolean) => {
+    if (!transcript) return
+    if (!force && (!running() || !transcriptAutoScroll)) return
+    if (transcriptScrollFrame !== undefined) cancelAnimationFrame(transcriptScrollFrame)
+    transcriptScrollFrame = requestAnimationFrame(() => {
+      transcriptScrollFrame = undefined
+      if (!transcript) return
+      if (!force && (!running() || !transcriptAutoScroll)) return
+      transcriptProgrammaticScroll = true
+      if (transcriptProgrammaticScrollTimer) clearTimeout(transcriptProgrammaticScrollTimer)
+      scrollTranscriptToBottom()
+      requestAnimationFrame(() => {
+        if (!transcript) return
+        if (force || (running() && transcriptAutoScroll)) scrollTranscriptToBottom()
+        transcriptProgrammaticScrollTimer = setTimeout(() => {
+          transcriptProgrammaticScroll = false
+          transcriptProgrammaticScrollTimer = undefined
+        }, 80)
+      })
+    })
+  }
+  onMount(() => {
+    if (!transcriptContent) return
+    const observer = new ResizeObserver(() => {
+      const initial = transcriptInitialScrollSessionID === transcriptSessionID && performance.now() <= transcriptInitialScrollUntil
+      if (initial) {
+        scheduleTranscriptScroll(true)
+        return
+      }
+      if (transcriptInitialScrollSessionID && performance.now() > transcriptInitialScrollUntil) cancelInitialTranscriptScroll()
+      if (running() && transcriptAutoScroll) scheduleTranscriptScroll(false)
+    })
+    observer.observe(transcriptContent)
+    onCleanup(() => observer.disconnect())
+  })
+  onCleanup(() => {
+    if (transcriptScrollFrame !== undefined) cancelAnimationFrame(transcriptScrollFrame)
+    if (transcriptUserScrollTimer) clearTimeout(transcriptUserScrollTimer)
+    if (transcriptProgrammaticScrollTimer) clearTimeout(transcriptProgrammaticScrollTimer)
+  })
   createEffect(() => {
     props.prompt
     if (!composerTextarea) return
@@ -1342,9 +2085,21 @@ function SessionPage(props: {
     const id = props.session?.id
     const count = props.data.messages.reduce((total, message) => total + message.parts.length, 0)
     if (!id && count === 0) return
-    requestAnimationFrame(() => {
-      if (transcript) transcript.scrollTop = transcript.scrollHeight
-    })
+    const sessionChanged = id !== transcriptSessionID
+    transcriptSessionID = id
+    if (sessionChanged) {
+      transcriptAutoScroll = true
+      transcriptInitialScrollSessionID = id
+      transcriptInitialScrollUntil = performance.now() + 1_200
+      scheduleTranscriptScroll(true)
+      return
+    }
+    if (transcriptInitialScrollSessionID === id) {
+      if (performance.now() <= transcriptInitialScrollUntil) scheduleTranscriptScroll(true)
+      else cancelInitialTranscriptScroll()
+      return
+    }
+    if (running() && transcriptAutoScroll) scheduleTranscriptScroll(false)
   })
   return (
     <div class="page session-page" classList={{ "session-empty": !sessionStarted() }}>
@@ -1379,20 +2134,22 @@ function SessionPage(props: {
             <For each={props.questions}>
               {(request) => <QuestionPanel request={request} reply={props.replyQuestion} reject={props.rejectQuestion} />}
             </For>
-            <section class="transcript" ref={transcript}>
-              <SessionSideData todos={props.data.todos} diffs={props.data.diffs} />
-              <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
-                <For each={props.data.messages} fallback={<SessionEmptyState />}>
-                  {(bundle) => (
-                    <article class={`message ${bundle.info.role}`}>
-                      <header>{bundle.info.role}</header>
-                      <For each={bundle.parts}>
-                        {(part) => <PartView part={part} />}
-                      </For>
-                    </article>
-                  )}
-                </For>
-              </Show>
+            <section class="transcript" ref={transcript} onScroll={handleTranscriptScroll} onWheel={markTranscriptUserScrollIntent} onPointerDown={markTranscriptUserScrollIntent} onTouchStart={markTranscriptUserScrollIntent} onTouchMove={markTranscriptUserScrollIntent}>
+              <div class="transcript-content" ref={transcriptContent}>
+                <SessionSideData todos={props.data.todos} diffs={props.data.diffs} />
+                <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
+                  <For each={props.data.messages} fallback={<SessionEmptyState />}>
+                    {(bundle) => (
+                      <article class={`message ${bundle.info.role}`}>
+                        <header>{bundle.info.role}</header>
+                        <For each={groupTranscriptParts(bundle.parts)}>
+                          {(item) => <DisplayPartView item={item} />}
+                        </For>
+                      </article>
+                    )}
+                  </For>
+                </Show>
+              </div>
             </section>
             <form class="composer" onSubmit={props.submit}>
               <div class={`composer-input ${mode()}`}>
@@ -1466,6 +2223,23 @@ function SessionPage(props: {
                   </button>
                 </div>
               </div>
+              <div class="composer-running" aria-live="polite">
+                <span class="composer-running-left">
+                  <Show when={running()} fallback={<span class="composer-running-placeholder" aria-hidden="true" />}>
+                    <span class="composer-spinner" aria-label="running" />
+                    <span class="composer-interrupt" aria-label="Press escape to interrupt the model">
+                      <span class="composer-interrupt-key">esc</span>{" "}
+                      <span class="composer-interrupt-action">interrupt</span>
+                    </span>
+                  </Show>
+                </span>
+                <span class="composer-running-right">
+                  <Show when={usageLabel()}>
+                    {(usage) => <span class="composer-token-usage">{usage()}</span>}
+                  </Show>
+                  <span class="composer-command-hint"><span>ctrl+p</span> commands</span>
+                </span>
+              </div>
             </form>
             <Show when={modelPickerOpen()}>
               <div class="dialog-backdrop" onMouseDown={() => setModelPickerOpen(false)}>
@@ -1534,6 +2308,23 @@ function filterModelOptions(options: ModelPickerOption[], query: string) {
   const needle = query.trim().toLowerCase()
   if (!needle) return options
   return options.filter((option) => `${option.model.name ?? option.model.id} ${option.provider.name}`.toLowerCase().includes(needle))
+}
+
+function modelPickerOptions(providers: Provider[]): ModelPickerOption[] {
+  return providers
+    .toSorted((a, b) => Number(a.id !== "opencode") - Number(b.id !== "opencode") || a.name.localeCompare(b.name))
+    .flatMap((provider) =>
+      Object.values(provider.models)
+        .filter((model) => model.status !== "deprecated")
+        .toSorted((a, b) => Number(!isFreeOpencodeModel(provider, a)) - Number(!isFreeOpencodeModel(provider, b)) || (a.name ?? a.id).localeCompare(b.name ?? b.id))
+        .map((model) => ({ provider, model })),
+    )
+}
+
+function selectedModelVariants(providers: Provider[], selectedModel: string) {
+  const selection = parseModelValue(selectedModel)
+  if (!selection) return []
+  return Object.keys(providers.find((provider) => provider.id === selection.providerID)?.models[selection.modelID]?.variants ?? {})
 }
 
 function isFreeOpencodeModel(provider: Provider, model: Provider["models"][string]) {
@@ -1697,6 +2488,94 @@ function SessionSideData(props: { todos: Todo[]; diffs: SnapshotFileDiff[] }) {
   )
 }
 
+type ToolPart = Extract<Part, { type: "tool" }>
+type DisplayPart = { type: "part"; part: Part } | { type: "tool-group"; tool: string; parts: ToolPart[] }
+
+function groupTranscriptParts(parts: Part[]): DisplayPart[] {
+  const result: DisplayPart[] = []
+  let pending: ToolPart[] = []
+
+  function flush() {
+    if (pending.length === 0) return
+    if (pending.length === 1) result.push({ type: "part", part: pending[0] })
+    else result.push({ type: "tool-group", tool: pending[0].tool, parts: pending })
+    pending = []
+  }
+
+  for (const part of parts) {
+    if (part.type === "tool" && isGroupableTool(part.tool)) {
+      if (pending.length === 0 || pending[0].tool === part.tool) {
+        pending.push(part)
+        continue
+      }
+    }
+    flush()
+    result.push({ type: "part", part })
+  }
+  flush()
+  return result
+}
+
+function isGroupableTool(tool: string) {
+  return tool === "read" || tool === "grep" || tool === "glob" || tool === "webfetch" || tool === "websearch" || tool === "skill"
+}
+
+function DisplayPartView(props: { item: DisplayPart }) {
+  return (
+    <Switch>
+      <Match when={props.item.type === "tool-group"}>
+        <ToolGroupView item={props.item as Extract<DisplayPart, { type: "tool-group" }>} />
+      </Match>
+      <Match when={props.item.type === "part"}>
+        <PartView part={(props.item as Extract<DisplayPart, { type: "part" }>).part} />
+      </Match>
+    </Switch>
+  )
+}
+
+function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" }> }) {
+  const status = createMemo(() => toolGroupStatus(props.item.parts))
+  return (
+    <details class={`part tool tool-group ${status()}`} open>
+      <summary>
+        <strong>{toolGroupTitle(props.item.tool, props.item.parts)}</strong>
+        <span>{status()}</span>
+      </summary>
+      <div class="tool-group-list">
+        <For each={props.item.parts}>
+          {(part) => {
+            const input = toolStateInput(part.state)
+            const metadata = toolMetadata(part.state) ?? {}
+            return (
+              <div class="tool-group-item">
+                <span>{toolDisplayTitle(part.tool, input, metadata)}</span>
+                <small>{part.state.status}</small>
+              </div>
+            )
+          }}
+        </For>
+      </div>
+    </details>
+  )
+}
+
+function toolGroupStatus(parts: ToolPart[]) {
+  if (parts.some((part) => part.state.status === "error")) return "error"
+  if (parts.some((part) => part.state.status === "running")) return "running"
+  if (parts.every((part) => part.state.status === "completed")) return "completed"
+  return parts.at(-1)?.state.status ?? "pending"
+}
+
+function toolGroupTitle(tool: string, parts: ToolPart[]) {
+  if (tool === "read") return `Read ${parts.length} files`
+  if (tool === "grep") return `Grep ${parts.length} searches`
+  if (tool === "glob") return `Glob ${parts.length} searches`
+  if (tool === "webfetch") return `WebFetch ${parts.length} URLs`
+  if (tool === "websearch") return `WebSearch ${parts.length} queries`
+  if (tool === "skill") return `Loaded ${parts.length} skills`
+  return `${tool} x${parts.length}`
+}
+
 function PartView(props: { part: MessageBundle["parts"][number] }) {
   return (
     <Switch fallback={<pre class="part muted">{JSON.stringify(props.part, null, 2)}</pre>}>
@@ -1757,26 +2636,24 @@ function ToolPartView(props: { part: Extract<Part, { type: "tool" }> }) {
   const error = createMemo(() => toolError(state()))
   const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata()))
   const open = createMemo(() => state().status === "running" || state().status === "error" || Boolean(output() || toolHasRichDetails(props.part.tool, metadata(), input())))
+  const showRaw = createMemo(() => shouldShowRawToolData(props.part.tool, input(), metadata()))
   return (
     <details class={`part tool ${state().status}`} open={open()}>
       <summary>
         <strong>{title()}</strong>
         <span>{state().status}</span>
       </summary>
-      <Show when={toolTitle(state())}>
-        <p>{toolTitle(state())}</p>
-      </Show>
       <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} />
-      <Show when={Object.keys(input()).length > 0 || Object.keys(metadata()).length > 0}>
+      <Show when={showRaw()}>
         <details class="tool-raw">
           <summary>Raw tool data</summary>
           <Show when={Object.keys(input()).length > 0}>
             <label>Input</label>
-            <pre>{JSON.stringify(input(), null, 2)}</pre>
+            <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
           </Show>
           <Show when={Object.keys(metadata()).length > 0}>
             <label>Metadata</label>
-            <pre>{JSON.stringify(metadata(), null, 2)}</pre>
+            <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
           </Show>
         </details>
       </Show>
@@ -1790,58 +2667,44 @@ function ToolDetails(props: { tool: string; input: Record<string, unknown>; meta
     <div class="tool-details">
       <Switch fallback={<GenericToolDetails input={props.input} metadata={props.metadata} output={props.output} error={props.error} />}>
         <Match when={props.tool === "bash" || props.tool === "shell"}>
-          <ToolKeyValues values={[field("description", props.input.description), field("workdir", props.input.workdir)]} />
-          <Show when={stringValue(props.input.command)}>
-            {(command) => <pre class="tool-command">$ {command()}</pre>}
-          </Show>
-          <ToolOutput output={props.output} />
+          <ToolShellBlock command={stringValue(props.input.command)} output={props.output} />
         </Match>
         <Match when={props.tool === "grep" || props.tool === "glob"}>
-          <ToolKeyValues values={[field("pattern", props.input.pattern), field("path", props.input.path), field("include", props.input.include), field("matches", props.metadata.matches), field("count", props.metadata.count)]} />
-          <ToolOutput output={props.output} />
+          <ToolOutput output={props.output} maxLines={15} compact />
         </Match>
         <Match when={props.tool === "read"}>
-          <ToolKeyValues values={[field("file", props.input.filePath), field("offset", props.input.offset), field("limit", props.input.limit)]} />
-          <ToolLoadedFiles metadata={props.metadata} />
-          <ToolOutput output={props.output} />
+          <></>
         </Match>
         <Match when={props.tool === "write"}>
-          <ToolKeyValues values={[field("file", props.input.filePath)]} />
           <Show when={stringValue(props.input.content)}>
-            {(content) => <pre class="tool-code">{content()}</pre>}
+            {(content) => <ToolCodeBlock class="tool-code" language={languageFromPath(stringValue(props.input.filePath))} code={content()} />}
           </Show>
           <ToolDiagnostics diagnostics={diagnostics()} />
           <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "edit"}>
-          <ToolKeyValues values={[field("file", props.input.filePath), field("replaceAll", props.input.replaceAll)]} />
-          <ToolDiffs metadata={props.metadata} />
+          <ToolDiffs input={props.input} metadata={props.metadata} />
           <ToolDiagnostics diagnostics={diagnostics()} />
           <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "apply_patch"}>
-          <ToolDiffs metadata={props.metadata} />
+          <ToolDiffs input={props.input} metadata={props.metadata} />
           <ToolDiagnostics diagnostics={diagnostics()} />
-          <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "todowrite"}>
           <ToolTodos input={props.input} metadata={props.metadata} />
-          <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "question"}>
           <ToolQuestions input={props.input} metadata={props.metadata} />
           <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "task"}>
-          <ToolKeyValues values={[field("description", props.input.description), field("agent", props.input.subagent_type), field("session", props.metadata.sessionId), field("background", props.metadata.background)]} />
           <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "webfetch" || props.tool === "websearch"}>
-          <ToolKeyValues values={[field("url", props.input.url), field("query", props.input.query), field("format", props.input.format), field("results", props.metadata.numResults), field("provider", props.metadata.provider)]} />
           <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "skill"}>
-          <ToolKeyValues values={[field("skill", props.input.name)]} />
           <ToolOutput output={props.output} />
         </Match>
       </Switch>
@@ -1849,6 +2712,17 @@ function ToolDetails(props: { tool: string; input: Record<string, unknown>; meta
         {(error) => <pre class="tool-error">{error()}</pre>}
       </Show>
     </div>
+  )
+}
+
+function ToolShellBlock(props: { command?: string; output: string }) {
+  return (
+    <>
+      <Show when={props.command}>
+        {(command) => <pre class="tool-command">$ {command()}</pre>}
+      </Show>
+      <ToolOutput output={props.output} />
+    </>
   )
 }
 
@@ -1879,38 +2753,45 @@ function ToolKeyValues(props: { values: Array<{ label: string; value: unknown }>
   )
 }
 
-function ToolOutput(props: { output: string }) {
+function ToolOutput(props: { output: string; maxLines?: number; compact?: boolean }) {
   const [expanded, setExpanded] = createSignal(false)
-  const collapsed = createMemo(() => collapseOutput(props.output.trim(), 80, 16_000))
-  const visible = createMemo(() => expanded() || !collapsed().overflow ? props.output.trim() : collapsed().output)
+  const trimmed = createMemo(() => props.output.trim())
+  const collapsed = createMemo(() => props.maxLines ? collapseLineOutput(trimmed(), props.maxLines) : collapseDiffOutput(trimmed()))
+  const visible = createMemo(() => expanded() || !collapsed().overflow ? trimmed() : collapsed().output)
   return (
-    <Show when={props.output.trim()}>
-      <div class="tool-output">
-        <header>Output</header>
+    <Show when={trimmed()}>
+      <div class="tool-output" classList={{ compact: props.compact === true }}>
         <pre>{visible()}</pre>
         <Show when={collapsed().overflow}>
-          <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Show less" : "Show more"}</button>
+          <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Click to collapse" : "Click to expand"}</button>
         </Show>
       </div>
     </Show>
   )
 }
 
-function ToolDiffs(props: { metadata: Record<string, unknown> }) {
+function ToolCodeBlock(props: { code: string; language?: string; class?: string }) {
+  return <CodeBlock class={props.class} language={props.language || "text"} code={props.code} />
+}
+
+function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<string, unknown> }) {
   const files = createMemo(() => arrayValue(props.metadata.files).filter(isRecordValue))
   return (
     <>
       <Show when={stringValue(props.metadata.diff)}>
-        {(diff) => <ToolDiff title="Diff" diff={diff()} />}
+        {(diff) => <ToolDiff title={stringValue(props.input.filePath) ?? "patch"} diff={diff()} filePath={stringValue(props.input.filePath)} />}
       </Show>
       <For each={files()}>
         {(file) => {
           const patch = stringValue(file.patch)
           const name = stringValue(file.relativePath) ?? stringValue(file.filePath) ?? stringValue(file.movePath) ?? "file"
+          const filePath = stringValue(file.filePath) ?? stringValue(file.movePath) ?? name
           const type = stringValue(file.type)
           return (
             <Show when={patch || type === "delete"}>
-              <ToolDiff title={toolPatchTitle(type, name, file)} diff={patch ?? `-${numberValue(file.deletions) ?? 0} lines`} />
+              <Show when={patch} fallback={<ToolDeletedLines title={toolPatchTitle(type, name, file)} deletions={numberValue(file.deletions) ?? 0} />}>
+                {(diff) => <ToolDiff title={toolPatchTitle(type, name, file)} diff={diff()} filePath={filePath} />}
+              </Show>
             </Show>
           )
         }}
@@ -1919,33 +2800,34 @@ function ToolDiffs(props: { metadata: Record<string, unknown> }) {
   )
 }
 
-function ToolDiff(props: { title: string; diff: string }) {
+function ToolDiff(props: { title: string; diff: string; filePath?: string }) {
+  const contents = createMemo(() => patchContents(props.diff, props.filePath ?? props.title))
   return (
-    <details class="tool-diff" open>
-      <summary>{props.title}</summary>
-      <pre>{props.diff}</pre>
-    </details>
+    <section class="tool-diff">
+      <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
+        {(value) => (
+          <div class="tool-file-diff">
+            <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle="split" virtualize={false} hunkSeparators="simple" />
+          </div>
+        )}
+      </Show>
+    </section>
+  )
+}
+
+function ToolDeletedLines(props: { title: string; deletions: number }) {
+  return (
+    <section class="tool-diff">
+      <p class="tool-deleted-lines">-{props.deletions} line{props.deletions === 1 ? "" : "s"}</p>
+    </section>
   )
 }
 
 function ToolDiagnostics(props: { diagnostics: unknown[] }) {
   return (
     <Show when={props.diagnostics.length > 0}>
-      <details class="tool-diagnostics" open>
-        <summary>Diagnostics ({props.diagnostics.length})</summary>
-        <pre>{JSON.stringify(props.diagnostics, null, 2)}</pre>
-      </details>
-    </Show>
-  )
-}
-
-function ToolLoadedFiles(props: { metadata: Record<string, unknown> }) {
-  const loaded = createMemo(() => arrayValue(props.metadata.loaded).filter((item): item is string => typeof item === "string"))
-  return (
-    <Show when={loaded().length > 0}>
-      <div class="tool-list">
-        <header>Loaded</header>
-        <For each={loaded()}>{(item) => <p>Loaded {item}</p>}</For>
+      <div class="tool-diagnostics">
+        <ToolCodeBlock language="json" code={JSON.stringify(props.diagnostics, null, 2)} />
       </div>
     </Show>
   )
@@ -1957,7 +2839,13 @@ function ToolTodos(props: { input: Record<string, unknown>; metadata: Record<str
     <Show when={todos().length > 0}>
       <div class="tool-todos">
         <For each={todos().filter(isRecordValue)}>
-          {(todo) => <div class={`todo-item ${stringValue(todo.status) ?? "pending"}`}><span>{todoIcon(stringValue(todo.status))}</span><strong>{stringValue(todo.content) ?? "Todo"}</strong><small>{stringValue(todo.priority) ?? ""}</small></div>}
+          {(todo) => (
+            <div class={`tool-todo ${stringValue(todo.status) ?? "pending"}`}>
+              <span>{formatTodoStatus(stringValue(todo.status))}</span>
+              <strong>{stringValue(todo.content) ?? "Todo"}</strong>
+              <small>{stringValue(todo.priority) ?? ""}</small>
+            </div>
+          )}
         </For>
       </div>
     </Show>
@@ -1997,7 +2885,7 @@ function toolDisplayTitle(tool: string, input: Record<string, unknown>, metadata
   if (tool === "read") return `Read ${stringValue(input.filePath) ?? "file"}`
   if (tool === "write") return `Write ${stringValue(input.filePath) ?? "file"}`
   if (tool === "edit") return `Edit ${stringValue(input.filePath) ?? "file"}`
-  if (tool === "apply_patch") return "Apply patch"
+  if (tool === "apply_patch") return "Patch"
   if (tool === "todowrite") return "Update todos"
   if (tool === "question") return `Ask ${arrayValue(input.questions).length || ""} question${arrayValue(input.questions).length === 1 ? "" : "s"}`.trim()
   if (tool === "task") return `${stringValue(input.subagent_type) ?? "General"} task: ${stringValue(input.description) ?? "subagent"}`
@@ -2011,13 +2899,34 @@ function toolHasRichDetails(tool: string, metadata: Record<string, unknown>, inp
   return Boolean(
     stringValue(metadata.diff) ||
     arrayValue(metadata.files).length ||
-    arrayValue(metadata.loaded).length ||
     arrayValue(metadata.todos).length ||
     arrayValue(input.todos).length ||
     arrayValue(input.questions).length ||
     stringValue(input.content),
   )
 }
+
+function shouldShowRawToolData(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>) {
+  if (COMMON_TOOL_IDS.has(tool)) return false
+  return Object.keys(input).length > 0 || Object.keys(metadata).length > 0
+}
+
+const COMMON_TOOL_IDS = new Set([
+  "apply_patch",
+  "bash",
+  "edit",
+  "glob",
+  "grep",
+  "question",
+  "read",
+  "shell",
+  "skill",
+  "task",
+  "todowrite",
+  "webfetch",
+  "websearch",
+  "write",
+])
 
 function field(label: string, value: unknown) {
   return { label, value }
@@ -2070,14 +2979,94 @@ function toolPatchTitle(type: string | undefined, name: string, file: Record<str
   return `Patched ${name}`
 }
 
-function todoIcon(status: string | undefined) {
-  if (status === "completed") return "✓"
-  if (status === "in_progress") return "•"
-  return " "
+function formatTodoStatus(status: string | undefined) {
+  if (status === "completed") return "done"
+  if (status === "in_progress") return "doing"
+  if (status === "cancelled") return "cancelled"
+  return "todo"
 }
 
-function toolTitle(state: Extract<Part, { type: "tool" }>["state"]) {
-  if ("title" in state) return state.title
+function languageFromPath(path: string | undefined) {
+  if (!path) return "text"
+  const extension = path.split(/[\\/.]/).at(-1)?.toLowerCase()
+  if (!extension || extension === path.toLowerCase()) return "text"
+  return LANGUAGE_BY_EXTENSION[extension] ?? extension
+}
+
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  cjs: "js",
+  mjs: "js",
+  jsx: "jsx",
+  tsx: "tsx",
+  ts: "ts",
+  jsonc: "jsonc",
+  md: "markdown",
+  markdown: "markdown",
+  ps1: "powershell",
+  sh: "bash",
+  bash: "bash",
+  yml: "yaml",
+  yaml: "yaml",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  go: "go",
+  cs: "csharp",
+  cpp: "cpp",
+  hpp: "cpp",
+  c: "c",
+  h: "c",
+}
+
+function collapseDiffOutput(output: string) {
+  const lines = output.split("\n")
+  if (!isDiffOutput(output) || lines.length <= 15) return { output, overflow: false }
+  return { output: lines.slice(0, 10).join("\n"), overflow: true }
+}
+
+function collapseLineOutput(output: string, maxLines: number) {
+  const lines = output.split("\n")
+  if (lines.length <= maxLines) return { output, overflow: false }
+  return { output: lines.slice(0, maxLines).join("\n"), overflow: true }
+}
+
+function patchContents(patch: string, filePath: string) {
+  const before: string[] = []
+  const after: string[] = []
+  let inHunk = false
+
+  for (const line of patch.replace(/\r\n?/g, "\n").split("\n")) {
+    if (line.startsWith("@@")) {
+      inHunk = true
+      continue
+    }
+    if (!inHunk) continue
+    if (line.startsWith("\\ No newline")) continue
+
+    const first = line[0]
+    const text = first === "+" || first === "-" || first === " " ? line.slice(1) : line
+    if (first === "+") {
+      after.push(text)
+      continue
+    }
+    if (first === "-") {
+      before.push(text)
+      continue
+    }
+    before.push(text)
+    after.push(text)
+  }
+
+  if (!inHunk) return
+  return {
+    before: { name: filePath, contents: before.join("\n") },
+    after: { name: filePath, contents: after.join("\n") },
+  }
+}
+
+function isDiffOutput(output: string) {
+  const text = output.trimStart()
+  return text.startsWith("diff --git ") || /^@@\s/m.test(text) || /^---\s.+\n\+\+\+\s/m.test(text)
 }
 
 function toolOutput(state: Extract<Part, { type: "tool" }>["state"]) {
@@ -2212,7 +3201,7 @@ function SidebarSessionLink(props: { session: Session; snapshot?: GuiSnapshot; l
         <span>{subtitle()}</span>
       </small>
       <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
-      <Show when={status() === "input_needed" || status() === "unviewed"}><span class="status-glyph" aria-label={sidebarStatusLabel(status())} /></Show>
+      <Show when={status() === "input_needed"}><span class="status-glyph" aria-label={sidebarStatusLabel(status())} /></Show>
     </button>
   )
 }
