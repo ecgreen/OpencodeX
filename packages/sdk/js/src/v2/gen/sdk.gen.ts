@@ -136,6 +136,10 @@ import type {
   OpencodexSessionMoveErrors,
   OpencodeXSessionMoveInput,
   OpencodexSessionMoveResponses,
+  OpencodexSessionStateUpdateErrors,
+  OpencodexSessionStateUpdateResponses,
+  OpencodexSessionSyncErrors,
+  OpencodexSessionSyncResponses,
   OpencodeXSwarmAddRoleInput,
   OpencodeXSwarmAssignTaskInput,
   OpencodexSwarmCancelErrors,
@@ -2483,6 +2487,52 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Get lightweight OpencodeX session sync snapshot
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scope?: "project"
+      path?: string
+      roots?: "true" | "false"
+      start?: string
+      search?: string
+      limit?: string
+      since?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "scope" },
+            { in: "query", key: "path" },
+            { in: "query", key: "roots" },
+            { in: "query", key: "start" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "since" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexSessionSyncResponses,
+      OpencodexSessionSyncErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session-sync",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Move a session into an OpencodeX project
    */
   public move<ThrowOnError extends boolean = false>(
@@ -2526,6 +2576,49 @@ export class Session2 extends HeyApiClient {
       url: "/experimental/opencodex/session/{sessionID}",
       ...options,
       ...params,
+    })
+  }
+}
+
+export class SessionState extends HeyApiClient {
+  /**
+   * Update OpencodeX session UI state
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      seenAt?: number
+      reviewedAt?: number
+      reviewedFiles?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "seenAt" },
+            { in: "body", key: "reviewedAt" },
+            { in: "body", key: "reviewedFiles" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexSessionStateUpdateResponses,
+      OpencodexSessionStateUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session-state/{sessionID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }
@@ -3090,6 +3183,11 @@ export class Opencodex extends HeyApiClient {
   private _session?: Session2
   get session(): Session2 {
     return (this._session ??= new Session2({ client: this.client }))
+  }
+
+  private _sessionState?: SessionState
+  get sessionState(): SessionState {
+    return (this._sessionState ??= new SessionState({ client: this.client }))
   }
 
   private _job?: Job

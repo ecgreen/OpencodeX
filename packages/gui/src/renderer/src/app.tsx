@@ -1,7 +1,8 @@
 import type { JSX } from "solid-js"
-import type { Agent, AssistantMessage, GlobalEvent, Message, OpencodeXView, Part, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Agent, AssistantMessage, GlobalEvent, Message, OpencodeXSessionState, OpencodeXView, Part, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./lib/client"
-import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
+import type { GuiSnapshot, MessageBundle, SessionCardSnapshot, SessionData } from "./lib/store"
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import { Mark } from "@opencode-ai/ui/logo"
 import { Markdown } from "@opencode-ai/ui/markdown"
@@ -11,6 +12,8 @@ import { connectGuiClient } from "./lib/client"
 import { compactPath, formatRelative, title } from "./lib/format"
 import { markMessageTailDetached, prependOlderMessages, trimToLiveTail, type MessageWindow } from "./lib/message-window"
 import { displayMessageText } from "./lib/message-text"
+import { deriveSessionStatus, deriveViewStatus, reconcileSessionUiState, sessionStatusLabel, type DerivedSessionStatus } from "./lib/session-status"
+import { syncViewSessionsInParallel, viewSessionsInOrder } from "./lib/view-sync"
 import {
   abortSession,
   createProject,
@@ -33,6 +36,7 @@ import {
   replyQuestion,
   sendPrompt,
   subscribeEvents,
+  updateSessionUiState,
   updateView,
   updateProjectFolders,
   updateViewFocus,
@@ -67,6 +71,7 @@ type PaletteCommand = {
   disabled?: string
   run: () => void | Promise<void>
 }
+type PaletteCommandGroup = { title: string; start: number; commands: PaletteCommand[] }
 
 const NAV_ITEMS = [
   { name: "dashboard", label: "Dashboard", icon: "dashboard", shortcut: "Ctrl+D", description: "Workspace command center" },
@@ -80,11 +85,11 @@ const NAV_ITEMS = [
 
 const GLOBAL_SHORTCUT_KEYS = new Set(["b", "/", "n", "p", "r", "d", "1", "2", "3", "4", "5", "6"])
 const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
-const SESSION_MESSAGE_PAGE_LIMIT = 96
+const SESSION_MESSAGE_PAGE_LIMIT = 128
 const VIEW_MESSAGE_PAGE_LIMIT = 48
-const SESSION_MESSAGE_WINDOW: MessageWindow = { count: 96, budget: 28_000 }
-const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 14_000 }
-const LIVE_SYNC_INTERVAL_MS = 500
+const SESSION_MESSAGE_WINDOW: MessageWindow = { count: 128, budget: 100_000 }
+const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 28_000 }
+const LIVE_SYNC_INTERVAL_MS = CLIENT_SESSION_SYNC_INTERVAL_MS
 const SNAPSHOT_SYNC_INTERVAL_MS = 5_000
 const SIDEBAR_ACTIVE_WINDOW_MS = 15 * 60 * 1000
 const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
@@ -113,10 +118,10 @@ const TUI_COMMAND_SHORTCUTS: Record<string, string> = {
   "theme.switch": "Ctrl+X T",
   "app.exit": "Ctrl+C / Ctrl+D / Ctrl+X Q",
 }
+const COMMAND_PALETTE_PINNED_CATEGORIES = ["OpencodeX", "Swarms", "Views"]
 
 type RailSectionName = "projects" | "recent" | "swarms" | "views"
 type DragTarget = { type: "project"; id: string } | { type: "view"; id: string }
-type SidebarSessionSource = "project" | "recent"
 type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
 type PendingViewSession = {
   id: string
@@ -125,7 +130,6 @@ type PendingViewSession = {
   directory?: string
 }
 type ViewItem = { kind: "session"; session: Session } | { kind: "pending"; slot: PendingViewSession }
-type DerivedSessionStatus = "dormant" | "in_progress" | "input_needed" | "ready_for_review" | "failed"
 
 export function App() {
   const [client, setClient] = createSignal<GuiClient>()
@@ -150,9 +154,6 @@ export function App() {
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
   const [railSections, setRailSections] = createSignal<Record<RailSectionName, boolean>>({ projects: false, recent: false, swarms: false, views: true })
   const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>({})
-  const [sidebarSessionSource, setSidebarSessionSource] = createSignal<{ sessionID: string; source: SidebarSessionSource }>()
-  const [viewedSessions, setViewedSessions] = createSignal(readViewedSessions())
-  const [readyReviewSessions, setReadyReviewSessions] = createSignal<Record<string, number>>({})
   const [viewAgents, setViewAgents] = createSignal<Record<string, string>>({})
   const [viewModels, setViewModels] = createSignal<Record<string, string>>({})
   const [viewVariants, setViewVariants] = createSignal<Record<string, string>>({})
@@ -165,6 +166,7 @@ export function App() {
   let lastActiveViewMembershipKey = ""
   let viewComposerFocusToken = 0
   let viewFocusPersistTimer: ReturnType<typeof setTimeout> | undefined
+  const viewSessionLoadPromises = new Map<string, { key: string; promise: Promise<void> }>()
   const seenEventIDs = new Set<string>()
   const seenEventIDOrder: string[] = []
   let liveSyncRunning = false
@@ -184,6 +186,12 @@ export function App() {
     if (current.name !== "session") return ""
     return current.sessionID
   })
+  const activeSessionRouteKey = createMemo(() => {
+    const current = route()
+    if (current.name === "session") return current.sessionID
+    if (current.name === "new-session") return `new:${current.projectID ?? ""}:${current.directory ?? ""}`
+    return ""
+  })
   const activeSessionData = createMemo(() => sessionDataSessionID() === activeSessionID() ? sessionData() : EMPTY_SESSION_DATA)
   const activeSessionLoading = createMemo(() => Boolean(activeSessionID()) && sessionDataSessionID() !== activeSessionID())
   const activeView = createMemo(() => {
@@ -192,11 +200,7 @@ export function App() {
     return (snapshot()?.views ?? []).find((view) => view.id === current.viewID) ?? snapshot()?.views[0]
   })
   const activeViewSessions = createMemo(() => {
-    const byID = new Map((snapshot()?.sessions ?? []).map((session) => [session.id, session]))
-    return (activeView()?.sessionIDs ?? [])
-      .map((sessionID) => byID.get(sessionID))
-      .filter((session): session is Session => session !== undefined)
-      .slice(0, 8)
+    return viewSessionsInOrder(activeView()).slice(0, 8)
   })
   const activeViewItems = createMemo<ViewItem[]>(() => [
     ...activeViewSessions().map((session): ViewItem => ({ kind: "session", session })),
@@ -233,12 +237,11 @@ export function App() {
   const visibleSessions = createMemo(() => tuiSidebarSessions(snapshot()))
   const recentSessions = createMemo(() => visibleSessions().filter((session) => isRecentSessionUpdate(session.time.updated)))
 
-  async function refresh(options: { preserveSessionStatus?: boolean } = {}) {
+  async function refresh() {
     const gui = client()
     if (!gui) return
-    const currentStatus = snapshot()?.sessionStatus ?? {}
     const next = await loadSnapshot(gui)
-    setSnapshot(options.preserveSessionStatus ? { ...next, sessionStatus: { ...currentStatus, ...next.sessionStatus } } : next)
+    setSnapshot((current) => current ? mergeSnapshot(current, next) : next)
     const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
     if (models.join("\n") === recentModels().join("\n")) return
     setRecentModels(models)
@@ -248,8 +251,10 @@ export function App() {
   async function refreshSessionCards() {
     const gui = client()
     if (!gui) return
-    const next = await loadSessionCards(gui)
-    setSnapshot((current) => current ? { ...current, ...next } : current)
+    const result = await loadSessionCards(gui, snapshot()?.sessionSyncRevision)
+    if (!result.changed) return
+    const next = { ...result.snapshot, sessionSyncRevision: result.revision }
+    setSnapshot((current) => current ? mergeSessionCardSnapshot(current, next) : current)
     const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
     if (models.join("\n") === recentModels().join("\n")) return
     setRecentModels(models)
@@ -310,14 +315,22 @@ export function App() {
     const gui = client()
     if (!gui) return
     if (!options.force && viewSessionData()[session.id] && (viewSessionLoadedTimes()[session.id] ?? 0) >= session.time.updated) return
+    const loadKey = `${session.id}\n${session.directory ?? ""}\n${session.time.updated}`
+    const existing = viewSessionLoadPromises.get(session.id)
+    if (existing?.key === loadKey) return existing.promise
     setViewLoadingSessions((current) => ({ ...current, [session.id]: true }))
-    try {
+    const promise = (async () => {
       const data = trimToLiveTail(await loadSession(gui, session.id, session.directory, { messageLimit: VIEW_MESSAGE_PAGE_LIMIT, messageRenderBudget: VIEW_MESSAGE_WINDOW.budget, includeSideData: false }), VIEW_MESSAGE_WINDOW)
+      if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
       setViewSessionData((current) => ({ ...current, [session.id]: data }))
       setViewSessionLoadedTimes((current) => ({ ...current, [session.id]: session.time.updated }))
-    } finally {
+    })().finally(() => {
+      if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
+      viewSessionLoadPromises.delete(session.id)
       setViewLoadingSessions((current) => ({ ...current, [session.id]: false }))
-    }
+    })
+    viewSessionLoadPromises.set(session.id, { key: loadKey, promise })
+    return promise
   }
 
   async function loadOlderSessionMessages(sessionID: string, before: string) {
@@ -359,22 +372,40 @@ export function App() {
   }
 
   async function syncActiveViewSessions() {
-    const sessions = activeViewSessions()
-    const focused = sessions.find((session) => session.id === activeViewFocusedSessionID())
-    if (focused) await syncViewSession(focused)
-    await Promise.all(sessions.filter((session) => session.id !== focused?.id).map((session) => syncViewSession(session)))
+    await syncViewSessionsInParallel(activeViewSessions(), activeViewFocusedSessionID(), syncViewSession)
   }
 
   function applySessionStatusEvent(sessionID: string, status: NonNullable<GuiSnapshot["sessionStatus"][string]>) {
     setSnapshot((current) => {
       if (!current) return current
-      if (status.type === "idle") {
-        return {
+      const next = status.type === "idle"
+        ? {
           ...current,
           sessionStatus: Object.fromEntries(Object.entries(current.sessionStatus).filter(([id]) => id !== sessionID)),
         }
-      }
-      return { ...current, sessionStatus: { ...current.sessionStatus, [sessionID]: status } }
+        : { ...current, sessionStatus: { ...current.sessionStatus, [sessionID]: status } }
+      return reconcileSessionUiState(next, sessionID)
+    })
+  }
+
+  function applySessionStateEvent(sessionID: string, state: OpencodeXSessionState) {
+    setSnapshot((current) => {
+      if (!current) return current
+      const existing = current.sessionUiState[sessionID]
+      return reconcileSessionUiState({
+        ...current,
+        sessionUiState: {
+          ...current.sessionUiState,
+          [sessionID]: {
+            sessionID,
+            ...(state.seenAt === undefined ? {} : { seenAt: state.seenAt }),
+            ...(state.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
+            reviewedFiles: state.reviewedFiles,
+            displayStatus: existing?.displayStatus ?? "idle",
+            updated: existing?.updated ?? false,
+          },
+        },
+      }, sessionID)
     })
   }
 
@@ -411,15 +442,6 @@ export function App() {
     const status = snapshot()?.sessionStatus[session.id]?.type
     if (status === "busy" || status === "retry") return true
     return data ? isLikelyActiveSession(session, data) : false
-  }
-
-  function clearSessionReadyForReview(sessionID: string) {
-    setReadyReviewSessions((current) => {
-      if (!(sessionID in current)) return current
-      const next = { ...current }
-      delete next[sessionID]
-      return next
-    })
   }
 
   function applySessionDataEvent(event: GlobalEvent) {
@@ -518,9 +540,14 @@ export function App() {
       return
     }
 
+    if (kind === "opencodex.session_state.updated" && properties) {
+      applySessionStateEvent((properties as { sessionID: string; state: OpencodeXSessionState }).sessionID, (properties as { sessionID: string; state: OpencodeXSessionState }).state)
+      return
+    }
+
     if (applySessionDataEvent(event) || applySnapshotEvent(event) || isHighFrequencySessionEvent(event)) return
 
-    void refresh({ preserveSessionStatus: true })
+    void refresh()
     if (sessionID) syncVisibleSession(sessionID)
   }
 
@@ -572,7 +599,7 @@ export function App() {
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       if (disposed) return
-      void syncLiveServerState().finally(() => {
+      void syncLiveServerState().catch(() => undefined).finally(() => {
         if (!disposed) timer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
       })
     }
@@ -808,11 +835,27 @@ export function App() {
   }
 
   function markSessionViewed(sessionID: string, time: number) {
-    clearSessionReadyForReview(sessionID)
-    if ((viewedSessions()[sessionID] ?? 0) >= time) return
-    const next = { ...viewedSessions(), [sessionID]: time }
-    setViewedSessions(next)
-    writeViewedSessions(next)
+    const gui = client()
+    setSnapshot((current) => {
+      if (!current) return current
+      const state = current.sessionUiState[sessionID]
+      if ((state?.seenAt ?? 0) >= time && (state?.reviewedAt ?? 0) >= time) return current
+      return reconcileSessionUiState({
+        ...current,
+        sessionUiState: {
+          ...current.sessionUiState,
+          [sessionID]: {
+            sessionID,
+            seenAt: Math.max(time, state?.seenAt ?? 0),
+            reviewedAt: Math.max(time, state?.reviewedAt ?? 0),
+            reviewedFiles: state?.reviewedFiles ?? [],
+            displayStatus: state?.displayStatus ?? "idle",
+            updated: state?.updated ?? false,
+          },
+        },
+      }, sessionID)
+    })
+    if (gui) void updateSessionUiState(gui, sessionID, { seenAt: time, reviewedAt: time }).catch(() => undefined)
   }
 
   function toggleRailSection(name: RailSectionName) {
@@ -827,22 +870,12 @@ export function App() {
     return expandedProjectIDs()[projectID] ?? true
   }
 
-  function openSidebarSession(sessionID: string, source: SidebarSessionSource) {
-    setSidebarSessionSource({ sessionID, source })
+  function openSession(sessionID: string) {
     setRoute({ name: "session", sessionID })
   }
 
-  function sidebarSessionActive(sessionID: string, source: SidebarSessionSource) {
-    const selected = sidebarSessionSource()
-    if (activeSessionID() !== sessionID) return false
-    if (selected?.sessionID !== sessionID) return source === "project"
-    return selected.source === source
-  }
-
-  function sidebarLastViewed(session: Session) {
-    const viewed = viewedSessions()[session.id] ?? 0
-    if (route().name === "views" && activeViewSessions().some((item) => item.id === session.id)) return Math.max(viewed, session.time.updated)
-    return viewed
+  function sidebarSessionActive(sessionID: string) {
+    return activeSessionID() === sessionID
   }
 
   async function handleAbortSession(sessionID: string) {
@@ -1540,7 +1573,7 @@ export function App() {
                         </div>
                       )}>
                         {(session) => (
-                          <SidebarSessionLink session={session} snapshot={snapshot()} readyReviewSessions={readyReviewSessions()} lastViewed={sidebarLastViewed(session)} active={sidebarSessionActive(session.id, "project")} nested onClick={() => openSidebarSession(session.id, "project")} />
+                          <SidebarSessionLink session={session} snapshot={snapshot} active={sidebarSessionActive(session.id)} nested onClick={() => openSession(session.id)} />
                         )}
                       </For>
                     </div>
@@ -1552,7 +1585,7 @@ export function App() {
           <RailSection title="Recent Sessions" count={recentSessions().length} collapsed={railSections().recent} toggle={() => toggleRailSection("recent")} action={() => void runAction(() => handleCreateSession())}>
             <For each={recentSessions()}>
               {(session) => (
-                <SidebarSessionLink session={session} snapshot={snapshot()} readyReviewSessions={readyReviewSessions()} lastViewed={sidebarLastViewed(session)} active={sidebarSessionActive(session.id, "recent")} onClick={() => openSidebarSession(session.id, "recent")} />
+                <SidebarSessionLink session={session} snapshot={snapshot} active={sidebarSessionActive(session.id)} onClick={() => openSession(session.id)} />
               )}
             </For>
           </RailSection>
@@ -1573,7 +1606,7 @@ export function App() {
                       void runAction(() => handleMoveView(view.id, event.key === "ArrowUp" ? -1 : 1))
                     }}
                   ><Icon name="grip" /></button>
-                  <button title={`${title(view.title)} - ${viewSessionCount(view)} sessions`} class="session-link" onClick={() => setRoute({ name: "views", viewID: view.id })}><span>{title(view.title)}</span><small>{viewSessionCount(view)} sessions</small></button>
+                  <SidebarViewLink view={view} snapshot={snapshot} active={route().name === "views" && activeView()?.id === view.id} onClick={() => setRoute({ name: "views", viewID: view.id })} />
                 </div>
               )}
             </For>
@@ -1595,7 +1628,6 @@ export function App() {
             <Match when={route().name === "dashboard"}>
               <Dashboard
                 snapshot={snapshot()}
-                readyReviewSessions={readyReviewSessions()}
                 setRoute={setRoute}
                 refresh={refresh}
                 createProject={() => void runAction(handleCreateProject)}
@@ -1608,42 +1640,46 @@ export function App() {
               />
             </Match>
             <Match when={route().name === "session" || route().name === "new-session"}>
-              <SessionPage
-                session={selectedSession()}
-                data={activeSessionData()}
-                loading={activeSessionLoading()}
-                prompt={prompt()}
-                setPrompt={setPrompt}
-                providers={snapshot()?.providers ?? []}
-                agents={snapshot()?.agents ?? []}
-                selectedAgent={selectedAgent()}
-                setSelectedAgent={setSelectedAgent}
-                selectedModel={selectedModel()}
-                recentModels={recentModels()}
-                setSelectedModel={(value) => {
-                  setSelectedModel(value)
-                  setSelectedVariant("")
-                  if (value) rememberModel(value)
-                }}
-                selectedVariant={selectedVariant()}
-                setSelectedVariant={setSelectedVariant}
-                submit={submitPrompt}
-                permissions={selectedPermissions()}
-                questions={selectedQuestions()}
-                replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
-                replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
-                rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
-                abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
-                renameSession={(session) => void runAction(() => handleRenameSession(session))}
-                moveSession={(session) => void runAction(() => handleMoveSession(session))}
-                deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
-                status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
-                pending={route().name === "new-session"}
-                messageWindow={SESSION_MESSAGE_WINDOW}
-                loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
-                reloadLatestMessages={() => selectedSession() ? runAction(() => reloadLatestSessionMessages(selectedSession()!.id)) : Promise.resolve()}
-                onFollowBottomChange={(sessionID, value) => setSessionFollowingBottom(sessionID, value)}
-              />
+              <Show when={activeSessionRouteKey()} keyed={true}>
+                {(_key) => (
+                  <SessionPage
+                    session={selectedSession()}
+                    data={activeSessionData()}
+                    loading={activeSessionLoading()}
+                    prompt={prompt()}
+                    setPrompt={setPrompt}
+                    providers={snapshot()?.providers ?? []}
+                    agents={snapshot()?.agents ?? []}
+                    selectedAgent={selectedAgent()}
+                    setSelectedAgent={setSelectedAgent}
+                    selectedModel={selectedModel()}
+                    recentModels={recentModels()}
+                    setSelectedModel={(value) => {
+                      setSelectedModel(value)
+                      setSelectedVariant("")
+                      if (value) rememberModel(value)
+                    }}
+                    selectedVariant={selectedVariant()}
+                    setSelectedVariant={setSelectedVariant}
+                    submit={submitPrompt}
+                    permissions={selectedPermissions()}
+                    questions={selectedQuestions()}
+                    replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
+                    replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
+                    rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
+                    abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
+                    renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                    moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                    deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                    status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
+                    pending={route().name === "new-session"}
+                    messageWindow={SESSION_MESSAGE_WINDOW}
+                    loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
+                    reloadLatestMessages={() => selectedSession() ? runAction(() => reloadLatestSessionMessages(selectedSession()!.id)) : Promise.resolve()}
+                    onFollowBottomChange={(sessionID, value) => setSessionFollowingBottom(sessionID, value)}
+                  />
+                )}
+              </Show>
             </Match>
             <Match when={route().name === "sessions"}>
               <SessionCollectionPage snapshot={snapshot()} setRoute={setRoute} />
@@ -1725,16 +1761,21 @@ function CommandPaletteModal(props: { open: boolean; commands: PaletteCommand[];
       return [command.title, command.category, command.description, command.name].filter(Boolean).join(" ").toLowerCase().includes(needle)
     })
     if (needle) return commands
-    const preserveSuggestedCategory = new Set(["OpencodeX", "Swarms", "Views"])
-    const suggested = commands.filter((command) => command.suggested)
     return [
-      ...suggested.filter((command) => command.category === "OpencodeX"),
-      ...suggested.filter((command) => command.category === "Swarms"),
-      ...suggested.filter((command) => command.category === "Views"),
-      ...suggested.filter((command) => !preserveSuggestedCategory.has(command.category)),
-      ...commands.filter((command) => !(command.suggested && preserveSuggestedCategory.has(command.category))),
+      ...COMMAND_PALETTE_PINNED_CATEGORIES.flatMap((category) => commands.filter((command) => command.category === category)),
+      ...commands.filter((command) => !COMMAND_PALETTE_PINNED_CATEGORIES.includes(command.category)),
     ]
   })
+  const commandGroups = createMemo(() =>
+    visible().reduce<PaletteCommandGroup[]>((result, command, index) => {
+      const group = result.at(-1)
+      if (group?.title === command.category) {
+        group.commands.push(command)
+        return result
+      }
+      return result.concat({ title: command.category, start: index, commands: [command] })
+    }, []),
+  )
   createEffect(() => {
     if (!props.open) return
     setQuery("")
@@ -1761,7 +1802,16 @@ function CommandPaletteModal(props: { open: boolean; commands: PaletteCommand[];
   }
   return (
     <Show when={props.open}>
-      <div class="dialog-backdrop command-palette-backdrop" onMouseDown={props.close}>
+      <div
+        class="dialog-backdrop command-palette-backdrop"
+        onMouseDown={props.close}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return
+          event.preventDefault()
+          event.stopPropagation()
+          props.close()
+        }}
+      >
         <section class="command-palette-modal" onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div>
@@ -1780,6 +1830,7 @@ function CommandPaletteModal(props: { open: boolean; commands: PaletteCommand[];
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault()
+                event.stopPropagation()
                 props.close()
                 return
               }
@@ -1801,38 +1852,41 @@ function CommandPaletteModal(props: { open: boolean; commands: PaletteCommand[];
             placeholder="Search commands"
           />
           <div class="command-palette-list" role="listbox" aria-label="Commands">
-            <For each={visible()} fallback={<p class="command-palette-empty">No matching commands.</p>}>
-              {(command, index) => {
-                const shortcut = () => command.shortcut ?? TUI_COMMAND_SHORTCUTS[command.name]
-                const detail = () => command.disabled ?? command.description
-                return (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={selected() === index()}
-                    disabled={!!command.disabled}
-                    classList={{ selected: selected() === index(), suggested: !!command.suggested }}
-                    title={command.disabled}
-                    onMouseEnter={() => setSelected(index())}
-                    onClick={() => props.run(command)}
-                  >
-                    <span class="command-palette-category">{command.suggested && !query() ? suggestedCategory(command.category) : command.category}</span>
-                    <strong>{command.title}</strong>
-                    <Show when={detail()}>{(value) => <small>{value()}</small>}</Show>
-                    <Show when={shortcut()}>{(value) => <kbd>{value()}</kbd>}</Show>
-                  </button>
-                )
-              }}
+            <For each={commandGroups()} fallback={<p class="command-palette-empty">No matching commands.</p>}>
+              {(group) => (
+                <section class="command-palette-group" role="group" aria-label={group.title}>
+                  <h3>{group.title}</h3>
+                  <For each={group.commands}>
+                    {(command, index) => {
+                      const shortcut = () => command.shortcut ?? TUI_COMMAND_SHORTCUTS[command.name]
+                      const detail = () => command.disabled ?? command.description
+                      const commandIndex = () => group.start + index()
+                      return (
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selected() === commandIndex()}
+                          disabled={!!command.disabled}
+                          classList={{ selected: selected() === commandIndex(), suggested: !!command.suggested }}
+                          title={command.disabled}
+                          onMouseEnter={() => setSelected(commandIndex())}
+                          onClick={() => props.run(command)}
+                        >
+                          <strong>{command.title}</strong>
+                          <Show when={detail()}>{(value) => <small>{value()}</small>}</Show>
+                          <Show when={shortcut()}>{(value) => <kbd>{value()}</kbd>}</Show>
+                        </button>
+                      )
+                    }}
+                  </For>
+                </section>
+              )}
             </For>
           </div>
         </section>
       </div>
     </Show>
   )
-}
-
-function suggestedCategory(category: string) {
-  return category === "OpencodeX" || category === "Swarms" || category === "Views" ? category : "Suggested"
 }
 
 function DialogModal(props: { dialog?: DialogState; close: () => void }) {
@@ -1870,7 +1924,16 @@ function DialogModal(props: { dialog?: DialogState; close: () => void }) {
   return (
     <Show when={props.dialog}>
       {(current) => (
-        <div class="dialog-backdrop" onMouseDown={cancel}>
+        <div
+          class="dialog-backdrop"
+          onMouseDown={cancel}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+            cancel()
+          }}
+        >
           <form class="dialog-card" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
             <h2>{current().title}</h2>
             <Show when={current().message}>
@@ -1926,14 +1989,17 @@ function Titlebar() {
 function Icon(props: { name: string }) {
   const paths: Record<string, JSX.Element> = {
     activity: <path d="M3 12h4l2-7 4 14 2-7h5" />,
+    check: <path d="M20 6 9 17l-5-5" />,
     dashboard: <path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z" />,
     chevronDown: <path d="M6 9l6 6 6-6" />,
     chevronRight: <path d="M9 6l6 6-6 6" />,
+    circle: <circle cx="12" cy="12" r="8" />,
     folder: <path d="M3 7h7l2 2h9v10H3z" />,
     "folder-open": <path d="M3 8h6.5l2 2H21M3 8v11h16l2-9H8l-2 3H3" />,
     grip: <path d="M8 5h.01M8 12h.01M8 19h.01M16 5h.01M16 12h.01M16 19h.01" />,
     more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
     panel: <path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 5v14M6 9h.01M6 12h.01M6 15h.01" />,
+    play: <path d="M8 5l11 7-11 7z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     send: <path d="M5 19 20 5M20 5l-5 14-3-7-7-3 15-4z" />,
     session: <path d="M4 5h16v11H8l-4 4z" />,
@@ -1941,6 +2007,7 @@ function Icon(props: { name: string }) {
     stop: <path d="M8 8h8v8H8z" />,
     swarm: <path d="M12 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6 16a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 16a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM10 10l-3 6M14 10l3 6M9 19h6" />,
     views: <path d="M4 5h8v8H4zM12 11h8v8h-8z" />,
+    x: <path d="M6 6l12 12M18 6 6 18" />,
   }
   return (
     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1972,7 +2039,6 @@ function RailSection(props: { title: string; count: number; collapsed: boolean; 
 
 function Dashboard(props: {
   snapshot?: GuiSnapshot
-  readyReviewSessions: Record<string, number>
   setRoute: (route: Route) => void
   refresh: () => void
   createProject: () => void
@@ -2080,15 +2146,15 @@ function Dashboard(props: {
           <div class="dashboard-card-grid">
           <For each={recentSessions()} fallback={<EmptyCreateDashboardCard title="Create session" description="Start a new chat from the dashboard." onClick={() => props.createSession()} />}>
             {(session) => (
-              <button class="dashboard-item-card dashboard-status-card interactive" classList={{ [`status-${sidebarStatus(props.snapshot, session, props.readyReviewSessions).replaceAll("_", "-")}`]: true }} onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
+              <button class="dashboard-item-card dashboard-status-card interactive" classList={{ [`status-${sidebarStatus(props.snapshot, session).replaceAll("_", "-")}`]: true }} onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
                 <div>
                   <strong>{title(session.title)}</strong>
                 </div>
                 <footer>
                   <small>{dashboardSessionMeta(session, props.snapshot)}</small>
                 </footer>
-                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
-                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "input_needed" || sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(sidebarStatus(props.snapshot, session, props.readyReviewSessions))} /></Show>
+                <Show when={sidebarStatus(props.snapshot, session) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+                <Show when={sidebarStatus(props.snapshot, session) === "input_needed" || sidebarStatus(props.snapshot, session) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(sidebarStatus(props.snapshot, session))} /></Show>
               </button>
             )}
           </For>
@@ -2098,7 +2164,7 @@ function Dashboard(props: {
           <div class="dashboard-card-grid">
           <For each={(props.snapshot?.views ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create view" description="Build a focused multi-session view." onClick={props.createView} />}>
             {(view) => (
-              <article class="dashboard-item-card dashboard-status-card" classList={{ [`status-${viewDashboardStatus(view, props.snapshot, props.readyReviewSessions).replaceAll("_", "-")}`]: true }}>
+              <article class="dashboard-item-card dashboard-status-card" classList={{ [`status-${viewDashboardStatus(view, props.snapshot).replaceAll("_", "-")}`]: true }}>
                 <div>
                   <strong>{title(view.title)}</strong>
                   <span>{viewSessionCount(view)} sessions</span>
@@ -2106,8 +2172,8 @@ function Dashboard(props: {
                 <footer>
                   <small>{formatRelative(view.timeUpdated)}</small>
                 </footer>
-                <Show when={viewDashboardStatus(view, props.snapshot, props.readyReviewSessions) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
-                <Show when={viewDashboardStatus(view, props.snapshot, props.readyReviewSessions) === "input_needed" || viewDashboardStatus(view, props.snapshot, props.readyReviewSessions) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(viewDashboardStatus(view, props.snapshot, props.readyReviewSessions))} /></Show>
+                <Show when={viewDashboardStatus(view, props.snapshot) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+                <Show when={viewDashboardStatus(view, props.snapshot) === "input_needed" || viewDashboardStatus(view, props.snapshot) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(viewDashboardStatus(view, props.snapshot))} /></Show>
               </article>
             )}
           </For>
@@ -2117,15 +2183,15 @@ function Dashboard(props: {
           <div class="dashboard-card-grid compact">
           <For each={priorSessions()} fallback={<Empty text="No prior sessions." />}>
             {(session) => (
-              <button class="dashboard-item-card dashboard-status-card interactive compact" classList={{ [`status-${sidebarStatus(props.snapshot, session, props.readyReviewSessions).replaceAll("_", "-")}`]: true }} onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
+              <button class="dashboard-item-card dashboard-status-card interactive compact" classList={{ [`status-${sidebarStatus(props.snapshot, session).replaceAll("_", "-")}`]: true }} onClick={() => props.setRoute({ name: "session", sessionID: session.id })}>
                 <div>
                   <strong>{title(session.title)}</strong>
                 </div>
                 <footer>
                   <small>{dashboardSessionMeta(session, props.snapshot)}</small>
                 </footer>
-                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
-                <Show when={sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "input_needed" || sidebarStatus(props.snapshot, session, props.readyReviewSessions) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(sidebarStatus(props.snapshot, session, props.readyReviewSessions))} /></Show>
+                <Show when={sidebarStatus(props.snapshot, session) === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+                <Show when={sidebarStatus(props.snapshot, session) === "input_needed" || sidebarStatus(props.snapshot, session) === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(sidebarStatus(props.snapshot, session))} /></Show>
               </button>
             )}
           </For>
@@ -2566,6 +2632,7 @@ function SessionPage(props: {
               data={props.data}
               loading={props.loading}
               running={running()}
+              providers={props.providers}
               messageWindow={props.messageWindow}
               loadOlderMessages={props.loadOlderMessages}
               reloadLatestMessages={props.reloadLatestMessages}
@@ -2660,7 +2727,16 @@ function SessionPage(props: {
               </div>
             </form>
             <Show when={modelPickerOpen()}>
-              <div class="dialog-backdrop" onMouseDown={() => setModelPickerOpen(false)}>
+              <div
+                class="dialog-backdrop"
+                onMouseDown={() => setModelPickerOpen(false)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setModelPickerOpen(false)
+                }}
+              >
                 <section class="model-picker-modal" onMouseDown={(event) => event.stopPropagation()}>
                   <header>
                     <div>
@@ -2705,6 +2781,7 @@ function TranscriptPanel(props: {
   data: SessionData
   loading: boolean
   running: boolean
+  providers: Provider[]
   messageWindow: MessageWindow
   loadOlderMessages?: (cursor: string) => Promise<void>
   reloadLatestMessages?: () => Promise<void>
@@ -2877,9 +2954,11 @@ function TranscriptPanel(props: {
             </Show>
           </Show>
           <For each={visibleMessages()} fallback={<SessionEmptyState />}>
-            {(bundle) => (
+            {(bundle, index) => (
               <article class={`message ${bundle.info.role}`}>
-                <header>{bundle.info.role}</header>
+                <Show when={showTranscriptHeader(visibleMessages(), index())}>
+                  <header>{transcriptHeaderLabel(bundle.info, props.providers)}</header>
+                </Show>
                 <For each={groupTranscriptParts(bundle.parts)}>
                   {(item) => <DisplayPartView item={item} />}
                 </For>
@@ -2895,6 +2974,31 @@ function TranscriptPanel(props: {
       </div>
     </section>
   )
+}
+
+function showTranscriptHeader(messages: MessageBundle[], index: number) {
+  const message = messages[index]
+  if (!message) return false
+  if (message.info.role === "user") return true
+  return messages[index - 1]?.info.role === "user"
+}
+
+function transcriptHeaderLabel(message: MessageBundle["info"], providers: Provider[]) {
+  if (message.role === "user") return "User"
+  return assistantModelLabel(message, providers)
+}
+
+function assistantModelLabel(message: AssistantMessage, providers: Provider[]) {
+  const model = providers.find((provider) => provider.id === message.providerID)?.models[message.modelID]
+  return model?.name ?? prettifyModelID(message.modelID)
+}
+
+function prettifyModelID(modelID: string) {
+  return modelID
+    .split(/[/:_-]+/)
+    .filter(Boolean)
+    .map((part) => part.toUpperCase() === part ? part : part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
 }
 
 function ModelPickerSection(props: { title: string; selectedModel: string; options: ModelPickerOption[]; select: (providerID: string, modelID: string) => void }) {
@@ -3108,27 +3212,31 @@ function DisplayPartView(props: { item: DisplayPart }) {
 
 function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" }> }) {
   const status = createMemo(() => toolGroupStatus(props.item.parts))
+  const startCollapsed = createMemo(() => props.item.tool === "read" && props.item.parts.length > 10)
+  const [expanded, setExpanded] = createSignal(!startCollapsed())
   return (
-    <details class={`part tool tool-group ${status()}`} open>
+    <details class={`part tool tool-group ${status()}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>
         <DisclosureChevron />
         <strong>{toolGroupTitle(props.item.tool, props.item.parts)}</strong>
-        <span class="tool-status">{status()}</span>
+        <span class="tool-status">{startCollapsed() && !expanded() ? "Click to expand" : status()}</span>
       </summary>
-      <div class="tool-group-list">
-        <For each={props.item.parts}>
-          {(part) => {
-            const input = toolStateInput(part.state)
-            const metadata = toolMetadata(part.state) ?? {}
-            return (
-              <div class="tool-group-item">
-                <span>{toolDisplayTitle(part.tool, input, metadata)}</span>
-                <small>{part.state.status}</small>
-              </div>
-            )
-          }}
-        </For>
-      </div>
+      <Show when={expanded()}>
+        <div class="tool-group-list">
+          <For each={props.item.parts}>
+            {(part) => {
+              const input = toolStateInput(part.state)
+              const metadata = toolMetadata(part.state) ?? {}
+              return (
+                <div class="tool-group-item">
+                  <span>{toolDisplayTitle(part.tool, input, metadata)}</span>
+                  <small>{part.state.status}</small>
+                </div>
+              )
+            }}
+          </For>
+        </div>
+      </Show>
     </details>
   )
 }
@@ -3207,42 +3315,54 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
 
 function ToolPartView(props: { part: Extract<Part, { type: "tool" }> }) {
   const state = () => props.part.state
+  const toolClass = () => props.part.tool === "todowrite" ? "todo-update" : ""
   const input = createMemo(() => toolStateInput(state()))
   const metadata = createMemo(() => toolMetadata(state()) ?? {})
   const error = createMemo(() => toolError(state()))
+  const output = createMemo(() => toolVisibleOutput(props.part.tool, state(), metadata()))
   const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata()))
-  const defaultOpen = createMemo(() => props.part.tool === "todowrite" || state().status === "running" || state().status === "error")
+  const hasDetails = createMemo(() => toolHasVisibleDetails(props.part.tool, input(), metadata(), output(), error()))
+  const defaultOpen = createMemo(() => hasDetails() && (props.part.tool === "todowrite" || props.part.tool === "apply_patch" || state().status === "running" || state().status === "error"))
   const [expanded, setExpanded] = createSignal(defaultOpen())
   createEffect(() => {
     if (defaultOpen()) setExpanded(true)
   })
   return (
-    <details class={`part tool ${state().status}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary>
-        <DisclosureChevron />
-        <strong>{title()}</strong>
-        <span class="tool-status">{state().status}</span>
-      </summary>
-      <Show when={expanded()}>
-        <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={toolVisibleOutput(props.part.tool, state(), metadata())} error={error()} />
-        <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
-          <details class="tool-raw">
-            <summary>
-              <DisclosureChevron />
-              <span>Raw tool data</span>
-            </summary>
-            <Show when={Object.keys(input()).length > 0}>
-              <label>Input</label>
-              <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
-            </Show>
-            <Show when={Object.keys(metadata()).length > 0}>
-              <label>Metadata</label>
-              <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
-            </Show>
-          </details>
+    <Show when={hasDetails()} fallback={
+      <div class={`part tool ${state().status} ${toolClass()} no-details`}>
+        <div class="tool-summary">
+          <strong>{title()}</strong>
+          <span class="tool-status">{state().status}</span>
+        </div>
+      </div>
+    }>
+      <details class={`part tool ${state().status} ${toolClass()}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+        <summary>
+          <DisclosureChevron />
+          <strong>{title()}</strong>
+          <span class="tool-status">{state().status}</span>
+        </summary>
+        <Show when={expanded()}>
+          <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} />
+          <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
+            <details class="tool-raw">
+              <summary>
+                <DisclosureChevron />
+                <span>Raw tool data</span>
+              </summary>
+              <Show when={Object.keys(input()).length > 0}>
+                <label>Input</label>
+                <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
+              </Show>
+              <Show when={Object.keys(metadata()).length > 0}>
+                <label>Metadata</label>
+                <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
+              </Show>
+            </details>
+          </Show>
         </Show>
-      </Show>
-    </details>
+      </details>
+    </Show>
   )
 }
 
@@ -3363,7 +3483,7 @@ function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<str
   const files = createMemo(() => arrayValue(props.metadata.files).filter(isRecordValue))
   return (
     <>
-      <Show when={stringValue(props.metadata.diff)}>
+      <Show when={files().length === 0 ? stringValue(props.metadata.diff) : undefined}>
         {(diff) => <ToolDiff title={stringValue(props.input.filePath) ?? "patch"} diff={diff()} filePath={stringValue(props.input.filePath)} />}
       </Show>
       <For each={files()}>
@@ -3374,7 +3494,7 @@ function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<str
           const type = stringValue(file.type)
           return (
             <Show when={patch || type === "delete"}>
-              <Show when={patch} fallback={<ToolDeletedLines title={toolPatchTitle(type, name, file)} deletions={numberValue(file.deletions) ?? 0} />}>
+              <Show when={patch} fallback={<ToolDeletedLines title={toolPatchTitle(type, name, file)} filePath={filePath} deletions={numberValue(file.deletions) ?? 0} />}>
                 {(diff) => <ToolDiff title={toolPatchTitle(type, name, file)} diff={diff()} filePath={filePath} />}
               </Show>
             </Show>
@@ -3389,22 +3509,39 @@ function ToolDiff(props: { title: string; diff: string; filePath?: string }) {
   const contents = createMemo(() => patchContents(props.diff, props.filePath ?? props.title))
   return (
     <section class="tool-diff">
-      <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
-        {(value) => (
-          <div class="tool-file-diff">
+      <div class="tool-file-diff">
+        <ToolDiffHeader title={props.title} filePath={props.filePath} />
+        <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
+          {(value) => (
             <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle="split" virtualize={false} hunkSeparators="simple" />
-          </div>
-        )}
-      </Show>
+          )}
+        </Show>
+      </div>
     </section>
   )
 }
 
-function ToolDeletedLines(props: { title: string; deletions: number }) {
+function ToolDeletedLines(props: { title: string; filePath?: string; deletions: number }) {
   return (
     <section class="tool-diff">
-      <p class="tool-deleted-lines">-{props.deletions} line{props.deletions === 1 ? "" : "s"}</p>
+      <div class="tool-file-diff">
+        <ToolDiffHeader title={props.title} filePath={props.filePath} />
+        <p class="tool-deleted-lines">-{props.deletions} line{props.deletions === 1 ? "" : "s"}</p>
+      </div>
     </section>
+  )
+}
+
+function ToolDiffHeader(props: { title: string; filePath?: string }) {
+  const path = createMemo(() => props.filePath ?? props.title)
+  const filename = createMemo(() => path().split(/[\\/]/).filter(Boolean).at(-1) ?? path())
+  return (
+    <header class="tool-file-diff-header">
+      <strong>{filename()}</strong>
+      <Show when={path() !== filename()}>
+        <span>{path()}</span>
+      </Show>
+    </header>
   )
 }
 
@@ -3424,13 +3561,20 @@ function ToolTodos(props: { input: Record<string, unknown>; metadata: Record<str
     <Show when={todos().length > 0}>
       <div class="tool-todos">
         <For each={todos().filter(isRecordValue)}>
-          {(todo) => (
-            <div class={`tool-todo ${stringValue(todo.status) ?? "pending"}`}>
-              <span>{formatTodoStatus(stringValue(todo.status))}</span>
-              <strong>{stringValue(todo.content) ?? "Todo"}</strong>
-              <small>{stringValue(todo.priority) ?? ""}</small>
-            </div>
-          )}
+          {(todo) => {
+            const status = stringValue(todo.status) ?? "pending"
+            return (
+              <div class={`tool-todo ${status}`}>
+                <span class="tool-todo-status" title={formatTodoStatus(status)} aria-label={formatTodoStatus(status)}>
+                  <Show when={todoStatusIcon(status)}>
+                    {(icon) => <Icon name={icon()} />}
+                  </Show>
+                </span>
+                <strong>{stringValue(todo.content) ?? "Todo"}</strong>
+                <small>{stringValue(todo.priority) ?? ""}</small>
+              </div>
+            )
+          }}
         </For>
       </div>
     </Show>
@@ -3489,6 +3633,15 @@ function toolHasRichDetails(tool: string, metadata: Record<string, unknown>, inp
     arrayValue(input.questions).length ||
     stringValue(input.content),
   )
+}
+
+function toolHasVisibleDetails(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>, output: string, error?: string) {
+  if (error) return true
+  if (tool === "read") return false
+  if (output.trim()) return true
+  if (toolHasRichDetails(tool, metadata, input)) return true
+  if (arrayValue(metadata.diagnostics).length > 0) return true
+  return shouldShowRawToolData(tool, input, metadata)
 }
 
 function shouldShowRawToolData(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>) {
@@ -3565,10 +3718,17 @@ function toolPatchTitle(type: string | undefined, name: string, file: Record<str
 }
 
 function formatTodoStatus(status: string | undefined) {
-  if (status === "completed") return "done"
-  if (status === "in_progress") return "doing"
-  if (status === "cancelled") return "cancelled"
-  return "todo"
+  if (status === "completed") return "Completed"
+  if (status === "in_progress") return "In progress"
+  if (status === "cancelled") return "Cancelled"
+  return "Pending"
+}
+
+function todoStatusIcon(status: string | undefined) {
+  if (status === "completed") return "check"
+  if (status === "in_progress") return "play"
+  if (status === "cancelled") return "x"
+  return
 }
 
 function languageFromPath(path: string | undefined) {
@@ -3815,13 +3975,8 @@ function viewSessionCount(view: OpencodeXView) {
   return view.sessionIDs.length + pendingViewSessions(view).length
 }
 
-function viewDashboardStatus(view: GuiSnapshot["views"][number], snapshot?: GuiSnapshot, readyReviewSessions: Record<string, number> = {}): DerivedSessionStatus {
-  const sessions = new Map(tuiSidebarSessions(snapshot).map((session) => [session.id, session]))
-  const statuses = view.sessionIDs.map((sessionID) => sessions.get(sessionID)).filter((session): session is Session => Boolean(session)).map((session) => sidebarStatus(snapshot, session, readyReviewSessions))
-  if (statuses.includes("input_needed")) return "input_needed"
-  if (statuses.includes("in_progress")) return "in_progress"
-  if (statuses.includes("ready_for_review")) return "ready_for_review"
-  return "dormant"
+function viewDashboardStatus(view: GuiSnapshot["views"][number], snapshot?: GuiSnapshot): DerivedSessionStatus {
+  return deriveViewStatus(view, snapshot)
 }
 
 function isRecentSessionUpdate(timeUpdated: number, now = Date.now()) {
@@ -3834,16 +3989,8 @@ function recentProjectSessions(sessions: Session[]) {
   return recent.length >= PROJECT_RECENT_SESSION_LIMIT ? recent : sorted.slice(0, PROJECT_RECENT_SESSION_LIMIT)
 }
 
-function isRunningBackendStatus(status: string | undefined) {
-  return status === "busy" || status === "retry"
-}
-
-function sidebarStatus(snapshot: GuiSnapshot | undefined, session: Session, readyReviewSessions: Record<string, number> = {}): DerivedSessionStatus {
-  if ((snapshot?.permissions ?? []).some((request) => request.sessionID === session.id) || (snapshot?.questions ?? []).some((request) => request.sessionID === session.id)) return "input_needed"
-  const status = snapshot?.sessionStatus[session.id]?.type
-  if (isRunningBackendStatus(status)) return "in_progress"
-  if (readyReviewSessions[session.id]) return "ready_for_review"
-  return "dormant"
+function sidebarStatus(snapshot: GuiSnapshot | undefined, session: Session): DerivedSessionStatus {
+  return deriveSessionStatus(snapshot, session)
 }
 
 function isLikelyActiveSession(session: Session, data: SessionData) {
@@ -3856,27 +4003,101 @@ function isLikelyActiveSession(session: Session, data: SessionData) {
   return lastAssistant.parts.length > 0
 }
 
-function sidebarStatusLabel(status: string) {
-  if (status === "in_progress") return "running"
-  if (status === "input_needed") return "needs input"
-  if (status === "ready_for_review") return "ready for review"
-  if (status === "failed") return "failed"
-  return "idle"
+const sidebarStatusLabel = sessionStatusLabel
+
+function statusClass(status: DerivedSessionStatus) {
+  return `status-${status.replaceAll("_", "-")}`
 }
 
-function SidebarSessionLink(props: { session: Session; snapshot?: GuiSnapshot; readyReviewSessions: Record<string, number>; lastViewed: number; active: boolean; nested?: boolean; onClick: () => void }) {
-  const status = createMemo(() => sidebarStatus(props.snapshot, props.session, props.readyReviewSessions))
+function mergeSnapshot(snapshot: GuiSnapshot, next: GuiSnapshot): GuiSnapshot {
+  const cardSnapshot = mergeSessionCardSnapshot(snapshot, next)
+  const merged = {
+    ...snapshot,
+    ...cardSnapshot,
+    providers: stableValue(snapshot.providers, next.providers),
+    agents: stableValue(snapshot.agents, next.agents),
+    swarms: stableValue(snapshot.swarms, next.swarms),
+    jobs: stableValue(snapshot.jobs, next.jobs),
+  }
+  return snapshot === merged
+    || (
+      snapshot.projects === merged.projects
+      && snapshot.sessions === merged.sessions
+      && snapshot.views === merged.views
+      && snapshot.sessionStatus === merged.sessionStatus
+      && snapshot.sessionUiState === merged.sessionUiState
+      && snapshot.permissions === merged.permissions
+      && snapshot.questions === merged.questions
+      && snapshot.providers === merged.providers
+      && snapshot.agents === merged.agents
+      && snapshot.swarms === merged.swarms
+      && snapshot.jobs === merged.jobs
+      && snapshot.sessionSyncRevision === merged.sessionSyncRevision
+    )
+    ? snapshot
+    : merged
+}
+
+function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCardSnapshot): GuiSnapshot {
+  const merged = {
+    ...snapshot,
+    projects: stableValue(snapshot.projects, next.projects),
+    sessions: stableValue(snapshot.sessions, next.sessions),
+    views: stableValue(snapshot.views, next.views),
+    sessionStatus: stableValue(snapshot.sessionStatus, next.sessionStatus),
+    sessionUiState: stableValue(snapshot.sessionUiState, next.sessionUiState),
+    permissions: stableValue(snapshot.permissions, next.permissions),
+    questions: stableValue(snapshot.questions, next.questions),
+    sessionSyncRevision: next.sessionSyncRevision,
+  }
+  return snapshot.projects === merged.projects
+    && snapshot.sessions === merged.sessions
+    && snapshot.views === merged.views
+    && snapshot.sessionStatus === merged.sessionStatus
+    && snapshot.sessionUiState === merged.sessionUiState
+    && snapshot.permissions === merged.permissions
+    && snapshot.questions === merged.questions
+    && snapshot.sessionSyncRevision === merged.sessionSyncRevision
+    ? snapshot
+    : merged
+}
+
+function stableValue<T>(current: T, next: T): T {
+  return JSON.stringify(current) === JSON.stringify(next) ? current : next
+}
+
+function SidebarSessionLink(props: { session: Session; snapshot: () => GuiSnapshot | undefined; active: boolean; nested?: boolean; onClick: () => void }) {
+  const status = createMemo(() => sidebarStatus(props.snapshot(), props.session))
   const subtitle = createMemo(() => [props.session.model?.id?.slice((props.session.model?.id ?? "").lastIndexOf("/") + 1), formatRelative(props.session.time.updated)].filter(Boolean).join(" - "))
   return (
     <button
       title={`${title(props.session.title)} - ${sidebarStatusLabel(status())} - ${formatRelative(props.session.time.updated)}`}
-      class="session-link"
-      classList={{ active: props.active, nested: props.nested, [`status-${status().replaceAll("_", "-")}`]: true }}
+      class={`session-link ${statusClass(status())}`}
+      classList={{ active: props.active, nested: props.nested }}
       onClick={props.onClick}
     >
       <span>{title(props.session.title)}</span>
       <small>
         <span>{subtitle()}</span>
+      </small>
+      <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
+      <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(status())} /></Show>
+    </button>
+  )
+}
+
+function SidebarViewLink(props: { view: OpencodeXView; snapshot: () => GuiSnapshot | undefined; active: boolean; onClick: () => void }) {
+  const status = createMemo(() => viewDashboardStatus(props.view, props.snapshot()))
+  return (
+    <button
+      title={`${title(props.view.title)} - ${sidebarStatusLabel(status())} - ${viewSessionCount(props.view)} sessions`}
+      class={`session-link ${statusClass(status())}`}
+      classList={{ active: props.active }}
+      onClick={props.onClick}
+    >
+      <span>{title(props.view.title)}</span>
+      <small>
+        <span>{viewSessionCount(props.view)} sessions</span>
       </small>
       <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
       <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sidebarStatusLabel(status())} /></Show>
@@ -4155,6 +4376,7 @@ function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSnapshot {
           sessions: project.sessions.filter((session) => session.id !== deletedSessionID),
         })),
         sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== deletedSessionID)),
+        sessionUiState: Object.fromEntries(Object.entries(snapshot.sessionUiState).filter(([id]) => id !== deletedSessionID)),
         permissions: snapshot.permissions.filter((request) => request.sessionID !== deletedSessionID),
         questions: snapshot.questions.filter((request) => request.sessionID !== deletedSessionID),
       }
@@ -4170,10 +4392,14 @@ function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSnapshot {
         always: requestProperties.always,
         tool: requestProperties.tool,
       }
-      return { ...snapshot, permissions: upsertByID(snapshot.permissions, request) }
+      return reconcileSessionUiState({ ...snapshot, permissions: upsertByID(snapshot.permissions, request) }, request.sessionID)
     }
-    case "permission.replied":
-      return { ...snapshot, permissions: snapshot.permissions.filter((request) => request.id !== (properties as { requestID: string }).requestID) }
+    case "permission.replied": {
+      const reply = properties as { requestID: string; sessionID?: string }
+      const sessionID = reply.sessionID ?? snapshot.permissions.find((request) => request.id === reply.requestID)?.sessionID
+      const next = { ...snapshot, permissions: snapshot.permissions.filter((request) => request.id !== reply.requestID) }
+      return sessionID ? reconcileSessionUiState(next, sessionID) : next
+    }
     case "question.asked": {
       const requestProperties = properties as QuestionRequest
       const request: QuestionRequest = {
@@ -4182,27 +4408,37 @@ function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSnapshot {
         questions: requestProperties.questions,
         tool: requestProperties.tool,
       }
-      return { ...snapshot, questions: upsertByID(snapshot.questions, request) }
+      return reconcileSessionUiState({ ...snapshot, questions: upsertByID(snapshot.questions, request) }, request.sessionID)
     }
     case "question.replied":
-    case "question.rejected":
-      return { ...snapshot, questions: snapshot.questions.filter((request) => request.id !== (properties as { requestID: string }).requestID) }
+    case "question.rejected": {
+      const reply = properties as { requestID: string; sessionID?: string }
+      const sessionID = reply.sessionID ?? snapshot.questions.find((request) => request.id === reply.requestID)?.sessionID
+      const next = { ...snapshot, questions: snapshot.questions.filter((request) => request.id !== reply.requestID) }
+      return sessionID ? reconcileSessionUiState(next, sessionID) : next
+    }
     default:
       return snapshot
   }
 }
 
 function patchSnapshotSession(snapshot: GuiSnapshot, info: Session): GuiSnapshot {
-  return {
+  return reconcileSessionUiState({
     ...snapshot,
     sessions: upsertSession(snapshot.sessions, info),
-  }
+    projects: snapshot.projects.map((project) => project.sessions.some((session) => session.id === info.id)
+      ? { ...project, sessions: upsertSession(project.sessions, info) }
+      : project),
+    views: snapshot.views.map((view) => view.sessions.some((session) => session.id === info.id)
+      ? { ...view, sessions: upsertSession(view.sessions, info) }
+      : view),
+  }, info.id)
 }
 
-function upsertSession(sessions: Session[], session: Session) {
+function upsertSession<T extends Session>(sessions: T[], session: Session): T[] {
   if (!isRenderableSession(session)) return sessions.filter((item) => item.id !== session.id)
   const index = sessions.findIndex((item) => item.id === session.id)
-  const next = index >= 0 ? sessions.map((item, i) => i === index ? session : item) : [...sessions, session]
+  const next = index >= 0 ? sessions.map((item, i) => i === index ? { ...item, ...session } : item) : [...sessions, session as T]
   return next.toSorted((a, b) => b.time.updated - a.time.updated)
 }
 
@@ -4293,28 +4529,6 @@ function writeRecentModels(values: string[]) {
   if (typeof localStorage === "undefined") return
   try {
     localStorage.setItem("opencodex.gui.recentModels", JSON.stringify(values.slice(0, 10)))
-  } catch {
-    return
-  }
-}
-
-function readViewedSessions() {
-  if (typeof localStorage === "undefined") return {}
-  try {
-    const raw = localStorage.getItem("opencodex.gui.viewedSessions")
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {}
-    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
-  } catch {
-    return {}
-  }
-}
-
-function writeViewedSessions(values: Record<string, number>) {
-  if (typeof localStorage === "undefined") return
-  try {
-    localStorage.setItem("opencodex.gui.viewedSessions", JSON.stringify(values))
   } catch {
     return
   }

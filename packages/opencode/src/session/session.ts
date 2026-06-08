@@ -23,7 +23,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionMessageTable, SessionTable, TodoTable } from "@opencode-ai/core/session/sql"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
@@ -47,6 +47,7 @@ const runtime = makeRuntime(Database.Service, Database.defaultLayer)
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
+const emptySessionCleanupAge = 4 * 60 * 60 * 1000
 
 function createDefaultTitle(isChild = false) {
   return (isChild ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString()
@@ -615,8 +616,68 @@ export const layer: Layer.Layer<
       return fromRow(row)
     })
 
+    const cleanupEmpty = Effect.fn("Session.cleanupEmpty")(function* () {
+      const rows = yield* db
+        .select({ id: SessionTable.id, title: SessionTable.title })
+        .from(SessionTable)
+        .where(
+          and(
+            lt(SessionTable.time_updated, Date.now() - emptySessionCleanupAge),
+            isNull(SessionTable.time_archived),
+            or(
+              eq(SessionTable.title, "New session"),
+              like(SessionTable.title, `${parentTitlePrefix}%`),
+              like(SessionTable.title, `${childTitlePrefix}%`),
+            )!,
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+
+      yield* Effect.forEach(
+        rows.filter((row) => row.title === "New session" || isDefaultTitle(row.title)),
+        (row) =>
+          Effect.gen(function* () {
+            const [message, part, sessionMessage, todo, child] = yield* Effect.all(
+              [
+                db
+                  .select({ id: MessageTable.id })
+                  .from(MessageTable)
+                  .where(eq(MessageTable.session_id, row.id))
+                  .limit(1)
+                  .get(),
+                db.select({ id: PartTable.id }).from(PartTable).where(eq(PartTable.session_id, row.id)).limit(1).get(),
+                db
+                  .select({ id: SessionMessageTable.id })
+                  .from(SessionMessageTable)
+                  .where(eq(SessionMessageTable.session_id, row.id))
+                  .limit(1)
+                  .get(),
+                db
+                  .select({ sessionID: TodoTable.session_id })
+                  .from(TodoTable)
+                  .where(eq(TodoTable.session_id, row.id))
+                  .limit(1)
+                  .get(),
+                db
+                  .select({ id: SessionTable.id })
+                  .from(SessionTable)
+                  .where(eq(SessionTable.parent_id, row.id))
+                  .limit(1)
+                  .get(),
+              ],
+              { concurrency: "unbounded" },
+            ).pipe(Effect.orDie)
+            if (message || part || sessionMessage || todo || child) return
+            yield* remove(row.id).pipe(Effect.ignore)
+          }),
+        { concurrency: "unbounded", discard: true },
+      )
+    })
+
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
       const ctx = yield* InstanceState.context
+      yield* cleanupEmpty()
       return yield* listByProject(db, {
         projectID: ctx.project.id,
         experimentalWorkspaces: flags.experimentalWorkspaces,
@@ -625,6 +686,7 @@ export const layer: Layer.Layer<
     })
 
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
+      yield* cleanupEmpty()
       const conditions: SQL[] = []
       if (input?.directory) conditions.push(eq(SessionTable.directory, input.directory))
       if (input?.projectID) conditions.push(eq(SessionTable.project_id, input.projectID))

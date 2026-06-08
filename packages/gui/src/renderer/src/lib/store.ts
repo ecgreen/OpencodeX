@@ -4,6 +4,7 @@ import type {
   Message,
   OpencodeXJob,
   OpencodeXProject,
+  OpencodeXSessionUiState,
   OpencodeXSwarm,
   OpencodeXView,
   Part,
@@ -16,6 +17,13 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
+import {
+  isRenderableClientSession,
+  loadClientSessionSync,
+  updateClientSessionState,
+  type ClientSessionStateUpdate,
+  type ClientSessionSyncResult,
+} from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { messageCursorBefore } from "./message-window"
 import { displayMessageText } from "./message-text"
@@ -44,6 +52,8 @@ export type GuiSnapshot = {
   projects: OpencodeXProject[]
   sessions: Session[]
   sessionStatus: Record<string, SessionStatus>
+  sessionUiState: Record<string, OpencodeXSessionUiState>
+  sessionSyncRevision?: string
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   providers: Provider[]
@@ -53,58 +63,47 @@ export type GuiSnapshot = {
   views: OpencodeXView[]
 }
 
-export type SessionCardSnapshot = Pick<GuiSnapshot, "projects" | "sessions" | "sessionStatus" | "permissions" | "questions">
+export type SessionCardSnapshot = Pick<
+  GuiSnapshot,
+  "projects" | "sessions" | "sessionStatus" | "sessionUiState" | "sessionSyncRevision" | "permissions" | "questions" | "views"
+>
 
-const SESSION_LIST_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 const ID_RANDOM_BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 let lastClientMessageIDTimestamp = 0
 let clientMessageIDCounter = 0
 
-export async function loadSessionCards(gui: GuiClient): Promise<SessionCardSnapshot> {
-  const sessionQuery = await sessionListQuery(gui)
-  const [projects, sessions] = await Promise.all([
-    gui.client.opencodex.project.list().then((x) => x.data ?? []),
-    gui.client.session.list({ start: Date.now() - SESSION_LIST_WINDOW_MS, ...sessionQuery }).then((x) => x.data ?? []),
-  ])
-  const merged = mergeSessions(sessions, projects)
-  const directories = Array.from(new Set([gui.directory, ...merged.map((session) => session.directory)].filter(Boolean)))
-  const workspaces = Array.from(new Set(merged.map((session) => session.workspaceID).filter((workspaceID): workspaceID is string => Boolean(workspaceID))))
-  const [sessionStatus, permissions, questions] = await Promise.all([
-    Promise.all([
-      ...directories.map((directory) => gui.client.session.status({ directory }).then((x) => x.data ?? {})),
-      ...workspaces.map((workspace) => gui.client.session.status({ workspace }).then((x) => x.data ?? {})),
-    ]).then((items) => Object.assign({}, ...items)),
-    Promise.all(directories.map((directory) => gui.client.permission.list({ directory }).then((x) => x.data ?? []))).then((x) => x.flat()),
-    Promise.all(directories.map((directory) => gui.client.question.list({ directory }).then((x) => x.data ?? []))).then((x) => x.flat()),
-  ])
-
-  return {
-    projects,
-    sessions: merged,
-    sessionStatus,
-    permissions,
-    questions,
-  }
+export async function loadSessionCards(gui: GuiClient, since?: string): Promise<ClientSessionSyncResult> {
+  return loadClientSessionSync({
+    client: gui.client,
+    directory: gui.directory || undefined,
+    sessionQuery: await sessionListQuery(gui),
+    since,
+    filterSession: isRenderableSession,
+  })
 }
 
 export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
-  const [cards, providers, agents, swarms, jobs, views] = await Promise.all([
+  const [cards, providers, agents, swarms, jobs] = await Promise.all([
     loadSessionCards(gui),
     gui.client.config.providers({ directory: gui.directory || undefined }).then((x) => x.data?.providers ?? []),
     gui.client.app.agents({ directory: gui.directory || undefined }).then((x) => x.data ?? []),
     gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
     gui.client.opencodex.job.list().then((x) => x.data ?? []),
-    gui.client.opencodex.view.list().then((x) => x.data ?? []),
   ])
+  const cardSnapshot = sessionSyncSnapshot(cards)
 
   return {
-    ...cards,
+    ...cardSnapshot,
+    sessionSyncRevision: cards.revision,
     providers,
     agents,
     swarms,
     jobs,
-    views,
   }
+}
+
+export async function updateSessionUiState(gui: GuiClient, sessionID: string, input: ClientSessionStateUpdate) {
+  return updateClientSessionState(gui.client, sessionID, input)
 }
 
 export async function loadSession(gui: GuiClient, sessionID: string, directory?: string, options: SessionLoadOptions = {}): Promise<SessionData> {
@@ -335,25 +334,22 @@ export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) =>
   return () => controller.abort()
 }
 
-function mergeSessions(sessions: Session[], projects: OpencodeXProject[]) {
-  return Array.from(
-    new Map(
-      [...sessions, ...projects.flatMap((project) => project.sessions as Session[])].map((session) => [session.id, session]),
-    ).values(),
-  ).filter(isRenderableSession).toSorted((a, b) => b.time.updated - a.time.updated)
-}
-
 export function isRenderableSession(session: Session) {
-  if (session.parentID) return true
-  if (session.model || session.summary || session.share || session.revert) return true
-  const tokens = session.tokens
-  if (tokens && tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write > 0) return true
-  if ((session.cost ?? 0) > 0) return true
-  return !isPlaceholderTitle(session.title)
+  return isRenderableClientSession(session)
 }
 
-function isPlaceholderTitle(title: string) {
-  return title === "New session" || /^New session - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(title)
+function sessionSyncSnapshot(result: ClientSessionSyncResult): SessionCardSnapshot {
+  if (result.changed) return { ...result.snapshot, sessionSyncRevision: result.revision }
+  return {
+    projects: [],
+    sessions: [],
+    views: [],
+    sessionStatus: {},
+    sessionUiState: {},
+    permissions: [],
+    questions: [],
+    sessionSyncRevision: result.revision,
+  }
 }
 
 async function sessionListQuery(gui: GuiClient): Promise<{ scope?: "project"; path?: string }> {

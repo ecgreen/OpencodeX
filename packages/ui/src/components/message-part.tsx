@@ -15,7 +15,7 @@ import {
 import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
-import {
+import type {
   AgentPart,
   AssistantMessage,
   FilePart,
@@ -29,7 +29,7 @@ import {
   Todo,
   QuestionAnswer,
   QuestionInfo,
-} from "@opencode-ai/sdk/v2"
+} from "@opencode-ai/sdk/v2/client"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"

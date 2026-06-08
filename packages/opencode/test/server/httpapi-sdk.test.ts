@@ -366,6 +366,105 @@ describe("HttpApi SDK", () => {
       }),
   )
 
+  serverPathParity("matches generated SDK OpencodeX session sync routes", (serverPath) =>
+    withStandardProject(serverPath, ({ sdk, directory }) =>
+      Effect.gen(function* () {
+        const first = yield* capture(() => sdk.session.create({ title: "sync-one" }))
+        const firstID = String(record(first.data).id)
+        const firstSync = yield* capture(() => sdk.opencodex.session.sync({ limit: "10" }))
+        const firstBody = record(firstSync.data)
+        const firstSnapshot = record(firstBody.snapshot)
+        const firstSessions = array(firstSnapshot.sessions)
+        const firstSession = record(firstSessions.find((session) => record(session).id === firstID))
+        const unchanged = yield* capture(() =>
+          sdk.opencodex.session.sync({ limit: "10", since: String(firstBody.revision) }),
+        )
+        const replayedBusy = yield* capture(() =>
+          sdk.sync.replay({
+            body_directory: directory,
+            events: [{
+              id: "evt_test_status_busy",
+              aggregateID: firstID,
+              seq: 1,
+              type: "session.status.1",
+              data: { sessionID: firstID, status: { type: "busy" } },
+            }],
+          }),
+        )
+        const busy = yield* capture(() =>
+          sdk.opencodex.session.sync({ limit: "10", since: String(firstBody.revision) }),
+        )
+        const busySnapshot = record(record(busy.data).snapshot)
+        const replayedIdle = yield* capture(() =>
+          sdk.sync.replay({
+            body_directory: directory,
+            events: [{
+              id: "evt_test_status_idle",
+              aggregateID: firstID,
+              seq: 2,
+              type: "session.status.1",
+              data: { sessionID: firstID, status: { type: "idle" } },
+            }],
+          }),
+        )
+        const idle = yield* capture(() =>
+          sdk.opencodex.session.sync({ limit: "10", since: String(record(busy.data).revision) }),
+        )
+        const idleSnapshot = record(record(idle.data).snapshot)
+        const updated = yield* capture(() =>
+          sdk.opencodex.sessionState.update({
+            sessionID: firstID,
+            seenAt: Date.now(),
+            reviewedAt: Date.now(),
+            reviewedFiles: ["hello.txt"],
+          }),
+        )
+        const reviewed = yield* capture(() =>
+          sdk.opencodex.session.sync({ limit: "10", since: String(firstBody.revision) }),
+        )
+        const reviewedSnapshot = record(record(reviewed.data).snapshot)
+        const reviewedUi = record(record(reviewedSnapshot.sessionUiState)[firstID])
+        const second = yield* capture(() => sdk.session.create({ title: "sync-two" }))
+        const secondID = String(record(second.data).id)
+        const afterSecond = yield* capture(() =>
+          sdk.opencodex.session.sync({ limit: "10", since: String(record(reviewed.data).revision) }),
+        )
+        const afterSecondSnapshot = record(record(afterSecond.data).snapshot)
+
+        expect(JSON.stringify(firstSnapshot)).not.toContain('"messages"')
+        expect(JSON.stringify(firstSnapshot)).not.toContain('"parts"')
+        expect(JSON.stringify(firstSnapshot)).not.toContain('"todos"')
+        expect(JSON.stringify(firstSnapshot)).not.toContain('"diffs"')
+
+        expect(statuses({ first, firstSync, unchanged, replayedBusy, busy, replayedIdle, idle, updated, reviewed, second, afterSecond })).toEqual({
+          first: 200,
+          firstSync: 200,
+          unchanged: 200,
+          replayedBusy: 200,
+          busy: 200,
+          replayedIdle: 200,
+          idle: 200,
+          updated: 200,
+          reviewed: 200,
+          second: 200,
+          afterSecond: 200,
+        })
+        expect(firstBody.changed).toBe(true)
+        expect(firstSession.title).toBe("sync-one")
+        expect(record(unchanged.data)).toEqual({ changed: false, revision: firstBody.revision })
+        expect(record(record(busySnapshot.sessionStatus)[firstID])).toEqual({ type: "busy" })
+        expect(record(record(busySnapshot.sessionUiState)[firstID]).displayStatus).toBe("in_progress")
+        expect(record(idleSnapshot.sessionStatus)[firstID]).toBeUndefined()
+        expect(array(record(updated.data).reviewedFiles)).toEqual(["hello.txt"])
+        expect(record(reviewed.data).changed).toBe(true)
+        expect(reviewedUi.displayStatus).toBe("idle")
+        expect(reviewedUi.updated).toBe(false)
+        expect(record(afterSecond.data).changed).toBe(true)
+        expect(array(afterSecondSnapshot.sessions).map((session) => record(session).id)).toContain(secondID)
+      }),
+    ),
+  )
+
   serverPathParity("matches generated SDK global and control behavior", (serverPath) =>
     Effect.gen(function* () {
       const sdk = yield* client(serverPath)

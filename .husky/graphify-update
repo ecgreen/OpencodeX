@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+if [ ! -f "graphify-out/graph.json" ]; then
+  exit 0
+fi
+
+echo "[graphify] updating graphify-out"
+
+if command -v graphify >/dev/null 2>&1; then
+  if graphify . --update; then
+    exit 0
+  fi
+  echo "[graphify] graphify command failed; trying graphify-out/.graphify_python" >&2
+fi
+
+if [ -f "graphify-out/.graphify_python" ]; then
+  graphify_python=
+  IFS= read -r graphify_python < graphify-out/.graphify_python || true
+  if [ -n "$graphify_python" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      graphify_python=$(cygpath -u "$graphify_python")
+    fi
+    case "$graphify_python" in
+      [A-Za-z]:\\*)
+        graphify_drive=${graphify_python%%:*}
+        graphify_rest=${graphify_python#?:}
+        graphify_rest=${graphify_rest//\\//}
+        case "$graphify_drive" in
+          C | c) graphify_drive=c ;;
+          D | d) graphify_drive=d ;;
+          E | e) graphify_drive=e ;;
+        esac
+        graphify_python="/$graphify_drive$graphify_rest"
+        ;;
+    esac
+    "$graphify_python" -m graphify . --update
+    exit 0
+  fi
+fi
+
+echo "[graphify] graphify command unavailable; install with: uv tool install graphifyy" >&2
+exit 127

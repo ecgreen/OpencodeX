@@ -1,13 +1,28 @@
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXSessionState } from "@/opencodex/session-state"
 import { OpencodeXView } from "@/opencodex/view"
+import { Permission } from "@/permission"
 import { Project } from "@/project/project"
+import { Question } from "@/question"
 import { SessionID } from "@/session/schema"
-import { Effect } from "effect"
+import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
+import { Database } from "@opencode-ai/core/database/database"
+import { EventTable } from "@opencode-ai/core/event/sql"
+import { versionedType } from "@opencode-ai/core/event"
+import { and, asc, eq, inArray } from "drizzle-orm"
+import { Effect, Option, Schema } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { UpdateJobPayload, UpdateProjectPayload, UpdateViewPayload } from "../groups/opencodex"
+import {
+  SessionSyncQuery,
+  UpdateJobPayload,
+  UpdateProjectPayload,
+  UpdateSessionStatePayload,
+  UpdateViewPayload,
+} from "../groups/opencodex"
 import { notFound, ProjectNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
@@ -85,12 +100,109 @@ function mapViewErrors<A, R>(
   )
 }
 
+function mergeSessions(sessions: readonly Session.Info[], projects: readonly OpencodeXProject.Info[]): Session.Info[] {
+  return [
+    ...new Map(
+      [...sessions.map(asSessionInfo), ...projects.flatMap((project) => project.sessions.map(asSessionInfo))]
+        .map((session): [SessionID, Session.Info] => [session.id, session]),
+    ).values(),
+  ].sort((a, b) => b.time.updated - a.time.updated || String(b.id).localeCompare(String(a.id)))
+}
+
+function asSessionInfo(session: Session.Info | OpencodeXProject.Info["sessions"][number]): Session.Info {
+  return stripSessionSummaryDiffs(session) as unknown as Session.Info
+}
+
+function stripSessionSummaryDiffs<T extends { summary?: { additions: number; deletions: number; files: number; diffs?: unknown } }>(session: T): T {
+  if (!session.summary?.diffs) return session
+  return {
+    ...session,
+    summary: {
+      additions: session.summary.additions,
+      deletions: session.summary.deletions,
+      files: session.summary.files,
+    },
+  } as T
+}
+
+function groupBySession<T extends { sessionID: SessionID }>(items: readonly T[]) {
+  return items.reduce<Record<string, T[]>>(
+    (result, item) => ({
+      ...result,
+      [item.sessionID]: [...(result[item.sessionID] ?? []), item],
+    }),
+    {},
+  )
+}
+
+function sessionSyncRevision(snapshot: OpencodeXSessionState.SyncSnapshot) {
+  return Bun.hash(JSON.stringify(snapshot)).toString(36)
+}
+
+const decodeSessionStatus = Schema.decodeUnknownOption(SessionStatus.Info)
+const sessionStatusEventType = versionedType(SessionStatus.Event.Status.type, 1)
+
+function persistedSessionStatus(db: Database.Interface["db"], sessionIDs: readonly SessionID[]) {
+  if (sessionIDs.length === 0) return Effect.succeed(new Map<SessionID, SessionStatus.Info>())
+  return db
+    .select({
+      sessionID: EventTable.aggregate_id,
+      data: EventTable.data,
+    })
+    .from(EventTable)
+    .where(
+      and(
+        inArray(EventTable.aggregate_id, [...new Set(sessionIDs)]),
+        eq(EventTable.type, sessionStatusEventType),
+      ),
+    )
+    .orderBy(EventTable.aggregate_id, asc(EventTable.seq))
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) =>
+        rows.reduce((result, row) => {
+          const status = decodeSessionStatus(row.data.status)
+          if (Option.isNone(status)) return result
+          if (status.value.type === "idle") {
+            result.delete(SessionID.make(row.sessionID))
+            return result
+          }
+          result.set(SessionID.make(row.sessionID), status.value)
+          return result
+        }, new Map<SessionID, SessionStatus.Info>()),
+      ),
+    )
+}
+
+function sessionStatusSnapshot(
+  persisted: Map<SessionID, SessionStatus.Info>,
+  active: Map<SessionID, SessionStatus.Info>,
+) {
+  return Object.fromEntries(
+    [...active.entries()]
+      .reduce((result, [sessionID, status]) => {
+        if (!result.has(sessionID)) result.set(sessionID, status)
+        return result
+      }, new Map(persisted))
+      .entries()
+      .toArray()
+      .toSorted(([a], [b]) => a.localeCompare(b)),
+  )
+}
+
 export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencodex", (handlers) =>
   Effect.gen(function* () {
     const service = yield* OpencodeXProject.Service
     const jobs = yield* OpencodeXJob.Service
     const swarms = yield* OpencodeXSwarm.Service
     const views = yield* OpencodeXView.Service
+    const sessions = yield* Session.Service
+    const status = yield* SessionStatus.Service
+    const permission = yield* Permission.Service
+    const question = yield* Question.Service
+    const sessionState = yield* OpencodeXSessionState.Service
+    const { db } = yield* Database.Service
 
     const listProjects = Effect.fn("OpencodeXHttpApi.listProjects")(function* () {
       return yield* service.list()
@@ -125,6 +237,77 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       payload: OpencodeXProject.CreateSessionInput
     }) {
       return yield* mapErrors(service.createSession(ctx.payload))
+    })
+
+    const sessionSync = Effect.fn("OpencodeXHttpApi.sessionSync")(function* (ctx: {
+      query: typeof SessionSyncQuery.Type
+    }) {
+      const [projects, listed, viewList, statusMap, permissions, questions] = yield* Effect.all(
+        [
+          service.list(),
+          sessions.list({
+            directory: ctx.query.scope === "project" ? undefined : ctx.query.directory,
+            scope: ctx.query.scope,
+            path: ctx.query.path,
+            roots: ctx.query.roots,
+            start: ctx.query.start,
+            search: ctx.query.search,
+            limit: ctx.query.limit,
+          }),
+          views.list(),
+          status.list(),
+          permission.list(),
+          question.list(),
+        ],
+        { concurrency: "unbounded" },
+      )
+      const lightProjects: OpencodeXProject.Info[] = projects.map((project) => ({
+        ...project,
+        sessions: project.sessions.map(stripSessionSummaryDiffs),
+      }))
+      const lightViews: OpencodeXView.Info[] = viewList.map((view) => ({
+        ...view,
+        sessions: view.sessions.map(stripSessionSummaryDiffs),
+      }))
+      const lightSessions = mergeSessions(listed.map(stripSessionSummaryDiffs), lightProjects)
+      const sessionStatus = sessionStatusSnapshot(
+        yield* persistedSessionStatus(db, lightSessions.map((session) => session.id)),
+        statusMap,
+      )
+      const sessionStates = yield* sessionState.list(lightSessions.map((session) => session.id))
+      const permissionsBySession = groupBySession(permissions)
+      const questionsBySession = groupBySession(questions)
+      const snapshot = {
+        projects: lightProjects,
+        sessions: lightSessions,
+        views: lightViews,
+        sessionStatus,
+        permissions: permissions.toSorted((a, b) => String(a.id).localeCompare(String(b.id))),
+        questions: questions.toSorted((a, b) => String(a.id).localeCompare(String(b.id))),
+        sessionUiState: Object.fromEntries(
+          lightSessions.map((session) => [
+            session.id,
+            OpencodeXSessionState.deriveUiState({
+              session,
+              status: sessionStatus[session.id],
+              permissions: permissionsBySession[session.id] ?? [],
+              questions: questionsBySession[session.id] ?? [],
+              state: sessionStates[session.id],
+            }),
+          ]),
+        ),
+      }
+      const revision = sessionSyncRevision(snapshot)
+      if (ctx.query.since === revision) return { changed: false as const, revision }
+      return { changed: true as const, revision, snapshot }
+    })
+
+    const updateSessionState = Effect.fn("OpencodeXHttpApi.updateSessionState")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof UpdateSessionStatePayload.Type
+    }) {
+      yield* SessionError.mapStorageNotFound(sessions.get(ctx.params.sessionID))
+      return yield* sessionState.update({ ...ctx.payload, sessionID: ctx.params.sessionID })
     })
 
     const moveSession = Effect.fn("OpencodeXHttpApi.moveSession")(function* (ctx: {
@@ -296,6 +479,8 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("updateProject", updateProject)
       .handle("reorderProjects", reorderProjects)
       .handle("createSession", createSession)
+      .handle("sessionSync", sessionSync)
+      .handle("updateSessionState", updateSessionState)
       .handle("moveSession", moveSession)
       .handle("removeSession", removeSession)
       .handle("removeProject", removeProject)

@@ -40,7 +40,7 @@ export function createFetch(override?: FetchHandler) {
   const session = [] as URL[]
   const fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
-    if (url.pathname === "/session") session.push(url)
+    if (url.pathname === "/session" || url.pathname === "/experimental/opencodex/session-sync") session.push(url)
 
     const overridden = await override?.(url)
     if (overridden) return overridden
@@ -48,10 +48,13 @@ export function createFetch(override?: FetchHandler) {
     switch (url.pathname) {
       case "/agent":
       case "/command":
+      case "/experimental/opencodex/project":
       case "/experimental/workspace":
       case "/experimental/workspace/status":
       case "/formatter":
       case "/lsp":
+      case "/permission":
+      case "/question":
         return json([])
       case "/config":
       case "/experimental/resource":
@@ -69,6 +72,20 @@ export function createFetch(override?: FetchHandler) {
         return json({ id: "proj_test" })
       case "/provider":
         return json({ all: [], default: {}, connected: [] })
+      case "/experimental/opencodex/session-sync":
+        return json({
+          changed: true,
+          revision: "empty",
+          snapshot: {
+            projects: [],
+            sessions: [],
+            views: [],
+            sessionStatus: {},
+            permissions: [],
+            questions: [],
+            sessionUiState: {},
+          },
+        })
       case "/session":
         return json([])
       case "/vcs":

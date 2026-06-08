@@ -1,0 +1,1102 @@
+{
+  "packages/gui/package.json": {
+    "mtime": 1780873112.5006294,
+    "ast_hash": "850298c46d84f1ea456736b94a730f95",
+    "semantic_hash": "850298c46d84f1ea456736b94a730f95"
+  },
+  "packages/gui/scripts/copy-sidecar.ts": {
+    "mtime": 1780542021.6147277,
+    "ast_hash": "eb44300aaac3531370a8fc3fa206999c",
+    "semantic_hash": "eb44300aaac3531370a8fc3fa206999c"
+  },
+  "packages/gui/scripts/install-local-windows.ps1": {
+    "mtime": 1780605541.8141377,
+    "ast_hash": "ff4b0d7e258d1088db99f59edf414487",
+    "semantic_hash": "ff4b0d7e258d1088db99f59edf414487"
+  },
+  "packages/gui/scripts/qa-backend-parity.ts": {
+    "mtime": 1780602868.2836266,
+    "ast_hash": "b1e0d8c7fd18c7771dadfa3e23fd03b0",
+    "semantic_hash": "b1e0d8c7fd18c7771dadfa3e23fd03b0"
+  },
+  "packages/gui/scripts/qa-issue.ts": {
+    "mtime": 1780601670.7815483,
+    "ast_hash": "ff0da295e7678052be8abd9b5d776b05",
+    "semantic_hash": "ff0da295e7678052be8abd9b5d776b05"
+  },
+  "packages/gui/src/main/index.ts": {
+    "mtime": 1780868297.2769337,
+    "ast_hash": "8e18789b55b9276f40c0541bb21f2f6e",
+    "semantic_hash": "8e18789b55b9276f40c0541bb21f2f6e"
+  },
+  "packages/gui/src/main/sidecar.ts": {
+    "mtime": 1780873650.3270175,
+    "ast_hash": "aab47582aec1dc620b08750ce34b6ecc",
+    "semantic_hash": "aab47582aec1dc620b08750ce34b6ecc"
+  },
+  "packages/gui/src/preload/index.ts": {
+    "mtime": 1780600801.0754173,
+    "ast_hash": "8a255a6a14b6a0b2614463466eff1246",
+    "semantic_hash": "8a255a6a14b6a0b2614463466eff1246"
+  },
+  "packages/gui/src/renderer/global.d.ts": {
+    "mtime": 1780600801.0764225,
+    "ast_hash": "a6ced0f52134a00d366683030a9f8433",
+    "semantic_hash": "a6ced0f52134a00d366683030a9f8433"
+  },
+  "packages/gui/src/renderer/src/app.tsx": {
+    "mtime": 1780902444.750702,
+    "ast_hash": "ff2e4626cdc65dc8975e0ad5c33c4c59",
+    "semantic_hash": "ff2e4626cdc65dc8975e0ad5c33c4c59"
+  },
+  "packages/gui/src/renderer/src/lib/client.ts": {
+    "mtime": 1780600801.0764225,
+    "ast_hash": "c1045d3f0467ec6c59c9709f197d0d94",
+    "semantic_hash": "c1045d3f0467ec6c59c9709f197d0d94"
+  },
+  "packages/gui/src/renderer/src/lib/format.ts": {
+    "mtime": 1780541540.4773564,
+    "ast_hash": "e8b2853dea34b3609b967dd8bc69386e",
+    "semantic_hash": "e8b2853dea34b3609b967dd8bc69386e"
+  },
+  "packages/gui/src/renderer/src/lib/message-text.ts": {
+    "mtime": 1780621594.3689487,
+    "ast_hash": "9aa0fdfc92155107198c37150e0378ec",
+    "semantic_hash": "9aa0fdfc92155107198c37150e0378ec"
+  },
+  "packages/gui/src/renderer/src/lib/message-window.ts": {
+    "mtime": 1780706281.777604,
+    "ast_hash": "c878a2199ad1b5b955d4505ce73b3c1c",
+    "semantic_hash": "c878a2199ad1b5b955d4505ce73b3c1c"
+  },
+  "packages/gui/src/renderer/src/lib/store.ts": {
+    "mtime": 1780861984.3827078,
+    "ast_hash": "8fdc8e8bc356b1b4a0a3fac89422b6ea",
+    "semantic_hash": "8fdc8e8bc356b1b4a0a3fac89422b6ea"
+  },
+  "packages/gui/src/renderer/src/main.tsx": {
+    "mtime": 1780617875.1101477,
+    "ast_hash": "522809d145253a8e63c9a1035eb3dad8",
+    "semantic_hash": "522809d145253a8e63c9a1035eb3dad8"
+  },
+  "packages/gui/test/message-text.test.ts": {
+    "mtime": 1780621594.3700616,
+    "ast_hash": "dbb62e226de432678998e13654b30485",
+    "semantic_hash": "dbb62e226de432678998e13654b30485"
+  },
+  "packages/gui/test/message-window.test.ts": {
+    "mtime": 1780695166.5888793,
+    "ast_hash": "6ca5e0d9d53e4a46274e19fb65af19f4",
+    "semantic_hash": "6ca5e0d9d53e4a46274e19fb65af19f4"
+  },
+  "packages/gui/test/store.parity.test.ts": {
+    "mtime": 1780902394.2048435,
+    "ast_hash": "8300ceb0f2ce2f66cbcebebe4a1a9546",
+    "semantic_hash": "8300ceb0f2ce2f66cbcebebe4a1a9546"
+  },
+  "packages/gui/tsconfig.json": {
+    "mtime": 1780542125.4989765,
+    "ast_hash": "30f70e3dee1b25a92ae9d3ed917610bf",
+    "semantic_hash": "30f70e3dee1b25a92ae9d3ed917610bf"
+  },
+  "packages/gui/tsconfig.main.json": {
+    "mtime": 1780542057.4696732,
+    "ast_hash": "49e2714fdeab926635fbb45ff738bd1b",
+    "semantic_hash": "49e2714fdeab926635fbb45ff738bd1b"
+  },
+  "packages/gui/tsconfig.preload.json": {
+    "mtime": 1780542057.4706724,
+    "ast_hash": "4f60380cc5397159e2c6afb71db833a5",
+    "semantic_hash": "4f60380cc5397159e2c6afb71db833a5"
+  },
+  "packages/gui/vite.config.mjs": {
+    "mtime": 1780813072.2694056,
+    "ast_hash": "cef02199c3dd7c7887bc2daff9ba2e2d",
+    "semantic_hash": "cef02199c3dd7c7887bc2daff9ba2e2d"
+  },
+  "packages/opencode/src/cli/cmd/tui/app.tsx": {
+    "mtime": 1780678249.8621535,
+    "ast_hash": "209294ee440bb292dc9fda913a1be987",
+    "semantic_hash": "209294ee440bb292dc9fda913a1be987"
+  },
+  "packages/opencode/src/cli/cmd/tui/attach.ts": {
+    "mtime": 1780259917.0981767,
+    "ast_hash": "7ab7b587f03ae0abdffa052723c2d02e",
+    "semantic_hash": "7ab7b587f03ae0abdffa052723c2d02e"
+  },
+  "packages/opencode/src/cli/cmd/tui/attention.ts": {
+    "mtime": 1780259917.0981767,
+    "ast_hash": "2ee44407dcbbeb41fbd0bd9eb6acfa87",
+    "semantic_hash": "2ee44407dcbbeb41fbd0bd9eb6acfa87"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/bg-pulse-render.ts": {
+    "mtime": 1780259917.0981767,
+    "ast_hash": "fc5de88ded5a41bf5d53e6be847caf8a",
+    "semantic_hash": "fc5de88ded5a41bf5d53e6be847caf8a"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/bg-pulse.tsx": {
+    "mtime": 1780259917.0981767,
+    "ast_hash": "f9f174f6959c1b27129c7e782841b61b",
+    "semantic_hash": "f9f174f6959c1b27129c7e782841b61b"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/border.tsx": {
+    "mtime": 1780259917.107845,
+    "ast_hash": "22914d1971045eedf114d365a62dec25",
+    "semantic_hash": "22914d1971045eedf114d365a62dec25"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/command-palette.tsx": {
+    "mtime": 1780467446.7676551,
+    "ast_hash": "d0d680f05b9220d042a6ff4e3984ac57",
+    "semantic_hash": "d0d680f05b9220d042a6ff4e3984ac57"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx": {
+    "mtime": 1780259917.112011,
+    "ast_hash": "6d4640ad1d7916f4ad179fa3472bbb51",
+    "semantic_hash": "6d4640ad1d7916f4ad179fa3472bbb51"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-console-org.tsx": {
+    "mtime": 1780259917.1134362,
+    "ast_hash": "ad42ca462650cabec149010a5d1876c6",
+    "semantic_hash": "ad42ca462650cabec149010a5d1876c6"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-mcp.tsx": {
+    "mtime": 1780259917.1165557,
+    "ast_hash": "b6ac10caa4b27d0dc34534a9b3f482b3",
+    "semantic_hash": "b6ac10caa4b27d0dc34534a9b3f482b3"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx": {
+    "mtime": 1780597801.83051,
+    "ast_hash": "387ff91560887c227cb0df8adcfed372",
+    "semantic_hash": "387ff91560887c227cb0df8adcfed372"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx": {
+    "mtime": 1780259917.1208317,
+    "ast_hash": "e7d28693579abef8580e83d6a3e18b3b",
+    "semantic_hash": "e7d28693579abef8580e83d6a3e18b3b"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-retry-action.tsx": {
+    "mtime": 1780259917.1218636,
+    "ast_hash": "869bc128f7b5ebc2bd6f473389bfa114",
+    "semantic_hash": "869bc128f7b5ebc2bd6f473389bfa114"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-session-delete-failed.tsx": {
+    "mtime": 1780259917.1241293,
+    "ast_hash": "aceb8f1e96cec2d3f87b77785abdef30",
+    "semantic_hash": "aceb8f1e96cec2d3f87b77785abdef30"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-session-list.tsx": {
+    "mtime": 1780259917.125677,
+    "ast_hash": "93f863cd299e2c4ce61d38d15812de76",
+    "semantic_hash": "93f863cd299e2c4ce61d38d15812de76"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-session-rename.tsx": {
+    "mtime": 1780259917.126703,
+    "ast_hash": "b9408fc136b4f9343b4e28ee00de79cb",
+    "semantic_hash": "b9408fc136b4f9343b4e28ee00de79cb"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-skill.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "60bef6ed8ed35febc6a5807c37714727",
+    "semantic_hash": "60bef6ed8ed35febc6a5807c37714727"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-stash.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "301cb5917c4540dd645b7888794d1a9c",
+    "semantic_hash": "301cb5917c4540dd645b7888794d1a9c"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-status.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "b74fd9adb5236390be4639011b451590",
+    "semantic_hash": "b74fd9adb5236390be4639011b451590"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-tag.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "e1ecfd97c5c5a7654a169dc6dfa9089d",
+    "semantic_hash": "e1ecfd97c5c5a7654a169dc6dfa9089d"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-theme-list.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "ece24d5333917eae0f8d6469e45d1d2c",
+    "semantic_hash": "ece24d5333917eae0f8d6469e45d1d2c"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-variant.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "2cc28df4e13e85dce545c1fd36dd05bb",
+    "semantic_hash": "2cc28df4e13e85dce545c1fd36dd05bb"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-workspace-create.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "7ca478d9f2dd1422d9a7a6ef83a92620",
+    "semantic_hash": "7ca478d9f2dd1422d9a7a6ef83a92620"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-workspace-file-changes.tsx": {
+    "mtime": 1780259917.128224,
+    "ast_hash": "f741a394501748f8b84137372f48159b",
+    "semantic_hash": "f741a394501748f8b84137372f48159b"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-workspace-list.tsx": {
+    "mtime": 1780259917.141192,
+    "ast_hash": "741bb3e7d223e58a35a092937fe2ffdb",
+    "semantic_hash": "741bb3e7d223e58a35a092937fe2ffdb"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/dialog-workspace-unavailable.tsx": {
+    "mtime": 1780259917.1434305,
+    "ast_hash": "e19443062bbf9b631e6ff7f55bf701aa",
+    "semantic_hash": "e19443062bbf9b631e6ff7f55bf701aa"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/error-component.tsx": {
+    "mtime": 1780259917.14545,
+    "ast_hash": "20cb50f56650b1fc0e68eeb88cfc878d",
+    "semantic_hash": "20cb50f56650b1fc0e68eeb88cfc878d"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/logo.tsx": {
+    "mtime": 1780597801.6599321,
+    "ast_hash": "f7757d77157a1bf4ebe09af60ef6faae",
+    "semantic_hash": "f7757d77157a1bf4ebe09af60ef6faae"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-operations.tsx": {
+    "mtime": 1780861219.9160476,
+    "ast_hash": "679d54cedf9495812ed0e741289347ae",
+    "semantic_hash": "679d54cedf9495812ed0e741289347ae"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-refresh.ts": {
+    "mtime": 1780512723.127109,
+    "ast_hash": "ba1ed8b798dd18aab81719944e2e6706",
+    "semantic_hash": "ba1ed8b798dd18aab81719944e2e6706"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-session-recency.ts": {
+    "mtime": 1780598771.7484324,
+    "ast_hash": "cee08aa79916d54d450dd2779ea1c490",
+    "semantic_hash": "cee08aa79916d54d450dd2779ea1c490"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-session-state.ts": {
+    "mtime": 1780444373.151543,
+    "ast_hash": "2e07431c0b3a7cff563cbac8f6fe5720",
+    "semantic_hash": "2e07431c0b3a7cff563cbac8f6fe5720"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-session-status.ts": {
+    "mtime": 1780861647.6122851,
+    "ast_hash": "5d3289fd3fbff7330bc871b0d8f15306",
+    "semantic_hash": "5d3289fd3fbff7330bc871b0d8f15306"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-sidebar.tsx": {
+    "mtime": 1780861189.3813298,
+    "ast_hash": "426b10da20522ba08bf8f413c3aa6d5a",
+    "semantic_hash": "426b10da20522ba08bf8f413c3aa6d5a"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-view-dialog.tsx": {
+    "mtime": 1780679111.444435,
+    "ast_hash": "c0db7a7d56ca724b1941aaff09a62e44",
+    "semantic_hash": "c0db7a7d56ca724b1941aaff09a62e44"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/opencodex-views.tsx": {
+    "mtime": 1780679576.175728,
+    "ast_hash": "dbff7531a4d0797180c0c9c417e34707",
+    "semantic_hash": "dbff7531a4d0797180c0c9c417e34707"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/plugin-route-missing.tsx": {
+    "mtime": 1780259917.1479564,
+    "ast_hash": "4afdbd3da2d9518e80a792045ed5f1f2",
+    "semantic_hash": "4afdbd3da2d9518e80a792045ed5f1f2"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx": {
+    "mtime": 1780259917.1520293,
+    "ast_hash": "205a69f749ba45ed545b46f9ca0cd346",
+    "semantic_hash": "205a69f749ba45ed545b46f9ca0cd346"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/cwd.ts": {
+    "mtime": 1780259917.1540308,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/drafts.tsx": {
+    "mtime": 1780348787.4239962,
+    "ast_hash": "2497099cf45935846aee5fd739e329a5",
+    "semantic_hash": "2497099cf45935846aee5fd739e329a5"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/frecency.tsx": {
+    "mtime": 1780259917.1560316,
+    "ast_hash": "b77f3267ded91d138dd52421fc24691f",
+    "semantic_hash": "b77f3267ded91d138dd52421fc24691f"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/history.tsx": {
+    "mtime": 1780351406.829045,
+    "ast_hash": "e210af59a8c0037d5d89bd4149ed76c7",
+    "semantic_hash": "e210af59a8c0037d5d89bd4149ed76c7"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx": {
+    "mtime": 1780679080.0686257,
+    "ast_hash": "5408a3ee36b38d773b5d3edf06357e16",
+    "semantic_hash": "5408a3ee36b38d773b5d3edf06357e16"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/part.ts": {
+    "mtime": 1780259917.1626043,
+    "ast_hash": "fa2b045f41d5ae161765d2b4292577d4",
+    "semantic_hash": "fa2b045f41d5ae161765d2b4292577d4"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/stash.tsx": {
+    "mtime": 1780259917.1647072,
+    "ast_hash": "f4a48c9e0d53ca39287e8926a9f2db32",
+    "semantic_hash": "f4a48c9e0d53ca39287e8926a9f2db32"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/prompt/traits.ts": {
+    "mtime": 1780259917.166352,
+    "ast_hash": "d15244d97336b0b38cc8b55aa219b946",
+    "semantic_hash": "d15244d97336b0b38cc8b55aa219b946"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/spinner.tsx": {
+    "mtime": 1780259917.1679099,
+    "ast_hash": "8c4e53f025c5edf7c337b9c25ba88376",
+    "semantic_hash": "8c4e53f025c5edf7c337b9c25ba88376"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/startup-loading.tsx": {
+    "mtime": 1780259917.1694922,
+    "ast_hash": "c625fbfd35a5ec2ab04d1a33078ac4be",
+    "semantic_hash": "c625fbfd35a5ec2ab04d1a33078ac4be"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/todo-item.tsx": {
+    "mtime": 1780259917.170477,
+    "ast_hash": "2e2356d532ac2e88ba30e301eb3a6ce3",
+    "semantic_hash": "2e2356d532ac2e88ba30e301eb3a6ce3"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/use-connected.tsx": {
+    "mtime": 1780259917.1726725,
+    "ast_hash": "a6d5dfbb1059d47ec14bc7ea42ddcd72",
+    "semantic_hash": "a6d5dfbb1059d47ec14bc7ea42ddcd72"
+  },
+  "packages/opencode/src/cli/cmd/tui/component/workspace-label.tsx": {
+    "mtime": 1780259917.1746671,
+    "ast_hash": "99ef289f1dbe08aad0afe8646de859db",
+    "semantic_hash": "99ef289f1dbe08aad0afe8646de859db"
+  },
+  "packages/opencode/src/cli/cmd/tui/config/cwd.ts": {
+    "mtime": 1780259917.1782482,
+    "ast_hash": "e82110b95fb3eb316b63a240fae8b3a7",
+    "semantic_hash": "e82110b95fb3eb316b63a240fae8b3a7"
+  },
+  "packages/opencode/src/cli/cmd/tui/config/keybind.ts": {
+    "mtime": 1780518117.1162288,
+    "ast_hash": "73caba39df53bd2f05fb8c0bfb055e6f",
+    "semantic_hash": "73caba39df53bd2f05fb8c0bfb055e6f"
+  },
+  "packages/opencode/src/cli/cmd/tui/config/tui-migrate.ts": {
+    "mtime": 1780597801.6629317,
+    "ast_hash": "528b0e280894e3e33aa5d7210b3fdc63",
+    "semantic_hash": "528b0e280894e3e33aa5d7210b3fdc63"
+  },
+  "packages/opencode/src/cli/cmd/tui/config/tui-schema.ts": {
+    "mtime": 1780259917.1822577,
+    "ast_hash": "21da014efd6a5db3e5df0ed118d02677",
+    "semantic_hash": "21da014efd6a5db3e5df0ed118d02677"
+  },
+  "packages/opencode/src/cli/cmd/tui/config/tui.ts": {
+    "mtime": 1780259917.1822577,
+    "ast_hash": "29269263e18ae9edfec8df41c866a793",
+    "semantic_hash": "29269263e18ae9edfec8df41c866a793"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/aggregate-failures.ts": {
+    "mtime": 1780259917.1822577,
+    "ast_hash": "617ced6bda690ef3e2d6d465f47f5a56",
+    "semantic_hash": "617ced6bda690ef3e2d6d465f47f5a56"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/args.tsx": {
+    "mtime": 1780259917.1906521,
+    "ast_hash": "5f86ff27b72beea86cd7eef6fea5b874",
+    "semantic_hash": "5f86ff27b72beea86cd7eef6fea5b874"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/directory.ts": {
+    "mtime": 1780259917.1906521,
+    "ast_hash": "4aa7d8e7fd621c3853a981bcf2907d87",
+    "semantic_hash": "4aa7d8e7fd621c3853a981bcf2907d87"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/editor-zed.ts": {
+    "mtime": 1780259917.1906521,
+    "ast_hash": "d51e58cc02c2f959ce18a3708be9dfc6",
+    "semantic_hash": "d51e58cc02c2f959ce18a3708be9dfc6"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/editor.ts": {
+    "mtime": 1780259917.1970475,
+    "ast_hash": "8bbccdd5208f6dff13d81eb9c28d0d73",
+    "semantic_hash": "8bbccdd5208f6dff13d81eb9c28d0d73"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/event.ts": {
+    "mtime": 1780685220.9359262,
+    "ast_hash": "2444bfeb598e23b8ab224b1d2c533f2c",
+    "semantic_hash": "2444bfeb598e23b8ab224b1d2c533f2c"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/exit.tsx": {
+    "mtime": 1780259917.2013307,
+    "ast_hash": "3163518f4b6267302d59bbcf15b0f416",
+    "semantic_hash": "3163518f4b6267302d59bbcf15b0f416"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/helper.tsx": {
+    "mtime": 1780259917.202329,
+    "ast_hash": "7b87644819ae1b895aa691419d9d05b7",
+    "semantic_hash": "7b87644819ae1b895aa691419d9d05b7"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/kv.tsx": {
+    "mtime": 1780259917.2033274,
+    "ast_hash": "fa3790582f77a99212e3266eaefdc0cb",
+    "semantic_hash": "fa3790582f77a99212e3266eaefdc0cb"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/local.tsx": {
+    "mtime": 1780868287.5884335,
+    "ast_hash": "6f24239c7b58a14d66569b6b601401f3",
+    "semantic_hash": "6f24239c7b58a14d66569b6b601401f3"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/path-format.tsx": {
+    "mtime": 1780259917.2085266,
+    "ast_hash": "68c9c137d1989d682ec4702455448876",
+    "semantic_hash": "68c9c137d1989d682ec4702455448876"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/project.tsx": {
+    "mtime": 1780259917.2095318,
+    "ast_hash": "7946bc7f3804786567f3fc08a1d642fe",
+    "semantic_hash": "7946bc7f3804786567f3fc08a1d642fe"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/prompt.tsx": {
+    "mtime": 1780259917.2120686,
+    "ast_hash": "df297111166393fdd26ead7f5095a417",
+    "semantic_hash": "df297111166393fdd26ead7f5095a417"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/route.tsx": {
+    "mtime": 1780450796.17193,
+    "ast_hash": "83762374576c22d8ab456e6f76b3a728",
+    "semantic_hash": "83762374576c22d8ab456e6f76b3a728"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/sdk.tsx": {
+    "mtime": 1780708044.4517794,
+    "ast_hash": "62446ec610047fda5986241fa5d730ff",
+    "semantic_hash": "62446ec610047fda5986241fa5d730ff"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/sync-v2.tsx": {
+    "mtime": 1780259917.2150717,
+    "ast_hash": "b09218a900a550baf736d3549730736d",
+    "semantic_hash": "b09218a900a550baf736d3549730736d"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/sync.tsx": {
+    "mtime": 1780861152.819733,
+    "ast_hash": "2c8d23b448057a5b2ee4045e50a0c022",
+    "semantic_hash": "2c8d23b448057a5b2ee4045e50a0c022"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme.tsx": {
+    "mtime": 1780259917.2176492,
+    "ast_hash": "aebd50c91b5d347bea2d9ff9a0157c23",
+    "semantic_hash": "aebd50c91b5d347bea2d9ff9a0157c23"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/aura.json": {
+    "mtime": 1780259917.2202497,
+    "ast_hash": "746b46b59b4bf7beee6d49cf1b1ed9a8",
+    "semantic_hash": "746b46b59b4bf7beee6d49cf1b1ed9a8"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/ayu.json": {
+    "mtime": 1780259917.2248418,
+    "ast_hash": "ee282045820db0cca7854d2034673a82",
+    "semantic_hash": "ee282045820db0cca7854d2034673a82"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/carbonfox.json": {
+    "mtime": 1780259917.2263854,
+    "ast_hash": "01e2b10842154a00c4df37f2f7662d5b",
+    "semantic_hash": "01e2b10842154a00c4df37f2f7662d5b"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/catppuccin-frappe.json": {
+    "mtime": 1780259917.228526,
+    "ast_hash": "37d6fe3db80f34b9e92a5a04c6595f96",
+    "semantic_hash": "37d6fe3db80f34b9e92a5a04c6595f96"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/catppuccin-macchiato.json": {
+    "mtime": 1780259917.2300687,
+    "ast_hash": "dcc87fea1c509f9ad7a3ae9462953d54",
+    "semantic_hash": "dcc87fea1c509f9ad7a3ae9462953d54"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/catppuccin.json": {
+    "mtime": 1780259917.2319782,
+    "ast_hash": "71005f7e91a46e726104ef022dd15eb0",
+    "semantic_hash": "71005f7e91a46e726104ef022dd15eb0"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/cobalt2.json": {
+    "mtime": 1780259917.23354,
+    "ast_hash": "4c9e8edce5123f6216d502b8f5d6d688",
+    "semantic_hash": "4c9e8edce5123f6216d502b8f5d6d688"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/cursor.json": {
+    "mtime": 1780259917.235577,
+    "ast_hash": "68590071f9733be3f7d6a9a4ecb59d37",
+    "semantic_hash": "68590071f9733be3f7d6a9a4ecb59d37"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/dracula.json": {
+    "mtime": 1780259917.2365766,
+    "ast_hash": "9798b488bf2a3313fd899c6f3e40536d",
+    "semantic_hash": "9798b488bf2a3313fd899c6f3e40536d"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/everforest.json": {
+    "mtime": 1780259917.2375984,
+    "ast_hash": "679c98bddd8334f9eb2dc0b5361df382",
+    "semantic_hash": "679c98bddd8334f9eb2dc0b5361df382"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/flexoki.json": {
+    "mtime": 1780259917.2412758,
+    "ast_hash": "ef25919f7ed0585b4e8baa82f0af6589",
+    "semantic_hash": "ef25919f7ed0585b4e8baa82f0af6589"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/github.json": {
+    "mtime": 1780259917.2432735,
+    "ast_hash": "7cdf9155777cbe94e67a654789389a6b",
+    "semantic_hash": "7cdf9155777cbe94e67a654789389a6b"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/gruvbox.json": {
+    "mtime": 1780259917.2442741,
+    "ast_hash": "0a7eb830a476ffac3e69e3c5d539f5e7",
+    "semantic_hash": "0a7eb830a476ffac3e69e3c5d539f5e7"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/kanagawa.json": {
+    "mtime": 1780259917.245533,
+    "ast_hash": "794dabc0b1014e67839164e05aca17fd",
+    "semantic_hash": "794dabc0b1014e67839164e05aca17fd"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/lucent-orng.json": {
+    "mtime": 1780259917.2480397,
+    "ast_hash": "595af0c9b3bfccb7df7998a8d3193d37",
+    "semantic_hash": "595af0c9b3bfccb7df7998a8d3193d37"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/material.json": {
+    "mtime": 1780259917.2490394,
+    "ast_hash": "83b076482b4ba3b546a374edbc117c15",
+    "semantic_hash": "83b076482b4ba3b546a374edbc117c15"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/matrix.json": {
+    "mtime": 1780259917.2518091,
+    "ast_hash": "4d26b4b9ea1659ff77c86aae4af71188",
+    "semantic_hash": "4d26b4b9ea1659ff77c86aae4af71188"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/mercury.json": {
+    "mtime": 1780259917.2538817,
+    "ast_hash": "ccda14ca67c621c28232f38341c2f0af",
+    "semantic_hash": "ccda14ca67c621c28232f38341c2f0af"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/monokai.json": {
+    "mtime": 1780259917.2554436,
+    "ast_hash": "d556f8a2cc4294e412df565e785401c2",
+    "semantic_hash": "d556f8a2cc4294e412df565e785401c2"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/nightowl.json": {
+    "mtime": 1780259917.2581449,
+    "ast_hash": "e2e7eeebd8c729aaf2287f785e4e702e",
+    "semantic_hash": "e2e7eeebd8c729aaf2287f785e4e702e"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/nord.json": {
+    "mtime": 1780259917.2602103,
+    "ast_hash": "bc158773cce73871f80f97d2fc807265",
+    "semantic_hash": "bc158773cce73871f80f97d2fc807265"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/one-dark.json": {
+    "mtime": 1780259917.2617772,
+    "ast_hash": "85fa7debb4cb2959322a9288daf46649",
+    "semantic_hash": "85fa7debb4cb2959322a9288daf46649"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/opencode.json": {
+    "mtime": 1780259917.2628198,
+    "ast_hash": "5ae956fb682d880597a894239fafb7ee",
+    "semantic_hash": "5ae956fb682d880597a894239fafb7ee"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/orng.json": {
+    "mtime": 1780259917.2660153,
+    "ast_hash": "753330af89b8816c8c30c0216e224305",
+    "semantic_hash": "753330af89b8816c8c30c0216e224305"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/osaka-jade.json": {
+    "mtime": 1780259917.2688706,
+    "ast_hash": "f387601ae7954cf66cfaaa0015e180f4",
+    "semantic_hash": "f387601ae7954cf66cfaaa0015e180f4"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/palenight.json": {
+    "mtime": 1780259917.2704751,
+    "ast_hash": "553f2825c9b96386635f4cee688ee5c4",
+    "semantic_hash": "553f2825c9b96386635f4cee688ee5c4"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/rosepine.json": {
+    "mtime": 1780259917.272552,
+    "ast_hash": "2ecc43c5f966016840636af172f33c9c",
+    "semantic_hash": "2ecc43c5f966016840636af172f33c9c"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/solarized.json": {
+    "mtime": 1780259917.2746284,
+    "ast_hash": "29ecb1b0ac59a66abf762d813d908312",
+    "semantic_hash": "29ecb1b0ac59a66abf762d813d908312"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/synthwave84.json": {
+    "mtime": 1780259917.2762923,
+    "ast_hash": "0a36b57a62e3a5680453e0f1584e7aa4",
+    "semantic_hash": "0a36b57a62e3a5680453e0f1584e7aa4"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/tokyonight.json": {
+    "mtime": 1780259917.2779827,
+    "ast_hash": "b03b53913deee60a97c1675011a9b739",
+    "semantic_hash": "b03b53913deee60a97c1675011a9b739"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/vercel.json": {
+    "mtime": 1780259917.278499,
+    "ast_hash": "be32edc3cb34aec7711daff02026c8e8",
+    "semantic_hash": "be32edc3cb34aec7711daff02026c8e8"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/vesper.json": {
+    "mtime": 1780259917.278499,
+    "ast_hash": "0f7bd4f6064d93d707e666187a323e8a",
+    "semantic_hash": "0f7bd4f6064d93d707e666187a323e8a"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/theme/zenburn.json": {
+    "mtime": 1780259917.278499,
+    "ast_hash": "ab708634740708e35f70f4e72432ffab",
+    "semantic_hash": "ab708634740708e35f70f4e72432ffab"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/thinking.ts": {
+    "mtime": 1780259917.278499,
+    "ast_hash": "68c17549a6aeb562d5cfcf3e10fa3da4",
+    "semantic_hash": "68c17549a6aeb562d5cfcf3e10fa3da4"
+  },
+  "packages/opencode/src/cli/cmd/tui/context/tui-config.tsx": {
+    "mtime": 1780259917.278499,
+    "ast_hash": "cd98302c660eb8c6e6827a608a64e1e9",
+    "semantic_hash": "cd98302c660eb8c6e6827a608a64e1e9"
+  },
+  "packages/opencode/src/cli/cmd/tui/coordinator-registry.ts": {
+    "mtime": 1780599725.6593208,
+    "ast_hash": "61df032ef924d37b21a4cab79f3a3839",
+    "semantic_hash": "61df032ef924d37b21a4cab79f3a3839"
+  },
+  "packages/opencode/src/cli/cmd/tui/coordinator.ts": {
+    "mtime": 1780523458.5719345,
+    "ast_hash": "623b4bde775adb340a5d033340576a01",
+    "semantic_hash": "623b4bde775adb340a5d033340576a01"
+  },
+  "packages/opencode/src/cli/cmd/tui/event.ts": {
+    "mtime": 1780259917.278499,
+    "ast_hash": "c066d889d6d3bf10cb50b1e1716bc1d1",
+    "semantic_hash": "c066d889d6d3bf10cb50b1e1716bc1d1"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx": {
+    "mtime": 1780259917.2935345,
+    "ast_hash": "2b5c4570cc890478dbe466819fdbc674",
+    "semantic_hash": "2b5c4570cc890478dbe466819fdbc674"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx": {
+    "mtime": 1780259917.2968352,
+    "ast_hash": "96d8ceebd376af53ebe8b9634d8924db",
+    "semantic_hash": "96d8ceebd376af53ebe8b9634d8924db"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips.tsx": {
+    "mtime": 1780259917.2984097,
+    "ast_hash": "5811a43f2dee859c2fb622392251f33d",
+    "semantic_hash": "5811a43f2dee859c2fb622392251f33d"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/session/dialog.tsx": {
+    "mtime": 1780259917.3014133,
+    "ast_hash": "fc687bcaa530074990ee8e98e6771feb",
+    "semantic_hash": "fc687bcaa530074990ee8e98e6771feb"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/session/index.tsx": {
+    "mtime": 1780259917.3039112,
+    "ast_hash": "03ff663a5ae23fc509ccab2f8888ca02",
+    "semantic_hash": "03ff663a5ae23fc509ccab2f8888ca02"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/session/preview-pane.tsx": {
+    "mtime": 1780259917.3060772,
+    "ast_hash": "f916b6199cbc7ec3ab4c5c34c5574863",
+    "semantic_hash": "f916b6199cbc7ec3ab4c5c34c5574863"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/session/util.tsx": {
+    "mtime": 1780259917.3075829,
+    "ast_hash": "2a0a88bc4c47a531459e0870c1542a1e",
+    "semantic_hash": "2a0a88bc4c47a531459e0870c1542a1e"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/context.tsx": {
+    "mtime": 1780259917.312018,
+    "ast_hash": "2e36332591350cd5c461635407b4685c",
+    "semantic_hash": "2e36332591350cd5c461635407b4685c"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/files.tsx": {
+    "mtime": 1780259917.3149965,
+    "ast_hash": "10e0bdbc32c4d9e95835cc1e6d25cf16",
+    "semantic_hash": "10e0bdbc32c4d9e95835cc1e6d25cf16"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx": {
+    "mtime": 1780259917.3165588,
+    "ast_hash": "534916a3860083fb1f1405fdb3db654b",
+    "semantic_hash": "534916a3860083fb1f1405fdb3db654b"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/lsp.tsx": {
+    "mtime": 1780259917.3181014,
+    "ast_hash": "2fe72f2ddcc1aa0e4b0ea6f05900b88f",
+    "semantic_hash": "2fe72f2ddcc1aa0e4b0ea6f05900b88f"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/mcp.tsx": {
+    "mtime": 1780259917.3196774,
+    "ast_hash": "6108a4c85acbc6dd9847a9bcf8f181cb",
+    "semantic_hash": "6108a4c85acbc6dd9847a9bcf8f181cb"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/todo.tsx": {
+    "mtime": 1780259917.3217356,
+    "ast_hash": "edb99b598296789379ff56b29c5103ca",
+    "semantic_hash": "edb99b598296789379ff56b29c5103ca"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/diff-viewer-file-tree-utils.ts": {
+    "mtime": 1780259917.3251553,
+    "ast_hash": "c9983576313465cb4e7a5c3cbff1808d",
+    "semantic_hash": "c9983576313465cb4e7a5c3cbff1808d"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/diff-viewer-file-tree.tsx": {
+    "mtime": 1780259917.3271852,
+    "ast_hash": "f0517ce67d3ed0852d5aa5573fb0c29d",
+    "semantic_hash": "f0517ce67d3ed0852d5aa5573fb0c29d"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/diff-viewer-ui.tsx": {
+    "mtime": 1780259917.329187,
+    "ast_hash": "313132436ddab204bab4d9622c89de06",
+    "semantic_hash": "313132436ddab204bab4d9622c89de06"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/diff-viewer.tsx": {
+    "mtime": 1780861275.393228,
+    "ast_hash": "a07e7d5829d445c9e155f728ed5afb97",
+    "semantic_hash": "a07e7d5829d445c9e155f728ed5afb97"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/notifications.ts": {
+    "mtime": 1780259917.33274,
+    "ast_hash": "9baac2c10cc5ed20b8fd4a3b90a753b1",
+    "semantic_hash": "9baac2c10cc5ed20b8fd4a3b90a753b1"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/plugins.tsx": {
+    "mtime": 1780259917.3347397,
+    "ast_hash": "be1e0ffa2b9bdbf3e2cd51283d729221",
+    "semantic_hash": "be1e0ffa2b9bdbf3e2cd51283d729221"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/session-v2.tsx": {
+    "mtime": 1780259917.3367426,
+    "ast_hash": "ba3e0cc62bf32961a133917630452720",
+    "semantic_hash": "ba3e0cc62bf32961a133917630452720"
+  },
+  "packages/opencode/src/cli/cmd/tui/feature-plugins/system/which-key.tsx": {
+    "mtime": 1780259917.337831,
+    "ast_hash": "62c9253651ad950f24951278d8c34734",
+    "semantic_hash": "62c9253651ad950f24951278d8c34734"
+  },
+  "packages/opencode/src/cli/cmd/tui/keymap.tsx": {
+    "mtime": 1780259917.3398335,
+    "ast_hash": "66f9b2380dfdfffd6306d260f55bf4dc",
+    "semantic_hash": "66f9b2380dfdfffd6306d260f55bf4dc"
+  },
+  "packages/opencode/src/cli/cmd/tui/layer.ts": {
+    "mtime": 1780259917.340831,
+    "ast_hash": "ed568adf1834e6325b3ceb8190d924f5",
+    "semantic_hash": "ed568adf1834e6325b3ceb8190d924f5"
+  },
+  "packages/opencode/src/cli/cmd/tui/plugin/api.tsx": {
+    "mtime": 1780597801.6629317,
+    "ast_hash": "23f6aa08a20d4f2df61af9dfaaa6aeed",
+    "semantic_hash": "23f6aa08a20d4f2df61af9dfaaa6aeed"
+  },
+  "packages/opencode/src/cli/cmd/tui/plugin/command-shim.ts": {
+    "mtime": 1780259917.3472643,
+    "ast_hash": "fe6c2d88e5504e823c71c8dffb04fd42",
+    "semantic_hash": "fe6c2d88e5504e823c71c8dffb04fd42"
+  },
+  "packages/opencode/src/cli/cmd/tui/plugin/internal.ts": {
+    "mtime": 1780259917.3472643,
+    "ast_hash": "fdbe414502783ee481b45ec8555fe0cb",
+    "semantic_hash": "fdbe414502783ee481b45ec8555fe0cb"
+  },
+  "packages/opencode/src/cli/cmd/tui/plugin/runtime.ts": {
+    "mtime": 1780259917.3492737,
+    "ast_hash": "f7f096199c31974f8e2a2822c2c04d0a",
+    "semantic_hash": "f7f096199c31974f8e2a2822c2c04d0a"
+  },
+  "packages/opencode/src/cli/cmd/tui/plugin/slots.tsx": {
+    "mtime": 1780259917.3512836,
+    "ast_hash": "bc0e164fa94c821daff197d467373ab5",
+    "semantic_hash": "bc0e164fa94c821daff197d467373ab5"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/home.tsx": {
+    "mtime": 1780597801.6639318,
+    "ast_hash": "f50e038a4340a5d10a20fd8f2498425d",
+    "semantic_hash": "f50e038a4340a5d10a20fd8f2498425d"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/dialog-fork-from-timeline.tsx": {
+    "mtime": 1780259917.3591459,
+    "ast_hash": "c5d18f9bf523a88c327e759d67c79b60",
+    "semantic_hash": "c5d18f9bf523a88c327e759d67c79b60"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/dialog-message.tsx": {
+    "mtime": 1780259917.3611658,
+    "ast_hash": "de3a957da625a7b59137a4f994543aaa",
+    "semantic_hash": "de3a957da625a7b59137a4f994543aaa"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/dialog-subagent.tsx": {
+    "mtime": 1780259917.3642416,
+    "ast_hash": "0a96876ea8196c4dac082923e4a9f23e",
+    "semantic_hash": "0a96876ea8196c4dac082923e4a9f23e"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/dialog-timeline.tsx": {
+    "mtime": 1780259917.3663213,
+    "ast_hash": "6d7cf5e555596e7e53de2e4852e01138",
+    "semantic_hash": "6d7cf5e555596e7e53de2e4852e01138"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/footer.tsx": {
+    "mtime": 1780259917.3678803,
+    "ast_hash": "a65e64638de1fde8986c39ff334acfbe",
+    "semantic_hash": "a65e64638de1fde8986c39ff334acfbe"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/index.tsx": {
+    "mtime": 1780473337.0791028,
+    "ast_hash": "ba6d34de8709a08401d6fd7cb6ae9ae8",
+    "semantic_hash": "ba6d34de8709a08401d6fd7cb6ae9ae8"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/permission.tsx": {
+    "mtime": 1780259917.3717399,
+    "ast_hash": "44e70d2e11f77671584cb5eba9ea7e38",
+    "semantic_hash": "44e70d2e11f77671584cb5eba9ea7e38"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/question.tsx": {
+    "mtime": 1780259917.3717399,
+    "ast_hash": "0496f7a885052b73f3f413d0cef498e7",
+    "semantic_hash": "0496f7a885052b73f3f413d0cef498e7"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/sidebar.tsx": {
+    "mtime": 1780259917.3717399,
+    "ast_hash": "4b81955cbe0b61d3a50eba1455876794",
+    "semantic_hash": "4b81955cbe0b61d3a50eba1455876794"
+  },
+  "packages/opencode/src/cli/cmd/tui/routes/session/subagent-footer.tsx": {
+    "mtime": 1780259917.3764868,
+    "ast_hash": "a4c4c4470e2779df291d68e48c9afbcf",
+    "semantic_hash": "a4c4c4470e2779df291d68e48c9afbcf"
+  },
+  "packages/opencode/src/cli/cmd/tui/thread.ts": {
+    "mtime": 1780523419.5274434,
+    "ast_hash": "29cbae72c25e55309997508f3137b360",
+    "semantic_hash": "29cbae72c25e55309997508f3137b360"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-alert.tsx": {
+    "mtime": 1780259917.3821201,
+    "ast_hash": "572e34872d13c615661add433e648aff",
+    "semantic_hash": "572e34872d13c615661add433e648aff"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-confirm.tsx": {
+    "mtime": 1780259917.384769,
+    "ast_hash": "7f8265f9a6b6efd549cde9647289ed78",
+    "semantic_hash": "7f8265f9a6b6efd549cde9647289ed78"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-export-options.tsx": {
+    "mtime": 1780259917.3869596,
+    "ast_hash": "9850f9e500852ba22a0b6130b495fc0f",
+    "semantic_hash": "9850f9e500852ba22a0b6130b495fc0f"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-folder-picker.tsx": {
+    "mtime": 1780472148.101459,
+    "ast_hash": "cbc10a04e608752914afb39a98c78a8d",
+    "semantic_hash": "cbc10a04e608752914afb39a98c78a8d"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-help.tsx": {
+    "mtime": 1780259917.3885243,
+    "ast_hash": "e2e4072bf6b6a66d990680073dc7e028",
+    "semantic_hash": "e2e4072bf6b6a66d990680073dc7e028"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-prompt.tsx": {
+    "mtime": 1780436862.759293,
+    "ast_hash": "48e1cf0c9b1c0ec7a3b3b33998d5ee39",
+    "semantic_hash": "48e1cf0c9b1c0ec7a3b3b33998d5ee39"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog-select.tsx": {
+    "mtime": 1780259917.3915827,
+    "ast_hash": "4c8bdc6e4f9527199816c67edaf5cdb8",
+    "semantic_hash": "4c8bdc6e4f9527199816c67edaf5cdb8"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/dialog.tsx": {
+    "mtime": 1780259917.3929844,
+    "ast_hash": "b325c9c0fb959736976c4bcd6b57b816",
+    "semantic_hash": "b325c9c0fb959736976c4bcd6b57b816"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/link.tsx": {
+    "mtime": 1780259917.3940132,
+    "ast_hash": "d175ecf750fc897d549cdf41be0b7e53",
+    "semantic_hash": "d175ecf750fc897d549cdf41be0b7e53"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/spinner.ts": {
+    "mtime": 1780259917.3972774,
+    "ast_hash": "dc62883c4667e1a729b6df3a753f57df",
+    "semantic_hash": "dc62883c4667e1a729b6df3a753f57df"
+  },
+  "packages/opencode/src/cli/cmd/tui/ui/toast.tsx": {
+    "mtime": 1780259917.3994603,
+    "ast_hash": "671188643267c8f85f89374e38b23230",
+    "semantic_hash": "671188643267c8f85f89374e38b23230"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/audio.ts": {
+    "mtime": 1780259917.4020462,
+    "ast_hash": "063b67367677b91c79a1f78967574316",
+    "semantic_hash": "063b67367677b91c79a1f78967574316"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/clipboard.ts": {
+    "mtime": 1780259917.4041164,
+    "ast_hash": "ce3adef90dcf9dd10136ce683696cd30",
+    "semantic_hash": "ce3adef90dcf9dd10136ce683696cd30"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/collapse-tool-output.ts": {
+    "mtime": 1780259917.4056637,
+    "ast_hash": "15a4d350843531fbcbe465c3114beb9d",
+    "semantic_hash": "15a4d350843531fbcbe465c3114beb9d"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/editor.ts": {
+    "mtime": 1780259917.4076674,
+    "ast_hash": "45e32d792ef5d6ec749a4745608f5997",
+    "semantic_hash": "45e32d792ef5d6ec749a4745608f5997"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/model.ts": {
+    "mtime": 1780259917.4076674,
+    "ast_hash": "1bcef79c97d3cb96a506678fb5ef57bc",
+    "semantic_hash": "1bcef79c97d3cb96a506678fb5ef57bc"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/provider-origin.ts": {
+    "mtime": 1780259917.4076674,
+    "ast_hash": "4579ec559a884f60b7f8089972c401b4",
+    "semantic_hash": "4579ec559a884f60b7f8089972c401b4"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/revert-diff.ts": {
+    "mtime": 1780259917.412008,
+    "ast_hash": "56eccdb8de024bc82e464d0c3226c1e2",
+    "semantic_hash": "56eccdb8de024bc82e464d0c3226c1e2"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/scroll.ts": {
+    "mtime": 1780259917.4143243,
+    "ast_hash": "a29748bec3593d654b89204a7a8b30cb",
+    "semantic_hash": "a29748bec3593d654b89204a7a8b30cb"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/selection.ts": {
+    "mtime": 1780259917.4166718,
+    "ast_hash": "af40d3dea150e7e3f378a9453324f48e",
+    "semantic_hash": "af40d3dea150e7e3f378a9453324f48e"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/signal.ts": {
+    "mtime": 1780259917.417667,
+    "ast_hash": "d808e68c3670c5939897b069a1a85801",
+    "semantic_hash": "d808e68c3670c5939897b069a1a85801"
+  },
+  "packages/opencode/src/cli/cmd/tui/util/transcript.ts": {
+    "mtime": 1780259917.4186704,
+    "ast_hash": "01cd7f0fde1440542e32ea31a66e3790",
+    "semantic_hash": "01cd7f0fde1440542e32ea31a66e3790"
+  },
+  "packages/opencode/src/cli/cmd/tui/validate-session.ts": {
+    "mtime": 1780259917.420174,
+    "ast_hash": "f4d007aa5fcba8030c5cbf856d8e653a",
+    "semantic_hash": "f4d007aa5fcba8030c5cbf856d8e653a"
+  },
+  "packages/opencode/src/cli/cmd/tui/win32.ts": {
+    "mtime": 1780259917.422178,
+    "ast_hash": "7ac175f5d3bfe0f5c8d884668e31f24c",
+    "semantic_hash": "7ac175f5d3bfe0f5c8d884668e31f24c"
+  },
+  "packages/opencode/src/cli/cmd/tui/worker.ts": {
+    "mtime": 1780259917.42337,
+    "ast_hash": "ef2cbddfd461387944c4d99aba01e1f6",
+    "semantic_hash": "ef2cbddfd461387944c4d99aba01e1f6"
+  },
+  "packages/opencode/test/cli/cmd/tui/aggregate-failures.test.ts": {
+    "mtime": 1780259918.049526,
+    "ast_hash": "72032ec4aec6ff6c8f828e1b850cdf13",
+    "semantic_hash": "72032ec4aec6ff6c8f828e1b850cdf13"
+  },
+  "packages/opencode/test/cli/cmd/tui/attention.test.ts": {
+    "mtime": 1780259918.0515254,
+    "ast_hash": "e79becd657211ba22a97e361cf7c51d8",
+    "semantic_hash": "e79becd657211ba22a97e361cf7c51d8"
+  },
+  "packages/opencode/test/cli/cmd/tui/dialog-workspace-create.test.ts": {
+    "mtime": 1780259918.0525255,
+    "ast_hash": "86bde083c985bd8bb88b4195b01224ac",
+    "semantic_hash": "86bde083c985bd8bb88b4195b01224ac"
+  },
+  "packages/opencode/test/cli/cmd/tui/model-options.test.ts": {
+    "mtime": 1780259918.0547268,
+    "ast_hash": "4904d52599423f005def88ccb666ebfc",
+    "semantic_hash": "4904d52599423f005def88ccb666ebfc"
+  },
+  "packages/opencode/test/cli/cmd/tui/notifications.test.ts": {
+    "mtime": 1780259918.0562882,
+    "ast_hash": "c151897a63d27dbcd0440170062d2888",
+    "semantic_hash": "c151897a63d27dbcd0440170062d2888"
+  },
+  "packages/opencode/test/cli/cmd/tui/prompt-drafts.test.ts": {
+    "mtime": 1780345729.840069,
+    "ast_hash": "8c4e000a2a18d97c3af8436983a19709",
+    "semantic_hash": "8c4e000a2a18d97c3af8436983a19709"
+  },
+  "packages/opencode/test/cli/cmd/tui/prompt-history.test.ts": {
+    "mtime": 1780259918.0578406,
+    "ast_hash": "fe200de1dacf84bf626e70cb4f220eba",
+    "semantic_hash": "fe200de1dacf84bf626e70cb4f220eba"
+  },
+  "packages/opencode/test/cli/cmd/tui/prompt-part.test.ts": {
+    "mtime": 1780259918.0594,
+    "ast_hash": "83255b6bc7a137bf43674260a7278876",
+    "semantic_hash": "83255b6bc7a137bf43674260a7278876"
+  },
+  "packages/opencode/test/cli/cmd/tui/prompt-traits.test.ts": {
+    "mtime": 1780259918.0617812,
+    "ast_hash": "b6482c04644e2709705d9acd5fb908db",
+    "semantic_hash": "b6482c04644e2709705d9acd5fb908db"
+  },
+  "packages/opencode/test/cli/cmd/tui/provider-options.test.ts": {
+    "mtime": 1780259918.063608,
+    "ast_hash": "82fdc786a4e7f99881eb6aecdd50294c",
+    "semantic_hash": "82fdc786a4e7f99881eb6aecdd50294c"
+  },
+  "packages/opencode/test/cli/cmd/tui/sync-fixture.tsx": {
+    "mtime": 1780259918.0646753,
+    "ast_hash": "be59a0c1b5d5b02e13a39d7363823e7f",
+    "semantic_hash": "be59a0c1b5d5b02e13a39d7363823e7f"
+  },
+  "packages/opencode/test/cli/cmd/tui/sync-undefined-messages.test.tsx": {
+    "mtime": 1780259918.066682,
+    "ast_hash": "4a06b8f8799e510940612d41d4f2765d",
+    "semantic_hash": "4a06b8f8799e510940612d41d4f2765d"
+  },
+  "packages/opencode/test/cli/cmd/tui/sync.test.tsx": {
+    "mtime": 1780877127.6009452,
+    "ast_hash": "2664c2c392364792d7d63b9730bdd880",
+    "semantic_hash": "2664c2c392364792d7d63b9730bdd880"
+  },
+  "packages/opencode/test/fixture/tui-plugin.ts": {
+    "mtime": 1780259918.2323139,
+    "ast_hash": "953b5cbc1b067c2268c5077e00321555",
+    "semantic_hash": "953b5cbc1b067c2268c5077e00321555"
+  },
+  "packages/opencode/test/fixture/tui-runtime.ts": {
+    "mtime": 1780259918.2323139,
+    "ast_hash": "94be98893c6bd3846dc8fcd8e029b3bb",
+    "semantic_hash": "94be98893c6bd3846dc8fcd8e029b3bb"
+  },
+  "packages/opencode/test/fixture/tui-sdk.ts": {
+    "mtime": 1780862627.9861724,
+    "ast_hash": "c75e8dda1321899c198d28f9ea096c1c",
+    "semantic_hash": "c75e8dda1321899c198d28f9ea096c1c"
+  },
+  "packages/gui/src/renderer/src/lib/session-status.ts": {
+    "mtime": 1780876497.9436102,
+    "ast_hash": "a9e1dfffda53765f151b00dcfd81207e",
+    "semantic_hash": "a9e1dfffda53765f151b00dcfd81207e"
+  },
+  "packages/gui/src/renderer/src/lib/view-sync.ts": {
+    "mtime": 1780902367.593632,
+    "ast_hash": "5b59c12a09bd7cc61d58bd2c6f22fb05",
+    "semantic_hash": "5b59c12a09bd7cc61d58bd2c6f22fb05"
+  },
+  "packages/gui/test/session-status.test.ts": {
+    "mtime": 1780899987.0380404,
+    "ast_hash": "301f9f28640b8976051f487060e28332",
+    "semantic_hash": "301f9f28640b8976051f487060e28332"
+  },
+  "packages/gui/test/view-sync.test.ts": {
+    "mtime": 1780902403.567855,
+    "ast_hash": "ce673b921875d6b626372966783ed5c7",
+    "semantic_hash": "ce673b921875d6b626372966783ed5c7"
+  }
+}

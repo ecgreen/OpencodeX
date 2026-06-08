@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
+import { updateClientSessionState } from "@opencode-ai/sdk/v2"
 import { batch, createEffect, createMemo } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
@@ -653,6 +654,21 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         markViewed(sessionID: string, time = Date.now()) {
           setSessionStore("viewed", sessionID, time)
+          const session = sync.session.get(sessionID)
+          const current = sync.data.session_ui_state[sessionID]
+          const reviewedAt = Math.max(time, current?.reviewedAt ?? 0)
+          sync.set("session_ui_state", sessionID, {
+            sessionID,
+            seenAt: Math.max(time, current?.seenAt ?? 0),
+            reviewedAt,
+            reviewedFiles: current?.reviewedFiles ?? [],
+            displayStatus:
+              current?.displayStatus === "needs_review" && (session?.time.updated ?? 0) <= reviewedAt
+                ? "idle"
+                : (current?.displayStatus ?? "idle"),
+            updated: (session?.time.updated ?? 0) > time,
+          })
+          void updateClientSessionState(sdk.client, sessionID, { seenAt: time, reviewedAt: time }).catch(() => {})
           save()
         },
         togglePin(sessionID: string) {

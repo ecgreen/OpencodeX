@@ -17,7 +17,12 @@ import type {
   ProviderListResponse,
   ProviderAuthMethod,
   VcsInfo,
+  ClientSessionSyncResult,
+  OpencodeXProject,
+  OpencodeXView,
+  OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
+import { loadClientSessionSync } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
@@ -27,7 +32,7 @@ import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onCleanup, onMount } from "solid-js"
 import * as Log from "@opencode-ai/core/util/log"
 import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
@@ -53,10 +58,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         [sessionID: string]: QuestionRequest[]
       }
       config: Config
+      opencodex_project: OpencodeXProject[]
+      opencodex_view: OpencodeXView[]
       session: Session[]
       session_status: {
         [sessionID: string]: SessionStatus
       }
+      session_ui_state: {
+        [sessionID: string]: OpencodeXSessionUiState
+      }
+      session_sync_revision: string | undefined
       session_diff: {
         [sessionID: string]: Snapshot.FileDiff[]
       }
@@ -94,8 +105,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       command: [],
       provider: [],
       provider_default: {},
+      opencodex_project: [],
+      opencodex_view: [],
       session: [],
       session_status: {},
+      session_ui_state: {},
+      session_sync_revision: undefined,
       session_diff: {},
       todo: {},
       message: {},
@@ -113,6 +128,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const kv = useKV()
 
     const fullSyncedSessions = new Set<string>()
+    let sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
@@ -124,10 +140,75 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       }
     }
 
-    function listSessions() {
-      return sdk.client.session
-        .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
-        .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+    function listSessionSync() {
+      return loadClientSessionSync({
+        client: sdk.client,
+        directory: project.instance.directory() || sdk.directory,
+        sessionQuery: sessionListQuery(),
+        since: store.session_sync_revision,
+        statusWorkspaces: [project.workspace.current()],
+      })
+    }
+
+    function applySessionSync(result: ClientSessionSyncResult) {
+      if (!result.changed) return
+      const snapshot = result.snapshot
+      batch(() => {
+        setStore("session_sync_revision", result.revision)
+        setStore("opencodex_project", reconcile(snapshot.projects))
+        setStore("opencodex_view", reconcile(snapshot.views))
+        setStore("session", reconcile(snapshot.sessions.toSorted((a, b) => a.id.localeCompare(b.id))))
+        setStore("session_status", reconcile(snapshot.sessionStatus))
+        setStore("session_ui_state", reconcile(snapshot.sessionUiState))
+        setStore("permission", reconcile(groupRequestsBySession(snapshot.permissions)))
+        setStore("question", reconcile(groupRequestsBySession(snapshot.questions)))
+      })
+    }
+
+    function upsertSession(info: Session) {
+      const result = Binary.search(store.session, info.id, (s) => s.id)
+      if (result.found) {
+        setStore("session", result.index, reconcile(info))
+        return
+      }
+      setStore(
+        "session",
+        produce((draft) => {
+          draft.splice(result.index, 0, info)
+        }),
+      )
+    }
+
+    function queueSessionRefresh() {
+      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer)
+      sessionRefreshTimer = setTimeout(() => {
+        sessionRefreshTimer = undefined
+        void listSessionSync()
+          .then(applySessionSync)
+          .catch((error) => {
+            Log.Default.error("tui session refresh failed", {
+              error: error instanceof Error ? error.message : String(error),
+              name: error instanceof Error ? error.name : undefined,
+              stack: error instanceof Error ? error.stack : undefined,
+            })
+          })
+      }, 250)
+    }
+
+    onCleanup(() => {
+      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer)
+    })
+
+    function groupRequestsBySession<T extends { id: string; sessionID: string }>(requests: readonly T[]) {
+      return requests.reduce<Record<string, T[]>>(
+        (result, request) => ({
+          ...result,
+          [request.sessionID]: [...(result[request.sessionID] ?? []), request].toSorted((a, b) =>
+            a.id.localeCompare(b.id),
+          ),
+        }),
+        {},
+      )
     }
 
     event.subscribe((event, { workspace }) => {
@@ -228,20 +309,17 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               }),
             )
           }
+          queueSessionRefresh()
+          break
+        }
+        case "session.created": {
+          upsertSession(event.properties.info)
+          queueSessionRefresh()
           break
         }
         case "session.updated": {
-          const result = Binary.search(store.session, event.properties.info.id, (s) => s.id)
-          if (result.found) {
-            setStore("session", result.index, reconcile(event.properties.info))
-            break
-          }
-          setStore(
-            "session",
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.info)
-            }),
-          )
+          upsertSession(event.properties.info)
+          queueSessionRefresh()
           break
         }
 
@@ -379,7 +457,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
-      const sessionListPromise = projectPromise.then(() => listSessions())
+      const sessionSyncPromise = projectPromise.then(() => listSessionSync())
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
@@ -396,7 +474,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         { name: "app.agents", promise: agentsPromise },
         { name: "config.get", promise: configPromise },
         { name: "project.sync", promise: projectPromise },
-        ...(args.continue ? [{ name: "session.list", promise: sessionListPromise }] : []),
+        ...(args.continue ? [{ name: "session.sync", promise: sessionSyncPromise }] : []),
       ]
 
       await Promise.allSettled(blockingRequests.map((r) => r.promise))
@@ -413,7 +491,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const consoleStateResponse = consoleStatePromise
           const agentsResponse = agentsPromise.then((x) => x.data ?? [])
           const configResponse = configPromise.then((x) => x.data!)
-          const sessionListResponse = args.continue ? sessionListPromise : undefined
+          const sessionSyncResponse = args.continue ? sessionSyncPromise : undefined
 
           return Promise.all([
             providersResponse,
@@ -421,14 +499,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             consoleStateResponse,
             agentsResponse,
             configResponse,
-            ...(sessionListResponse ? [sessionListResponse] : []),
+            ...(sessionSyncResponse ? [sessionSyncResponse] : []),
           ]).then((responses) => {
             const providers = responses[0]
             const providerList = responses[1]
             const consoleState = responses[2]
             const agents = responses[3]
             const config = responses[4]
-            const sessions = responses[5]
+              const sessionSync = responses[5]
 
             batch(() => {
               setStore("provider", reconcile(providers.providers))
@@ -437,7 +515,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               setStore("console_state", reconcile(consoleState))
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
-              if (sessions !== undefined) setStore("session", reconcile(sessions))
+              if (sessionSync !== undefined) {
+                applySessionSync(sessionSync as ClientSessionSyncResult)
+              }
             })
           })
         })
@@ -445,7 +525,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
           void Promise.all([
-            ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
+            ...(args.continue ? [] : [sessionSyncPromise.then(applySessionSync)]),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
             sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
@@ -454,9 +534,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               .list({ workspace })
               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
             sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
-            sdk.client.session.status({ workspace }).then((x) => {
-              setStore("session_status", reconcile(x.data ?? {}))
-            }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
@@ -505,8 +582,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return sessionListQuery()
         },
         async refresh() {
-          const list = await listSessions()
-          setStore("session", reconcile(list))
+          applySessionSync(await listSessionSync())
+        },
+        async refreshStatus() {
+          applySessionSync(await listSessionSync())
         },
         status(sessionID: string) {
           const session = result.session.get(sessionID)

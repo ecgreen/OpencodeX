@@ -1,2 +1,12 @@
 #!/bin/sh
+set -e
+
+.husky/graphify-update
+
+if [ -n "$(git status --porcelain -- graphify-out .graphifyignore)" ]; then
+  echo "[graphify] graphify-out is stale or uncommitted. Commit the updated graphify artifacts before pushing." >&2
+  git status --short -- graphify-out .graphifyignore >&2
+  exit 1
+fi
+
 echo "husky - skipping local typecheck; GitHub Actions validates pushes and PRs"

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+.husky/graphify-update
+
+if [ -d "graphify-out" ]; then
+  git add graphify-out
+  if [ -f ".graphifyignore" ]; then
+    git add .graphifyignore
+  fi
+fi

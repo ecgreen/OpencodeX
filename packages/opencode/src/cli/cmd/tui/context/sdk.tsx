@@ -1,10 +1,10 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
+import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
 
-const LIVE_SYNC_INTERVAL_MS = 500
 const SEEN_EVENT_ID_LIMIT = 2_000
 
 type SyncHistoryCursor = Record<string, number>
@@ -171,10 +171,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       if (historyTimer) return
       const tick = () => {
         void syncPersistedHistory().finally(() => {
-          if (!abort.signal.aborted) historyTimer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
+          if (!abort.signal.aborted) historyTimer = setTimeout(tick, CLIENT_SESSION_SYNC_INTERVAL_MS)
         })
       }
-      historyTimer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
+      historyTimer = setTimeout(tick, CLIENT_SESSION_SYNC_INTERVAL_MS)
     }
 
     function latestSessionStatusEventIDs(events: SyncHistoryEvent[]) {

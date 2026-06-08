@@ -1,10 +1,10 @@
 import { RGBA } from "@opentui/core"
 import type { useSync } from "@tui/context/sync"
 
-export type DerivedStatus = "dormant" | "in_progress" | "input_needed"
+export type DerivedStatus = "dormant" | "in_progress" | "input_needed" | "needs_review"
 
-export const DERIVED_STATUSES: DerivedStatus[] = ["in_progress", "input_needed", "dormant"]
 export const NEW_RESULT_COLOR = RGBA.fromInts(217, 70, 239, 255)
+export const DERIVED_STATUSES: DerivedStatus[] = ["input_needed", "needs_review", "in_progress", "dormant"]
 
 export function deriveStatus(sessionID: string, sync: ReturnType<typeof useSync>): DerivedStatus {
   const permissions = sync.data.permission[sessionID] ?? []
@@ -12,7 +12,11 @@ export function deriveStatus(sessionID: string, sync: ReturnType<typeof useSync>
   if (permissions.length > 0 || questions.length > 0) return "input_needed"
   const status = sync.data.session_status[sessionID]
   if (status?.type === "busy" || status?.type === "retry") return "in_progress"
+  const uiState = sync.data.session_ui_state[sessionID]
+  if (uiState?.displayStatus === "input_needed") return "input_needed"
+  if (uiState?.displayStatus === "in_progress") return "in_progress"
   if (isLikelyActiveSession(sessionID, sync)) return "in_progress"
+  if (uiState?.displayStatus === "needs_review") return "needs_review"
   return "dormant"
 }
 
@@ -29,6 +33,7 @@ export function deriveViewStatus(sessionIDs: readonly string[], sync: ReturnType
   const statuses = sessionIDs.map((sessionID) => deriveStatus(sessionID, sync))
   if (statuses.includes("input_needed")) return "input_needed"
   if (statuses.includes("in_progress")) return "in_progress"
+  if (statuses.includes("needs_review")) return "needs_review"
   return "dormant"
 }
 
@@ -42,6 +47,8 @@ export function statusColor(status: DerivedStatus) {
       return RGBA.fromInts(96, 165, 250, 255)
     case "input_needed":
       return RGBA.fromInts(251, 146, 60, 255)
+    case "needs_review":
+      return NEW_RESULT_COLOR
     case "dormant":
       return RGBA.fromInts(180, 180, 180, 255)
   }
@@ -53,6 +60,8 @@ export function statusLabel(status: DerivedStatus) {
       return "running"
     case "input_needed":
       return "needs input"
+    case "needs_review":
+      return "ready for review"
     case "dormant":
       return "idle"
   }

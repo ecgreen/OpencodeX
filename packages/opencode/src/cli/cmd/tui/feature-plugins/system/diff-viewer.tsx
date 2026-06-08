@@ -1,10 +1,12 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@opencode-ai/plugin/tui"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import { updateClientSessionState } from "@opencode-ai/sdk/v2"
 import { TextAttributes, type BorderSides, type BoxRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import { useBindings, useCommandShortcut } from "@tui/keymap"
 import { useTheme } from "@tui/context/theme"
+import { useSync } from "@tui/context/sync"
 import { useTerminalDimensions } from "@opentui/solid"
 import path from "path"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
@@ -77,6 +79,7 @@ function storedView(value: unknown): DiffView | undefined {
 
 function DiffViewer(props: { api: TuiPluginApi }) {
   const dimensions = useTerminalDimensions()
+  const sync = useSync()
   const themeState = useTheme()
   const theme = () => props.api.theme.current
   const params = () =>
@@ -89,6 +92,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
         }
       | undefined
   const mode = () => params()?.mode ?? "git"
+  const sessionID = () => params()?.sessionID
   const diffInput = createMemo(() => ({
     mode: mode(),
     sessionID: params()?.sessionID,
@@ -160,7 +164,9 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     setLastHighlightedFileNode(undefined)
     setActivePatchFileIndex(undefined)
     setSelectedFileIndex(undefined)
-    setReviewedFileNames(new Set<string>())
+    const currentReviewed = sync.data.session_ui_state[sessionID() ?? ""]?.reviewedFiles ?? []
+    const currentFiles = new Set(files().map((file) => file.file))
+    setReviewedFileNames(new Set(currentReviewed.filter((file) => currentFiles.has(file))))
   })
 
   const ensureHighlightedFileNode = () => {
@@ -356,18 +362,36 @@ function DiffViewer(props: { api: TuiPluginApi }) {
   }
 
   const toggleSelectedFileReviewed = () => {
+    const currentSessionID = sessionID()
     const fileIndex =
       focus() === "files"
         ? fileRows().find((row) => row.id === highlightedFileNode())?.fileIndex
         : (selectedFileIndex() ?? activePatchFileIndex() ?? currentPatchFileIndex())
     const file = fileIndex === undefined ? undefined : files()[fileIndex]?.file
     if (!file) return
-    setReviewedFileNames((reviewed) => {
-      const next = new Set(reviewed)
-      if (next.has(file)) next.delete(file)
-      else next.add(file)
-      return next
+    const next = new Set(reviewedFileNames())
+    if (next.has(file)) next.delete(file)
+    else next.add(file)
+    setReviewedFileNames(next)
+    if (!currentSessionID) return
+    const currentFiles = files()
+    const reviewedAt =
+      currentFiles.length > 0 && currentFiles.every((item) => next.has(item.file))
+        ? Math.max(Date.now(), sync.session.get(currentSessionID)?.time.updated ?? 0)
+        : undefined
+    const currentState = sync.data.session_ui_state[currentSessionID]
+    sync.set("session_ui_state", currentSessionID, {
+      sessionID: currentSessionID,
+      seenAt: currentState?.seenAt,
+      reviewedAt: Math.max(reviewedAt ?? 0, currentState?.reviewedAt ?? 0) || undefined,
+      reviewedFiles: [...next],
+      displayStatus: reviewedAt && currentState?.displayStatus === "needs_review" ? "idle" : (currentState?.displayStatus ?? "idle"),
+      updated: currentState?.updated ?? false,
     })
+    void updateClientSessionState(props.api.client, currentSessionID, {
+      reviewedFiles: [...next],
+      reviewedAt,
+    }).catch(() => {})
   }
 
   const commands = [

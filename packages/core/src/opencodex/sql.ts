@@ -56,6 +56,21 @@ export const OpencodeXProjectSessionTable = sqliteTable(
   (table) => [index("opencodex_project_session_project_idx").on(table.opencodex_project_id)],
 )
 
+export const OpencodeXSessionStateTable = sqliteTable(
+  "opencodex_session_state",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .primaryKey()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    seen_at: integer(),
+    reviewed_at: integer(),
+    reviewed_files: text({ mode: "json" }).$type<string[]>().notNull(),
+    ...Timestamps,
+  },
+  (table) => [index("opencodex_session_state_updated_idx").on(table.time_updated)],
+)
+
 export const OpencodeXViewTable = sqliteTable(
   "opencodex_view",
   {

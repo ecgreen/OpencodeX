@@ -16,6 +16,7 @@ import { DialogSelect } from "@tui/ui/dialog-select"
 import { DialogModel } from "@tui/component/dialog-model"
 import { Toast } from "@tui/ui/toast"
 import { createColors, createFrames } from "@tui/ui/spinner"
+import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2"
 import "opentui-spinner/solid"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
 import { useBindings, useCommandShortcut } from "../keymap"
@@ -419,38 +420,37 @@ function isGenericDashboardSession(session: DashboardSession) {
 
 function dashboardStatusColor(status: DashboardStatus) {
   if (status === "unviewed") return NEW_RESULT_COLOR
-  if (status === "review_ready") return REVIEW_READY_PURPLE
+  if (status === "review_ready" || status === "needs_review") return REVIEW_READY_PURPLE
   return derivedStatusColor(status)
 }
 
 function dashboardStatusLabel(status: DashboardStatus) {
-  if (status === "unviewed" || status === "review_ready") return "Ready for review"
+  if (status === "unviewed" || status === "review_ready" || status === "needs_review") return "Ready for review"
   return statusLabel(status)
 }
 
-function isUnviewed(session: DashboardSession, local: ReturnType<typeof useLocal>) {
-  return session.time.updated > local.session.lastViewed(session.id)
+function isUnviewed(session: DashboardSession, sync: ReturnType<typeof useSync>) {
+  return sync.data.session_ui_state[session.id]?.updated ?? false
 }
 
 function pathShortName(input: string) {
   return input.split(/[\\/]/).filter(Boolean).at(-1) ?? input
 }
 
-function dashboardSessionStatus(session: DashboardSession, sync: ReturnType<typeof useSync>, local: ReturnType<typeof useLocal>): DashboardStatus {
+function dashboardSessionStatus(session: DashboardSession, sync: ReturnType<typeof useSync>): DashboardStatus {
   const status = deriveStatus(session.id, sync)
-  return status === "dormant" && isUnviewed(session, local) ? "unviewed" : status
+  return status === "dormant" && isUnviewed(session, sync) ? "unviewed" : status
 }
 
 function dashboardViewStatus(
   view: OpencodeXView,
   sessions: ReadonlyMap<string, DashboardSession>,
   sync: ReturnType<typeof useSync>,
-  local: ReturnType<typeof useLocal>,
 ): DashboardStatus {
   const status = deriveViewStatus(view.sessionIDs, sync)
   if (status !== "dormant") return status
   const viewSessions = view.sessionIDs.map((sessionID) => sessions.get(sessionID)).filter((session): session is DashboardSession => session !== undefined)
-  return viewSessions.some((session) => isUnviewed(session, local)) ? "unviewed" : "dormant"
+  return viewSessions.some((session) => isUnviewed(session, sync)) ? "unviewed" : "dormant"
 }
 
 function sessionAttentionReason(session: DashboardSession, status: DashboardStatus, sync: ReturnType<typeof useSync>) {
@@ -459,7 +459,7 @@ function sessionAttentionReason(session: DashboardSession, status: DashboardStat
   const questions = sync.data.question[session.id] ?? []
   if (questions.length > 0) return `${questions.length} question${questions.length === 1 ? "" : "s"} waiting`
   if (status === "unviewed") return "new result since last viewed"
-  if (status === "review_ready") return "ready for review"
+  if (status === "review_ready" || status === "needs_review") return "ready for review"
   return undefined
 }
 
@@ -474,6 +474,7 @@ function swarmAttentionReason(status: string) {
 function projectSummaryStatus(summary: DashboardProjectSummary): DashboardStatus {
   if (summary.rows.some((row) => ["input_needed", "approval_needed", "blocked", "failed"].includes(row.status))) return "input_needed"
   if (summary.rows.some((row) => ["in_progress", "running", "queued"].includes(row.status))) return "in_progress"
+  if (summary.rows.some((row) => row.status === "needs_review")) return "needs_review"
   if (summary.rows.some((row) => row.status === "unviewed")) return "unviewed"
   return "dormant"
 }
@@ -926,8 +927,8 @@ function SessionCard(props: {
       .filter(Boolean)
       .join(" - "),
   )
-  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed"].includes(status()))
-  const titleColor = createMemo(() => status() === "review_ready" || status() === "unviewed" ? dashboardStatusColor(status()) : theme.text)
+  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed", "needs_review"].includes(status()))
+  const titleColor = createMemo(() => ["review_ready", "unviewed", "needs_review"].includes(status()) ? dashboardStatusColor(status()) : theme.text)
   const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(status()) : titleColor())
   return (
     <box
@@ -1029,9 +1030,9 @@ function AttentionCard(props: {
   selected?: boolean
 }) {
   const { theme } = useTheme()
-  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed"].includes(props.row.dashboardStatus ?? ""))
+  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed", "needs_review"].includes(props.row.dashboardStatus ?? ""))
   const titleColor = createMemo(() =>
-    props.row.dashboardStatus === "review_ready" || props.row.dashboardStatus === "unviewed"
+    props.row.dashboardStatus === "review_ready" || props.row.dashboardStatus === "unviewed" || props.row.dashboardStatus === "needs_review"
       ? dashboardRowColor(props.row, theme)
       : theme.text,
   )
@@ -1071,8 +1072,8 @@ function ViewCard(props: { view: OpencodeXView; status: DashboardStatus; width: 
   const { theme } = useTheme()
   const route = useRoute()
   const sessionCount = createMemo(() => props.view.sessionIDs.length)
-  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed"].includes(props.status))
-  const titleColor = createMemo(() => props.status === "review_ready" || props.status === "unviewed" ? dashboardStatusColor(props.status) : theme.text)
+  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed", "needs_review"].includes(props.status))
+  const titleColor = createMemo(() => ["review_ready", "unviewed", "needs_review"].includes(props.status) ? dashboardStatusColor(props.status) : theme.text)
   const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(props.status) : titleColor())
   return (
     <box
@@ -1208,10 +1209,18 @@ export function OpencodeXDashboard() {
   const [priorSessionsCollapsed, setPriorSessionsCollapsed] = createSignal(true)
   const [swarmsCollapsed, setSwarmsCollapsed] = createSignal(false)
   const [viewsCollapsed, setViewsCollapsed] = createSignal(false)
-  const [projects, { refetch: refetchProjects }] = createResource(refresh, () => sdk.request<OpencodeXProject[]>("/experimental/opencodex/project"))
+  let refreshRunning = false
+  const projects = createMemo(() => sync.data.opencodex_project as OpencodeXProject[])
   const [swarms] = createResource(refresh, () => sdk.request<OpencodeXSwarm[]>("/experimental/opencodex/swarm"))
-  const [views] = createResource(refresh, () => sdk.request<OpencodeXView[]>("/experimental/opencodex/view"))
-  const refreshDashboard = () => setRefresh((value) => value + 1)
+  const views = createMemo(() => sync.data.opencodex_view as OpencodeXView[])
+  const refreshDashboard = () => {
+    if (refreshRunning) return
+    refreshRunning = true
+    setRefresh((value) => value + 1)
+    void sync.session.refresh().catch(() => {}).finally(() => {
+      refreshRunning = false
+    })
+  }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const cardWidth = createMemo(() => {
     if (dimensions().width >= 150) return 42
@@ -1231,7 +1240,7 @@ export function OpencodeXDashboard() {
     setOxSidebarOpen(() => true)
     promptRef.current?.blur()
     promptRef.set(undefined)
-    const timer = setInterval(refreshDashboard, 2500)
+    const timer = setInterval(refreshDashboard, CLIENT_SESSION_SYNC_INTERVAL_MS)
     onCleanup(() => clearInterval(timer))
   })
 
@@ -1268,7 +1277,7 @@ export function OpencodeXDashboard() {
     const sessionByID = new Map(topLevelSessions().map((session) => [session.id, session]))
     const sessionRows = topLevelSessions().map((session) => {
       const project = projectForSession(list, session.id)
-      const status = dashboardSessionStatus(session, sync, local)
+      const status = dashboardSessionStatus(session, sync)
       return {
         id: `session:${session.id}`,
         kind: "session" as const,
@@ -1305,7 +1314,7 @@ export function OpencodeXDashboard() {
     })
     const viewRows = (views() ?? []).map((view) => {
       const project = list.find((item) => item.sessions.some((session) => view.sessionIDs.includes(session.id)))
-      const status = dashboardViewStatus(view, sessionByID, sync, local)
+      const status = dashboardViewStatus(view, sessionByID, sync)
       return {
         id: `view:${view.id}`,
         kind: "view" as const,
@@ -1379,7 +1388,7 @@ export function OpencodeXDashboard() {
       theme,
       refetch: () => {
         setRefresh((value) => value + 1)
-        void refetchProjects()
+        void sync.session.refresh()
       },
     })
   }
@@ -2458,6 +2467,7 @@ export function OpencodeXSwarms() {
   const [selectedRunID, setSelectedRunID] = createSignal("new")
   const [activeCollapsed, setActiveCollapsed] = createSignal(false)
   const [inactiveCollapsed, setInactiveCollapsed] = createSignal(false)
+  let refreshRunning = false
   const [projects] = createResource(refresh, () => sdk.request<OpencodeXProject[]>("/experimental/opencodex/project"))
   const [swarms, { refetch }] = createResource(refresh, () => sdk.request<OpencodeXSwarm[]>("/experimental/opencodex/swarm"))
   const promptMaxWidth = createMemo(() => {
@@ -2558,7 +2568,14 @@ export function OpencodeXSwarms() {
 
   onMount(() => {
     setOxSidebarOpen(() => true)
-    const timer = setInterval(() => setRefresh((value) => value + 1), 2500)
+    const timer = setInterval(() => {
+      if (refreshRunning) return
+      refreshRunning = true
+      setRefresh((value) => value + 1)
+      void sync.session.refresh().catch(() => {}).finally(() => {
+        refreshRunning = false
+      })
+    }, CLIENT_SESSION_SYNC_INTERVAL_MS)
     onCleanup(() => clearInterval(timer))
   })
 

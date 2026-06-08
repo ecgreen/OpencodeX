@@ -28,6 +28,7 @@ import {
 import { RGBA, TextAttributes } from "@opentui/core"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { Part, Session } from "@opencode-ai/sdk/v2"
+import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2"
 import { usePromptRef } from "@tui/context/prompt"
 import { useBindings, useCommandShortcut } from "../keymap"
 import { getPendingOpencodeXProjectSession, setPendingOpencodeXProjectSession } from "./opencodex-session-state"
@@ -183,7 +184,7 @@ function projectTitle(project: OpencodeXProjectInfo) {
 }
 
 function sidebarStatusColor(status: SidebarStatus) {
-  if (status === "unviewed" || status === "review_ready") return REVIEW_READY_COLOR
+  if (status === "unviewed" || status === "review_ready" || status === "needs_review") return REVIEW_READY_COLOR
   return statusColor(status)
 }
 
@@ -841,19 +842,29 @@ export function OpencodeXSidebar() {
   const [sidebarFocused, setSidebarFocused] = createSignal(false)
   const [selectedRowID, setSelectedRowID] = createSignal<string>()
   let sidebarScroll: ScrollBoxRenderable | undefined
+  let refreshRunning = false
 
-  const refreshSidebar = () => setRefresh((value) => value + 1)
+  const refreshSidebar = () => {
+    if (refreshRunning) return
+    refreshRunning = true
+    setRefresh((value) => value + 1)
+    void sync.session.refresh().catch(() => {}).finally(() => {
+      refreshRunning = false
+    })
+  }
   onCleanup(onOpencodeXRefresh(refreshSidebar))
 
-  const [projects, { refetch }] = createResource(refresh, () =>
-    sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"),
-  )
+  onMount(() => {
+    const timer = setInterval(refreshSidebar, CLIENT_SESSION_SYNC_INTERVAL_MS)
+    onCleanup(() => clearInterval(timer))
+  })
+
+  const projects = createMemo(() => sync.data.opencodex_project as OpencodeXProjectInfo[])
+  const refetch = () => void sync.session.refresh()
   const [swarms] = createResource(refresh, () =>
     sdk.request<OpencodeXSwarmInfo[]>("/experimental/opencodex/swarm"),
   )
-  const [views] = createResource(refresh, () =>
-    sdk.request<OpencodeXViewInfo[]>("/experimental/opencodex/view"),
-  )
+  const views = createMemo(() => sync.data.opencodex_view as OpencodeXViewInfo[])
 
   const sessions = createMemo(() =>
     sync.data.session.filter((s) => !s.parentID).toSorted((a, b) => b.time.updated - a.time.updated),
@@ -932,9 +943,9 @@ export function OpencodeXSidebar() {
     recentProjectItems(
       project.sessions
         .filter((session) => !missingSessionIDs().has(session.id))
+        .map((session) => sessionByID().get(session.id) ?? session)
         .filter((session) => !isSwarmSession(session))
-        .filter((session) => !isEmptyPlaceholderSession(session))
-        .map((session) => sessionByID().get(session.id) ?? session),
+        .filter((session) => !isEmptyPlaceholderSession(session)),
       (session) => session.time.updated,
     )
 
@@ -1398,10 +1409,10 @@ export function OpencodeXSidebar() {
     const active = createMemo(() => currentSessionID() === session.id)
     const title = createMemo(() => [sessionTitle(session, sync), input?.titleSuffix].filter(Boolean).join(" - "))
     const detail = createMemo(() => [input?.subtitle, sessionSwarmTitle(session, swarms() ?? []) ?? modelLabel(session)].filter(Boolean).join(" - "))
-    const unviewed = createMemo(() => status() === "dormant" && session.time.updated > local.session.lastViewed(session.id))
+    const unviewed = createMemo(() => status() === "dormant" && (sync.data.session_ui_state[session.id]?.updated ?? false))
     const displayStatus = createMemo<SidebarStatus>(() => unviewed() ? "unviewed" : status())
     const statusFg = createMemo(() => sidebarStatusColor(displayStatus()))
-    const attentionTitle = createMemo(() => displayStatus() === "unviewed" || displayStatus() === "review_ready")
+    const attentionTitle = createMemo(() => ["unviewed", "review_ready", "needs_review"].includes(displayStatus()))
     const textColor = createMemo(() => {
       if (attentionTitle()) return statusFg()
       if (status() !== "dormant") return statusColor(status())
@@ -1528,11 +1539,11 @@ export function OpencodeXSidebar() {
       const base = deriveViewStatus(view.sessionIDs, sync)
       if (base !== "dormant") return base
       const sessions = view.sessionIDs.map((sessionID) => sessionsByID().get(sessionID)).filter((session): session is Session => session !== undefined)
-      return sessions.some((session) => session.time.updated > local.session.lastViewed(session.id)) ? "unviewed" : "dormant"
+      return sessions.some((session) => sync.data.session_ui_state[session.id]?.updated ?? false) ? "unviewed" : "dormant"
     })
     const statusFg = createMemo(() => sidebarStatusColor(status()))
     const statusText = createMemo(() => sidebarStatusLabel(status()))
-    const attentionTitle = createMemo(() => status() === "unviewed" || status() === "review_ready")
+    const attentionTitle = createMemo(() => ["unviewed", "review_ready", "needs_review"].includes(status()))
     const textColor = createMemo(() => {
       if (attentionTitle()) return statusFg()
       if (status() !== "dormant") return statusFg()

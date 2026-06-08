@@ -6,14 +6,20 @@ fi
 
 mkdir -p .git/hooks
 
-cat > .git/hooks/pre-push << 'EOF'
+cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/sh
-# Ensure dependencies are installed before typecheck
-if command -v bun >/dev/null 2>&1; then
-  bun install >/dev/null 2>&1 || true
+if [ -f ".husky/pre-commit" ]; then
+  sh -e ".husky/pre-commit" "$@"
 fi
-bun run typecheck
 EOF
 
+cat > .git/hooks/pre-push << 'EOF'
+#!/bin/sh
+if [ -f ".husky/pre-push" ]; then
+  sh -e ".husky/pre-push" "$@"
+fi
+EOF
+
+chmod +x .git/hooks/pre-commit
 chmod +x .git/hooks/pre-push
-echo "✅ Pre-push hook installed"
+echo "Graphify commit and push hooks installed"

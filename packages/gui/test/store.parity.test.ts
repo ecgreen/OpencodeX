@@ -24,23 +24,25 @@ describe("GUI store backend parity", () => {
     const gui = fakeGui(calls)
     const snapshot = await loadSnapshot(gui)
 
-    expect(calls).toContain("permission.list")
-    expect(calls).toContain("question.list")
     expect(calls).toEqual(expect.arrayContaining([
       "project.current",
-      "project.list",
-      "session.list",
+      "opencodex.session.sync",
       "config.providers",
       "app.agents",
       "swarm.list",
       "job.list",
-      "view.list",
-      "session.status",
     ]))
+    expect(calls).not.toContain("project.list")
+    expect(calls).not.toContain("session.list")
+    expect(calls).not.toContain("session.status")
+    expect(calls).not.toContain("permission.list")
+    expect(calls).not.toContain("question.list")
+    expect(calls).not.toContain("view.list")
     expect(calls).not.toContain("session.messages:session-list")
     expect(snapshot.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
     expect(snapshot.permissions).toHaveLength(1)
     expect(snapshot.questions).toHaveLength(1)
+    expect(snapshot.sessionUiState["session-list"]?.displayStatus).toBe("input_needed")
     expect(snapshot.providers[0]?.id).toBe("anthropic")
     expect(snapshot.agents[0]?.name).toBe("build")
   })
@@ -50,17 +52,47 @@ describe("GUI store backend parity", () => {
     const gui = fakeGui(calls)
     const cards = await loadSessionCards(gui)
 
-    expect(calls).toContain("project.list")
-    expect(calls).toContain("session.list")
-    expect(calls).toContain("session.status")
-    expect(calls).toContain("permission.list")
-    expect(calls).toContain("question.list")
+    expect(calls).toContain("opencodex.session.sync")
+    expect(calls.filter((call) => call === "opencodex.session.sync")).toHaveLength(1)
+    expect(calls).not.toContain("project.list")
+    expect(calls).not.toContain("session.list")
+    expect(calls).not.toContain("session.status")
+    expect(calls).not.toContain("permission.list")
+    expect(calls).not.toContain("question.list")
     expect(calls).not.toContain("session.messages:session-list")
     expect(calls).not.toContain("config.providers")
     expect(calls).not.toContain("app.agents")
     expect(calls).not.toContain("job.list")
     expect(calls).not.toContain("view.list")
-    expect(cards.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
+    expect(cards.changed).toBe(true)
+    if (cards.changed) {
+      expect(cards.snapshot.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
+      expect(cards.snapshot.sessionUiState["session-list"]?.updated).toBe(true)
+    }
+  })
+
+  test("keeps view-only sessions on views without expanding the scoped session index", async () => {
+    const calls: string[] = []
+    const viewOnlySession = session("view-only-session", 3)
+    const cards = await loadSessionCards(fakeGui(calls, { viewSessions: [viewOnlySession] }))
+
+    expect(cards.changed).toBe(true)
+    if (cards.changed) {
+      expect(cards.snapshot.views[0]?.sessionIDs).toEqual(["view-only-session"])
+      expect(cards.snapshot.views[0]?.sessions.map((item) => item.id)).toEqual(["view-only-session"])
+      expect(cards.snapshot.sessions.map((item) => item.id)).not.toContain("view-only-session")
+    }
+  })
+
+  test("skips unchanged lightweight session sync revisions", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+
+    const cards = await loadSessionCards(gui, "rev-1")
+
+    expect(calls).toContain("opencodex.session.sync:rev-1")
+    expect(cards).toEqual({ changed: false, revision: "rev-1" })
+    expect(calls).not.toContain("session.messages:session-list")
   })
 
   test("sends create and prompt payloads through existing APIs", async () => {
@@ -212,9 +244,10 @@ describe("GUI store backend parity", () => {
   })
 })
 
-function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unknown>; messages?: Record<string, unknown[]>; updated?: number; headerCursor?: string | null } = {}) {
+function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unknown>; sessionUiState?: Record<string, unknown>; messages?: Record<string, unknown[]>; updated?: number; headerCursor?: string | null; viewSessions?: ReturnType<typeof session>[] } = {}) {
   const sessionList = session("session-list", options.updated ?? 1)
   const projectSession = session("project-session", options.updated ?? 2)
+  const viewSessions = options.viewSessions ?? []
   return {
     directory: "C:/Work/OpencodeX",
     url: "http://127.0.0.1:4096",
@@ -254,6 +287,74 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
           },
         },
         session: {
+          sync: async (input?: { since?: string }) => {
+            calls.push("opencodex.session.sync")
+            calls.push(`opencodex.session.sync:${input?.since ?? ""}`)
+            if (input?.since === "rev-1") return { data: { changed: false, revision: "rev-1" } }
+            return {
+              data: {
+                changed: true,
+                revision: "rev-1",
+                snapshot: {
+                  projects: [
+                    {
+                      id: "project-1",
+                      name: "Project",
+                      project: { id: "project-core", name: "Project", time: { created: 1, updated: 1 } },
+                      folders: [{ path: "C:/Work/OpencodeX" }],
+                      sessions: [projectSession],
+                    },
+                  ],
+                  sessions: [projectSession, sessionList],
+                  views: viewSessions.length > 0
+                    ? [{
+                      id: "view-1",
+                      title: "View",
+                      focusedSessionID: viewSessions[0]?.id,
+                      layout: "auto",
+                      sessions: viewSessions,
+                      sessionIDs: viewSessions.map((item) => item.id),
+                      timeCreated: 1,
+                      timeUpdated: 1,
+                    }]
+                    : [],
+                  sessionStatus: options.sessionStatus ?? { "session-list": { type: "idle" } },
+                  permissions: [
+                    {
+                      id: "permission-1",
+                      sessionID: "session-list",
+                      permission: "edit",
+                      patterns: ["**/*.ts"],
+                      metadata: {},
+                      always: [],
+                    },
+                  ],
+                  questions: [
+                    {
+                      id: "question-1",
+                      sessionID: "session-list",
+                      questions: [{ header: "Choice", question: "Pick one", options: [{ label: "A", description: "Option A" }] }],
+                    },
+                  ],
+                  sessionUiState: {
+                    "session-list": {
+                      sessionID: "session-list",
+                      reviewedFiles: [],
+                      displayStatus: "input_needed",
+                      updated: true,
+                    },
+                    "project-session": {
+                      sessionID: "project-session",
+                      reviewedFiles: [],
+                      displayStatus: "needs_review",
+                      updated: true,
+                    },
+                    ...options.sessionUiState,
+                  },
+                },
+              },
+            }
+          },
           create: async (input: { opencodeXSessionCreateInput?: { projectID?: string } }) => {
             calls.push(`opencodex.session.create:${input.opencodeXSessionCreateInput?.projectID}`)
             return { data: sessionList }
@@ -294,6 +395,7 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
           },
         },
       },
+      experimental: { workspace: { status: async () => ({ data: [] }) } },
       config: {
         providers: async () => {
           calls.push("config.providers")
@@ -364,8 +466,9 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
           calls.push("session.list")
           return { data: [sessionList] }
         },
-        status: async () => {
+        status: async (input?: { workspace?: string }) => {
           calls.push("session.status")
+          calls.push(`session.status.workspace:${input?.workspace ?? ""}`)
           return { data: options.sessionStatus ?? { "session-list": { type: "idle" } } }
         },
         promptAsync: async (input: { sessionID: string; messageID?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: Array<{ type: string; text?: string }> }) => {

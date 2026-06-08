@@ -27,6 +27,7 @@ import { Permission } from "@/permission"
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXSessionState } from "@/opencodex/session-state"
 import { OpencodeXView } from "@/opencodex/view"
 import { Installation } from "@/installation"
 import { InstanceLayer } from "@/project/instance-layer"
@@ -213,6 +214,7 @@ export function createRoutes(
       ModelsDev.defaultLayer,
       OpencodeXJob.defaultLayer,
       OpencodeXProject.defaultLayer,
+      OpencodeXSessionState.defaultLayer,
       OpencodeXSwarm.defaultLayer,
       OpencodeXView.defaultLayer,
       Permission.defaultLayer,

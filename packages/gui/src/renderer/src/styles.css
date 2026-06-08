@@ -2081,13 +2081,28 @@ input:focus-visible {
 
 .command-palette-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 6px;
+  gap: 10px;
   min-height: 0;
   overflow: auto;
   padding-right: 4px;
   background: transparent;
+}
+
+.command-palette-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.command-palette-group h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 -1px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .command-palette-list button {
@@ -2117,19 +2132,6 @@ input:focus-visible {
 .command-palette-list button:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.command-palette-category {
-  grid-column: 1;
-  align-self: center;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .command-palette-list strong,
@@ -2178,7 +2180,7 @@ input:focus-visible {
 }
 
 @media (max-width: 760px) {
-  .command-palette-list {
+  .command-palette-group {
     grid-template-columns: 1fr;
   }
 }
@@ -3464,26 +3466,36 @@ details > summary:hover .output-chevron {
   background: rgba(16, 16, 16, 0.82);
 }
 
-.part.tool > summary {
+.part.tool > summary,
+.part.tool > .tool-summary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
+}
+
+.part.tool > summary {
+  grid-template-columns: auto minmax(0, 1fr) auto;
   list-style: none;
+}
+
+.part.tool > .tool-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .part.tool > summary::-webkit-details-marker {
   display: none;
 }
 
-.part.tool > summary strong {
+.part.tool > summary strong,
+.part.tool > .tool-summary strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
 }
 
-.part.tool > summary .tool-status {
+.part.tool > summary .tool-status,
+.part.tool > .tool-summary .tool-status {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 10px;
@@ -3498,6 +3510,25 @@ details > summary:hover .output-chevron {
 
 .part.tool.error {
   border-color: rgba(224, 108, 117, 0.48);
+}
+
+.part.tool.todo-update {
+  border-color: rgba(127, 216, 143, 0.3);
+  background: rgba(127, 216, 143, 0.055);
+}
+
+.part.tool.todo-update > summary,
+.part.tool.todo-update > .tool-summary {
+  color: var(--success);
+}
+
+.part.tool.todo-update > summary .output-chevron {
+  color: rgba(127, 216, 143, 0.82);
+}
+
+.part.tool.todo-update > summary .tool-status,
+.part.tool.todo-update > .tool-summary .tool-status {
+  color: rgba(127, 216, 143, 0.72);
 }
 
 .tool-details {
@@ -3681,12 +3712,49 @@ details > summary:hover .output-chevron {
   --syntax-unknown: var(--muted);
 }
 
+.tool-file-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-bottom: 1px solid #202020;
+  color: var(--text);
+  background: #101010;
+}
+
+.tool-file-diff-header strong,
+.tool-file-diff-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-file-diff-header strong {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tool-file-diff-header span {
+  flex: 0 1 auto;
+  max-width: 46%;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .tool-file-diff [data-component="file"] {
   background: #080808;
 }
 
+.tool-file-diff > [data-component="code-block"] pre {
+  border: 0;
+  border-radius: 0;
+}
+
 .tool-deleted-lines {
   margin: 0;
+  padding: 10px 12px;
   color: var(--error);
   font-family: var(--mono);
   font-size: 12px;
@@ -3729,25 +3797,33 @@ details > summary:hover .output-chevron {
 }
 
 .tool-todos {
-  gap: 4px;
+  gap: 2px;
+  padding: 0;
 }
 
 .tool-todo {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
-  padding: 7px 0;
+  padding: 3px 0;
   color: var(--text);
 }
 
-.tool-todo span {
-  min-width: 54px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.tool-todo-status {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgba(255, 255, 255, 0.52);
+  border-radius: 999px;
+  color: #ffffff;
+  background: #080808;
+}
+
+.tool-todo-status .icon {
+  width: 12px;
+  height: 12px;
 }
 
 .tool-todo strong {
@@ -3757,7 +3833,7 @@ details > summary:hover .output-chevron {
 }
 
 .tool-todo small {
-  color: var(--muted);
+  color: var(--text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -3765,12 +3841,12 @@ details > summary:hover .output-chevron {
 }
 
 .tool-todo.completed strong {
-  color: rgba(238, 238, 238, 0.72);
-  text-decoration: line-through;
+  color: var(--text);
 }
 
-.tool-todo.in_progress span {
-  color: var(--primary);
+.tool-todo.in_progress .tool-todo-status {
+  border-color: rgba(255, 255, 255, 0.68);
+  background: #080808;
 }
 
 .tool-raw {

@@ -53,7 +53,7 @@ async function createWindow() {
 
   if (isDev) {
     await window.loadURL("http://127.0.0.1:5173")
-    window.webContents.openDevTools({ mode: "detach" })
+    if (process.env.OPENCODEX_GUI_DEVTOOLS === "1") window.webContents.openDevTools({ mode: "detach" })
     return
   }
 

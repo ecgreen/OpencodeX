@@ -76,6 +76,7 @@ export type Event =
   | EventPtyDeleted
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventOpencodexSessionStateUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventAccountAdded
@@ -688,6 +689,14 @@ export type Pty = {
   cwd: string
   status: "running" | "exited"
   pid: number
+}
+
+export type OpencodeXSessionState = {
+  sessionID: string
+  seenAt?: number
+  reviewedAt?: number
+  reviewedFiles: Array<string>
+  timeUpdated: number
 }
 
 export type GlobalEvent = {
@@ -1403,6 +1412,14 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.session_state.updated"
+        properties: {
+          sessionID: string
+          state: OpencodeXSessionState
+        }
+      }
+    | {
+        id: string
         type: "server.connected"
         properties: {
           [key: string]: unknown
@@ -1473,6 +1490,7 @@ export type GlobalEvent = {
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
     | SyncEventSessionStatus
+    | SyncEventOpencodexSessionStateUpdated
 }
 
 /**
@@ -2369,6 +2387,81 @@ export type OpencodeXSessionCreateInput = {
   hidden?: boolean
 }
 
+export type OpencodeXView = {
+  id: string
+  title: string
+  focusedSessionID?: string
+  layout: string
+  sessions: Array<GlobalSession>
+  sessionIDs: Array<string>
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type PermissionRequest = {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: Array<string>
+  metadata: {
+    [key: string]: unknown
+  }
+  always: Array<string>
+  tool?: {
+    messageID: string
+    callID: string
+  }
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  /**
+   * Questions to ask
+   */
+  questions: Array<QuestionInfo>
+  tool?: QuestionTool
+}
+
+export type OpencodeXSessionDisplayStatus = "idle" | "in_progress" | "input_needed" | "needs_review"
+
+export type OpencodeXSessionUiState = {
+  sessionID: string
+  seenAt?: number
+  reviewedAt?: number
+  reviewedFiles: Array<string>
+  displayStatus: OpencodeXSessionDisplayStatus
+  updated: boolean
+}
+
+export type OpencodeXSessionSyncSnapshot = {
+  projects: Array<OpencodeXProject>
+  sessions: Array<Session>
+  views: Array<OpencodeXView>
+  sessionStatus: {
+    [key: string]: SessionStatus
+  }
+  permissions: Array<PermissionRequest>
+  questions: Array<QuestionRequest>
+  sessionUiState: {
+    [key: string]: OpencodeXSessionUiState
+  }
+}
+
+export type OpencodeXSessionSyncResponse =
+  | {
+      changed: false
+      revision: string
+    }
+  | {
+      changed: true
+      revision: string
+      snapshot: OpencodeXSessionSyncSnapshot
+    }
+
 export type OpencodeXSessionMoveInput = {
   projectID: string
   sessionID: string
@@ -2607,20 +2700,6 @@ export type OpencodeXSwarmUpdateRoleInput = {
   }
 }
 
-export type OpencodeXView = {
-  id: string
-  title: string
-  focusedSessionID?: string
-  layout: string
-  sessions: Array<GlobalSession>
-  sessionIDs: Array<string>
-  metadata?: {
-    [key: string]: unknown
-  }
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
 export type OpencodeXViewCreateInput = {
   id?: string
   title?: string
@@ -2647,35 +2726,10 @@ export type PtyForbiddenError = {
   message: string
 }
 
-export type QuestionRequest = {
-  id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionInfo>
-  tool?: QuestionTool
-}
-
 export type QuestionNotFoundError = {
   _tag: "QuestionNotFoundError"
   requestID: string
   message: string
-}
-
-export type PermissionRequest = {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: Array<string>
-  metadata: {
-    [key: string]: unknown
-  }
-  always: Array<string>
-  tool?: {
-    messageID: string
-    callID: string
-  }
 }
 
 export type PermissionNotFoundError = {
@@ -3661,6 +3715,18 @@ export type SyncEventSessionStatus = {
   data: {
     sessionID: string
     status: SessionStatus
+  }
+}
+
+export type SyncEventOpencodexSessionStateUpdated = {
+  type: "sync"
+  name: "opencodex.session_state.updated.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    state: OpencodeXSessionState
   }
 }
 
@@ -4791,6 +4857,15 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
+  }
+}
+
+export type EventOpencodexSessionStateUpdated = {
+  id: string
+  type: "opencodex.session_state.updated"
+  properties: {
+    sessionID: string
+    state: OpencodeXSessionState
   }
 }
 
@@ -6557,6 +6632,78 @@ export type OpencodexSessionCreateResponses = {
 }
 
 export type OpencodexSessionCreateResponse = OpencodexSessionCreateResponses[keyof OpencodexSessionCreateResponses]
+
+export type OpencodexSessionSyncData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scope?: "project"
+    path?: string
+    roots?: "true" | "false"
+    start?: string
+    search?: string
+    limit?: string
+    since?: string
+  }
+  url: "/experimental/opencodex/session-sync"
+}
+
+export type OpencodexSessionSyncErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSessionSyncError = OpencodexSessionSyncErrors[keyof OpencodexSessionSyncErrors]
+
+export type OpencodexSessionSyncResponses = {
+  /**
+   * OpencodeX session sync snapshot
+   */
+  200: OpencodeXSessionSyncResponse
+}
+
+export type OpencodexSessionSyncResponse = OpencodexSessionSyncResponses[keyof OpencodexSessionSyncResponses]
+
+export type OpencodexSessionStateUpdateData = {
+  body?: {
+    seenAt?: number
+    reviewedAt?: number
+    reviewedFiles?: Array<string>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/session-state/{sessionID}"
+}
+
+export type OpencodexSessionStateUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSessionStateUpdateError =
+  OpencodexSessionStateUpdateErrors[keyof OpencodexSessionStateUpdateErrors]
+
+export type OpencodexSessionStateUpdateResponses = {
+  /**
+   * Updated OpencodeX session UI state
+   */
+  200: OpencodeXSessionState
+}
+
+export type OpencodexSessionStateUpdateResponse =
+  OpencodexSessionStateUpdateResponses[keyof OpencodexSessionStateUpdateResponses]
 
 export type OpencodexSessionMoveData = {
   body?: OpencodeXSessionMoveInput

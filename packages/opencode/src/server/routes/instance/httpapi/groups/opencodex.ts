@@ -1,6 +1,7 @@
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXSessionState } from "@/opencodex/session-state"
 import { OpencodeXView } from "@/opencodex/view"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
@@ -8,15 +9,29 @@ import { Schema, Struct } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
-import { WorkspaceRoutingMiddleware } from "../middleware/workspace-routing"
+import { WorkspaceRoutingMiddleware, WorkspaceRoutingQueryFields } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 import { ApiNotFoundError, ProjectNotFoundError } from "../errors"
+import { QueryBoolean } from "./query"
 
 const root = "/experimental/opencodex"
 
 export const UpdateProjectPayload = Schema.Struct(Struct.omit(OpencodeXProject.UpdateInput.fields, ["projectID"]))
 export const UpdateJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.UpdateInput.fields, ["id"]))
 export const UpdateViewPayload = Schema.Struct(Struct.omit(OpencodeXView.UpdateInput.fields, ["id"]))
+export const UpdateSessionStatePayload = Schema.Struct(
+  Struct.omit(OpencodeXSessionState.UpdateInput.fields, ["sessionID"]),
+)
+export const SessionSyncQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  scope: Schema.optional(Schema.Literals(["project"])),
+  path: Schema.optional(Schema.String),
+  roots: Schema.optional(QueryBoolean),
+  start: Schema.optional(Schema.NumberFromString),
+  search: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.NumberFromString),
+  since: Schema.optional(Schema.String),
+})
 
 export const OpencodeXApi = HttpApi.make("opencodex")
   .add(
@@ -80,6 +95,27 @@ export const OpencodeXApi = HttpApi.make("opencodex")
           OpenApi.annotations({
             identifier: "opencodex.session.create",
             summary: "Create a session under an OpencodeX project",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionSync", `${root}/session-sync`, {
+          query: SessionSyncQuery,
+          success: described(OpencodeXSessionState.SyncResponse, "OpencodeX session sync snapshot"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.session.sync",
+            summary: "Get lightweight OpencodeX session sync snapshot",
+          }),
+        ),
+        HttpApiEndpoint.patch("updateSessionState", `${root}/session-state/:sessionID`, {
+          params: { sessionID: SessionID },
+          payload: UpdateSessionStatePayload,
+          success: described(OpencodeXSessionState.Info, "Updated OpencodeX session UI state"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.session_state.update",
+            summary: "Update OpencodeX session UI state",
           }),
         ),
         HttpApiEndpoint.post("moveSession", `${root}/session/move`, {
