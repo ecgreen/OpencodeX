@@ -634,10 +634,15 @@ export const RunCommand = effectCmd({
         const agent = await pickAgent(client)
 
         const events = await client.event.subscribe()
-        loop(client, events).catch((e) => {
+        const completed = loop(client, events).catch((e) => {
           console.error(e)
-          process.exit(1)
+          process.exitCode = 1
         })
+        async function finish() {
+          if (args.attach) return
+          const error = await completed
+          if (error) process.exitCode = 1
+        }
 
         if (args.command) {
           const result = await client.session.command({
@@ -651,7 +656,9 @@ export const RunCommand = effectCmd({
           if (result.error) {
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
             process.exitCode = 1
+            return
           }
+          await finish()
           return
         }
 
@@ -666,7 +673,9 @@ export const RunCommand = effectCmd({
         if (result.error) {
           if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
           process.exitCode = 1
+          return
         }
+        await finish()
       }
 
       if (args.attach) {
