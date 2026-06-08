@@ -1,10 +1,8 @@
 #!/bin/sh
 set -e
 
-.husky/graphify-update
-
 if [ -n "$(git status --porcelain -- graphify-out .graphifyignore)" ]; then
-  echo "[graphify] graphify-out is stale or uncommitted. Commit the updated graphify artifacts before pushing." >&2
+  echo "[graphify] graphify-out has uncommitted changes. Commit the graphify artifacts before pushing." >&2
   git status --short -- graphify-out .graphifyignore >&2
   exit 1
 fi
