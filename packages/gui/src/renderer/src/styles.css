@@ -531,7 +531,7 @@ textarea:disabled {
 
 .project-heading {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) 52px;
+  grid-template-columns: 24px 26px minmax(0, 1fr) auto;
   gap: 4px;
   align-items: center;
   border-radius: 6px;
@@ -1017,15 +1017,13 @@ h2 {
 }
 
 .dashboard-item-card.project-card .row-actions {
-  justify-content: space-between;
   align-self: end;
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
-.dashboard-item-card.project-card .row-actions small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.dashboard-item-card.project-card .project-folder-label {
+  max-width: 100%;
 }
 
 .dashboard-item-card.project-card .row-actions button {
@@ -2756,7 +2754,7 @@ body {
 }
 
 .project-heading {
-  grid-template-columns: 24px minmax(0, 1fr) 52px;
+  grid-template-columns: 22px 24px minmax(0, 1fr) auto;
   gap: 3px;
   padding: 1px 4px 1px 5px;
 }

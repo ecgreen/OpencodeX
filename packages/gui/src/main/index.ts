@@ -77,9 +77,10 @@ ipcMain.handle("opencodex:window", (event, action: "minimize" | "maximize" | "cl
   if (action === "close") window.close()
 })
 
-ipcMain.handle("opencodex:folder", async () => {
+ipcMain.handle("opencodex:folder", async (_event, defaultPath?: string) => {
   const result = await dialog.showOpenDialog({
     properties: ["openDirectory", "createDirectory"],
+    defaultPath,
   })
   return result.canceled ? undefined : result.filePaths[0]
 })

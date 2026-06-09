@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { GuiClient } from "../src/renderer/src/lib/client"
+import { prepareSessionPromptTarget } from "../src/renderer/src/lib/session-prompt"
 import {
   createProject,
   createSession,
@@ -115,6 +116,20 @@ describe("GUI store backend parity", () => {
     expect(calls).toContain("view.create:session-list")
     expect(calls).toContain("session.promptAsync:session-list:hello:build:anthropic/claude-sonnet:fast")
     expect(calls.find((call) => call.startsWith("session.promptAsync.messageID:"))).toMatch(/^session\.promptAsync\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+  })
+
+  test("prepares prompt targets for existing and pending sessions", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+    const existing = session("existing-session", 1)
+
+    expect(await prepareSessionPromptTarget(gui, { name: "session" }, existing)).toEqual({ target: existing })
+
+    const pending = await prepareSessionPromptTarget(gui, { name: "new-session", projectID: "project-1" }, session("pending-session", 2))
+
+    expect(calls).toContain("opencodex.session.create:project-1")
+    expect(pending.target.id).toBe("session-list")
+    expect(pending.createdSessionID).toBe("session-list")
   })
 
   test("loads TUI-style session bundle", async () => {

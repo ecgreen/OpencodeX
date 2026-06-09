@@ -7,6 +7,6 @@ export type GuiConnection = {
 
 contextBridge.exposeInMainWorld("opencodex", {
   connection: () => ipcRenderer.invoke("opencodex:connection") as Promise<GuiConnection>,
-  folder: () => ipcRenderer.invoke("opencodex:folder") as Promise<string | undefined>,
+  folder: (defaultPath?: string) => ipcRenderer.invoke("opencodex:folder", defaultPath) as Promise<string | undefined>,
   window: (action: "minimize" | "maximize" | "close") => ipcRenderer.invoke("opencodex:window", action),
 })

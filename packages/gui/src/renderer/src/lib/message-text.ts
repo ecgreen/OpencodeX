@@ -31,33 +31,49 @@ function extractVisibleText(value: unknown): string | undefined {
   if (Array.isArray(value)) return joinText(value.map(extractVisibleText))
   if (!isRecord(value)) return
 
-  const channel = typeof value.channel === "string" ? value.channel : undefined
-  if (channel) {
-    if (HIDDEN_CHANNELS.has(channel)) return
-    if (VISIBLE_CHANNELS.has(channel)) return extractVisibleText(value.content)
-  }
+  return extractChannelContent(value)
+    ?? extractVisibleFields(value)
+    ?? extractEnvelopeContent(value)
+    ?? extractMessageContent(value)
+    ?? extractTypedContent(value)
+    ?? extractRoleContent(value)
+}
 
-  const channelText = joinText([
+function extractChannelContent(value: JsonRecord) {
+  const channel = typeof value.channel === "string" ? value.channel : undefined
+  if (!channel) return
+  if (HIDDEN_CHANNELS.has(channel)) return
+  if (VISIBLE_CHANNELS.has(channel)) return extractVisibleText(value.content)
+}
+
+function extractVisibleFields(value: JsonRecord) {
+  return joinText([
     extractVisibleText(value.commentary),
     extractVisibleText(value.final),
     extractVisibleText(value.final_answer),
   ])
-  if (channelText) return channelText
+}
 
+function extractEnvelopeContent(value: JsonRecord) {
   if (Array.isArray(value.output)) return extractOpenAIOutput(value.output)
   if (Array.isArray(value.choices)) return extractChoices(value.choices)
+}
 
+function extractMessageContent(value: JsonRecord) {
   if (isRecord(value.message)) {
     const role = typeof value.message.role === "string" ? value.message.role : undefined
     if (!role || role === "assistant") return extractVisibleText(value.message)
   }
+}
 
+function extractTypedContent(value: JsonRecord) {
   const type = typeof value.type === "string" ? value.type : undefined
   if ((type === "text" || type === "output_text") && typeof value.text === "string") return value.text
   if ((type === "message" || type === "assistant") && value.content !== undefined) return extractVisibleText(value.content)
-  if (typeof value.role === "string" && value.content !== undefined) return extractVisibleText(value.content)
+}
 
-  return
+function extractRoleContent(value: JsonRecord) {
+  if (typeof value.role === "string" && value.content !== undefined) return extractVisibleText(value.content)
 }
 
 function extractOpenAIOutput(output: unknown[]) {
