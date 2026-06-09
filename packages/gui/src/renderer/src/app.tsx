@@ -1,14 +1,15 @@
-import type { GlobalEvent, OpencodeXSessionState, OpencodeXView, PermissionRequest, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { GlobalEvent, OpencodeXSessionState, OpencodeXView, PermissionRequest, ProviderAuthMethod, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./lib/client"
-import type { GuiSnapshot, SessionData } from "./lib/store"
+import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
 import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import { OpencodeXLogo, Titlebar } from "./components/chrome"
 import { CollectionPage, ProjectCollectionPage, SessionCollectionPage, StatusPage } from "./components/collection-pages"
 import { CommandPaletteModal, type PaletteCommand } from "./components/command-palette"
 import { Dashboard } from "./components/dashboard"
+import { DiffPage, type DiffMode } from "./components/diff-page"
 import { DialogModal, type ChoiceOption, type DialogState } from "./components/dialog-modal"
-import { RailSidebar, type RailDragTarget, type RailSectionName } from "./components/rail-sidebar"
+import { RailSidebar, type RailDragTarget, type RailDropTarget, type RailSectionName } from "./components/rail-sidebar"
 import { SessionPage } from "./components/session-page"
 import { ViewPaneHost } from "./components/view-pane-host"
 import { ViewsPage } from "./components/views"
@@ -18,10 +19,10 @@ import { compactPath, formatRelative, title } from "./lib/format"
 import { guiShortcutAction, isKeyboardEditingTarget, runGuiShortcutAction } from "./lib/keyboard-shortcuts"
 import { prependOlderMessages, trimToLiveTail, type MessageWindow } from "./lib/message-window"
 import { runCycleVariantAction, runSwitchAgentAction, runSwitchModelAction, runSwitchVariantAction } from "./lib/model-actions"
-import { firstAvailableModel, modelValue, selectedModelVariants, sessionModelDefaults } from "./lib/model-selection"
+import { firstAvailableModel, modelValue, parseModelValue, selectedModelVariants, sessionModelDefaults } from "./lib/model-selection"
 import { buildPaletteCommands } from "./lib/palette-commands"
-import { runCreateProjectAction, runCreateSessionRouteAction, runDeleteProjectAction, runEditProjectFoldersAction, runRenameProjectAction } from "./lib/project-actions"
-import { droppedReorderIDs, moveByOffset } from "./lib/reorder"
+import { runCreateProjectAction, runCreateSessionRouteAction, runDeleteProjectAction, runEditProjectAction, runEditProjectFoldersAction, runRenameProjectAction } from "./lib/project-actions"
+import { droppedReorderIDs, mergeOrderedIDs, moveByOffset } from "./lib/reorder"
 import { activeSessionIDForRoute, activeSessionRouteKey as sessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "./lib/route-selection"
 import {
   globalEventAction,
@@ -42,23 +43,42 @@ import { markSessionViewedInSnapshot } from "./lib/session-status"
 import { runSelectedSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "./lib/session-sync"
 import { runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest } from "./lib/session-actions"
 import { liveServerSyncPlan, visibleSessionSyncTarget } from "./lib/live-sync"
+import { buildSessionSlashCommands, type SessionSlashCommand, type SessionSlashCommandContext } from "./lib/session-slash-commands"
 import { syncViewSessionsInParallel, viewSessionsInOrder } from "./lib/view-sync"
 import { runViewPromptAction } from "./lib/view-prompt"
 import { runSessionPromptAction } from "./lib/session-prompt"
+import { formatSessionTranscript } from "./lib/transcript"
 import {
   abortSession,
+  assignSwarmTask,
+  authorizeProviderOauth,
+  completeProviderOauth,
   createProject,
   createSession,
   createSwarm,
   createView,
+  connectMcp,
+  deleteView,
   deleteProject,
   deleteSession,
+  disconnectMcp,
+  disposeInstance,
+  forkSession,
+  listConsoleOrgs,
+  listMcpStatus,
+  listProviderAuthMethods,
+  listProviders,
+  listSkills,
+  loadSessionDiff,
   loadSession,
   loadSessionCards,
   loadSessionMessages,
   loadSnapshot,
+  loadVcsDiff,
+  listWorkspaces,
   moveSession,
   rejectQuestion,
+  removeWorkspace,
   renameProject,
   renameSession,
   reorderProjects,
@@ -66,13 +86,24 @@ import {
   replyPermission,
   replyQuestion,
   sendPrompt,
+  setProviderApiAuth,
+  shareSession,
+  summarizeSession,
   subscribeEvents,
+  switchConsoleOrg,
+  syncWorkspaces,
+  unrevertSession,
+  unshareSession,
   updateSessionUiState,
   updateView,
+  updateProject,
   updateProjectFolders,
   updateViewFocus,
   validateProjectFolders,
   isRenderableSession,
+  revertSession,
+  warpSessionWorkspace,
+  workspaceStatus,
 } from "./lib/store"
 import { pendingViewSessions, viewItemID, viewItemSession, type ViewItem } from "./lib/view-items"
 
@@ -84,28 +115,33 @@ type Route =
   | { name: "session"; sessionID: string }
   | { name: "swarms" }
   | { name: "views"; viewID?: string }
+  | { name: "diff"; mode?: DiffMode; sessionID?: string }
   | { name: "settings" }
   | { name: "status" }
 
 const NAV_ITEMS = [
   { name: "dashboard", label: "Dashboard", icon: "dashboard", shortcut: "Ctrl+D", description: "Workspace command center" },
-  { name: "sessions", label: "Sessions", icon: "session", shortcut: "Ctrl+1", description: "Resume and monitor agent sessions" },
-  { name: "projects", label: "Projects", icon: "folder", shortcut: "Ctrl+2", description: "Project groups and folders" },
-  { name: "views", label: "Views", icon: "views", shortcut: "Ctrl+4", description: "Multi-session views" },
-  { name: "swarms", label: "Swarms", icon: "swarm", shortcut: "Ctrl+3", description: "Coordinate AI team runs" },
-  { name: "status", label: "Status", icon: "activity", shortcut: "Ctrl+5", description: "Provider and runtime health" },
-  { name: "settings", label: "Settings", icon: "settings", shortcut: "Ctrl+6", description: "Preferences and provider setup" },
+  { name: "projects", label: "Projects", icon: "folder", shortcut: "Ctrl+1", description: "Manage project groups and folders" },
+  { name: "swarms", label: "Swarms", icon: "swarm", shortcut: "Ctrl+2", description: "Manage swarms (work in progress)" },
+  { name: "views", label: "Views", icon: "views", shortcut: "Ctrl+3", description: "Manage views (work in progress)" },
 ] as const
 
 const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
 const SESSION_MESSAGE_PAGE_LIMIT = 128
 const VIEW_MESSAGE_PAGE_LIMIT = 48
+const LOAD_MORE_MESSAGE_MULTIPLIER = 3
 const SESSION_MESSAGE_WINDOW: MessageWindow = { count: 128, budget: 100_000 }
 const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 28_000 }
 const LIVE_SYNC_INTERVAL_MS = CLIENT_SESSION_SYNC_INTERVAL_MS
 const SNAPSHOT_SYNC_INTERVAL_MS = 5_000
 const SEEN_EVENT_ID_LIMIT = 2_000
+const DEFAULT_RAIL_SECTION_ORDER: RailSectionName[] = ["pinned", "projects", "recent", "views"]
+const DEFAULT_RAIL_SECTIONS: Record<RailSectionName, boolean> = { pinned: false, projects: false, recent: false, views: true }
+const CUSTOM_PROVIDER_OPTION = "__custom_provider__"
+const CUSTOM_PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
+type GuiThemeMode = "dark" | "light"
 export function App() {
+  const sidebarPreferences = readSidebarPreferences()
   const [client, setClient] = createSignal<GuiClient>()
   const [snapshot, setSnapshot] = createSignal<GuiSnapshot>()
   const [route, setRoute] = createSignal<Route>({ name: "dashboard" })
@@ -121,13 +157,19 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = createSignal("")
   const [selectedModel, setSelectedModel] = createSignal("")
   const [selectedVariant, setSelectedVariant] = createSignal("")
+  const [themeMode, setThemeMode] = createSignal<GuiThemeMode>(readThemeMode())
+  const [showTranscriptTimestamps, setShowTranscriptTimestamps] = createSignal(false)
+  const [showTranscriptThinking, setShowTranscriptThinking] = createSignal(true)
   const [notice, setNotice] = createSignal("")
   const [dialog, setDialog] = createSignal<DialogState>()
   const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
-  const [railCollapsed, setRailCollapsed] = createSignal(false)
+  const [railCollapsed, setRailCollapsed] = createSignal(sidebarPreferences.railCollapsed)
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
-  const [railSections, setRailSections] = createSignal<Record<RailSectionName, boolean>>({ projects: false, recent: false, swarms: false, views: true })
-  const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>({})
+  const [railSectionOrder, setRailSectionOrder] = createSignal<RailSectionName[]>(sidebarPreferences.railSectionOrder)
+  const [railSections, setRailSections] = createSignal<Record<RailSectionName, boolean>>(sidebarPreferences.railSections)
+  const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>(sidebarPreferences.expandedProjectIDs)
+  const [pinnedSessionIDs, setPinnedSessionIDs] = createSignal(sidebarPreferences.pinnedSessionIDs)
+  const [pinnedViewIDs, setPinnedViewIDs] = createSignal(sidebarPreferences.pinnedViewIDs)
   const [viewAgents, setViewAgents] = createSignal<Record<string, string>>({})
   const [viewModels, setViewModels] = createSignal<Record<string, string>>({})
   const [viewVariants, setViewVariants] = createSignal<Record<string, string>>({})
@@ -135,6 +177,8 @@ export function App() {
   const [viewComposerFocusRequest, setViewComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
   const [recentModels, setRecentModels] = createSignal(readRecentModels())
   const [dragTarget, setDragTarget] = createSignal<RailDragTarget>()
+  const [dropTarget, setDropTarget] = createSignal<RailDropTarget>()
+  const [projectVisualOrder, setProjectVisualOrder] = createSignal<string[]>([])
   let sessionSyncRequestID = 0
   let sessionDataLoadedTime = 0
   let lastActiveViewMembershipKey = ""
@@ -182,6 +226,50 @@ export function App() {
     return snapshot()?.questions.filter((request) => request.sessionID === session.id) ?? []
   })
   const visibleSessions = createMemo(() => tuiSidebarSessions(snapshot()))
+  const pinnedSessionIDSet = createMemo(() => new Set(pinnedSessionIDs()))
+  const pinnedViewIDSet = createMemo(() => new Set(pinnedViewIDs()))
+  const pinnedSessions = createMemo(() => {
+    const byID = new Map(visibleSessions().map((session) => [session.id, session]))
+    return pinnedSessionIDs().map((id) => byID.get(id)).filter((session): session is Session => session !== undefined)
+  })
+  const pinnedViews = createMemo(() => {
+    const byID = new Map((snapshot()?.views ?? []).map((view) => [view.id, view]))
+    return pinnedViewIDs().map((id) => byID.get(id)).filter((view): view is OpencodeXView => view !== undefined)
+  })
+
+  createEffect(() => {
+    const mode = themeMode()
+    document.documentElement.dataset.theme = mode
+    localStorage.setItem("opencodex.gui.theme", mode)
+  })
+
+  createEffect(() => {
+    writeSidebarPreferences({
+      railCollapsed: railCollapsed(),
+      railSectionOrder: railSectionOrder(),
+      railSections: railSections(),
+      expandedProjectIDs: expandedProjectIDs(),
+      pinnedSessionIDs: pinnedSessionIDs(),
+      pinnedViewIDs: pinnedViewIDs(),
+    })
+  })
+
+  createEffect(() => {
+    const current = snapshot()
+    if (!current) return
+    const sessionIDs = new Set(visibleSessions().map((session) => session.id))
+    const viewIDs = new Set(current.views.map((view) => view.id))
+    const nextSessionIDs = pinnedSessionIDs().filter((id) => sessionIDs.has(id))
+    const nextViewIDs = pinnedViewIDs().filter((id) => viewIDs.has(id))
+    if (nextSessionIDs.join("\n") !== pinnedSessionIDs().join("\n")) setPinnedSessionIDs(nextSessionIDs)
+    if (nextViewIDs.join("\n") !== pinnedViewIDs().join("\n")) setPinnedViewIDs(nextViewIDs)
+  })
+
+  createEffect(() => {
+    const visualOrder = projectVisualOrder()
+    if (visualOrder.length === 0) return
+    if ((snapshot()?.projects ?? []).map((project) => project.id).join("\n") === visualOrder.join("\n")) setProjectVisualOrder([])
+  })
 
   async function refresh() {
     const gui = client()
@@ -287,7 +375,11 @@ export function App() {
     const gui = client()
     if (!gui || sessionDataSessionID() !== sessionID) return
     const session = snapshot()?.sessions.find((item) => item.id === sessionID)
-    const page = await loadSessionMessages(gui, sessionID, session?.directory, { limit: SESSION_MESSAGE_PAGE_LIMIT, renderBudget: SESSION_MESSAGE_WINDOW.budget, before })
+    const page = await loadSessionMessages(gui, sessionID, session?.directory, {
+      limit: SESSION_MESSAGE_PAGE_LIMIT * LOAD_MORE_MESSAGE_MULTIPLIER,
+      renderBudget: SESSION_MESSAGE_WINDOW.budget * LOAD_MORE_MESSAGE_MULTIPLIER,
+      before,
+    })
     setSessionData((data) => sessionDataSessionID() === sessionID ? prependOlderMessages(data, page) : data)
   }
 
@@ -296,7 +388,11 @@ export function App() {
     if (!gui) return
     const session = snapshot()?.sessions.find((item) => item.id === sessionID)
     if (!session) return
-    const page = await loadSessionMessages(gui, sessionID, session.directory, { limit: VIEW_MESSAGE_PAGE_LIMIT, renderBudget: VIEW_MESSAGE_WINDOW.budget, before })
+    const page = await loadSessionMessages(gui, sessionID, session.directory, {
+      limit: VIEW_MESSAGE_PAGE_LIMIT * LOAD_MORE_MESSAGE_MULTIPLIER,
+      renderBudget: VIEW_MESSAGE_WINDOW.budget * LOAD_MORE_MESSAGE_MULTIPLIER,
+      before,
+    })
     setViewSessionData((current) => ({
       ...current,
       [sessionID]: prependOlderMessages(current[sessionID] ?? EMPTY_SESSION_DATA, page),
@@ -660,8 +756,21 @@ export function App() {
     setRailSections((current) => ({ ...current, [name]: !current[name] }))
   }
 
+  function toggleSessionPinned(sessionID: string) {
+    setPinnedSessionIDs((current) => current.includes(sessionID) ? current.filter((id) => id !== sessionID) : [...current, sessionID])
+  }
+
+  function toggleViewPinned(viewID: string) {
+    setPinnedViewIDs((current) => current.includes(viewID) ? current.filter((id) => id !== viewID) : [...current, viewID])
+  }
+
   function toggleProject(projectID: string) {
     setExpandedProjectIDs((current) => ({ ...current, [projectID]: !projectExpanded(projectID) }))
+  }
+
+  function projectOrderIDs() {
+    const ids = (snapshot()?.projects ?? []).map((project) => project.id)
+    return projectVisualOrder().length === 0 ? ids : mergeOrderedIDs(ids, projectVisualOrder())
   }
 
   function projectExpanded(projectID: string) {
@@ -730,32 +839,56 @@ export function App() {
   }
 
   async function handleSwitchModel() {
-    await runSwitchModelAction({
-      providers: snapshot()?.providers ?? [],
-      alert,
-      askChoice,
+    await switchModelFor({
       setSelectedModel,
       setSelectedVariant,
-      rememberModel,
     })
   }
 
   async function handleSwitchAgent() {
+    await switchAgentFor(setSelectedAgent)
+  }
+
+  async function handleSwitchVariant() {
+    await switchVariantFor({
+      selectedModel: selectedModel(),
+      setSelectedVariant,
+    })
+  }
+
+  async function switchModelFor(input: {
+    setSelectedModel: (value: string) => void
+    setSelectedVariant: (value: string) => void
+  }) {
+    await runSwitchModelAction({
+      providers: snapshot()?.providers ?? [],
+      alert,
+      askChoice,
+      setSelectedModel: input.setSelectedModel,
+      setSelectedVariant: input.setSelectedVariant,
+      rememberModel,
+    })
+  }
+
+  async function switchAgentFor(setAgent: (value: string) => void) {
     await runSwitchAgentAction({
       agents: snapshot()?.agents ?? [],
       alert,
       askChoice,
-      setSelectedAgent,
+      setSelectedAgent: setAgent,
     })
   }
 
-  async function handleSwitchVariant() {
+  async function switchVariantFor(input: {
+    selectedModel: string
+    setSelectedVariant: (value: string) => void
+  }) {
     await runSwitchVariantAction({
       providers: snapshot()?.providers ?? [],
-      selectedModel: selectedModel(),
+      selectedModel: input.selectedModel,
       alert,
       askChoice,
-      setSelectedVariant,
+      setSelectedVariant: input.setSelectedVariant,
     })
   }
 
@@ -789,8 +922,594 @@ export function App() {
       "Ctrl+N creates a session.",
       "Ctrl+R refreshes.",
       "Ctrl+B toggles the sidebar.",
-      "Ctrl+D and Ctrl+1-6 navigate sections.",
+      "Ctrl+D and Ctrl+1-3 navigate sections.",
     ].join("\n"))
+  }
+
+  async function handleThemeSlash() {
+    const value = await askChoice({
+      title: "Theme",
+      options: [
+        { value: "dark", title: "Dark", description: "Use the dark GUI palette" },
+        { value: "light", title: "Light", description: "Use the light GUI palette" },
+      ],
+    })
+    if (value !== "dark" && value !== "light") return
+    setThemeMode(value)
+    alert(`${value === "dark" ? "Dark" : "Light"} mode enabled.`)
+  }
+
+  function handleDiffSlash(session?: Session) {
+    setRoute({
+      name: "diff",
+      mode: session ? "last-turn" : "git",
+      sessionID: session?.id,
+    })
+  }
+
+  async function loadDiffForPage(input: { mode: DiffMode; session?: Session }) {
+    const gui = client()
+    if (!gui) return []
+    if (input.mode === "last-turn") {
+      if (!input.session) return []
+      return (await loadSessionDiff(gui, { sessionID: input.session.id, directory: input.session.directory })).data ?? []
+    }
+    return (await loadVcsDiff(gui, { mode: "git", context: 12 })).data ?? []
+  }
+
+  async function updateDiffReviewedFiles(session: Session, reviewedFiles: string[]) {
+    const gui = client()
+    if (!gui) return
+    const reviewedAt = reviewedFiles.length > 0 && session.summary?.files === reviewedFiles.length ? Math.max(Date.now(), session.time.updated) : undefined
+    await updateSessionUiState(gui, session.id, { reviewedFiles, reviewedAt })
+    setSnapshot((current) => current ? {
+      ...current,
+      sessionUiState: {
+        ...current.sessionUiState,
+        [session.id]: {
+          sessionID: session.id,
+          displayStatus: current.sessionUiState[session.id]?.displayStatus ?? "idle",
+          reviewedFiles,
+          updated: current.sessionUiState[session.id]?.updated ?? false,
+          seenAt: current.sessionUiState[session.id]?.seenAt,
+          reviewedAt: reviewedAt ?? current.sessionUiState[session.id]?.reviewedAt,
+        },
+      },
+    } : current)
+  }
+
+  function handleToggleTimestampsSlash() {
+    const next = !showTranscriptTimestamps()
+    setShowTranscriptTimestamps(next)
+    alert(next ? "Message timestamps shown." : "Message timestamps hidden.")
+  }
+
+  function handleToggleThinkingSlash() {
+    const next = !showTranscriptThinking()
+    setShowTranscriptThinking(next)
+    alert(next ? "Thinking content shown." : "Thinking content hidden.")
+  }
+
+  async function handleSkillsSlash(context?: SessionSlashCommandContext) {
+    const gui = client()
+    if (!gui) return
+    const skills = (await listSkills(gui)).data ?? []
+    if (skills.length === 0) return alert("No skills are available.")
+    const name = await askChoice({
+      title: "Skills",
+      options: skills.map((skill) => ({
+        value: skill.name,
+        title: skill.name,
+        description: skill.description?.replace(/\s+/g, " ").trim(),
+        meta: skill.location,
+      })),
+    })
+    if (!name) return
+    context?.setDraftPrompt(`/${name} `)
+  }
+
+  async function handleEditorSlash(session?: Session, context?: SessionSlashCommandContext) {
+    if (!window.opencodex?.editor) return alert("External editor support is not available in this environment.")
+    const current = context?.draftPrompt.trim().startsWith("/") ? "" : context?.draftPrompt ?? ""
+    const content = await window.opencodex.editor({
+      value: current,
+      cwd: session?.directory || client()?.directory,
+    })
+    if (content === undefined) return alert("Set VISUAL or EDITOR to use /editor.")
+    context?.setDraftPrompt(content)
+  }
+
+  async function handleMcpSlash() {
+    const gui = client()
+    if (!gui) return
+    const status = (await listMcpStatus(gui)).data ?? {}
+    const options = Object.entries(status).map(([name, item]) => ({
+      value: name,
+      title: name,
+      meta: item.status,
+      description: "error" in item ? item.error : item.status === "connected" ? "Disconnect this MCP server" : "Connect this MCP server",
+    }))
+    if (options.length === 0) return alert("No MCP servers are configured.")
+    const name = await askChoice({ title: "Toggle MCP", message: "Connected servers will be disconnected; other servers will be connected.", options })
+    if (!name) return
+    if (status[name]?.status === "connected") {
+      await disconnectMcp(gui, name)
+      return alert(`Disconnected ${name}.`)
+    }
+    await connectMcp(gui, name)
+    alert(`Connected ${name}.`)
+  }
+
+  async function handleOrgSlash() {
+    const gui = client()
+    if (!gui) return
+    const orgs = (await listConsoleOrgs(gui)).data?.orgs ?? []
+    if (orgs.length === 0) return alert("No Console organizations are available.")
+    const value = await askChoice({
+      title: "Switch Org",
+      options: orgs.map((org) => ({
+        value: `${org.accountID}:${org.orgID}`,
+        title: org.orgName,
+        meta: org.active ? "active" : org.accountEmail,
+        description: org.accountUrl,
+      })),
+    })
+    const org = orgs.find((item) => `${item.accountID}:${item.orgID}` === value)
+    if (!org) return
+    if (org.active) return alert(`${org.orgName} is already active.`)
+    await switchConsoleOrg(gui, org.accountID, org.orgID)
+    await disposeInstance(gui).catch(() => undefined)
+    await refresh()
+    alert(`Switched to ${org.orgName}.`)
+  }
+
+  async function handleConnectSlash() {
+    const gui = client()
+    if (!gui) return
+    const providers = (await listProviders(gui)).data
+    const authMethods = (await listProviderAuthMethods(gui)).data ?? {}
+    const providerValue = await askChoice({
+      title: "Connect Provider",
+      options: [
+        ...(providers?.all ?? []).map((provider) => ({
+          value: provider.id,
+          title: provider.name,
+          meta: providers?.connected.includes(provider.id) ? "connected" : provider.source,
+          description: provider.id,
+        })),
+        { value: CUSTOM_PROVIDER_OPTION, title: "Other", description: "Save credentials for a custom provider ID" },
+      ],
+    })
+    if (!providerValue) return
+    const providerID = providerValue === CUSTOM_PROVIDER_OPTION ? normalizeCustomProviderID(await askText({
+      title: "Custom Provider",
+      message: "Provider ids must start with a lowercase letter or number and only use lowercase letters, numbers, hyphens, and underscores.",
+    })) : providerValue
+    if (!providerID) return alert("Invalid provider ID.")
+    const methods = authMethods[providerID] ?? [{ type: "api" as const, label: "API key" }]
+    const methodValue = methods.length === 1 ? "0" : await askChoice({
+      title: "Provider Auth",
+      options: methods.map((method, index) => ({
+        value: String(index),
+        title: method.label,
+        meta: method.type,
+      })),
+    })
+    if (!methodValue) return
+    const methodIndex = Number(methodValue)
+    const method = methods[methodIndex]
+    if (!method) return
+    const inputs = await promptProviderInputs(method.prompts ?? [])
+    if (!inputs) return
+    if (method.type === "api") {
+      const key = (await askText({ title: method.label, message: providerID === "opencode" ? "Enter your OpenCode Zen API key." : undefined }))?.trim()
+      if (!key) return
+      await setProviderApiAuth(gui, providerID, key, Object.keys(inputs).length > 0 ? inputs : undefined)
+      await disposeInstance(gui).catch(() => undefined)
+      await refresh()
+      alert(`Connected ${providerID}.`)
+      return
+    }
+    const authorization = (await authorizeProviderOauth(gui, { providerID, method: methodIndex, inputs })).data
+    if (!authorization) return alert("No OAuth authorization details returned.")
+    window.open(authorization.url, "_blank", "noopener,noreferrer")
+    await navigator.clipboard.writeText(authorization.url).catch(() => undefined)
+    if (authorization.method === "code") {
+      const code = await askText({
+        title: method.label,
+        message: `${authorization.instructions}\n\n${authorization.url}`,
+      })
+      if (!code) return
+      await completeProviderOauth(gui, { providerID, method: methodIndex, code })
+    } else {
+      const completed = await askChoice({
+        title: method.label,
+        message: `${authorization.instructions}\n\nThe authorization URL was opened and copied to the clipboard.`,
+        options: [{ value: "done", title: "I completed authorization", description: "Continue provider setup" }],
+      })
+      if (!completed) return
+      await completeProviderOauth(gui, { providerID, method: methodIndex })
+    }
+    await disposeInstance(gui).catch(() => undefined)
+    await refresh()
+    alert(`Connected ${providerID}.`)
+  }
+
+  async function handleCreateSwarmTaskSlash(input: { selectedAgent?: string; selectedVariant?: string } = {}) {
+    const gui = client()
+    if (!gui) return
+    const swarms = (snapshot()?.swarms ?? []).filter((swarm) => swarm.status !== "cancelled")
+    if (swarms.length === 0) return alert("Create an active swarm before assigning a task.")
+    const swarmID = await askChoice({
+      title: "New Swarm Task",
+      options: swarms.map((swarm) => ({
+        value: swarm.id,
+        title: swarm.title,
+        meta: swarm.status,
+        description: swarm.prompt || `${swarm.roles.length} roles`,
+      })),
+    })
+    if (!swarmID) return
+    const promptText = (await askText({ title: "New Swarm Task", multiline: true }))?.trim()
+    if (!promptText) return
+    await assignSwarmTask(gui, swarmID, {
+      prompt: promptText,
+      agent: input.selectedAgent || undefined,
+      variant: input.selectedVariant || undefined,
+    })
+    await refresh()
+    setRoute({ name: "swarms" })
+    alert("Swarm task assigned.")
+  }
+
+  async function handleEditViewSlash() {
+    const gui = client()
+    if (!gui) return
+    const view = await chooseView("Edit View")
+    if (!view) return
+    const titleText = await askText({ title: "Rename View", value: view.title })
+    const nextTitle = titleText?.trim()
+    if (!nextTitle) return
+    await updateView(gui, view.id, { title: nextTitle })
+    await refresh()
+    alert("View updated.")
+  }
+
+  async function handleDeleteViewSlash() {
+    const gui = client()
+    if (!gui) return
+    const view = await chooseView("Delete View")
+    if (!view) return
+    if (!(await confirm({ title: "Delete View", message: `Delete "${view.title}"?`, confirm: "Delete" }))) return
+    await deleteView(gui, view.id)
+    await refresh()
+    const current = route()
+    if (current.name === "views" && current.viewID === view.id) setRoute({ name: "views" })
+    alert("View deleted.")
+  }
+
+  async function handleWorkspacesSlash() {
+    const gui = client()
+    if (!gui) return
+    await syncWorkspaces(gui).catch(() => undefined)
+    const workspaces = (await listWorkspaces(gui)).data ?? []
+    const statuses = new Map(((await workspaceStatus(gui)).data ?? []).map((status) => [status.workspaceID, status.status]))
+    if (workspaces.length === 0) return alert("No workspaces are available.")
+    const value = await askChoice({
+      title: "Manage Workspaces",
+      message: "Select a workspace to remove it after confirmation.",
+      options: workspaces.map((workspace) => ({
+        value: workspace.id,
+        title: workspace.name,
+        meta: [workspace.type, statuses.get(workspace.id)].filter(Boolean).join(" - "),
+        description: [workspace.branch, workspace.directory].filter(Boolean).join(" - "),
+      })),
+    })
+    const workspace = workspaces.find((item) => item.id === value)
+    if (!workspace) return
+    if (!(await confirm({ title: "Remove Workspace", message: `Remove "${workspace.name}"?`, confirm: "Remove" }))) return
+    await removeWorkspace(gui, workspace.id)
+    await refresh()
+    alert("Workspace removed.")
+  }
+
+  async function handleWarpSlash(session?: Session) {
+    const gui = client()
+    if (!gui || !session) return
+    await syncWorkspaces(gui).catch(() => undefined)
+    const workspaces = (await listWorkspaces(gui)).data ?? []
+    const value = await askChoice({
+      title: "Warp Workspace",
+      message: "Move this session into a workspace or detach it to the local project.",
+      options: [
+        { value: "__local__", title: "Local project", description: "Detach this session from workspace sync" },
+        ...workspaces.map((workspace) => ({
+          value: workspace.id,
+          title: workspace.name,
+          meta: workspace.type,
+          description: [workspace.branch, workspace.directory].filter(Boolean).join(" - "),
+        })),
+      ],
+    })
+    if (!value) return
+    const copyChanges = await askChoice({
+      title: "Copy Changes",
+      message: "Copy existing workspace changes into the destination?",
+      options: [
+        { value: "yes", title: "Copy changes", description: "Preserve pending changes during the warp" },
+        { value: "no", title: "Do not copy", description: "Move the session without copying changes" },
+      ],
+    })
+    if (!copyChanges) return
+    await warpSessionWorkspace(gui, { id: value === "__local__" ? null : value, sessionID: session.id, copyChanges: copyChanges === "yes" })
+    await refresh()
+    await reloadSessionAfterSlash(session)
+    alert("Session workspace updated.")
+  }
+
+  async function handleShareSlash(session?: Session) {
+    const gui = client()
+    if (!gui || !session) return
+    const url = session.share?.url ?? (await shareSession(gui, session.id)).data?.share?.url
+    if (!url) return alert("No share URL returned.")
+    await navigator.clipboard.writeText(url)
+    await refresh()
+    alert("Share URL copied.")
+  }
+
+  async function handleUnshareSlash(session?: Session) {
+    const gui = client()
+    if (!gui || !session) return
+    await unshareSession(gui, session.id)
+    await refresh()
+    alert("Session unshared.")
+  }
+
+  async function handleCompactSlash(session?: Session, currentModel = selectedModel()) {
+    const gui = client()
+    if (!gui || !session) return
+    const model = parseModelValue(currentModel)
+    if (!model) return alert("Select a model before compacting this session.")
+    await summarizeSession(gui, { sessionID: session.id, providerID: model.providerID, modelID: model.modelID })
+    await refresh()
+    alert("Session compaction started.")
+  }
+
+  async function handleUndoSlash(session?: Session, data = activeSessionData(), restorePrompt: (value: string) => void = setPrompt) {
+    const gui = client()
+    if (!gui || !session) return
+    const status = snapshot()?.sessionStatus[session.id]?.type
+    if (status && status !== "idle") await abortSession(gui, session.id, session.directory).catch(() => undefined)
+    const message = data.messages.findLast((item) => (!session.revert?.messageID || item.info.id < session.revert.messageID) && item.info.role === "user")
+    if (!message) return alert("No previous user message to undo.")
+    await revertSession(gui, { sessionID: session.id, messageID: message.info.id })
+    restorePrompt(message.parts.map(textPartContent).join(""))
+    await reloadSessionAfterSlash(session)
+  }
+
+  async function handleRedoSlash(session?: Session, data = activeSessionData()) {
+    const gui = client()
+    if (!gui || !session) return
+    const messageID = session.revert?.messageID
+    if (!messageID) return alert("No message to redo.")
+    const message = data.messages.find((item) => item.info.role === "user" && item.info.id > messageID)
+    if (!message) await unrevertSession(gui, session.id)
+    else await revertSession(gui, { sessionID: session.id, messageID: message.info.id })
+    await reloadSessionAfterSlash(session)
+  }
+
+  async function handleTimelineSlash(session?: Session, data = activeSessionData()) {
+    if (!session) return
+    const messageID = await chooseUserMessage("Jump to Message", data)
+    if (!messageID) return
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(
+          `.session-page[data-session-id="${CSS.escape(session.id)}"] [data-message-id="${CSS.escape(messageID)}"]`,
+        )
+        ?.scrollIntoView({ block: "center" })
+    })
+  }
+
+  async function handleForkSlash(session?: Session, data = activeSessionData()) {
+    const gui = client()
+    if (!gui || !session) return
+    const value = await askChoice({
+      title: "Fork Session",
+      message: "Choose where to fork from.",
+      options: [
+        { value: "__full__", title: "Full session", description: "Fork from the current end of the session" },
+        ...userMessageOptions(data),
+      ],
+    })
+    if (!value) return
+    const forked = await forkSession(gui, { sessionID: session.id, messageID: value === "__full__" ? undefined : value })
+    const next = forked.data
+    if (!next) return alert("No forked session returned.")
+    if (value !== "__full__") {
+      const message = data.messages.find((item) => item.info.id === value)
+      setPrompt(message?.parts.map(textPartContent).join("") ?? "")
+    }
+    await refresh()
+    setRoute({ name: "session", sessionID: next.id })
+  }
+
+  async function handleCopyTranscriptSlash(session?: Session) {
+    const transcript = await loadTranscriptForSlash(session)
+    if (!transcript) return
+    await navigator.clipboard.writeText(transcript)
+    alert("Session transcript copied.")
+  }
+
+  async function handleExportTranscriptSlash(session?: Session) {
+    const transcript = await loadTranscriptForSlash(session)
+    if (!transcript || !session) return
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(new Blob([transcript], { type: "text/markdown" }))
+    link.download = `session-${session.id.slice(0, 8)}.md`
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  async function loadTranscriptForSlash(session?: Session) {
+    const gui = client()
+    if (!gui || !session) return
+    const data = await loadSession(gui, session.id, session.directory, { messageLimit: 10_000 })
+    return formatSessionTranscript({ session, messages: data.messages, providers: snapshot()?.providers ?? [] })
+  }
+
+  async function reloadSessionAfterSlash(session: Session) {
+    await refresh()
+    if (sessionDataSessionID() === session.id) await syncSession(session.id, { force: true })
+    if (viewSessionData()[session.id]) await syncViewSession(session, { force: true })
+  }
+
+  async function chooseUserMessage(titleText: string, data: SessionData) {
+    const options = userMessageOptions(data)
+    if (options.length === 0) return alert("No user messages available.")
+    return askChoice({ title: titleText, options })
+  }
+
+  function userMessageOptions(data: SessionData) {
+    return data.messages
+      .filter((message) => message.info.role === "user")
+      .map((message) => ({
+        value: message.info.id,
+        title: message.parts.map(textPartContent).join("").replace(/\s+/g, " ").trim() || "User message",
+        description: new Date(message.info.time.created).toLocaleString(),
+      }))
+      .toReversed()
+  }
+
+  function textPartContent(part: MessageBundle["parts"][number]) {
+    if (part.type !== "text" || part.synthetic || part.ignored) return ""
+    return part.text
+  }
+
+  function normalizeCustomProviderID(value?: string) {
+    const providerID = value?.trim().replace(/^@ai-sdk\//, "")
+    if (!providerID || !CUSTOM_PROVIDER_ID.test(providerID)) return
+    return providerID
+  }
+
+  async function promptProviderInputs(prompts: NonNullable<ProviderAuthMethod["prompts"]>) {
+    const inputs: Record<string, string> = {}
+    for (const prompt of prompts) {
+      if (prompt.when) {
+        const value = inputs[prompt.when.key]
+        const matches = value === undefined ? false : prompt.when.op === "eq" ? value === prompt.when.value : value !== prompt.when.value
+        if (!matches) continue
+      }
+      const value = prompt.type === "select"
+        ? await askChoice({
+          title: prompt.message,
+          options: prompt.options.map((option) => ({
+            value: option.value,
+            title: option.label,
+            description: option.hint,
+          })),
+        })
+        : await askText({ title: prompt.message, message: prompt.placeholder })
+      if (value === undefined) return
+      inputs[prompt.key] = value
+    }
+    return inputs
+  }
+
+  async function chooseView(titleText: string) {
+    const views = snapshot()?.views ?? []
+    if (views.length === 0) {
+      alert("No views are available.")
+      return
+    }
+    const value = await askChoice({
+      title: titleText,
+      options: views.map((view) => ({
+        value: view.id,
+        title: view.title,
+        meta: `${view.sessions.length} sessions`,
+        description: view.focusedSessionID ? `Focused session: ${view.focusedSessionID}` : undefined,
+      })),
+    })
+    return views.find((view) => view.id === value)
+  }
+
+  function sessionSlashCommands(
+    session?: Session,
+    options: {
+      data?: SessionData
+      selectedModel?: string
+      selectedAgent?: string
+      selectedVariant?: string
+      restorePrompt?: (value: string) => void
+      switchModel?: () => void | Promise<void>
+      switchAgent?: () => void | Promise<void>
+      switchVariant?: () => void | Promise<void>
+    } = {},
+  ): SessionSlashCommand[] {
+    return buildSessionSlashCommands({
+      shared: !!session?.share?.url,
+      canRedo: !!session?.revert?.messageID,
+      variantCount: selectedModelVariants(snapshot()?.providers ?? [], options.selectedModel ?? selectedModel()).length,
+      actions: {
+        switchSession: handleSwitchSession,
+        createSession: () => handleCreateSession(),
+        openDashboard: () => {
+          setRoute({ name: "dashboard" })
+        },
+        createProject: handleCreateProject,
+        openSwarms: () => {
+          setRoute({ name: "swarms" })
+        },
+        openSwarm: () => {
+          setRoute({ name: "swarms" })
+        },
+        createSwarm: handleCreateSwarm,
+        createSwarmTask: () => handleCreateSwarmTaskSlash({
+          selectedAgent: options.selectedAgent ?? selectedAgent(),
+          selectedVariant: options.selectedVariant ?? selectedVariant(),
+        }),
+        openView: () => {
+          setRoute({ name: "views" })
+        },
+        createView: handleCreateView,
+        editView: handleEditViewSlash,
+        deleteView: handleDeleteViewSlash,
+        createProjectSession: handleCreateProjectSession,
+        manageWorkspaces: handleWorkspacesSlash,
+        switchModel: (context) => {
+          if (context?.openModelPicker) return context.openModelPicker()
+          return (options.switchModel ?? handleSwitchModel)()
+        },
+        switchAgent: options.switchAgent ?? handleSwitchAgent,
+        toggleMcps: handleMcpSlash,
+        switchVariant: options.switchVariant ?? handleSwitchVariant,
+        connectProvider: handleConnectSlash,
+        switchOrg: handleOrgSlash,
+        viewStatus: () => {
+          setRoute({ name: "status" })
+        },
+        switchTheme: handleThemeSlash,
+        showHelp,
+        exitApp: () => void window.opencodex?.window("close"),
+        openEditor: (context) => handleEditorSlash(session, context),
+        openSkills: handleSkillsSlash,
+        warpWorkspace: () => handleWarpSlash(session),
+        openDiff: () => handleDiffSlash(session),
+        shareSession: () => handleShareSlash(session),
+        renameSession: () => session ? handleRenameSession(session) : undefined,
+        openTimeline: () => handleTimelineSlash(session, options.data),
+        forkSession: () => handleForkSlash(session, options.data),
+        compactSession: () => handleCompactSlash(session, options.selectedModel),
+        unshareSession: () => handleUnshareSlash(session),
+        undoMessage: () => handleUndoSlash(session, options.data, options.restorePrompt),
+        redoMessage: () => handleRedoSlash(session, options.data),
+        toggleTimestamps: handleToggleTimestampsSlash,
+        toggleThinking: handleToggleThinkingSlash,
+        copyTranscript: () => handleCopyTranscriptSlash(session),
+        exportTranscript: () => handleExportTranscriptSlash(session),
+      },
+    })
   }
 
   async function handlePermission(request: PermissionRequest, reply: "once" | "always" | "reject") {
@@ -864,6 +1583,21 @@ export function App() {
     })
   }
 
+  async function handleEditProject(projectID: string, currentName: string, folders: string[]) {
+    const gui = client()
+    if (!gui) return
+    await runEditProjectAction({
+      projectID,
+      currentName,
+      folders,
+      askText,
+      validateProjectFolders: (targetProjectID, next) => validateProjectFolders(gui, { projectID: targetProjectID, folders: next }),
+      updateProject: (targetProjectID, next) => updateProject(gui, targetProjectID, next).then(() => undefined),
+      refresh,
+      alert,
+    })
+  }
+
   async function handleDeleteProject(projectID: string, name: string) {
     const gui = client()
     if (!gui) return
@@ -918,10 +1652,50 @@ export function App() {
     })
   }
 
+  function handleMoveRailSection(section: RailSectionName, offset: number) {
+    const sectionOrder = moveByOffset(railSectionOrder(), section, offset)
+    if (sectionOrder.length === 0) return
+    setRailSectionOrder(mergeOrderedIDs(DEFAULT_RAIL_SECTION_ORDER, sectionOrder))
+  }
+
+  function handleDropRailSection(targetID: string, placement: "before" | "after") {
+    const source = dragTarget()
+    const sectionOrder = droppedReorderIDs({
+      ids: railSectionOrder(),
+      source,
+      sourceType: "section",
+      targetID,
+      placement,
+    })
+    if (sectionOrder.length === 0) {
+      clearDragTarget()
+      return
+    }
+    setRailSectionOrder(mergeOrderedIDs(DEFAULT_RAIL_SECTION_ORDER, sectionOrder))
+    clearDragTarget()
+  }
+
+  function handleReorderRailSection(sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") {
+    const sectionOrder = droppedReorderIDs({
+      ids: railSectionOrder(),
+      source: { type: "section", id: sourceID },
+      sourceType: "section",
+      targetID,
+      placement,
+    })
+    if (sectionOrder.length === 0) {
+      clearDragTarget()
+      return
+    }
+    setRailSectionOrder(mergeOrderedIDs(DEFAULT_RAIL_SECTION_ORDER, sectionOrder))
+    clearDragTarget()
+  }
+
   async function handleMoveProject(projectID: string, offset: number) {
-    const projectIDs = moveByOffset((snapshot()?.projects ?? []).map((project) => project.id), projectID, offset)
+    const projectIDs = moveByOffset(projectOrderIDs(), projectID, offset)
     const gui = client()
     if (!gui || projectIDs.length === 0) return
+    setProjectVisualOrder(projectIDs)
     await reorderProjects(gui, projectIDs)
     await refresh()
   }
@@ -936,23 +1710,46 @@ export function App() {
 
   async function handleDropProject(targetID: string, placement: "before" | "after") {
     const source = dragTarget()
-    setDragTarget(undefined)
     const projectIDs = droppedReorderIDs({
-      ids: (snapshot()?.projects ?? []).map((project) => project.id),
+      ids: projectOrderIDs(),
       source,
       sourceType: "project",
       targetID,
       placement,
     })
     const gui = client()
-    if (!gui || projectIDs.length === 0) return
+    if (!gui || projectIDs.length === 0) {
+      clearDragTarget()
+      return
+    }
+    setProjectVisualOrder(projectIDs)
+    clearDragTarget()
+    await reorderProjects(gui, projectIDs)
+    await refresh()
+  }
+
+  async function handleReorderProject(sourceID: string, targetID: string, placement: "before" | "after") {
+    const projectIDs = droppedReorderIDs({
+      ids: projectOrderIDs(),
+      source: { type: "project", id: sourceID },
+      sourceType: "project",
+      targetID,
+      placement,
+    })
+    const gui = client()
+    if (!gui || projectIDs.length === 0) {
+      clearDragTarget()
+      return
+    }
+    setProjectVisualOrder(projectIDs)
+    clearDragTarget()
     await reorderProjects(gui, projectIDs)
     await refresh()
   }
 
   async function handleDropView(targetID: string, placement: "before" | "after") {
     const source = dragTarget()
-    setDragTarget(undefined)
+    clearDragTarget()
     const viewIDs = droppedReorderIDs({
       ids: (snapshot()?.views ?? []).map((view) => view.id),
       source,
@@ -968,9 +1765,15 @@ export function App() {
 
   async function chooseProjectID(projects: GuiSnapshot["projects"]) {
     if (projects.length === 1) return projects[0].id
-    const options = projects.map((project) => `${project.id} - ${title(project.name ?? project.project.name)}`).join("\n")
-    const selected = (await askText({ title: "Choose Project", message: options, value: projects[0].id }))?.trim()
-    return projects.some((project) => project.id === selected) ? selected : undefined
+    return askChoice({
+      title: "Choose Project",
+      message: "Choose a project to use.",
+      options: projects.map((project) => ({
+        value: project.id,
+        title: title(project.name ?? project.project.name),
+        description: project.folders.map((folder) => compactPath(folder.path)).join(", "),
+      })),
+    })
   }
 
   async function chooseSessionIDs(sessions: Session[]) {
@@ -997,8 +1800,35 @@ export function App() {
 
   function startDrag(event: DragEvent, target: RailDragTarget) {
     setDragTarget(target)
+    setDropTarget(undefined)
     event.dataTransfer?.setData("text/plain", target.id)
     if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
+  }
+
+  function dragOver(event: DragEvent, target: RailDragTarget) {
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
+    const source = dragTarget()
+    if (!source || source.type !== target.type || source.id === target.id) {
+      setDropTarget(undefined)
+      return
+    }
+    setDropTarget({ ...target, placement: dropPlacement(event) })
+  }
+
+  function projectPointerDrag(sourceID: string, targetID?: string, placement?: "before" | "after") {
+    setDragTarget({ type: "project", id: sourceID })
+    setDropTarget(targetID && placement ? { type: "project", id: targetID, placement } : undefined)
+  }
+
+  function sectionPointerDrag(sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") {
+    setDragTarget({ type: "section", id: sourceID })
+    setDropTarget(targetID && placement ? { type: "section", id: targetID, placement } : undefined)
+  }
+
+  function clearDragTarget() {
+    setDragTarget(undefined)
+    setDropTarget(undefined)
   }
 
   const paletteCommands = createMemo<PaletteCommand[]>(() =>
@@ -1066,6 +1896,23 @@ export function App() {
         renameSession={(session) => void runAction(() => handleRenameSession(session))}
         moveSession={(session) => void runAction(() => handleMoveSession(session))}
         deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+        slashCommands={sessionSlashCommands(session, {
+          data: viewSessionData()[session.id] ?? EMPTY_SESSION_DATA,
+          selectedAgent: viewAgentValue(session),
+          selectedModel: viewModelValue(session),
+          selectedVariant: viewVariantValue(session),
+          switchModel: () => switchModelFor({
+            setSelectedModel: (value) => setViewModels((current) => ({ ...current, [session.id]: value })),
+            setSelectedVariant: (value) => setViewVariants((current) => ({ ...current, [session.id]: value })),
+          }),
+          switchAgent: () => switchAgentFor((value) => setViewAgents((current) => ({ ...current, [session.id]: value }))),
+          switchVariant: () => switchVariantFor({
+            selectedModel: viewModelValue(session),
+            setSelectedVariant: (value) => setViewVariants((current) => ({ ...current, [session.id]: value })),
+          }),
+        })}
+        showTimestamps={showTranscriptTimestamps()}
+        showThinking={showTranscriptThinking()}
         messageWindow={VIEW_MESSAGE_WINDOW}
         loadOlderMessages={(sessionID, cursor) => runAction(() => loadOlderViewSessionMessages(sessionID, cursor))}
         reloadLatestMessages={(sessionID) => runAction(() => reloadLatestViewSessionMessages(sessionID))}
@@ -1080,15 +1927,22 @@ export function App() {
       <RailSidebar
         snapshot={snapshot()}
         sessions={visibleSessions()}
+        pinnedSessions={pinnedSessions()}
+        pinnedViews={pinnedViews()}
         navItems={NAV_ITEMS}
         activeRouteName={route().name}
         activeSessionID={activeSessionID()}
         activeViewID={activeView()?.id}
         railCollapsed={railCollapsed()}
+        railSectionOrder={railSectionOrder()}
         railSections={railSections()}
         dragTarget={dragTarget()}
+        dropTarget={dropTarget()}
+        projectVisualOrder={projectVisualOrder()}
         projectSessions={(project) => projectSessions(project, snapshot())}
         projectExpanded={projectExpanded}
+        sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
+        viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
         toggleRail={() => setRailCollapsed((value) => !value)}
         toggleRailSection={toggleRailSection}
         toggleProject={toggleProject}
@@ -1099,10 +1953,19 @@ export function App() {
         createProject={() => void runAction(handleCreateProject)}
         createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
         createView={() => void runAction(handleCreateView)}
+        toggleSessionPinned={toggleSessionPinned}
+        toggleViewPinned={toggleViewPinned}
         startDrag={startDrag}
-        clearDragTarget={() => setDragTarget(undefined)}
+        dragOver={dragOver}
+        clearDragTarget={clearDragTarget}
+        sectionPointerDrag={sectionPointerDrag}
+        reorderRailSection={handleReorderRailSection}
+        projectPointerDrag={projectPointerDrag}
+        reorderProject={(sourceID, targetID, placement) => void runAction(() => handleReorderProject(sourceID, targetID, placement))}
+        dropRailSection={handleDropRailSection}
         dropProject={(targetID, placement) => void runAction(() => handleDropProject(targetID, placement))}
         dropView={(targetID, placement) => void runAction(() => handleDropView(targetID, placement))}
+        moveRailSection={handleMoveRailSection}
         moveProject={(projectID, offset) => void runAction(() => handleMoveProject(projectID, offset))}
         moveView={(viewID, offset) => void runAction(() => handleMoveView(viewID, offset))}
       />
@@ -1123,10 +1986,15 @@ export function App() {
                 snapshot={snapshot()}
                 logo={<OpencodeXLogo />}
                 openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                openView={(viewID) => setRoute({ name: "views", viewID })}
+                sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
+                viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
                 createProject={() => void runAction(handleCreateProject)}
                 createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
                 createSwarm={() => void runAction(handleCreateSwarm)}
                 createView={() => void runAction(handleCreateView)}
+                toggleSessionPinned={toggleSessionPinned}
+                toggleViewPinned={toggleViewPinned}
                 renameProject={(projectID, current) => void runAction(() => handleRenameProject(projectID, current))}
                 editProjectFolders={(projectID, folders) => void runAction(() => handleEditProjectFolders(projectID, folders))}
                 deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
@@ -1164,6 +2032,12 @@ export function App() {
                     renameSession={(session) => void runAction(() => handleRenameSession(session))}
                     moveSession={(session) => void runAction(() => handleMoveSession(session))}
                     deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                    slashCommands={sessionSlashCommands(selectedSession(), {
+                      data: activeSessionData(),
+                      restorePrompt: setPrompt,
+                    })}
+                    showTimestamps={showTranscriptTimestamps()}
+                    showThinking={showTranscriptThinking()}
                     status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
                     pending={route().name === "new-session"}
                     messageWindow={SESSION_MESSAGE_WINDOW}
@@ -1178,17 +2052,52 @@ export function App() {
               <SessionCollectionPage sessions={tuiSidebarSessions(snapshot())} sessionStatus={snapshot()?.sessionStatus ?? {}} openSession={(sessionID) => setRoute({ name: "session", sessionID })} />
             </Match>
             <Match when={route().name === "projects"}>
-              <ProjectCollectionPage projects={snapshot()?.projects ?? []} sessionCount={(project) => projectSessions(project, snapshot()).length} createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))} />
+              <ProjectCollectionPage
+                projects={snapshot()?.projects ?? []}
+                sessionCount={(project) => projectSessions(project, snapshot()).length}
+                createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
+                editProject={(projectID, currentName, folders) => void runAction(() => handleEditProject(projectID, currentName, folders))}
+              />
             </Match>
             <Match when={route().name === "swarms"}>
-              <CollectionPage title="Swarms" count={snapshot()?.swarms.length ?? 0} description="Create, run, cancel, and inspect orchestrated swarm work through existing OpencodeX endpoints." />
+              <CollectionPage title="Swarms" count={snapshot()?.swarms.length ?? 0} description="Create, run, cancel, and inspect orchestrated swarm work here while management tools are built out." />
             </Match>
             <Match when={route().name === "views"}>
-              <ViewsPage
-                view={activeView()}
-                items={activeViewItems()}
-                renderItem={renderViewPane}
-              />
+              <Show
+                when={activeView()}
+                keyed={true}
+                fallback={<CollectionPage title="Views" count={snapshot()?.views.length ?? 0} description="Create, edit, reorder, and inspect multi-session views here while management tools are built out." />}
+              >
+                {(view) => (
+                  <ViewsPage
+                    view={view}
+                    items={activeViewItems()}
+                    renderItem={renderViewPane}
+                  />
+                )}
+              </Show>
+            </Match>
+            <Match when={route().name === "diff"}>
+              {(() => {
+                const current = route()
+                const session = current.name === "diff"
+                  ? snapshot()?.sessions.find((item) => item.id === current.sessionID) ?? selectedSession()
+                  : selectedSession()
+                const mode = current.name === "diff" ? current.mode ?? "git" : "git"
+                return (
+                  <DiffPage
+                    mode={mode}
+                    session={session}
+                    sessions={visibleSessions()}
+                    sessionUiState={snapshot()?.sessionUiState ?? {}}
+                    setMode={(mode) => setRoute({ name: "diff", mode, sessionID: session?.id })}
+                    selectSession={(sessionID) => setRoute({ name: "diff", mode: sessionID ? "last-turn" : "git", sessionID })}
+                    close={() => session ? setRoute({ name: "session", sessionID: session.id }) : setRoute({ name: "dashboard" })}
+                    loadDiff={loadDiffForPage}
+                    updateReviewedFiles={updateDiffReviewedFiles}
+                  />
+                )
+              })()}
             </Match>
             <Match when={route().name === "status"}>
               <StatusPage snapshot={snapshot()} />
@@ -1274,4 +2183,86 @@ function writeRecentModels(values: string[]) {
   } catch {
     return
   }
+}
+
+function readThemeMode(): GuiThemeMode {
+  if (typeof localStorage === "undefined") return "dark"
+  return localStorage.getItem("opencodex.gui.theme") === "light" ? "light" : "dark"
+}
+
+type SidebarPreferences = {
+  railCollapsed: boolean
+  railSectionOrder: RailSectionName[]
+  railSections: Record<RailSectionName, boolean>
+  expandedProjectIDs: Record<string, boolean>
+  pinnedSessionIDs: string[]
+  pinnedViewIDs: string[]
+}
+
+function readSidebarPreferences(): SidebarPreferences {
+  if (typeof localStorage === "undefined") return defaultSidebarPreferences()
+  try {
+    const raw = localStorage.getItem("opencodex.gui.sidebar")
+    if (!raw) return defaultSidebarPreferences()
+    const parsed = JSON.parse(raw)
+    if (typeof parsed !== "object" || parsed === null) return defaultSidebarPreferences()
+    const input = parsed as Record<string, unknown>
+    return {
+      railCollapsed: typeof input.railCollapsed === "boolean" ? input.railCollapsed : false,
+      railSectionOrder: mergeOrderedIDs(DEFAULT_RAIL_SECTION_ORDER, Array.isArray(input.railSectionOrder) ? input.railSectionOrder.filter((value): value is string => typeof value === "string") : []),
+      railSections: readRailSections(input.railSections),
+      expandedProjectIDs: readBooleanMap(input.expandedProjectIDs),
+      pinnedSessionIDs: readStringList(input.pinnedSessionIDs),
+      pinnedViewIDs: readStringList(input.pinnedViewIDs),
+    }
+  } catch {
+    return defaultSidebarPreferences()
+  }
+}
+
+function writeSidebarPreferences(value: SidebarPreferences) {
+  if (typeof localStorage === "undefined") return
+  try {
+    localStorage.setItem("opencodex.gui.sidebar", JSON.stringify(value))
+  } catch {
+    return
+  }
+}
+
+function defaultSidebarPreferences(): SidebarPreferences {
+  return {
+    railCollapsed: false,
+    railSectionOrder: DEFAULT_RAIL_SECTION_ORDER,
+    railSections: DEFAULT_RAIL_SECTIONS,
+    expandedProjectIDs: {},
+    pinnedSessionIDs: [],
+    pinnedViewIDs: [],
+  }
+}
+
+function readRailSections(value: unknown): Record<RailSectionName, boolean> {
+  if (typeof value !== "object" || value === null) return DEFAULT_RAIL_SECTIONS
+  const input = value as Record<string, unknown>
+  return {
+    pinned: typeof input.pinned === "boolean" ? input.pinned : DEFAULT_RAIL_SECTIONS.pinned,
+    projects: typeof input.projects === "boolean" ? input.projects : DEFAULT_RAIL_SECTIONS.projects,
+    recent: typeof input.recent === "boolean" ? input.recent : DEFAULT_RAIL_SECTIONS.recent,
+    views: typeof input.views === "boolean" ? input.views : DEFAULT_RAIL_SECTIONS.views,
+  }
+}
+
+function readBooleanMap(value: unknown): Record<string, boolean> {
+  if (typeof value !== "object" || value === null) return {}
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"))
+}
+
+function readStringList(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(value.filter((item): item is string => typeof item === "string")))
+}
+
+function dropPlacement(event: DragEvent): "before" | "after" {
+  const rect = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : undefined
+  if (!rect) return "before"
+  return event.clientY > rect.top + rect.height / 2 ? "after" : "before"
 }

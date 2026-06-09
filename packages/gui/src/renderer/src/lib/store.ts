@@ -16,6 +16,7 @@ import type {
   Session,
   SessionStatus,
   Todo,
+  VcsFileDiff,
 } from "@opencode-ai/sdk/v2/client"
 import {
   isRenderableClientSession,
@@ -40,6 +41,8 @@ export type SessionData = {
   todos: Todo[]
   diffs: SnapshotFileDiff[]
 }
+
+export type DiffFile = SnapshotFileDiff | VcsFileDiff
 
 export type SessionLoadOptions = {
   messageLimit?: number
@@ -104,6 +107,22 @@ export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
 
 export async function updateSessionUiState(gui: GuiClient, sessionID: string, input: ClientSessionStateUpdate) {
   return updateClientSessionState(gui.client, sessionID, input)
+}
+
+export async function loadSessionDiff(gui: GuiClient, input: { sessionID: string; directory?: string; messageID?: string }) {
+  return gui.client.session.diff({
+    sessionID: input.sessionID,
+    directory: input.directory || gui.directory || undefined,
+    messageID: input.messageID,
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function loadVcsDiff(gui: GuiClient, input: { mode: "git" | "branch"; context?: number }) {
+  return gui.client.vcs.diff({
+    directory: gui.directory || undefined,
+    mode: input.mode,
+    context: input.context,
+  }, { headers: authHeaders(gui), throwOnError: true })
 }
 
 export async function loadSession(gui: GuiClient, sessionID: string, directory?: string, options: SessionLoadOptions = {}): Promise<SessionData> {
@@ -187,6 +206,30 @@ export async function abortSession(gui: GuiClient, sessionID: string, directory?
   return gui.client.session.abort({ sessionID, directory: directory || gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
 }
 
+export async function shareSession(gui: GuiClient, sessionID: string) {
+  return gui.client.session.share({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function unshareSession(gui: GuiClient, sessionID: string) {
+  return gui.client.session.unshare({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function summarizeSession(gui: GuiClient, input: { sessionID: string; providerID: string; modelID: string }) {
+  return gui.client.session.summarize(input, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function revertSession(gui: GuiClient, input: { sessionID: string; messageID: string }) {
+  return gui.client.session.revert(input, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function unrevertSession(gui: GuiClient, sessionID: string) {
+  return gui.client.session.unrevert({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function forkSession(gui: GuiClient, input: { sessionID: string; messageID?: string }) {
+  return gui.client.session.fork(input, { headers: authHeaders(gui), throwOnError: true })
+}
+
 export async function replyPermission(
   gui: GuiClient,
   requestID: string,
@@ -241,6 +284,10 @@ export async function updateProjectFolders(gui: GuiClient, projectID: string, fo
   return gui.client.opencodex.project.update({ projectID, folders }, { headers: authHeaders(gui), throwOnError: true })
 }
 
+export async function updateProject(gui: GuiClient, projectID: string, input: { name: string; folders: string[] }) {
+  return gui.client.opencodex.project.update({ projectID, name: input.name, folders: input.folders }, { headers: authHeaders(gui), throwOnError: true })
+}
+
 export async function reorderProjects(gui: GuiClient, projectIDs: string[]) {
   return gui.client.opencodex.project.reorder({ opencodeXProjectReorderInput: { projectIDs } }, { headers: authHeaders(gui), throwOnError: true })
 }
@@ -291,6 +338,17 @@ export async function createSwarm(gui: GuiClient, input: { projectID: string; ti
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
+export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { prompt: string; agent?: string; variant?: string }) {
+  return gui.client.opencodex.swarm.task.assign({
+    swarmID,
+    opencodeXSwarmAssignTaskInput: {
+      prompt: input.prompt,
+      agent: input.agent,
+      variant: input.variant,
+    },
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
 export async function createView(gui: GuiClient, input: { title?: string; sessionIDs: string[] }) {
   return gui.client.opencodex.view.create({
     opencodeXViewCreateInput: {
@@ -310,8 +368,102 @@ export async function updateViewFocus(gui: GuiClient, viewID: string, focusedSes
   return gui.client.opencodex.view.update({ viewID, focusedSessionID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function updateView(gui: GuiClient, viewID: string, input: { sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
+export async function deleteView(gui: GuiClient, viewID: string) {
+  return gui.client.opencodex.view.delete({ viewID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function updateView(gui: GuiClient, viewID: string, input: { title?: string; sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
   return gui.client.opencodex.view.update({ viewID, ...input }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function listMcpStatus(gui: GuiClient) {
+  return gui.client.mcp.status({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function connectMcp(gui: GuiClient, name: string) {
+  return gui.client.mcp.connect({ name, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function disconnectMcp(gui: GuiClient, name: string) {
+  return gui.client.mcp.disconnect({ name, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function listConsoleOrgs(gui: GuiClient) {
+  return gui.client.experimental.console.listOrgs({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function switchConsoleOrg(gui: GuiClient, accountID: string, orgID: string) {
+  return gui.client.experimental.console.switchOrg({ accountID, orgID, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function syncWorkspaces(gui: GuiClient) {
+  return gui.client.experimental.workspace.syncList({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function listWorkspaces(gui: GuiClient) {
+  return gui.client.experimental.workspace.list({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function workspaceStatus(gui: GuiClient) {
+  return gui.client.experimental.workspace.status({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function removeWorkspace(gui: GuiClient, id: string) {
+  return gui.client.experimental.workspace.remove({ id, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function warpSessionWorkspace(gui: GuiClient, input: { id: string | null; sessionID: string; copyChanges?: boolean }) {
+  return gui.client.experimental.workspace.warp({
+    directory: gui.directory || undefined,
+    id: input.id,
+    sessionID: input.sessionID,
+    copyChanges: input.copyChanges,
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function disposeInstance(gui: GuiClient) {
+  return gui.client.instance.dispose({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function listProviders(gui: GuiClient) {
+  return gui.client.provider.list({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function listProviderAuthMethods(gui: GuiClient) {
+  return gui.client.provider.auth({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function setProviderApiAuth(gui: GuiClient, providerID: string, key: string, metadata?: Record<string, string>) {
+  return gui.client.auth.set({
+    providerID,
+    auth: {
+      type: "api",
+      key,
+      ...(metadata ? { metadata } : {}),
+    },
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function authorizeProviderOauth(gui: GuiClient, input: { providerID: string; method: number; inputs?: Record<string, string> }) {
+  return gui.client.provider.oauth.authorize({
+    directory: gui.directory || undefined,
+    providerID: input.providerID,
+    method: input.method,
+    inputs: input.inputs,
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function completeProviderOauth(gui: GuiClient, input: { providerID: string; method: number; code?: string }) {
+  return gui.client.provider.oauth.callback({
+    directory: gui.directory || undefined,
+    providerID: input.providerID,
+    method: input.method,
+    code: input.code,
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function listSkills(gui: GuiClient) {
+  return gui.client.app.skills({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
 }
 
 export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) => void) {

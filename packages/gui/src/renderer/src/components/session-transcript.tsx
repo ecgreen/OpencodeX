@@ -176,14 +176,14 @@ export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
   return result
 }
 
-export function DisplayPartView(props: { item: DisplayPart }) {
+export function DisplayPartView(props: { item: DisplayPart; showThinking: boolean }) {
   return (
     <Switch>
       <Match when={props.item.type === "tool-group"}>
         <ToolGroupView item={props.item as Extract<DisplayPart, { type: "tool-group" }>} />
       </Match>
       <Match when={props.item.type === "part"}>
-        <PartView part={(props.item as Extract<DisplayPart, { type: "part" }>).part} />
+        <PartView part={(props.item as Extract<DisplayPart, { type: "part" }>).part} showThinking={props.showThinking} />
       </Match>
     </Switch>
   )
@@ -241,14 +241,14 @@ function toolGroupTitle(tool: string, parts: ToolPart[]) {
   return `${tool} x${parts.length}`
 }
 
-function PartView(props: { part: MessageBundle["parts"][number] }) {
+function PartView(props: { part: MessageBundle["parts"][number]; showThinking: boolean }) {
   return (
     <Switch fallback={<pre class="part muted">{JSON.stringify(props.part, null, 2)}</pre>}>
       <Match when={isStructuralPart(props.part)}>
         <></>
       </Match>
       <Match when={props.part.type === "text" || props.part.type === "reasoning"}>
-        <TextPartView part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>} />
+        <TextPartView part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>} showThinking={props.showThinking} />
       </Match>
       <Match when={props.part.type === "tool"}>
         <ToolPartView part={props.part as ToolPart} />
@@ -273,7 +273,7 @@ function isStructuralPart(part: MessageBundle["parts"][number]) {
   return part.type === "step-start" || part.type === "step-finish" || part.type === "snapshot" || part.type === "retry" || part.type === "subtask"
 }
 
-function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }> }) {
+function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; showThinking: boolean }) {
   const text = createMemo(() => {
     if ("synthetic" in props.part && props.part.synthetic) return ""
     if ("ignored" in props.part && props.part.ignored) return ""
@@ -288,7 +288,9 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
               <DisclosureChevron />
               <span>Thinking</span>
             </summary>
-            <Markdown text={text()} cacheKey={props.part.id} streaming={false} />
+            <Show when={props.showThinking}>
+              <Markdown text={text()} cacheKey={props.part.id} streaming={false} />
+            </Show>
           </details>
         </Show>
       </div>

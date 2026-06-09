@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { droppedReorderIDs, moveByOffset, moveRelative } from "../src/renderer/src/lib/reorder"
+import { droppedReorderIDs, mergeOrderedIDs, moveByOffset, moveRelative } from "../src/renderer/src/lib/reorder"
 
 describe("GUI reorder helpers", () => {
   test("moves ids by keyboard offset", () => {
@@ -38,5 +38,9 @@ describe("GUI reorder helpers", () => {
       targetID: "project-a",
       placement: "before",
     })).toEqual([])
+  })
+
+  test("merges remembered order with current ids", () => {
+    expect(mergeOrderedIDs(["pinned", "projects", "recent", "views"], ["views", "missing", "projects", "views"])).toEqual(["views", "projects", "pinned", "recent"])
   })
 })

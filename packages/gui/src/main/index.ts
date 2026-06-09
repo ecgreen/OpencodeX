@@ -1,4 +1,7 @@
 import path from "node:path"
+import { spawn } from "node:child_process"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron"
 import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
 
@@ -83,6 +86,32 @@ ipcMain.handle("opencodex:folder", async (_event, defaultPath?: string) => {
     defaultPath,
   })
   return result.canceled ? undefined : result.filePaths[0]
+})
+
+ipcMain.handle("opencodex:editor", async (_event, input: { value: string; cwd?: string }) => {
+  const editor = process.env.VISUAL || process.env.EDITOR
+  if (!editor) return undefined
+  const dir = await mkdtemp(path.join(tmpdir(), "opencodex-editor-"))
+  const file = path.join(dir, "prompt.md")
+  await writeFile(file, input.value)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(`${editor} "${file}"`, {
+        cwd: input.cwd,
+        shell: true,
+        stdio: "inherit",
+      })
+      child.on("error", reject)
+      child.on("exit", (code) => {
+        if (code === 0) return resolve()
+        reject(new Error(`Editor exited with code ${code ?? "unknown"}`))
+      })
+    })
+    const content = await readFile(file, "utf8")
+    return content || undefined
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 app.whenReady().then(() => {

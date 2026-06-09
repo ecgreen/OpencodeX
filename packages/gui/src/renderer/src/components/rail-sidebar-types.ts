@@ -1,6 +1,10 @@
-export type RailRouteName = "dashboard" | "sessions" | "projects" | "views" | "swarms" | "status" | "settings"
-export type RailSectionName = "projects" | "recent" | "swarms" | "views"
-export type RailDragTarget = { type: "project"; id: string } | { type: "view"; id: string }
+export type RailRouteName = "dashboard" | "projects" | "swarms" | "views"
+export type RailSectionName = "pinned" | "projects" | "recent" | "views"
+export type RailDragTarget =
+  | { type: "section"; id: RailSectionName }
+  | { type: "project"; id: string }
+  | { type: "view"; id: string }
+export type RailDropTarget = RailDragTarget & { placement: "before" | "after" }
 export type RailNavItem = {
   name: RailRouteName
   label: string

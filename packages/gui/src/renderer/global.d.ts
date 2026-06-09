@@ -5,6 +5,7 @@ declare global {
     opencodex?: {
       connection(): Promise<GuiConnection>
       folder(defaultPath?: string): Promise<string | undefined>
+      editor(input: { value: string; cwd?: string }): Promise<string | undefined>
       window(action: "minimize" | "maximize" | "close"): Promise<void>
     }
   }

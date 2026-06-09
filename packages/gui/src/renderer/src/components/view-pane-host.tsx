@@ -1,5 +1,6 @@
 import type { Agent, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { MessageWindow } from "../lib/message-window"
+import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { GuiSnapshot, SessionData } from "../lib/store"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
 import { ViewPane } from "./view-pane"
@@ -30,6 +31,9 @@ export function ViewPaneHost(props: {
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  slashCommands: SessionSlashCommand[]
+  showTimestamps: boolean
+  showThinking: boolean
   messageWindow: MessageWindow
   loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
   reloadLatestMessages: (sessionID: string) => Promise<void>
@@ -66,6 +70,9 @@ export function ViewPaneHost(props: {
       renameSession={props.renameSession}
       moveSession={props.moveSession}
       deleteSession={props.deleteSession}
+      slashCommands={props.slashCommands}
+      showTimestamps={props.showTimestamps}
+      showThinking={props.showThinking}
       messageWindow={props.messageWindow}
       loadOlderMessages={(cursor) => props.loadOlderMessages(id(), cursor)}
       reloadLatestMessages={() => props.reloadLatestMessages(id())}

@@ -15,6 +15,7 @@ import {
   renameProject,
   renameSession,
   sendPrompt,
+  updateProject,
   updateProjectFolders,
   validateProjectFolders,
 } from "../src/renderer/src/lib/store"
@@ -244,6 +245,7 @@ describe("GUI store backend parity", () => {
     await validateProjectFolders(gui, { projectID: "project-1", folders: ["C:/Work/OpencodeX"] })
     await renameProject(gui, "project-1", "Renamed")
     await updateProjectFolders(gui, "project-1", ["C:/Work/OpencodeX"])
+    await updateProject(gui, "project-1", { name: "Renamed", folders: ["C:/Work/One", "C:/Work/Two"] })
     await deleteProject(gui, "project-1")
     await renameSession(gui, "session-list", "Renamed Session")
     await moveSession(gui, "session-list", "project-1")
@@ -252,6 +254,7 @@ describe("GUI store backend parity", () => {
     expect(calls).toContain("project.validate:project-1:C:/Work/OpencodeX")
     expect(calls).toContain("project.update:project-1:Renamed:")
     expect(calls).toContain("project.update:project-1::C:/Work/OpencodeX")
+    expect(calls).toContain("project.update:project-1:Renamed:C:/Work/One,C:/Work/Two")
     expect(calls).toContain("project.delete:project-1")
     expect(calls).toContain("session.update:session-list:Renamed Session")
     expect(calls).toContain("opencodex.session.move:session-list:project-1")

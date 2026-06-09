@@ -26,3 +26,14 @@ export function droppedReorderIDs(input: {
   if (!input.source || input.source.type !== input.sourceType || input.source.id === input.targetID) return []
   return moveRelative(input.ids, input.source.id, input.targetID, input.placement)
 }
+
+export function mergeOrderedIDs<T extends string>(ids: readonly T[], preferred: readonly string[]) {
+  const allowed = new Set<string>(ids)
+  const seen = new Set<string>()
+  const ordered = preferred.filter((id): id is T => {
+    if (!allowed.has(id) || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+  return [...ordered, ...ids.filter((id) => !seen.has(id))]
+}

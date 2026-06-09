@@ -7,6 +7,7 @@ import {
   runCreateProjectAction,
   runCreateSessionRouteAction,
   runDeleteProjectAction,
+  runEditProjectAction,
   runEditProjectFoldersAction,
   runRenameProjectAction,
 } from "../src/renderer/src/lib/project-actions"
@@ -142,6 +143,54 @@ describe("GUI project action decisions", () => {
       "update:project-1:C:/One|C:/Two",
       "refresh",
     ])
+  })
+
+  test("edits project name and folders together after validation", async () => {
+    const calls: string[] = []
+    const answers = ["  New Name  ", "C:/One\n\n C:/Two "]
+
+    await runEditProjectAction({
+      projectID: "project-1",
+      currentName: "Old",
+      folders: ["C:/Old"],
+      askText: async (input) => {
+        calls.push(`ask:${input.title}:${input.value}`)
+        return answers.shift()
+      },
+      validateProjectFolders: async (projectID, folders) => {
+        calls.push(`validate:${projectID}:${folders.join("|")}`)
+        return { data: { valid: true, folders: [] } }
+      },
+      updateProject: async (projectID, next) => calls.push(`update:${projectID}:${next.name}:${next.folders.join("|")}`),
+      refresh: async () => calls.push("refresh"),
+      alert: (message) => calls.push(`alert:${message}`),
+    })
+
+    expect(calls).toEqual([
+      "ask:Edit Project Name:Old",
+      "ask:Edit Project Folders:C:/Old",
+      "validate:project-1:C:/One|C:/Two",
+      "update:project-1:New Name:C:/One|C:/Two",
+      "refresh",
+    ])
+  })
+
+  test("does not update project details when folder validation fails", async () => {
+    const calls: string[] = []
+    const answers = ["New Name", "C:/Missing"]
+
+    await runEditProjectAction({
+      projectID: "project-1",
+      currentName: "Old",
+      folders: ["C:/Old"],
+      askText: async () => answers.shift(),
+      validateProjectFolders: async () => ({ data: { valid: false, folders: [{ input: "C:/Missing", message: "Missing folder" }] } }),
+      updateProject: async () => calls.push("update"),
+      refresh: async () => calls.push("refresh"),
+      alert: (message) => calls.push(`alert:${message}`),
+    })
+
+    expect(calls).toEqual(["alert:Missing folder"])
   })
 
   test("deletes projects only after confirmation", async () => {

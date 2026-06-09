@@ -1,4 +1,4 @@
-export type GuiShortcutRouteName = "dashboard" | "sessions" | "projects" | "swarms" | "views" | "status" | "settings"
+export type GuiShortcutRouteName = "dashboard" | "projects" | "swarms" | "views"
 
 export type GuiShortcutAction =
   | { type: "abort-session"; sessionID: string }
@@ -31,12 +31,9 @@ export type GuiShortcutHandlers = {
 
 const ROUTES_BY_KEY: Record<string, GuiShortcutRouteName | undefined> = {
   d: "dashboard",
-  "1": "sessions",
-  "2": "projects",
-  "3": "swarms",
-  "4": "views",
-  "5": "status",
-  "6": "settings",
+  "1": "projects",
+  "2": "swarms",
+  "3": "views",
 }
 
 const DIRECT_ACTIONS_BY_KEY: Record<string, GuiShortcutAction | undefined> = {

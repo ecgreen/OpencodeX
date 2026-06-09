@@ -80,6 +80,28 @@ export async function runEditProjectFoldersAction(input: {
   await input.refresh()
 }
 
+export async function runEditProjectAction(input: {
+  projectID: string
+  currentName?: string
+  folders: string[]
+  askText: (input: TextDialogInput) => Promise<string | undefined>
+  validateProjectFolders: (projectID: string, folders: string[]) => Promise<ProjectFolderValidation>
+  updateProject: (projectID: string, next: { name: string; folders: string[] }) => Promise<void>
+  refresh: () => Promise<void>
+  alert: (message: string) => void
+}) {
+  const name = (await input.askText({ title: "Edit Project Name", value: input.currentName ?? "" }))?.trim()
+  if (!name) return
+  const text = await input.askText({ title: "Edit Project Folders", message: "One folder per line", value: input.folders.join("\n"), multiline: true })
+  if (!text) return
+  const folders = projectFoldersFromText(text)
+  if (folders.length === 0) return
+  const validationMessage = projectFolderValidationMessage(await input.validateProjectFolders(input.projectID, folders))
+  if (validationMessage) return input.alert(validationMessage)
+  await input.updateProject(input.projectID, { name, folders })
+  await input.refresh()
+}
+
 export async function runDeleteProjectAction(input: {
   projectID: string
   name: string

@@ -6,6 +6,7 @@ import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, type Derived
 import { isRenderableSession, type GuiSnapshot } from "../lib/store"
 import { pendingViewSessions } from "../lib/view-items"
 import { Icon } from "./icon"
+import { PinButton } from "./pin-button"
 
 const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
 
@@ -13,10 +14,15 @@ export function Dashboard(props: {
   snapshot?: GuiSnapshot
   logo: JSX.Element
   openSession: (sessionID: string) => void
+  openView: (viewID: string) => void
+  sessionPinned: (sessionID: string) => boolean
+  viewPinned: (viewID: string) => boolean
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
   createSwarm: () => void
   createView: () => void
+  toggleSessionPinned: (sessionID: string) => void
+  toggleViewPinned: (viewID: string) => void
   renameProject: (projectID: string, current?: string) => void
   editProjectFolders: (projectID: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
@@ -39,9 +45,9 @@ export function Dashboard(props: {
         <DashboardProjectsSection snapshot={props.snapshot} collapsed={!!collapsed().projects} onToggle={() => toggleSection("projects")} createProject={props.createProject} createSession={props.createSession} renameProject={props.renameProject} editProjectFolders={props.editProjectFolders} deleteProject={props.deleteProject} />
         <DashboardSwarmsSection snapshot={props.snapshot} collapsed={!!collapsed().swarms} onToggle={() => toggleSection("swarms")} createSwarm={props.createSwarm} />
         <DashboardAttentionSection snapshot={props.snapshot} collapsed={!!collapsed().attention} onToggle={() => toggleSection("attention")} openSession={props.openSession} />
-        <DashboardSessionsSection title="Recent Sessions" sessions={sessions()} snapshot={props.snapshot} collapsed={!!collapsed().sessions} onToggle={() => toggleSection("sessions")} openSession={props.openSession} createSession={() => props.createSession()} />
-        <DashboardViewsSection snapshot={props.snapshot} collapsed={!!collapsed().views} onToggle={() => toggleSection("views")} createView={props.createView} />
-        <DashboardSessionsSection title="Prior Sessions" sessions={sessions()} snapshot={props.snapshot} collapsed={!!collapsed().prior} onToggle={() => toggleSection("prior")} openSession={props.openSession} compact />
+        <DashboardSessionsSection title="Recent Sessions" sessions={sessions()} snapshot={props.snapshot} collapsed={!!collapsed().sessions} onToggle={() => toggleSection("sessions")} openSession={props.openSession} createSession={() => props.createSession()} sessionPinned={props.sessionPinned} toggleSessionPinned={props.toggleSessionPinned} />
+        <DashboardViewsSection snapshot={props.snapshot} collapsed={!!collapsed().views} onToggle={() => toggleSection("views")} openView={props.openView} createView={props.createView} viewPinned={props.viewPinned} toggleViewPinned={props.toggleViewPinned} />
+        <DashboardSessionsSection title="Prior Sessions" sessions={sessions()} snapshot={props.snapshot} collapsed={!!collapsed().prior} onToggle={() => toggleSection("prior")} openSession={props.openSession} compact sessionPinned={props.sessionPinned} toggleSessionPinned={props.toggleSessionPinned} />
       </section>
     </div>
   )
@@ -174,6 +180,8 @@ function DashboardSessionsSection(props: {
   collapsed: boolean
   onToggle: () => void
   openSession: (sessionID: string) => void
+  sessionPinned: (sessionID: string) => boolean
+  toggleSessionPinned: (sessionID: string) => void
   createSession?: () => void
   compact?: boolean
 }) {
@@ -183,7 +191,14 @@ function DashboardSessionsSection(props: {
       <div class={`dashboard-card-grid${props.compact ? " compact" : ""}`}>
         <For each={sessions()} fallback={props.compact ? <Empty text="No prior sessions." /> : <EmptyCreateDashboardCard title="Create session" description="Start a new chat from the dashboard." onClick={() => props.createSession?.()} />}>
           {(session) => (
-            <DashboardSessionCard session={session} snapshot={props.snapshot} openSession={props.openSession} compact={props.compact} />
+            <DashboardSessionCard
+              session={session}
+              snapshot={props.snapshot}
+              openSession={props.openSession}
+              compact={props.compact}
+              pinned={props.sessionPinned(session.id)}
+              togglePinned={() => props.toggleSessionPinned(session.id)}
+            />
           )}
         </For>
       </div>
@@ -191,49 +206,85 @@ function DashboardSessionsSection(props: {
   )
 }
 
-function DashboardViewsSection(props: { snapshot?: GuiSnapshot; collapsed: boolean; onToggle: () => void; createView: () => void }) {
+function DashboardViewsSection(props: {
+  snapshot?: GuiSnapshot
+  collapsed: boolean
+  onToggle: () => void
+  openView: (viewID: string) => void
+  viewPinned: (viewID: string) => boolean
+  toggleViewPinned: (viewID: string) => void
+  createView: () => void
+}) {
   return (
     <DashboardSection title="Views" count={props.snapshot?.views.length ?? 0} collapsed={props.collapsed} onToggle={props.onToggle}>
       <div class="dashboard-card-grid">
         <For each={(props.snapshot?.views ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create view" description="Build a focused multi-session view." onClick={props.createView} />}>
-          {(view) => <DashboardViewCard view={view} snapshot={props.snapshot} />}
+          {(view) => (
+            <DashboardViewCard
+              view={view}
+              snapshot={props.snapshot}
+              openView={props.openView}
+              pinned={props.viewPinned(view.id)}
+              togglePinned={() => props.toggleViewPinned(view.id)}
+            />
+          )}
         </For>
       </div>
     </DashboardSection>
   )
 }
 
-function DashboardSessionCard(props: { session: Session; snapshot?: GuiSnapshot; openSession: (sessionID: string) => void; compact?: boolean }) {
+function DashboardSessionCard(props: {
+  session: Session
+  snapshot?: GuiSnapshot
+  openSession: (sessionID: string) => void
+  pinned: boolean
+  togglePinned: () => void
+  compact?: boolean
+}) {
   const status = createMemo(() => sidebarStatus(props.snapshot, props.session))
   return (
-    <button
+    <article
       class="dashboard-item-card dashboard-status-card interactive"
       classList={{ compact: props.compact === true, [`status-${status().replaceAll("_", "-")}`]: true }}
-      onClick={() => props.openSession(props.session.id)}
     >
-      <div>
-        <strong>{title(props.session.title)}</strong>
-      </div>
-      <footer>
-        <small>{dashboardSessionMeta(props.session, props.snapshot)}</small>
-      </footer>
+      <button class="dashboard-card-open" onClick={() => props.openSession(props.session.id)}>
+        <div>
+          <strong>{title(props.session.title)}</strong>
+        </div>
+        <footer>
+          <small>{dashboardSessionMeta(props.session, props.snapshot)}</small>
+        </footer>
+      </button>
+      <PinButton pinned={props.pinned} label={title(props.session.title)} onClick={props.togglePinned} />
       <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
       <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sessionStatusLabel(status())} /></Show>
-    </button>
+    </article>
   )
 }
 
-function DashboardViewCard(props: { view: GuiSnapshot["views"][number]; snapshot?: GuiSnapshot }) {
+function DashboardViewCard(props: {
+  view: GuiSnapshot["views"][number]
+  snapshot?: GuiSnapshot
+  openView: (viewID: string) => void
+  pinned: boolean
+  togglePinned: () => void
+}) {
   const status = createMemo(() => viewDashboardStatus(props.view, props.snapshot))
   return (
-    <article class="dashboard-item-card dashboard-status-card" classList={{ [`status-${status().replaceAll("_", "-")}`]: true }}>
-      <div>
-        <strong>{title(props.view.title)}</strong>
-        <span>{viewSessionCount(props.view)} sessions</span>
-      </div>
-      <footer>
-        <small>{formatRelative(props.view.timeUpdated)}</small>
-      </footer>
+    <article
+      class="dashboard-item-card dashboard-status-card interactive"
+      classList={{ [`status-${status().replaceAll("_", "-")}`]: true }}
+    >
+      <button class="dashboard-card-open" onClick={() => props.openView(props.view.id)}>
+        <div>
+          <strong>{title(props.view.title)}</strong>
+        </div>
+        <footer>
+          <small>{viewDashboardMeta(props.view)}</small>
+        </footer>
+      </button>
+      <PinButton pinned={props.pinned} label={title(props.view.title)} onClick={props.togglePinned} />
       <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
       <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sessionStatusLabel(status())} /></Show>
     </article>
@@ -329,6 +380,10 @@ function viewSessionCount(view: OpencodeXView) {
 
 function viewDashboardStatus(view: GuiSnapshot["views"][number], snapshot?: GuiSnapshot): DerivedSessionStatus {
   return deriveViewStatus(view, snapshot)
+}
+
+function viewDashboardMeta(view: OpencodeXView) {
+  return `${formatRelative(view.timeUpdated)} - ${viewSessionCount(view)} sessions`
 }
 
 function isRecentSessionUpdate(timeUpdated: number, now = Date.now()) {

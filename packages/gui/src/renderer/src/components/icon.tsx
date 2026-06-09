@@ -13,6 +13,7 @@ export function Icon(props: { name: string }) {
     grip: <path d="M8 5h.01M8 12h.01M8 19h.01M16 5h.01M16 12h.01M16 19h.01" />,
     more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
     panel: <path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 5v14M6 9h.01M6 12h.01M6 15h.01" />,
+    pin: <path d="M12 17v5M5 3h14l-3 7 3 3v2H5v-2l3-3-3-7z" />,
     play: <path d="M8 5l11 7-11 7z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     send: <path d="M5 19 20 5M20 5l-5 14-3-7-7-3 15-4z" />,

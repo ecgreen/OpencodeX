@@ -1,8 +1,9 @@
 import type { Agent, AssistantMessage, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { compactPath, title } from "../lib/format"
 import type { MessageWindow } from "../lib/message-window"
 import { isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
+import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { MessageBundle, SessionData } from "../lib/store"
 import { permissionToolPart } from "../lib/tool-display"
 import { Icon } from "./icon"
@@ -35,6 +36,9 @@ export function SessionPage(props: {
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  slashCommands: SessionSlashCommand[]
+  showTimestamps: boolean
+  showThinking: boolean
   status?: string
   pending?: boolean
   composerFocusToken?: () => number
@@ -51,6 +55,8 @@ export function SessionPage(props: {
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
   const [modelQuery, setModelQuery] = createSignal("")
   const [draftPrompt, setDraftPrompt] = createSignal(props.prompt)
+  const [slashMenuOpen, setSlashMenuOpen] = createSignal(false)
+  const [selectedSlashCommand, setSelectedSlashCommand] = createSignal(0)
   const modelOptions = createMemo(() =>
     props.providers.flatMap((provider) =>
       Object.values(provider.models)
@@ -98,6 +104,23 @@ export function SessionPage(props: {
   const running = createMemo(() => props.status === "busy" || props.status === "retry")
   const sessionStarted = createMemo(() => props.loading || props.data.messages.length > 0 || props.status === "busy" || props.status === "retry" || blocked())
   const draftText = createMemo(() => draftPrompt().trim())
+  const slashQuery = createMemo(() => {
+    const draft = draftPrompt()
+    if (!draft.startsWith("/") || draft.includes(" ") || draft.includes("\n")) return
+    return draft.slice(1).toLowerCase()
+  })
+  const visibleSlashCommands = createMemo(() => {
+    const query = slashQuery()
+    if (query === undefined) return []
+    return props.slashCommands.filter((command) =>
+      [command.name, command.title, command.detail, command.disabled, ...(command.aliases ?? [])]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    )
+  })
+  const slashMenuVisible = createMemo(() => slashMenuOpen() && !blocked() && slashQuery() !== undefined)
   const usageLabel = createMemo(() => {
     const last = props.data.messages.findLast((bundle) => isAssistantMessage(bundle.info) && bundle.info.tokens.output > 0)?.info
     if (!last || !isAssistantMessage(last)) return
@@ -141,9 +164,32 @@ export function SessionPage(props: {
     requestAnimationFrame(resizeComposer)
     props.submit(event, text)
   }
+  const runSlashCommand = (command: SessionSlashCommand | undefined) => {
+    if (!command || command.disabled) return
+    const currentDraft = draftPrompt()
+    setDraftPrompt("")
+    setSlashMenuOpen(false)
+    requestAnimationFrame(resizeComposer)
+    void command.run({ draftPrompt: currentDraft, setDraftPrompt, openModelPicker: () => setModelPickerOpen(true) })
+  }
+  const completeSlashCommand = (command: SessionSlashCommand | undefined) => {
+    if (!command) return
+    setDraftPrompt(`/${command.name}`)
+    setSlashMenuOpen(true)
+    requestAnimationFrame(resizeComposer)
+  }
+  const selectSlashCommand = (offset: number) => {
+    const count = visibleSlashCommands().length
+    if (count === 0) return
+    setSelectedSlashCommand((current) => (current + offset + count) % count)
+  }
   createEffect(() => {
     draftPrompt()
     resizeComposer()
+  })
+  createEffect(() => {
+    const count = visibleSlashCommands().length
+    if (selectedSlashCommand() >= count) setSelectedSlashCommand(Math.max(0, count - 1))
   })
   createEffect(() => {
     const token = props.composerFocusToken?.() ?? 0
@@ -158,9 +204,10 @@ export function SessionPage(props: {
     if (id === transcriptExpandedSessionID) return
     transcriptExpandedSessionID = id
     setDraftPrompt(props.prompt)
+    setSlashMenuOpen(false)
   })
   return (
-    <div class="page session-page" classList={{ "session-empty": !sessionStarted() }}>
+    <div class="page session-page" data-session-id={session()?.id} classList={{ "session-empty": !sessionStarted() }}>
       <Show when={session()} fallback={<Empty text="Session not found" />}>
         {(selected) => (
           <>
@@ -202,6 +249,8 @@ export function SessionPage(props: {
               loading={props.loading}
               running={running()}
               providers={props.providers}
+              showTimestamps={props.showTimestamps}
+              showThinking={props.showThinking}
               messageWindow={props.messageWindow}
               loadOlderMessages={props.loadOlderMessages}
               reloadLatestMessages={props.reloadLatestMessages}
@@ -209,14 +258,66 @@ export function SessionPage(props: {
             />
             <form class="composer" onSubmit={submitComposer}>
               <div class={`composer-input ${mode()}`}>
+                <Show when={slashMenuVisible()}>
+                  <div class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
+                    <For each={visibleSlashCommands()} fallback={<p>No matching commands.</p>}>
+                      {(command, index) => (
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selectedSlashCommand() === index()}
+                          disabled={!!command.disabled}
+                          classList={{ selected: selectedSlashCommand() === index() }}
+                          title={command.disabled}
+                          onMouseEnter={() => setSelectedSlashCommand(index())}
+                          onClick={() => runSlashCommand(command)}
+                        >
+                          <strong>/{command.name}</strong>
+                          <span>{command.title} - {command.disabled ?? command.detail}</span>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
                 <textarea
                   ref={composerTextarea}
                   disabled={blocked()}
                   value={draftPrompt()}
+                  onFocus={() => setSlashMenuOpen(true)}
+                  onBlur={() => setSlashMenuOpen(false)}
                   onInput={(event) => {
                     setDraftPrompt(event.currentTarget.value)
+                    setSlashMenuOpen(true)
+                    setSelectedSlashCommand(0)
                   }}
                   onKeyDown={(event) => {
+                    if (slashMenuVisible()) {
+                      if (event.key === "Escape") {
+                        event.preventDefault()
+                        setSlashMenuOpen(false)
+                        return
+                      }
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault()
+                        selectSlashCommand(-1)
+                        return
+                      }
+                      if (event.key === "ArrowDown") {
+                        event.preventDefault()
+                        selectSlashCommand(1)
+                        return
+                      }
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        runSlashCommand(visibleSlashCommands()[selectedSlashCommand()])
+                        return
+                      }
+                      if (event.key === "Tab") {
+                        event.preventDefault()
+                        completeSlashCommand(visibleSlashCommands()[selectedSlashCommand()])
+                        return
+                      }
+                    }
                     if (event.ctrlKey && event.key.toLowerCase() === "t") {
                       event.preventDefault()
                       if (!blocked()) cycleVariant()
@@ -349,6 +450,8 @@ function TranscriptPanel(props: {
   loading: boolean
   running: boolean
   providers: Provider[]
+  showTimestamps: boolean
+  showThinking: boolean
   messageWindow: MessageWindow
   loadOlderMessages?: (cursor: string) => Promise<void>
   reloadLatestMessages?: () => Promise<void>
@@ -356,6 +459,8 @@ function TranscriptPanel(props: {
 }) {
   const TRANSCRIPT_BOTTOM_THRESHOLD = 8
   let transcript: HTMLElement | undefined
+  let transcriptContent: HTMLDivElement | undefined
+  let resizeObserver: ResizeObserver | undefined
   let followFrame: number | undefined
   let bottomFrame: number | undefined
   let activeSessionID = ""
@@ -411,7 +516,7 @@ function TranscriptPanel(props: {
   }
   const scrollToBottom = () => {
     if (!transcript) return
-    transcript.scrollTop = transcript.scrollHeight
+    transcript.scrollTop = Number.MAX_SAFE_INTEGER
     setFollowingBottom(nearBottom())
   }
   const continueBottomScroll = (key: string) => {
@@ -477,7 +582,15 @@ function TranscriptPanel(props: {
   onCleanup(() => {
     cancelBottomScroll()
     cancelTopScroll()
+    resizeObserver?.disconnect()
     if (followFrame !== undefined) cancelAnimationFrame(followFrame)
+  })
+  onMount(() => {
+    resizeObserver = new ResizeObserver(() => {
+      if (!followingBottom || props.data.messageTailDetached || props.loading) return
+      scrollToBottom()
+    })
+    if (transcriptContent) resizeObserver.observe(transcriptContent)
   })
   createEffect(() => {
     const key = renderKey()
@@ -506,7 +619,7 @@ function TranscriptPanel(props: {
 
   return (
     <section class="transcript" ref={transcript} onScroll={handleScroll} onWheel={handleUserScrollIntent} onPointerDown={handleUserScrollIntent} onTouchStart={handleUserScrollIntent}>
-      <div class="transcript-content">
+      <div class="transcript-content" ref={transcriptContent}>
         <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
           <Show when={props.data.messageCursor}>
             <Show when={olderMessagesLoading()} fallback={
@@ -522,12 +635,12 @@ function TranscriptPanel(props: {
           </Show>
           <For each={visibleMessages()} fallback={<SessionEmptyState />}>
             {(bundle, index) => (
-              <article class={`message ${bundle.info.role}`}>
+              <article class={`message ${bundle.info.role}`} data-message-id={bundle.info.id}>
                 <Show when={showTranscriptHeader(visibleMessages(), index())}>
-                  <header>{transcriptHeaderLabel(bundle.info, props.providers)}</header>
+                  <header>{transcriptHeaderLabel(bundle.info, props.providers, props.showTimestamps)}</header>
                 </Show>
                 <For each={groupTranscriptParts(bundle.parts)}>
-                  {(item) => <DisplayPartView item={item} />}
+                  {(item) => <DisplayPartView item={item} showThinking={props.showThinking} />}
                 </For>
               </article>
             )}
@@ -550,9 +663,10 @@ function showTranscriptHeader(messages: MessageBundle[], index: number) {
   return messages[index - 1]?.info.role === "user"
 }
 
-function transcriptHeaderLabel(message: MessageBundle["info"], providers: Provider[]) {
-  if (message.role === "user") return "User"
-  return assistantModelLabel(message, providers)
+function transcriptHeaderLabel(message: MessageBundle["info"], providers: Provider[], showTimestamps: boolean) {
+  const label = message.role === "user" ? "User" : assistantModelLabel(message, providers)
+  if (!showTimestamps) return label
+  return `${label} - ${new Date(message.time.created).toLocaleString()}`
 }
 
 function assistantModelLabel(message: AssistantMessage, providers: Provider[]) {

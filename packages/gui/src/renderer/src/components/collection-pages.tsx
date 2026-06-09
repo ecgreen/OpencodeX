@@ -33,6 +33,7 @@ export function ProjectCollectionPage(props: {
   projects: GuiSnapshot["projects"]
   sessionCount: (project: GuiSnapshot["projects"][number]) => number
   createSession: (projectID?: string, directory?: string) => void
+  editProject: (projectID: string, currentName: string, folders: string[]) => void
 }) {
   return (
     <div class="page placeholder-page list-page">
@@ -49,6 +50,7 @@ export function ProjectCollectionPage(props: {
             <div class="row-actions">
               <small>{props.sessionCount(project)} sessions</small>
               <button onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</button>
+              <button onClick={() => props.editProject(project.id, title(project.name ?? project.project.name), project.folders.map((folder) => folder.path))}>Edit</button>
             </div>
           </article>
         )}
