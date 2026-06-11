@@ -15,7 +15,6 @@ export function prependOlderMessages(data: SessionData, page: MessagePage): Sess
     ...data,
     messages: mergeMessageBundles([...page.messages, ...data.messages]),
     messageCursor: page.cursor,
-    messageTailDetached: data.messageTailDetached,
   }
 }
 
@@ -26,17 +25,11 @@ export function trimToLiveTail(data: SessionData, limit: number | MessageWindow)
     ...data,
     messages: window.messages,
     messageCursor: window.messages[0] ? messageCursorBefore(window.messages[0]) : data.messageCursor,
-    messageTailDetached: false,
   }
 }
 
 export function selectLiveTailMessages(messages: MessageBundle[], limit: number | MessageWindow) {
   return messagesFromEnd(messages, limit).messages
-}
-
-export function markMessageTailDetached(data: SessionData): SessionData {
-  if (data.messageTailDetached) return data
-  return { ...data, messageTailDetached: true }
 }
 
 function mergeMessageBundles(messages: MessageBundle[]) {

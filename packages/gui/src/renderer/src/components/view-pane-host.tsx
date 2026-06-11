@@ -1,5 +1,4 @@
 import type { Agent, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import type { MessageWindow } from "../lib/message-window"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { GuiSnapshot, SessionData } from "../lib/store"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
@@ -34,10 +33,7 @@ export function ViewPaneHost(props: {
   slashCommands: SessionSlashCommand[]
   showTimestamps: boolean
   showThinking: boolean
-  messageWindow: MessageWindow
   loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
-  reloadLatestMessages: (sessionID: string) => Promise<void>
-  onFollowBottomChange: (sessionID: string, value: boolean) => void
 }) {
   const session = () => viewItemSession(props.item)
   const id = () => viewItemID(props.item)
@@ -73,10 +69,7 @@ export function ViewPaneHost(props: {
       slashCommands={props.slashCommands}
       showTimestamps={props.showTimestamps}
       showThinking={props.showThinking}
-      messageWindow={props.messageWindow}
       loadOlderMessages={(cursor) => props.loadOlderMessages(id(), cursor)}
-      reloadLatestMessages={() => props.reloadLatestMessages(id())}
-      onFollowBottomChange={props.onFollowBottomChange}
     />
   )
 }

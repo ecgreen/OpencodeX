@@ -12,6 +12,7 @@ import {
   isHighFrequencySessionEvent,
   isSessionDataEvent,
   markViewSessionsLoaded,
+  mergeLiveSessionData,
   mergeSessionCardSnapshot,
   patchBoundedSessionData,
   patchSelectedSessionData,
@@ -125,16 +126,77 @@ describe("GUI live session patching", () => {
     expect(result.messages[0]?.parts[0]).toMatchObject({ id: "prt_delta", text: "hello world" })
   })
 
-  test("marks the live tail detached instead of appending while reading older content", () => {
+  test("keeps accumulated streaming text when a stale part update arrives", () => {
+    const withDelta = patchSessionData(
+      sessionData([{ ...bundle("msg_stream", 1), parts: [textPart("msg_stream", "prt_stream", "first line")] }]),
+      event("message.part.delta", { messageID: "msg_stream", partID: "prt_stream", field: "text", delta: "\nsecond line" }),
+    )
+    const result = patchSessionData(
+      withDelta,
+      event("message.part.updated", { part: textPart("msg_stream", "prt_stream", "first line") }),
+    )
+
+    expect(result.messages[0]?.parts[0]).toMatchObject({ id: "prt_stream", text: "first line\nsecond line" })
+  })
+
+  test("appends chunk-like live part updates until a final full part arrives", () => {
+    const withFirstLine = patchSessionData(
+      sessionData([{ ...bundle("msg_lines", 1), parts: [textPart("msg_lines", "prt_lines", "first line\n")] }]),
+      event("message.part.updated", { part: textPart("msg_lines", "prt_lines", "second line\n") }),
+    )
+    const withRepeatedLine = patchSessionData(
+      withFirstLine,
+      event("message.part.updated", { part: textPart("msg_lines", "prt_lines", "second line\n") }),
+    )
+    const withFinalText = patchSessionData(
+      withRepeatedLine,
+      event("message.part.updated", { part: textPart("msg_lines", "prt_lines", "final rewritten text", { time: { end: 10 } }) }),
+    )
+
+    expect(withFirstLine.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "first line\nsecond line\n" })
+    expect(withRepeatedLine.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "first line\nsecond line\n" })
+    expect(withFinalText.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "final rewritten text" })
+  })
+
+  test("preserves accumulated live text when a polling reload has stale part text", () => {
+    const current = sessionData([
+      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "first line\nsecond line\nthird line")] },
+    ])
+    const staleReload = sessionData([
+      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "")] },
+    ])
+    const finalReload = sessionData([
+      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "final text", { time: { end: 10 } })] },
+    ])
+
+    expect(mergeLiveSessionData(current, staleReload).messages[0]?.parts[0]).toMatchObject({
+      id: "prt_reload",
+      text: "first line\nsecond line\nthird line",
+    })
+    expect(mergeLiveSessionData(current, finalReload).messages[0]?.parts[0]).toMatchObject({
+      id: "prt_reload",
+      text: "final text",
+    })
+  })
+
+  test("keeps appending the live tail when older content was loaded", () => {
     const result = patchBoundedSessionData(
       sessionData([bundle("msg_existing", 1)]),
       event("message.updated", { info: message("msg_new", 2) }),
       10,
-      false,
     )
 
-    expect(result.messages.map((item) => item.info.id)).toEqual(["msg_existing"])
-    expect(result.messageTailDetached).toBe(true)
+    expect(result.messages.map((item) => item.info.id)).toEqual(["msg_existing", "msg_new"])
+  })
+
+  test("trims to the live tail when live updates arrive", () => {
+    const result = patchBoundedSessionData(
+      sessionData([bundle("msg_older", 1), bundle("msg_existing", 2)]),
+      event("message.updated", { info: message("msg_new", 3) }),
+      { count: 2, budget: Number.POSITIVE_INFINITY },
+    )
+
+    expect(result.messages.map((item) => item.info.id)).toEqual(["msg_existing", "msg_new"])
   })
 
   test("removes deleted sessions from snapshot side channels", () => {
@@ -222,7 +284,6 @@ describe("GUI live session patching", () => {
       targetSessionID: "ses_live",
       event: event("message.updated", { info: message("msg_new", 2) }),
       limit: 10,
-      followingBottom: true,
       emptyData: sessionData([]),
     })
 
@@ -238,7 +299,6 @@ describe("GUI live session patching", () => {
       sessionIDs: ["ses_live"],
       event: event("message.updated", { info: message("msg_new", 2) }),
       limit: 10,
-      followingBottom: () => true,
       emptyData: sessionData([]),
     })
 
@@ -277,13 +337,14 @@ function message(id: string, created: number): MessageBundle["info"] {
   } as MessageBundle["info"]
 }
 
-function textPart(messageID: string, id: string, text: string): Part {
+function textPart(messageID: string, id: string, text: string, input: Partial<Part> = {}): Part {
   return {
     id,
     sessionID: "ses_live",
     messageID,
     type: "text",
     text,
+    ...input,
   } as Part
 }
 

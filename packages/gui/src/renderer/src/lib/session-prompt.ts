@@ -62,7 +62,7 @@ export async function runSessionPromptAction(input: {
   })
   await input.sendPrompt(target.sessionID, submission.text, target.options)
   if (target.modelToRemember) input.rememberModel(target.modelToRemember)
-  await input.syncSession(prepared.target.id)
+  await input.syncSession(target.sessionID)
   await input.refresh()
   if (prepared.createdSessionID) input.openCreatedSession(prepared.createdSessionID)
 }

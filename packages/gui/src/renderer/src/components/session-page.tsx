@@ -1,7 +1,6 @@
 import type { Agent, AssistantMessage, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { compactPath, title } from "../lib/format"
-import type { MessageWindow } from "../lib/message-window"
 import { isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { MessageBundle, SessionData } from "../lib/store"
@@ -10,6 +9,11 @@ import { Icon } from "./icon"
 import { OpencodeXLogo } from "./chrome"
 import { DisplayPartView, PermissionPanel, QuestionPanel, groupTranscriptParts } from "./session-transcript"
 import { StatusPill } from "./status-pill"
+
+const OPEN_SCROLL_SETTLE_MIN_MS = 2_500
+const OPEN_SCROLL_SETTLE_MAX_MS = 6_000
+const OPEN_SCROLL_SETTLE_IDLE_MS = 350
+const PROMPT_AUTO_SCROLL_BOTTOM_THRESHOLD = 100
 
 export function SessionPage(props: {
   session?: Session
@@ -42,15 +46,13 @@ export function SessionPage(props: {
   status?: string
   pending?: boolean
   composerFocusToken?: () => number
-  messageWindow: MessageWindow
   loadOlderMessages?: (cursor: string) => Promise<void>
-  reloadLatestMessages?: () => Promise<void>
-  onFollowBottomChange?: (sessionID: string, value: boolean) => void
 }) {
   const session = () => props.session
   const blocked = () => props.permissions.length > 0 || props.questions.length > 0
   let transcriptExpandedSessionID = ""
   let composerTextarea: HTMLTextAreaElement | undefined
+  let startTranscriptPromptFollow: (() => void) | undefined
   const [modelPickerOpen, setModelPickerOpen] = createSignal(false)
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
   const [modelQuery, setModelQuery] = createSignal("")
@@ -160,6 +162,7 @@ export function SessionPage(props: {
     event.preventDefault()
     const text = draftText()
     if (blocked() || !text) return
+    startTranscriptPromptFollow?.()
     setDraftPrompt("")
     requestAnimationFrame(resizeComposer)
     props.submit(event, text)
@@ -247,14 +250,11 @@ export function SessionPage(props: {
               sessionID={selected().id}
               data={props.data}
               loading={props.loading}
-              running={running()}
               providers={props.providers}
               showTimestamps={props.showTimestamps}
               showThinking={props.showThinking}
-              messageWindow={props.messageWindow}
+              setPromptFollowStarter={(start) => { startTranscriptPromptFollow = start }}
               loadOlderMessages={props.loadOlderMessages}
-              reloadLatestMessages={props.reloadLatestMessages}
-              onFollowBottomChange={props.onFollowBottomChange}
             />
             <form class="composer" onSubmit={submitComposer}>
               <div class={`composer-input ${mode()}`}>
@@ -448,177 +448,112 @@ function TranscriptPanel(props: {
   sessionID: string
   data: SessionData
   loading: boolean
-  running: boolean
   providers: Provider[]
   showTimestamps: boolean
   showThinking: boolean
-  messageWindow: MessageWindow
+  setPromptFollowStarter: (start: (() => void) | undefined) => void
   loadOlderMessages?: (cursor: string) => Promise<void>
-  reloadLatestMessages?: () => Promise<void>
-  onFollowBottomChange?: (sessionID: string, value: boolean) => void
 }) {
-  const TRANSCRIPT_BOTTOM_THRESHOLD = 8
   let transcript: HTMLElement | undefined
   let transcriptContent: HTMLDivElement | undefined
-  let resizeObserver: ResizeObserver | undefined
-  let followFrame: number | undefined
-  let bottomFrame: number | undefined
+  let cancelOpenScroll: (() => void) | undefined
+  let promptFollowFrame: number | undefined
+  let promptFollowObserver: ResizeObserver | undefined
+  let promptFollowing = false
+  let promptFollowScrollTop = 0
   let activeSessionID = ""
-  let observedRenderKey = ""
-  let followingBottom = true
-  let topFrame: number | undefined
-  let bottomStableFrames = 0
-  let bottomStableTarget = 0
-  let bottomFrameBudget = 0
-  let bottomLastHeight = -1
+  let openedScrollSessionID = ""
   const [olderMessagesLoading, setOlderMessagesLoading] = createSignal(false)
-  const [latestMessagesLoading, setLatestMessagesLoading] = createSignal(false)
   const visibleMessages = createMemo(() => props.data.messages)
-  const visiblePartCount = createMemo(() => visibleMessages().reduce((total, message) => total + message.parts.length, 0))
-  const renderKey = createMemo(() => [
-    props.sessionID,
-    props.loading ? "loading" : "ready",
-    visibleMessages()[0]?.info.id ?? "",
-    visibleMessages().at(-1)?.info.id ?? "",
-    visiblePartCount(),
-    props.data.messageTailDetached ? "detached" : "latest",
-  ].join("\0"))
-  const nearBottom = () => transcript ? transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= TRANSCRIPT_BOTTOM_THRESHOLD : true
-  const setFollowingBottom = (value: boolean) => {
-    followingBottom = value && props.data.messageTailDetached !== true
-    props.onFollowBottomChange?.(props.sessionID, followingBottom)
-  }
-  const forceFollowingBottom = () => {
-    followingBottom = true
-    props.onFollowBottomChange?.(props.sessionID, true)
-  }
-  const cancelBottomScroll = () => {
-    if (bottomFrame === undefined) return
-    cancelAnimationFrame(bottomFrame)
-    bottomFrame = undefined
-    bottomStableFrames = 0
-    bottomFrameBudget = 0
-  }
-  const cancelTopScroll = () => {
-    if (topFrame === undefined) return
-    cancelAnimationFrame(topFrame)
-    topFrame = undefined
-  }
-  const updateFollowingFromScroll = () => {
-    setFollowingBottom(nearBottom())
-  }
-  const scheduleFollowingUpdate = () => {
-    if (followFrame !== undefined) return
-    followFrame = requestAnimationFrame(() => {
-      followFrame = undefined
-      updateFollowingFromScroll()
-    })
-  }
   const scrollToBottom = () => {
     if (!transcript) return
-    transcript.scrollTop = Number.MAX_SAFE_INTEGER
-    setFollowingBottom(nearBottom())
+    transcript.scrollTop = transcript.scrollHeight
+    if (promptFollowing) promptFollowScrollTop = transcript.scrollTop
   }
-  const continueBottomScroll = (key: string) => {
-    bottomFrame = requestAnimationFrame(() => {
-      bottomFrame = undefined
-      if (renderKey() !== key || !followingBottom || props.data.messageTailDetached) return
-      const height = transcript?.scrollHeight ?? 0
-      scrollToBottom()
-      bottomStableFrames = height === bottomLastHeight ? bottomStableFrames + 1 : 0
-      bottomLastHeight = height
-      bottomFrameBudget -= 1
-      if (bottomFrameBudget > 0 && bottomStableFrames < bottomStableTarget) continueBottomScroll(key)
+  const nearBottom = () => {
+    if (!transcript) return true
+    return transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= PROMPT_AUTO_SCROLL_BOTTOM_THRESHOLD
+  }
+  const scheduleOpenedSessionScroll = () => {
+    cancelOpenScroll?.()
+    if (!transcript || !transcriptContent) return
+    cancelOpenScroll = settleTranscriptOpenScroll(transcript, transcriptContent)
+  }
+  const stopPromptFollow = () => {
+    promptFollowing = false
+    if (promptFollowFrame !== undefined) {
+      cancelAnimationFrame(promptFollowFrame)
+      promptFollowFrame = undefined
+    }
+    promptFollowObserver?.disconnect()
+    promptFollowObserver = undefined
+  }
+  const schedulePromptFollowScroll = () => {
+    if (!promptFollowing || promptFollowFrame !== undefined) return
+    promptFollowFrame = requestAnimationFrame(() => {
+      promptFollowFrame = undefined
+      if (promptFollowing) scrollToBottom()
     })
   }
-  const scheduleBottomScroll = (key: string, stableFrames: number, frameBudget: number) => {
-    cancelBottomScroll()
-    bottomStableFrames = 0
-    bottomStableTarget = stableFrames
-    bottomFrameBudget = frameBudget
-    bottomLastHeight = -1
-    continueBottomScroll(key)
+  const startPromptFollow = () => {
+    if (!transcript || !transcriptContent || !nearBottom()) {
+      stopPromptFollow()
+      return
+    }
+    cancelOpenScroll?.()
+    cancelOpenScroll = undefined
+    promptFollowing = true
+    promptFollowScrollTop = transcript.scrollTop
+    promptFollowObserver?.disconnect()
+    promptFollowObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(schedulePromptFollowScroll)
+    promptFollowObserver?.observe(transcriptContent)
+    schedulePromptFollowScroll()
   }
-  const handleUserScrollIntent = () => {
-    cancelBottomScroll()
-    scheduleFollowingUpdate()
+  const handleScroll = () => {
+    if (!promptFollowing || !transcript) return
+    const scrollTop = transcript.scrollTop
+    if (scrollTop < promptFollowScrollTop && !nearBottom()) {
+      promptFollowScrollTop = scrollTop
+      stopPromptFollow()
+      return
+    }
+    promptFollowScrollTop = scrollTop
+    if (!nearBottom()) stopPromptFollow()
+  }
+  const handleWheel = (event: WheelEvent) => {
+    if (promptFollowing && event.deltaY < 0) stopPromptFollow()
   }
   const loadOlderMessages = async () => {
     const cursor = props.data.messageCursor
     if (!cursor || !props.loadOlderMessages || olderMessagesLoading()) return
-    const restoreTop = transcript?.scrollTop ?? 0
-    const restoreHeight = transcript?.scrollHeight ?? 0
-    cancelBottomScroll()
-    setFollowingBottom(false)
+    stopPromptFollow()
     setOlderMessagesLoading(true)
-    await props.loadOlderMessages(cursor).finally(() => {
-      setOlderMessagesLoading(false)
-      cancelTopScroll()
-      topFrame = requestAnimationFrame(() => {
-        topFrame = undefined
-        if (transcript) transcript.scrollTop = restoreTop + Math.max(0, transcript.scrollHeight - restoreHeight)
-        updateFollowingFromScroll()
-      })
-    })
-  }
-  const reloadLatestMessages = async () => {
-    if (!props.reloadLatestMessages || latestMessagesLoading()) return
-    cancelBottomScroll()
-    forceFollowingBottom()
-    setLatestMessagesLoading(true)
-    await props.reloadLatestMessages().finally(() => {
-      setLatestMessagesLoading(false)
-      scheduleBottomScroll(renderKey(), 10, 90)
-    })
-  }
-  const handleScroll = () => {
-    if (!nearBottom()) {
-      cancelBottomScroll()
-      if (followingBottom) setFollowingBottom(false)
-    }
-    scheduleFollowingUpdate()
+    await props.loadOlderMessages(cursor).finally(() => setOlderMessagesLoading(false))
   }
 
+  props.setPromptFollowStarter(startPromptFollow)
   onCleanup(() => {
-    cancelBottomScroll()
-    cancelTopScroll()
-    resizeObserver?.disconnect()
-    if (followFrame !== undefined) cancelAnimationFrame(followFrame)
-  })
-  onMount(() => {
-    resizeObserver = new ResizeObserver(() => {
-      if (!followingBottom || props.data.messageTailDetached || props.loading) return
-      scrollToBottom()
-    })
-    if (transcriptContent) resizeObserver.observe(transcriptContent)
+    props.setPromptFollowStarter(undefined)
+    cancelOpenScroll?.()
+    stopPromptFollow()
   })
   createEffect(() => {
-    const key = renderKey()
     const sessionChanged = activeSessionID !== props.sessionID
     activeSessionID = props.sessionID
     if (sessionChanged) {
-      observedRenderKey = ""
-      setFollowingBottom(props.data.messageTailDetached !== true)
+      cancelOpenScroll?.()
+      cancelOpenScroll = undefined
+      stopPromptFollow()
+      openedScrollSessionID = ""
     }
-    if (props.data.messageTailDetached) {
-      observedRenderKey = key
-      setFollowingBottom(false)
-      return
-    }
-    if (props.loading || visibleMessages().length === 0) return
-    if (!observedRenderKey) {
-      observedRenderKey = key
-      setFollowingBottom(true)
-      scheduleBottomScroll(key, 10, 90)
-      return
-    }
-    if (observedRenderKey === key) return
-    observedRenderKey = key
-    if (followingBottom) scheduleBottomScroll(key, props.running ? 2 : 1, props.running ? 12 : 4)
+    if (!props.sessionID || openedScrollSessionID === props.sessionID) return
+    if (props.loading && visibleMessages().length === 0) return
+    openedScrollSessionID = props.sessionID
+    scheduleOpenedSessionScroll()
   })
 
   return (
-    <section class="transcript" ref={transcript} onScroll={handleScroll} onWheel={handleUserScrollIntent} onPointerDown={handleUserScrollIntent} onTouchStart={handleUserScrollIntent}>
+    <section class="transcript" ref={transcript} onScroll={handleScroll} onWheel={handleWheel}>
       <div class="transcript-content" ref={transcriptContent}>
         <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
           <Show when={props.data.messageCursor}>
@@ -645,15 +580,84 @@ function TranscriptPanel(props: {
               </article>
             )}
           </For>
-          <Show when={props.data.messageTailDetached}>
-            <button type="button" class="transcript-window-button transcript-latest-button" disabled={latestMessagesLoading()} onClick={() => void reloadLatestMessages()}>
-              {latestMessagesLoading() ? "Loading latest messages..." : "Jump to latest messages"}
-            </button>
-          </Show>
         </Show>
       </div>
     </section>
   )
+}
+
+function settleTranscriptOpenScroll(transcript: HTMLElement, content: HTMLElement) {
+  let frame: number | undefined
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  let maxTimer: ReturnType<typeof setTimeout> | undefined
+  let stopped = false
+  const startedAt = performance.now()
+  const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
+    scheduleScroll()
+    scheduleIdleFinish()
+  })
+  const clearFrame = () => {
+    if (frame === undefined) return
+    cancelAnimationFrame(frame)
+    frame = undefined
+  }
+  const clearIdleTimer = () => {
+    if (idleTimer === undefined) return
+    clearTimeout(idleTimer)
+    idleTimer = undefined
+  }
+  const clearMaxTimer = () => {
+    if (maxTimer === undefined) return
+    clearTimeout(maxTimer)
+    maxTimer = undefined
+  }
+  const scrollToBottom = () => {
+    transcript.scrollTop = transcript.scrollHeight
+  }
+  const cancelForUser = () => stop()
+  const stop = () => {
+    if (stopped) return
+    stopped = true
+    clearFrame()
+    clearIdleTimer()
+    clearMaxTimer()
+    observer?.disconnect()
+    transcript.removeEventListener("wheel", cancelForUser)
+    transcript.removeEventListener("touchstart", cancelForUser)
+    transcript.removeEventListener("pointerdown", cancelForUser)
+  }
+  const finish = () => {
+    if (stopped) return
+    scrollToBottom()
+    stop()
+  }
+  const scheduleScroll = () => {
+    if (stopped || frame !== undefined) return
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      scrollToBottom()
+    })
+  }
+  const scheduleIdleFinish = () => {
+    if (stopped) return
+    clearIdleTimer()
+    idleTimer = setTimeout(() => {
+      if (performance.now() - startedAt < OPEN_SCROLL_SETTLE_MIN_MS) {
+        scheduleIdleFinish()
+        return
+      }
+      finish()
+    }, OPEN_SCROLL_SETTLE_IDLE_MS)
+  }
+
+  observer?.observe(content)
+  transcript.addEventListener("wheel", cancelForUser, { passive: true })
+  transcript.addEventListener("touchstart", cancelForUser, { passive: true })
+  transcript.addEventListener("pointerdown", cancelForUser, { passive: true })
+  maxTimer = setTimeout(finish, OPEN_SCROLL_SETTLE_MAX_MS)
+  scheduleScroll()
+  scheduleIdleFinish()
+  return stop
 }
 
 function showTranscriptHeader(messages: MessageBundle[], index: number) {

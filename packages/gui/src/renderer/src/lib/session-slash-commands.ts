@@ -45,7 +45,6 @@ export type SessionSlashCommandActions = {
   openDiff: (context?: SessionSlashCommandContext) => void | Promise<void>
   shareSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   renameSession: (context?: SessionSlashCommandContext) => void | Promise<void>
-  openTimeline: (context?: SessionSlashCommandContext) => void | Promise<void>
   forkSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   compactSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   unshareSession: (context?: SessionSlashCommandContext) => void | Promise<void>
@@ -288,13 +287,6 @@ export function buildSessionSlashCommands(input: {
       detail: "Change the current session title",
       category: "Session",
       run: input.actions.renameSession,
-    },
-    {
-      name: "timeline",
-      title: "Jump to message",
-      detail: "Open the session timeline",
-      category: "Session",
-      run: input.actions.openTimeline,
     },
     {
       name: "fork",

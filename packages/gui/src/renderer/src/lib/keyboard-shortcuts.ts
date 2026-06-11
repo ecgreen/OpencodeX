@@ -34,6 +34,7 @@ const ROUTES_BY_KEY: Record<string, GuiShortcutRouteName | undefined> = {
   "1": "projects",
   "2": "swarms",
   "3": "views",
+  "4": "views",
 }
 
 const DIRECT_ACTIONS_BY_KEY: Record<string, GuiShortcutAction | undefined> = {

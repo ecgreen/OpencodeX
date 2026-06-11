@@ -1,5 +1,4 @@
 import type { Agent, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import type { MessageWindow } from "../lib/message-window"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/store"
 import { SessionPage } from "./session-page"
@@ -35,10 +34,7 @@ export function ViewPane(props: {
   slashCommands: SessionSlashCommand[]
   showTimestamps: boolean
   showThinking: boolean
-  messageWindow: MessageWindow
   loadOlderMessages: (cursor: string) => Promise<void>
-  reloadLatestMessages: () => Promise<void>
-  onFollowBottomChange: (sessionID: string, value: boolean) => void
 }) {
   const handlePointerDown = (event: PointerEvent) => {
     if (event.button !== 0 || props.focused()) return
@@ -77,10 +73,7 @@ export function ViewPane(props: {
         status={props.status}
         pending={props.pending}
         composerFocusToken={props.composerFocusToken}
-        messageWindow={props.messageWindow}
         loadOlderMessages={props.loadOlderMessages}
-        reloadLatestMessages={props.reloadLatestMessages}
-        onFollowBottomChange={props.onFollowBottomChange}
       />
     </article>
   )

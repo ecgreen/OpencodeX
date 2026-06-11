@@ -1,5 +1,5 @@
 import type { GlobalEvent, Message, OpencodeXSessionState, Part, PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
-import { markMessageTailDetached, trimToLiveTail, type MessageWindow } from "./message-window"
+import { trimToLiveTail, type MessageWindow } from "./message-window"
 import { displayMessageText } from "./message-text"
 import { reconcileSessionUiState } from "./session-status"
 import { isRenderableSession, type GuiSnapshot, type MessageBundle, type SessionCardSnapshot, type SessionData } from "./store"
@@ -184,12 +184,21 @@ export function globalEventAction(event: GlobalEvent): GlobalEventAction {
   return { type: "refresh", sessionID: eventSessionID(event) }
 }
 
-export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, limit: MessageWindow, followingBottom: boolean): SessionData {
-  if (!followingBottom || data.messageTailDetached) {
-    const next = patchSessionData(data, event, { appendMissingMessages: false })
-    return eventWouldAppendMissingMessage(data, event) ? markMessageTailDetached(next) : next
-  }
+export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, limit: MessageWindow): SessionData {
   return trimToLiveTail(patchSessionData(data, event), limit)
+}
+
+export function mergeLiveSessionData(current: SessionData | undefined, incoming: SessionData): SessionData {
+  if (!current) return incoming
+  const currentMessages = new Map(current.messages.map((bundle) => [bundle.info.id, bundle]))
+  return {
+    ...incoming,
+    messages: incoming.messages.map((bundle) => {
+      const existing = currentMessages.get(bundle.info.id)
+      if (!existing) return bundle
+      return { ...bundle, parts: mergeLoadedParts(existing.parts, bundle.parts) }
+    }),
+  }
 }
 
 export function patchSelectedSessionData(input: {
@@ -198,14 +207,12 @@ export function patchSelectedSessionData(input: {
   targetSessionID: string
   event: GlobalEvent
   limit: MessageWindow
-  followingBottom: boolean
   emptyData: SessionData
 }) {
   return patchBoundedSessionData(
     input.loadedSessionID === input.targetSessionID ? input.data : input.emptyData,
     input.event,
     input.limit,
-    input.followingBottom,
   )
 }
 
@@ -214,7 +221,6 @@ export function patchVisibleViewSessionData(input: {
   sessionIDs: string[]
   event: GlobalEvent
   limit: MessageWindow
-  followingBottom: (sessionID: string) => boolean
   emptyData: SessionData
 }) {
   return input.sessionIDs.reduce(
@@ -224,7 +230,6 @@ export function patchVisibleViewSessionData(input: {
         next[sessionID] ?? input.emptyData,
         input.event,
         input.limit,
-        input.followingBottom(sessionID),
       ),
     }),
     { ...input.data },
@@ -482,9 +487,39 @@ function mergePartLists(parts: Part[], incoming: Part[]) {
 function upsertPartList(parts: Part[], part: Part) {
   const index = parts.findIndex((item) => item.id === part.id)
   const next = index >= 0
-    ? parts.map((item, i) => i === index ? part : item)
+    ? parts.map((item, i) => i === index ? mergeLivePart(item, part) : item)
     : [...parts, part]
   return sortParts(next)
+}
+
+function mergeLivePart(current: Part, incoming: Part): Part {
+  if (!isTextPart(current) || !isTextPart(incoming)) return incoming
+  if (textPartEnded(incoming)) return incoming
+  if (!incoming.text) return current
+  if (!current.text) return incoming
+  if (incoming.text === current.text || incoming.text.startsWith(current.text)) return incoming
+  if (current.text.startsWith(incoming.text) || current.text.endsWith(incoming.text)) return { ...incoming, text: current.text } as Part
+  return { ...incoming, text: current.text + incoming.text } as Part
+}
+
+function mergeLoadedParts(current: Part[], incoming: Part[]) {
+  const currentParts = new Map(current.map((part) => [part.id, part]))
+  const incomingPartIDs = new Set(incoming.map((part) => part.id))
+  return sortParts([
+    ...incoming.map((part) => {
+      const existing = currentParts.get(part.id)
+      return existing ? mergeLivePart(existing, part) : part
+    }),
+    ...current.filter((part) => !incomingPartIDs.has(part.id) && isTextPart(part) && !textPartEnded(part)),
+  ])
+}
+
+function isTextPart(part: Part): part is Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }> {
+  return part.type === "text" || part.type === "reasoning"
+}
+
+function textPartEnded(part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>) {
+  return typeof part.time?.end === "number"
 }
 
 function sortParts(parts: Part[]) {
@@ -558,16 +593,6 @@ function pendingDeltaKey(partID: string, field: string) {
 
 function sortMessageBundles(messages: MessageBundle[]) {
   return messages.toSorted((a, b) => (a.info.time.created ?? 0) - (b.info.time.created ?? 0))
-}
-
-function eventWouldAppendMissingMessage(data: SessionData, event: GlobalEvent) {
-  const properties = eventData(event)
-  if (!properties) return false
-  const kind = eventKind(event)
-  if (kind === "message.updated") return !data.messages.some((bundle) => bundle.info.id === (properties as { info: Message }).info.id)
-  if (kind === "message.part.updated") return !data.messages.some((bundle) => bundle.info.id === (properties as { part: Part }).part.messageID)
-  if (kind === "message.part.delta") return !data.messages.some((bundle) => bundle.info.id === (properties as { messageID: string }).messageID)
-  return false
 }
 
 function patchSnapshotSession(snapshot: GuiSnapshot, info: Session): GuiSnapshot {

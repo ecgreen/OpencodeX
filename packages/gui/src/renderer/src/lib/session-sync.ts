@@ -62,6 +62,10 @@ export function shouldSkipViewSessionSync(input: {
   return (input.loadedTime ?? 0) >= input.session.time.updated
 }
 
+export function shouldShowViewSessionLoading(data?: SessionData) {
+  return data === undefined
+}
+
 export function viewSessionLoadKey(session: Session) {
   return `${session.id}\n${session.directory ?? ""}\n${session.time.updated}`
 }

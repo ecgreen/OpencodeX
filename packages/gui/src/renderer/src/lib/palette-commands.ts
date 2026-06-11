@@ -11,12 +11,20 @@ export type PaletteCommandActions = {
   toggleRail: () => void
   focusSidebar: () => void
   createSwarm: () => void | Promise<void>
+  createSwarmTask: () => void | Promise<void>
   createView: () => void | Promise<void>
+  editView: () => void | Promise<void>
+  deleteView: () => void | Promise<void>
+  manageWorkspaces: () => void | Promise<void>
   copyWorkspacePath: () => void | Promise<void>
   switchModel: () => void | Promise<void>
   switchAgent: () => void | Promise<void>
+  toggleMcps: () => void | Promise<void>
   cycleVariant: () => void | Promise<void>
   switchVariant: () => void | Promise<void>
+  connectProvider: () => void | Promise<void>
+  switchOrg: () => void | Promise<void>
+  switchTheme: () => void | Promise<void>
   showHelp: () => void | Promise<void>
   focusComposer: () => void
   refresh: () => void | Promise<void>
@@ -120,8 +128,7 @@ export function buildPaletteCommands(input: {
       title: "New swarm task",
       category: "Swarms",
       suggested: true,
-      disabled: "GUI swarm task picker is not implemented yet.",
-      run: () => {},
+      run: input.actions.createSwarmTask,
     },
     {
       name: "opencodex.view.open",
@@ -142,16 +149,14 @@ export function buildPaletteCommands(input: {
       title: "Edit view",
       category: "Views",
       suggested: true,
-      disabled: "GUI view editing is not implemented yet.",
-      run: () => {},
+      run: input.actions.editView,
     },
     {
       name: "opencodex.view.delete",
       title: "Delete view",
       category: "Views",
       suggested: true,
-      disabled: "GUI view deletion is not implemented yet.",
-      run: () => {},
+      run: input.actions.deleteView,
     },
     {
       name: "workspace.copy_path",
@@ -164,8 +169,7 @@ export function buildPaletteCommands(input: {
       name: "workspace.list",
       title: "Manage workspaces",
       category: "Workspace",
-      disabled: "GUI workspace management is not implemented yet.",
-      run: () => {},
+      run: input.actions.manageWorkspaces,
     },
     {
       name: "model.list",
@@ -184,8 +188,7 @@ export function buildPaletteCommands(input: {
       name: "mcp.list",
       title: "Toggle MCPs",
       category: "Agent",
-      disabled: "GUI MCP toggles are not implemented yet.",
-      run: () => {},
+      run: input.actions.toggleMcps,
     },
     {
       name: "variant.cycle",
@@ -204,15 +207,13 @@ export function buildPaletteCommands(input: {
       name: "provider.connect",
       title: "Connect provider",
       category: "Provider",
-      disabled: "GUI provider connection flow is not implemented yet.",
-      run: () => {},
+      run: input.actions.connectProvider,
     },
     {
       name: "console.org.switch",
       title: "Switch org",
       category: "Provider",
-      disabled: "GUI console org switching is not implemented yet.",
-      run: () => {},
+      run: input.actions.switchOrg,
     },
     {
       name: "opencode.status",
@@ -224,8 +225,7 @@ export function buildPaletteCommands(input: {
       name: "theme.switch",
       title: "Switch theme",
       category: "System",
-      disabled: "GUI theme picker is not implemented yet.",
-      run: () => {},
+      run: input.actions.switchTheme,
     },
     {
       name: "theme.switch_mode",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { runSelectedSessionSync, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-sync"
+import { runSelectedSessionSync, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-sync"
 import type { SessionData } from "../src/renderer/src/lib/store"
 
 describe("GUI session sync decisions", () => {
@@ -16,6 +16,11 @@ describe("GUI session sync decisions", () => {
     expect(shouldSkipViewSessionSync({ session: session("s1", 10), data: data(), loadedTime: 9 })).toBe(false)
     expect(shouldSkipViewSessionSync({ session: session("s1", 10), loadedTime: 10 })).toBe(false)
     expect(shouldSkipViewSessionSync({ force: true, session: session("s1", 10), data: data(), loadedTime: 10 })).toBe(false)
+  })
+
+  test("shows view loading only before a pane has loaded data", () => {
+    expect(shouldShowViewSessionLoading()).toBe(true)
+    expect(shouldShowViewSessionLoading(data())).toBe(false)
   })
 
   test("keys concurrent view loads by session identity, directory, and update time", () => {

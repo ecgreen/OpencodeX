@@ -31,7 +31,7 @@ export function activeSessionRouteKey(route: RouteLike) {
 export function activeViewForRoute(route: RouteLike, views: OpencodeXView[]): OpencodeXView | undefined {
   if (route.name !== "views") return
   if (!route.viewID) return
-  return views.find((view) => view.id === route.viewID)
+  return views.find((view) => view.id === route.viewID) ?? views[0]
 }
 
 export function focusedViewItemID(input: {

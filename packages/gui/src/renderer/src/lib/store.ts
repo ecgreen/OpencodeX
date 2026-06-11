@@ -6,6 +6,7 @@ import type {
   OpencodeXProject,
   OpencodeXSessionUiState,
   OpencodeXSwarm,
+  OpencodeXSwarmRoleInput,
   OpencodeXView,
   Part,
   PermissionRequest,
@@ -37,7 +38,6 @@ export type MessageBundle = {
 export type SessionData = {
   messages: MessageBundle[]
   messageCursor?: string
-  messageTailDetached?: boolean
   todos: Todo[]
   diffs: SnapshotFileDiff[]
 }
@@ -327,23 +327,48 @@ export async function moveSession(gui: GuiClient, sessionID: string, projectID: 
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function createSwarm(gui: GuiClient, input: { projectID: string; title?: string; prompt?: string }) {
+export async function getSwarm(gui: GuiClient, swarmID: string) {
+  return gui.client.opencodex.swarm.get({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function createSwarm(gui: GuiClient, input: { projectID: string; title?: string; prompt?: string; roles?: OpencodeXSwarmRoleInput[] }) {
   return gui.client.opencodex.swarm.create({
     opencodeXSwarmCreateInput: {
       projectID: input.projectID,
       title: input.title,
       prompt: input.prompt,
       source: "manual",
+      roles: input.roles,
     },
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { prompt: string; agent?: string; variant?: string }) {
+export async function updateSwarm(gui: GuiClient, swarmID: string, input: { title?: string; roles?: OpencodeXSwarmRoleInput[]; metadata?: Record<string, unknown> }) {
+  return gui.client.opencodex.swarm.update({
+    swarmID,
+    opencodeXSwarmUpdateInput: input,
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function startSwarm(gui: GuiClient, swarmID: string) {
+  return gui.client.opencodex.swarm.start({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function cancelSwarm(gui: GuiClient, swarmID: string) {
+  return gui.client.opencodex.swarm.cancel({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function deleteSwarm(gui: GuiClient, swarmID: string) {
+  return gui.client.opencodex.swarm.delete({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { prompt: string; agent?: string; mode?: "build" | "plan"; variant?: string }) {
   return gui.client.opencodex.swarm.task.assign({
     swarmID,
     opencodeXSwarmAssignTaskInput: {
       prompt: input.prompt,
       agent: input.agent,
+      mode: input.mode,
       variant: input.variant,
     },
   }, { headers: authHeaders(gui), throwOnError: true })

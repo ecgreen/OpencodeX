@@ -3,7 +3,7 @@ import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo } from "solid-js"
 import type { ViewItem } from "../lib/view-items"
 
-type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
+export type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
 
 export function ViewsPage(props: {
   view?: OpencodeXView
@@ -22,7 +22,7 @@ export function ViewsPage(props: {
   )
 }
 
-function viewLayout(count: number): LayoutNode {
+export function viewLayout(count: number): LayoutNode {
   if (count <= 1) return 0
   if (count === 2) return { direction: "row", children: [0, 1] }
   if (count === 3) return { direction: "row", children: [0, { direction: "column", children: [1, 2] }] }

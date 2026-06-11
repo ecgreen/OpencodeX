@@ -41,21 +41,26 @@ export async function runViewPromptAction(input: {
 }) {
   const submission = prepareViewPromptSubmission({ gui: input.gui, item: input.item, text: input.text })
   if (!submission) return
-  input.setDraftLoading(submission.draftID, true)
-  const prepared = await (input.prepareTarget ?? prepareViewPromptTarget)(submission.gui, submission.item, input.view)
-  if (prepared.type === "notice") return input.alert(prepared.message)
-  if (prepared.type === "unavailable") return
-  if (prepared.focusSessionID) input.setFocusedSessionID(prepared.focusSessionID)
-  const target = prepareViewPromptSendTarget({
-    target: prepared.target,
-    agent: input.agentForSession(prepared.draftSession),
-    model: input.modelForSession(prepared.draftSession),
-    variant: input.variantForSession(prepared.draftSession),
-  })
-  await input.sendPrompt(target.sessionID, submission.text, target.options)
-  if (target.modelToRemember) input.rememberModel(target.modelToRemember)
-  await input.syncViewSession(prepared.target)
-  await input.refresh()
+  const showDraftLoading = submission.item.kind === "pending"
+  if (showDraftLoading) input.setDraftLoading(submission.draftID, true)
+  try {
+    const prepared = await (input.prepareTarget ?? prepareViewPromptTarget)(submission.gui, submission.item, input.view)
+    if (prepared.type === "notice") return input.alert(prepared.message)
+    if (prepared.type === "unavailable") return
+    if (prepared.focusSessionID) input.setFocusedSessionID(prepared.focusSessionID)
+    const target = prepareViewPromptSendTarget({
+      target: prepared.target,
+      agent: input.agentForSession(prepared.draftSession),
+      model: input.modelForSession(prepared.draftSession),
+      variant: input.variantForSession(prepared.draftSession),
+    })
+    await input.sendPrompt(target.sessionID, submission.text, target.options)
+    if (target.modelToRemember) input.rememberModel(target.modelToRemember)
+    await input.syncViewSession(prepared.target)
+    await input.refresh()
+  } finally {
+    if (showDraftLoading) input.setDraftLoading(submission.draftID, false)
+  }
 }
 
 export function prepareViewPromptSubmission(input: { gui?: GuiClient; item: ViewItem; text: string }): ViewPromptSubmission | undefined {

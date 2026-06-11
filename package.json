@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "bun run script/opencodex-dev.ts",
     "dev:tui": "bun run script/opencodex-dev.ts",
+    "dev:electron": "bun --cwd packages/gui run dev:electron",
     "opencodex": "bun run script/opencodex-dev.ts",
     "lint": "oxlint",
     "typecheck": "bun run turbo typecheck",

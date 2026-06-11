@@ -4,23 +4,21 @@ import type { GuiSnapshot, MessageBundle, SessionData } from "../src/renderer/sr
 import { liveServerSyncPlan, shouldPollSelectedSession, shouldRefreshSnapshotCards, viewSessionsToPoll, visibleSessionSyncTarget } from "../src/renderer/src/lib/live-sync"
 
 describe("GUI live sync decisions", () => {
-  test("polls the selected session only when it follows the live tail", () => {
-    expect(shouldPollSelectedSession({ followingBottom: false })).toBe(false)
-    expect(shouldPollSelectedSession({ followingBottom: true })).toBe(true)
-    expect(shouldPollSelectedSession({ followingBottom: true, session: session("s1", 100), status: { type: "busy" } })).toBe(true)
-    expect(shouldPollSelectedSession({ followingBottom: true, session: session("s1", 1), data: data([assistant("m1", 1, [textPart("p1")])]) })).toBe(false)
+  test("polls selected sessions that need live updates", () => {
+    expect(shouldPollSelectedSession({})).toBe(true)
+    expect(shouldPollSelectedSession({ session: session("s1", 100), status: { type: "busy" } })).toBe(true)
+    expect(shouldPollSelectedSession({ session: session("s1", 1), data: data([assistant("m1", 1, [textPart("p1")])]) })).toBe(false)
   })
 
-  test("selects only followed view sessions that need polling", () => {
-    const sessions = [session("busy", 100), session("stale", 1), session("paused", 100)]
+  test("selects view sessions that need polling", () => {
+    const sessions = [session("busy", 100), session("stale", 1), session("idle", 100)]
 
     expect(viewSessionsToPoll({
       sessions,
-      followingBottom: (sessionID) => sessionID !== "paused",
       sessionStatus: { busy: { type: "busy" } },
       sessionData: {
         stale: data([assistant("stale", 1, [textPart("text")])]),
-        paused: data([assistant("paused", 100, [textPart("text")])]),
+        idle: data([assistant("idle", 100, [textPart("text")])]),
       },
     }).map((item) => item.id)).toEqual(["busy"])
   })
@@ -37,25 +35,16 @@ describe("GUI live sync decisions", () => {
       route: { name: "session", sessionID: "selected" },
       sessionID: "selected",
       viewSessions: [view],
-      followingBottom: () => true,
     })).toEqual({ type: "session", sessionID: "selected" })
     expect(visibleSessionSyncTarget({
       route: { name: "views" },
       sessionID: "view-session",
       viewSessions: [view],
-      followingBottom: () => true,
     })).toEqual({ type: "view", session: view })
     expect(visibleSessionSyncTarget({
       route: { name: "views" },
       sessionID: "missing",
       viewSessions: [view],
-      followingBottom: () => true,
-    })).toBeUndefined()
-    expect(visibleSessionSyncTarget({
-      route: { name: "session", sessionID: "selected" },
-      sessionID: "selected",
-      viewSessions: [view],
-      followingBottom: () => false,
     })).toBeUndefined()
   })
 
@@ -68,7 +57,6 @@ describe("GUI live sync decisions", () => {
       loadedSessionID: "selected",
       loadedSessionData: data([]),
       activeViewSessions: [],
-      followingBottom: () => true,
       viewSessionData: {},
       lastSnapshotSync: 5_000,
       snapshotSyncInterval: 5_000,
@@ -77,7 +65,7 @@ describe("GUI live sync decisions", () => {
     expect(plan).toEqual({ selectedSessionID: "selected", viewSessions: [], refreshSnapshot: true })
   })
 
-  test("plans followed view session polling without selected-session work", () => {
+  test("plans view session polling without selected-session work", () => {
     const busy = session("busy", 100)
     const stale = session("stale", 1)
     const plan = liveServerSyncPlan({
@@ -87,7 +75,6 @@ describe("GUI live sync decisions", () => {
       loadedSessionID: "",
       loadedSessionData: data([]),
       activeViewSessions: [busy, stale],
-      followingBottom: (sessionID) => sessionID !== "stale",
       viewSessionData: { stale: data([assistant("stale", 1, [textPart("text")])]) },
       lastSnapshotSync: 5_000,
       snapshotSyncInterval: 5_000,

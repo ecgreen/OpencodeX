@@ -48,6 +48,399 @@
   color: var(--text);
 }
 
+.manager-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.manager-page-header h1 {
+  margin: 0;
+}
+
+.manager-page-header p:not(.eyebrow) {
+  margin: 6px 0 0;
+  color: var(--muted);
+  max-width: 760px;
+}
+
+.manager-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.manager-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manager-section > header > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.manager-section > header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.swarm-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.swarm-task-card {
+  gap: 10px;
+}
+
+.swarm-task-card textarea,
+.role-editor-card textarea,
+.view-editor-page textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.swarm-editor-page,
+.view-editor-page,
+.swarms-page,
+.views-manager-page {
+  overflow: auto;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.form-grid label,
+.role-editor-card label,
+.full-width-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-grid input,
+.form-grid select,
+.role-editor-card input,
+.role-editor-card select,
+.role-editor-card textarea,
+.full-width-field input,
+.view-editor-page textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.role-editor-list {
+  display: grid;
+  gap: 12px;
+}
+
+.role-editor-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.role-editor-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.view-editor-page {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.views-manager-page:has(.views-page) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.views-manager-page:has(.views-page) .manager-page-header {
+  flex: 0 0 auto;
+  padding: 16px 18px 0;
+}
+
+.views-manager-page:has(.views-page) .active-view-header {
+  flex: 0 0 auto;
+}
+
+.views-manager-page:has(.views-page) .views-page {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 18px 18px;
+}
+
+.active-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 18px 8px;
+}
+
+.active-view-header > div:first-child {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 9px;
+}
+
+.active-view-header h1 {
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-view-header span {
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.active-view-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.active-view-actions button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.active-view-actions button:hover {
+  color: var(--text);
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
+.active-view-actions button.danger:hover {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 72%, var(--border));
+}
+
+.active-view-actions .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.view-list-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 84px;
+  height: auto;
+  padding: 12px 10px;
+  border-left-color: var(--secondary);
+  background: var(--session-card-bg, #151515);
+}
+
+.view-list-card .dashboard-card-open {
+  min-height: 54px;
+}
+
+.view-card-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 30px);
+  gap: 5px;
+}
+
+.view-card-actions button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.view-card-actions button:hover {
+  color: var(--text);
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
+.view-card-actions button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.view-card-actions button.danger:hover {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 72%, var(--border));
+}
+
+.view-card-actions button:first-child .icon {
+  transform: rotate(180deg);
+}
+
+.view-card-actions .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.view-editor-session-section {
+  min-height: 0;
+}
+
+.view-editor-session-section > header {
+  flex: 0 0 auto;
+}
+
+.view-session-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.view-session-card {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  min-height: 58px;
+  padding-right: 10px;
+  cursor: pointer;
+}
+
+.view-session-card input {
+  accent-color: var(--primary);
+}
+
+.view-session-card-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.view-session-card-copy strong,
+.view-session-card-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-session-card-copy small {
+  color: var(--muted);
+}
+
+.view-editor-page .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 12px 0 0;
+  background: var(--bg);
+}
+
+.manager-create-button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.manager-table {
+  display: grid;
+  gap: 8px;
+}
+
+.manager-row {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px;
+}
+
+.manager-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.manager-row small {
+  color: var(--muted);
+}
+
+.page-actions {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 860px) {
+  .manager-page-header,
+  .manager-section > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .swarm-detail-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #f6f3ee;
@@ -133,7 +526,9 @@ body {
 .view-layout-group {
   display: flex;
   flex: 1 1 0;
-  gap: 0;
+  flex-basis: 0;
+  flex-shrink: 1;
+  gap: 8px;
   min-width: 0;
   min-height: 0;
 }
@@ -359,6 +754,8 @@ body {
   position: relative;
   display: flex;
   flex: 1 1 0;
+  flex-basis: 0;
+  flex-shrink: 1;
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--border-subtle);
@@ -373,6 +770,8 @@ body {
 .view-pane > .session-page {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 10px;
 }
 
@@ -1812,8 +2211,6 @@ h2 {
 
 .transcript {
   overflow: auto;
-  overflow-anchor: none;
-  scroll-behavior: auto;
   min-height: 0;
   padding: 12px;
   border: 1px solid var(--border-subtle);

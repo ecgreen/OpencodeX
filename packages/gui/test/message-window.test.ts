@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { MessageBundle, SessionData } from "../src/renderer/src/lib/store"
-import { markMessageTailDetached, prependOlderMessages, trimToLiveTail } from "../src/renderer/src/lib/message-window"
+import { prependOlderMessages, trimToLiveTail } from "../src/renderer/src/lib/message-window"
 
 describe("message window helpers", () => {
   test("prepends older pages without reordering messages", () => {
@@ -11,7 +11,6 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m1", "m2", "m3", "m4"])
     expect(result.messageCursor).toBe("older")
-    expect(result.messageTailDetached).toBeFalsy()
   })
 
   test("prepends older pages without trimming newer messages", () => {
@@ -22,7 +21,6 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m1", "m2", "m3", "m4"])
     expect(result.messageCursor).toBe("older")
-    expect(result.messageTailDetached).toBeFalsy()
   })
 
   test("prepends older pages without detaching from latest", () => {
@@ -32,7 +30,6 @@ describe("message window helpers", () => {
     )
 
     expect(messageIDs(result)).toEqual(["m1", "m2", "m3", "m4"])
-    expect(result.messageTailDetached).toBeFalsy()
   })
 
   test("trims older messages when following the live tail", () => {
@@ -43,7 +40,6 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m3", "m4"])
     expect(result.messageCursor).toBeTruthy()
-    expect(result.messageTailDetached).toBe(false)
   })
 
   test("keeps the newest heavy message when following the live content budget", () => {
@@ -54,14 +50,6 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m4"])
     expect(result.messageCursor).toBeTruthy()
-    expect(result.messageTailDetached).toBe(false)
-  })
-
-  test("marks withheld live tail as detached", () => {
-    const result = markMessageTailDetached(sessionData([bundle("m1", 1)]))
-
-    expect(messageIDs(result)).toEqual(["m1"])
-    expect(result.messageTailDetached).toBe(true)
   })
 })
 

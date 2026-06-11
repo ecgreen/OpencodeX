@@ -1,4 +1,4 @@
-import type { GlobalEvent, OpencodeXSessionState, OpencodeXView, PermissionRequest, ProviderAuthMethod, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { GlobalEvent, OpencodeXSessionState, OpencodeXSwarmRoleInput, OpencodeXView, PermissionRequest, ProviderAuthMethod, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./lib/client"
 import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
@@ -11,10 +11,11 @@ import { DiffPage, type DiffMode } from "./components/diff-page"
 import { DialogModal, type ChoiceOption, type DialogState } from "./components/dialog-modal"
 import { RailSidebar, type RailDragTarget, type RailDropTarget, type RailSectionName } from "./components/rail-sidebar"
 import { SessionPage } from "./components/session-page"
+import { SwarmEditorPage, SwarmsPage } from "./components/swarms-page"
 import { ViewPaneHost } from "./components/view-pane-host"
-import { ViewsPage } from "./components/views"
+import { ViewEditorPage, ViewsManagerPage } from "./components/views-manager-page"
 import { connectGuiClient } from "./lib/client"
-import { runCreateProjectSessionAction, runCreateSwarmAction, runCreateViewAction } from "./lib/creation-actions"
+import { runCreateProjectSessionAction } from "./lib/creation-actions"
 import { compactPath, formatRelative, title } from "./lib/format"
 import { guiShortcutAction, isKeyboardEditingTarget, runGuiShortcutAction } from "./lib/keyboard-shortcuts"
 import { prependOlderMessages, trimToLiveTail, type MessageWindow } from "./lib/message-window"
@@ -31,6 +32,7 @@ import {
   applySessionStatusSnapshot,
   isSnapshotPatchEvent,
   markViewSessionsLoaded,
+  mergeLiveSessionData,
   mergeSessionCardSnapshot,
   mergeSnapshot,
   patchSelectedSessionData,
@@ -40,7 +42,8 @@ import {
   sessionDataEventTargets,
 } from "./lib/live-session-patch"
 import { markSessionViewedInSnapshot } from "./lib/session-status"
-import { runSelectedSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "./lib/session-sync"
+import { opencodeXSwarmExecutionMode } from "./lib/swarm-actions"
+import { runSelectedSessionSync, shouldShowViewSessionLoading, shouldSkipViewSessionSync, viewSessionLoadKey } from "./lib/session-sync"
 import { runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest } from "./lib/session-actions"
 import { liveServerSyncPlan, visibleSessionSyncTarget } from "./lib/live-sync"
 import { buildSessionSlashCommands, type SessionSlashCommand, type SessionSlashCommandContext } from "./lib/session-slash-commands"
@@ -58,6 +61,8 @@ import {
   createSwarm,
   createView,
   connectMcp,
+  cancelSwarm,
+  deleteSwarm,
   deleteView,
   deleteProject,
   deleteSession,
@@ -95,6 +100,7 @@ import {
   unrevertSession,
   unshareSession,
   updateSessionUiState,
+  updateSwarm,
   updateView,
   updateProject,
   updateProjectFolders,
@@ -113,8 +119,10 @@ type Route =
   | { name: "new-session"; projectID?: string; directory?: string }
   | { name: "projects" }
   | { name: "session"; sessionID: string }
-  | { name: "swarms" }
+  | { name: "swarms"; swarmID?: string }
+  | { name: "swarm-create"; swarmID?: string }
   | { name: "views"; viewID?: string }
+  | { name: "view-edit"; viewID?: string }
   | { name: "diff"; mode?: DiffMode; sessionID?: string }
   | { name: "settings" }
   | { name: "status" }
@@ -189,7 +197,6 @@ export function App() {
   const seenEventIDOrder: string[] = []
   let liveSyncRunning = false
   let lastSnapshotSync = 0
-  const transcriptFollowBottom = new Map<string, boolean>()
 
   const selectedSession = createMemo(() => selectedSessionForRoute(route(), snapshot(), client()?.directory))
   const activeSessionID = createMemo(() => activeSessionIDForRoute(route()))
@@ -197,6 +204,11 @@ export function App() {
   const activeSessionData = createMemo(() => sessionDataSessionID() === activeSessionID() ? sessionData() : EMPTY_SESSION_DATA)
   const activeSessionLoading = createMemo(() => Boolean(activeSessionID()) && sessionDataSessionID() !== activeSessionID())
   const activeView = createMemo(() => activeViewForRoute(route(), snapshot()?.views ?? []))
+  const editingView = createMemo(() => {
+    const current = route()
+    if (current.name !== "view-edit" || !current.viewID) return
+    return snapshot()?.views.find((view) => view.id === current.viewID)
+  })
   const activeViewSessions = createMemo(() => {
     return viewSessionsInOrder(activeView()).slice(0, 8)
   })
@@ -337,7 +349,7 @@ export function App() {
       clearLoadingSessionID: () => setLoadingSessionID(""),
       loadData: async (targetSessionID, directory) => trimToLiveTail(await loadSession(gui, targetSessionID, directory, { messageLimit: SESSION_MESSAGE_PAGE_LIMIT, messageRenderBudget: SESSION_MESSAGE_WINDOW.budget }), SESSION_MESSAGE_WINDOW),
       applyData: (data, loadedTime) => {
-        setSessionData(data)
+        setSessionData((current) => sessionDataSessionID() === sessionID ? mergeLiveSessionData(current, data) : data)
         setSessionDataSessionID(sessionID)
         sessionDataLoadedTime = loadedTime
       },
@@ -356,16 +368,17 @@ export function App() {
     const loadKey = viewSessionLoadKey(session)
     const existing = viewSessionLoadPromises.get(session.id)
     if (existing?.key === loadKey) return existing.promise
-    setViewLoadingSessions((current) => ({ ...current, [session.id]: true }))
+    const showLoading = shouldShowViewSessionLoading(viewSessionData()[session.id])
+    if (showLoading) setViewLoadingSessions((current) => ({ ...current, [session.id]: true }))
     const promise = (async () => {
       const data = trimToLiveTail(await loadSession(gui, session.id, session.directory, { messageLimit: VIEW_MESSAGE_PAGE_LIMIT, messageRenderBudget: VIEW_MESSAGE_WINDOW.budget, includeSideData: false }), VIEW_MESSAGE_WINDOW)
       if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
-      setViewSessionData((current) => ({ ...current, [session.id]: data }))
+      setViewSessionData((current) => ({ ...current, [session.id]: mergeLiveSessionData(current[session.id], data) }))
       setViewSessionLoadedTimes((current) => ({ ...current, [session.id]: session.time.updated }))
     })().finally(() => {
       if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
       viewSessionLoadPromises.delete(session.id)
-      setViewLoadingSessions((current) => ({ ...current, [session.id]: false }))
+      if (showLoading) setViewLoadingSessions((current) => ({ ...current, [session.id]: false }))
     })
     viewSessionLoadPromises.set(session.id, { key: loadKey, promise })
     return promise
@@ -399,24 +412,6 @@ export function App() {
     }))
   }
 
-  async function reloadLatestSessionMessages(sessionID: string) {
-    await syncSession(sessionID, { force: true })
-  }
-
-  async function reloadLatestViewSessionMessages(sessionID: string) {
-    const session = snapshot()?.sessions.find((item) => item.id === sessionID)
-    if (!session) return
-    await syncViewSession(session, { force: true })
-  }
-
-  function setSessionFollowingBottom(sessionID: string, value: boolean) {
-    transcriptFollowBottom.set(sessionID, value)
-  }
-
-  function sessionFollowingBottom(sessionID: string) {
-    return transcriptFollowBottom.get(sessionID) ?? true
-  }
-
   async function syncActiveViewSessions() {
     await syncViewSessionsInParallel(activeViewSessions(), activeViewFocusedSessionID(), syncViewSession)
   }
@@ -442,7 +437,6 @@ export function App() {
         loadedSessionID: sessionDataSessionID(),
         loadedSessionData: sessionData(),
         activeViewSessions: activeViewSessions(),
-        followingBottom: sessionFollowingBottom,
         viewSessionData: viewSessionData(),
         lastSnapshotSync,
         snapshotSyncInterval: SNAPSHOT_SYNC_INTERVAL_MS,
@@ -476,7 +470,6 @@ export function App() {
         targetSessionID: sessionID,
         event,
         limit: SESSION_MESSAGE_WINDOW,
-        followingBottom: sessionFollowingBottom(sessionID),
         emptyData: EMPTY_SESSION_DATA,
       }))
       setSessionDataSessionID(sessionID)
@@ -489,7 +482,6 @@ export function App() {
         sessionIDs: targets.visibleSessionIDs,
         event,
         limit: VIEW_MESSAGE_WINDOW,
-        followingBottom: sessionFollowingBottom,
         emptyData: EMPTY_SESSION_DATA,
       }))
       setViewSessionLoadedTimes((data) => markViewSessionsLoaded(data, targets.visibleSessionIDs, Date.now()))
@@ -537,7 +529,7 @@ export function App() {
   }
 
   function syncVisibleSession(sessionID: string) {
-    const target = visibleSessionSyncTarget({ route: route(), sessionID, viewSessions: activeViewSessions(), followingBottom: sessionFollowingBottom })
+    const target = visibleSessionSyncTarget({ route: route(), sessionID, viewSessions: activeViewSessions() })
     if (target?.type === "session") void syncSession(target.sessionID, { force: true })
     if (target?.type === "view") void syncViewSession(target.session, { force: true })
   }
@@ -597,7 +589,7 @@ export function App() {
         clearNotice: () => setNotice(""),
         openCommandPalette: () => setCommandPaletteOpen(true),
         toggleRail: () => setRailCollapsed((value) => !value),
-        focusComposer: () => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(),
+        focusComposer: () => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
         createSession: () => void runAction(() => handleCreateSession()),
         refresh: () => void runAction(refresh),
         route: (name) => setRoute({ name }),
@@ -663,10 +655,11 @@ export function App() {
   async function submitPrompt(event: SubmitEvent, value?: string) {
     event.preventDefault()
     const gui = client()
+    const session = selectedSession()
     await runSessionPromptAction({
       gui,
       route: route(),
-      session: selectedSession(),
+      session,
       text: value ?? prompt(),
       permissionCount: selectedPermissions().length,
       questionCount: selectedQuestions().length,
@@ -912,7 +905,7 @@ export function App() {
   function focusComposer() {
     const current = route()
     if (current.name !== "session" && current.name !== "new-session" && visibleSessions().length > 0) setRoute({ name: "session", sessionID: visibleSessions()[0].id })
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus())
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }))
   }
 
   function showHelp() {
@@ -1155,10 +1148,11 @@ export function App() {
     await assignSwarmTask(gui, swarmID, {
       prompt: promptText,
       agent: input.selectedAgent || undefined,
+      mode: opencodeXSwarmExecutionMode(input.selectedAgent || selectedAgent() || undefined),
       variant: input.selectedVariant || undefined,
     })
     await refresh()
-    setRoute({ name: "swarms" })
+    setRoute({ name: "swarms", swarmID })
     alert("Swarm task assigned.")
   }
 
@@ -1167,12 +1161,7 @@ export function App() {
     if (!gui) return
     const view = await chooseView("Edit View")
     if (!view) return
-    const titleText = await askText({ title: "Rename View", value: view.title })
-    const nextTitle = titleText?.trim()
-    if (!nextTitle) return
-    await updateView(gui, view.id, { title: nextTitle })
-    await refresh()
-    alert("View updated.")
+    setRoute({ name: "view-edit", viewID: view.id })
   }
 
   async function handleDeleteViewSlash() {
@@ -1180,11 +1169,17 @@ export function App() {
     if (!gui) return
     const view = await chooseView("Delete View")
     if (!view) return
-    if (!(await confirm({ title: "Delete View", message: `Delete "${view.title}"?`, confirm: "Delete" }))) return
-    await deleteView(gui, view.id)
+    await handleDeleteViewByID(view.id, view.title)
+  }
+
+  async function handleDeleteViewByID(viewID: string, name: string) {
+    const gui = client()
+    if (!gui) return
+    if (!(await confirm({ title: "Delete View", message: `Delete "${name}"?`, confirm: "Delete" }))) return
+    await deleteView(gui, viewID)
     await refresh()
     const current = route()
-    if (current.name === "views" && current.viewID === view.id) setRoute({ name: "views" })
+    if ((current.name === "views" && current.viewID === viewID) || (current.name === "view-edit" && current.viewID === viewID)) setRoute({ name: "views" })
     alert("View deleted.")
   }
 
@@ -1298,19 +1293,6 @@ export function App() {
     await reloadSessionAfterSlash(session)
   }
 
-  async function handleTimelineSlash(session?: Session, data = activeSessionData()) {
-    if (!session) return
-    const messageID = await chooseUserMessage("Jump to Message", data)
-    if (!messageID) return
-    requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>(
-          `.session-page[data-session-id="${CSS.escape(session.id)}"] [data-message-id="${CSS.escape(messageID)}"]`,
-        )
-        ?.scrollIntoView({ block: "center" })
-    })
-  }
-
   async function handleForkSlash(session?: Session, data = activeSessionData()) {
     const gui = client()
     if (!gui || !session) return
@@ -1362,12 +1344,6 @@ export function App() {
     await refresh()
     if (sessionDataSessionID() === session.id) await syncSession(session.id, { force: true })
     if (viewSessionData()[session.id]) await syncViewSession(session, { force: true })
-  }
-
-  async function chooseUserMessage(titleText: string, data: SessionData) {
-    const options = userMessageOptions(data)
-    if (options.length === 0) return alert("No user messages available.")
-    return askChoice({ title: titleText, options })
   }
 
   function userMessageOptions(data: SessionData) {
@@ -1498,7 +1474,6 @@ export function App() {
         openDiff: () => handleDiffSlash(session),
         shareSession: () => handleShareSlash(session),
         renameSession: () => session ? handleRenameSession(session) : undefined,
-        openTimeline: () => handleTimelineSlash(session, options.data),
         forkSession: () => handleForkSlash(session, options.data),
         compactSession: () => handleCompactSlash(session, options.selectedModel),
         unshareSession: () => handleUnshareSlash(session),
@@ -1620,36 +1595,69 @@ export function App() {
       guiDirectory: gui.directory,
       setPrompt,
       openNewSession: (targetProjectID, targetDirectory) => setRoute({ name: "new-session", projectID: targetProjectID, directory: targetDirectory }),
-      focusComposer: () => requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()),
+      focusComposer: () => requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true })),
     })
   }
 
   async function handleCreateSwarm() {
+    if ((snapshot()?.projects.length ?? 0) === 0) return alert("Create or load a project before creating a swarm.")
+    setRoute({ name: "swarm-create" })
+  }
+
+  async function handleSaveSwarm(input: { projectID: string; title?: string; roles: OpencodeXSwarmRoleInput[]; swarmID?: string }) {
     const gui = client()
-    const projects = snapshot()?.projects ?? []
     if (!gui) return
-    await runCreateSwarmAction({
-      projects,
-      alert,
-      chooseProjectID,
-      createSwarm: (projectID, title, prompt) => createSwarm(gui, { projectID, title, prompt }).then(() => undefined),
-      refresh,
-      openSwarms: () => setRoute({ name: "swarms" }),
+    const swarm = input.swarmID
+      ? await updateSwarm(gui, input.swarmID, { title: input.title, roles: input.roles }).then((result) => result.data)
+      : await createSwarm(gui, { projectID: input.projectID, title: input.title, roles: input.roles }).then((result) => result.data)
+    await refresh()
+    setRoute({ name: "swarms", swarmID: swarm?.id ?? input.swarmID })
+  }
+
+  async function handleAssignSwarmTask(swarmID: string, promptText: string) {
+    const gui = client()
+    if (!gui) return
+    await assignSwarmTask(gui, swarmID, {
+      prompt: promptText,
+      agent: selectedAgent() || undefined,
+      mode: opencodeXSwarmExecutionMode(selectedAgent() || undefined),
+      variant: selectedVariant() || undefined,
     })
+    await refresh()
+    setRoute({ name: "swarms", swarmID })
+  }
+
+  async function handleCancelSwarm(swarmID: string) {
+    const gui = client()
+    if (!gui) return
+    await cancelSwarm(gui, swarmID)
+    await refresh()
+  }
+
+  async function handleDeleteSwarm(swarmID: string, name: string) {
+    const gui = client()
+    if (!gui) return
+    if (!(await confirm({ title: "Delete Swarm", message: `Delete "${name}"? This removes the swarm, roles, tasks, and events.`, confirm: "Delete" }))) return
+    await deleteSwarm(gui, swarmID)
+    await refresh()
+    setRoute({ name: "swarms" })
   }
 
   async function handleCreateView() {
+    setRoute({ name: "view-edit" })
+  }
+
+  async function handleSaveView(input: { viewID?: string; title: string; sessionIDs: string[]; metadata?: Record<string, unknown> }) {
     const gui = client()
-    const sessions = snapshot()?.sessions ?? []
     if (!gui) return
-    await runCreateViewAction({
-      sessions,
-      alert,
-      chooseSessionIDs,
-      createView: (title, sessionIDs) => createView(gui, { title, sessionIDs }).then(() => undefined),
-      refresh,
-      openViews: () => setRoute({ name: "views" }),
-    })
+    const view = input.viewID
+      ? await updateView(gui, input.viewID, { title: input.title, sessionIDs: input.sessionIDs, metadata: input.metadata }).then((result) => result.data)
+      : await createView(gui, { title: input.title, sessionIDs: input.sessionIDs }).then(async (result) => {
+        if (input.metadata && result.data) await updateView(gui, result.data.id, { metadata: input.metadata })
+        return result.data
+      })
+    await refresh()
+    setRoute({ name: "views", viewID: view?.id ?? input.viewID })
   }
 
   function handleMoveRailSection(section: RailSectionName, offset: number) {
@@ -1849,12 +1857,23 @@ export function App() {
           requestAnimationFrame(() => document.querySelector<HTMLElement>(".rail button")?.focus())
         },
         createSwarm: handleCreateSwarm,
+        createSwarmTask: () => handleCreateSwarmTaskSlash({
+          selectedAgent: selectedAgent(),
+          selectedVariant: selectedVariant(),
+        }),
         createView: handleCreateView,
+        editView: handleEditViewSlash,
+        deleteView: handleDeleteViewSlash,
+        manageWorkspaces: handleWorkspacesSlash,
         copyWorkspacePath,
         switchModel: handleSwitchModel,
         switchAgent: handleSwitchAgent,
+        toggleMcps: handleMcpSlash,
         cycleVariant,
         switchVariant: handleSwitchVariant,
+        connectProvider: handleConnectSlash,
+        switchOrg: handleOrgSlash,
+        switchTheme: handleThemeSlash,
         showHelp,
         focusComposer,
         refresh,
@@ -1913,10 +1932,7 @@ export function App() {
         })}
         showTimestamps={showTranscriptTimestamps()}
         showThinking={showTranscriptThinking()}
-        messageWindow={VIEW_MESSAGE_WINDOW}
         loadOlderMessages={(sessionID, cursor) => runAction(() => loadOlderViewSessionMessages(sessionID, cursor))}
-        reloadLatestMessages={(sessionID) => runAction(() => reloadLatestViewSessionMessages(sessionID))}
-        onFollowBottomChange={(sessionID, value) => setSessionFollowingBottom(sessionID, value)}
       />
     )
   }
@@ -2040,42 +2056,99 @@ export function App() {
                     showThinking={showTranscriptThinking()}
                     status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
                     pending={route().name === "new-session"}
-                    messageWindow={SESSION_MESSAGE_WINDOW}
                     loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
-                    reloadLatestMessages={() => selectedSession() ? runAction(() => reloadLatestSessionMessages(selectedSession()!.id)) : Promise.resolve()}
-                    onFollowBottomChange={(sessionID, value) => setSessionFollowingBottom(sessionID, value)}
                   />
                 )}
               </Show>
             </Match>
             <Match when={route().name === "sessions"}>
-              <SessionCollectionPage sessions={tuiSidebarSessions(snapshot())} sessionStatus={snapshot()?.sessionStatus ?? {}} openSession={(sessionID) => setRoute({ name: "session", sessionID })} />
+              <SessionCollectionPage
+                sessions={tuiSidebarSessions(snapshot())}
+                projects={snapshot()?.projects ?? []}
+                sessionStatus={snapshot()?.sessionStatus ?? {}}
+                openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
+                toggleSessionPinned={toggleSessionPinned}
+              />
             </Match>
             <Match when={route().name === "projects"}>
               <ProjectCollectionPage
                 projects={snapshot()?.projects ?? []}
                 sessionCount={(project) => projectSessions(project, snapshot()).length}
                 createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
+                createProject={() => void runAction(handleCreateProject)}
                 editProject={(projectID, currentName, folders) => void runAction(() => handleEditProject(projectID, currentName, folders))}
+                deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
+                moveProject={(projectID, offset) => void runAction(() => handleMoveProject(projectID, offset))}
               />
             </Match>
             <Match when={route().name === "swarms"}>
-              <CollectionPage title="Swarms" count={snapshot()?.swarms.length ?? 0} description="Create, run, cancel, and inspect orchestrated swarm work here while management tools are built out." />
+              {(() => {
+                const current = route()
+                return (
+                  <SwarmsPage
+                    snapshot={snapshot()}
+                    swarmID={current.name === "swarms" ? current.swarmID : undefined}
+                    openSwarm={(swarmID) => setRoute({ name: "swarms", swarmID })}
+                    createSwarm={() => void runAction(handleCreateSwarm)}
+                    editSwarm={(swarmID) => setRoute({ name: "swarm-create", swarmID })}
+                    openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                    assignTask={(swarmID, promptText) => void runAction(() => handleAssignSwarmTask(swarmID, promptText))}
+                    cancelSwarm={(swarmID) => void runAction(() => handleCancelSwarm(swarmID))}
+                    deleteSwarm={(swarmID, name) => void runAction(() => handleDeleteSwarm(swarmID, name))}
+                    refresh={() => void runAction(refresh)}
+                  />
+                )
+              })()}
+            </Match>
+            <Match when={route().name === "swarm-create"}>
+              {(() => {
+                const current = route()
+                const swarm = current.name === "swarm-create" && current.swarmID
+                  ? snapshot()?.swarms.find((item) => item.id === current.swarmID)
+                  : undefined
+                return (
+                  <SwarmEditorPage
+                    projects={snapshot()?.projects ?? []}
+                    providers={snapshot()?.providers ?? []}
+                    agents={snapshot()?.agents ?? []}
+                    swarm={swarm}
+                    selectedModel={selectedModel()}
+                    save={(input) => void runAction(() => handleSaveSwarm(input))}
+                    cancel={() => setRoute(swarm ? { name: "swarms", swarmID: swarm.id } : { name: "swarms" })}
+                  />
+                )
+              })()}
             </Match>
             <Match when={route().name === "views"}>
-              <Show
-                when={activeView()}
-                keyed={true}
-                fallback={<CollectionPage title="Views" count={snapshot()?.views.length ?? 0} description="Create, edit, reorder, and inspect multi-session views here while management tools are built out." />}
-              >
-                {(view) => (
-                  <ViewsPage
-                    view={view}
-                    items={activeViewItems()}
-                    renderItem={renderViewPane}
-                  />
-                )}
-              </Show>
+              <ViewsManagerPage
+                view={activeView()}
+                views={snapshot()?.views ?? []}
+                sessions={tuiSidebarSessions(snapshot())}
+                projects={snapshot()?.projects ?? []}
+                items={activeViewItems()}
+                renderItem={renderViewPane}
+                openView={(viewID) => setRoute({ name: "views", viewID })}
+                createView={() => void runAction(handleCreateView)}
+                editView={(viewID) => setRoute({ name: "view-edit", viewID })}
+                deleteView={(viewID, name) => void runAction(() => handleDeleteViewByID(viewID, name))}
+                moveView={(viewID, offset) => void runAction(() => handleMoveView(viewID, offset))}
+              />
+            </Match>
+            <Match when={route().name === "view-edit"}>
+              <ViewEditorPage
+                view={editingView()}
+                sessions={tuiSidebarSessions(snapshot())}
+                projects={snapshot()?.projects ?? []}
+                save={(input) => void runAction(() => handleSaveView(input))}
+                cancel={() => {
+                  const view = editingView()
+                  setRoute(view ? { name: "views", viewID: view.id } : { name: "views" })
+                }}
+              />
             </Match>
             <Match when={route().name === "diff"}>
               {(() => {

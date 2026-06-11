@@ -85,7 +85,6 @@ describe("GUI view prompt decisions", () => {
     })
 
     expect(calls).toEqual([
-      "loading:session-1:true",
       "focus:session-1",
       "send:session-1:hello:build:anthropic/claude-sonnet:fast",
       "remember:anthropic/claude-sonnet",
@@ -116,6 +115,7 @@ describe("GUI view prompt decisions", () => {
     expect(calls).toEqual([
       "loading:pending-1:true",
       "alert:No directory available for this pending view session.",
+      "loading:pending-1:false",
     ])
   })
 })
