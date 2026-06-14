@@ -179,6 +179,16 @@ describe("GUI live session patching", () => {
     })
   })
 
+  test("keeps polling reload references stable when content is unchanged", () => {
+    const current = sessionData([
+      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "same text", { time: { end: 10 } })] },
+    ])
+
+    expect(mergeLiveSessionData(current, sessionData([
+      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "same text", { time: { end: 10 } })] },
+    ]))).toBe(current)
+  })
+
   test("keeps appending the live tail when older content was loaded", () => {
     const result = patchBoundedSessionData(
       sessionData([bundle("msg_existing", 1)]),
@@ -291,10 +301,11 @@ describe("GUI live session patching", () => {
   })
 
   test("patches only visible view sessions and marks their load time", () => {
+    const other = sessionData([bundle("msg_other", 1)])
     const data = patchVisibleViewSessionData({
       data: {
         ses_live: sessionData([bundle("msg_existing", 1)]),
-        ses_other: sessionData([bundle("msg_other", 1)]),
+        ses_other: other,
       },
       sessionIDs: ["ses_live"],
       event: event("message.updated", { info: message("msg_new", 2) }),
@@ -304,7 +315,24 @@ describe("GUI live session patching", () => {
 
     expect(data.ses_live?.messages.map((item) => item.info.id)).toEqual(["msg_existing", "msg_new"])
     expect(data.ses_other?.messages.map((item) => item.info.id)).toEqual(["msg_other"])
+    expect(data.ses_other).toBe(other)
     expect(markViewSessionsLoaded({ ses_other: 1 }, ["ses_live"], 10)).toEqual({ ses_other: 1, ses_live: 10 })
+  })
+
+  test("keeps view session records stable when no visible session is targeted", () => {
+    const data = {
+      ses_live: sessionData([bundle("msg_existing", 1)]),
+      ses_other: sessionData([bundle("msg_other", 1)]),
+    }
+
+    expect(patchVisibleViewSessionData({
+      data,
+      sessionIDs: [],
+      event: event("message.updated", { info: message("msg_new", 2) }),
+      limit: 10,
+      emptyData: sessionData([]),
+    })).toBe(data)
+    expect(markViewSessionsLoaded({ ses_live: 10 }, ["ses_live"], 10)).toEqual({ ses_live: 10 })
   })
 })
 

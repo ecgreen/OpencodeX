@@ -205,7 +205,7 @@ export function SwarmEditorPage(props: {
                   <header>
                     <strong>{index() === 0 ? "Orchestrator" : `Specialist ${index()}`}</strong>
                     <Show when={index() > 0}>
-                      <button type="button" class="danger" onClick={() => removeRole(index())}>Remove</button>
+                      <button type="button" class="danger" onClick={() => removeRole(index())}><Icon name="trash" /> Remove</button>
                     </Show>
                   </header>
                   <div class="form-grid">
@@ -252,8 +252,8 @@ export function SwarmEditorPage(props: {
           <div class="notice error">{error()}</div>
         </Show>
         <div class="form-actions">
-          <button type="button" class="secondary" onClick={props.cancel}>Cancel</button>
-          <button type="submit" class="primary" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</button>
+          <button type="button" class="secondary" onClick={props.cancel}><Icon name="x" /> Cancel</button>
+          <button type="submit" class="primary" disabled={saving()}><Icon name="check" /> {saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</button>
         </div>
       </Show>
     </form>
@@ -290,7 +290,7 @@ function SwarmDetail(props: {
           { label: "Refresh", icon: "activity", onClick: props.refresh },
           { label: "Edit", icon: "settings", onClick: () => props.editSwarm(props.swarm.id) },
           ...(isActiveSwarmStatus(status()) ? [{ label: "Cancel", icon: "stop", onClick: () => props.cancelSwarm(props.swarm.id) }] : []),
-          { label: "Delete", icon: "x", danger: true, onClick: () => props.deleteSwarm(props.swarm.id, props.swarm.title) },
+          { label: "Delete", icon: "trash", danger: true, onClick: () => props.deleteSwarm(props.swarm.id, props.swarm.title) },
         ]}
       />
       <section class="swarm-detail-grid">

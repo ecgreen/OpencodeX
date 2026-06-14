@@ -38,8 +38,20 @@ export type DisplayPart = { type: "part"; part: Part } | { type: "tool-group"; t
 
 export function PermissionPanel(props: { request: PermissionRequest; tool?: ToolPart; reply: (request: PermissionRequest, reply: "once" | "always" | "reject") => void }) {
   const input = () => toolInput(props.request, props.tool)
+  const [expanded, setExpanded] = createSignal(false)
+  const choose = (reply: "once" | "always" | "reject") => props.reply(props.request, reply)
   return (
-    <section class="safety-panel permission-panel">
+    <section
+      class="safety-panel permission-panel"
+      classList={{ expanded: expanded() }}
+      tabindex="0"
+      onKeyDown={(event) => {
+        if (event.key === "1") choose("once")
+        if (event.key === "2") choose("always")
+        if (event.key === "3" || event.key === "Escape") choose("reject")
+        if (event.key.toLowerCase() === "f") setExpanded((value) => !value)
+      }}
+    >
       <div>
         <p class="eyebrow">Permission Required</p>
         <h2>{permissionTitle(props.request, input())}</h2>
@@ -66,7 +78,7 @@ export function PermissionPanel(props: { request: PermissionRequest; tool?: Tool
           {(diff) => (
             <details class="permission-context" open>
               <summary>Requested Diff</summary>
-              <pre>{diff()}</pre>
+              <PermissionDiff diff={diff()} filePath={stringValue(props.request.metadata.filepath)} />
             </details>
           )}
         </Show>
@@ -78,9 +90,10 @@ export function PermissionPanel(props: { request: PermissionRequest; tool?: Tool
         </Show>
       </div>
       <div class="safety-actions">
-        <button class="secondary danger" onClick={() => props.reply(props.request, "reject")}>Reject</button>
-        <button class="secondary" onClick={() => props.reply(props.request, "once")}>Allow Once</button>
-        <button class="primary" onClick={() => props.reply(props.request, "always")}>Always Allow</button>
+        <button class="secondary" onClick={() => setExpanded((value) => !value)}><Icon name={expanded() ? "chevronRight" : "chevronDown"} /> {expanded() ? "Collapse" : "Expand"}</button>
+        <button class="secondary danger" onClick={() => choose("reject")}><Icon name="x" /> Reject</button>
+        <button class="secondary" onClick={() => choose("once")}><Icon name="check" /> Allow Once</button>
+        <button class="primary" onClick={() => choose("always")}><Icon name="check" /> Always Allow</button>
       </div>
     </section>
   )
@@ -89,6 +102,7 @@ export function PermissionPanel(props: { request: PermissionRequest; tool?: Tool
 export function QuestionPanel(props: { request: QuestionRequest; reply: (request: QuestionRequest, answers: QuestionAnswer[]) => void; reject: (request: QuestionRequest) => void }) {
   const [answers, setAnswers] = createSignal<QuestionAnswer[]>(props.request.questions.map(() => []))
   const [custom, setCustom] = createSignal<string[]>(props.request.questions.map(() => ""))
+  const [active, setActive] = createSignal(0)
   const finalAnswers = () =>
     answers().map((answer, index) => {
       const text = custom()[index]?.trim()
@@ -106,26 +120,47 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
       }),
     )
   }
+  function choose(index: number, label: string, multiple?: boolean) {
+    toggle(index, label, multiple)
+    if (props.request.questions.length === 1 && !multiple) props.reply(props.request, [[label]])
+    else setActive((current) => Math.min(props.request.questions.length - 1, current + 1))
+  }
   function updateCustom(index: number, value: string) {
     setCustom((current) => current.map((item, i) => (i === index ? value : item)))
   }
   return (
-    <section class="safety-panel question-panel">
+    <section
+      class="safety-panel question-panel"
+      tabindex="0"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") props.reject(props.request)
+        if (event.key === "Tab") {
+          event.preventDefault()
+          setActive((current) => (current + (event.shiftKey ? -1 : 1) + props.request.questions.length) % props.request.questions.length)
+        }
+        const option = Number(event.key)
+        if (option >= 1 && option <= 9) {
+          const question = props.request.questions[active()]
+          const selected = question?.options[option - 1]
+          if (question && selected) choose(active(), selected.label, question.multiple)
+        }
+      }}
+    >
       <div>
         <p class="eyebrow">Question Pending</p>
         <For each={props.request.questions}>
           {(question, index) => (
-            <div class="question-block">
+            <div class="question-block" classList={{ active: active() === index() }}>
               <h2>{question.header}</h2>
               <p>{question.question}</p>
               <div class="option-list">
                 <For each={question.options}>
-                  {(option) => (
+                  {(option, optionIndex) => (
                     <button
                       classList={{ selected: answers()[index()].includes(option.label) }}
-                      onClick={() => toggle(index(), option.label, question.multiple)}
+                      onClick={() => choose(index(), option.label, question.multiple)}
                     >
-                      <strong>{option.label}</strong>
+                      <strong>{optionIndex() + 1}. {option.label}</strong>
                       <span>{option.description}</span>
                     </button>
                   )}
@@ -144,10 +179,23 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
         </For>
       </div>
       <div class="safety-actions">
-        <button class="secondary danger" onClick={() => props.reject(props.request)}>Reject</button>
-        <button class="primary" disabled={!valid()} onClick={() => props.reply(props.request, finalAnswers())}>Reply</button>
+        <button class="secondary danger" onClick={() => props.reject(props.request)}><Icon name="x" /> Reject</button>
+        <button class="primary" disabled={!valid()} onClick={() => props.reply(props.request, finalAnswers())}><Icon name="send" /> Reply</button>
       </div>
     </section>
+  )
+}
+
+function PermissionDiff(props: { diff: string; filePath?: string }) {
+  const contents = createMemo(() => patchContents(props.diff, props.filePath ?? "diff"))
+  return (
+    <Show when={contents()} fallback={<pre>{props.diff}</pre>}>
+      {(value) => (
+        <div class="permission-diff">
+          <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle="split" virtualize={false} hunkSeparators="simple" />
+        </div>
+      )}
+    </Show>
   )
 }
 
@@ -176,14 +224,20 @@ export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
   return result
 }
 
-export function DisplayPartView(props: { item: DisplayPart; showThinking: boolean }) {
+export function DisplayPartView(props: { item: DisplayPart; concealCodeBlocks: boolean; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
   return (
     <Switch>
       <Match when={props.item.type === "tool-group"}>
         <ToolGroupView item={props.item as Extract<DisplayPart, { type: "tool-group" }>} />
       </Match>
       <Match when={props.item.type === "part"}>
-        <PartView part={(props.item as Extract<DisplayPart, { type: "part" }>).part} showThinking={props.showThinking} />
+        <PartView
+          part={(props.item as Extract<DisplayPart, { type: "part" }>).part}
+          concealCodeBlocks={props.concealCodeBlocks}
+          showThinking={props.showThinking}
+          showToolDetails={props.showToolDetails}
+          showGenericToolOutput={props.showGenericToolOutput}
+        />
       </Match>
     </Switch>
   )
@@ -241,17 +295,21 @@ function toolGroupTitle(tool: string, parts: ToolPart[]) {
   return `${tool} x${parts.length}`
 }
 
-function PartView(props: { part: MessageBundle["parts"][number]; showThinking: boolean }) {
+function PartView(props: { part: MessageBundle["parts"][number]; concealCodeBlocks: boolean; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
   return (
     <Switch fallback={<pre class="part muted">{JSON.stringify(props.part, null, 2)}</pre>}>
       <Match when={isStructuralPart(props.part)}>
         <></>
       </Match>
       <Match when={props.part.type === "text" || props.part.type === "reasoning"}>
-        <TextPartView part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>} showThinking={props.showThinking} />
+        <TextPartView
+          part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>}
+          concealCodeBlocks={props.concealCodeBlocks}
+          showThinking={props.showThinking}
+        />
       </Match>
       <Match when={props.part.type === "tool"}>
-        <ToolPartView part={props.part as ToolPart} />
+        <ToolPartView part={props.part as ToolPart} showDetails={props.showToolDetails} showGenericOutput={props.showGenericToolOutput} />
       </Match>
       <Match when={props.part.type === "file"}>
         <div class="part file">File: {props.part.type === "file" ? props.part.filename ?? props.part.url : ""}</div>
@@ -273,7 +331,7 @@ function isStructuralPart(part: MessageBundle["parts"][number]) {
   return part.type === "step-start" || part.type === "step-finish" || part.type === "snapshot" || part.type === "retry" || part.type === "subtask"
 }
 
-function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; showThinking: boolean }) {
+function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; concealCodeBlocks: boolean; showThinking: boolean }) {
   const text = createMemo(() => {
     if ("synthetic" in props.part && props.part.synthetic) return ""
     if ("ignored" in props.part && props.part.ignored) return ""
@@ -281,7 +339,7 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
   })
   return (
     <Show when={text()}>
-      <div class={`part text ${props.part.type}`}>
+      <div class={`part text ${props.part.type}`} classList={{ "conceal-code": props.concealCodeBlocks }}>
         <Show when={props.part.type === "reasoning"} fallback={<Markdown text={text()} cacheKey={props.part.id} streaming={false} />}>
           <details class="thinking-block" open>
             <summary>
@@ -298,7 +356,7 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
   )
 }
 
-function ToolPartView(props: { part: ToolPart }) {
+function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGenericOutput: boolean }) {
   const state = () => props.part.state
   const toolClass = () => props.part.tool === "todowrite" ? "todo-update" : ""
   const input = createMemo(() => toolStateInput(state()))
@@ -307,13 +365,14 @@ function ToolPartView(props: { part: ToolPart }) {
   const output = createMemo(() => toolVisibleOutput(props.part.tool, state(), metadata()))
   const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata()))
   const hasDetails = createMemo(() => toolHasVisibleDetails(props.part.tool, input(), metadata(), output(), error()))
-  const defaultOpen = createMemo(() => hasDetails() && (props.part.tool === "todowrite" || props.part.tool === "apply_patch" || state().status === "running" || state().status === "error"))
+  const visibleDetails = createMemo(() => props.showDetails && hasDetails())
+  const defaultOpen = createMemo(() => visibleDetails() && (props.part.tool === "todowrite" || props.part.tool === "apply_patch" || state().status === "running" || state().status === "error"))
   const [expanded, setExpanded] = createSignal(defaultOpen())
   createEffect(() => {
     if (defaultOpen()) setExpanded(true)
   })
   return (
-    <Show when={hasDetails()} fallback={
+    <Show when={visibleDetails()} fallback={
       <div class={`part tool ${state().status} ${toolClass()} no-details`}>
         <div class="tool-summary">
           <strong>{title()}</strong>
@@ -328,7 +387,7 @@ function ToolPartView(props: { part: ToolPart }) {
           <span class="tool-status">{state().status}</span>
         </summary>
         <Show when={expanded()}>
-          <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} />
+          <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} showGenericOutput={props.showGenericOutput} />
           <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
             <details class="tool-raw">
               <summary>
@@ -351,11 +410,11 @@ function ToolPartView(props: { part: ToolPart }) {
   )
 }
 
-function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string }) {
+function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string; showGenericOutput: boolean }) {
   const diagnostics = createMemo(() => arrayValue(props.metadata.diagnostics))
   return (
     <div class="tool-details">
-      <Switch fallback={<GenericToolDetails input={props.input} metadata={props.metadata} output={props.output} error={props.error} />}>
+      <Switch fallback={<GenericToolDetails input={props.input} metadata={props.metadata} output={props.showGenericOutput ? props.output : ""} error={props.error} />}>
         <Match when={props.tool === "bash" || props.tool === "shell"}>
           <ToolShellBlock command={stringValue(props.input.command)} output={props.output} />
         </Match>

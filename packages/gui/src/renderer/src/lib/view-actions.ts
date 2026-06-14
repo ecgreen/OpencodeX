@@ -1,7 +1,8 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXProject, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import { pendingViewSessions, type PendingViewSession } from "./view-items"
 
 export type ViewSelection = { kind: "existing"; sessionID: string } | { kind: "pending"; slot: PendingViewSession }
+export type ViewSessionProjectGroup = { project: OpencodeXProject; sessions: Session[] }
 
 export function initialViewSelection(view?: OpencodeXView): ViewSelection[] {
   return [
@@ -68,6 +69,25 @@ export function addPendingViewSessions(input: {
       },
     })),
   ]
+}
+
+export function groupViewSessionsByProject(input: { sessions: Session[]; projects: OpencodeXProject[] }) {
+  const assigned = new Set<string>()
+  const projects = input.projects
+    .map((project): ViewSessionProjectGroup => {
+      const projectSessionIDs = new Set(project.sessions.map((session) => session.id))
+      const sessions = input.sessions.filter((session) => {
+        if (!projectSessionIDs.has(session.id) || assigned.has(session.id)) return false
+        assigned.add(session.id)
+        return true
+      })
+      return { project, sessions }
+    })
+    .filter((group) => group.sessions.length > 0)
+  return {
+    projects,
+    unprojected: input.sessions.filter((session) => !assigned.has(session.id)),
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

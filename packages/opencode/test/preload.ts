@@ -82,17 +82,45 @@ delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
 // Use in-memory sqlite
 process.env["OPENCODE_DB"] = ":memory:"
 
-const { ensureSolidTransformPlugin } = await import("@opentui/solid/bun-plugin")
-ensureSolidTransformPlugin()
+const explicitTestTargets = process.argv.slice(1).filter((arg) => !arg.startsWith("-"))
+if (process.env["OPENCODE_TEST_PRELOAD_DEBUG"] === "true") {
+  console.error(JSON.stringify({ argv: process.argv, explicitTestTargets }))
+}
+const needsSolidTransform = explicitTestTargets.length === 0 || explicitTestTargets.some((arg) =>
+  arg.endsWith(".tsx") || arg.includes("/cli/tui/") || arg.includes("\\cli\\tui\\")
+)
+if (needsSolidTransform) {
+  await import("@opentui/solid/bun-plugin")
+    .then((mod) => mod.ensureSolidTransformPlugin())
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.includes("@babel/preset-typescript")) throw error
+    })
+}
 
-// Now safe to import from src/
-const { Log } = await import("@opencode-ai/core/util/log")
-const { initProjectors } = await import("../src/server/projectors")
+const purePreloadTest = explicitTestTargets.length > 0 && explicitTestTargets.every((arg) =>
+  arg.includes("/test/opencodex/workbench-git.test.ts") || arg.includes("\\test\\opencodex\\workbench-git.test.ts")
+)
 
-void Log.init({
-  print: false,
-  dev: true,
-  level: "DEBUG",
-})
+if (!purePreloadTest) {
+  // Now safe to import from src/
+  const appSetup = await Promise.all([
+    import("@opencode-ai/core/util/log"),
+    import("../src/server/projectors"),
+  ]).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes("Cannot find package 'effect'") || message.includes("xdg-basedir")) return
+    throw error
+  })
 
-initProjectors()
+  if (appSetup) {
+    const [{ Log }, { initProjectors }] = appSetup
+    void Log.init({
+      print: false,
+      dev: true,
+      level: "DEBUG",
+    })
+
+    initProjectors()
+  }
+}

@@ -2,6 +2,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { For, createMemo } from "solid-js"
 import { compactPath, title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
+import { Icon } from "./icon"
 import { StatusPill } from "./status-pill"
 
 export function SessionCollectionPage(props: {
@@ -34,7 +35,7 @@ export function SessionCollectionPage(props: {
               <button onClick={() => props.toggleSessionPinned(session.id)}>{props.sessionPinned(session.id) ? "Unpin" : "Pin"}</button>
               <button onClick={() => props.renameSession(session)}>Rename</button>
               <button onClick={() => props.moveSession(session)}>Move</button>
-              <button class="danger" onClick={() => props.deleteSession(session)}>Delete</button>
+              <button class="danger" onClick={() => props.deleteSession(session)}><Icon name="trash" /> Delete</button>
             </div>
           </article>
         )}
@@ -58,7 +59,7 @@ export function ProjectCollectionPage(props: {
       <h1>Project groups</h1>
       <p>Project groups, folders, and nested sessions are loaded from the same OpencodeX backend used by the TUI.</p>
       <div class="row-actions page-actions">
-        <button class="primary" onClick={props.createProject}>Create project</button>
+        <button class="primary" onClick={props.createProject}><Icon name="plus" /> Create project</button>
       </div>
       <For each={props.projects} fallback={<Empty text="No projects" />}>
         {(project, index) => (
@@ -73,7 +74,7 @@ export function ProjectCollectionPage(props: {
               <button disabled={index() === props.projects.length - 1} onClick={() => props.moveProject(project.id, 1)}>Down</button>
               <button onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</button>
               <button onClick={() => props.editProject(project.id, title(project.name ?? project.project.name), project.folders.map((folder) => folder.path))}>Edit</button>
-              <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}>Delete</button>
+              <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}><Icon name="trash" /> Delete</button>
             </div>
           </article>
         )}

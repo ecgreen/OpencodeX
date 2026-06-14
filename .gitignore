@@ -24,6 +24,7 @@ a.out
 target
 .scripts
 .direnv/
+.graphify_venv/
 
 # Local dev files
 opencode-dev

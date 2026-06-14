@@ -3,6 +3,7 @@ import { trimToLiveTail, type MessageWindow } from "./message-window"
 import { displayMessageText } from "./message-text"
 import { reconcileSessionUiState } from "./session-status"
 import { isRenderableSession, type GuiSnapshot, type MessageBundle, type SessionCardSnapshot, type SessionData } from "./store"
+import { setRecordEntry } from "./view-pane-state"
 
 const pendingLiveParts = new Map<string, Part[]>()
 const pendingLivePartDeltas = new Map<string, Map<string, string>>()
@@ -101,6 +102,11 @@ export function mergeSnapshot(snapshot: GuiSnapshot, next: GuiSnapshot): GuiSnap
     ...cardSnapshot,
     providers: stableValue(snapshot.providers, next.providers),
     agents: stableValue(snapshot.agents, next.agents),
+    commands: stableValue(snapshot.commands, next.commands),
+    lsp: stableValue(snapshot.lsp, next.lsp),
+    mcp: stableValue(snapshot.mcp, next.mcp),
+    config: stableValue(snapshot.config, next.config),
+    plugins: stableValue(snapshot.plugins, next.plugins),
     swarms: stableValue(snapshot.swarms, next.swarms),
     jobs: stableValue(snapshot.jobs, next.jobs),
   }
@@ -115,6 +121,11 @@ export function mergeSnapshot(snapshot: GuiSnapshot, next: GuiSnapshot): GuiSnap
       && snapshot.questions === merged.questions
       && snapshot.providers === merged.providers
       && snapshot.agents === merged.agents
+      && snapshot.commands === merged.commands
+      && snapshot.lsp === merged.lsp
+      && snapshot.mcp === merged.mcp
+      && snapshot.config === merged.config
+      && snapshot.plugins === merged.plugins
       && snapshot.swarms === merged.swarms
       && snapshot.jobs === merged.jobs
       && snapshot.sessionSyncRevision === merged.sessionSyncRevision
@@ -191,14 +202,14 @@ export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, l
 export function mergeLiveSessionData(current: SessionData | undefined, incoming: SessionData): SessionData {
   if (!current) return incoming
   const currentMessages = new Map(current.messages.map((bundle) => [bundle.info.id, bundle]))
-  return {
+  return stableValue(current, {
     ...incoming,
     messages: incoming.messages.map((bundle) => {
       const existing = currentMessages.get(bundle.info.id)
       if (!existing) return bundle
       return { ...bundle, parts: mergeLoadedParts(existing.parts, bundle.parts) }
     }),
-  }
+  })
 }
 
 export function patchSelectedSessionData(input: {
@@ -223,21 +234,14 @@ export function patchVisibleViewSessionData(input: {
   limit: MessageWindow
   emptyData: SessionData
 }) {
-  return input.sessionIDs.reduce(
-    (next, sessionID) => ({
-      ...next,
-      [sessionID]: patchBoundedSessionData(
-        next[sessionID] ?? input.emptyData,
-        input.event,
-        input.limit,
-      ),
-    }),
-    { ...input.data },
-  )
+  return input.sessionIDs.reduce((next, sessionID) => {
+    const current = next[sessionID] ?? input.emptyData
+    return setRecordEntry(next, sessionID, patchBoundedSessionData(current, input.event, input.limit))
+  }, input.data)
 }
 
 export function markViewSessionsLoaded(current: Record<string, number>, sessionIDs: string[], time: number) {
-  return sessionIDs.reduce((next, sessionID) => ({ ...next, [sessionID]: time }), { ...current })
+  return sessionIDs.reduce((next, sessionID) => setRecordEntry(next, sessionID, time), current)
 }
 
 export function sessionDataEventTargets(event: GlobalEvent, context: {

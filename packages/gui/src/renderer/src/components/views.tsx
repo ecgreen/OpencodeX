@@ -1,21 +1,23 @@
-import type { JSX } from "solid-js"
+import type { Accessor, JSX } from "solid-js"
 import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo } from "solid-js"
-import type { ViewItem } from "../lib/view-items"
+import { viewItemID, type ViewItem } from "../lib/view-items"
 
 export type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
 
 export function ViewsPage(props: {
   view?: OpencodeXView
   items: ViewItem[]
-  renderItem: (item: ViewItem) => JSX.Element
+  renderItem: (item: Accessor<ViewItem>) => JSX.Element
 }) {
+  const itemIDs = createMemo(() => props.items.map((item) => viewItemID(item)))
+  const itemsByID = createMemo(() => new Map(props.items.map((item) => [viewItemID(item), item])))
   const layout = createMemo(() => viewLayout(props.items.length))
   return (
     <div class="page views-page">
       <Show when={props.view} fallback={<Empty text="Create a view to work across multiple sessions." />}>
         <Show when={props.items.length > 0} fallback={<Empty text="This view has no available sessions." />}>
-          {renderViewLayout({ node: layout(), items: props.items, renderItem: props.renderItem })}
+          {renderViewLayout({ node: layout(), itemIDs: itemIDs(), itemsByID, renderItem: props.renderItem })}
         </Show>
       </Show>
     </div>
@@ -33,16 +35,28 @@ export function viewLayout(count: number): LayoutNode {
   return { direction: "column", children: [{ direction: "row", children: [0, 1, 2, 3] }, { direction: "row", children: [4, 5, 6, 7] }] }
 }
 
-function renderViewLayout(input: { node: LayoutNode; items: ViewItem[]; renderItem: (item: ViewItem) => JSX.Element }): JSX.Element {
+function renderViewLayout(input: { node: LayoutNode; itemIDs: string[]; itemsByID: Accessor<Map<string, ViewItem>>; renderItem: (item: Accessor<ViewItem>) => JSX.Element }): JSX.Element {
   if (typeof input.node === "number") {
-    const item = input.items[input.node]
-    if (!item) return <></>
-    return input.renderItem(item)
+    const id = input.itemIDs[input.node]
+    if (!id) return <></>
+    return (
+      <Show keyed when={id}>
+        {(paneID) => <ViewPaneSlot item={() => input.itemsByID().get(paneID)} renderItem={input.renderItem} />}
+      </Show>
+    )
   }
   return (
     <div class={`view-layout-group ${input.node.direction}`}>
       <For each={input.node.children}>{(node) => renderViewLayout({ ...input, node })}</For>
     </div>
+  )
+}
+
+function ViewPaneSlot(props: { item: Accessor<ViewItem | undefined>; renderItem: (item: Accessor<ViewItem>) => JSX.Element }) {
+  return (
+    <Show when={props.item()}>
+      {(item) => props.renderItem(item)}
+    </Show>
   )
 }
 

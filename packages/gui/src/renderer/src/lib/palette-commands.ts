@@ -1,6 +1,6 @@
 import type { PaletteCommand } from "../components/command-palette"
 
-type PaletteRouteName = "dashboard" | "sessions" | "projects" | "swarms" | "views" | "status"
+type PaletteRouteName = "dashboard" | "sessions" | "projects" | "swarms" | "views" | "plugins" | "status"
 
 export type PaletteCommandActions = {
   switchSession: () => void | Promise<void>
@@ -26,8 +26,23 @@ export type PaletteCommandActions = {
   switchOrg: () => void | Promise<void>
   switchTheme: () => void | Promise<void>
   showHelp: () => void | Promise<void>
+  showKeyboardHelp: () => void | Promise<void>
+  copyLastAssistantMessage: () => void | Promise<void>
+  copyTranscript: () => void | Promise<void>
+  toggleCodeConceal: () => void | Promise<void>
+  toggleTimestamps: () => void | Promise<void>
+  toggleThinking: () => void | Promise<void>
+  toggleToolDetails: () => void | Promise<void>
+  toggleScrollbar: () => void | Promise<void>
+  toggleGenericToolOutput: () => void | Promise<void>
+  transcriptFirst: () => void
+  transcriptLast: () => void
+  transcriptNextMessage: () => void
+  transcriptPreviousMessage: () => void
+  transcriptLastUser: () => void
   focusComposer: () => void
   refresh: () => void | Promise<void>
+  installPlugin: () => void | Promise<void>
   openDocs: () => void
   exitApp: () => void
 }
@@ -245,13 +260,117 @@ export function buildPaletteCommands(input: {
       name: "help.show",
       title: "Help",
       category: "System",
+      shortcut: "Ctrl+?",
       run: input.actions.showHelp,
+    },
+    {
+      name: "which-key.toggle",
+      title: "Keyboard shortcuts",
+      category: "System",
+      shortcut: "Ctrl+?",
+      run: input.actions.showKeyboardHelp,
+    },
+    {
+      name: "messages.copy",
+      title: "Copy last assistant message",
+      category: "Session",
+      shortcut: "Ctrl+Shift+C",
+      run: input.actions.copyLastAssistantMessage,
+    },
+    {
+      name: "session.copy",
+      title: "Copy session transcript",
+      category: "Session",
+      run: input.actions.copyTranscript,
+    },
+    {
+      name: "session.toggle.conceal",
+      title: "Toggle code concealment",
+      category: "Session",
+      run: input.actions.toggleCodeConceal,
+    },
+    {
+      name: "session.toggle.timestamps",
+      title: "Toggle timestamps",
+      category: "Session",
+      run: input.actions.toggleTimestamps,
+    },
+    {
+      name: "session.toggle.thinking",
+      title: "Toggle thinking",
+      category: "Session",
+      run: input.actions.toggleThinking,
+    },
+    {
+      name: "session.toggle.actions",
+      title: "Toggle tool details",
+      category: "Session",
+      run: input.actions.toggleToolDetails,
+    },
+    {
+      name: "session.toggle.scrollbar",
+      title: "Toggle session scrollbar",
+      category: "Session",
+      run: input.actions.toggleScrollbar,
+    },
+    {
+      name: "session.toggle.generic_tool_output",
+      title: "Toggle generic tool output",
+      category: "Session",
+      run: input.actions.toggleGenericToolOutput,
+    },
+    {
+      name: "session.first",
+      title: "First message",
+      category: "Session",
+      shortcut: "Alt+Home",
+      run: input.actions.transcriptFirst,
+    },
+    {
+      name: "session.last",
+      title: "Last message",
+      category: "Session",
+      shortcut: "Alt+End",
+      run: input.actions.transcriptLast,
+    },
+    {
+      name: "session.message.next",
+      title: "Next message",
+      category: "Session",
+      shortcut: "Alt+Down",
+      run: input.actions.transcriptNextMessage,
+    },
+    {
+      name: "session.message.previous",
+      title: "Previous message",
+      category: "Session",
+      shortcut: "Alt+Up",
+      run: input.actions.transcriptPreviousMessage,
+    },
+    {
+      name: "session.messages_last_user",
+      title: "Jump to last user message",
+      category: "Session",
+      shortcut: "Alt+U",
+      run: input.actions.transcriptLastUser,
     },
     {
       name: "docs.open",
       title: "Open docs",
       category: "System",
       run: input.actions.openDocs,
+    },
+    {
+      name: "plugins.list",
+      title: "Plugins",
+      category: "System",
+      run: () => input.actions.openRoute("plugins"),
+    },
+    {
+      name: "plugins.install",
+      title: "Install plugin",
+      category: "System",
+      run: input.actions.installPlugin,
     },
     {
       name: "app.exit",

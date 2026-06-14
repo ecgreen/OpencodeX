@@ -1,6 +1,8 @@
-import type { Agent, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, FileNode, LspStatus, McpStatus, McpResource, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/store"
+import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import { SessionPage } from "./session-page"
 
 export function ViewPane(props: {
@@ -11,8 +13,15 @@ export function ViewPane(props: {
   data: SessionData
   loading: boolean
   status: string
+  composerState: ViewPaneRuntimeState
+  updateComposerState: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   providers: Provider[]
+  mcp: Record<string, McpStatus>
+  mcpResources?: Record<string, McpResource>
+  lsp: LspStatus[]
+  config?: Config
   agents: Agent[]
+  findFiles?: (input: { query: string; directory?: string }) => Promise<FileNode[]>
   recentModels: string[]
   selectedAgent: string
   setSelectedAgent: (value: string) => void
@@ -23,7 +32,7 @@ export function ViewPane(props: {
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   focus: (focusComposer: boolean) => void
-  submit: (event: SubmitEvent, text: string) => void
+  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
@@ -32,8 +41,18 @@ export function ViewPane(props: {
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   slashCommands: SessionSlashCommand[]
+  concealCodeBlocks: boolean
   showTimestamps: boolean
   showThinking: boolean
+  showToolDetails: boolean
+  showScrollbar: boolean
+  showGenericToolOutput: boolean
+  toggleCodeConceal: () => void
+  toggleTimestamps: () => void
+  toggleThinking: () => void
+  toggleToolDetails: () => void
+  toggleScrollbar: () => void
+  toggleGenericToolOutput: () => void
   loadOlderMessages: (cursor: string) => Promise<void>
 }) {
   const handlePointerDown = (event: PointerEvent) => {
@@ -49,7 +68,12 @@ export function ViewPane(props: {
         prompt=""
         setPrompt={() => undefined}
         providers={props.providers}
+        mcp={props.mcp}
+        mcpResources={props.mcpResources}
+        lsp={props.lsp}
+        config={props.config}
         agents={props.agents}
+        findFiles={props.findFiles}
         selectedAgent={props.selectedAgent}
         setSelectedAgent={props.setSelectedAgent}
         selectedModel={props.selectedModel}
@@ -68,10 +92,22 @@ export function ViewPane(props: {
         moveSession={props.moveSession}
         deleteSession={props.deleteSession}
         slashCommands={props.slashCommands}
+        concealCodeBlocks={props.concealCodeBlocks}
         showTimestamps={props.showTimestamps}
         showThinking={props.showThinking}
+        showToolDetails={props.showToolDetails}
+        showScrollbar={props.showScrollbar}
+        showGenericToolOutput={props.showGenericToolOutput}
+        toggleCodeConceal={props.toggleCodeConceal}
+        toggleTimestamps={props.toggleTimestamps}
+        toggleThinking={props.toggleThinking}
+        toggleToolDetails={props.toggleToolDetails}
+        toggleScrollbar={props.toggleScrollbar}
+        toggleGenericToolOutput={props.toggleGenericToolOutput}
         status={props.status}
         pending={props.pending}
+        composerState={props.composerState}
+        updateComposerState={props.updateComposerState}
         composerFocusToken={props.composerFocusToken}
         loadOlderMessages={props.loadOlderMessages}
       />

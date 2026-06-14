@@ -1,6 +1,10 @@
 import type {
   Agent,
+  Command,
+  Config,
   GlobalEvent,
+  LspStatus,
+  McpStatus,
   Message,
   OpencodeXJob,
   OpencodeXProject,
@@ -17,6 +21,12 @@ import type {
   Session,
   SessionStatus,
   Todo,
+  TextPartInput,
+  FilePartInput,
+  FileContent,
+  FileNode,
+  AgentPartInput,
+  McpResource,
   VcsFileDiff,
 } from "@opencode-ai/sdk/v2/client"
 import {
@@ -42,7 +52,114 @@ export type SessionData = {
   diffs: SnapshotFileDiff[]
 }
 
+export type PromptPart = TextPartInput | FilePartInput | AgentPartInput
+
 export type DiffFile = SnapshotFileDiff | VcsFileDiff
+
+export type GuiPlugin = {
+  id: string
+  pluginID: string
+  kind: "server" | "tui"
+  spec: string
+  source: string
+  scope: "global" | "local" | "internal"
+  enabled: boolean
+  active: boolean
+  canToggle: boolean
+  target?: string
+  note?: string
+}
+
+export type GuiPluginInstallResult = {
+  ok: boolean
+  message?: string
+  dir?: string
+  tui: boolean
+  server: boolean
+  items: Array<{ kind: "server" | "tui"; mode: "noop" | "add" | "replace"; file: string }>
+}
+
+export type WorkbenchOperationResult = {
+  ok: boolean
+  reason?: string
+  message?: string
+  content?: string
+}
+
+export type WorkbenchGitFileStatus = {
+  path: string
+  code: string
+  status: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+}
+
+export type WorkbenchGitStatus = {
+  ok: boolean
+  message?: string
+  branch?: string
+  defaultBranch?: string
+  upstream?: string
+  ahead?: number
+  behind?: number
+  remote?: string
+  remoteUrl?: string
+  githubUrl?: string
+  clean: boolean
+  files: WorkbenchGitFileStatus[]
+}
+
+export type WorkbenchGitBranches = {
+  ok: boolean
+  message?: string
+  current?: string
+  branches: string[]
+}
+
+export type WorkbenchGitHistoryFile = {
+  path: string
+  status: string
+  previousPath?: string
+}
+
+export type WorkbenchGitHistoryCommit = {
+  hash: string
+  shortHash: string
+  author: string
+  email?: string
+  date: string
+  subject: string
+  body?: string
+  files: WorkbenchGitHistoryFile[]
+}
+export type WorkbenchDiagnostic = {
+  path?: string
+  line?: number
+  column?: number
+  severity: "error" | "warning" | "info"
+  message: string
+}
+export type WorkbenchDiagnosticsResult = {
+  ok: boolean
+  command?: string
+  message?: string
+  output?: string
+  diagnostics: WorkbenchDiagnostic[]
+}
+
+export type WorkbenchGitStash = {
+  ref: string
+  hash?: string
+  age?: string
+  message?: string
+}
+
+export type WorkbenchDataResult<T = unknown> = {
+  ok: boolean
+  message?: string
+  data?: T
+}
 
 export type SessionLoadOptions = {
   messageLimit?: number
@@ -61,6 +178,12 @@ export type GuiSnapshot = {
   questions: QuestionRequest[]
   providers: Provider[]
   agents: Agent[]
+  commands?: Command[]
+  lsp?: LspStatus[]
+  mcp?: Record<string, McpStatus>
+  config?: Config
+  mcpResources?: Record<string, McpResource>
+  plugins?: GuiPlugin[]
   swarms: OpencodeXSwarm[]
   jobs: OpencodeXJob[]
   views: OpencodeXView[]
@@ -86,10 +209,17 @@ export async function loadSessionCards(gui: GuiClient, since?: string): Promise<
 }
 
 export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
-  const [cards, providers, agents, swarms, jobs] = await Promise.all([
+  const directory = gui.directory || undefined
+  const [cards, providers, agents, commands, lsp, mcp, config, mcpResources, plugins, swarms, jobs] = await Promise.all([
     loadSessionCards(gui),
-    gui.client.config.providers({ directory: gui.directory || undefined }).then((x) => x.data?.providers ?? []),
-    gui.client.app.agents({ directory: gui.directory || undefined }).then((x) => x.data ?? []),
+    gui.client.config.providers({ directory }).then((x) => x.data?.providers ?? []),
+    gui.client.app.agents({ directory }).then((x) => x.data ?? []),
+    Promise.resolve(gui.client.command?.list?.({ directory })).then((x) => x?.data ?? []).catch(() => []),
+    Promise.resolve(gui.client.lsp?.status?.({ directory })).then((x) => x?.data ?? []).catch(() => []),
+    Promise.resolve(gui.client.mcp?.status?.({ directory })).then((x) => x?.data ?? {}).catch(() => ({})),
+    Promise.resolve(gui.client.config.get?.({ directory })).then((x) => x?.data).catch(() => undefined),
+    Promise.resolve(gui.client.experimental.resource?.list?.({ directory })).then((x) => x?.data ?? {}).catch(() => ({})),
+    listPlugins(gui).catch(() => []),
     gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
     gui.client.opencodex.job.list().then((x) => x.data ?? []),
   ])
@@ -100,6 +230,12 @@ export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
     sessionSyncRevision: cards.revision,
     providers,
     agents,
+    commands,
+    lsp,
+    mcp,
+    config,
+    mcpResources,
+    plugins,
     swarms,
     jobs,
   }
@@ -117,9 +253,9 @@ export async function loadSessionDiff(gui: GuiClient, input: { sessionID: string
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function loadVcsDiff(gui: GuiClient, input: { mode: "git" | "branch"; context?: number }) {
+export async function loadVcsDiff(gui: GuiClient, input: { mode: "git" | "branch"; context?: number; directory?: string }) {
   return gui.client.vcs.diff({
-    directory: gui.directory || undefined,
+    directory: input.directory || gui.directory || undefined,
     mode: input.mode,
     context: input.context,
   }, { headers: authHeaders(gui), throwOnError: true })
@@ -170,7 +306,7 @@ export async function sendPrompt(
   gui: GuiClient,
   sessionID: string,
   text: string,
-  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string } = {},
+  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: PromptPart[] } = {},
 ) {
   return gui.client.session.promptAsync({
     sessionID,
@@ -179,7 +315,53 @@ export async function sendPrompt(
     agent: options.agent,
     model: options.model,
     variant: options.variant,
-    parts: [{ type: "text", text }],
+    parts: options.parts ?? [{ type: "text", text }],
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function runSessionCommand(
+  gui: GuiClient,
+  sessionID: string,
+  input: {
+    command: string
+    arguments: string
+    directory?: string
+    agent?: string
+    model?: { providerID: string; modelID: string }
+    variant?: string
+    parts?: PromptPart[]
+  },
+) {
+  return gui.client.session.command({
+    sessionID,
+    command: input.command,
+    arguments: input.arguments,
+    directory: input.directory || gui.directory || undefined,
+    messageID: createClientMessageID(),
+    agent: input.agent,
+    model: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
+    variant: input.variant,
+    parts: input.parts?.flatMap((part) => part.type === "file" ? [part] : []),
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+export async function runShellCommand(
+  gui: GuiClient,
+  sessionID: string,
+  input: {
+    command: string
+    directory?: string
+    agent?: string
+    model?: { providerID: string; modelID: string }
+  },
+) {
+  return gui.client.session.shell({
+    sessionID,
+    command: input.command,
+    directory: input.directory || gui.directory || undefined,
+    messageID: createClientMessageID(),
+    agent: input.agent,
+    model: input.model,
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
@@ -491,6 +673,153 @@ export async function listSkills(gui: GuiClient) {
   return gui.client.app.skills({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
 }
 
+export async function findFiles(gui: GuiClient, input: { query: string; directory?: string; limit?: number }): Promise<FileNode[]> {
+  return gui.client.find.files({
+    directory: input.directory || gui.directory || undefined,
+    query: input.query,
+    dirs: "true",
+    limit: input.limit ?? 20,
+  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => (x.data ?? []).map((file) => typeof file === "string" ? {
+    name: file.split(/[\\/]/).at(-1) ?? file,
+    path: file,
+    absolute: file,
+    type: "file",
+    ignored: false,
+  } : file))
+}
+
+export async function listWorkbenchFiles(gui: GuiClient, path: string, directory?: string): Promise<FileNode[]> {
+  return gui.client.file.list({
+    directory: directory || gui.directory || undefined,
+    path,
+  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data ?? [])
+}
+
+export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string): Promise<FileContent | undefined> {
+  return gui.client.file.read({
+    directory: directory || gui.directory || undefined,
+    path,
+  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data)
+}
+
+export async function writeWorkbenchFile(gui: GuiClient, input: { path: string; content: string; previousContent?: string }, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/write", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, directory)
+}
+
+export async function createWorkbenchFile(gui: GuiClient, input: { path: string; content?: string; directory?: boolean }, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/create", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, directory)
+}
+
+export async function renameWorkbenchFile(gui: GuiClient, input: { from: string; to: string }, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/rename", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, directory)
+}
+
+export async function deleteWorkbenchFile(gui: GuiClient, path: string, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/delete", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  }, directory)
+}
+
+export async function workbenchGitStatus(gui: GuiClient, directory?: string): Promise<WorkbenchGitStatus> {
+  return pluginApi<WorkbenchGitStatus>(gui, "/experimental/opencodex/workbench/git/status", {}, directory)
+}
+
+export async function workbenchGitBranches(gui: GuiClient, directory?: string): Promise<WorkbenchGitBranches> {
+  return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", {}, directory)
+}
+
+export async function workbenchGitDiff(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<DiffFile[]>> {
+  return pluginApi<WorkbenchDataResult<DiffFile[]>>(gui, "/experimental/opencodex/workbench/git/diff", {}, directory)
+}
+
+export async function workbenchGitHistory(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<WorkbenchGitHistoryCommit[]>> {
+  return pluginApi<WorkbenchDataResult<WorkbenchGitHistoryCommit[]>>(gui, "/experimental/opencodex/workbench/git/history", {}, directory)
+}
+
+export async function workbenchDiagnostics(gui: GuiClient, directory?: string): Promise<WorkbenchDiagnosticsResult> {
+  return pluginApi<WorkbenchDiagnosticsResult>(gui, "/experimental/opencodex/workbench/diagnostics", {}, directory)
+}
+
+export async function workbenchGitOperation(gui: GuiClient, action: "checkout" | "create-branch", input: { branch: string }, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: "stage" | "unstage" | "discard", input: { paths: string[] }, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: "commit", input: { message: string; body?: string }, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: "fetch" | "pull" | "push" | "publish", input?: undefined, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: string, input?: unknown, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/git/${action}`, {
+    method: "POST",
+    body: input === undefined ? undefined : JSON.stringify(input),
+  }, directory)
+}
+
+export async function workbenchGitStashes(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<WorkbenchGitStash[]>> {
+  return pluginApi<WorkbenchDataResult<WorkbenchGitStash[]>>(gui, "/experimental/opencodex/workbench/git/stashes", {}, directory)
+}
+
+export async function workbenchGitStashCreate(gui: GuiClient, input: { message?: string }, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/git/stash", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, directory)
+}
+
+export async function workbenchGitStashOperation(gui: GuiClient, action: "apply" | "pop" | "drop", input: { ref: string }, directory?: string): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/git/stash/${action}`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, directory)
+}
+
+export async function workbenchGithubData<T = unknown>(gui: GuiClient, action: "auth" | "repo" | "issues" | "pulls", directory?: string): Promise<WorkbenchDataResult<T>> {
+  return pluginApi<WorkbenchDataResult<T>>(gui, `/experimental/opencodex/workbench/github/${action}`, {}, directory)
+}
+
+export async function workbenchGithubPost<T = unknown>(
+  gui: GuiClient,
+  action: "pull" | "checks" | "checkout-pull" | "create-pull",
+  input: unknown,
+  directory?: string,
+): Promise<WorkbenchDataResult<T> | WorkbenchOperationResult> {
+  return pluginApi<WorkbenchDataResult<T> | WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/github/${action}`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, directory)
+}
+
+export async function registerGuiBridge(gui: GuiClient, input: { browserBridge?: { url: string; token: string } }): Promise<WorkbenchOperationResult> {
+  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/gui-bridge/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export async function listPlugins(gui: GuiClient): Promise<GuiPlugin[]> {
+  return pluginApi<GuiPlugin[]>(gui, "/experimental/opencodex/plugin")
+}
+
+export async function installPlugin(gui: GuiClient, input: { spec: string; global?: boolean; force?: boolean }): Promise<GuiPluginInstallResult> {
+  return pluginApi<GuiPluginInstallResult>(gui, "/experimental/opencodex/plugin/install", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export async function togglePlugin(gui: GuiClient, input: { id: string; enabled: boolean }): Promise<GuiPlugin> {
+  return pluginApi<GuiPlugin>(gui, "/experimental/opencodex/plugin/toggle", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })
+}
+
 export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) => void) {
   const controller = new AbortController()
   void (async () => {
@@ -562,4 +891,19 @@ function hasWindowsDrive(value: string) {
 
 function authHeaders(gui: GuiClient) {
   return gui.authHeader ? { authorization: gui.authHeader } : undefined
+}
+
+async function pluginApi<T>(gui: GuiClient, pathname: string, init: RequestInit = {}, directory?: string): Promise<T> {
+  const url = new URL(pathname, gui.url)
+  if (directory || gui.directory) url.searchParams.set("directory", directory || gui.directory)
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...(authHeaders(gui) ?? {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!response.ok) throw new Error(await response.text() || `Plugin request failed with ${response.status}`)
+  return response.json() as Promise<T>
 }

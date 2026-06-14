@@ -1,0 +1,256 @@
+name: release-gui
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release. Defaults to packages/gui/package.json."
+        required: false
+        type: string
+      draft:
+        description: "Create the GitHub Release as a draft."
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark the GitHub Release as a prerelease."
+        required: false
+        default: true
+        type: boolean
+      allow_unsigned_gui:
+        description: "Allow unsigned GUI assets. Use only for internal preview testing."
+        required: false
+        default: false
+        type: boolean
+
+concurrency: release-gui-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build GUI preview assets (${{ matrix.name }})
+    runs-on: ${{ matrix.host }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            host: ubuntu-24.04
+            cli_target: linux-x64
+            sidecar_target: opencode-linux-x64
+            builder_args: --linux AppImage deb --x64
+            smoke: xvfb-run -a bun --cwd packages/gui run smoke:packaged
+          - name: windows-x64
+            host: windows-latest
+            cli_target: win32-x64
+            sidecar_target: opencode-windows-x64
+            builder_args: --win nsis zip --x64
+            smoke: bun --cwd packages/gui run smoke:packaged
+          - name: macos-x64
+            host: macos-13
+            cli_target: darwin-x64
+            sidecar_target: opencode-darwin-x64
+            builder_args: --mac dmg zip --x64
+            smoke: bun --cwd packages/gui run smoke:packaged
+          - name: macos-arm64
+            host: macos-14
+            cli_target: darwin-arm64
+            sidecar_target: opencode-darwin-arm64
+            builder_args: --mac dmg zip --arm64
+            smoke: bun --cwd packages/gui run smoke:packaged
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="$(node -p "require('./packages/gui/package.json').version")"
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate GUI signing inputs
+        env:
+          ALLOW_UNSIGNED_GUI: ${{ inputs.allow_unsigned_gui && '1' || '' }}
+          MACOS_CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          MACOS_CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if [[ "$ALLOW_UNSIGNED_GUI" == "1" ]]; then
+            echo "::warning::Building unsigned GUI assets because allow_unsigned_gui was enabled."
+            exit 0
+          fi
+
+          missing=()
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            for name in MACOS_CSC_LINK MACOS_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+              if [[ -z "${!name}" ]]; then
+                missing+=("$name")
+              fi
+            done
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            for name in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+              if [[ -z "${!name}" ]]; then
+                missing+=("$name")
+              fi
+            done
+          fi
+
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "Missing GUI signing secrets: ${missing[*]}"
+            echo "Set the required repository or environment secrets, or rerun with allow_unsigned_gui for internal testing only."
+            exit 1
+          fi
+
+      - name: Install Linux GUI smoke dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      - name: Build GUI sidecar binary
+        env:
+          OPENCODE_CHANNEL: latest
+          OPENCODE_VERSION: ${{ steps.version.outputs.version }}
+        run: bun ./packages/opencode/script/build.ts --target "${{ matrix.cli_target }}" --skip-embed-web-ui --no-minify
+
+      - name: Build renderer and copy sidecar
+        env:
+          OPENCODEX_GUI_SIDECAR_TARGET: ${{ matrix.sidecar_target }}
+        run: |
+          bun --cwd packages/gui run build
+          bun --cwd packages/gui run prepare:sidecar
+
+      - name: Build unpacked GUI for smoke
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          OPENCODEX_ALLOW_UNSIGNED_GUI: 1
+        run: bun --cwd packages/gui exec electron-builder --dir --publish never
+
+      - name: Smoke packaged GUI
+        run: ${{ matrix.smoke }}
+
+      - name: Build distributable GUI assets
+        env:
+          CSC_LINK: ${{ startsWith(matrix.name, 'macos') && secrets.MACOS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ startsWith(matrix.name, 'macos') && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ startsWith(matrix.name, 'macos') && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(matrix.name, 'macos') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ startsWith(matrix.name, 'macos') && secrets.APPLE_TEAM_ID || '' }}
+          WIN_CSC_LINK: ${{ matrix.name == 'windows-x64' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.name == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          OPENCODEX_ALLOW_UNSIGNED_GUI: ${{ inputs.allow_unsigned_gui && '1' || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.allow_unsigned_gui && 'false' || '' }}
+        run: bun --cwd packages/gui exec electron-builder ${{ matrix.builder_args }} --publish never
+
+      - name: Collect GUI assets
+        run: |
+          mkdir -p gui-release
+          find packages/gui/release -maxdepth 1 -type f -print0 | while IFS= read -r -d '' file; do
+            cp "$file" gui-release/
+          done
+          if [[ -z "$(find gui-release -maxdepth 1 -type f -print -quit)" ]]; then
+            echo "No GUI release assets produced."
+            exit 1
+          fi
+          ls -lh gui-release
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencodex-gui-${{ matrix.name }}
+          path: gui-release/*
+
+  publish:
+    name: Publish GUI preview assets
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: opencodex-gui-*
+          path: gui-release
+          merge-multiple: true
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="$(node -p "require('./packages/gui/package.json').version")"
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Add GUI checksums
+        run: |
+          (cd gui-release && sha256sum * > SHA256SUMS-GUI)
+          ls -lh gui-release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          INPUT_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          INPUT_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || '' }}
+        shell: bash
+        run: |
+          flags=()
+          if [[ "$INPUT_DRAFT" == "true" ]]; then
+            flags+=(--draft)
+          fi
+          prerelease="${INPUT_PRERELEASE:-true}"
+          if [[ "$prerelease" == "true" ]]; then
+            flags+=(--prerelease)
+          fi
+
+          notes="$(cat <<EOF
+          OpencodeX ${VERSION} public preview GUI assets.
+
+          Preview notes:
+          - Desktop GUI builds are preview-quality.
+          - macOS assets should be Developer ID signed and notarized unless allow_unsigned_gui was explicitly enabled.
+          - Windows assets should be Authenticode signed unless allow_unsigned_gui was explicitly enabled.
+          - The TUI/CLI remains the primary supported public release surface.
+          - Checksums for GUI assets are in SHA256SUMS-GUI.
+          EOF
+          )"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" gui-release/* --clobber
+            exit 0
+          fi
+
+          gh release create "$TAG" \
+            gui-release/* \
+            --target "$GITHUB_SHA" \
+            --title "OpencodeX ${VERSION}" \
+            --notes "$notes" \
+            "${flags[@]}"

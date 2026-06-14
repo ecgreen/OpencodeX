@@ -24,7 +24,7 @@ describe("GUI keyboard shortcuts", () => {
 
   test("routes navigation shortcuts by key", () => {
     expect(shortcut("d", { ctrlKey: true })).toEqual({ type: "route", route: "dashboard" })
-    expect(shortcut("4", { metaKey: true })).toEqual({ type: "route", route: "views" })
+    expect(shortcut("4", { metaKey: true })).toEqual({ type: "route", route: "plugins" })
   })
 
   test("returns command actions for non-navigation shortcuts", () => {
@@ -49,6 +49,9 @@ describe("GUI keyboard shortcuts", () => {
       focusComposer: () => calls.push("focus-composer"),
       createSession: () => calls.push("create-session"),
       refresh: () => calls.push("refresh"),
+      showKeyboardHelp: () => calls.push("help"),
+      copyLastAssistantMessage: () => calls.push("copy-last"),
+      transcript: (action: string) => calls.push(`transcript:${action}`),
       route: (route: string) => calls.push(`route:${route}`),
     }
 
@@ -70,6 +73,8 @@ function shortcut(
       key,
       ctrlKey: input.ctrlKey ?? false,
       metaKey: input.metaKey ?? false,
+      altKey: input.altKey ?? false,
+      shiftKey: input.shiftKey ?? false,
     },
     {
       editing: input.editing ?? false,

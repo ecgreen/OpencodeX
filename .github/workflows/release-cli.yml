@@ -15,11 +15,8 @@ on:
       prerelease:
         description: "Mark the GitHub Release as a prerelease."
         required: false
-        default: false
+        default: true
         type: boolean
-  push:
-    tags:
-      - "v*"
 
 concurrency: release-cli-${{ github.ref }}
 
@@ -107,14 +104,15 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
           INPUT_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
-          INPUT_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          INPUT_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || '' }}
         shell: bash
         run: |
           flags=()
           if [[ "$INPUT_DRAFT" == "true" ]]; then
             flags+=(--draft)
           fi
-          if [[ "$INPUT_PRERELEASE" == "true" ]]; then
+          prerelease="${INPUT_PRERELEASE:-true}"
+          if [[ "$prerelease" == "true" ]]; then
             flags+=(--prerelease)
           fi
 
@@ -127,5 +125,5 @@ jobs:
             release/* \
             --target "$GITHUB_SHA" \
             --title "OpencodeX ${VERSION}" \
-            --notes "OpencodeX ${VERSION} CLI release assets." \
+            --notes "OpencodeX ${VERSION} public preview CLI release assets. The TUI/CLI is the primary supported preview surface; desktop GUI preview assets may be uploaded by the release-gui workflow. Checksums are in SHA256SUMS." \
             "${flags[@]}"

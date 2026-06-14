@@ -1,9 +1,10 @@
-import type { JSX } from "solid-js"
+import type { Accessor, JSX } from "solid-js"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, formatRelative, title } from "../lib/format"
 import {
   addPendingViewSessions,
+  groupViewSessionsByProject,
   initialViewSelection,
   metadataWithPendingSessions,
   selectedPendingViewSessions,
@@ -22,7 +23,7 @@ export function ViewsManagerPage(props: {
   sessions: Session[]
   projects: GuiSnapshot["projects"]
   items: ViewItem[]
-  renderItem: (item: ViewItem) => JSX.Element
+  renderItem: (item: Accessor<ViewItem>) => JSX.Element
   openView: (viewID: string) => void
   createView: () => void
   editView: (viewID: string) => void
@@ -74,8 +75,9 @@ export function ViewEditorPage(props: {
   const selectedIDs = createMemo(() => new Set(selectedViewSessionIDs(selection())))
   const pending = createMemo(() => selectedPendingViewSessions(selection()))
   const editing = createMemo(() => props.view !== undefined)
-  const projectsByID = createMemo(() => new Map(props.projects.map((project) => [project.id, title(project.name ?? project.project.name)])))
-  const projectNameBySessionID = createMemo(() => new Map(props.projects.flatMap((project) => project.sessions.map((session) => [session.id, title(project.name ?? project.project.name)]))))
+  const [collapsedSessionGroups, setCollapsedSessionGroups] = createSignal<Record<string, boolean>>({})
+  const groupedSessions = createMemo(() => groupViewSessionsByProject({ sessions: props.sessions, projects: props.projects }))
+  const hasAvailableSessions = createMemo(() => groupedSessions().projects.length > 0 || groupedSessions().unprojected.length > 0)
 
   function toggleSession(sessionID: string) {
     setError("")
@@ -108,6 +110,10 @@ export function ViewEditorPage(props: {
 
   function removePending(slotID: string) {
     setSelection((current) => current.filter((item) => item.kind !== "pending" || item.slot.id !== slotID))
+  }
+
+  function toggleSessionGroup(groupID: string) {
+    setCollapsedSessionGroups((current) => ({ ...current, [groupID]: !current[groupID] }))
   }
 
   async function save(event: SubmitEvent) {
@@ -168,7 +174,7 @@ export function ViewEditorPage(props: {
                 </div>
                 <footer>
                   <small>{compactPath(slot.directory)}</small>
-                  <button type="button" class="danger" onClick={() => removePending(slot.id)}>Remove</button>
+                  <button type="button" class="danger" onClick={() => removePending(slot.id)}><Icon name="trash" /> Remove</button>
                 </footer>
               </article>
             )}
@@ -180,28 +186,92 @@ export function ViewEditorPage(props: {
           <strong>Sessions</strong>
           <span>{selectedIDs().size} selected</span>
         </header>
-        <div class="view-session-grid">
-          <For each={props.sessions} fallback={<div class="empty">No sessions available.</div>}>
-            {(session) => (
-              <label class="view-session-card session-link">
-                <input type="checkbox" checked={selectedIDs().has(session.id)} onChange={() => toggleSession(session.id)} />
-                <span class="view-session-card-copy">
-                  <strong>{title(session.title)}</strong>
-                  <small>{projectsByID().get(session.projectID) ?? projectNameBySessionID().get(session.id) ?? compactPath(session.directory)} - {formatRelative(session.time.updated)}</small>
-                </span>
-              </label>
-            )}
-          </For>
-        </div>
+        <Show when={hasAvailableSessions()} fallback={<div class="empty">No sessions available.</div>}>
+          <div class="view-session-groups">
+            <For each={groupedSessions().projects}>
+              {(group) => {
+                const groupID = () => `project:${group.project.id}`
+                return (
+                  <ViewSessionGroup
+                    id={groupID()}
+                    title={title(group.project.name ?? group.project.project.name)}
+                    count={group.sessions.length}
+                    collapsed={collapsedSessionGroups()[groupID()]}
+                    toggle={toggleSessionGroup}
+                  >
+                    <ViewSessionGrid sessions={group.sessions} selectedIDs={selectedIDs()} toggleSession={toggleSession} />
+                  </ViewSessionGroup>
+                )
+              }}
+            </For>
+            <Show when={groupedSessions().unprojected.length > 0}>
+              <ViewSessionGroup
+                id="unprojected"
+                title="No Project"
+                count={groupedSessions().unprojected.length}
+                collapsed={collapsedSessionGroups().unprojected}
+                toggle={toggleSessionGroup}
+              >
+                <ViewSessionGrid sessions={groupedSessions().unprojected} selectedIDs={selectedIDs()} toggleSession={toggleSession} />
+              </ViewSessionGroup>
+            </Show>
+          </div>
+        </Show>
       </section>
       <Show when={error()}>
         <div class="notice error">{error()}</div>
       </Show>
       <div class="form-actions">
-        <button type="button" class="secondary" onClick={props.cancel}>Cancel</button>
-        <button type="submit" class="primary" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save view" : "Create view"}</button>
+        <button type="button" class="secondary" onClick={props.cancel}><Icon name="x" /> Cancel</button>
+        <button type="submit" class="primary" disabled={saving()}><Icon name="check" /> {saving() ? "Saving..." : editing() ? "Save view" : "Create view"}</button>
       </div>
     </form>
+  )
+}
+
+function ViewSessionGroup(props: {
+  id: string
+  title: string
+  count: number
+  collapsed?: boolean
+  toggle: (id: string) => void
+  children: JSX.Element
+}) {
+  return (
+    <section class="view-session-group">
+      <button type="button" class="view-session-group-header" aria-expanded={!props.collapsed} onClick={() => props.toggle(props.id)}>
+        <span>
+          <Icon name={props.collapsed ? "chevronRight" : "chevronDown"} />
+          <strong>{props.title}</strong>
+        </span>
+        <small>{props.count} {props.count === 1 ? "session" : "sessions"}</small>
+      </button>
+      <Show when={!props.collapsed}>
+        {props.children}
+      </Show>
+    </section>
+  )
+}
+
+function ViewSessionGrid(props: {
+  sessions: Session[]
+  selectedIDs: Set<string>
+  toggleSession: (sessionID: string) => void
+}) {
+  return (
+    <div class="view-session-grid">
+      <For each={props.sessions}>
+        {(session) => (
+          <label class="view-session-card session-link">
+            <input type="checkbox" checked={props.selectedIDs.has(session.id)} onChange={() => props.toggleSession(session.id)} />
+            <span class="view-session-card-copy">
+              <strong>{title(session.title)}</strong>
+              <small>{compactPath(session.directory)} - {formatRelative(session.time.updated)}</small>
+            </span>
+          </label>
+        )}
+      </For>
+    </div>
   )
 }
 
@@ -240,7 +310,7 @@ function ViewList(props: {
                   <Icon name="pencil" />
                 </button>
                 <button type="button" class="danger" title="Delete view" aria-label="Delete view" onClick={() => props.deleteView(view.id, view.title)}>
-                  <Icon name="x" />
+                  <Icon name="trash" />
                 </button>
               </div>
             </article>
@@ -296,7 +366,7 @@ function ActiveViewHeader(props: {
           <Icon name="pencil" />
         </button>
         <button type="button" class="danger" title="Delete view" aria-label="Delete view" onClick={props.delete}>
-          <Icon name="x" />
+          <Icon name="trash" />
         </button>
       </div>
     </header>

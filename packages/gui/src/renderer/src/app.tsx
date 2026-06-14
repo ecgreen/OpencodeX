@@ -2,26 +2,40 @@ import type { GlobalEvent, OpencodeXSessionState, OpencodeXSwarmRoleInput, Openc
 import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./lib/client"
 import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
-import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js"
+import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type Accessor } from "solid-js"
 import { OpencodeXLogo, Titlebar } from "./components/chrome"
 import { CollectionPage, ProjectCollectionPage, SessionCollectionPage, StatusPage } from "./components/collection-pages"
 import { CommandPaletteModal, type PaletteCommand } from "./components/command-palette"
 import { Dashboard } from "./components/dashboard"
 import { DiffPage, type DiffMode } from "./components/diff-page"
+import { KeyboardHelpModal } from "./components/keyboard-help"
 import { DialogModal, type ChoiceOption, type DialogState } from "./components/dialog-modal"
+import { PluginsPage } from "./components/plugins-page"
 import { RailSidebar, type RailDragTarget, type RailDropTarget, type RailSectionName } from "./components/rail-sidebar"
 import { SessionPage } from "./components/session-page"
 import { SwarmEditorPage, SwarmsPage } from "./components/swarms-page"
 import { ViewPaneHost } from "./components/view-pane-host"
 import { ViewEditorPage, ViewsManagerPage } from "./components/views-manager-page"
+import { WorkbenchPage } from "./components/workbench-page"
 import { connectGuiClient } from "./lib/client"
 import { runCreateProjectSessionAction } from "./lib/creation-actions"
 import { compactPath, formatRelative, title } from "./lib/format"
+import {
+  guiPluginCommands,
+  guiPluginThemeCss,
+  installGuiPlugin as installDeclarativeGuiPlugin,
+  readInstalledGuiPlugins,
+  type GuiPluginManifest,
+  type InstalledGuiPlugin,
+  writeInstalledGuiPlugins,
+} from "./lib/gui-plugins"
 import { guiShortcutAction, isKeyboardEditingTarget, runGuiShortcutAction } from "./lib/keyboard-shortcuts"
 import { prependOlderMessages, trimToLiveTail, type MessageWindow } from "./lib/message-window"
 import { runCycleVariantAction, runSwitchAgentAction, runSwitchModelAction, runSwitchVariantAction } from "./lib/model-actions"
 import { firstAvailableModel, modelValue, parseModelValue, selectedModelVariants, sessionModelDefaults } from "./lib/model-selection"
 import { buildPaletteCommands } from "./lib/palette-commands"
+import { restorePromptPartsFromEditedText } from "./lib/prompt-autocomplete"
+import type { GuiPromptInfo } from "./lib/prompt-state"
 import { runCreateProjectAction, runCreateSessionRouteAction, runDeleteProjectAction, runEditProjectAction, runEditProjectFoldersAction, runRenameProjectAction } from "./lib/project-actions"
 import { droppedReorderIDs, mergeOrderedIDs, moveByOffset } from "./lib/reorder"
 import { activeSessionIDForRoute, activeSessionRouteKey as sessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "./lib/route-selection"
@@ -31,7 +45,6 @@ import {
   applySessionStateSnapshot,
   applySessionStatusSnapshot,
   isSnapshotPatchEvent,
-  markViewSessionsLoaded,
   mergeLiveSessionData,
   mergeSessionCardSnapshot,
   mergeSnapshot,
@@ -50,7 +63,16 @@ import { buildSessionSlashCommands, type SessionSlashCommand, type SessionSlashC
 import { syncViewSessionsInParallel, viewSessionsInOrder } from "./lib/view-sync"
 import { runViewPromptAction } from "./lib/view-prompt"
 import { runSessionPromptAction } from "./lib/session-prompt"
+import { workbenchPromptTarget } from "./lib/workbench"
 import { formatSessionTranscript } from "./lib/transcript"
+import { defaultTranscriptExportOptions, prepareSessionTranscriptExport, type GuiTranscriptExportOptions } from "./lib/transcript-export"
+import {
+  EMPTY_VIEW_PANE_RUNTIME_STATE,
+  pruneRecordKeys,
+  setRecordEntry,
+  updateViewPaneRuntimeState,
+  type ViewPaneRuntimeState,
+} from "./lib/view-pane-state"
 import {
   abortSession,
   assignSwarmTask,
@@ -69,10 +91,13 @@ import {
   disconnectMcp,
   disposeInstance,
   forkSession,
+  findFiles,
+  installPlugin,
   listConsoleOrgs,
   listMcpStatus,
   listProviderAuthMethods,
   listProviders,
+  listPlugins,
   listSkills,
   loadSessionDiff,
   loadSession,
@@ -90,6 +115,8 @@ import {
   reorderViews,
   replyPermission,
   replyQuestion,
+  runShellCommand,
+  runSessionCommand,
   sendPrompt,
   setProviderApiAuth,
   shareSession,
@@ -97,6 +124,7 @@ import {
   subscribeEvents,
   switchConsoleOrg,
   syncWorkspaces,
+  togglePlugin,
   unrevertSession,
   unshareSession,
   updateSessionUiState,
@@ -111,7 +139,7 @@ import {
   warpSessionWorkspace,
   workspaceStatus,
 } from "./lib/store"
-import { pendingViewSessions, viewItemID, viewItemSession, type ViewItem } from "./lib/view-items"
+import { pendingViewSessions, viewItemID, viewItemSession, viewItemsMembershipKey, viewSessionsSyncKey, type ViewItem } from "./lib/view-items"
 
 type Route =
   | { name: "dashboard" }
@@ -123,6 +151,8 @@ type Route =
   | { name: "swarm-create"; swarmID?: string }
   | { name: "views"; viewID?: string }
   | { name: "view-edit"; viewID?: string }
+  | { name: "plugins" }
+  | { name: "workbench" }
   | { name: "diff"; mode?: DiffMode; sessionID?: string }
   | { name: "settings" }
   | { name: "status" }
@@ -130,8 +160,10 @@ type Route =
 const NAV_ITEMS = [
   { name: "dashboard", label: "Dashboard", icon: "dashboard", shortcut: "Ctrl+D", description: "Workspace command center" },
   { name: "projects", label: "Projects", icon: "folder", shortcut: "Ctrl+1", description: "Manage project groups and folders" },
-  { name: "swarms", label: "Swarms", icon: "swarm", shortcut: "Ctrl+2", description: "Manage swarms (work in progress)" },
-  { name: "views", label: "Views", icon: "views", shortcut: "Ctrl+3", description: "Manage views (work in progress)" },
+  { name: "swarms", label: "Swarms", icon: "swarm", shortcut: "Ctrl+2", description: "Create, manage, and run agent swarms" },
+  { name: "views", label: "Views", icon: "views", shortcut: "Ctrl+3", description: "Create and manage multi-session views" },
+  { name: "plugins", label: "Plugins", icon: "settings", shortcut: "Ctrl+4", description: "Install and manage plugins" },
+  { name: "workbench", label: "Workbench", icon: "browser", shortcut: "Ctrl+5", description: "Files, GitHub, Git, browser, and artifacts" },
 ] as const
 
 const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
@@ -155,8 +187,7 @@ export function App() {
   const [route, setRoute] = createSignal<Route>({ name: "dashboard" })
   const [sessionData, setSessionData] = createSignal<SessionData>(EMPTY_SESSION_DATA)
   const [viewSessionData, setViewSessionData] = createSignal<Record<string, SessionData>>({})
-  const [viewSessionLoadedTimes, setViewSessionLoadedTimes] = createSignal<Record<string, number>>({})
-  const [viewLoadingSessions, setViewLoadingSessions] = createSignal<Record<string, boolean>>({})
+  const [viewPaneStates, setViewPaneStates] = createSignal<Record<string, ViewPaneRuntimeState>>({})
   const [sessionDataSessionID, setSessionDataSessionID] = createSignal("")
   const [loading, setLoading] = createSignal("Starting sidecar")
   const [error, setError] = createSignal<string>()
@@ -166,11 +197,16 @@ export function App() {
   const [selectedModel, setSelectedModel] = createSignal("")
   const [selectedVariant, setSelectedVariant] = createSignal("")
   const [themeMode, setThemeMode] = createSignal<GuiThemeMode>(readThemeMode())
-  const [showTranscriptTimestamps, setShowTranscriptTimestamps] = createSignal(false)
-  const [showTranscriptThinking, setShowTranscriptThinking] = createSignal(true)
+  const [concealTranscriptCodeBlocks, setConcealTranscriptCodeBlocks] = createSignal(readBoolPreference("opencodex.gui.transcript.concealCode", true))
+  const [showTranscriptTimestamps, setShowTranscriptTimestamps] = createSignal(readBoolPreference("opencodex.gui.transcript.timestamps", false))
+  const [showTranscriptThinking, setShowTranscriptThinking] = createSignal(readBoolPreference("opencodex.gui.transcript.thinking", true))
+  const [showTranscriptToolDetails, setShowTranscriptToolDetails] = createSignal(readBoolPreference("opencodex.gui.transcript.toolDetails", true))
+  const [showTranscriptScrollbar, setShowTranscriptScrollbar] = createSignal(readBoolPreference("opencodex.gui.transcript.scrollbar", true))
+  const [showTranscriptGenericToolOutput, setShowTranscriptGenericToolOutput] = createSignal(readBoolPreference("opencodex.gui.transcript.genericToolOutput", true))
   const [notice, setNotice] = createSignal("")
   const [dialog, setDialog] = createSignal<DialogState>()
   const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
+  const [keyboardHelpOpen, setKeyboardHelpOpen] = createSignal(false)
   const [railCollapsed, setRailCollapsed] = createSignal(sidebarPreferences.railCollapsed)
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
   const [railSectionOrder, setRailSectionOrder] = createSignal<RailSectionName[]>(sidebarPreferences.railSectionOrder)
@@ -178,9 +214,7 @@ export function App() {
   const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>(sidebarPreferences.expandedProjectIDs)
   const [pinnedSessionIDs, setPinnedSessionIDs] = createSignal(sidebarPreferences.pinnedSessionIDs)
   const [pinnedViewIDs, setPinnedViewIDs] = createSignal(sidebarPreferences.pinnedViewIDs)
-  const [viewAgents, setViewAgents] = createSignal<Record<string, string>>({})
-  const [viewModels, setViewModels] = createSignal<Record<string, string>>({})
-  const [viewVariants, setViewVariants] = createSignal<Record<string, string>>({})
+  const [guiPlugins, setGuiPlugins] = createSignal<InstalledGuiPlugin[]>(readInstalledGuiPlugins())
   const [focusedViewSessionID, setFocusedViewSessionID] = createSignal("")
   const [viewComposerFocusRequest, setViewComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
   const [recentModels, setRecentModels] = createSignal(readRecentModels())
@@ -218,13 +252,11 @@ export function App() {
   ].slice(0, 8))
   const activeViewLoadKey = createMemo(() => {
     const view = activeView()
-    if (!view) return ""
-    return [view.id, ...activeViewSessions().map((session) => `${session.id}:${session.directory ?? ""}:${session.time.updated}`)].join("\n")
+    return viewSessionsSyncKey(view?.id, activeViewSessions())
   })
   const activeViewMembershipKey = createMemo(() => {
     const view = activeView()
-    if (!view) return ""
-    return [view.id, ...activeViewItems().map((item) => viewItemID(item))].join("\n")
+    return viewItemsMembershipKey(view?.id, activeViewItems())
   })
   const activeViewFocusedSessionID = createMemo(() => focusedViewItemID({ localID: focusedViewSessionID(), persistedID: activeView()?.focusedSessionID, items: activeViewItems() }))
   const selectedPermissions = createMemo(() => {
@@ -307,6 +339,29 @@ export function App() {
     writeRecentModels(models)
   }
 
+  async function refreshPlugins() {
+    const gui = client()
+    if (!gui) return
+    const plugins = await listPlugins(gui)
+    setSnapshot((current) => current ? { ...current, plugins } : current)
+  }
+
+  createEffect(() => {
+    writeInstalledGuiPlugins(guiPlugins())
+  })
+
+  function handleInstallGuiPlugin(manifest: GuiPluginManifest, source: InstalledGuiPlugin["source"]) {
+    setGuiPlugins((plugins) => installDeclarativeGuiPlugin(plugins, manifest, source))
+  }
+
+  function handleToggleGuiPlugin(id: string) {
+    setGuiPlugins((plugins) => plugins.map((plugin) => plugin.manifest.id === id ? { ...plugin, enabled: !plugin.enabled } : plugin))
+  }
+
+  function handleRemoveGuiPlugin(id: string) {
+    setGuiPlugins((plugins) => plugins.filter((plugin) => plugin.manifest.id !== id))
+  }
+
   async function runAction(action: () => Promise<void>) {
     try {
       await action()
@@ -319,6 +374,22 @@ export function App() {
     setNotice(message)
   }
 
+  function viewPaneState(paneID: string) {
+    return viewPaneStates()[paneID] ?? EMPTY_VIEW_PANE_RUNTIME_STATE
+  }
+
+  function updateViewPaneState(paneID: string, update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) {
+    setViewPaneStates((current) => updateViewPaneRuntimeState(current, paneID, update))
+  }
+
+  function setViewPaneLoading(paneID: string, loading: boolean) {
+    updateViewPaneState(paneID, (state) => state.loading === loading ? state : { ...state, loading })
+  }
+
+  function setViewPaneLoadedTime(paneID: string, loadedTime: number) {
+    updateViewPaneState(paneID, (state) => state.loadedTime === loadedTime ? state : { ...state, loadedTime })
+  }
+
   function askText(input: { title: string; message?: string; value?: string; multiline?: boolean }) {
     return new Promise<string | undefined>((resolve) => setDialog({ type: "text", ...input, resolve }))
   }
@@ -329,6 +400,10 @@ export function App() {
 
   function askChoice(input: { title: string; message?: string; options: ChoiceOption[] }) {
     return new Promise<string | undefined>((resolve) => setDialog({ type: "choice", ...input, resolve }))
+  }
+
+  function askExportOptions(input: { title: string; message?: string; defaults: GuiTranscriptExportOptions }) {
+    return new Promise<GuiTranscriptExportOptions | undefined>((resolve) => setDialog({ type: "export", ...input, resolve }))
   }
 
   async function syncSession(sessionID: string, options: { force?: boolean } = {}) {
@@ -364,21 +439,21 @@ export function App() {
   async function syncViewSession(session: Session, options: { force?: boolean } = {}) {
     const gui = client()
     if (!gui) return
-    if (shouldSkipViewSessionSync({ force: options.force, session, data: viewSessionData()[session.id], loadedTime: viewSessionLoadedTimes()[session.id] })) return
+    if (shouldSkipViewSessionSync({ force: options.force, session, data: viewSessionData()[session.id], loadedTime: viewPaneState(session.id).loadedTime })) return
     const loadKey = viewSessionLoadKey(session)
     const existing = viewSessionLoadPromises.get(session.id)
     if (existing?.key === loadKey) return existing.promise
     const showLoading = shouldShowViewSessionLoading(viewSessionData()[session.id])
-    if (showLoading) setViewLoadingSessions((current) => ({ ...current, [session.id]: true }))
+    if (showLoading) setViewPaneLoading(session.id, true)
     const promise = (async () => {
       const data = trimToLiveTail(await loadSession(gui, session.id, session.directory, { messageLimit: VIEW_MESSAGE_PAGE_LIMIT, messageRenderBudget: VIEW_MESSAGE_WINDOW.budget, includeSideData: false }), VIEW_MESSAGE_WINDOW)
       if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
-      setViewSessionData((current) => ({ ...current, [session.id]: mergeLiveSessionData(current[session.id], data) }))
-      setViewSessionLoadedTimes((current) => ({ ...current, [session.id]: session.time.updated }))
+      setViewSessionData((current) => setRecordEntry(current, session.id, mergeLiveSessionData(current[session.id], data)))
+      setViewPaneLoadedTime(session.id, session.time.updated)
     })().finally(() => {
       if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
       viewSessionLoadPromises.delete(session.id)
-      if (showLoading) setViewLoadingSessions((current) => ({ ...current, [session.id]: false }))
+      if (showLoading) setViewPaneLoading(session.id, false)
     })
     viewSessionLoadPromises.set(session.id, { key: loadKey, promise })
     return promise
@@ -406,10 +481,7 @@ export function App() {
       renderBudget: VIEW_MESSAGE_WINDOW.budget * LOAD_MORE_MESSAGE_MULTIPLIER,
       before,
     })
-    setViewSessionData((current) => ({
-      ...current,
-      [sessionID]: prependOlderMessages(current[sessionID] ?? EMPTY_SESSION_DATA, page),
-    }))
+    setViewSessionData((current) => setRecordEntry(current, sessionID, prependOlderMessages(current[sessionID] ?? EMPTY_SESSION_DATA, page)))
   }
 
   async function syncActiveViewSessions() {
@@ -484,7 +556,8 @@ export function App() {
         limit: VIEW_MESSAGE_WINDOW,
         emptyData: EMPTY_SESSION_DATA,
       }))
-      setViewSessionLoadedTimes((data) => markViewSessionsLoaded(data, targets.visibleSessionIDs, Date.now()))
+      const loadedTime = Date.now()
+      targets.visibleSessionIDs.forEach((sessionID) => setViewPaneLoadedTime(sessionID, loadedTime))
     }
 
     return true
@@ -592,6 +665,9 @@ export function App() {
         focusComposer: () => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
         createSession: () => void runAction(() => handleCreateSession()),
         refresh: () => void runAction(refresh),
+        showKeyboardHelp: () => setKeyboardHelpOpen(true),
+        copyLastAssistantMessage: () => void runAction(copyLastAssistantMessage),
+        transcript: moveTranscript,
         route: (name) => setRoute({ name }),
       })
     }
@@ -618,6 +694,10 @@ export function App() {
     if (current.name !== "views" || !loadKey || !client()) return
     if (membershipKey !== lastActiveViewMembershipKey) {
       lastActiveViewMembershipKey = membershipKey
+      const paneIDs = new Set(activeViewItems().map((item) => viewItemID(item)))
+      const sessionIDs = new Set(activeViewSessions().map((session) => session.id))
+      setViewPaneStates((states) => pruneRecordKeys(states, paneIDs))
+      setViewSessionData((data) => pruneRecordKeys(data, sessionIDs))
       setFocusedViewSessionID("")
     }
     untrack(() => { void syncActiveViewSessions() })
@@ -652,7 +732,7 @@ export function App() {
     if (model) setSelectedModel(model)
   })
 
-  async function submitPrompt(event: SubmitEvent, value?: string) {
+  async function submitPrompt(event: SubmitEvent, value?: string | GuiPromptInfo) {
     event.preventDefault()
     const gui = client()
     const session = selectedSession()
@@ -669,6 +749,9 @@ export function App() {
       setPrompt,
       setLoadingSessionID,
       sendPrompt: (sessionID, text, options) => gui ? sendPrompt(gui, sessionID, text, options).then(() => undefined) : Promise.resolve(),
+      runCommand: (sessionID, command, args, options) => gui ? runSessionCommand(gui, sessionID, { command, arguments: args, ...options }).then(() => undefined) : Promise.resolve(),
+      runShell: (sessionID, command, options) => gui ? runShellCommand(gui, sessionID, { command, directory: options.directory, agent: options.agent, model: options.model }).then(() => undefined) : Promise.resolve(),
+      serverCommands: snapshot()?.commands ?? [],
       rememberModel,
       syncSession: (sessionID) => syncSession(sessionID, { force: true }),
       refresh,
@@ -676,37 +759,62 @@ export function App() {
     })
   }
 
-  async function submitViewPrompt(event: SubmitEvent, item: ViewItem, value: string) {
+  function openWorkbenchPrompt(text: string) {
+    setPrompt(text)
+    const session = selectedSession()
+    if (session) {
+      setRoute({ name: "session", sessionID: session.id })
+      requestComposerFocus()
+      return
+    }
+    const project = snapshot()?.projects[0]
+    setRoute(workbenchPromptTarget({
+      projectID: project?.id,
+      projectDirectory: project?.folders[0]?.path,
+      fallbackDirectory: client()?.directory,
+    }))
+    requestComposerFocus()
+  }
+
+  function requestComposerFocus() {
+    setTimeout(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }), 0)
+  }
+
+  async function submitViewPrompt(event: SubmitEvent, item: ViewItem, value: GuiPromptInfo) {
     event.preventDefault()
     const gui = client()
+    const paneID = viewItemID(item)
     await runViewPromptAction({
       gui,
       item,
       view: activeView(),
       text: value,
-      agentForSession: viewAgentValue,
-      modelForSession: viewModelValue,
-      variantForSession: viewVariantValue,
-      setDraftLoading: (draftID, loading) => setViewLoadingSessions((current) => ({ ...current, [draftID]: loading })),
+      agentForSession: (session) => viewAgentValue(paneID, session),
+      modelForSession: (session) => viewModelValue(paneID, session),
+      variantForSession: (session) => viewVariantValue(paneID, session),
+      setDraftLoading: setViewPaneLoading,
       setFocusedSessionID: setFocusedViewSessionID,
       alert,
       sendPrompt: (sessionID, text, options) => gui ? sendPrompt(gui, sessionID, text, options).then(() => undefined) : Promise.resolve(),
+      runCommand: (sessionID, command, args, options) => gui ? runSessionCommand(gui, sessionID, { command, arguments: args, ...options }).then(() => undefined) : Promise.resolve(),
+      runShell: (sessionID, command, options) => gui ? runShellCommand(gui, sessionID, { command, directory: options.directory, agent: options.agent, model: options.model }).then(() => undefined) : Promise.resolve(),
+      serverCommands: snapshot()?.commands ?? [],
       rememberModel,
       syncViewSession: (session) => syncViewSession(session, { force: true }),
       refresh,
     })
   }
 
-  function viewAgentValue(session: Session) {
-    return viewAgents()[session.id] ?? session.agent ?? ""
+  function viewAgentValue(paneID: string, session: Session) {
+    return viewPaneState(paneID).selectedAgent ?? session.agent ?? ""
   }
 
-  function viewModelValue(session: Session) {
-    return viewModels()[session.id] ?? (session.model ? modelValue(session.model.providerID, session.model.id) : selectedModel())
+  function viewModelValue(paneID: string, session: Session) {
+    return viewPaneState(paneID).selectedModel ?? (session.model ? modelValue(session.model.providerID, session.model.id) : selectedModel())
   }
 
-  function viewVariantValue(session: Session) {
-    return viewVariants()[session.id] ?? session.model?.variant ?? ""
+  function viewVariantValue(paneID: string, session: Session) {
+    return viewPaneState(paneID).selectedVariant ?? session.model?.variant ?? ""
   }
 
   function focusViewSession(sessionID: string, options: { focusComposer?: boolean } = {}) {
@@ -909,14 +1017,42 @@ export function App() {
   }
 
   function showHelp() {
-    alert([
-      "Ctrl+P opens commands.",
-      "Ctrl+/ focuses the composer.",
-      "Ctrl+N creates a session.",
-      "Ctrl+R refreshes.",
-      "Ctrl+B toggles the sidebar.",
-      "Ctrl+D and Ctrl+1-3 navigate sections.",
-    ].join("\n"))
+    setKeyboardHelpOpen(true)
+  }
+
+  function transcriptElement() {
+    return document.querySelector<HTMLElement>(".session-page .transcript")
+  }
+
+  function transcriptMessages() {
+    return Array.from(document.querySelectorAll<HTMLElement>(".session-page .message[data-message-id]"))
+  }
+
+  function moveTranscript(action: "first" | "last" | "next" | "previous" | "last-user") {
+    const transcript = transcriptElement()
+    const messages = transcriptMessages()
+    if (!transcript || messages.length === 0) return
+    if (action === "first") {
+      transcript.scrollTo({ top: 0, behavior: "smooth" })
+      return
+    }
+    if (action === "last") {
+      transcript.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" })
+      return
+    }
+    const current = messages.findIndex((message) => message.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top + 12)
+    const target = action === "last-user"
+      ? messages.findLast((message) => message.classList.contains("user"))
+      : messages[Math.max(0, Math.min(messages.length - 1, (current === -1 ? 0 : current) + (action === "next" ? 1 : -1)))]
+    target?.scrollIntoView({ block: "start", behavior: "smooth" })
+  }
+
+  async function copyLastAssistantMessage() {
+    const message = activeSessionData().messages.findLast((bundle) => bundle.info.role === "assistant")
+    const text = message?.parts.flatMap((part) => part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : []).join("\n").trim()
+    if (!text) return alert("No assistant text is available to copy.")
+    await navigator.clipboard.writeText(text)
+    alert("Assistant message copied.")
   }
 
   async function handleThemeSlash() {
@@ -974,13 +1110,43 @@ export function App() {
   function handleToggleTimestampsSlash() {
     const next = !showTranscriptTimestamps()
     setShowTranscriptTimestamps(next)
+    writeBoolPreference("opencodex.gui.transcript.timestamps", next)
     alert(next ? "Message timestamps shown." : "Message timestamps hidden.")
+  }
+
+  function handleToggleCodeConcealSlash() {
+    const next = !concealTranscriptCodeBlocks()
+    setConcealTranscriptCodeBlocks(next)
+    writeBoolPreference("opencodex.gui.transcript.concealCode", next)
+    alert(next ? "Code blocks concealed." : "Code blocks expanded.")
   }
 
   function handleToggleThinkingSlash() {
     const next = !showTranscriptThinking()
     setShowTranscriptThinking(next)
+    writeBoolPreference("opencodex.gui.transcript.thinking", next)
     alert(next ? "Thinking content shown." : "Thinking content hidden.")
+  }
+
+  function handleToggleToolDetailsSlash() {
+    const next = !showTranscriptToolDetails()
+    setShowTranscriptToolDetails(next)
+    writeBoolPreference("opencodex.gui.transcript.toolDetails", next)
+    alert(next ? "Tool details shown." : "Tool details hidden.")
+  }
+
+  function handleToggleScrollbarSlash() {
+    const next = !showTranscriptScrollbar()
+    setShowTranscriptScrollbar(next)
+    writeBoolPreference("opencodex.gui.transcript.scrollbar", next)
+    alert(next ? "Session scrollbar shown." : "Session scrollbar hidden.")
+  }
+
+  function handleToggleGenericToolOutputSlash() {
+    const next = !showTranscriptGenericToolOutput()
+    setShowTranscriptGenericToolOutput(next)
+    writeBoolPreference("opencodex.gui.transcript.genericToolOutput", next)
+    alert(next ? "Generic tool output shown." : "Generic tool output hidden.")
   }
 
   async function handleSkillsSlash(context?: SessionSlashCommandContext) {
@@ -1010,6 +1176,7 @@ export function App() {
     })
     if (content === undefined) return alert("Set VISUAL or EDITOR to use /editor.")
     context?.setDraftPrompt(content)
+    context?.setDraftParts?.(restorePromptPartsFromEditedText(context.draftParts ?? [], content))
   }
 
   async function handleMcpSlash() {
@@ -1324,20 +1491,53 @@ export function App() {
   }
 
   async function handleExportTranscriptSlash(session?: Session) {
-    const transcript = await loadTranscriptForSlash(session)
-    if (!transcript || !session) return
+    const gui = client()
+    if (!gui || !session) return
+    const options = await askExportOptions({
+      title: "Export Options",
+      defaults: defaultTranscriptExportOptions({
+        session,
+        thinking: showTranscriptThinking(),
+        toolDetails: showTranscriptToolDetails(),
+        assistantMetadata: true,
+      }),
+    })
+    if (!options) return
+    const data = await loadSession(gui, session.id, session.directory, { messageLimit: 10_000 })
+    const transcript = prepareSessionTranscriptExport({
+      session,
+      messages: data.messages,
+      providers: snapshot()?.providers ?? [],
+      options,
+    })
+    const href = URL.createObjectURL(new Blob([transcript.markdown], { type: "text/markdown" }))
+    if (transcript.openWithoutSaving) {
+      const opened = window.open(href, "_blank", "noopener,noreferrer")
+      setTimeout(() => URL.revokeObjectURL(href), 30_000)
+      if (!opened) alert("Export preview was blocked.")
+      return
+    }
     const link = document.createElement("a")
-    link.href = URL.createObjectURL(new Blob([transcript], { type: "text/markdown" }))
-    link.download = `session-${session.id.slice(0, 8)}.md`
+    link.href = href
+    link.download = transcript.filename
     link.click()
-    URL.revokeObjectURL(link.href)
+    URL.revokeObjectURL(href)
   }
 
   async function loadTranscriptForSlash(session?: Session) {
     const gui = client()
     if (!gui || !session) return
     const data = await loadSession(gui, session.id, session.directory, { messageLimit: 10_000 })
-    return formatSessionTranscript({ session, messages: data.messages, providers: snapshot()?.providers ?? [] })
+    return formatSessionTranscript({
+      session,
+      messages: data.messages,
+      providers: snapshot()?.providers ?? [],
+      options: {
+        thinking: showTranscriptThinking(),
+        toolDetails: showTranscriptToolDetails(),
+        assistantMetadata: true,
+      },
+    })
   }
 
   async function reloadSessionAfterSlash(session: Session) {
@@ -1423,7 +1623,7 @@ export function App() {
       switchVariant?: () => void | Promise<void>
     } = {},
   ): SessionSlashCommand[] {
-    return buildSessionSlashCommands({
+    const local = buildSessionSlashCommands({
       shared: !!session?.share?.url,
       canRedo: !!session?.revert?.messageID,
       variantCount: selectedModelVariants(snapshot()?.providers ?? [], options.selectedModel ?? selectedModel()).length,
@@ -1479,12 +1679,28 @@ export function App() {
         unshareSession: () => handleUnshareSlash(session),
         undoMessage: () => handleUndoSlash(session, options.data, options.restorePrompt),
         redoMessage: () => handleRedoSlash(session, options.data),
+        toggleCodeConceal: handleToggleCodeConcealSlash,
         toggleTimestamps: handleToggleTimestampsSlash,
         toggleThinking: handleToggleThinkingSlash,
+        toggleToolDetails: handleToggleToolDetailsSlash,
+        toggleScrollbar: handleToggleScrollbarSlash,
+        toggleGenericToolOutput: handleToggleGenericToolOutputSlash,
         copyTranscript: () => handleCopyTranscriptSlash(session),
         exportTranscript: () => handleExportTranscriptSlash(session),
       },
     })
+    const localNames = new Set(local.flatMap((command) => [command.name, ...(command.aliases ?? [])]))
+    const server = (snapshot()?.commands ?? [])
+      .filter((command) => command.source !== "skill" && !localNames.has(command.name))
+      .toSorted((left, right) => left.name.localeCompare(right.name))
+      .map((command): SessionSlashCommand => ({
+        name: command.name,
+        title: command.source === "mcp" ? `${command.name}:mcp` : command.name,
+        detail: command.description ?? "Run backend command",
+        category: command.source === "mcp" ? "MCP Commands" : "Project Commands",
+        run: (context) => context?.setDraftPrompt(`/${command.name} `),
+      }))
+    return [...local, ...server]
   }
 
   async function handlePermission(request: PermissionRequest, reply: "once" | "always" | "reject") {
@@ -1658,6 +1874,24 @@ export function App() {
       })
     await refresh()
     setRoute({ name: "views", viewID: view?.id ?? input.viewID })
+  }
+
+  async function handleInstallPlugin(input: { spec: string; global?: boolean }) {
+    const gui = client()
+    if (!gui) return
+    const result = await installPlugin(gui, input)
+    if (!result.ok) throw new Error(result.message ?? "Failed to install plugin.")
+    await refresh()
+    const targets = [result.server ? "server" : "", result.tui ? "TUI" : ""].filter(Boolean).join(" and ")
+    setNotice(`Installed ${input.spec}${targets ? ` for ${targets}` : ""}.`)
+  }
+
+  async function handleTogglePlugin(plugin: NonNullable<GuiSnapshot["plugins"]>[number]) {
+    const gui = client()
+    if (!gui) return
+    await togglePlugin(gui, { id: plugin.id, enabled: !plugin.enabled })
+    await refreshPlugins()
+    setNotice(`${plugin.enabled ? "Disabled" : "Enabled"} ${plugin.spec}.`)
   }
 
   function handleMoveRailSection(section: RailSectionName, offset: number) {
@@ -1839,8 +2073,8 @@ export function App() {
     setDropTarget(undefined)
   }
 
-  const paletteCommands = createMemo<PaletteCommand[]>(() =>
-    buildPaletteCommands({
+  const paletteCommands = createMemo<PaletteCommand[]>(() => [
+    ...buildPaletteCommands({
       visibleSessionCount: visibleSessions().length,
       currentRouteName: route().name,
       workspacePath: selectedSession()?.directory || client()?.directory,
@@ -1875,37 +2109,69 @@ export function App() {
         switchOrg: handleOrgSlash,
         switchTheme: handleThemeSlash,
         showHelp,
+        showKeyboardHelp: () => { setKeyboardHelpOpen(true) },
+        copyLastAssistantMessage,
+        copyTranscript: () => handleCopyTranscriptSlash(selectedSession()),
+        toggleCodeConceal: handleToggleCodeConcealSlash,
+        toggleTimestamps: handleToggleTimestampsSlash,
+        toggleThinking: handleToggleThinkingSlash,
+        toggleToolDetails: handleToggleToolDetailsSlash,
+        toggleScrollbar: handleToggleScrollbarSlash,
+        toggleGenericToolOutput: handleToggleGenericToolOutputSlash,
+        transcriptFirst: () => moveTranscript("first"),
+        transcriptLast: () => moveTranscript("last"),
+        transcriptNextMessage: () => moveTranscript("next"),
+        transcriptPreviousMessage: () => moveTranscript("previous"),
+        transcriptLastUser: () => moveTranscript("last-user"),
         focusComposer,
         refresh,
+        installPlugin: () => { setRoute({ name: "plugins" }) },
         openDocs: () => { window.open("https://opencode.ai/docs", "_blank", "noopener,noreferrer") },
         exitApp: () => void window.opencodex?.window("close"),
       },
     }),
-  )
+    ...guiPluginCommands(guiPlugins()).map(({ plugin, command }): PaletteCommand => ({
+      name: `gui-plugin.${plugin.manifest.id}.${command.id}`,
+      title: command.title,
+      category: "GUI Plugins",
+      description: command.description ?? plugin.manifest.name,
+      run: () => openWorkbenchPrompt(command.prompt),
+    })),
+  ])
 
-  function renderViewPane(item: ViewItem) {
-    const session = viewItemSession(item)
+  function renderViewPane(item: Accessor<ViewItem>) {
+    const paneID = createMemo(() => viewItemID(item()))
+    const session = createMemo(() => viewItemSession(item()))
+    const paneState = createMemo(() => viewPaneState(paneID()))
     return (
       <ViewPaneHost
-        item={item}
-        snapshot={snapshot()}
-        data={viewSessionData()}
-        emptyData={EMPTY_SESSION_DATA}
-        loading={viewLoadingSessions()}
+        item={item()}
+        data={item().kind === "session" ? viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA : EMPTY_SESSION_DATA}
+        loading={paneState().loading}
+        status={item().kind === "session" ? snapshot()?.sessionStatus[paneID()]?.type ?? "idle" : "idle"}
+        permissions={item().kind === "session" ? snapshot()?.permissions.filter((request) => request.sessionID === paneID()) ?? [] : []}
+        questions={item().kind === "session" ? snapshot()?.questions.filter((request) => request.sessionID === paneID()) ?? [] : []}
+        composerState={paneState()}
+        updateComposerState={(update) => updateViewPaneState(paneID(), update)}
         focusedSessionID={activeViewFocusedSessionID()}
         composerFocusRequest={viewComposerFocusRequest()}
         providers={snapshot()?.providers ?? []}
+        mcp={snapshot()?.mcp ?? {}}
+        mcpResources={snapshot()?.mcpResources ?? {}}
+        lsp={snapshot()?.lsp ?? []}
+        config={snapshot()?.config}
         agents={snapshot()?.agents ?? []}
+        findFiles={(input) => client() ? findFiles(client()!, input) : Promise.resolve([])}
         recentModels={recentModels()}
-        selectedAgent={viewAgentValue(session)}
-        setSelectedAgent={(sessionID, value) => setViewAgents((current) => ({ ...current, [sessionID]: value }))}
-        selectedModel={viewModelValue(session)}
+        selectedAgent={viewAgentValue(paneID(), session())}
+        setSelectedAgent={(sessionID, value) => updateViewPaneState(sessionID, (state) => state.selectedAgent === value ? state : { ...state, selectedAgent: value })}
+        selectedModel={viewModelValue(paneID(), session())}
         setSelectedModel={(sessionID, value) => {
-          setViewModels((current) => ({ ...current, [sessionID]: value }))
+          updateViewPaneState(sessionID, (state) => state.selectedModel === value && state.selectedVariant === "" ? state : { ...state, selectedModel: value, selectedVariant: "" })
           if (value) rememberModel(value)
         }}
-        selectedVariant={viewVariantValue(session)}
-        setSelectedVariant={(sessionID, value) => setViewVariants((current) => ({ ...current, [sessionID]: value }))}
+        selectedVariant={viewVariantValue(paneID(), session())}
+        setSelectedVariant={(sessionID, value) => updateViewPaneState(sessionID, (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value })}
         focus={(sessionID, focusComposer) => focusViewSession(sessionID, { focusComposer })}
         submit={(event, item, text) => void runAction(() => submitViewPrompt(event, item, text))}
         replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
@@ -1915,23 +2181,33 @@ export function App() {
         renameSession={(session) => void runAction(() => handleRenameSession(session))}
         moveSession={(session) => void runAction(() => handleMoveSession(session))}
         deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
-        slashCommands={sessionSlashCommands(session, {
-          data: viewSessionData()[session.id] ?? EMPTY_SESSION_DATA,
-          selectedAgent: viewAgentValue(session),
-          selectedModel: viewModelValue(session),
-          selectedVariant: viewVariantValue(session),
+        slashCommands={sessionSlashCommands(session(), {
+          data: viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA,
+          selectedAgent: viewAgentValue(paneID(), session()),
+          selectedModel: viewModelValue(paneID(), session()),
+          selectedVariant: viewVariantValue(paneID(), session()),
           switchModel: () => switchModelFor({
-            setSelectedModel: (value) => setViewModels((current) => ({ ...current, [session.id]: value })),
-            setSelectedVariant: (value) => setViewVariants((current) => ({ ...current, [session.id]: value })),
+            setSelectedModel: (value) => updateViewPaneState(paneID(), (state) => state.selectedModel === value ? state : { ...state, selectedModel: value }),
+            setSelectedVariant: (value) => updateViewPaneState(paneID(), (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value }),
           }),
-          switchAgent: () => switchAgentFor((value) => setViewAgents((current) => ({ ...current, [session.id]: value }))),
+          switchAgent: () => switchAgentFor((value) => updateViewPaneState(paneID(), (state) => state.selectedAgent === value ? state : { ...state, selectedAgent: value })),
           switchVariant: () => switchVariantFor({
-            selectedModel: viewModelValue(session),
-            setSelectedVariant: (value) => setViewVariants((current) => ({ ...current, [session.id]: value })),
+            selectedModel: viewModelValue(paneID(), session()),
+            setSelectedVariant: (value) => updateViewPaneState(paneID(), (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value }),
           }),
         })}
         showTimestamps={showTranscriptTimestamps()}
+        concealCodeBlocks={concealTranscriptCodeBlocks()}
         showThinking={showTranscriptThinking()}
+        showToolDetails={showTranscriptToolDetails()}
+        showScrollbar={showTranscriptScrollbar()}
+        showGenericToolOutput={showTranscriptGenericToolOutput()}
+        toggleCodeConceal={handleToggleCodeConcealSlash}
+        toggleTimestamps={handleToggleTimestampsSlash}
+        toggleThinking={handleToggleThinkingSlash}
+        toggleToolDetails={handleToggleToolDetailsSlash}
+        toggleScrollbar={handleToggleScrollbarSlash}
+        toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
         loadOlderMessages={(sessionID, cursor) => runAction(() => loadOlderViewSessionMessages(sessionID, cursor))}
       />
     )
@@ -1939,6 +2215,7 @@ export function App() {
 
   return (
     <div class="app-shell" classList={{ "rail-collapsed": railCollapsed() }}>
+      <style>{guiPluginThemeCss(guiPlugins())}</style>
       <Titlebar />
       <RailSidebar
         snapshot={snapshot()}
@@ -2026,7 +2303,12 @@ export function App() {
                     prompt={prompt()}
                     setPrompt={setPrompt}
                     providers={snapshot()?.providers ?? []}
+                    mcp={snapshot()?.mcp ?? {}}
+                    mcpResources={snapshot()?.mcpResources ?? {}}
+                    lsp={snapshot()?.lsp ?? []}
+                    config={snapshot()?.config}
                     agents={snapshot()?.agents ?? []}
+                    findFiles={(input) => client() ? findFiles(client()!, input) : Promise.resolve([])}
                     selectedAgent={selectedAgent()}
                     setSelectedAgent={setSelectedAgent}
                     selectedModel={selectedModel()}
@@ -2052,8 +2334,18 @@ export function App() {
                       data: activeSessionData(),
                       restorePrompt: setPrompt,
                     })}
+                    concealCodeBlocks={concealTranscriptCodeBlocks()}
                     showTimestamps={showTranscriptTimestamps()}
                     showThinking={showTranscriptThinking()}
+                    showToolDetails={showTranscriptToolDetails()}
+                    showScrollbar={showTranscriptScrollbar()}
+                    showGenericToolOutput={showTranscriptGenericToolOutput()}
+                    toggleCodeConceal={handleToggleCodeConcealSlash}
+                    toggleTimestamps={handleToggleTimestampsSlash}
+                    toggleThinking={handleToggleThinkingSlash}
+                    toggleToolDetails={handleToggleToolDetailsSlash}
+                    toggleScrollbar={handleToggleScrollbarSlash}
+                    toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
                     status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
                     pending={route().name === "new-session"}
                     loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
@@ -2150,6 +2442,61 @@ export function App() {
                 }}
               />
             </Match>
+            <Match when={route().name === "plugins"}>
+              <PluginsPage
+                plugins={snapshot()?.plugins ?? []}
+                guiPlugins={guiPlugins()}
+                refresh={() => runAction(refreshPlugins)}
+                install={(input) => runAction(() => handleInstallPlugin(input))}
+                toggle={(plugin) => runAction(() => handleTogglePlugin(plugin))}
+                installGuiPlugin={handleInstallGuiPlugin}
+                toggleGuiPlugin={handleToggleGuiPlugin}
+                removeGuiPlugin={handleRemoveGuiPlugin}
+              />
+            </Match>
+            <Match when={route().name === "workbench"}>
+              <WorkbenchPage
+                gui={client()}
+                snapshot={snapshot()}
+                projects={snapshot()?.projects ?? []}
+                recentModels={recentModels()}
+                selectedAgent={selectedAgent()}
+                setSelectedAgent={setSelectedAgent}
+                selectedModel={selectedModel()}
+                setSelectedModel={(value) => {
+                  setSelectedModel(value)
+                  setSelectedVariant("")
+                  if (value) rememberModel(value)
+                }}
+                selectedVariant={selectedVariant()}
+                setSelectedVariant={setSelectedVariant}
+                rememberModel={rememberModel}
+                refresh={refresh}
+                replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
+                replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
+                rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
+                abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
+                renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                slashCommands={(session, data, restorePrompt) => sessionSlashCommands(session, { data, restorePrompt })}
+                concealCodeBlocks={concealTranscriptCodeBlocks()}
+                showTimestamps={showTranscriptTimestamps()}
+                showThinking={showTranscriptThinking()}
+                showToolDetails={showTranscriptToolDetails()}
+                showScrollbar={showTranscriptScrollbar()}
+                showGenericToolOutput={showTranscriptGenericToolOutput()}
+                toggleCodeConceal={handleToggleCodeConcealSlash}
+                toggleTimestamps={handleToggleTimestampsSlash}
+                toggleThinking={handleToggleThinkingSlash}
+                toggleToolDetails={handleToggleToolDetailsSlash}
+                toggleScrollbar={handleToggleScrollbarSlash}
+                toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
+                sendToComposer={openWorkbenchPrompt}
+                openDiff={() => setRoute({ name: "diff", mode: "git", sessionID: selectedSession()?.id })}
+                openExternal={(url) => void globalThis.open(url, "_blank", "noopener")}
+              />
+            </Match>
             <Match when={route().name === "diff"}>
               {(() => {
                 const current = route()
@@ -2190,6 +2537,7 @@ export function App() {
           void runAction(async () => { await command.run() })
         }}
       />
+      <KeyboardHelpModal open={keyboardHelpOpen()} commands={paletteCommands()} close={() => setKeyboardHelpOpen(false)} />
       <DialogModal dialog={dialog()} close={() => setDialog(undefined)} />
     </div>
   )
@@ -2261,6 +2609,19 @@ function writeRecentModels(values: string[]) {
 function readThemeMode(): GuiThemeMode {
   if (typeof localStorage === "undefined") return "dark"
   return localStorage.getItem("opencodex.gui.theme") === "light" ? "light" : "dark"
+}
+
+function readBoolPreference(key: string, fallback: boolean) {
+  if (typeof localStorage === "undefined") return fallback
+  const value = localStorage.getItem(key)
+  if (value === "true") return true
+  if (value === "false") return false
+  return fallback
+}
+
+function writeBoolPreference(key: string, value: boolean) {
+  if (typeof localStorage === "undefined") return
+  localStorage.setItem(key, value ? "true" : "false")
 }
 
 type SidebarPreferences = {

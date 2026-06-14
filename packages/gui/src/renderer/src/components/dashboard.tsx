@@ -96,7 +96,7 @@ function DashboardProjectsSection(props: {
                 <button onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</button>
                 <button onClick={() => props.renameProject(project.id, project.name ?? project.project.name)}>Rename</button>
                 <button onClick={() => props.editProjectFolders(project.id, project.folders.map((folder) => folder.path))}>Folders</button>
-                <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}>Delete</button>
+                <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}><Icon name="trash" /> Delete</button>
               </div>
             </article>
           )}

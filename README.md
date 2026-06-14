@@ -182,6 +182,20 @@ To uninstall later:
 .\install-windows.ps1 -Uninstall
 ```
 
+### Desktop GUI public preview
+
+The desktop GUI is published as preview-quality GitHub Release assets alongside the CLI. Download the asset for your platform from:
+
+```text
+https://github.com/opencodex/opencodex/releases/latest
+```
+
+Public GUI preview builds are expected to be signed on Windows and signed/notarized on macOS. Verify downloaded assets with `SHA256SUMS-GUI` from the same release. If a release is explicitly marked unsigned, macOS, Windows, or Linux may show an operating-system trust prompt before first launch.
+
+The GUI launches a local OpencodeX sidecar and uses the same session store as the TUI. You can create or continue work in either surface, then switch back without migration.
+
+See [Public Preview Notes](docs/PUBLIC_PREVIEW.md) for known limitations, validation expectations, and issue-reporting guidance.
+
 ### Build from source: macOS
 
 The recommended path is to build from source with the bundled script.

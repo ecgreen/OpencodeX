@@ -1,15 +1,20 @@
-import type { Agent, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, FileNode, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { GuiSnapshot, SessionData } from "../lib/store"
+import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
 import { ViewPane } from "./view-pane"
 
 export function ViewPaneHost(props: {
   item: ViewItem
-  snapshot?: GuiSnapshot
-  data: Record<string, SessionData>
-  emptyData: SessionData
-  loading: Record<string, boolean>
+  data: SessionData
+  loading: boolean
+  status: string
+  permissions: PermissionRequest[]
+  questions: QuestionRequest[]
+  composerState: ViewPaneRuntimeState
+  updateComposerState: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   focusedSessionID: string
   composerFocusRequest: { sessionID: string; token: number }
   recentModels: string[]
@@ -17,12 +22,17 @@ export function ViewPaneHost(props: {
   selectedModel: string
   selectedVariant: string
   providers: Provider[]
+  mcp?: GuiSnapshot["mcp"]
+  mcpResources?: GuiSnapshot["mcpResources"]
+  lsp?: GuiSnapshot["lsp"]
+  config?: GuiSnapshot["config"]
   agents: Agent[]
+  findFiles?: (input: { query: string; directory?: string }) => Promise<FileNode[]>
   setSelectedAgent: (sessionID: string, value: string) => void
   setSelectedModel: (sessionID: string, value: string) => void
   setSelectedVariant: (sessionID: string, value: string) => void
   focus: (sessionID: string, focusComposer: boolean) => void
-  submit: (event: SubmitEvent, item: ViewItem, text: string) => void
+  submit: (event: SubmitEvent, item: ViewItem, prompt: GuiPromptInfo) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
@@ -31,8 +41,18 @@ export function ViewPaneHost(props: {
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   slashCommands: SessionSlashCommand[]
+  concealCodeBlocks: boolean
   showTimestamps: boolean
   showThinking: boolean
+  showToolDetails: boolean
+  showScrollbar: boolean
+  showGenericToolOutput: boolean
+  toggleCodeConceal: () => void
+  toggleTimestamps: () => void
+  toggleThinking: () => void
+  toggleToolDetails: () => void
+  toggleScrollbar: () => void
+  toggleGenericToolOutput: () => void
   loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
 }) {
   const session = () => viewItemSession(props.item)
@@ -43,11 +63,18 @@ export function ViewPaneHost(props: {
       pending={props.item.kind === "pending"}
       focused={() => props.focusedSessionID === id()}
       composerFocusToken={() => props.composerFocusRequest.sessionID === id() ? props.composerFocusRequest.token : 0}
-      data={props.item.kind === "session" ? props.data[id()] ?? props.emptyData : props.emptyData}
-      loading={props.loading[id()] === true}
-      status={props.item.kind === "session" ? props.snapshot?.sessionStatus[id()]?.type ?? "idle" : "idle"}
+      data={props.data}
+      loading={props.loading}
+      status={props.status}
+      composerState={props.composerState}
+      updateComposerState={props.updateComposerState}
       providers={props.providers}
+      mcp={props.mcp ?? {}}
+      mcpResources={props.mcpResources}
+      lsp={props.lsp ?? []}
+      config={props.config}
       agents={props.agents}
+      findFiles={props.findFiles}
       recentModels={props.recentModels}
       selectedAgent={props.selectedAgent}
       setSelectedAgent={(value) => props.setSelectedAgent(id(), value)}
@@ -55,8 +82,8 @@ export function ViewPaneHost(props: {
       setSelectedModel={(value) => props.setSelectedModel(id(), value)}
       selectedVariant={props.selectedVariant}
       setSelectedVariant={(value) => props.setSelectedVariant(id(), value)}
-      permissions={props.item.kind === "session" ? props.snapshot?.permissions.filter((request) => request.sessionID === id()) ?? [] : []}
-      questions={props.item.kind === "session" ? props.snapshot?.questions.filter((request) => request.sessionID === id()) ?? [] : []}
+      permissions={props.permissions}
+      questions={props.questions}
       focus={(focusComposer) => props.focus(id(), focusComposer)}
       submit={(event, text) => props.submit(event, props.item, text)}
       replyPermission={props.replyPermission}
@@ -67,8 +94,18 @@ export function ViewPaneHost(props: {
       moveSession={props.moveSession}
       deleteSession={props.deleteSession}
       slashCommands={props.slashCommands}
+      concealCodeBlocks={props.concealCodeBlocks}
       showTimestamps={props.showTimestamps}
       showThinking={props.showThinking}
+      showToolDetails={props.showToolDetails}
+      showScrollbar={props.showScrollbar}
+      showGenericToolOutput={props.showGenericToolOutput}
+      toggleCodeConceal={props.toggleCodeConceal}
+      toggleTimestamps={props.toggleTimestamps}
+      toggleThinking={props.toggleThinking}
+      toggleToolDetails={props.toggleToolDetails}
+      toggleScrollbar={props.toggleScrollbar}
+      toggleGenericToolOutput={props.toggleGenericToolOutput}
       loadOlderMessages={(cursor) => props.loadOlderMessages(id(), cursor)}
     />
   )

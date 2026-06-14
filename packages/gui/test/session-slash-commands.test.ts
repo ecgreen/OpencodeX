@@ -46,8 +46,12 @@ describe("GUI session slash command catalog", () => {
       "unshare",
       "undo",
       "redo",
+      "conceal",
       "timestamps",
       "thinking",
+      "actions",
+      "scrollbar",
+      "generic-output",
       "copy",
       "export",
     ])
@@ -55,6 +59,10 @@ describe("GUI session slash command catalog", () => {
     expect(command(commands, "compact")?.aliases).toEqual(["summarize"])
     expect(command(commands, "timestamps")?.aliases).toEqual(["toggle-timestamps"])
     expect(command(commands, "thinking")?.aliases).toEqual(["toggle-thinking"])
+    expect(command(commands, "conceal")?.aliases).toEqual(["toggle-conceal", "code-conceal"])
+    expect(command(commands, "actions")?.aliases).toEqual(["tool-details", "toggle-actions"])
+    expect(command(commands, "scrollbar")?.aliases).toEqual(["toggle-scrollbar"])
+    expect(command(commands, "generic-output")?.aliases).toEqual(["generic-tool-output"])
     expect(command(commands, "connect")?.disabled).toBeUndefined()
   })
 
@@ -73,12 +81,16 @@ describe("GUI session slash command catalog", () => {
     await command(commands, "mcps")?.run()
     await command(commands, "org")?.run()
     await command(commands, "rename")?.run()
+    await command(commands, "conceal")?.run()
+    await command(commands, "actions")?.run()
+    await command(commands, "scrollbar")?.run()
+    await command(commands, "generic-output")?.run()
     await command(commands, "copy")?.run()
 
     expect(command(commands, "unshare")?.disabled).toBe("This session is not shared.")
     expect(command(commands, "redo")?.disabled).toBe("No message to redo.")
     expect(command(commands, "variants")?.disabled).toBe("The selected model does not expose variants.")
-    expect(calls).toEqual(["model", "agent", "connect", "mcps", "org", "rename", "copy"])
+    expect(calls).toEqual(["model", "agent", "connect", "mcps", "org", "rename", "conceal", "actions", "scrollbar", "generic-output", "copy"])
   })
 })
 
@@ -123,8 +135,12 @@ function actions(calls: string[]) {
     unshareSession: () => calls.push("unshare"),
     undoMessage: () => calls.push("undo"),
     redoMessage: () => calls.push("redo"),
+    toggleCodeConceal: () => calls.push("conceal"),
     toggleTimestamps: () => calls.push("timestamps"),
     toggleThinking: () => calls.push("thinking"),
+    toggleToolDetails: () => calls.push("actions"),
+    toggleScrollbar: () => calls.push("scrollbar"),
+    toggleGenericToolOutput: () => calls.push("generic-output"),
     copyTranscript: () => calls.push("copy"),
     exportTranscript: () => calls.push("export"),
   }

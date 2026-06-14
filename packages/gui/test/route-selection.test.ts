@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
 import { activeSessionIDForRoute, activeSessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "../src/renderer/src/lib/route-selection"
-import type { ViewItem } from "../src/renderer/src/lib/view-items"
+import { viewItemsMembershipKey, viewSessionsSyncKey, type ViewItem } from "../src/renderer/src/lib/view-items"
 
 describe("GUI route selection helpers", () => {
   test("selects existing and pending sessions from routes", () => {
@@ -33,6 +33,16 @@ describe("GUI route selection helpers", () => {
     expect(focusedViewItemID({ localID: "missing", persistedID: "s2", items })).toBe("s2")
     expect(focusedViewItemID({ localID: "", items })).toBe("s1")
   })
+
+  test("separates stable view membership from volatile sync keys", () => {
+    const before = [session("s1", 1), session("s2", 1)]
+    const after = [session("s1", 9), session("s2", 1)]
+    const itemsBefore: ViewItem[] = before.map((item) => ({ kind: "session", session: item }))
+    const itemsAfter: ViewItem[] = after.map((item) => ({ kind: "session", session: item }))
+
+    expect(viewItemsMembershipKey("v1", itemsAfter)).toBe(viewItemsMembershipKey("v1", itemsBefore))
+    expect(viewSessionsSyncKey("v1", after)).not.toBe(viewSessionsSyncKey("v1", before))
+  })
 })
 
 function snapshot(): GuiSnapshot {
@@ -51,8 +61,8 @@ function snapshot(): GuiSnapshot {
   }
 }
 
-function session(id: string): Session {
-  return { id, directory: "C:\\project", time: { updated: 1 } } as Session
+function session(id: string, updated = 1): Session {
+  return { id, directory: "C:\\project", time: { updated } } as Session
 }
 
 function view(id: string, focusedSessionID?: string): OpencodeXView {

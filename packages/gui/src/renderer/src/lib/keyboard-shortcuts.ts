@@ -1,4 +1,4 @@
-export type GuiShortcutRouteName = "dashboard" | "projects" | "swarms" | "views"
+export type GuiShortcutRouteName = "dashboard" | "projects" | "swarms" | "views" | "plugins"
 
 export type GuiShortcutAction =
   | { type: "abort-session"; sessionID: string }
@@ -9,6 +9,9 @@ export type GuiShortcutAction =
   | { type: "focus-composer" }
   | { type: "create-session" }
   | { type: "refresh" }
+  | { type: "show-keyboard-help" }
+  | { type: "copy-last-assistant" }
+  | { type: "transcript"; action: "first" | "last" | "next" | "previous" | "last-user" }
   | { type: "route"; route: GuiShortcutRouteName }
 
 export type GuiShortcutContext = {
@@ -26,6 +29,9 @@ export type GuiShortcutHandlers = {
   focusComposer: () => void
   createSession: () => void
   refresh: () => void
+  showKeyboardHelp: () => void
+  copyLastAssistantMessage: () => void
+  transcript: (action: "first" | "last" | "next" | "previous" | "last-user") => void
   route: (route: GuiShortcutRouteName) => void
 }
 
@@ -34,7 +40,7 @@ const ROUTES_BY_KEY: Record<string, GuiShortcutRouteName | undefined> = {
   "1": "projects",
   "2": "swarms",
   "3": "views",
-  "4": "views",
+  "4": "plugins",
 }
 
 const DIRECT_ACTIONS_BY_KEY: Record<string, GuiShortcutAction | undefined> = {
@@ -43,13 +49,22 @@ const DIRECT_ACTIONS_BY_KEY: Record<string, GuiShortcutAction | undefined> = {
   n: { type: "create-session" },
   r: { type: "refresh" },
 }
-const GLOBAL_SHORTCUT_KEYS = new Set(["p", ...Object.keys(DIRECT_ACTIONS_BY_KEY), ...Object.keys(ROUTES_BY_KEY)])
+const GLOBAL_SHORTCUT_KEYS = new Set(["p", "?", "c", "home", "end", "arrowdown", "arrowup", "u", ...Object.keys(DIRECT_ACTIONS_BY_KEY), ...Object.keys(ROUTES_BY_KEY)])
 
-export function guiShortcutAction(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">, context: GuiShortcutContext): GuiShortcutAction | undefined {
+export function guiShortcutAction(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">, context: GuiShortcutContext): GuiShortcutAction | undefined {
   const key = event.key.toLowerCase()
   const escapeAction = escapeShortcutAction(event.key, context)
   if (escapeAction) return escapeAction
+  if (event.altKey && !context.dialogOpen && !context.editing) {
+    if (key === "home") return { type: "transcript", action: "first" }
+    if (key === "end") return { type: "transcript", action: "last" }
+    if (key === "arrowdown") return { type: "transcript", action: "next" }
+    if (key === "arrowup") return { type: "transcript", action: "previous" }
+    if (key === "u") return { type: "transcript", action: "last-user" }
+  }
   if (!(event.ctrlKey || event.metaKey)) return
+  if (key === "?" || (event.shiftKey && key === "/")) return { type: "show-keyboard-help" }
+  if (event.shiftKey && key === "c") return { type: "copy-last-assistant" }
   if (key === "p") return commandPaletteShortcutAction(context)
   if (context.dialogOpen || context.editing) return GLOBAL_SHORTCUT_KEYS.has(key) ? { type: "prevent-global-shortcut" } : undefined
   const action = DIRECT_ACTIONS_BY_KEY[key]
@@ -67,6 +82,9 @@ export function runGuiShortcutAction(action: GuiShortcutAction, handlers: GuiSho
   if (action.type === "focus-composer") return handlers.focusComposer()
   if (action.type === "create-session") return handlers.createSession()
   if (action.type === "refresh") return handlers.refresh()
+  if (action.type === "show-keyboard-help") return handlers.showKeyboardHelp()
+  if (action.type === "copy-last-assistant") return handlers.copyLastAssistantMessage()
+  if (action.type === "transcript") return handlers.transcript(action.action)
   return handlers.route(action.route)
 }
 

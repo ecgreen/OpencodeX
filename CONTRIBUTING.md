@@ -1,6 +1,6 @@
-# Contributing to OpenCode
+# Contributing to OpencodeX
 
-We want to make it easy for you to contribute to OpenCode. Here are the most common type of changes that get merged:
+We want to make it easy for you to contribute to OpencodeX. Here are the most common type of changes that get merged:
 
 - Bug fixes
 - Additional LSPs / Formatters
@@ -29,7 +29,7 @@ Want to take on an issue? Leave a comment and a maintainer may assign it to you 
 New providers shouldn't require many if ANY code changes, but if you want to add support for a new provider first make a PR to:
 https://github.com/anomalyco/models.dev
 
-## Developing OpenCode
+## Developing OpencodeX
 
 - Requirements: Bun 1.3+
 - Install dependencies and start the dev server from the repo root:
@@ -70,9 +70,37 @@ Then run it with:
 Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
 
 - Core pieces:
-  - `packages/opencode`: OpenCode core business logic & server.
+  - `packages/opencode`: OpencodeX core business logic & server.
   - `packages/opencode/src/cli/cmd/tui/`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
+  - `packages/gui`: Electron desktop GUI public preview.
   - `packages/plugin`: Source for `@opencode-ai/plugin`
+
+### Developing the GUI preview
+
+From the repo root:
+
+```bash
+bun dev:electron
+```
+
+Run GUI validation from the package directory:
+
+```bash
+cd packages/gui
+bun run typecheck
+bun test
+bun run qa
+```
+
+Package a local desktop build:
+
+```bash
+cd packages/gui
+bun run package
+bun run smoke:packaged
+```
+
+Packaged GUI builds launch a local OpencodeX sidecar coordinator and talk to it through the generated SDK. The GUI should not read or write backend SQLite files directly.
 
 ### Understanding bun dev vs opencode
 

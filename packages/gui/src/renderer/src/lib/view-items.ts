@@ -62,6 +62,16 @@ export function viewItemID(item: ViewItem) {
   return item.kind === "session" ? item.session.id : item.slot.id
 }
 
+export function viewItemsMembershipKey(viewID: string | undefined, items: ViewItem[]) {
+  if (!viewID) return ""
+  return [viewID, ...items.map((item) => viewItemID(item))].join("\n")
+}
+
+export function viewSessionsSyncKey(viewID: string | undefined, sessions: Session[]) {
+  if (!viewID) return ""
+  return [viewID, ...sessions.map((session) => `${session.id}:${session.directory ?? ""}:${session.time.updated}`)].join("\n")
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }

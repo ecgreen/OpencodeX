@@ -25,6 +25,7 @@ type SidecarLaunch = {
   args: string[]
   cwd: string
   database?: string
+  startupLog?: string
 }
 
 type CoordinatorManifest = {
@@ -92,6 +93,10 @@ function coordinatorManifestPath(key: string) {
   return path.join(COORDINATOR_ROOT, `${key}.json`)
 }
 
+function coordinatorStartupLogPath(key: string) {
+  return path.join(COORDINATOR_ROOT, `${key}.startup.log`)
+}
+
 function coordinatorClientDir(key: string) {
   return path.join(COORDINATOR_ROOT, `${key}.clients`)
 }
@@ -124,15 +129,16 @@ function launch(directory: string, key: string, database?: string): SidecarLaunc
 
   const bun = findExecutable("bun") ?? findExecutable("bun.exe")
   if (!bun) throw new Error("Missing Bun for OpencodeX GUI dev sidecar. Install Bun or set OPENCODEX_GUI_SIDECAR.")
+  const packageDirectory = opencodePackageDirectory()
   return {
     command: bun,
     args: [
       "run",
       "--conditions=browser",
-      path.join(opencodePackageDirectory(), "src", "index.ts"),
+      path.join(packageDirectory, "src", "index.ts"),
       ...coordinatorArgs(directory, key),
     ],
-    cwd: directory,
+    cwd: packageDirectory,
     database,
   }
 }
@@ -302,7 +308,41 @@ function containsPath(parent: string, child: string) {
 
 function startError(error: unknown, started: SidecarLaunch) {
   const message = error instanceof Error ? error.message : String(error)
-  return new Error(`Failed to start OpencodeX sidecar with "${started.command} ${started.args.join(" ")}": ${message}`)
+  return new Error(
+    `Failed to start OpencodeX sidecar with "${started.command} ${started.args.join(" ")}": ${message}${startupLogDetails(started)}`,
+  )
+}
+
+function startupLogDetails(started: SidecarLaunch) {
+  if (!started.startupLog) return ""
+  const tail = readStartupLogTail(started.startupLog)
+  if (!tail) return `\nStartup log: ${started.startupLog}`
+  return `\nStartup log: ${started.startupLog}\n${tail}`
+}
+
+function readStartupLogTail(file: string) {
+  try {
+    const content = fs.readFileSync(file, "utf8").trim()
+    if (!content) return undefined
+    return content.length > 4_000 ? content.slice(-4_000) : content
+  } catch {
+    return undefined
+  }
+}
+
+function createStartupLog(started: SidecarLaunch) {
+  fs.mkdirSync(COORDINATOR_ROOT, { recursive: true })
+  fs.writeFileSync(
+    started.startupLog!,
+    [
+      `[${new Date().toISOString()}] starting OpencodeX coordinator`,
+      `command: ${started.command}`,
+      `args: ${started.args.join(" ")}`,
+      `cwd: ${started.cwd}`,
+      "",
+    ].join("\n"),
+  )
+  return fs.openSync(started.startupLog!, "a")
 }
 
 async function readCoordinatorManifest(key: string) {
@@ -390,13 +430,14 @@ function startCoordinatorClientLease(key: string) {
 async function spawnCoordinator(directory: string, key: string, database: string | undefined) {
   const password = randomBytes(32).toString("base64url")
   const token = randomBytes(32).toString("base64url")
-  const started = launch(directory, key, database)
+  const started = { ...launch(directory, key, database), startupLog: coordinatorStartupLogPath(key) }
   const child = (() => {
+    const startupLog = createStartupLog(started)
     try {
-      return spawn(started.command, started.args, {
+      const spawned = spawn(started.command, started.args, {
         cwd: started.cwd,
         detached: process.platform !== "win32",
-        stdio: "ignore",
+        stdio: ["ignore", startupLog, startupLog],
         env: {
           ...process.env,
           ...selectedDatabaseEnv(started.database),
@@ -409,7 +450,10 @@ async function spawnCoordinator(directory: string, key: string, database: string
         },
         windowsHide: true,
       })
+      fs.closeSync(startupLog)
+      return spawned
     } catch (error) {
+      fs.closeSync(startupLog)
       throw startError(error, started)
     }
   })()
@@ -431,14 +475,14 @@ async function waitForCoordinator(directory: string, child: ChildProcess, starte
     failure = startError(error, started)
   })
   child.once("exit", (code, signal) => {
-    failure = new Error(`OpencodeX coordinator exited before startup (${signal ?? code ?? "unknown"})`)
+    failure = new Error(`OpencodeX coordinator exited before startup (${signal ?? code ?? "unknown"})${startupLogDetails(started)}`)
   })
   while (Date.now() - startedAt < START_TIMEOUT) {
     if (failure) throw failure
     if (await activeCoordinator(directory)) return
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
-  throw new Error("Timed out waiting for OpencodeX coordinator to start")
+  throw new Error(`Timed out waiting for OpencodeX coordinator to start${startupLogDetails(started)}`)
 }
 
 async function coordinatorConnection(directory: string) {

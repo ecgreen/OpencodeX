@@ -1,6 +1,10 @@
+import type { PromptPart } from "./store"
+
 export type SessionSlashCommandContext = {
   draftPrompt: string
+  draftParts?: PromptPart[]
   setDraftPrompt: (value: string) => void
+  setDraftParts?: (value: PromptPart[]) => void
   openModelPicker: () => void
 }
 
@@ -50,8 +54,12 @@ export type SessionSlashCommandActions = {
   unshareSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   undoMessage: (context?: SessionSlashCommandContext) => void | Promise<void>
   redoMessage: (context?: SessionSlashCommandContext) => void | Promise<void>
+  toggleCodeConceal: (context?: SessionSlashCommandContext) => void | Promise<void>
   toggleTimestamps: (context?: SessionSlashCommandContext) => void | Promise<void>
   toggleThinking: (context?: SessionSlashCommandContext) => void | Promise<void>
+  toggleToolDetails: (context?: SessionSlashCommandContext) => void | Promise<void>
+  toggleScrollbar: (context?: SessionSlashCommandContext) => void | Promise<void>
+  toggleGenericToolOutput: (context?: SessionSlashCommandContext) => void | Promise<void>
   copyTranscript: (context?: SessionSlashCommandContext) => void | Promise<void>
   exportTranscript: (context?: SessionSlashCommandContext) => void | Promise<void>
 }
@@ -327,6 +335,14 @@ export function buildSessionSlashCommands(input: {
       run: input.actions.redoMessage,
     },
     {
+      name: "conceal",
+      title: "Toggle code concealment",
+      detail: "Show or conceal markdown code blocks",
+      category: "Session",
+      aliases: ["toggle-conceal", "code-conceal"],
+      run: input.actions.toggleCodeConceal,
+    },
+    {
       name: "timestamps",
       title: "Toggle timestamps",
       detail: "Show or hide message timestamps",
@@ -341,6 +357,30 @@ export function buildSessionSlashCommands(input: {
       category: "Session",
       aliases: ["toggle-thinking"],
       run: input.actions.toggleThinking,
+    },
+    {
+      name: "actions",
+      title: "Toggle tool details",
+      detail: "Show or hide tool details in the transcript",
+      category: "Session",
+      aliases: ["tool-details", "toggle-actions"],
+      run: input.actions.toggleToolDetails,
+    },
+    {
+      name: "scrollbar",
+      title: "Toggle session scrollbar",
+      detail: "Show or hide the transcript scrollbar",
+      category: "Session",
+      aliases: ["toggle-scrollbar"],
+      run: input.actions.toggleScrollbar,
+    },
+    {
+      name: "generic-output",
+      title: "Toggle generic tool output",
+      detail: "Show or hide output for unknown/custom tools",
+      category: "Session",
+      aliases: ["generic-tool-output"],
+      run: input.actions.toggleGenericToolOutput,
     },
     {
       name: "copy",

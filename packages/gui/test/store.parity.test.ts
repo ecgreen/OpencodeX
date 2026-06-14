@@ -14,6 +14,8 @@ import {
   moveSession,
   renameProject,
   renameSession,
+  runSessionCommand,
+  runShellCommand,
   sendPrompt,
   updateProject,
   updateProjectFolders,
@@ -117,6 +119,33 @@ describe("GUI store backend parity", () => {
     expect(calls).toContain("view.create:session-list")
     expect(calls).toContain("session.promptAsync:session-list:hello:build:anthropic/claude-sonnet:fast")
     expect(calls.find((call) => call.startsWith("session.promptAsync.messageID:"))).toMatch(/^session\.promptAsync\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+  })
+
+  test("sends server command and shell payloads through TUI-equivalent APIs", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls)
+
+    await runSessionCommand(gui, "session-list", {
+      command: "review",
+      arguments: "staged changes",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet" },
+      variant: "fast",
+      parts: [
+        { type: "text", text: "/review staged changes" },
+        { type: "file", mime: "text/plain", filename: "src/app.ts", url: "file:///src/app.ts" },
+      ],
+    })
+    await runShellCommand(gui, "session-list", {
+      command: "bun test",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet" },
+    })
+
+    expect(calls).toContain("session.command:session-list:review:staged changes:build:anthropic/claude-sonnet:fast:1")
+    expect(calls.find((call) => call.startsWith("session.command.messageID:"))).toMatch(/^session\.command\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    expect(calls).toContain("session.shell:session-list:bun test:build:anthropic/claude-sonnet")
+    expect(calls.find((call) => call.startsWith("session.shell.messageID:"))).toMatch(/^session\.shell\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
   })
 
   test("prepares prompt targets for existing and pending sessions", async () => {
@@ -492,6 +521,16 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
         promptAsync: async (input: { sessionID: string; messageID?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: Array<{ type: string; text?: string }> }) => {
           calls.push(`session.promptAsync:${input.sessionID}:${input.parts?.[0]?.text}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}:${input.variant ?? ""}`)
           calls.push(`session.promptAsync.messageID:${input.messageID ?? ""}`)
+          return { data: true }
+        },
+        command: async (input: { sessionID: string; messageID?: string; command: string; arguments: string; agent?: string; model?: string; variant?: string; parts?: Array<{ type: string }> }) => {
+          calls.push(`session.command:${input.sessionID}:${input.command}:${input.arguments}:${input.agent ?? ""}:${input.model ?? ""}:${input.variant ?? ""}:${input.parts?.length ?? 0}`)
+          calls.push(`session.command.messageID:${input.messageID ?? ""}`)
+          return { data: true }
+        },
+        shell: async (input: { sessionID: string; messageID?: string; command: string; agent?: string; model?: { providerID: string; modelID: string } }) => {
+          calls.push(`session.shell:${input.sessionID}:${input.command}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}`)
+          calls.push(`session.shell.messageID:${input.messageID ?? ""}`)
           return { data: true }
         },
         messages: async (input: { sessionID: string; limit?: number; renderBudget?: number; before?: string }) => {

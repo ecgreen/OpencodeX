@@ -1,0 +1,65 @@
+name: Install failure
+description: Report a CLI or GUI installation problem
+title: "[INSTALL]: "
+labels:
+  - install
+body:
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - CLI/TUI
+        - Desktop GUI
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: OpencodeX version
+      placeholder: "1.15.13 or release tag"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11, macOS 14, Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: method
+    attributes:
+      label: Install method
+      options:
+        - install script
+        - install-windows.ps1
+        - GitHub Release GUI asset
+        - local build
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Command output or installer error
+      description: Paste the smallest useful output. Redact tokens, keys, paths, or usernames if needed.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true

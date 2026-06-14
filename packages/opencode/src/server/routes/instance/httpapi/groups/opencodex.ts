@@ -1,5 +1,6 @@
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXJob } from "@/opencodex/job"
+import { OpencodeXPlugin } from "@/opencodex/plugin"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
 import { OpencodeXView } from "@/opencodex/view"
@@ -22,6 +23,132 @@ export const UpdateViewPayload = Schema.Struct(Struct.omit(OpencodeXView.UpdateI
 export const UpdateSessionStatePayload = Schema.Struct(
   Struct.omit(OpencodeXSessionState.UpdateInput.fields, ["sessionID"]),
 )
+export const PluginListQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+})
+export const WorkbenchFileWritePayload = Schema.Struct({
+  path: Schema.String,
+  content: Schema.String,
+  previousContent: Schema.optional(Schema.String),
+})
+export const WorkbenchFileCreatePayload = Schema.Struct({
+  path: Schema.String,
+  content: Schema.optional(Schema.String),
+  directory: Schema.optional(Schema.Boolean),
+})
+export const WorkbenchFileRenamePayload = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String,
+})
+export const WorkbenchFileDeletePayload = Schema.Struct({
+  path: Schema.String,
+})
+export const WorkbenchGitPathsPayload = Schema.Struct({
+  paths: Schema.Array(Schema.String),
+})
+export const WorkbenchGitBranchPayload = Schema.Struct({
+  branch: Schema.String,
+})
+export const WorkbenchGitCommitPayload = Schema.Struct({
+  message: Schema.String,
+  body: Schema.optional(Schema.String),
+})
+export const WorkbenchGitStashCreatePayload = Schema.Struct({
+  message: Schema.optional(Schema.String),
+})
+export const WorkbenchGitStashPayload = Schema.Struct({
+  ref: Schema.String,
+})
+export const WorkbenchGithubPullPayload = Schema.Struct({
+  number: Schema.Number,
+})
+export const WorkbenchGithubCreatePullPayload = Schema.Struct({
+  title: Schema.String,
+  body: Schema.optional(Schema.String),
+  base: Schema.optional(Schema.String),
+  head: Schema.optional(Schema.String),
+})
+export const WorkbenchBridgeRegisterPayload = Schema.Struct({
+  browserBridge: Schema.optional(Schema.Struct({
+    url: Schema.String,
+    token: Schema.String,
+  })),
+})
+export const WorkbenchOperationResult = Schema.Struct({
+  ok: Schema.Boolean,
+  reason: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+  content: Schema.optional(Schema.String),
+})
+export const WorkbenchGitFileStatus = Schema.Struct({
+  path: Schema.String,
+  code: Schema.String,
+  status: Schema.String,
+  staged: Schema.Boolean,
+  unstaged: Schema.Boolean,
+  untracked: Schema.Boolean,
+})
+export const WorkbenchGitStatus = Schema.Struct({
+  ok: Schema.Boolean,
+  message: Schema.optional(Schema.String),
+  branch: Schema.optional(Schema.String),
+  defaultBranch: Schema.optional(Schema.String),
+  upstream: Schema.optional(Schema.String),
+  ahead: Schema.optional(Schema.Number),
+  behind: Schema.optional(Schema.Number),
+  remote: Schema.optional(Schema.String),
+  remoteUrl: Schema.optional(Schema.String),
+  githubUrl: Schema.optional(Schema.String),
+  clean: Schema.Boolean,
+  files: Schema.Array(WorkbenchGitFileStatus),
+})
+export const WorkbenchGitBranches = Schema.Struct({
+  ok: Schema.Boolean,
+  message: Schema.optional(Schema.String),
+  current: Schema.optional(Schema.String),
+  branches: Schema.Array(Schema.String),
+})
+export const WorkbenchGitDiffFile = Schema.Struct({
+  file: Schema.String,
+  patch: Schema.String,
+  additions: Schema.Number,
+  deletions: Schema.Number,
+  status: Schema.Literals(["added", "deleted", "modified"]),
+})
+export const WorkbenchGitHistoryFile = Schema.Struct({
+  path: Schema.String,
+  status: Schema.String,
+  previousPath: Schema.optional(Schema.String),
+})
+export const WorkbenchGitHistoryCommit = Schema.Struct({
+  hash: Schema.String,
+  shortHash: Schema.String,
+  author: Schema.String,
+  email: Schema.optional(Schema.String),
+  date: Schema.String,
+  subject: Schema.String,
+  body: Schema.optional(Schema.String),
+  files: Schema.Array(WorkbenchGitHistoryFile),
+})
+export const WorkbenchDiagnostic = Schema.Struct({
+  path: Schema.optional(Schema.String),
+  line: Schema.optional(Schema.Number),
+  column: Schema.optional(Schema.Number),
+  severity: Schema.Literals(["error", "warning", "info"]),
+  message: Schema.String,
+})
+export const WorkbenchDiagnosticsResult = Schema.Struct({
+  ok: Schema.Boolean,
+  command: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+  output: Schema.optional(Schema.String),
+  diagnostics: Schema.Array(WorkbenchDiagnostic),
+})
+export const WorkbenchDataResult = Schema.Struct({
+  ok: Schema.Boolean,
+  message: Schema.optional(Schema.String),
+  data: Schema.optional(Schema.Unknown),
+})
 export const SessionSyncQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   scope: Schema.optional(Schema.Literals(["project"])),
@@ -155,6 +282,354 @@ export const OpencodeXApi = HttpApi.make("opencodex")
           OpenApi.annotations({
             identifier: "opencodex.job.list",
             summary: "List OpencodeX jobs",
+          }),
+        ),
+        HttpApiEndpoint.get("listPlugins", `${root}/plugin`, {
+          query: PluginListQuery,
+          success: described(Schema.Array(OpencodeXPlugin.Info), "List configured OpencodeX plugins"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.plugin.list",
+            summary: "List configured OpencodeX plugins",
+          }),
+        ),
+        HttpApiEndpoint.post("installPlugin", `${root}/plugin/install`, {
+          query: PluginListQuery,
+          payload: OpencodeXPlugin.InstallInput,
+          success: described(OpencodeXPlugin.InstallResult, "Installed OpencodeX plugin"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.plugin.install",
+            summary: "Install an OpencodeX plugin",
+          }),
+        ),
+        HttpApiEndpoint.patch("togglePlugin", `${root}/plugin/toggle`, {
+          query: PluginListQuery,
+          payload: OpencodeXPlugin.ToggleInput,
+          success: described(OpencodeXPlugin.Info, "Updated OpencodeX plugin enabled state"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.plugin.toggle",
+            summary: "Enable or disable a TUI plugin",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchFileWrite", `${root}/workbench/file/write`, {
+          payload: WorkbenchFileWritePayload,
+          success: described(WorkbenchOperationResult, "Write a text file from the GUI workbench"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.file.write",
+            summary: "Write a text file from the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchFileCreate", `${root}/workbench/file/create`, {
+          payload: WorkbenchFileCreatePayload,
+          success: described(WorkbenchOperationResult, "Create a text file from the GUI workbench"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.file.create",
+            summary: "Create a text file from the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchFileRename", `${root}/workbench/file/rename`, {
+          payload: WorkbenchFileRenamePayload,
+          success: described(WorkbenchOperationResult, "Rename a file from the GUI workbench"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.file.rename",
+            summary: "Rename a file from the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchFileDelete", `${root}/workbench/file/delete`, {
+          payload: WorkbenchFileDeletePayload,
+          success: described(WorkbenchOperationResult, "Delete a file from the GUI workbench"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.file.delete",
+            summary: "Delete a file from the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGitStatus", `${root}/workbench/git/status`, {
+          success: described(WorkbenchGitStatus, "Workbench Git status"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.status",
+            summary: "Get Git status for the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGitBranches", `${root}/workbench/git/branches`, {
+          success: described(WorkbenchGitBranches, "Workbench Git branches"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.branches",
+            summary: "List Git branches for the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGitDiff", `${root}/workbench/git/diff`, {
+          success: described(WorkbenchDataResult, "Workbench Git diffs"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.diff",
+            summary: "Load Git diffs for the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGitHistory", `${root}/workbench/git/history`, {
+          success: described(WorkbenchDataResult, "Workbench Git history"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.history",
+            summary: "Load Git history for the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchDiagnostics", `${root}/workbench/diagnostics`, {
+          success: described(WorkbenchDiagnosticsResult, "Workbench project diagnostics"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.diagnostics",
+            summary: "Run project checks for the GUI workbench",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitCheckout", `${root}/workbench/git/checkout`, {
+          payload: WorkbenchGitBranchPayload,
+          success: described(WorkbenchOperationResult, "Checkout a Git branch"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.checkout",
+            summary: "Checkout a Git branch",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitCreateBranch", `${root}/workbench/git/create-branch`, {
+          payload: WorkbenchGitBranchPayload,
+          success: described(WorkbenchOperationResult, "Create and checkout a Git branch"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.create_branch",
+            summary: "Create and checkout a Git branch",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitStage", `${root}/workbench/git/stage`, {
+          payload: WorkbenchGitPathsPayload,
+          success: described(WorkbenchOperationResult, "Stage Git files"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.stage",
+            summary: "Stage Git files",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitUnstage", `${root}/workbench/git/unstage`, {
+          payload: WorkbenchGitPathsPayload,
+          success: described(WorkbenchOperationResult, "Unstage Git files"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.unstage",
+            summary: "Unstage Git files",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitDiscard", `${root}/workbench/git/discard`, {
+          payload: WorkbenchGitPathsPayload,
+          success: described(WorkbenchOperationResult, "Discard Git file changes"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.discard",
+            summary: "Discard Git file changes",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitCommit", `${root}/workbench/git/commit`, {
+          payload: WorkbenchGitCommitPayload,
+          success: described(WorkbenchOperationResult, "Commit staged Git changes"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.commit",
+            summary: "Commit staged Git changes",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitFetch", `${root}/workbench/git/fetch`, {
+          success: described(WorkbenchOperationResult, "Fetch Git remotes"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.fetch",
+            summary: "Fetch Git remotes",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitPull", `${root}/workbench/git/pull`, {
+          success: described(WorkbenchOperationResult, "Pull current Git branch"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.pull",
+            summary: "Pull current Git branch",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitPush", `${root}/workbench/git/push`, {
+          success: described(WorkbenchOperationResult, "Push current Git branch"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.push",
+            summary: "Push current Git branch",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitPublish", `${root}/workbench/git/publish`, {
+          success: described(WorkbenchOperationResult, "Publish current Git branch and set upstream"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.publish",
+            summary: "Publish current Git branch and set upstream",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGitStashes", `${root}/workbench/git/stashes`, {
+          success: described(WorkbenchDataResult, "List Git stashes"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.stashes",
+            summary: "List Git stashes",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitStashCreate", `${root}/workbench/git/stash`, {
+          payload: WorkbenchGitStashCreatePayload,
+          success: described(WorkbenchOperationResult, "Stash current Git changes"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.stash",
+            summary: "Stash current Git changes",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitStashApply", `${root}/workbench/git/stash/apply`, {
+          payload: WorkbenchGitStashPayload,
+          success: described(WorkbenchOperationResult, "Apply a Git stash"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.stash_apply",
+            summary: "Apply a Git stash",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitStashPop", `${root}/workbench/git/stash/pop`, {
+          payload: WorkbenchGitStashPayload,
+          success: described(WorkbenchOperationResult, "Pop a Git stash"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.stash_pop",
+            summary: "Pop a Git stash",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGitStashDrop", `${root}/workbench/git/stash/drop`, {
+          payload: WorkbenchGitStashPayload,
+          success: described(WorkbenchOperationResult, "Drop a Git stash"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.git.stash_drop",
+            summary: "Drop a Git stash",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGithubAuth", `${root}/workbench/github/auth`, {
+          success: described(WorkbenchDataResult, "GitHub remote status"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.auth",
+            summary: "Get GitHub remote status",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGithubRepo", `${root}/workbench/github/repo`, {
+          success: described(WorkbenchDataResult, "GitHub repository information"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.repo",
+            summary: "Get GitHub repository information",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGithubIssues", `${root}/workbench/github/issues`, {
+          success: described(WorkbenchDataResult, "GitHub issues"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.issues",
+            summary: "List GitHub issues from the remote repository",
+          }),
+        ),
+        HttpApiEndpoint.get("workbenchGithubPulls", `${root}/workbench/github/pulls`, {
+          success: described(WorkbenchDataResult, "GitHub pull requests"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.pulls",
+            summary: "List GitHub pull requests from the remote repository",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGithubPull", `${root}/workbench/github/pull`, {
+          payload: WorkbenchGithubPullPayload,
+          success: described(WorkbenchDataResult, "GitHub pull request detail"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.pull",
+            summary: "Get GitHub pull request detail from the remote repository",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGithubChecks", `${root}/workbench/github/checks`, {
+          payload: WorkbenchGithubPullPayload,
+          success: described(WorkbenchDataResult, "GitHub pull request checks"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.checks",
+            summary: "Get GitHub pull request checks from the remote repository",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGithubCheckoutPull", `${root}/workbench/github/checkout-pull`, {
+          payload: WorkbenchGithubPullPayload,
+          success: described(WorkbenchOperationResult, "Checkout a GitHub pull request"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.checkout_pull",
+            summary: "Checkout a GitHub pull request with Git",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchGithubCreatePull", `${root}/workbench/github/create-pull`, {
+          payload: WorkbenchGithubCreatePullPayload,
+          success: described(WorkbenchDataResult, "Created GitHub pull request"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.workbench.github.create_pull",
+            summary: "Create a GitHub pull request browser handoff",
+          }),
+        ),
+        HttpApiEndpoint.post("workbenchBridgeRegister", `${root}/gui-bridge/register`, {
+          payload: WorkbenchBridgeRegisterPayload,
+          success: described(WorkbenchOperationResult, "Register GUI bridge capabilities"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.gui_bridge.register",
+            summary: "Register GUI bridge capabilities",
           }),
         ),
         HttpApiEndpoint.post("createJob", `${root}/job`, {
