@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { IconButton } from "./ui"
 
 export type PaletteCommand = {
   name: string
@@ -105,7 +106,7 @@ export function CommandPaletteModal(props: { open: boolean; commands: PaletteCom
               <h2>Commands</h2>
               <p>Search actions, then press Enter.</p>
             </div>
-            <button type="button" aria-label="Close command palette" onClick={props.close}>{"\u00d7"}</button>
+            <IconButton icon="x" label="Close command palette" onClick={props.close} />
           </header>
           <input
             ref={input}

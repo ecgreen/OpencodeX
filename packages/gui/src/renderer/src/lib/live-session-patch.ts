@@ -1,12 +1,40 @@
 import type { GlobalEvent, Message, OpencodeXSessionState, Part, PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 import { trimToLiveTail, type MessageWindow } from "./message-window"
-import { displayMessageText } from "./message-text"
 import { reconcileSessionUiState } from "./session-status"
 import { isRenderableSession, type GuiSnapshot, type MessageBundle, type SessionCardSnapshot, type SessionData } from "./store"
 import { setRecordEntry } from "./view-pane-state"
-
-const pendingLiveParts = new Map<string, Part[]>()
-const pendingLivePartDeltas = new Map<string, Map<string, string>>()
+import {
+  eventAggregateID,
+  eventData,
+  eventKind,
+  eventMessageID,
+  eventSessionID,
+  globalEventID,
+  globalEventSessionState,
+  globalEventSessionStatus,
+} from "./live-session-event"
+import {
+  applyPendingDeltasToPart,
+  forgetPendingMessageParts,
+  forgetPendingPart,
+  mergeLoadedParts,
+  mergePartLists,
+  normalizeLivePart,
+  rememberPendingPart,
+  rememberPendingPartDelta,
+  takePendingParts,
+  upsertPartList,
+} from "./live-session-parts"
+export {
+  eventAggregateID,
+  eventData,
+  eventKind,
+  eventMessageID,
+  eventSessionID,
+  globalEventID,
+  globalEventSessionState,
+  globalEventSessionStatus,
+} from "./live-session-event"
 
 type SessionDataPatchOptions = {
   appendMissingMessages?: boolean
@@ -378,44 +406,6 @@ export function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSna
   }
 }
 
-export function globalEventID(event: GlobalEvent) {
-  const id = (event.payload as { id?: string }).id
-  return typeof id === "string" ? id : undefined
-}
-
-export function eventAggregateID(event: GlobalEvent) {
-  const id = (event.payload as { aggregateID?: string }).aggregateID
-  return typeof id === "string" ? id : undefined
-}
-
-export function eventSessionID(event: GlobalEvent) {
-  return sessionIDFrom(eventData(event))
-}
-
-export function globalEventSessionStatus(event: GlobalEvent) {
-  const kind = eventKind(event)
-  if (kind === "session.idle") {
-    const sessionID = eventSessionID(event)
-    return sessionID ? { sessionID, status: { type: "idle" } as GuiSnapshot["sessionStatus"][string], syncVisible: true } : undefined
-  }
-
-  if (kind !== "session.status") return
-  const properties = eventData(event)
-  if (!isRecordValue(properties) || typeof properties.sessionID !== "string" || !isSessionStatus(properties.status)) return
-  return { sessionID: properties.sessionID, status: properties.status, syncVisible: properties.status.type === "idle" }
-}
-
-export function globalEventSessionState(event: GlobalEvent) {
-  if (eventKind(event) !== "opencodex.session_state.updated") return
-  const properties = eventData(event)
-  if (!isRecordValue(properties) || typeof properties.sessionID !== "string" || !isRecordValue(properties.state)) return
-  return { sessionID: properties.sessionID, state: properties.state as OpencodeXSessionState }
-}
-
-export function eventMessageID(event: GlobalEvent) {
-  return messageIDFrom(eventData(event))
-}
-
 function stableValue<T>(current: T, next: T): T {
   return JSON.stringify(current) === JSON.stringify(next) ? current : next
 }
@@ -476,125 +466,6 @@ function applyPartDelta(messages: MessageBundle[], messageID: string, partID: st
   return next
 }
 
-function normalizeLivePart(part: Part): Part {
-  if (part.type !== "text" && part.type !== "reasoning") return part
-  return { ...part, text: displayMessageText(part.text) } as Part
-}
-
-function mergePartLists(parts: Part[], incoming: Part[]) {
-  if (incoming.length === 0) return parts
-  let next = parts
-  for (const part of incoming) next = upsertPartList(next, part)
-  return next
-}
-
-function upsertPartList(parts: Part[], part: Part) {
-  const index = parts.findIndex((item) => item.id === part.id)
-  const next = index >= 0
-    ? parts.map((item, i) => i === index ? mergeLivePart(item, part) : item)
-    : [...parts, part]
-  return sortParts(next)
-}
-
-function mergeLivePart(current: Part, incoming: Part): Part {
-  if (!isTextPart(current) || !isTextPart(incoming)) return incoming
-  if (textPartEnded(incoming)) return incoming
-  if (!incoming.text) return current
-  if (!current.text) return incoming
-  if (incoming.text === current.text || incoming.text.startsWith(current.text)) return incoming
-  if (current.text.startsWith(incoming.text) || current.text.endsWith(incoming.text)) return { ...incoming, text: current.text } as Part
-  return { ...incoming, text: current.text + incoming.text } as Part
-}
-
-function mergeLoadedParts(current: Part[], incoming: Part[]) {
-  const currentParts = new Map(current.map((part) => [part.id, part]))
-  const incomingPartIDs = new Set(incoming.map((part) => part.id))
-  return sortParts([
-    ...incoming.map((part) => {
-      const existing = currentParts.get(part.id)
-      return existing ? mergeLivePart(existing, part) : part
-    }),
-    ...current.filter((part) => !incomingPartIDs.has(part.id) && isTextPart(part) && !textPartEnded(part)),
-  ])
-}
-
-function isTextPart(part: Part): part is Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }> {
-  return part.type === "text" || part.type === "reasoning"
-}
-
-function textPartEnded(part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>) {
-  return typeof part.time?.end === "number"
-}
-
-function sortParts(parts: Part[]) {
-  return parts.toSorted((a, b) => a.id.localeCompare(b.id))
-}
-
-function rememberPendingPart(part: Part) {
-  pendingLiveParts.set(part.messageID, upsertPartList(pendingLiveParts.get(part.messageID) ?? [], part))
-}
-
-function takePendingParts(messageID: string) {
-  const parts = pendingLiveParts.get(messageID) ?? []
-  pendingLiveParts.delete(messageID)
-  return parts
-}
-
-function forgetPendingMessageParts(messageID: string) {
-  pendingLiveParts.delete(messageID)
-  pendingLivePartDeltas.delete(messageID)
-}
-
-function forgetPendingPart(messageID: string, partID: string) {
-  const parts = pendingLiveParts.get(messageID)
-  if (parts) {
-    const next = parts.filter((part) => part.id !== partID)
-    if (next.length > 0) pendingLiveParts.set(messageID, next)
-    else pendingLiveParts.delete(messageID)
-  }
-  const deltas = pendingLivePartDeltas.get(messageID)
-  if (!deltas) return
-  for (const key of deltas.keys()) {
-    if (key.startsWith(`${partID}\0`)) deltas.delete(key)
-  }
-  if (deltas.size === 0) pendingLivePartDeltas.delete(messageID)
-}
-
-function rememberPendingPartDelta(messageID: string, partID: string, field: string, delta: string) {
-  const pending = pendingLiveParts.get(messageID)
-  if (pending?.some((part) => part.id === partID)) {
-    pendingLiveParts.set(messageID, pending.map((part) => part.id === partID ? applyDeltaToPart(part, field, delta) : part))
-    return
-  }
-  const deltas = pendingLivePartDeltas.get(messageID) ?? new Map<string, string>()
-  const key = pendingDeltaKey(partID, field)
-  deltas.set(key, (deltas.get(key) ?? "") + delta)
-  pendingLivePartDeltas.set(messageID, deltas)
-}
-
-function applyPendingDeltasToPart(part: Part): Part {
-  const deltas = pendingLivePartDeltas.get(part.messageID)
-  if (!deltas) return part
-  let next = part
-  for (const [key, delta] of deltas) {
-    const [partID, field] = key.split("\0")
-    if (partID !== part.id || !field) continue
-    next = applyDeltaToPart(next, field, delta)
-    deltas.delete(key)
-  }
-  if (deltas.size === 0) pendingLivePartDeltas.delete(part.messageID)
-  return next
-}
-
-function applyDeltaToPart(part: Part, field: string, delta: string): Part {
-  if (field !== "text" || (part.type !== "text" && part.type !== "reasoning")) return part
-  return { ...part, text: part.text + delta } as Part
-}
-
-function pendingDeltaKey(partID: string, field: string) {
-  return `${partID}\0${field}`
-}
-
 function sortMessageBundles(messages: MessageBundle[]) {
   return messages.toSorted((a, b) => (a.info.time.created ?? 0) - (b.info.time.created ?? 0))
 }
@@ -623,36 +494,4 @@ function upsertByID<T extends { id: string }>(items: T[], item: T) {
   return items.some((current) => current.id === item.id)
     ? items.map((current) => current.id === item.id ? item : current)
     : [...items, item]
-}
-
-export function eventKind(event: GlobalEvent) {
-  const payload = event.payload as { type: string; name?: string }
-  return payload.type === "sync" && payload.name ? payload.name.replace(/\.\d+$/, "") : payload.type
-}
-
-export function eventData(event: GlobalEvent) {
-  const payload = event.payload as { properties?: Record<string, unknown>; data?: Record<string, unknown> }
-  return payload.properties ?? payload.data
-}
-
-function sessionIDFrom(value: unknown) {
-  if (!isRecordValue(value)) return
-  if (typeof value.sessionID === "string") return value.sessionID
-  if (isRecordValue(value.info) && typeof value.info.sessionID === "string") return value.info.sessionID
-  if (isRecordValue(value.part) && typeof value.part.sessionID === "string") return value.part.sessionID
-}
-
-function messageIDFrom(value: unknown) {
-  if (!isRecordValue(value)) return
-  if (typeof value.messageID === "string") return value.messageID
-  if (isRecordValue(value.info) && typeof value.info.id === "string") return value.info.id
-  if (isRecordValue(value.part) && typeof value.part.messageID === "string") return value.part.messageID
-}
-
-function isRecordValue(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
-function isSessionStatus(value: unknown): value is GuiSnapshot["sessionStatus"][string] {
-  return isRecordValue(value) && typeof value.type === "string"
 }

@@ -1,82 +1,39 @@
-import type { Agent, AssistantMessage, Config, FileNode, LspStatus, McpStatus, McpResource, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
-import { compactPath, title } from "../lib/format"
+import type { Provider } from "@opencode-ai/sdk/v2/client"
+import { For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { MessageBundle, PromptPart, SessionData } from "../lib/store"
 import { EMPTY_VIEW_PANE_RUNTIME_STATE, type ViewPaneRuntimeState } from "../lib/view-pane-state"
 import {
-  mergePromptDraft,
   nextPromptHistoryState,
-  parsePromptDrafts,
-  parsePromptStash,
   pushPromptStash,
   type GuiPromptInfo,
   type GuiPromptStashEntry,
 } from "../lib/prompt-state"
 import { buildPromptMentionOptions, prunePromptPartsForInput, referenceSearch, type PromptMentionOption } from "../lib/prompt-autocomplete"
+import {
+  clearComposerDraft,
+  filePartFromFile,
+  formatTokenCount,
+  isAssistantMessage,
+  readComposerDraft,
+  readComposerStash,
+  readFavoriteModels,
+  textPart,
+  writeComposerDraft,
+  writeComposerStash,
+  writeFavoriteModels,
+} from "../lib/session-composer-helpers"
 import { permissionToolPart } from "../lib/tool-display"
-import { Icon } from "./icon"
-import { OpencodeXLogo } from "./chrome"
-import { DisplayPartView, PermissionPanel, QuestionPanel, groupTranscriptParts } from "./session-transcript"
-import { SessionInspector } from "./session-inspector"
-import { StatusPill } from "./status-pill"
+import { SessionComposer } from "./session-composer"
+import { PermissionPanel, QuestionPanel } from "./session-safety-panels"
+import { TranscriptPanel } from "./session-transcript-panel"
+import { SessionModelPicker } from "./session-model-picker"
+import type { SessionPageProps } from "./session-page-types"
+import { SessionSidePanel, type SessionSidePanelRequest, type SessionSidePanelTarget } from "./session-side-panel"
+import { SessionToolbar } from "./session-toolbar"
 
-const OPEN_SCROLL_SETTLE_MIN_MS = 2_500
-const OPEN_SCROLL_SETTLE_MAX_MS = 6_000
-const OPEN_SCROLL_SETTLE_IDLE_MS = 350
-const PROMPT_AUTO_SCROLL_BOTTOM_THRESHOLD = 100
-
-export function SessionPage(props: {
-  session?: Session
-  data: SessionData
-  loading: boolean
-  prompt: string
-  setPrompt: (value: string) => void
-  providers: Provider[]
-  mcp: Record<string, McpStatus>
-  mcpResources?: Record<string, McpResource>
-  lsp: LspStatus[]
-  config?: Config
-  agents: Agent[]
-  findFiles?: (input: { query: string; directory?: string }) => Promise<FileNode[]>
-  selectedAgent: string
-  setSelectedAgent: (value: string) => void
-  selectedModel: string
-  recentModels: string[]
-  setSelectedModel: (value: string) => void
-  selectedVariant: string
-  setSelectedVariant: (value: string) => void
-  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => void
-  permissions: PermissionRequest[]
-  questions: QuestionRequest[]
-  replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
-  replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
-  rejectQuestion: (request: QuestionRequest) => void
-  abortSession: (sessionID: string) => void
-  renameSession: (session: Session) => void
-  moveSession: (session: Session) => void
-  deleteSession: (session: Session) => void
-  slashCommands: SessionSlashCommand[]
-  concealCodeBlocks: boolean
-  showTimestamps: boolean
-  showThinking: boolean
-  showToolDetails: boolean
-  showScrollbar: boolean
-  showGenericToolOutput: boolean
-  toggleCodeConceal: () => void
-  toggleTimestamps: () => void
-  toggleThinking: () => void
-  toggleToolDetails: () => void
-  toggleScrollbar: () => void
-  toggleGenericToolOutput: () => void
-  status?: string
-  pending?: boolean
-  composerState?: ViewPaneRuntimeState
-  updateComposerState?: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
-  composerFocusToken?: () => number
-  loadOlderMessages?: (cursor: string) => Promise<void>
-}) {
+export function SessionPage(props: SessionPageProps) {
   const session = () => props.session
   const blocked = () => props.permissions.length > 0 || props.questions.length > 0
   let transcriptExpandedSessionID = ""
@@ -91,6 +48,10 @@ export function SessionPage(props: {
   const [stash, setStash] = createSignal<GuiPromptStashEntry[]>(readComposerStash())
   const [localHistoryIndex, setLocalHistoryIndex] = createSignal(-1)
   const [localHistoryDraft, setLocalHistoryDraft] = createSignal("")
+  const [sidePanelOpen, setSidePanelOpen] = createSignal(readSidePanelOpen())
+  const [sidePanelWidthRatio, setSidePanelWidthRatio] = createSignal(readSidePanelWidthRatio())
+  const [sidePanelRequest, setSidePanelRequest] = createSignal<SessionSidePanelRequest>()
+  const sidePanelEnabled = () => props.sidePanelEnabled !== false
   const [slashMenuOpen, setSlashMenuOpen] = createSignal(false)
   const [selectedSlashCommand, setSelectedSlashCommand] = createSignal(0)
   const composerState = () => props.composerState ?? EMPTY_VIEW_PANE_RUNTIME_STATE
@@ -401,44 +362,100 @@ export function SessionPage(props: {
     if (!value.input && value.parts.length === 0) clearComposerDraft(id)
     else writeComposerDraft(id, value)
   })
+  createEffect(() => {
+    if (!sidePanelEnabled()) return
+    writeSidePanelOpen(sidePanelOpen())
+    writeSidePanelWidthRatio(sidePanelWidthRatio())
+  })
+  const openSidePanelTarget = (request: SessionSidePanelTarget = { tab: "git" }) => {
+    if (props.openSidePanelTarget) {
+      props.openSidePanelTarget(request)
+      return
+    }
+    if (!sidePanelEnabled()) return
+    openSidePanel(request)
+  }
+  const openSidePanel = (request: SessionSidePanelTarget = { tab: "git" }) => {
+    setSidePanelOpen(true)
+    setSidePanelRequest({ ...request, token: Date.now() } as SessionSidePanelRequest)
+  }
+  const toggleSidePanel = () => {
+    if (sidePanelOpen()) {
+      setSidePanelOpen(false)
+      return
+    }
+    openSidePanel()
+  }
+  const startSidePanelResize = (event: PointerEvent & { currentTarget: HTMLElement }) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    const container = event.currentTarget.parentElement
+    const containerWidth = container?.getBoundingClientRect().width ?? window.innerWidth
+    const startX = event.clientX
+    const startRatio = sidePanelWidthRatio()
+    const onMove = (moveEvent: PointerEvent) => {
+      setSidePanelWidthRatio(clampSidePanelWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
+    }
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+  const openTranscriptTarget = (event: MouseEvent) => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return
+    const fileTarget = target.closest<HTMLElement>("[data-side-panel-file]")
+    const filePath = fileTarget?.dataset.sidePanelFile
+    if (filePath) {
+      event.preventDefault()
+      openSidePanelTarget({ tab: "open", value: filePath })
+      return
+    }
+    const anchor = target.closest<HTMLAnchorElement>("a[href]")
+    const href = anchor?.href
+    if (!href) return
+    if (href.startsWith("http://") || href.startsWith("https://")) {
+      event.preventDefault()
+      openSidePanelTarget({ tab: "open", value: href, title: anchor.textContent?.trim() || undefined })
+      return
+    }
+    if (href.startsWith("file://")) {
+      event.preventDefault()
+      openSidePanelTarget({ tab: "open", value: href })
+    }
+  }
   return (
     <div class="page session-page" data-session-id={session()?.id} classList={{ "session-empty": !sessionStarted() }}>
       <Show when={session()} fallback={<Empty text="Session not found" />}>
         {(selected) => (
           <>
             <div class="session-page-top">
-              <header class="session-toolbar">
-                <div class="session-titleline">
-                  <div>
-                    <h1>{title(selected().title)}</h1>
-                    <p>{compactPath(selected().directory)}</p>
-                  </div>
-                </div>
-                <div class="session-actions compact">
-                  <Show when={props.status === "busy" || props.status === "retry" || blocked()}>
-                    <button class="icon-button" title="Interrupt session" aria-label="Interrupt session" onClick={() => props.abortSession(selected().id)}><Icon name="stop" /></button>
-                  </Show>
-                  <StatusPill status={blocked() ? "input_needed" : props.status ?? "idle"} />
-                  <Show when={!props.pending}>
-                    <details class="overflow-menu">
-                      <summary title="Session actions" aria-label="Session actions"><Icon name="more" /></summary>
-                      <div>
-                        <button type="button" onClick={() => props.renameSession(selected())}>Rename</button>
-                        <button type="button" onClick={() => props.moveSession(selected())}>Move to project</button>
-                        <hr />
-                        <button type="button" onClick={props.toggleCodeConceal}><Icon name={props.concealCodeBlocks ? "check" : "circle"} /> Code blocks</button>
-                        <button type="button" onClick={props.toggleTimestamps}><Icon name={props.showTimestamps ? "check" : "circle"} /> Timestamps</button>
-                        <button type="button" onClick={props.toggleThinking}><Icon name={props.showThinking ? "check" : "circle"} /> Thinking</button>
-                        <button type="button" onClick={props.toggleToolDetails}><Icon name={props.showToolDetails ? "check" : "circle"} /> Tool details</button>
-                        <button type="button" onClick={props.toggleScrollbar}><Icon name={props.showScrollbar ? "check" : "circle"} /> Scrollbar</button>
-                        <button type="button" onClick={props.toggleGenericToolOutput}><Icon name={props.showGenericToolOutput ? "check" : "circle"} /> Generic tool output</button>
-                        <hr />
-                        <button type="button" class="danger" onClick={() => props.deleteSession(selected())}><Icon name="trash" /> Delete</button>
-                      </div>
-                    </details>
-                  </Show>
-                </div>
-              </header>
+              <SessionToolbar
+                session={selected()}
+                status={props.status}
+                blocked={blocked()}
+                pending={props.pending}
+                concealCodeBlocks={props.concealCodeBlocks}
+                showTimestamps={props.showTimestamps}
+                showThinking={props.showThinking}
+                showToolDetails={props.showToolDetails}
+                showScrollbar={props.showScrollbar}
+                showGenericToolOutput={props.showGenericToolOutput}
+                abortSession={props.abortSession}
+                renameSession={props.renameSession}
+                moveSession={props.moveSession}
+                deleteSession={props.deleteSession}
+                toggleCodeConceal={props.toggleCodeConceal}
+                toggleTimestamps={props.toggleTimestamps}
+                toggleThinking={props.toggleThinking}
+                toggleToolDetails={props.toggleToolDetails}
+                toggleScrollbar={props.toggleScrollbar}
+                toggleGenericToolOutput={props.toggleGenericToolOutput}
+                sidePanelOpen={sidePanelEnabled() ? sidePanelOpen() : undefined}
+                toggleSidePanel={sidePanelEnabled() ? toggleSidePanel : undefined}
+              />
               <For each={props.permissions}>
                 {(request) => <PermissionPanel request={request} tool={permissionToolPart(request, props.data.messages)} reply={props.replyPermission} />}
               </For>
@@ -446,7 +463,7 @@ export function SessionPage(props: {
                 {(request) => <QuestionPanel request={request} reply={props.replyQuestion} reject={props.rejectQuestion} />}
               </For>
             </div>
-            <div class="session-main">
+            <div class="session-main" onClick={openTranscriptTarget}>
               <TranscriptPanel
                 sessionID={selected().id}
                 data={props.data}
@@ -461,242 +478,75 @@ export function SessionPage(props: {
                 setPromptFollowStarter={(start) => { startTranscriptPromptFollow = start }}
                 loadOlderMessages={props.loadOlderMessages}
               />
-              <SessionInspector
-                session={selected()}
-                data={props.data}
-                providers={props.providers}
-                mcp={props.mcp}
-                lsp={props.lsp}
-                lspEnabled={props.config?.lsp === undefined ? undefined : props.config.lsp !== false}
-              />
-            </div>
-            <form class="composer" onSubmit={submitComposer}>
-              <div class={`composer-input ${mode()}`}>
-                <Show when={slashMenuVisible()}>
-                  <div class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
-                    <For each={visibleSlashCommands()} fallback={<p>No matching commands.</p>}>
-                      {(command, index) => (
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={selectedSlashCommand() === index()}
-                          disabled={!!command.disabled}
-                          classList={{ selected: selectedSlashCommand() === index() }}
-                          title={command.disabled}
-                          onMouseEnter={() => setSelectedSlashCommand(index())}
-                          onClick={() => runSlashCommand(command)}
-                        >
-                          <strong>/{command.name}</strong>
-                          <span>{command.title} - {command.disabled ?? command.detail}</span>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={mentionMenuVisible()}>
-                  <div class="slash-command-menu mention-menu" role="listbox" aria-label="Mentions" onMouseDown={(event) => event.preventDefault()}>
-                    <For each={mentionOptions()}>
-                      {(option) => (
-                        <button type="button" role="option" onClick={() => chooseMention(option)}>
-                          <strong>{option.replacement}</strong>
-                          <span>{option.category} - {option.detail}</span>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <textarea
-                  ref={composerTextarea}
-                  disabled={blocked()}
-                  value={draftPrompt()}
-                  onFocus={() => setSlashMenuOpen(true)}
-                  onBlur={() => setSlashMenuOpen(false)}
-                  onInput={(event) => {
-                    const value = event.currentTarget.value
-                    setDraftPrompt(value)
-                    setDraftParts((current) => prunePromptPartsForInput(value, current))
-                    setHistoryIndex(-1)
-                    setHistoryDraft("")
-                    setSlashMenuOpen(true)
-                    setSelectedSlashCommand(0)
-                  }}
-                  onPaste={(event) => {
-                    const files = Array.from(event.clipboardData?.files ?? [])
-                    if (files.length === 0) return
-                    event.preventDefault()
-                    void pasteFiles(files)
-                  }}
-                  onKeyDown={(event) => {
-                    if (slashMenuVisible()) {
-                      if (event.key === "Escape") {
-                        event.preventDefault()
-                        setSlashMenuOpen(false)
-                        return
-                      }
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault()
-                        selectSlashCommand(-1)
-                        return
-                      }
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault()
-                        selectSlashCommand(1)
-                        return
-                      }
-                      if (event.key === "Enter") {
-                        event.preventDefault()
-                        runSlashCommand(visibleSlashCommands()[selectedSlashCommand()])
-                        return
-                      }
-                      if (event.key === "Tab") {
-                        event.preventDefault()
-                        completeSlashCommand(visibleSlashCommands()[selectedSlashCommand()])
-                        return
-                      }
-                    }
-                    if (event.ctrlKey && event.key.toLowerCase() === "t") {
-                      event.preventDefault()
-                      if (!blocked()) cycleVariant()
-                      return
-                    }
-                    if (event.altKey && event.key === "ArrowUp") {
-                      event.preventDefault()
-                      loadHistory(-1)
-                      return
-                    }
-                    if (event.altKey && event.key === "ArrowDown") {
-                      event.preventDefault()
-                      loadHistory(1)
-                      return
-                    }
-                    const historyOffset = promptHistoryOffset(event)
-                    if (historyOffset !== undefined && loadHistory(historyOffset)) {
-                      event.preventDefault()
-                      return
-                    }
-                    if (event.key === "Tab") {
-                      event.preventDefault()
-                      if (!blocked()) toggleMode()
-                      return
-                    }
-                    if (event.key !== "Enter" || event.shiftKey) return
-                    event.preventDefault()
-                    event.currentTarget.form?.requestSubmit()
-                  }}
-                  placeholder={blocked() ? "Reply to the pending permission/question before continuing..." : "Message OpencodeX..."}
+              <Show when={sidePanelEnabled()}>
+                <SessionSidePanel
+                  open={sidePanelOpen()}
+                  widthRatio={sidePanelWidthRatio()}
+                  session={selected()}
+                  data={props.data}
+                  providers={props.providers}
+                  mcp={props.mcp}
+                  lsp={props.lsp}
+                  config={props.config}
+                  gui={props.gui}
+                  directory={props.sidePanelDirectory ?? selected().directory}
+                  request={sidePanelRequest()}
+                  startResize={startSidePanelResize}
+                  close={() => setSidePanelOpen(false)}
                 />
-                <div class="composer-footer">
-                  <div class="composer-meta" aria-live="polite">
-                    <button class={`mode-chip ${mode()}`} type="button" disabled={blocked()} onClick={toggleMode} title="Toggle Build/Plan mode">
-                      {mode() === "plan" ? "Plan" : "Build"}
-                    </button>
-                    <button class="model-menu" type="button" disabled={blocked()} onClick={() => setModelPickerOpen(true)} title="Choose model">{modelLabel()}</button>
-                    <Show when={variants().length > 0}>
-                      <div
-                        class="variant-menu-wrap"
-                        onFocusOut={(event) => {
-                          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setVariantPickerOpen(false)
-                        }}
-                      >
-                        <button
-                          class="variant-trigger"
-                          type="button"
-                          disabled={blocked()}
-                          aria-haspopup="listbox"
-                          aria-expanded={variantPickerOpen()}
-                          title="Change variant (Ctrl+T to cycle)"
-                          onClick={() => setVariantPickerOpen((open) => !open)}
-                        >
-                          {variantLabel()}
-                        </button>
-                        <Show when={variantPickerOpen()}>
-                          <div class="variant-menu" role="listbox" aria-label="Choose variant">
-                            <button type="button" role="option" aria-selected={props.selectedVariant === ""} classList={{ selected: props.selectedVariant === "" }} onClick={() => selectVariant("")}>Default</button>
-                            <For each={variants()}>
-                              {(variant) => (
-                                <button type="button" role="option" aria-selected={props.selectedVariant === variant} classList={{ selected: props.selectedVariant === variant }} onClick={() => selectVariant(variant)}>
-                                  {variant}
-                                </button>
-                              )}
-                            </For>
-                          </div>
-                        </Show>
-                      </div>
-                    </Show>
-                  </div>
-                  <Show when={draftParts().length > 0}>
-                    <div class="composer-stash-actions">
-                      <span>{draftParts().length} attachment{draftParts().length === 1 ? "" : "s"}</span>
-                    </div>
-                  </Show>
-                  <button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={blocked() || draftText().length === 0}>
-                    <Icon name="send" />
-                  </button>
-                </div>
-              </div>
-              <div class="composer-running" aria-live="polite">
-                <span class="composer-running-left">
-                  <Show when={running()} fallback={<span class="composer-running-placeholder" aria-hidden="true" />}>
-                    <span class="composer-spinner" aria-label="running" />
-                    <span class="composer-interrupt" aria-label="Press escape to interrupt the model">
-                      <span class="composer-interrupt-key">esc</span>{" "}
-                      <span class="composer-interrupt-action">interrupt</span>
-                    </span>
-                  </Show>
-                </span>
-                <span class="composer-running-right">
-                  <Show when={usageLabel()}>
-                    {(usage) => <span class="composer-token-usage">{usage()}</span>}
-                  </Show>
-                  <span class="composer-command-hint"><span>ctrl+p</span> commands</span>
-                </span>
-              </div>
-            </form>
+              </Show>
+            </div>
+            <SessionComposer
+              blocked={blocked()}
+              running={running()}
+              mode={mode()}
+              draftPrompt={draftPrompt()}
+              draftParts={draftParts()}
+              draftText={draftText()}
+              slashMenuVisible={slashMenuVisible()}
+              visibleSlashCommands={visibleSlashCommands()}
+              selectedSlashCommand={selectedSlashCommand()}
+              mentionMenuVisible={mentionMenuVisible()}
+              mentionOptions={mentionOptions()}
+              variants={variants()}
+              variantPickerOpen={variantPickerOpen()}
+              selectedVariant={props.selectedVariant}
+              modelLabel={modelLabel()}
+              variantLabel={variantLabel()}
+              usageLabel={usageLabel()}
+              submit={submitComposer}
+              setTextarea={(element) => { composerTextarea = element }}
+              setDraftPrompt={setDraftPrompt}
+              setDraftParts={setDraftParts}
+              setHistoryIndex={setHistoryIndex}
+              setHistoryDraft={setHistoryDraft}
+              setSlashMenuOpen={setSlashMenuOpen}
+              setSelectedSlashCommand={setSelectedSlashCommand}
+              setModelPickerOpen={setModelPickerOpen}
+              setVariantPickerOpen={setVariantPickerOpen}
+              runSlashCommand={runSlashCommand}
+              completeSlashCommand={completeSlashCommand}
+              selectSlashCommand={selectSlashCommand}
+              chooseMention={chooseMention}
+              pasteFiles={(files) => void pasteFiles(files)}
+              cycleVariant={cycleVariant}
+              loadHistory={loadHistory}
+              toggleMode={toggleMode}
+              selectVariant={selectVariant}
+            />
             <Show when={modelPickerOpen()}>
-              <div
-                class="dialog-backdrop"
-                onMouseDown={() => setModelPickerOpen(false)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape") return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setModelPickerOpen(false)
-                }}
-              >
-                <section class="model-picker-modal" onMouseDown={(event) => event.stopPropagation()}>
-                  <header>
-                    <div>
-                      <h2>Select model</h2>
-                      <p>Recent routes are listed first, matching the TUI picker.</p>
-                    </div>
-                    <button type="button" aria-label="Close model picker" onClick={() => setModelPickerOpen(false)}>{"\u00d7"}</button>
-                  </header>
-                  <input value={modelQuery()} onInput={(event) => setModelQuery(event.currentTarget.value)} placeholder="Search models or providers" autofocus />
-                  <div class="model-picker-list">
-                    <Show when={filteredFavoriteModelOptions().length > 0}>
-                      <ModelPickerSection title="Favorites" selectedModel={props.selectedModel} favorites={favoriteModels()} options={filteredFavoriteModelOptions()} select={selectModel} toggleFavorite={toggleFavoriteModel} />
-                    </Show>
-                    <Show when={filteredRecentModelOptions().length > 0}>
-                      <ModelPickerSection title="Recently used" selectedModel={props.selectedModel} favorites={favoriteModels()} options={filteredRecentModelOptions()} select={selectModel} toggleFavorite={toggleFavoriteModel} />
-                    </Show>
-                    <For each={filteredProviderModelOptions()}>
-                      {(group) => (
-                        <ModelPickerSection
-                          title={group.provider.name}
-                          selectedModel={props.selectedModel}
-                          favorites={favoriteModels()}
-                          options={group.models.map((model) => ({ provider: group.provider, model }))}
-                          select={selectModel}
-                          toggleFavorite={toggleFavoriteModel}
-                        />
-                      )}
-                    </For>
-                    <Show when={filteredFavoriteModelOptions().length === 0 && filteredRecentModelOptions().length === 0 && filteredProviderModelOptions().length === 0}>
-                      <p class="model-picker-empty">No matching models.</p>
-                    </Show>
-                  </div>
-                </section>
-              </div>
+              <SessionModelPicker
+                query={modelQuery()}
+                favorites={favoriteModels()}
+                selectedModel={props.selectedModel}
+                favoriteOptions={filteredFavoriteModelOptions()}
+                recentOptions={filteredRecentModelOptions()}
+                providerGroups={filteredProviderModelOptions()}
+                close={() => setModelPickerOpen(false)}
+                setQuery={setModelQuery}
+                select={selectModel}
+                toggleFavorite={toggleFavoriteModel}
+              />
             </Show>
           </>
         )}
@@ -705,419 +555,40 @@ export function SessionPage(props: {
   )
 }
 
-function TranscriptPanel(props: {
-  sessionID: string
-  data: SessionData
-  loading: boolean
-  providers: Provider[]
-  concealCodeBlocks: boolean
-  showTimestamps: boolean
-  showThinking: boolean
-  showToolDetails: boolean
-  showScrollbar: boolean
-  showGenericToolOutput: boolean
-  setPromptFollowStarter: (start: (() => void) | undefined) => void
-  loadOlderMessages?: (cursor: string) => Promise<void>
-}) {
-  let transcript: HTMLElement | undefined
-  let transcriptContent: HTMLDivElement | undefined
-  let cancelOpenScroll: (() => void) | undefined
-  let promptFollowFrame: number | undefined
-  let promptFollowObserver: ResizeObserver | undefined
-  let promptFollowing = false
-  let promptFollowScrollTop = 0
-  let activeSessionID = ""
-  let openedScrollSessionID = ""
-  const [olderMessagesLoading, setOlderMessagesLoading] = createSignal(false)
-  const visibleMessages = createMemo(() => props.data.messages)
-  const scrollToBottom = () => {
-    if (!transcript) return
-    transcript.scrollTop = transcript.scrollHeight
-    if (promptFollowing) promptFollowScrollTop = transcript.scrollTop
-  }
-  const nearBottom = () => {
-    if (!transcript) return true
-    return transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= PROMPT_AUTO_SCROLL_BOTTOM_THRESHOLD
-  }
-  const scheduleOpenedSessionScroll = () => {
-    cancelOpenScroll?.()
-    if (!transcript || !transcriptContent) return
-    cancelOpenScroll = settleTranscriptOpenScroll(transcript, transcriptContent)
-  }
-  const stopPromptFollow = () => {
-    promptFollowing = false
-    if (promptFollowFrame !== undefined) {
-      cancelAnimationFrame(promptFollowFrame)
-      promptFollowFrame = undefined
-    }
-    promptFollowObserver?.disconnect()
-    promptFollowObserver = undefined
-  }
-  const schedulePromptFollowScroll = () => {
-    if (!promptFollowing || promptFollowFrame !== undefined) return
-    promptFollowFrame = requestAnimationFrame(() => {
-      promptFollowFrame = undefined
-      if (promptFollowing) scrollToBottom()
-    })
-  }
-  const startPromptFollow = () => {
-    if (!transcript || !transcriptContent || !nearBottom()) {
-      stopPromptFollow()
-      return
-    }
-    cancelOpenScroll?.()
-    cancelOpenScroll = undefined
-    promptFollowing = true
-    promptFollowScrollTop = transcript.scrollTop
-    promptFollowObserver?.disconnect()
-    promptFollowObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(schedulePromptFollowScroll)
-    promptFollowObserver?.observe(transcriptContent)
-    schedulePromptFollowScroll()
-  }
-  const handleScroll = () => {
-    if (!promptFollowing || !transcript) return
-    const scrollTop = transcript.scrollTop
-    if (scrollTop < promptFollowScrollTop && !nearBottom()) {
-      promptFollowScrollTop = scrollTop
-      stopPromptFollow()
-      return
-    }
-    promptFollowScrollTop = scrollTop
-    if (!nearBottom()) stopPromptFollow()
-  }
-  const handleWheel = (event: WheelEvent) => {
-    if (promptFollowing && event.deltaY < 0) stopPromptFollow()
-  }
-  const loadOlderMessages = async () => {
-    const cursor = props.data.messageCursor
-    if (!cursor || !props.loadOlderMessages || olderMessagesLoading()) return
-    stopPromptFollow()
-    setOlderMessagesLoading(true)
-    await props.loadOlderMessages(cursor).finally(() => setOlderMessagesLoading(false))
-  }
-
-  props.setPromptFollowStarter(startPromptFollow)
-  onCleanup(() => {
-    props.setPromptFollowStarter(undefined)
-    cancelOpenScroll?.()
-    stopPromptFollow()
-  })
-  createEffect(() => {
-    const sessionChanged = activeSessionID !== props.sessionID
-    activeSessionID = props.sessionID
-    if (sessionChanged) {
-      cancelOpenScroll?.()
-      cancelOpenScroll = undefined
-      stopPromptFollow()
-      openedScrollSessionID = ""
-    }
-    if (!props.sessionID || openedScrollSessionID === props.sessionID) return
-    if (props.loading && visibleMessages().length === 0) return
-    openedScrollSessionID = props.sessionID
-    scheduleOpenedSessionScroll()
-  })
-
-  return (
-    <section class="transcript" classList={{ "hide-scrollbar": !props.showScrollbar }} ref={transcript} onScroll={handleScroll} onWheel={handleWheel}>
-      <div class="transcript-content" ref={transcriptContent}>
-        <Show when={!props.loading} fallback={<TranscriptLoadingState />}>
-          <Show when={props.data.messageCursor}>
-            <Show when={olderMessagesLoading()} fallback={
-              <button type="button" class="transcript-window-button" onClick={() => void loadOlderMessages()}>
-                Load more
-              </button>
-            }>
-              <div class="transcript-page-loader" aria-live="polite" aria-busy="true">
-                <span class="session-loading-spinner" />
-                <span>Loading older messages...</span>
-              </div>
-            </Show>
-          </Show>
-          <For each={visibleMessages()} fallback={<SessionEmptyState />}>
-            {(bundle, index) => (
-              <article class={`message ${bundle.info.role}`} data-message-id={bundle.info.id}>
-                <Show when={showTranscriptHeader(visibleMessages(), index())}>
-                  <header>{transcriptHeaderLabel(bundle.info, props.providers, props.showTimestamps)}</header>
-                </Show>
-                <For each={groupTranscriptParts(bundle.parts)}>
-                  {(item) => (
-                    <DisplayPartView
-                      item={item}
-                      concealCodeBlocks={props.concealCodeBlocks}
-                      showThinking={props.showThinking}
-                      showToolDetails={props.showToolDetails}
-                      showGenericToolOutput={props.showGenericToolOutput}
-                    />
-                  )}
-                </For>
-              </article>
-            )}
-          </For>
-        </Show>
-      </div>
-    </section>
-  )
-}
-
-function settleTranscriptOpenScroll(transcript: HTMLElement, content: HTMLElement) {
-  let frame: number | undefined
-  let idleTimer: ReturnType<typeof setTimeout> | undefined
-  let maxTimer: ReturnType<typeof setTimeout> | undefined
-  let stopped = false
-  const startedAt = performance.now()
-  const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
-    scheduleScroll()
-    scheduleIdleFinish()
-  })
-  const clearFrame = () => {
-    if (frame === undefined) return
-    cancelAnimationFrame(frame)
-    frame = undefined
-  }
-  const clearIdleTimer = () => {
-    if (idleTimer === undefined) return
-    clearTimeout(idleTimer)
-    idleTimer = undefined
-  }
-  const clearMaxTimer = () => {
-    if (maxTimer === undefined) return
-    clearTimeout(maxTimer)
-    maxTimer = undefined
-  }
-  const scrollToBottom = () => {
-    transcript.scrollTop = transcript.scrollHeight
-  }
-  const cancelForUser = () => stop()
-  const stop = () => {
-    if (stopped) return
-    stopped = true
-    clearFrame()
-    clearIdleTimer()
-    clearMaxTimer()
-    observer?.disconnect()
-    transcript.removeEventListener("wheel", cancelForUser)
-    transcript.removeEventListener("touchstart", cancelForUser)
-    transcript.removeEventListener("pointerdown", cancelForUser)
-  }
-  const finish = () => {
-    if (stopped) return
-    scrollToBottom()
-    stop()
-  }
-  const scheduleScroll = () => {
-    if (stopped || frame !== undefined) return
-    frame = requestAnimationFrame(() => {
-      frame = undefined
-      scrollToBottom()
-    })
-  }
-  const scheduleIdleFinish = () => {
-    if (stopped) return
-    clearIdleTimer()
-    idleTimer = setTimeout(() => {
-      if (performance.now() - startedAt < OPEN_SCROLL_SETTLE_MIN_MS) {
-        scheduleIdleFinish()
-        return
-      }
-      finish()
-    }, OPEN_SCROLL_SETTLE_IDLE_MS)
-  }
-
-  observer?.observe(content)
-  transcript.addEventListener("wheel", cancelForUser, { passive: true })
-  transcript.addEventListener("touchstart", cancelForUser, { passive: true })
-  transcript.addEventListener("pointerdown", cancelForUser, { passive: true })
-  maxTimer = setTimeout(finish, OPEN_SCROLL_SETTLE_MAX_MS)
-  scheduleScroll()
-  scheduleIdleFinish()
-  return stop
-}
-
-function showTranscriptHeader(messages: MessageBundle[], index: number) {
-  const message = messages[index]
-  if (!message) return false
-  if (message.info.role === "user") return true
-  return messages[index - 1]?.info.role === "user"
-}
-
-function transcriptHeaderLabel(message: MessageBundle["info"], providers: Provider[], showTimestamps: boolean) {
-  const label = message.role === "user" ? "User" : assistantModelLabel(message, providers)
-  if (!showTimestamps) return label
-  return `${label} - ${new Date(message.time.created).toLocaleString()}`
-}
-
-function assistantModelLabel(message: AssistantMessage, providers: Provider[]) {
-  const model = providers.find((provider) => provider.id === message.providerID)?.models[message.modelID]
-  return model?.name ?? prettifyModelID(message.modelID)
-}
-
-function prettifyModelID(modelID: string) {
-  return modelID
-    .split(/[/:_-]+/)
-    .filter(Boolean)
-    .map((part) => part.toUpperCase() === part ? part : part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
-}
-
-function ModelPickerSection(props: { title: string; selectedModel: string; favorites: string[]; options: ModelPickerOption[]; select: (providerID: string, modelID: string) => void; toggleFavorite: (value: string) => void }) {
-  return (
-    <section class="model-picker-section">
-      <h3>{props.title}</h3>
-      <div>
-        <For each={props.options}>
-          {(option) => {
-            const value = modelValue(option.provider.id, option.model.id)
-            const favorite = () => props.favorites.includes(value)
-            return (
-              <button type="button" classList={{ selected: props.selectedModel === value }} onClick={() => props.select(option.provider.id, option.model.id)}>
-                <span>{option.model.name ?? option.model.id}</span>
-                <small>{option.provider.name}</small>
-                <Show when={isFreeOpencodeModel(option.provider, option.model)}><em>Free</em></Show>
-                <span
-                  class="model-favorite-toggle"
-                  classList={{ active: favorite() }}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={favorite() ? "Remove favorite" : "Add favorite"}
-                  title={favorite() ? "Remove favorite" : "Add favorite"}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    props.toggleFavorite(value)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return
-                    event.preventDefault()
-                    event.stopPropagation()
-                    props.toggleFavorite(value)
-                  }}
-                >
-                  <Icon name="star" />
-                  {favorite() ? "Favorite" : "Add"}
-                </span>
-              </button>
-            )
-          }}
-        </For>
-      </div>
-    </section>
-  )
-}
-
-function readFavoriteModels() {
-  if (typeof localStorage === "undefined") return []
-  try {
-    const parsed = JSON.parse(localStorage.getItem("opencodex.gui.favoriteModels") ?? "[]")
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((value): value is string => typeof value === "string").slice(0, 20)
-  } catch {
-    return []
-  }
-}
-
-function writeFavoriteModels(values: string[]) {
-  if (typeof localStorage === "undefined") return
-  localStorage.setItem("opencodex.gui.favoriteModels", JSON.stringify(values.slice(0, 20)))
-}
-
-function readComposerStash() {
-  if (typeof localStorage === "undefined") return []
-  return parsePromptStash(localStorage.getItem("opencodex.gui.promptStash") ?? "")
-}
-
-function writeComposerStash(entries: GuiPromptStashEntry[]) {
-  if (typeof localStorage === "undefined") return
-  localStorage.setItem("opencodex.gui.promptStash", entries.map((entry) => JSON.stringify(entry)).join("\n"))
-}
-
-function readComposerDraft(sessionID?: string) {
-  if (!sessionID || typeof localStorage === "undefined") return
-  return parsePromptDrafts(localStorage.getItem("opencodex.gui.promptDrafts") ?? "{}")[sessionID]
-}
-
-function writeComposerDraft(sessionID: string, draft: GuiPromptInfo) {
-  if (typeof localStorage === "undefined") return
-  localStorage.setItem(
-    "opencodex.gui.promptDrafts",
-    JSON.stringify(mergePromptDraft(parsePromptDrafts(localStorage.getItem("opencodex.gui.promptDrafts") ?? "{}"), sessionID, draft)),
-  )
-}
-
-function clearComposerDraft(sessionID?: string) {
-  if (!sessionID || typeof localStorage === "undefined") return
-  const drafts = parsePromptDrafts(localStorage.getItem("opencodex.gui.promptDrafts") ?? "{}")
-  const next = Object.fromEntries(Object.entries(drafts).filter(([key]) => key !== sessionID))
-  localStorage.setItem("opencodex.gui.promptDrafts", JSON.stringify(next))
-}
-
-async function filePartFromFile(file: File): Promise<PromptPart> {
-  return {
-    type: "file",
-    filename: file.name || undefined,
-    mime: file.type || "application/octet-stream",
-    url: await fileToDataURL(file),
-  }
-}
-
-function fileToDataURL(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.addEventListener("load", () => resolve(typeof reader.result === "string" ? reader.result : ""))
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read file.")))
-    reader.readAsDataURL(file)
-  })
-}
-
-function textPart(part: MessageBundle["parts"][number]) {
-  return part.type === "text" ? part.text : ""
-}
-
-function promptHistoryOffset(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) {
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-  const textarea = event.currentTarget
-  if (event.key === "ArrowUp" && textarea.value.slice(0, textarea.selectionStart).includes("\n") === false) return -1
-  if (event.key !== "ArrowDown") return
-  if (textarea.value.slice(textarea.selectionEnd).includes("\n")) return
-  return 1
-}
-
 function filterModelOptions(options: ModelPickerOption[], query: string) {
   const needle = query.trim().toLowerCase()
   if (!needle) return options
   return options.filter((option) => `${option.model.name ?? option.model.id} ${option.provider.name}`.toLowerCase().includes(needle))
 }
 
-function isAssistantMessage(message: MessageBundle["info"]): message is AssistantMessage {
-  return message.role === "assistant"
-}
-
-function formatTokenCount(tokens: number) {
-  if (tokens >= 1_000_000) return `${trimCompactNumber(tokens / 1_000_000)}m`
-  if (tokens >= 1_000) return `${trimCompactNumber(tokens / 1_000)}k`
-  return tokens.toLocaleString()
-}
-
-function trimCompactNumber(value: number) {
-  return value >= 100 ? Math.round(value).toString() : value.toFixed(1).replace(/\.0$/, "")
-}
-
-function TranscriptLoadingState() {
-  return (
-    <div class="session-loading-state" aria-live="polite" aria-busy="true">
-      <span class="session-loading-spinner" />
-      <p>Loading...</p>
-    </div>
-  )
-}
-
-function SessionEmptyState() {
-  return (
-    <div class="session-empty-state">
-      <OpencodeXLogo />
-      <p>What should OpencodeX work on?</p>
-    </div>
-  )
-}
-
 function Empty(props: { text: string }) {
   return <div class="empty">{props.text}</div>
+}
+
+const SIDE_PANEL_OPEN_KEY = "opencodex.gui.sessionSidePanel.open"
+const SIDE_PANEL_WIDTH_KEY = "opencodex.gui.sessionSidePanel.width"
+
+function readSidePanelOpen() {
+  if (typeof localStorage === "undefined") return false
+  return localStorage.getItem(SIDE_PANEL_OPEN_KEY) === "open"
+}
+
+function writeSidePanelOpen(value: boolean) {
+  if (typeof localStorage === "undefined") return
+  localStorage.setItem(SIDE_PANEL_OPEN_KEY, value ? "open" : "closed")
+}
+
+function readSidePanelWidthRatio() {
+  if (typeof localStorage === "undefined") return 0.4
+  const parsed = Number(localStorage.getItem(SIDE_PANEL_WIDTH_KEY))
+  return clampSidePanelWidthRatio(Number.isFinite(parsed) ? parsed : 0.4)
+}
+
+function writeSidePanelWidthRatio(value: number) {
+  if (typeof localStorage === "undefined") return
+  localStorage.setItem(SIDE_PANEL_WIDTH_KEY, String(clampSidePanelWidthRatio(value)))
+}
+
+function clampSidePanelWidthRatio(value: number) {
+  return Math.max(0.28, Math.min(0.7, value))
 }

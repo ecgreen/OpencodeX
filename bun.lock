@@ -207,6 +207,7 @@
         "@solidjs/router": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "codemirror": "6.0.2",
+        "lucide-solid": "1.17.0",
         "solid-js": "catalog:",
         "vite": "catalog:",
         "vite-plugin-solid": "catalog:",
@@ -2870,6 +2871,8 @@
     "lru.min": ["lru.min@1.1.4", "", {}, "sha512-DqC6n3QQ77zdFpCMASA1a3Jlb64Hv2N2DciFGkO/4L9+q/IpIAuRlKOvCXabtRW6cQf8usbmM6BE/TOPysCdIA=="],
 
     "lru_map": ["lru_map@0.4.1", "", {}, "sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg=="],
+
+    "lucide-solid": ["lucide-solid@1.17.0", "", { "peerDependencies": { "solid-js": "^1.4.7" } }, "sha512-CBmYwkhv+zhldhWomlaRJY18rmBUTeDxyFCNkXIqKdeYUdCgu5aMQ8dx9VAkpFRYacz1Y72oeiKND080qwJhGw=="],
 
     "luxon": ["luxon@3.6.1", "", {}, "sha512-tJLxrKJhO2ukZ5z0gyjY1zPh3Rh88Ej9P7jNrZiHMUXHae1yvI2imgOZtL1TO8TW6biMMKfTtAOoEJANgtWBMQ=="],
 

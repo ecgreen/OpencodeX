@@ -1,0 +1,1467 @@
+/* TUI parity pass: keep the GUI text-first, flat, dense, and terminal-native. */
+:root {
+  --bg: #0a0a0a;
+  --panel: #141414;
+  --element: #1e1e1e;
+  --element-2: #282828;
+  --border: #484848;
+  --border-subtle: #3c3c3c;
+  --border-active: #606060;
+  --text: #eeeeee;
+  --muted: #808080;
+  --primary: #fab283;
+  --secondary: #5c9cf5;
+  --accent: #9d7cd8;
+  --warning: #f5a742;
+  --error: #e06c75;
+  --success: #7fd88f;
+  --info: #56b6c2;
+  --surface: var(--panel);
+  --surface-raised: var(--element);
+  --surface-hover: #242424;
+  --surface-active: var(--element);
+  --surface-glass: var(--panel);
+  --line: var(--border);
+  --line-soft: var(--border-subtle);
+  --line-strong: var(--border-active);
+  --brand: var(--primary);
+  --brand-soft: color-mix(in srgb, var(--primary) 13%, transparent);
+  --brand-contrast: var(--bg);
+  --blue: var(--primary);
+  --blue-soft: color-mix(in srgb, var(--primary) 13%, transparent);
+  --purple: var(--secondary);
+  --purple-soft: color-mix(in srgb, var(--secondary) 13%, transparent);
+  --amber: var(--warning);
+  --amber-soft: color-mix(in srgb, var(--warning) 12%, transparent);
+  --danger: var(--error);
+  --danger-soft: color-mix(in srgb, var(--error) 12%, transparent);
+  --ok: var(--success);
+  --ok-soft: color-mix(in srgb, var(--success) 12%, transparent);
+  --text-muted: var(--muted);
+  --text-strong: var(--text);
+  --radius-card: 0;
+  --radius-control: 2px;
+  --shadow-soft: none;
+  --shadow-button: none;
+  --shadow-button-hover: none;
+}
+
+:root[data-theme="light"] {
+  --bg: #eff1f5;
+  --panel: #e6e9ef;
+  --element: #dce0e8;
+  --element-2: #ccd0da;
+  --border: #bcc0cc;
+  --border-subtle: #ccd0da;
+  --border-active: #9ca0b0;
+  --text: #4c4f69;
+  --muted: #7c7f93;
+  --primary: #1e66f5;
+  --secondary: #8839ef;
+  --accent: #ea76cb;
+  --warning: #df8e1d;
+  --error: #d20f39;
+  --success: #40a02b;
+  --info: #179299;
+}
+
+body,
+:root[data-theme="light"] body {
+  background: var(--bg);
+}
+
+button,
+input,
+textarea,
+select,
+[data-ui="button"],
+[data-ui="input"],
+[data-ui="textarea"] {
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+.app-shell,
+.stage,
+.page,
+.session-page,
+.dashboard-page,
+.swarms-page,
+.views-manager-page,
+.plugins-page,
+.workbench-page {
+  background: var(--bg);
+}
+
+.stage {
+  padding: 10px;
+}
+
+.page {
+  gap: 12px;
+}
+
+.rail,
+.rail-header,
+.rail nav,
+.rail-section,
+.rail-project,
+.rail-session,
+.session-link {
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.rail {
+  border-right: 1px solid var(--border);
+}
+
+.rail button,
+.rail a,
+.session-link {
+  border-radius: 0;
+}
+
+.rail button:hover,
+.rail button:focus-visible,
+.session-link:hover,
+.session-link:focus-visible,
+.session-link.active {
+  background: var(--element);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.session-toolbar,
+.transcript,
+.composer-input,
+.dialog-card,
+.command-palette-modal,
+.model-picker-modal,
+.keyboard-help-modal,
+.notice,
+.safety-panel,
+.loading-card,
+.error-card,
+.empty,
+[data-ui="card"] {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.session-toolbar {
+  min-height: 42px;
+  padding: 7px 10px;
+  border-color: var(--border-subtle);
+  background: var(--panel);
+}
+
+.session-titleline h1,
+.session-header h1 {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.status,
+[data-ui="status"],
+.chip,
+.session-meta span {
+  min-height: 22px;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.opencodex-logo {
+  filter: none;
+}
+
+.dashboard-page > .opencodex-logo {
+  justify-self: start;
+  margin: 0 0 -2px 4px;
+  font-size: clamp(5px, 0.56vw, 8px);
+  opacity: 0.68;
+}
+
+.dashboard-actions {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.dashboard-action-card {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--action-color, var(--border-active));
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  transform: none;
+}
+
+.dashboard-action-card::before {
+  display: none;
+}
+
+.dashboard-action-card.project {
+  --action-color: var(--secondary);
+}
+
+.dashboard-action-card.session {
+  --action-color: var(--primary);
+}
+
+.dashboard-action-card.swarm {
+  --action-color: var(--accent);
+}
+
+.dashboard-action-card.view {
+  --action-color: var(--info);
+}
+
+.dashboard-action-card.project,
+.dashboard-action-card.session,
+.dashboard-action-card.swarm,
+.dashboard-action-card.view {
+  color: var(--text);
+}
+
+.dashboard-action-card:hover,
+.dashboard-action-card:focus-visible {
+  border-color: var(--border-active);
+  background: var(--element);
+  box-shadow: inset 3px 0 0 var(--action-color, var(--primary));
+  transform: none;
+}
+
+.dashboard-action-card .action-plus {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: inline-grid;
+  place-items: center;
+  align-self: center;
+  justify-self: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  color: var(--action-color);
+  background: transparent;
+}
+
+.dashboard-action-card .action-plus .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard-action-card strong {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  color: var(--action-color);
+  font-size: 13px;
+}
+
+.dashboard-action-card span:not(.action-plus),
+.dashboard-action-card small {
+  min-width: 0;
+  font-size: 11px;
+}
+
+.dashboard-action-card span:not(.action-plus) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dashboard-action-card small {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: end;
+  display: inline-flex;
+  place-items: center;
+  justify-content: flex-end;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0 0 9px;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--action-color) 42%, var(--border));
+  border-radius: 0;
+  color: var(--action-color);
+  background: transparent;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.dashboard-section {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dashboard-section > header {
+  min-height: 30px;
+  padding: 0 0 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-section .section-collapse {
+  padding: 0;
+  color: var(--secondary);
+  background: transparent;
+}
+
+.dashboard-section-content > div {
+  padding-top: 6px;
+}
+
+.dashboard-card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.dashboard-item-card,
+.view-list-card,
+.view-session-card,
+.manager-row,
+.role-editor-card,
+.project-detail-list,
+.dashboard-project-view {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dashboard-item-card {
+  min-height: 46px;
+  padding: 7px 10px;
+}
+
+.dashboard-item-card::before,
+.dashboard-status-card::before {
+  display: none;
+}
+
+.dashboard-item-card.interactive:hover,
+.dashboard-item-card.interactive:focus-within,
+.dashboard-status-card.interactive:hover,
+[data-ui="card"][data-interactive="true"]:hover {
+  border-color: var(--border-subtle);
+  border-left-color: var(--card-accent, var(--primary));
+  background: var(--element);
+  box-shadow: inset 3px 0 0 var(--card-accent, var(--primary));
+}
+
+.dashboard-status-card {
+  --session-card-bg: transparent;
+  background: transparent;
+}
+
+.dashboard-status-card.status-in-progress,
+.dashboard-status-card.status-input-needed,
+.dashboard-status-card.status-unviewed,
+.dashboard-status-card.status-ready-for-review,
+.dashboard-status-card.status-failed,
+.dashboard-status-card.status-dormant {
+  background: transparent;
+}
+
+.dashboard-status-card.status-in-progress {
+  --card-accent: var(--primary);
+}
+
+.dashboard-status-card.status-input-needed {
+  --card-accent: var(--warning);
+}
+
+.dashboard-status-card.status-unviewed,
+.dashboard-status-card.status-ready-for-review {
+  --card-accent: var(--secondary);
+}
+
+.dashboard-status-card.status-failed {
+  --card-accent: var(--error);
+}
+
+.dashboard-item-card.project-card,
+.dashboard-project-view {
+  --card-accent: var(--primary);
+}
+
+.dashboard-item-card.warning,
+.project-detail-row.warning {
+  --card-accent: var(--warning);
+  background: transparent;
+}
+
+.dashboard-item-card.empty-create {
+  border-style: dashed;
+  background: transparent;
+}
+
+.dashboard-card-open,
+.dashboard-project-open {
+  min-height: 0;
+}
+
+.dashboard-project-view {
+  padding: 10px 0 0;
+}
+
+.dashboard-project-view > header {
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dashboard-project-view-grid {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.project-detail-list {
+  border-left: 0;
+}
+
+.project-detail-list > header {
+  background: var(--panel);
+}
+
+.project-detail-row {
+  border-radius: 0;
+}
+
+.transcript {
+  padding: 10px 12px;
+  border-color: transparent;
+  background: var(--bg);
+}
+
+.message {
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.message header {
+  margin: 0 0 5px;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.message.user {
+  padding: 10px 12px;
+  border-left: 3px solid var(--primary);
+  background: var(--panel);
+}
+
+.message.user header {
+  padding-left: 0;
+  color: var(--primary);
+}
+
+.message.assistant {
+  padding-left: 24px;
+}
+
+.part.text {
+  margin: 6px 0 10px;
+}
+
+.message.assistant .part.text {
+  padding: 0;
+  background: transparent;
+}
+
+.part.reasoning,
+.thinking-block,
+.part.badge,
+.part.file {
+  border-radius: 0;
+  background: transparent;
+}
+
+.part.tool,
+.tool-group,
+.part.tool.no-details {
+  margin: 10px 0 12px;
+  border: 0;
+  border-left: 3px solid var(--success);
+  border-radius: 0;
+  background: var(--panel);
+}
+
+.part.tool > summary,
+.part.tool .tool-summary,
+.tool-group > summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.tool-details,
+.tool-group-list,
+.tool-output,
+.tool-diff,
+.tool-raw,
+.permission-context,
+.question-block {
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.tool-output,
+.tool-diff,
+.permission-diff,
+.part.tool pre,
+.part.text [data-component="markdown"] pre {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--element);
+}
+
+.part.text [data-component="markdown"] code {
+  border-radius: 0;
+  background: var(--element);
+}
+
+.composer {
+  gap: 4px;
+}
+
+.composer-input {
+  border-color: var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.composer textarea {
+  min-height: 46px;
+  padding: 10px 12px;
+  background: transparent;
+}
+
+.composer-footer {
+  min-height: 34px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mode-chip,
+.model-menu,
+.variant-trigger {
+  border-radius: 0;
+  background: var(--element);
+}
+
+.send-button {
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 0;
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: none;
+}
+
+.send-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 88%, white 12%);
+  box-shadow: none;
+}
+
+.slash-command-menu,
+.variant-menu,
+.overflow-menu > div {
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.option-list button,
+.slash-command-menu button,
+.choice-list button,
+.command-palette-list button,
+.model-picker-section button,
+.workbench-open-file-results button,
+.project-detail-row {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.option-list button:hover,
+.option-list button.selected,
+.slash-command-menu button:hover,
+.slash-command-menu button.selected,
+.choice-list button:hover,
+.command-palette-list button:hover:not(:disabled),
+.command-palette-list button.selected:not(:disabled),
+.model-picker-section button:hover,
+.model-picker-section button.selected,
+.workbench-open-file-results button:hover,
+.workbench-open-file-results button:focus-visible,
+button.project-detail-row:hover,
+button.project-detail-row:focus-visible {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.dialog-backdrop,
+.command-palette-backdrop,
+.workbench-open-file-backdrop {
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: none;
+}
+
+.dialog-card,
+.command-palette-modal,
+.model-picker-modal,
+.keyboard-help-modal,
+.workbench-open-file-modal {
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.command-palette-modal,
+.model-picker-modal {
+  width: min(820px, calc(100vw - 36px));
+  border-radius: 0;
+}
+
+.command-palette-modal header,
+.model-picker-modal header,
+.keyboard-help-modal header,
+.workbench-open-file-modal > header {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.command-palette-modal > input,
+.model-picker-modal input,
+.keyboard-help-modal > input,
+.dialog-card input,
+.dialog-card textarea,
+.workbench-open-file-search {
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.command-palette-group {
+  border: 0;
+}
+
+.command-palette-group h3 {
+  color: var(--secondary);
+}
+
+.command-palette-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.command-palette-list small {
+  grid-column: 1;
+}
+
+.command-palette-list kbd {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.view-pane,
+.workbench-files,
+.workbench-sidebar,
+.workbench-editor,
+.workbench-assistant-panel,
+.workbench-browser-panel,
+.workbench-artifacts-panel,
+.workbench-git-panel,
+.workbench-editor > header,
+.workbench-editor-tabs,
+.workbench-diagnostics-bar,
+.workbench-open-file-modal {
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.view-pane {
+  border-color: var(--border);
+}
+
+.view-pane.focused {
+  border-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.workbench-sidebar,
+.diff-file-list {
+  border-right: 1px solid var(--border);
+}
+
+.workbench-editor > header,
+.workbench-editor-tabs,
+.diff-header,
+.diff-subbar,
+.diff-file-header {
+  background: var(--panel);
+}
+
+.workbench-diagnostics-bar,
+.workbench-diagnostic-row > button:first-child,
+.workbench-diagnostic-fix,
+.workbench-open-file-trigger,
+.view-card-actions button,
+.active-view-actions button,
+.diff-actions button,
+.diff-file-header button,
+.diff-subbar select,
+.diff-file-tree-toolbar button {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 1180px) {
+  .session-inspector {
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 860px) {
+  body {
+    min-width: 360px;
+  }
+
+  .stage {
+    padding: 8px;
+  }
+
+  .dashboard-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-action-card {
+    min-height: 52px;
+  }
+}
+
+/* Follow-up tuning: keep the GUI darker, denser, and less card-driven. */
+.dashboard-page > .opencodex-logo {
+  justify-self: center;
+  margin: clamp(12px, 3vh, 32px) 0 clamp(4px, 1.4vh, 16px);
+  font-size: clamp(8px, 1.28vw, 15px);
+  opacity: 0.96;
+}
+
+.rail nav button[aria-label^="Workbench:"],
+.rail nav button[aria-label^="Plugins:"] {
+  display: none;
+}
+
+.rail button:hover,
+.rail button:focus-visible,
+.session-link:hover,
+.session-link:focus-visible,
+.session-link.active {
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-section header,
+.project-heading {
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.project-heading:hover,
+.project-heading:focus-within {
+  border-color: var(--border-subtle);
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-section .section-toggle,
+.project-toggle,
+.project-title {
+  border: 0;
+  background: transparent;
+}
+
+.rail-section header > .section-new,
+.project-new {
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header > .section-new:hover,
+.rail-section header > .section-new:focus-visible,
+.project-new:hover,
+.project-new:focus-visible {
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+}
+
+.session-page {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0;
+  min-height: 0;
+}
+
+.session-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  align-self: stretch;
+  margin: 0;
+  border-width: 0 0 1px;
+  border-color: var(--border-active);
+  background: var(--bg);
+}
+
+.transcript {
+  padding: 12px 14px;
+}
+
+.message {
+  margin: 0 0 10px;
+}
+
+.message.assistant {
+  display: grid;
+  gap: 5px;
+}
+
+.part.text {
+  margin: 4px 0 6px;
+}
+
+.part.tool,
+.part.tool.no-details {
+  margin: 4px 0;
+  border: 0;
+  background: transparent;
+}
+
+.part.tool > summary,
+.part.tool .tool-summary {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  padding: 1px 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+}
+
+.part.tool > summary strong,
+.part.tool .tool-summary strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.part.tool > summary .tool-status,
+.part.tool .tool-summary .tool-status {
+  display: none;
+}
+
+.part.tool > summary .output-chevron {
+  color: var(--muted);
+}
+
+.part.tool .tool-details {
+  margin: 2px 0 0 19px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.part.tool .tool-output {
+  border: 0;
+  background: transparent;
+}
+
+.part.tool .tool-output pre,
+.part.tool pre {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.part.tool .tool-output button {
+  margin-top: 2px;
+}
+
+.part.tool.todo-update,
+.part.tool:has(.tool-diff),
+.thinking-block {
+  margin: 12px 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--warning);
+  background: var(--panel);
+}
+
+.part.tool:has(.tool-diff) {
+  border-left-color: var(--primary);
+}
+
+.part.tool.todo-update {
+  border-left-color: var(--success);
+}
+
+.part.tool.todo-update > summary,
+.part.tool.todo-update > .tool-summary,
+.part.tool:has(.tool-diff) > summary,
+.part.tool:has(.tool-diff) > .tool-summary,
+.thinking-block summary {
+  display: grid;
+  min-height: 32px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  background: transparent;
+}
+
+.part.tool.todo-update > summary .tool-status,
+.part.tool.todo-update > .tool-summary .tool-status,
+.part.tool:has(.tool-diff) > summary .tool-status,
+.part.tool:has(.tool-diff) > .tool-summary .tool-status {
+  display: inline-flex;
+}
+
+.part.tool.todo-update .tool-details,
+.part.tool:has(.tool-diff) .tool-details {
+  margin: 0;
+  padding: 8px 10px 10px;
+}
+
+.part.tool.todo-update .tool-output,
+.part.tool:has(.tool-diff) .tool-output,
+.part.tool:has(.tool-diff) .tool-diff {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.part.tool.todo-update .tool-output pre,
+.part.tool:has(.tool-diff) .tool-output pre,
+.part.tool:has(.tool-diff) pre {
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.composer-footer {
+  border-top: 0;
+}
+
+.send-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.send-button .icon {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  transform: translateX(1px);
+}
+
+/* Card hover polish: dark, readable, and clearly focused without layout shift. */
+.dashboard-action-card {
+  --card-hover-duration: 180ms;
+  --card-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+  transition:
+    background var(--card-hover-duration) var(--card-hover-ease),
+    border-color var(--card-hover-duration) var(--card-hover-ease),
+    box-shadow var(--card-hover-duration) var(--card-hover-ease),
+    color 140ms ease;
+}
+
+.dashboard-action-card :is(span, small, strong) {
+  transition:
+    border-color var(--card-hover-duration) var(--card-hover-ease),
+    color 140ms ease;
+}
+
+.dashboard-action-card:hover,
+.dashboard-action-card:focus-visible {
+  border-color: color-mix(in srgb, var(--action-color) 46%, var(--border));
+  border-left-color: var(--action-color);
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--action-color) 16%, transparent), transparent 48%),
+    color-mix(in srgb, var(--panel) 88%, var(--action-color) 12%);
+  box-shadow:
+    inset 4px 0 0 var(--action-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--action-color) 24%, transparent);
+}
+
+.dashboard-action-card:hover span:not(.action-plus),
+.dashboard-action-card:focus-visible span:not(.action-plus) {
+  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+}
+
+.dashboard-action-card:hover small,
+.dashboard-action-card:focus-visible small {
+  border-left-color: color-mix(in srgb, var(--action-color) 68%, var(--border));
+  color: color-mix(in srgb, var(--action-color) 82%, var(--text));
+}
+
+.dashboard-item-card.interactive,
+.dashboard-status-card.interactive,
+[data-ui="card"][data-interactive="true"],
+.view-list-card,
+.view-session-card,
+.manager-row,
+.role-editor-card,
+button.project-detail-row {
+  --card-hover-duration: 180ms;
+  --card-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  transition:
+    background var(--card-hover-duration) var(--card-hover-ease),
+    border-color var(--card-hover-duration) var(--card-hover-ease),
+    box-shadow var(--card-hover-duration) var(--card-hover-ease),
+    color 140ms ease;
+}
+
+.dashboard-item-card.interactive :is(p, span, small, strong),
+.dashboard-status-card.interactive :is(p, span, small, strong),
+[data-ui="card"][data-interactive="true"] :is(p, span, small, strong),
+.view-list-card :is(p, span, small, strong),
+.view-session-card :is(p, span, small, strong),
+.manager-row :is(p, span, small, strong),
+.role-editor-card :is(p, span, small, strong),
+button.project-detail-row :is(p, span, small, strong) {
+  transition: color 140ms ease;
+}
+
+.dashboard-item-card.interactive:hover,
+.dashboard-item-card.interactive:focus-within,
+.dashboard-status-card.interactive:hover,
+.dashboard-status-card.interactive:focus-within,
+[data-ui="card"][data-interactive="true"]:hover,
+[data-ui="card"][data-interactive="true"]:focus-within,
+.view-list-card:hover,
+.view-list-card:focus-within,
+.view-session-card:hover,
+.view-session-card:focus-within,
+.manager-row:hover,
+.manager-row:focus-within,
+.role-editor-card:hover,
+.role-editor-card:focus-within,
+button.project-detail-row:hover,
+button.project-detail-row:focus-visible {
+  border-color: color-mix(in srgb, var(--card-accent, var(--primary)) 42%, var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--card-accent, var(--primary)) 12%, transparent), transparent 46%),
+    color-mix(in srgb, var(--panel) 90%, var(--card-accent, var(--primary)) 10%);
+  box-shadow:
+    inset 4px 0 0 var(--card-accent, var(--primary)),
+    inset 0 0 0 1px color-mix(in srgb, var(--card-accent, var(--primary)) 20%, transparent);
+}
+
+.dashboard-item-card.interactive:hover :is(p, span, small),
+.dashboard-item-card.interactive:focus-within :is(p, span, small),
+.dashboard-status-card.interactive:hover :is(p, span, small),
+.dashboard-status-card.interactive:focus-within :is(p, span, small),
+[data-ui="card"][data-interactive="true"]:hover :is(p, span, small),
+[data-ui="card"][data-interactive="true"]:focus-within :is(p, span, small),
+.view-list-card:hover :is(p, span, small),
+.view-list-card:focus-within :is(p, span, small),
+.view-session-card:hover :is(p, span, small),
+.view-session-card:focus-within :is(p, span, small),
+.manager-row:hover :is(p, span, small),
+.manager-row:focus-within :is(p, span, small),
+.role-editor-card:hover :is(p, span, small),
+.role-editor-card:focus-within :is(p, span, small),
+button.project-detail-row:hover :is(p, span, small),
+button.project-detail-row:focus-visible :is(p, span, small) {
+  color: color-mix(in srgb, var(--text) 76%, var(--muted));
+}
+
+.dashboard-item-card.interactive:hover strong,
+.dashboard-item-card.interactive:focus-within strong,
+.dashboard-status-card.interactive:hover strong,
+.dashboard-status-card.interactive:focus-within strong,
+[data-ui="card"][data-interactive="true"]:hover strong,
+[data-ui="card"][data-interactive="true"]:focus-within strong,
+.view-list-card:hover strong,
+.view-list-card:focus-within strong,
+.view-session-card:hover strong,
+.view-session-card:focus-within strong,
+.manager-row:hover strong,
+.manager-row:focus-within strong,
+.role-editor-card:hover strong,
+.role-editor-card:focus-within strong,
+button.project-detail-row:hover strong,
+button.project-detail-row:focus-visible strong {
+  color: var(--text);
+}
+
+/* Sidebar card hover polish: keep state rails visible, readable, and stationary. */
+.rail-section header,
+.project-heading,
+.session-link,
+.nav button {
+  --sidebar-hover-duration: 170ms;
+  --sidebar-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateY(0);
+  transition:
+    background var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    border-color var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    box-shadow var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    color 130ms ease,
+    opacity 130ms ease;
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.project-heading:hover,
+.project-heading:focus-within,
+.session-link:hover,
+.session-link:focus-visible,
+.nav button:hover,
+.nav button:focus-visible {
+  transform: translateY(0);
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.project-heading:hover,
+.project-heading:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--primary) 11%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 90%, var(--primary) 10%);
+  box-shadow:
+    inset 3px 0 0 var(--primary),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.session-link {
+  transform: translateY(0);
+}
+
+.session-link:hover,
+.session-link:focus-visible {
+  border-color: color-mix(in srgb, var(--session-state-color) 32%, var(--border-subtle));
+  border-left-color: var(--session-state-color);
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--session-state-color) 16%, transparent), transparent 48%),
+    color-mix(in srgb, var(--panel) 92%, var(--session-state-color) 8%);
+  box-shadow:
+    inset 3px 0 0 var(--session-state-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--session-state-color) 14%, transparent);
+}
+
+.session-link.active {
+  border-color: color-mix(in srgb, var(--session-state-color) 42%, var(--border));
+  border-left-color: var(--session-state-color);
+  background: var(--session-active-bg);
+  box-shadow:
+    inset 3px 0 0 var(--session-state-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--session-state-color) 24%, transparent);
+}
+
+.session-link:hover > span:first-child,
+.session-link:focus-visible > span:first-child,
+.session-link:hover small,
+.session-link:focus-visible small {
+  color: color-mix(in srgb, var(--text) 86%, var(--session-state-color));
+}
+
+.session-link.status-unviewed:hover > span:first-child,
+.session-link.status-unviewed:focus-visible > span:first-child,
+.session-link.status-ready-for-review:hover > span:first-child,
+.session-link.status-ready-for-review:focus-visible > span:first-child {
+  color: transparent;
+}
+
+.nav button:hover,
+.nav button:focus-visible {
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--primary) 13%, transparent), transparent 50%),
+    color-mix(in srgb, var(--panel) 90%, var(--primary) 10%);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+/* Project rows use the same blue as the dashboard project action. */
+.project-heading {
+  --project-row-color: var(--secondary);
+  color: var(--project-row-color);
+}
+
+.rail-section header[data-rail-section-id="projects"] {
+  --project-row-color: var(--secondary);
+}
+
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong) {
+  color: var(--project-row-color);
+}
+
+.rail-section header[data-rail-section-id="projects"]:hover,
+.rail-section header[data-rail-section-id="projects"]:focus-within {
+  border-color: color-mix(in srgb, var(--project-row-color) 34%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--project-row-color) 13%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 91%, var(--project-row-color) 9%);
+  box-shadow:
+    inset 3px 0 0 var(--project-row-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--project-row-color) 16%, transparent);
+}
+
+.rail-section header[data-rail-section-id="projects"] > .section-new {
+  color: color-mix(in srgb, var(--project-row-color) 72%, var(--muted));
+  background: transparent;
+}
+
+.rail-section header[data-rail-section-id="projects"]:hover > .section-new,
+.rail-section header[data-rail-section-id="projects"]:focus-within > .section-new {
+  color: color-mix(in srgb, var(--project-row-color) 82%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 7%, transparent);
+}
+
+.rail-section header[data-rail-section-id="projects"] > .section-new:hover,
+.rail-section header[data-rail-section-id="projects"] > .section-new:focus-visible {
+  color: color-mix(in srgb, var(--project-row-color) 88%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 12%, transparent);
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle, .project-title) {
+  color: var(--project-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle, .project-title):hover,
+.project-heading :is(.project-toggle, .project-title):focus-visible,
+.project-heading:hover :is(.project-toggle, .project-title),
+.project-heading:focus-within :is(.project-toggle, .project-title) {
+  color: color-mix(in srgb, var(--project-row-color) 86%, var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:hover,
+.project-heading:focus-within {
+  border-color: color-mix(in srgb, var(--project-row-color) 34%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--project-row-color) 13%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 91%, var(--project-row-color) 9%);
+  box-shadow:
+    inset 3px 0 0 var(--project-row-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--project-row-color) 16%, transparent);
+}
+
+.project-heading .project-new {
+  border-left: 1px solid color-mix(in srgb, var(--project-row-color) 20%, var(--border-subtle));
+  color: color-mix(in srgb, var(--project-row-color) 72%, var(--muted));
+  background: transparent;
+}
+
+.project-heading:hover .project-new,
+.project-heading:focus-within .project-new {
+  border-left-color: color-mix(in srgb, var(--project-row-color) 38%, var(--border));
+  color: color-mix(in srgb, var(--project-row-color) 82%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 7%, transparent);
+}
+
+.project-heading .project-new:hover,
+.project-heading .project-new:focus-visible {
+  border-left-color: color-mix(in srgb, var(--project-row-color) 54%, var(--border));
+  color: color-mix(in srgb, var(--project-row-color) 88%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 12%, transparent);
+  box-shadow: none;
+}
+
+.project-heading.dragging,
+.rail-section header.dragging,
+.draggable-row.dragging,
+.rail-section.section-slot-placeholder::before,
+.rail-section.section-slot-placeholder::after,
+.project-drop-placeholder,
+.project-group.dropping,
+.rail-section header.dropping,
+.draggable-row.dropping,
+.rail-section-drag-preview,
+.project-drag-preview,
+.project-drag-preview-sessions span {
+  border-radius: 0;
+}
+
+.project-drag-preview {
+  border-color: color-mix(in srgb, var(--secondary) 34%, var(--border));
+  border-left-color: var(--secondary);
+}
+
+.project-drag-preview-icon {
+  color: var(--secondary);
+}
+
+/* Major sidebar section rows share a neutral slate treatment. */
+.rail-section header {
+  --major-row-color: color-mix(in srgb, var(--text) 92%, #ffffff);
+  --major-row-accent: color-mix(in srgb, var(--text) 58%, var(--border-active));
+  --major-row-muted: color-mix(in srgb, var(--muted) 74%, var(--text));
+  color: var(--major-row-color);
+}
+
+.rail-section header :is(.section-toggle, .section-chevron, strong) {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header .section-count {
+  color: var(--major-row-muted);
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.rail-section header[data-rail-section-id="projects"]:hover,
+.rail-section header[data-rail-section-id="projects"]:focus-within {
+  border-color: color-mix(in srgb, var(--major-row-accent) 42%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 11%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 88%, var(--text) 12%);
+  box-shadow:
+    inset 3px 0 0 var(--major-row-accent),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.rail-section header :is(.section-toggle, .section-chevron, strong):hover,
+.rail-section header :is(.section-toggle, .section-chevron, strong):focus-visible,
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong):hover,
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong):focus-visible {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header > .section-new,
+.rail-section header[data-rail-section-id="projects"] > .section-new {
+  border-left: 1px solid color-mix(in srgb, var(--major-row-accent) 28%, var(--border-subtle));
+  color: var(--major-row-muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header:hover > .section-new,
+.rail-section header:focus-within > .section-new,
+.rail-section header[data-rail-section-id="projects"]:hover > .section-new,
+.rail-section header[data-rail-section-id="projects"]:focus-within > .section-new {
+  border-left-color: color-mix(in srgb, var(--major-row-accent) 42%, var(--border));
+  color: color-mix(in srgb, var(--text) 86%, var(--muted));
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.rail-section header > .section-new:hover,
+.rail-section header > .section-new:focus-visible,
+.rail-section header[data-rail-section-id="projects"] > .section-new:hover,
+.rail-section header[data-rail-section-id="projects"] > .section-new:focus-visible {
+  border-left-color: color-mix(in srgb, var(--major-row-accent) 58%, var(--border));
+  color: var(--major-row-color);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  box-shadow: none;
+}
+
+/* Final neutral pass for major headers. */
+.rail-section header[data-rail-section-id] :is(.section-toggle, .section-chevron, strong),
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong) {
+  color: var(--major-row-color);
+}
+
+.rail-section header[data-rail-section-id]:hover,
+.rail-section header[data-rail-section-id]:focus-within,
+.rail-section header[data-rail-section-id="projects"]:hover,
+.rail-section header[data-rail-section-id="projects"]:focus-within {
+  border-color: color-mix(in srgb, var(--text) 20%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent), transparent 54%),
+    color-mix(in srgb, var(--bg) 68%, var(--element) 32%);
+  box-shadow:
+    inset 3px 0 0 var(--major-row-accent),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.rail-section header > .section-new,
+.rail-section header[data-rail-section-id="projects"] > .section-new,
+.project-heading .project-new {
+  background: transparent;
+}
+
+.rail-section header:hover > .section-new,
+.rail-section header:focus-within > .section-new,
+.rail-section header[data-rail-section-id="projects"]:hover > .section-new,
+.rail-section header[data-rail-section-id="projects"]:focus-within > .section-new,
+.project-heading:hover .project-new,
+.project-heading:focus-within .project-new,
+.rail-section header > .section-new:hover,
+.rail-section header > .section-new:focus-visible,
+.rail-section header[data-rail-section-id="projects"] > .section-new:hover,
+.rail-section header[data-rail-section-id="projects"] > .section-new:focus-visible,
+.project-heading .project-new:hover,
+.project-heading .project-new:focus-visible {
+  background: transparent;
+  box-shadow: none;
+}

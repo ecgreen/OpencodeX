@@ -1,3 +1,5 @@
+import { StatusBadge } from "./ui"
+
 export function StatusPill(props: { status: string }) {
-  return <span class={`status ${props.status.replaceAll("_", "-").replaceAll(" ", "-")}`}>{props.status}</span>
+  return <StatusBadge class={`status ${props.status.replaceAll("_", "-").replaceAll(" ", "-")}`} status={props.status} />
 }

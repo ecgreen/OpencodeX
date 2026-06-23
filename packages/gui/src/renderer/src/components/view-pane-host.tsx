@@ -3,6 +3,7 @@ import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { GuiSnapshot, SessionData } from "../lib/store"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
+import type { SessionSidePanelTarget } from "./session-side-panel"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
 import { ViewPane } from "./view-pane"
 
@@ -32,6 +33,7 @@ export function ViewPaneHost(props: {
   setSelectedModel: (sessionID: string, value: string) => void
   setSelectedVariant: (sessionID: string, value: string) => void
   focus: (sessionID: string, focusComposer: boolean) => void
+  openSidePanelTarget?: (sessionID: string, target: SessionSidePanelTarget) => void
   submit: (event: SubmitEvent, item: ViewItem, prompt: GuiPromptInfo) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
@@ -85,6 +87,7 @@ export function ViewPaneHost(props: {
       permissions={props.permissions}
       questions={props.questions}
       focus={(focusComposer) => props.focus(id(), focusComposer)}
+      openSidePanelTarget={(target) => props.openSidePanelTarget?.(id(), target)}
       submit={(event, text) => props.submit(event, props.item, text)}
       replyPermission={props.replyPermission}
       replyQuestion={props.replyQuestion}

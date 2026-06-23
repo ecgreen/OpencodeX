@@ -3,6 +3,7 @@ import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/store"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
+import type { SessionSidePanelTarget } from "./session-side-panel"
 import { SessionPage } from "./session-page"
 
 export function ViewPane(props: {
@@ -32,6 +33,7 @@ export function ViewPane(props: {
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   focus: (focusComposer: boolean) => void
+  openSidePanelTarget?: (target: SessionSidePanelTarget) => void
   submit: (event: SubmitEvent, prompt: GuiPromptInfo) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
@@ -56,7 +58,7 @@ export function ViewPane(props: {
   loadOlderMessages: (cursor: string) => Promise<void>
 }) {
   const handlePointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 || props.focused()) return
+    if (event.button !== 0) return
     props.focus(shouldAutoFocusViewComposer(event))
   }
   return (
@@ -109,6 +111,8 @@ export function ViewPane(props: {
         composerState={props.composerState}
         updateComposerState={props.updateComposerState}
         composerFocusToken={props.composerFocusToken}
+        sidePanelEnabled={false}
+        openSidePanelTarget={props.openSidePanelTarget}
         loadOlderMessages={props.loadOlderMessages}
       />
     </article>

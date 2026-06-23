@@ -10,6 +10,7 @@ export type DiffTreeRow = {
   name: string
   path: string
   depth: number
+  guides: boolean[]
   file?: DiffFile
 }
 
@@ -49,7 +50,7 @@ export function buildDiffFileTree(files: DiffFile[]): DiffTreeNode[] {
   return sortTree(roots)
 }
 
-export function flattenDiffFileTree(nodes: DiffTreeNode[], expanded: ReadonlySet<string>, depth = 0): DiffTreeRow[] {
+export function flattenDiffFileTree(nodes: DiffTreeNode[], expanded: ReadonlySet<string>, depth = 0, guides: boolean[] = []): DiffTreeRow[] {
   return nodes.flatMap((node): DiffTreeRow[] => {
     const row = {
       id: node.id,
@@ -57,10 +58,11 @@ export function flattenDiffFileTree(nodes: DiffTreeNode[], expanded: ReadonlySet
       name: node.name,
       path: node.path,
       depth,
+      guides,
       ...(node.type === "file" ? { file: node.file } : {}),
     }
     if (node.type === "file" || !expanded.has(node.id)) return [row]
-    return [row, ...flattenDiffFileTree(node.children, expanded, depth + 1)]
+    return [row, ...flattenDiffFileTree(node.children, expanded, depth + 1, [...guides, true])]
   })
 }
 

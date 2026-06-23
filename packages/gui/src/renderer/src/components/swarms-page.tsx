@@ -17,7 +17,7 @@ import {
   swarmRuns,
 } from "../lib/swarm-actions"
 import type { GuiSnapshot } from "../lib/store"
-import { Icon } from "./icon"
+import { Button, IconButton, TextArea, TextInput } from "./ui"
 
 export function SwarmsPage(props: {
   snapshot?: GuiSnapshot
@@ -186,7 +186,7 @@ export function SwarmEditorPage(props: {
             </label>
             <label>
               <span>Title</span>
-              <input value={swarmTitle()} onInput={(event) => setSwarmTitle(event.currentTarget.value)} placeholder="Optional; first task can name the swarm later" />
+              <TextInput value={swarmTitle()} onInput={(event) => setSwarmTitle(event.currentTarget.value)} placeholder="Optional; first task can name the swarm later" />
             </label>
           </div>
         </section>
@@ -196,7 +196,7 @@ export function SwarmEditorPage(props: {
               <strong>Team</strong>
               <span>{roles().length} roles</span>
             </div>
-            <button type="button" class="secondary" onClick={addRole}><Icon name="plus" /> Role</button>
+            <Button size="sm" icon="plus" onClick={addRole}>Role</Button>
           </header>
           <div class="role-editor-list">
             <For each={roles()}>
@@ -205,13 +205,13 @@ export function SwarmEditorPage(props: {
                   <header>
                     <strong>{index() === 0 ? "Orchestrator" : `Specialist ${index()}`}</strong>
                     <Show when={index() > 0}>
-                      <button type="button" class="danger" onClick={() => removeRole(index())}><Icon name="trash" /> Remove</button>
+                      <IconButton variant="danger" icon="trash" label={`Remove role ${index()}`} onClick={() => removeRole(index())} />
                     </Show>
                   </header>
                   <div class="form-grid">
                     <label>
                       <span>Name</span>
-                      <input value={role.name} onInput={(event) => updateRole(index(), (current) => ({ ...current, name: event.currentTarget.value }))} />
+                      <TextInput value={role.name} onInput={(event) => updateRole(index(), (current) => ({ ...current, name: event.currentTarget.value }))} />
                     </label>
                     <label>
                       <span>Agent</span>
@@ -224,7 +224,7 @@ export function SwarmEditorPage(props: {
                     </label>
                     <label>
                       <span>Skill</span>
-                      <input value={role.skill ?? ""} onInput={(event) => updateRole(index(), (current) => ({ ...current, skill: event.currentTarget.value || undefined }))} />
+                      <TextInput value={role.skill ?? ""} onInput={(event) => updateRole(index(), (current) => ({ ...current, skill: event.currentTarget.value || undefined }))} />
                     </label>
                     <label>
                       <span>Model</span>
@@ -241,7 +241,7 @@ export function SwarmEditorPage(props: {
                   </div>
                   <label>
                     <span>Instructions</span>
-                    <textarea value={role.instructions} onInput={(event) => updateRole(index(), (current) => ({ ...current, instructions: event.currentTarget.value }))} />
+                    <TextArea value={role.instructions} onInput={(event) => updateRole(index(), (current) => ({ ...current, instructions: event.currentTarget.value }))} />
                   </label>
                 </article>
               )}
@@ -252,8 +252,8 @@ export function SwarmEditorPage(props: {
           <div class="notice error">{error()}</div>
         </Show>
         <div class="form-actions">
-          <button type="button" class="secondary" onClick={props.cancel}><Icon name="x" /> Cancel</button>
-          <button type="submit" class="primary" disabled={saving()}><Icon name="check" /> {saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</button>
+          <Button icon="x" onClick={props.cancel}>Cancel</Button>
+          <Button type="submit" variant="primary" icon="check" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</Button>
         </div>
       </Show>
     </form>
@@ -303,8 +303,8 @@ function SwarmDetail(props: {
         </article>
         <form class="dashboard-item-card swarm-task-card" onSubmit={submitTask}>
           <strong>New task</strong>
-          <textarea value={taskPrompt()} onInput={(event) => setTaskPrompt(event.currentTarget.value)} placeholder="Describe the next task for this swarm" />
-          <button type="submit" class="primary"><Icon name="send" /> Assign task</button>
+          <TextArea value={taskPrompt()} onInput={(event) => setTaskPrompt(event.currentTarget.value)} placeholder="Describe the next task for this swarm" />
+          <Button type="submit" variant="primary" icon="send">Assign task</Button>
         </form>
       </section>
       <section class="manager-section">
@@ -413,7 +413,7 @@ function PageHeader(props: {
       </div>
       <div class="row-actions">
         <For each={props.actions}>
-          {(action) => <button class={action.danger ? "danger" : "secondary"} type="button" onClick={action.onClick}><Icon name={action.icon} /> {action.label}</button>}
+          {(action) => <Button variant={action.danger ? "danger" : "secondary"} icon={action.icon} onClick={action.onClick}>{action.label}</Button>}
         </For>
       </div>
     </header>

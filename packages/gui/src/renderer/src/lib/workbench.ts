@@ -1,5 +1,31 @@
 import type { FileContent, FileNode, OpencodeXProject } from "@opencode-ai/sdk/v2/client"
-import type { DiffFile, WorkbenchGitFileStatus } from "./store"
+import { highlightWorkbenchCode, workbenchChangedLineNumbers, workbenchLineDiffRows, workbenchLineStates } from "./workbench-lines"
+import { workbenchNormalizeBrowserURL } from "./workbench-browser"
+export {
+  normalizeWorkbenchDiffs,
+  workbenchDiffForPath,
+  workbenchFilteredGitChangeRows,
+  workbenchGitChangeGroups,
+  workbenchGitChangeRows,
+  workbenchGitFileStats,
+  workbenchGitSummary,
+  workbenchPatchRows,
+} from "./workbench-git"
+export {
+  activeWorkbenchBrowserTab,
+  addWorkbenchArtifact,
+  addWorkbenchBrowserTab,
+  closeWorkbenchBrowserTab,
+  removeWorkbenchArtifact,
+  updateWorkbenchBrowserTabState,
+  updateWorkbenchBrowserTabURL,
+  workbenchArtifactOpenURL,
+  workbenchBrowserPageArtifact,
+  workbenchBrowserTabLabel,
+  workbenchNormalizeBrowserURL,
+} from "./workbench-browser"
+export { workbenchGithubLinks, workbenchGithubPullLink, workbenchPullNumber } from "./workbench-github"
+export { workbenchDiffPrompt, workbenchPromptTarget } from "./workbench-prompts"
 
 export type WorkbenchTreeRow = {
   node: FileNode
@@ -44,11 +70,6 @@ export type WorkbenchPatchRow = {
   text: string
   oldLine?: number
   newLine?: number
-}
-
-type WorkbenchLineMatch = {
-  original: number
-  current: number
 }
 
 export type WorkbenchArtifact = {
@@ -236,167 +257,12 @@ export function renameWorkbenchBuffer<TContent>(
   return buffers.map((buffer) => buffer.path === from ? { ...buffer, path: to } : buffer)
 }
 
-export function addWorkbenchBrowserTab(tabs: WorkbenchBrowserTab[], tab: WorkbenchBrowserTab) {
-  return tabs.some((item) => item.id === tab.id) ? tabs : [...tabs, tab]
-}
-
-export function activeWorkbenchBrowserTab(tabs: WorkbenchBrowserTab[], activeID: string) {
-  return tabs.find((tab) => tab.id === activeID) ?? tabs[0]
-}
-
-export function updateWorkbenchBrowserTabURL(tabs: WorkbenchBrowserTab[], id: string, url: string) {
-  return tabs.map((tab) => tab.id === id ? { ...tab, url } : tab)
-}
-
-export function updateWorkbenchBrowserTabState(tabs: WorkbenchBrowserTab[], state: WorkbenchBrowserTabState) {
-  return tabs.map((tab) => tab.id === state.id ? {
-    ...tab,
-    url: state.url || tab.url,
-    title: state.title || tab.title,
-    state,
-  } : tab)
-}
-
-export function closeWorkbenchBrowserTab(tabs: WorkbenchBrowserTab[], activeID: string, id: string) {
-  const index = tabs.findIndex((tab) => tab.id === id)
-  const nextTabs = tabs.filter((tab) => tab.id !== id)
-  return {
-    tabs: nextTabs,
-    activeID: activeID === id ? nextTabs[Math.min(index, nextTabs.length - 1)]?.id ?? "" : activeID,
-  }
-}
-
 export function workbenchPathKey(value: string | undefined) {
   return value?.replaceAll("\\", "/").replace(/^\.\/+/, "").replaceAll("/./", "/") ?? ""
 }
 
-export function normalizeWorkbenchDiffs(files: readonly DiffFile[]) {
-  return files.flatMap((file): WorkbenchDiffFile[] => {
-    const path = workbenchPathKey(file.file)
-    if (!path) return []
-    return [{
-      file: path,
-      patch: file.patch,
-      additions: file.additions,
-      deletions: file.deletions,
-      status: file.status ?? "modified",
-    }]
-  })
-}
-
-export function workbenchGitChangeRows(statusFiles: readonly WorkbenchGitFileStatus[], diffFiles: readonly WorkbenchDiffFile[]) {
-  const statusPaths = new Set(statusFiles.map((file) => workbenchPathKey(file.path)))
-  return [
-    ...statusFiles.map((file) => ({
-      ...file,
-      path: workbenchPathKey(file.path),
-    })),
-    ...diffFiles.flatMap((file): WorkbenchGitFileStatus[] => {
-      const path = workbenchPathKey(file.file)
-      if (!path || statusPaths.has(path)) return []
-      return [{
-        path,
-        code: file.status === "added" ? "A " : file.status === "deleted" ? "D " : " M",
-        status: file.status,
-        staged: false,
-        unstaged: true,
-        untracked: file.status === "added" && file.patch?.includes("/dev/null") === true,
-      }]
-    }),
-  ]
-}
-
-export function workbenchFilteredGitChangeRows(files: readonly WorkbenchGitFileStatus[], query: string) {
-  const normalized = query.trim().toLowerCase()
-  if (!normalized) return [...files]
-  if (normalized === "staged") return files.filter((file) => file.staged)
-  if (normalized === "unstaged" || normalized === "changes") return files.filter((file) => file.unstaged || file.untracked || !file.staged)
-  if (normalized === "new" || normalized === "untracked") return files.filter((file) => file.untracked || file.status === "added")
-  return files.filter((file) => [
-    file.path,
-    file.status,
-    file.code,
-    file.staged ? "staged" : "changes",
-    file.untracked ? "new" : "",
-  ].some((value) => value.toLowerCase().includes(normalized)))
-}
-
-export function workbenchGitChangeGroups(files: readonly WorkbenchGitFileStatus[]) {
-  return {
-    staged: files.filter((file) => file.staged),
-    unstaged: files.filter((file) => file.unstaged || file.untracked || !file.staged),
-  }
-}
-
-export function workbenchGitFileStats(_file: Pick<WorkbenchGitFileStatus, "path">, diff: WorkbenchDiffFile | undefined) {
-  return {
-    additions: diff?.additions ?? 0,
-    deletions: diff?.deletions ?? 0,
-    total: (diff?.additions ?? 0) + (diff?.deletions ?? 0),
-  }
-}
-
-export function workbenchGitSummary(files: readonly WorkbenchGitFileStatus[], diffs: readonly WorkbenchDiffFile[]) {
-  const diffByPath = new Map(diffs.map((diff) => [workbenchPathKey(diff.file), diff]))
-  const stats = files.map((file) => workbenchGitFileStats(file, diffByPath.get(workbenchPathKey(file.path))))
-  return {
-    changed: files.length,
-    staged: files.filter((file) => file.staged).length,
-    unstaged: files.filter((file) => file.unstaged || file.untracked || !file.staged).length,
-    additions: stats.reduce((total, stat) => total + stat.additions, 0),
-    deletions: stats.reduce((total, stat) => total + stat.deletions, 0),
-  }
-}
-
-export function workbenchDiffForPath(files: readonly WorkbenchDiffFile[], path: string | undefined) {
-  const key = workbenchPathKey(path)
-  if (!key) return
-  return files.find((file) => workbenchPathKey(file.file) === key)
-    ?? files.find((file) => workbenchPathKey(file.file).endsWith(`/${key}`))
-}
-
 export function workbenchDiffCopyText(diff: WorkbenchDiffFile | undefined) {
   return diff?.patch?.trim() ? diff.patch : ""
-}
-
-export function workbenchPatchRows(patch: string): WorkbenchPatchRow[] {
-  const rows: WorkbenchPatchRow[] = []
-  let oldLine = 0
-  let newLine = 0
-  let inHunk = false
-  for (const line of patch.replace(/\r\n?/g, "\n").split("\n")) {
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line)
-    if (hunk) {
-      oldLine = Number(hunk[1])
-      newLine = Number(hunk[2])
-      inHunk = true
-      rows.push({ kind: "hunk", text: line })
-      continue
-    }
-    if (!inHunk) {
-      rows.push({ kind: "meta", text: line })
-      continue
-    }
-    if (line.startsWith("\\ No newline")) {
-      rows.push({ kind: "meta", text: line })
-      continue
-    }
-    if (line.startsWith("+")) {
-      rows.push({ kind: "addition", text: line.slice(1), newLine })
-      newLine++
-      continue
-    }
-    if (line.startsWith("-")) {
-      rows.push({ kind: "deletion", text: line.slice(1), oldLine })
-      oldLine++
-      continue
-    }
-    const text = line.startsWith(" ") ? line.slice(1) : line
-    rows.push({ kind: "context", text, oldLine, newLine })
-    oldLine++
-    newLine++
-  }
-  return rows.filter((row) => row.kind !== "meta" || row.text.trim())
 }
 
 export function workbenchUnsavedBufferDiff(buffer: Pick<WorkbenchFileBuffer, "path" | "content" | "original"> | undefined) {
@@ -477,43 +343,6 @@ export function workbenchFileAssistantPrompt(input: {
   ].join("\n")
 }
 
-export function addWorkbenchArtifact(
-  artifacts: readonly WorkbenchArtifact[],
-  artifact: Omit<WorkbenchArtifact, "id" | "created"> & { id?: string; created?: number },
-  limit = 50,
-) {
-  const created = artifact.created ?? Date.now()
-  const next = {
-    ...artifact,
-    id: artifact.id ?? `artifact-${created}`,
-    created,
-  }
-  return [next, ...artifacts.filter((item) => item.id !== next.id)].slice(0, limit)
-}
-
-export function removeWorkbenchArtifact(artifacts: readonly WorkbenchArtifact[], id: string) {
-  return artifacts.filter((item) => item.id !== id)
-}
-
-export function workbenchArtifactOpenURL(artifact: Pick<WorkbenchArtifact, "kind" | "url">) {
-  if (!artifact.url) return
-  if (artifact.kind === "link") return artifact.url
-  return artifact.url.startsWith("http") ? artifact.url : undefined
-}
-
-export function workbenchBrowserPageArtifact(input: { url?: string; title?: string }) {
-  const inputURL = input.url?.trim()
-  if (!inputURL) return
-  const url = workbenchNormalizeBrowserURL(inputURL)
-  const title = input.title?.trim() || workbenchBrowserURLLabel(url)
-  return {
-    kind: "link" as const,
-    title,
-    url,
-    text: `Browser page: ${title}\n${url}`,
-  }
-}
-
 export function parseWorkbenchState(value: string | null | undefined): Partial<WorkbenchPersistedState> {
   if (!value) return {}
   try {
@@ -530,30 +359,6 @@ export function readWorkbenchState(storage: Storage | undefined = globalStorage(
 export function writeWorkbenchState(state: WorkbenchPersistedState, storage: Storage | undefined = globalStorage()) {
   if (!storage) return
   storage.setItem(WORKBENCH_STATE_STORAGE_KEY, JSON.stringify(normalizeWorkbenchState(state)))
-}
-
-export function workbenchBrowserTabLabel(tab: WorkbenchBrowserTab | undefined) {
-  if (!tab) return "New tab"
-  const title = tab.state?.title || tab.title
-  if (title) return title
-  try {
-    const url = new URL(tab.state?.url || tab.url)
-    return url.hostname || url.toString()
-  } catch {
-    return tab.url || "New tab"
-  }
-}
-
-export function workbenchNormalizeBrowserURL(value: string) {
-  const input = value.trim()
-  if (!input) return "about:blank"
-  if (/^(https?|file|about):/i.test(input)) return input
-  if (/^localhost(?::\d+)?(?:\/.*)?$/i.test(input)) return `http://${input}`
-  if (/^(?:127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/.*)?$/i.test(input)) return `http://${input}`
-  if (/^\[::1\](?::\d+)?(?:\/.*)?$/i.test(input)) return `http://${input}`
-  if (/^[^\s/]+\.[^\s/]+(?:\/.*)?$/i.test(input)) return `https://${input}`
-  if (/^[^\s]+:\d+(?:\/.*)?$/i.test(input)) return `http://${input}`
-  return `https://www.google.com/search?q=${encodeURIComponent(input)}`
 }
 
 export function flattenWorkbenchFileTree(input: {
@@ -581,108 +386,7 @@ export function flattenWorkbenchFileTree(input: {
   return visit(input.root, 0)
 }
 
-export function workbenchLineStates(input: { current: string; original: string }) {
-  const changed = workbenchChangedLineNumbers(input)
-  const current = splitWorkbenchLines(input.current)
-  return current.map((text, index) => ({
-    number: index + 1,
-    text,
-    modified: changed.has(index + 1),
-  }))
-}
-
-export function workbenchChangedLineNumbers(input: { current: string; original: string }) {
-  if (input.current === input.original) return new Set<number>()
-  const current = splitWorkbenchLines(input.current)
-  const original = splitWorkbenchLines(input.original)
-  const matches = new Set(workbenchLineMatches(original, current).map((match) => match.current))
-  const changed = new Set(current.flatMap((_, index) => matches.has(index) ? [] : [index + 1]))
-  if (changed.size > 0 || current.length === 0) return changed
-  const anchor = current.findIndex((line, index) => line !== original[index])
-  return new Set([Math.min(Math.max(anchor + 1, 1), current.length)])
-}
-
-export function highlightWorkbenchCode(input: { text: string; path: string }) {
-  return splitWorkbenchLines(input.text).map((line) => highlightWorkbenchLine(line, input.path)).join("\n")
-}
-
-export function workbenchPromptTarget(input: {
-  sessionID?: string
-  projectID?: string
-  projectDirectory?: string
-  fallbackDirectory?: string
-}) {
-  if (input.sessionID) return { name: "session" as const, sessionID: input.sessionID }
-  return {
-    name: "new-session" as const,
-    projectID: input.projectID,
-    directory: input.projectDirectory ?? input.fallbackDirectory,
-  }
-}
-
-export function workbenchGithubLinks(input: {
-  githubUrl?: string
-  branch?: string
-  defaultBranch?: string
-}) {
-  const repository = normalizedGithubUrl(input.githubUrl)
-  if (!repository) return
-  const branch = input.branch?.trim()
-  const base = input.defaultBranch?.trim() || "main"
-  const compare = branch && branch !== base
-    ? `${repository}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?quick_pull=1`
-    : `${repository}/compare`
-  return {
-    repository,
-    pulls: `${repository}/pulls`,
-    issues: `${repository}/issues`,
-    actions: `${repository}/actions`,
-    compare,
-    newIssue: `${repository}/issues/new/choose`,
-  }
-}
-
-export function workbenchPullNumber(value: string) {
-  const match = /^#?(\d+)$/.exec(value.trim())
-  if (!match) return
-  const number = Number(match[1])
-  return Number.isSafeInteger(number) && number > 0 ? number : undefined
-}
-
-export function workbenchGithubPullLink(input: { githubUrl?: string; number?: number }) {
-  const repository = normalizedGithubUrl(input.githubUrl)
-  if (!repository || !input.number) return
-  return `${repository}/pull/${input.number}`
-}
-
-export function workbenchDiffPrompt(input: {
-  file?: string
-  status?: string
-  additions?: number
-  deletions?: number
-  patch?: string
-}) {
-  const file = input.file?.trim()
-  const summary = [
-    input.status ? `status: ${input.status}` : "",
-    typeof input.additions === "number" ? `+${input.additions}` : "",
-    typeof input.deletions === "number" ? `-${input.deletions}` : "",
-  ].filter(Boolean).join(", ")
-  const header = file
-    ? `Review the Git diff for ${file}${summary ? ` (${summary})` : ""}.`
-    : "Review the selected Git diff."
-  const patch = input.patch?.trim()
-  if (!patch) return `${header} Call out risks, missing tests, and whether I should edit, stage, or discard it.`
-  const body = patch.length > 12_000 ? `${patch.slice(0, 12_000)}\n\n[Diff truncated]` : patch
-  return [
-    header,
-    "Call out risks, missing tests, and whether I should edit, stage, or discard it.",
-    "",
-    "```diff",
-    body,
-    "```",
-  ].join("\n")
-}
+export { highlightWorkbenchCode, workbenchChangedLineNumbers, workbenchLineStates } from "./workbench-lines"
 
 function sortWorkbenchFiles(items: FileNode[]) {
   return [...items].sort((left, right) => {
@@ -758,15 +462,6 @@ function normalizeWorkbenchArtifacts(input: unknown) {
   }).sort((left, right) => right.created - left.created).slice(0, 50)
 }
 
-function workbenchBrowserURLLabel(value: string) {
-  try {
-    const url = new URL(workbenchNormalizeBrowserURL(value))
-    return url.hostname || url.toString()
-  } catch {
-    return "Browser page"
-  }
-}
-
 function isWorkbenchTab(value: unknown): value is WorkbenchTab {
   return value === "files" || value === "git" || value === "browser" || value === "artifacts"
 }
@@ -778,192 +473,3 @@ function globalStorage() {
     return undefined
   }
 }
-
-function splitWorkbenchLines(text: string) {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n")
-  return lines.length ? lines : [""]
-}
-
-function workbenchLineDiffRows(originalText: string, currentText: string) {
-  const original = splitWorkbenchLines(originalText)
-  const current = splitWorkbenchLines(currentText)
-  const matches = workbenchLineMatches(original, current)
-  const rows: string[] = []
-  let originalIndex = 0
-  let currentIndex = 0
-  for (const match of matches) {
-    while (originalIndex < match.original) {
-      rows.push(`-${original[originalIndex] ?? ""}`)
-      originalIndex++
-    }
-    while (currentIndex < match.current) {
-      rows.push(`+${current[currentIndex] ?? ""}`)
-      currentIndex++
-    }
-    rows.push(` ${current[match.current] ?? ""}`)
-    originalIndex = match.original + 1
-    currentIndex = match.current + 1
-  }
-  while (originalIndex < original.length) {
-    rows.push(`-${original[originalIndex] ?? ""}`)
-    originalIndex++
-  }
-  while (currentIndex < current.length) {
-    rows.push(`+${current[currentIndex] ?? ""}`)
-    currentIndex++
-  }
-  return rows
-}
-
-function workbenchLineMatches(original: readonly string[], current: readonly string[]) {
-  const prefix: WorkbenchLineMatch[] = []
-  let prefixIndex = 0
-  while (prefixIndex < original.length && prefixIndex < current.length && original[prefixIndex] === current[prefixIndex]) {
-    prefix.push({ original: prefixIndex, current: prefixIndex })
-    prefixIndex++
-  }
-
-  const suffix: WorkbenchLineMatch[] = []
-  let originalEnd = original.length - 1
-  let currentEnd = current.length - 1
-  while (originalEnd >= prefixIndex && currentEnd >= prefixIndex && original[originalEnd] === current[currentEnd]) {
-    suffix.push({ original: originalEnd, current: currentEnd })
-    originalEnd--
-    currentEnd--
-  }
-
-  const originalMiddle = original.slice(prefixIndex, originalEnd + 1)
-  const currentMiddle = current.slice(prefixIndex, currentEnd + 1)
-  const middle = originalMiddle.length * currentMiddle.length > 300_000
-    ? []
-    : workbenchMiddleLineMatches(originalMiddle, currentMiddle).map((match) => ({
-        original: match.original + prefixIndex,
-        current: match.current + prefixIndex,
-      }))
-  return [...prefix, ...middle, ...suffix.reverse()]
-}
-
-function workbenchMiddleLineMatches(original: readonly string[], current: readonly string[]) {
-  const width = current.length + 1
-  const scores = new Uint32Array((original.length + 1) * width)
-  for (let originalIndex = 1; originalIndex <= original.length; originalIndex++) {
-    for (let currentIndex = 1; currentIndex <= current.length; currentIndex++) {
-      const index = originalIndex * width + currentIndex
-      scores[index] = original[originalIndex - 1] === current[currentIndex - 1]
-        ? scores[(originalIndex - 1) * width + currentIndex - 1] + 1
-        : Math.max(scores[(originalIndex - 1) * width + currentIndex], scores[originalIndex * width + currentIndex - 1])
-    }
-  }
-
-  const matches: WorkbenchLineMatch[] = []
-  let originalIndex = original.length
-  let currentIndex = current.length
-  while (originalIndex > 0 && currentIndex > 0) {
-    if (original[originalIndex - 1] === current[currentIndex - 1]) {
-      matches.push({ original: originalIndex - 1, current: currentIndex - 1 })
-      originalIndex--
-      currentIndex--
-      continue
-    }
-    if (scores[(originalIndex - 1) * width + currentIndex] >= scores[originalIndex * width + currentIndex - 1]) {
-      originalIndex--
-      continue
-    }
-    currentIndex--
-  }
-  return matches.reverse()
-}
-
-function highlightWorkbenchLine(line: string, file: string) {
-  const commentStart = lineCommentStart(line, file)
-  if (commentStart >= 0) {
-    return `${highlightWorkbenchTokens(line.slice(0, commentStart))}<span class="syntax-comment">${escapeHtml(line.slice(commentStart))}</span>`
-  }
-  return highlightWorkbenchTokens(line)
-}
-
-function highlightWorkbenchTokens(line: string) {
-  const tokens = line.match(/(["'`])(?:\\.|(?!\1).)*\1|\b[A-Za-z_$][\w$]*\b|\b\d+(?:\.\d+)?\b|[{}[\]().,:;<>+\-*/%=!&|?]+|\s+|./g) ?? []
-  return tokens.map((token, index) => {
-    if (/^\s+$/.test(token)) return token
-    if (/^(["'`])/.test(token)) return `<span class="syntax-string">${escapeHtml(token)}</span>`
-    if (/^\d/.test(token)) return `<span class="syntax-constant">${escapeHtml(token)}</span>`
-    if (/^[{}[\]().,:;<>+\-*/%=!&|?]+$/.test(token)) return `<span class="syntax-punctuation">${escapeHtml(token)}</span>`
-    if (WORKBENCH_KEYWORDS.has(token)) return `<span class="syntax-keyword">${escapeHtml(token)}</span>`
-    if (WORKBENCH_PRIMITIVES.has(token)) return `<span class="syntax-primitive">${escapeHtml(token)}</span>`
-    if (/^[A-Z]/.test(token)) return `<span class="syntax-type">${escapeHtml(token)}</span>`
-    if ((tokens[index + 1] ?? "").startsWith("(")) return `<span class="syntax-property">${escapeHtml(token)}</span>`
-    return escapeHtml(token)
-  }).join("")
-}
-
-function lineCommentStart(line: string, file: string) {
-  const trimmed = file.toLowerCase()
-  const hash = line.indexOf("#")
-  const slash = line.indexOf("//")
-  if ([".py", ".sh", ".bash", ".zsh", ".ps1", ".yml", ".yaml", ".toml"].some((extension) => trimmed.endsWith(extension))) return hash
-  if (slash >= 0) return slash
-  return hash === 0 ? hash : -1
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-}
-
-function normalizedGithubUrl(value: string | undefined) {
-  if (!value) return
-  const url = value.replace(/\/+$/, "")
-  try {
-    const parsed = new URL(url)
-    if (parsed.hostname !== "github.com") return
-    const path = parsed.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "")
-    if (path.split("/").length !== 2) return
-    return `https://github.com/${path}`
-  } catch {
-    return
-  }
-}
-
-const WORKBENCH_KEYWORDS = new Set([
-  "async",
-  "await",
-  "break",
-  "case",
-  "catch",
-  "class",
-  "const",
-  "continue",
-  "def",
-  "default",
-  "do",
-  "else",
-  "export",
-  "extends",
-  "finally",
-  "for",
-  "from",
-  "function",
-  "if",
-  "import",
-  "in",
-  "interface",
-  "let",
-  "match",
-  "new",
-  "package",
-  "private",
-  "protected",
-  "public",
-  "return",
-  "struct",
-  "switch",
-  "type",
-  "var",
-  "while",
-])
-
-const WORKBENCH_PRIMITIVES = new Set(["false", "null", "None", "nil", "true", "undefined"])

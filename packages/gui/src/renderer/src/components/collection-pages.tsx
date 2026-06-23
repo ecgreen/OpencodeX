@@ -2,8 +2,8 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { For, createMemo } from "solid-js"
 import { compactPath, title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
-import { Icon } from "./icon"
 import { StatusPill } from "./status-pill"
+import { Button, IconButton } from "./ui"
 
 export function SessionCollectionPage(props: {
   sessions: Session[]
@@ -31,11 +31,11 @@ export function SessionCollectionPage(props: {
             </div>
             <div class="row-actions">
               <StatusPill status={props.sessionStatus[session.id]?.type ?? "idle"} />
-              <button onClick={() => props.openSession(session.id)}>Open</button>
-              <button onClick={() => props.toggleSessionPinned(session.id)}>{props.sessionPinned(session.id) ? "Unpin" : "Pin"}</button>
-              <button onClick={() => props.renameSession(session)}>Rename</button>
-              <button onClick={() => props.moveSession(session)}>Move</button>
-              <button class="danger" onClick={() => props.deleteSession(session)}><Icon name="trash" /> Delete</button>
+              <Button size="sm" icon="session" onClick={() => props.openSession(session.id)}>Open</Button>
+              <IconButton icon="pin" label={`${props.sessionPinned(session.id) ? "Unpin" : "Pin"} ${title(session.title)}`} pressed={props.sessionPinned(session.id)} onClick={() => props.toggleSessionPinned(session.id)} />
+              <IconButton icon="pencil" label={`Rename ${title(session.title)}`} onClick={() => props.renameSession(session)} />
+              <IconButton icon="folder" label={`Move ${title(session.title)} to project`} onClick={() => props.moveSession(session)} />
+              <IconButton variant="danger" icon="trash" label={`Delete ${title(session.title)}`} onClick={() => props.deleteSession(session)} />
             </div>
           </article>
         )}
@@ -59,7 +59,7 @@ export function ProjectCollectionPage(props: {
       <h1>Project groups</h1>
       <p>Project groups, folders, and nested sessions are loaded from the same OpencodeX backend used by the TUI.</p>
       <div class="row-actions page-actions">
-        <button class="primary" onClick={props.createProject}><Icon name="plus" /> Create project</button>
+        <Button variant="primary" icon="plus" onClick={props.createProject}>Create project</Button>
       </div>
       <For each={props.projects} fallback={<Empty text="No projects" />}>
         {(project, index) => (
@@ -70,11 +70,11 @@ export function ProjectCollectionPage(props: {
             </div>
             <div class="row-actions">
               <small>{props.sessionCount(project)} sessions</small>
-              <button disabled={index() === 0} onClick={() => props.moveProject(project.id, -1)}>Up</button>
-              <button disabled={index() === props.projects.length - 1} onClick={() => props.moveProject(project.id, 1)}>Down</button>
-              <button onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</button>
-              <button onClick={() => props.editProject(project.id, title(project.name ?? project.project.name), project.folders.map((folder) => folder.path))}>Edit</button>
-              <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}><Icon name="trash" /> Delete</button>
+              <IconButton icon="arrowUp" label={`Move ${title(project.name ?? project.project.name)} up`} disabled={index() === 0} onClick={() => props.moveProject(project.id, -1)} />
+              <IconButton icon="chevronDown" label={`Move ${title(project.name ?? project.project.name)} down`} disabled={index() === props.projects.length - 1} onClick={() => props.moveProject(project.id, 1)} />
+              <Button size="sm" icon="session" onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</Button>
+              <IconButton icon="pencil" label={`Edit ${title(project.name ?? project.project.name)}`} onClick={() => props.editProject(project.id, title(project.name ?? project.project.name), project.folders.map((folder) => folder.path))} />
+              <IconButton variant="danger" icon="trash" label={`Delete ${title(project.name ?? project.project.name)}`} onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))} />
             </div>
           </article>
         )}

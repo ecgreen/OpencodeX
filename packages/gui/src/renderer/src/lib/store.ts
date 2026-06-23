@@ -1,36 +1,11 @@
-import type {
-  Agent,
-  Command,
-  Config,
+﻿import type {
   GlobalEvent,
-  LspStatus,
-  McpStatus,
-  Message,
-  OpencodeXJob,
-  OpencodeXProject,
-  OpencodeXSessionUiState,
-  OpencodeXSwarm,
-  OpencodeXSwarmRoleInput,
-  OpencodeXView,
   Part,
-  PermissionRequest,
-  Provider,
   QuestionAnswer,
-  QuestionRequest,
   SnapshotFileDiff,
-  Session,
-  SessionStatus,
   Todo,
-  TextPartInput,
-  FilePartInput,
-  FileContent,
-  FileNode,
-  AgentPartInput,
-  McpResource,
-  VcsFileDiff,
 } from "@opencode-ai/sdk/v2/client"
 import {
-  isRenderableClientSession,
   loadClientSessionSync,
   updateClientSessionState,
   type ClientSessionStateUpdate,
@@ -39,160 +14,78 @@ import {
 import type { GuiClient } from "./client"
 import { messageCursorBefore } from "./message-window"
 import { displayMessageText } from "./message-text"
-
-export type MessageBundle = {
-  info: Message
-  parts: Part[]
-}
-
-export type SessionData = {
-  messages: MessageBundle[]
-  messageCursor?: string
-  todos: Todo[]
-  diffs: SnapshotFileDiff[]
-}
-
-export type PromptPart = TextPartInput | FilePartInput | AgentPartInput
-
-export type DiffFile = SnapshotFileDiff | VcsFileDiff
-
-export type GuiPlugin = {
-  id: string
-  pluginID: string
-  kind: "server" | "tui"
-  spec: string
-  source: string
-  scope: "global" | "local" | "internal"
-  enabled: boolean
-  active: boolean
-  canToggle: boolean
-  target?: string
-  note?: string
-}
-
-export type GuiPluginInstallResult = {
-  ok: boolean
-  message?: string
-  dir?: string
-  tui: boolean
-  server: boolean
-  items: Array<{ kind: "server" | "tui"; mode: "noop" | "add" | "replace"; file: string }>
-}
-
-export type WorkbenchOperationResult = {
-  ok: boolean
-  reason?: string
-  message?: string
-  content?: string
-}
-
-export type WorkbenchGitFileStatus = {
-  path: string
-  code: string
-  status: string
-  staged: boolean
-  unstaged: boolean
-  untracked: boolean
-}
-
-export type WorkbenchGitStatus = {
-  ok: boolean
-  message?: string
-  branch?: string
-  defaultBranch?: string
-  upstream?: string
-  ahead?: number
-  behind?: number
-  remote?: string
-  remoteUrl?: string
-  githubUrl?: string
-  clean: boolean
-  files: WorkbenchGitFileStatus[]
-}
-
-export type WorkbenchGitBranches = {
-  ok: boolean
-  message?: string
-  current?: string
-  branches: string[]
-}
-
-export type WorkbenchGitHistoryFile = {
-  path: string
-  status: string
-  previousPath?: string
-}
-
-export type WorkbenchGitHistoryCommit = {
-  hash: string
-  shortHash: string
-  author: string
-  email?: string
-  date: string
-  subject: string
-  body?: string
-  files: WorkbenchGitHistoryFile[]
-}
-export type WorkbenchDiagnostic = {
-  path?: string
-  line?: number
-  column?: number
-  severity: "error" | "warning" | "info"
-  message: string
-}
-export type WorkbenchDiagnosticsResult = {
-  ok: boolean
-  command?: string
-  message?: string
-  output?: string
-  diagnostics: WorkbenchDiagnostic[]
-}
-
-export type WorkbenchGitStash = {
-  ref: string
-  hash?: string
-  age?: string
-  message?: string
-}
-
-export type WorkbenchDataResult<T = unknown> = {
-  ok: boolean
-  message?: string
-  data?: T
-}
-
-export type SessionLoadOptions = {
-  messageLimit?: number
-  messageRenderBudget?: number
-  messageBefore?: string
-  includeSideData?: boolean
-}
-
-export type GuiSnapshot = {
-  projects: OpencodeXProject[]
-  sessions: Session[]
-  sessionStatus: Record<string, SessionStatus>
-  sessionUiState: Record<string, OpencodeXSessionUiState>
-  sessionSyncRevision?: string
-  permissions: PermissionRequest[]
-  questions: QuestionRequest[]
-  providers: Provider[]
-  agents: Agent[]
-  commands?: Command[]
-  lsp?: LspStatus[]
-  mcp?: Record<string, McpStatus>
-  config?: Config
-  mcpResources?: Record<string, McpResource>
-  plugins?: GuiPlugin[]
-  swarms: OpencodeXSwarm[]
-  jobs: OpencodeXJob[]
-  views: OpencodeXView[]
-}
-
-export type SessionCardSnapshot = Pick<
+import { authHeaders } from "./store-auth"
+import { isRenderableSession, sessionListQuery, sessionSyncSnapshot } from "./store-session-sync"
+import { listPlugins as loadGuiPlugins } from "./store-workbench"
+export { authHeaders } from "./store-auth"
+export { isRenderableSession } from "./store-session-sync"
+export * from "./store-opencodex-actions"
+export * from "./store-provider-actions"
+import type {
+  DiffFile,
+  GuiPlugin,
+  GuiPluginInstallResult,
   GuiSnapshot,
-  "projects" | "sessions" | "sessionStatus" | "sessionUiState" | "sessionSyncRevision" | "permissions" | "questions" | "views"
->
+  MessageBundle,
+  PromptPart,
+  SessionCardSnapshot,
+  SessionData,
+  SessionLoadOptions,
+  WorkbenchDataResult,
+  WorkbenchDiagnostic,
+  WorkbenchDiagnosticsResult,
+  WorkbenchGitBranches,
+  WorkbenchGitFileStatus,
+  WorkbenchGitHistoryCommit,
+  WorkbenchGitStash,
+  WorkbenchGitStatus,
+  WorkbenchOperationResult,
+} from "./store-types"
+export type {
+  DiffFile,
+  GuiPlugin,
+  GuiPluginInstallResult,
+  GuiSnapshot,
+  MessageBundle,
+  PromptPart,
+  SessionCardSnapshot,
+  SessionData,
+  SessionLoadOptions,
+  WorkbenchDataResult,
+  WorkbenchDiagnostic,
+  WorkbenchDiagnosticsResult,
+  WorkbenchGitBranches,
+  WorkbenchGitFileStatus,
+  WorkbenchGitHistoryCommit,
+  WorkbenchGitHistoryFile,
+  WorkbenchGitStash,
+  WorkbenchGitStatus,
+  WorkbenchOperationResult,
+} from "./store-types"
+export {
+  createWorkbenchFile,
+  deleteWorkbenchFile,
+  findFiles,
+  installPlugin,
+  listPlugins,
+  listWorkbenchFiles,
+  readWorkbenchFile,
+  registerGuiBridge,
+  renameWorkbenchFile,
+  togglePlugin,
+  workbenchDiagnostics,
+  workbenchGithubData,
+  workbenchGithubPost,
+  workbenchGitBranches,
+  workbenchGitDiff,
+  workbenchGitHistory,
+  workbenchGitOperation,
+  workbenchGitStashes,
+  workbenchGitStashCreate,
+  workbenchGitStashOperation,
+  workbenchGitStatus,
+  writeWorkbenchFile,
+} from "./store-workbench"
 
 const ID_RANDOM_BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 let lastClientMessageIDTimestamp = 0
@@ -219,7 +112,7 @@ export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
     Promise.resolve(gui.client.mcp?.status?.({ directory })).then((x) => x?.data ?? {}).catch(() => ({})),
     Promise.resolve(gui.client.config.get?.({ directory })).then((x) => x?.data).catch(() => undefined),
     Promise.resolve(gui.client.experimental.resource?.list?.({ directory })).then((x) => x?.data ?? {}).catch(() => ({})),
-    listPlugins(gui).catch(() => []),
+    loadGuiPlugins(gui).catch(() => []),
     gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
     gui.client.opencodex.job.list().then((x) => x.data ?? []),
   ])
@@ -442,384 +335,6 @@ export async function rejectQuestion(gui: GuiClient, requestID: string, director
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function createProject(gui: GuiClient, input: { name?: string; directory: string }) {
-  return gui.client.opencodex.project.create({
-    opencodeXProjectCreateInput: {
-      name: input.name,
-      directory: input.directory,
-      folders: [input.directory],
-    },
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function validateProjectFolders(gui: GuiClient, input: { projectID?: string; folders: string[] }) {
-  return gui.client.opencodex.project.validate({
-    opencodeXProjectValidateInput: input,
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function renameProject(gui: GuiClient, projectID: string, name: string) {
-  return gui.client.opencodex.project.update({ projectID, name }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function updateProjectFolders(gui: GuiClient, projectID: string, folders: string[]) {
-  return gui.client.opencodex.project.update({ projectID, folders }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function updateProject(gui: GuiClient, projectID: string, input: { name: string; folders: string[] }) {
-  return gui.client.opencodex.project.update({ projectID, name: input.name, folders: input.folders }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function reorderProjects(gui: GuiClient, projectIDs: string[]) {
-  return gui.client.opencodex.project.reorder({ opencodeXProjectReorderInput: { projectIDs } }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function deleteProject(gui: GuiClient, projectID: string) {
-  return gui.client.opencodex.project.delete({ projectID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function createSession(gui: GuiClient, input: { projectID?: string; directory: string; title?: string }) {
-  if (input.projectID) {
-    return gui.client.opencodex.session.create({
-      opencodeXSessionCreateInput: {
-        projectID: input.projectID,
-          directory: input.directory,
-          title: input.title,
-        },
-    }, { headers: authHeaders(gui), throwOnError: true })
-  }
-
-  return gui.client.session.create({
-    directory: input.directory,
-    title: input.title,
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function renameSession(gui: GuiClient, sessionID: string, title: string, directory?: string) {
-  return gui.client.session.update({ sessionID, directory: directory || gui.directory || undefined, title }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function deleteSession(gui: GuiClient, sessionID: string) {
-  return gui.client.opencodex.session.delete({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function moveSession(gui: GuiClient, sessionID: string, projectID: string) {
-  return gui.client.opencodex.session.move({
-    opencodeXSessionMoveInput: { sessionID, projectID },
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function getSwarm(gui: GuiClient, swarmID: string) {
-  return gui.client.opencodex.swarm.get({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function createSwarm(gui: GuiClient, input: { projectID: string; title?: string; prompt?: string; roles?: OpencodeXSwarmRoleInput[] }) {
-  return gui.client.opencodex.swarm.create({
-    opencodeXSwarmCreateInput: {
-      projectID: input.projectID,
-      title: input.title,
-      prompt: input.prompt,
-      source: "manual",
-      roles: input.roles,
-    },
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function updateSwarm(gui: GuiClient, swarmID: string, input: { title?: string; roles?: OpencodeXSwarmRoleInput[]; metadata?: Record<string, unknown> }) {
-  return gui.client.opencodex.swarm.update({
-    swarmID,
-    opencodeXSwarmUpdateInput: input,
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function startSwarm(gui: GuiClient, swarmID: string) {
-  return gui.client.opencodex.swarm.start({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function cancelSwarm(gui: GuiClient, swarmID: string) {
-  return gui.client.opencodex.swarm.cancel({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function deleteSwarm(gui: GuiClient, swarmID: string) {
-  return gui.client.opencodex.swarm.delete({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { prompt: string; agent?: string; mode?: "build" | "plan"; variant?: string }) {
-  return gui.client.opencodex.swarm.task.assign({
-    swarmID,
-    opencodeXSwarmAssignTaskInput: {
-      prompt: input.prompt,
-      agent: input.agent,
-      mode: input.mode,
-      variant: input.variant,
-    },
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function createView(gui: GuiClient, input: { title?: string; sessionIDs: string[] }) {
-  return gui.client.opencodex.view.create({
-    opencodeXViewCreateInput: {
-      title: input.title,
-      sessionIDs: input.sessionIDs,
-      focusedSessionID: input.sessionIDs[0],
-      layout: "auto",
-    },
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function reorderViews(gui: GuiClient, viewIDs: string[]) {
-  return gui.client.opencodex.view.reorder({ opencodeXViewReorderInput: { viewIDs } }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function updateViewFocus(gui: GuiClient, viewID: string, focusedSessionID: string) {
-  return gui.client.opencodex.view.update({ viewID, focusedSessionID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function deleteView(gui: GuiClient, viewID: string) {
-  return gui.client.opencodex.view.delete({ viewID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function updateView(gui: GuiClient, viewID: string, input: { title?: string; sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
-  return gui.client.opencodex.view.update({ viewID, ...input }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function listMcpStatus(gui: GuiClient) {
-  return gui.client.mcp.status({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function connectMcp(gui: GuiClient, name: string) {
-  return gui.client.mcp.connect({ name, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function disconnectMcp(gui: GuiClient, name: string) {
-  return gui.client.mcp.disconnect({ name, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function listConsoleOrgs(gui: GuiClient) {
-  return gui.client.experimental.console.listOrgs({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function switchConsoleOrg(gui: GuiClient, accountID: string, orgID: string) {
-  return gui.client.experimental.console.switchOrg({ accountID, orgID, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function syncWorkspaces(gui: GuiClient) {
-  return gui.client.experimental.workspace.syncList({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function listWorkspaces(gui: GuiClient) {
-  return gui.client.experimental.workspace.list({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function workspaceStatus(gui: GuiClient) {
-  return gui.client.experimental.workspace.status({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function removeWorkspace(gui: GuiClient, id: string) {
-  return gui.client.experimental.workspace.remove({ id, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function warpSessionWorkspace(gui: GuiClient, input: { id: string | null; sessionID: string; copyChanges?: boolean }) {
-  return gui.client.experimental.workspace.warp({
-    directory: gui.directory || undefined,
-    id: input.id,
-    sessionID: input.sessionID,
-    copyChanges: input.copyChanges,
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function disposeInstance(gui: GuiClient) {
-  return gui.client.instance.dispose({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function listProviders(gui: GuiClient) {
-  return gui.client.provider.list({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function listProviderAuthMethods(gui: GuiClient) {
-  return gui.client.provider.auth({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function setProviderApiAuth(gui: GuiClient, providerID: string, key: string, metadata?: Record<string, string>) {
-  return gui.client.auth.set({
-    providerID,
-    auth: {
-      type: "api",
-      key,
-      ...(metadata ? { metadata } : {}),
-    },
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function authorizeProviderOauth(gui: GuiClient, input: { providerID: string; method: number; inputs?: Record<string, string> }) {
-  return gui.client.provider.oauth.authorize({
-    directory: gui.directory || undefined,
-    providerID: input.providerID,
-    method: input.method,
-    inputs: input.inputs,
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function completeProviderOauth(gui: GuiClient, input: { providerID: string; method: number; code?: string }) {
-  return gui.client.provider.oauth.callback({
-    directory: gui.directory || undefined,
-    providerID: input.providerID,
-    method: input.method,
-    code: input.code,
-  }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function listSkills(gui: GuiClient) {
-  return gui.client.app.skills({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function findFiles(gui: GuiClient, input: { query: string; directory?: string; limit?: number }): Promise<FileNode[]> {
-  return gui.client.find.files({
-    directory: input.directory || gui.directory || undefined,
-    query: input.query,
-    dirs: "true",
-    limit: input.limit ?? 20,
-  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => (x.data ?? []).map((file) => typeof file === "string" ? {
-    name: file.split(/[\\/]/).at(-1) ?? file,
-    path: file,
-    absolute: file,
-    type: "file",
-    ignored: false,
-  } : file))
-}
-
-export async function listWorkbenchFiles(gui: GuiClient, path: string, directory?: string): Promise<FileNode[]> {
-  return gui.client.file.list({
-    directory: directory || gui.directory || undefined,
-    path,
-  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data ?? [])
-}
-
-export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string): Promise<FileContent | undefined> {
-  return gui.client.file.read({
-    directory: directory || gui.directory || undefined,
-    path,
-  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data)
-}
-
-export async function writeWorkbenchFile(gui: GuiClient, input: { path: string; content: string; previousContent?: string }, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/write", {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, directory)
-}
-
-export async function createWorkbenchFile(gui: GuiClient, input: { path: string; content?: string; directory?: boolean }, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/create", {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, directory)
-}
-
-export async function renameWorkbenchFile(gui: GuiClient, input: { from: string; to: string }, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/rename", {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, directory)
-}
-
-export async function deleteWorkbenchFile(gui: GuiClient, path: string, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/file/delete", {
-    method: "POST",
-    body: JSON.stringify({ path }),
-  }, directory)
-}
-
-export async function workbenchGitStatus(gui: GuiClient, directory?: string): Promise<WorkbenchGitStatus> {
-  return pluginApi<WorkbenchGitStatus>(gui, "/experimental/opencodex/workbench/git/status", {}, directory)
-}
-
-export async function workbenchGitBranches(gui: GuiClient, directory?: string): Promise<WorkbenchGitBranches> {
-  return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", {}, directory)
-}
-
-export async function workbenchGitDiff(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<DiffFile[]>> {
-  return pluginApi<WorkbenchDataResult<DiffFile[]>>(gui, "/experimental/opencodex/workbench/git/diff", {}, directory)
-}
-
-export async function workbenchGitHistory(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<WorkbenchGitHistoryCommit[]>> {
-  return pluginApi<WorkbenchDataResult<WorkbenchGitHistoryCommit[]>>(gui, "/experimental/opencodex/workbench/git/history", {}, directory)
-}
-
-export async function workbenchDiagnostics(gui: GuiClient, directory?: string): Promise<WorkbenchDiagnosticsResult> {
-  return pluginApi<WorkbenchDiagnosticsResult>(gui, "/experimental/opencodex/workbench/diagnostics", {}, directory)
-}
-
-export async function workbenchGitOperation(gui: GuiClient, action: "checkout" | "create-branch", input: { branch: string }, directory?: string): Promise<WorkbenchOperationResult>
-export async function workbenchGitOperation(gui: GuiClient, action: "stage" | "unstage" | "discard", input: { paths: string[] }, directory?: string): Promise<WorkbenchOperationResult>
-export async function workbenchGitOperation(gui: GuiClient, action: "commit", input: { message: string; body?: string }, directory?: string): Promise<WorkbenchOperationResult>
-export async function workbenchGitOperation(gui: GuiClient, action: "fetch" | "pull" | "push" | "publish", input?: undefined, directory?: string): Promise<WorkbenchOperationResult>
-export async function workbenchGitOperation(gui: GuiClient, action: string, input?: unknown, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/git/${action}`, {
-    method: "POST",
-    body: input === undefined ? undefined : JSON.stringify(input),
-  }, directory)
-}
-
-export async function workbenchGitStashes(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<WorkbenchGitStash[]>> {
-  return pluginApi<WorkbenchDataResult<WorkbenchGitStash[]>>(gui, "/experimental/opencodex/workbench/git/stashes", {}, directory)
-}
-
-export async function workbenchGitStashCreate(gui: GuiClient, input: { message?: string }, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/workbench/git/stash", {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, directory)
-}
-
-export async function workbenchGitStashOperation(gui: GuiClient, action: "apply" | "pop" | "drop", input: { ref: string }, directory?: string): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/git/stash/${action}`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, directory)
-}
-
-export async function workbenchGithubData<T = unknown>(gui: GuiClient, action: "auth" | "repo" | "issues" | "pulls", directory?: string): Promise<WorkbenchDataResult<T>> {
-  return pluginApi<WorkbenchDataResult<T>>(gui, `/experimental/opencodex/workbench/github/${action}`, {}, directory)
-}
-
-export async function workbenchGithubPost<T = unknown>(
-  gui: GuiClient,
-  action: "pull" | "checks" | "checkout-pull" | "create-pull",
-  input: unknown,
-  directory?: string,
-): Promise<WorkbenchDataResult<T> | WorkbenchOperationResult> {
-  return pluginApi<WorkbenchDataResult<T> | WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/github/${action}`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, directory)
-}
-
-export async function registerGuiBridge(gui: GuiClient, input: { browserBridge?: { url: string; token: string } }): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/gui-bridge/register", {
-    method: "POST",
-    body: JSON.stringify(input),
-  })
-}
-
-export async function listPlugins(gui: GuiClient): Promise<GuiPlugin[]> {
-  return pluginApi<GuiPlugin[]>(gui, "/experimental/opencodex/plugin")
-}
-
-export async function installPlugin(gui: GuiClient, input: { spec: string; global?: boolean; force?: boolean }): Promise<GuiPluginInstallResult> {
-  return pluginApi<GuiPluginInstallResult>(gui, "/experimental/opencodex/plugin/install", {
-    method: "POST",
-    body: JSON.stringify(input),
-  })
-}
-
-export async function togglePlugin(gui: GuiClient, input: { id: string; enabled: boolean }): Promise<GuiPlugin> {
-  return pluginApi<GuiPlugin>(gui, "/experimental/opencodex/plugin/toggle", {
-    method: "PATCH",
-    body: JSON.stringify(input),
-  })
-}
-
 export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) => void) {
   const controller = new AbortController()
   void (async () => {
@@ -840,70 +355,3 @@ export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) =>
   return () => controller.abort()
 }
 
-export function isRenderableSession(session: Session) {
-  return isRenderableClientSession(session)
-}
-
-function sessionSyncSnapshot(result: ClientSessionSyncResult): SessionCardSnapshot {
-  if (result.changed) return { ...result.snapshot, sessionSyncRevision: result.revision }
-  return {
-    projects: [],
-    sessions: [],
-    views: [],
-    sessionStatus: {},
-    sessionUiState: {},
-    permissions: [],
-    questions: [],
-    sessionSyncRevision: result.revision,
-  }
-}
-
-async function sessionListQuery(gui: GuiClient): Promise<{ scope?: "project"; path?: string }> {
-  if (!gui.directory) return { scope: "project" }
-  const current = await gui.client.project.current({ directory: gui.directory }).then((x) => x.data).catch(() => undefined)
-  const worktree = current?.worktree
-  if (!worktree) return { scope: "project" }
-  const relative = relativePath(worktree, gui.directory)
-  if (relative === undefined) return { scope: "project" }
-  return { path: relative }
-}
-
-function relativePath(root: string, target: string) {
-  const normalizedRoot = normalizePath(root)
-  const normalizedTarget = normalizePath(target)
-  const insensitive = hasWindowsDrive(normalizedRoot) || hasWindowsDrive(normalizedTarget)
-  const rootKey = insensitive ? normalizedRoot.toLowerCase() : normalizedRoot
-  const targetKey = insensitive ? normalizedTarget.toLowerCase() : normalizedTarget
-  if (rootKey === targetKey) return ""
-  const prefix = normalizedRoot.endsWith("/") ? normalizedRoot : `${normalizedRoot}/`
-  const prefixKey = insensitive ? prefix.toLowerCase() : prefix
-  if (!targetKey.startsWith(prefixKey)) return undefined
-  return normalizedTarget.slice(prefix.length)
-}
-
-function normalizePath(value: string) {
-  return value.replaceAll("\\", "/").replace(/\/+$/, "")
-}
-
-function hasWindowsDrive(value: string) {
-  return /^[a-zA-Z]:\//.test(value)
-}
-
-function authHeaders(gui: GuiClient) {
-  return gui.authHeader ? { authorization: gui.authHeader } : undefined
-}
-
-async function pluginApi<T>(gui: GuiClient, pathname: string, init: RequestInit = {}, directory?: string): Promise<T> {
-  const url = new URL(pathname, gui.url)
-  if (directory || gui.directory) url.searchParams.set("directory", directory || gui.directory)
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...(authHeaders(gui) ?? {}),
-      ...(init.headers ?? {}),
-    },
-  })
-  if (!response.ok) throw new Error(await response.text() || `Plugin request failed with ${response.status}`)
-  return response.json() as Promise<T>
-}

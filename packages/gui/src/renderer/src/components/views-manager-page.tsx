@@ -15,6 +15,7 @@ import {
 import type { GuiSnapshot } from "../lib/store"
 import { type ViewItem } from "../lib/view-items"
 import { Icon } from "./icon"
+import { Button, IconButton, TextInput } from "./ui"
 import { ViewsPage } from "./views"
 
 export function ViewsManagerPage(props: {
@@ -24,6 +25,9 @@ export function ViewsManagerPage(props: {
   projects: GuiSnapshot["projects"]
   items: ViewItem[]
   renderItem: (item: Accessor<ViewItem>) => JSX.Element
+  sidePanel?: JSX.Element
+  sidePanelOpen?: boolean
+  toggleSidePanel?: () => void
   openView: (viewID: string) => void
   createView: () => void
   editView: (viewID: string) => void
@@ -50,10 +54,15 @@ export function ViewsManagerPage(props: {
           <>
             <ActiveViewHeader
               title={view().title}
+              sidePanelOpen={props.sidePanelOpen}
+              toggleSidePanel={props.toggleSidePanel}
               edit={() => props.editView(view().id)}
               delete={() => props.deleteView(view().id, view().title)}
             />
-            <ViewsPage view={view()} items={props.items} renderItem={props.renderItem} />
+            <div class="views-manager-main">
+              <ViewsPage view={view()} items={props.items} renderItem={props.renderItem} />
+              {props.sidePanel}
+            </div>
           </>
         )}
       </Show>
@@ -148,7 +157,7 @@ export function ViewEditorPage(props: {
         <header><strong>Details</strong></header>
         <label class="full-width-field">
           <span>Title</span>
-          <input value={viewName()} onInput={(event) => setViewName(event.currentTarget.value)} placeholder="Optional; generated from selected sessions" />
+          <TextInput value={viewName()} onInput={(event) => setViewName(event.currentTarget.value)} placeholder="Optional; generated from selected sessions" />
         </label>
       </section>
       <section class="manager-section view-editor-new-sessions">
@@ -158,9 +167,9 @@ export function ViewEditorPage(props: {
             <span>{pending().length}</span>
           </div>
           <div class="row-actions">
-            <button type="button" class="secondary" onClick={() => addPending()}><Icon name="plus" /> No project</button>
+            <Button size="sm" icon="plus" onClick={() => addPending()}>No project</Button>
             <For each={props.projects.slice(0, 3)}>
-              {(project) => <button type="button" class="secondary" onClick={() => addPending(project.id)}><Icon name="plus" /> {title(project.name ?? project.project.name)}</button>}
+              {(project) => <Button size="sm" icon="plus" onClick={() => addPending(project.id)}>{title(project.name ?? project.project.name)}</Button>}
             </For>
           </div>
         </header>
@@ -174,7 +183,7 @@ export function ViewEditorPage(props: {
                 </div>
                 <footer>
                   <small>{compactPath(slot.directory)}</small>
-                  <button type="button" class="danger" onClick={() => removePending(slot.id)}><Icon name="trash" /> Remove</button>
+                  <Button size="sm" variant="danger" icon="trash" onClick={() => removePending(slot.id)}>Remove</Button>
                 </footer>
               </article>
             )}
@@ -222,8 +231,8 @@ export function ViewEditorPage(props: {
         <div class="notice error">{error()}</div>
       </Show>
       <div class="form-actions">
-        <button type="button" class="secondary" onClick={props.cancel}><Icon name="x" /> Cancel</button>
-        <button type="submit" class="primary" disabled={saving()}><Icon name="check" /> {saving() ? "Saving..." : editing() ? "Save view" : "Create view"}</button>
+        <Button icon="x" onClick={props.cancel}>Cancel</Button>
+        <Button type="submit" variant="primary" icon="check" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save view" : "Create view"}</Button>
       </div>
     </form>
   )
@@ -300,18 +309,10 @@ function ViewList(props: {
                 </div>
               </button>
               <div class="view-card-actions">
-                <button type="button" title="Move view up" aria-label="Move view up" disabled={index() === 0} onClick={() => props.moveView(view.id, -1)}>
-                  <Icon name="chevronDown" />
-                </button>
-                <button type="button" title="Move view down" aria-label="Move view down" disabled={index() === props.views.length - 1} onClick={() => props.moveView(view.id, 1)}>
-                  <Icon name="chevronDown" />
-                </button>
-                <button type="button" title="Edit view" aria-label="Edit view" onClick={() => props.editView(view.id)}>
-                  <Icon name="pencil" />
-                </button>
-                <button type="button" class="danger" title="Delete view" aria-label="Delete view" onClick={() => props.deleteView(view.id, view.title)}>
-                  <Icon name="trash" />
-                </button>
+                <IconButton icon="chevronDown" label="Move view up" disabled={index() === 0} onClick={() => props.moveView(view.id, -1)} />
+                <IconButton icon="chevronDown" label="Move view down" disabled={index() === props.views.length - 1} onClick={() => props.moveView(view.id, 1)} />
+                <IconButton icon="pencil" label="Edit view" onClick={() => props.editView(view.id)} />
+                <IconButton variant="danger" icon="trash" label="Delete view" onClick={() => props.deleteView(view.id, view.title)} />
               </div>
             </article>
           )}
@@ -344,7 +345,7 @@ function ManagerHeader(props: {
       </div>
       <div class="row-actions">
         <For each={props.actions}>
-          {(action) => <button type="button" class={action.danger ? "danger" : action.primary ? "primary manager-create-button" : "secondary"} onClick={action.onClick}><Icon name={action.icon} /> {action.label}</button>}
+          {(action) => <Button class={action.primary ? "manager-create-button" : undefined} variant={action.danger ? "danger" : action.primary ? "primary" : "secondary"} icon={action.icon} onClick={action.onClick}>{action.label}</Button>}
         </For>
       </div>
     </header>
@@ -353,6 +354,8 @@ function ManagerHeader(props: {
 
 function ActiveViewHeader(props: {
   title: string
+  sidePanelOpen?: boolean
+  toggleSidePanel?: () => void
   edit: () => void | Promise<void>
   delete: () => void | Promise<void>
 }) {
@@ -362,12 +365,18 @@ function ActiveViewHeader(props: {
         <h1>{props.title}</h1>
       </div>
       <div class="active-view-actions">
-        <button type="button" title="Edit view" aria-label="Edit view" onClick={props.edit}>
-          <Icon name="pencil" />
-        </button>
-        <button type="button" class="danger" title="Delete view" aria-label="Delete view" onClick={props.delete}>
-          <Icon name="trash" />
-        </button>
+        <Show when={props.toggleSidePanel}>
+          {(toggleSidePanel) => (
+            <IconButton
+              icon="panel"
+              label={props.sidePanelOpen ? "Close side panel" : "Open side panel"}
+              pressed={props.sidePanelOpen}
+              onClick={toggleSidePanel()}
+            />
+          )}
+        </Show>
+        <IconButton icon="pencil" label="Edit view" onClick={props.edit} />
+        <IconButton variant="danger" icon="trash" label="Delete view" onClick={props.delete} />
       </div>
     </header>
   )

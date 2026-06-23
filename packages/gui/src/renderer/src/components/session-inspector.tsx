@@ -47,60 +47,86 @@ export function SessionInspector(props: {
       }
     >
       <aside class="session-inspector" aria-label="Session context">
-        <div class="session-inspector-header">
-          <strong>Context</strong>
-          <button type="button" title="Hide context" aria-label="Hide session context" onClick={() => setPanelOpen(false)}>-</button>
-        </div>
-        <InspectorSection id="context" title="Usage" collapsed={collapsed().context} toggle={toggle}>
-          <div class="inspector-metrics">
-            <Metric label="Tokens" value={model().context.tokens ? model().context.tokens.toLocaleString() : "0"} />
-            <Metric label="Context" value={model().context.percent === undefined ? "unknown" : `${model().context.percent}%`} />
-            <Metric label="Cost" value={model().context.cost} />
-          </div>
-        </InspectorSection>
-        <Show when={model().visibleSections.mcp}>
-          <InspectorSection id="mcp" title="MCP" collapsed={collapsed().mcp} toggle={toggle}>
-            <For each={model().mcpRows}>
-              {([name, status]) => <StatusRow name={name} status={status.status} detail={"error" in status ? status.error : undefined} />}
-            </For>
-          </InspectorSection>
-        </Show>
-        <Show when={model().visibleSections.lsp}>
-          <InspectorSection id="lsp" title="LSP" collapsed={collapsed().lsp} toggle={toggle}>
-            <Show when={props.lsp.length > 0} fallback={<p class="inspector-empty">{props.lspEnabled === false ? "LSPs are disabled" : "LSPs will activate as files are read"}</p>}>
-              <For each={props.lsp}>
-                {(item) => <StatusRow name={item.id || item.name} status={item.status} detail={item.root} />}
-              </For>
-            </Show>
-          </InspectorSection>
-        </Show>
-        <Show when={model().visibleSections.todo}>
-          <InspectorSection id="todo" title="Todo" collapsed={collapsed().todo} toggle={toggle}>
-            <For each={model().activeTodos}>
-              {(todo) => (
-                <div class={`inspector-todo ${todo.status}`}>
-                  <span>{formatTodoStatus(todo.status)}</span>
-                  <strong>{todo.content}</strong>
-                  <small>{todo.priority}</small>
-                </div>
-              )}
-            </For>
-          </InspectorSection>
-        </Show>
-        <Show when={model().visibleSections.files}>
-          <InspectorSection id="files" title="Modified Files" collapsed={collapsed().files} toggle={toggle}>
-            <For each={props.data.diffs}>
-              {(file) => (
-                <div class="inspector-file">
-                  <span>{file.file}</span>
-                  <small><b class="diff-additions">+{file.additions}</b><b class="diff-deletions">-{file.deletions}</b></small>
-                </div>
-              )}
-            </For>
-          </InspectorSection>
-        </Show>
+        <SessionContextPanel
+          model={model()}
+          lsp={props.lsp}
+          lspEnabled={props.lspEnabled}
+          diffs={props.data.diffs}
+          collapsed={collapsed()}
+          toggle={toggle}
+          close={() => setPanelOpen(false)}
+        />
       </aside>
     </Show>
+  )
+}
+
+export function SessionContextPanel(props: {
+  model: ReturnType<typeof sessionInspectorModel>
+  lsp: LspStatus[]
+  lspEnabled?: boolean
+  diffs: SessionData["diffs"]
+  collapsed: InspectorState
+  toggle: (id: string) => void
+  close?: () => void
+}) {
+  return (
+    <>
+      <div class="session-inspector-header">
+        <strong>Context</strong>
+        <Show when={props.close}>
+          {(close) => <button type="button" title="Hide context" aria-label="Hide session context" onClick={close()}>-</button>}
+        </Show>
+      </div>
+      <InspectorSection id="context" title="Usage" collapsed={props.collapsed.context} toggle={props.toggle}>
+        <div class="inspector-metrics">
+          <Metric label="Tokens" value={props.model.context.tokens ? props.model.context.tokens.toLocaleString() : "0"} />
+          <Metric label="Context" value={props.model.context.percent === undefined ? "unknown" : `${props.model.context.percent}%`} />
+          <Metric label="Cost" value={props.model.context.cost} />
+        </div>
+      </InspectorSection>
+      <Show when={props.model.visibleSections.mcp}>
+        <InspectorSection id="mcp" title="MCP" collapsed={props.collapsed.mcp} toggle={props.toggle}>
+          <For each={props.model.mcpRows}>
+            {([name, status]) => <StatusRow name={name} status={status.status} detail={"error" in status ? status.error : undefined} />}
+          </For>
+        </InspectorSection>
+      </Show>
+      <Show when={props.model.visibleSections.lsp}>
+        <InspectorSection id="lsp" title="LSP" collapsed={props.collapsed.lsp} toggle={props.toggle}>
+          <Show when={props.lsp.length > 0} fallback={<p class="inspector-empty">{props.lspEnabled === false ? "LSPs are disabled" : "LSPs will activate as files are read"}</p>}>
+            <For each={props.lsp}>
+              {(item) => <StatusRow name={item.id || item.name} status={item.status} detail={item.root} />}
+            </For>
+          </Show>
+        </InspectorSection>
+      </Show>
+      <Show when={props.model.visibleSections.todo}>
+        <InspectorSection id="todo" title="Todo" collapsed={props.collapsed.todo} toggle={props.toggle}>
+          <For each={props.model.activeTodos}>
+            {(todo) => (
+              <div class={`inspector-todo ${todo.status}`}>
+                <span>{formatTodoStatus(todo.status)}</span>
+                <strong>{todo.content}</strong>
+                <small>{todo.priority}</small>
+              </div>
+            )}
+          </For>
+        </InspectorSection>
+      </Show>
+      <Show when={props.model.visibleSections.files}>
+        <InspectorSection id="files" title="Modified Files" collapsed={props.collapsed.files} toggle={props.toggle}>
+          <For each={props.diffs}>
+            {(file) => (
+              <div class="inspector-file">
+                <span>{file.file}</span>
+                <small><b class="diff-additions">+{file.additions}</b><b class="diff-deletions">-{file.deletions}</b></small>
+              </div>
+            )}
+          </For>
+        </InspectorSection>
+      </Show>
+    </>
   )
 }
 

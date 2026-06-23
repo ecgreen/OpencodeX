@@ -1,5 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import type { GuiTranscriptExportOptions } from "../lib/transcript-export"
+import { ModalFrame } from "./modal-frame"
+import { Button, CommandRow, TextArea, TextInput } from "./ui"
 
 export type ChoiceOption = { value: string; title: string; description?: string; meta?: string }
 
@@ -70,36 +72,34 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
   return (
     <Show when={props.dialog}>
       {(current) => (
-        <div
-          class="dialog-backdrop"
-          onMouseDown={cancel}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return
-            event.preventDefault()
-            event.stopPropagation()
-            cancel()
-          }}
+        <ModalFrame
+          title={current().title}
+          description={current().message}
+          close={cancel}
+          onSubmit={submit}
+          footer={(
+            <div class="dialog-actions">
+              <Button onClick={cancel}>Cancel</Button>
+              <Button type="submit" variant="primary">{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</Button>
+            </div>
+          )}
         >
-          <form class="dialog-card" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
-            <h2>{current().title}</h2>
-            <Show when={current().message}>
-              <p>{current().message}</p>
-            </Show>
+          <>
             <Show when={current().type === "text"}>
-              <Show when={(current() as Extract<DialogState, { type: "text" }>).multiline} fallback={<input value={value()} onInput={(event) => setValue(event.currentTarget.value)} autofocus />}>
-                <textarea value={value()} onInput={(event) => setValue(event.currentTarget.value)} autofocus />
+              <Show when={(current() as Extract<DialogState, { type: "text" }>).multiline} fallback={<TextInput value={value()} onInput={(event) => setValue(event.currentTarget.value)} autofocus />}>
+                <TextArea value={value()} onInput={(event) => setValue(event.currentTarget.value)} autofocus />
               </Show>
             </Show>
             <Show when={current().type === "choice"}>
-              <input value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="Search options" autofocus />
+              <TextInput value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="Search options" autofocus />
               <div class="choice-list">
                 <For each={choiceOptions()} fallback={<p>No matching options.</p>}>
                   {(option) => (
-                    <button type="button" onClick={() => choose(option.value)}>
+                    <CommandRow onClick={() => choose(option.value)}>
                       <strong>{option.title}</strong>
                       <Show when={option.meta}><small>{option.meta}</small></Show>
                       <Show when={option.description}><span>{option.description}</span></Show>
-                    </button>
+                    </CommandRow>
                   )}
                 </For>
               </div>
@@ -108,7 +108,7 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
               <div class="export-options">
                 <label>
                   <span>Filename</span>
-                  <input value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="session.md" autofocus />
+                  <TextInput value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="session.md" autofocus />
                 </label>
                 <label class="checkbox-row">
                   <input type="checkbox" checked={thinking()} onChange={(event) => setThinking(event.currentTarget.checked)} />
@@ -128,12 +128,8 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
                 </label>
               </div>
             </Show>
-            <div class="dialog-actions">
-              <button type="button" class="secondary" onClick={cancel}>Cancel</button>
-              <button type="submit" class="primary">{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</button>
-            </div>
-          </form>
-        </div>
+          </>
+        </ModalFrame>
       )}
     </Show>
   )

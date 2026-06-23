@@ -8,6 +8,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "vite --configLoader runner --host 127.0.0.1",
+    "onlook:preview": "vite --configLoader runner --host 127.0.0.1",
     "dev:electron": "bun run scripts/dev-electron.ts",
     "build:main": "tsgo -p tsconfig.main.json && tsgo -p tsconfig.preload.json",
     "build": "vite --configLoader runner build && bun run build:main",
@@ -44,6 +45,7 @@
     "@solidjs/router": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "codemirror": "6.0.2",
+    "lucide-solid": "1.17.0",
     "solid-js": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "catalog:"

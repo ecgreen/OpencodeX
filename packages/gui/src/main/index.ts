@@ -230,6 +230,14 @@ ipcMain.handle("opencodex:folder", async (_event, defaultPath?: unknown) => {
   return result.canceled ? undefined : result.filePaths[0]
 })
 
+ipcMain.handle("opencodex:file", async (_event, defaultPath?: unknown) => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile"],
+    defaultPath: validString(defaultPath),
+  })
+  return result.canceled ? undefined : result.filePaths[0]
+})
+
 ipcMain.handle("opencodex:editor", async (_event, raw: unknown) => {
   const input = validEditorInput(raw)
   if (!input) return undefined

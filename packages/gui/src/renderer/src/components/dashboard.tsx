@@ -2,11 +2,14 @@ import type { JSX } from "solid-js"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, formatRelative, title } from "../lib/format"
+import { projectSessions, tuiSidebarSessions } from "../lib/app-session-lists"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, type DerivedSessionStatus } from "../lib/session-status"
-import { isRenderableSession, type GuiSnapshot } from "../lib/store"
+import { type GuiSnapshot } from "../lib/store"
 import { pendingViewSessions } from "../lib/view-items"
 import { Icon } from "./icon"
 import { PinButton } from "./pin-button"
+import { Button, IconButton } from "./ui"
+import { DashboardActionCard, DashboardSection, Empty, EmptyCreateDashboardCard } from "./dashboard-primitives"
 
 const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
 
@@ -29,6 +32,8 @@ export function Dashboard(props: {
 }) {
   const sessions = createMemo(() => tuiSidebarSessions(props.snapshot))
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({ swarms: true, prior: true })
+  const [selectedProjectID, setSelectedProjectID] = createSignal("")
+  const selectedProject = createMemo(() => (props.snapshot?.projects ?? []).find((project) => project.id === selectedProjectID()))
   const toggleSection = (section: string) => setCollapsed((value) => ({ ...value, [section]: !value[section] }))
   return (
     <div class="page dashboard-page">
@@ -42,7 +47,20 @@ export function Dashboard(props: {
         createView={props.createView}
       />
       <section class="dashboard-sections">
-        <DashboardProjectsSection snapshot={props.snapshot} collapsed={!!collapsed().projects} onToggle={() => toggleSection("projects")} createProject={props.createProject} createSession={props.createSession} renameProject={props.renameProject} editProjectFolders={props.editProjectFolders} deleteProject={props.deleteProject} />
+        <Show when={selectedProject()}>
+          {(project) => (
+            <DashboardProjectView
+              project={project()}
+              snapshot={props.snapshot}
+              openSession={props.openSession}
+              openView={props.openView}
+              createSession={props.createSession}
+              editProjectFolders={props.editProjectFolders}
+              close={() => setSelectedProjectID("")}
+            />
+          )}
+        </Show>
+        <DashboardProjectsSection snapshot={props.snapshot} collapsed={!!collapsed().projects} onToggle={() => toggleSection("projects")} openProject={setSelectedProjectID} createProject={props.createProject} createSession={props.createSession} renameProject={props.renameProject} editProjectFolders={props.editProjectFolders} deleteProject={props.deleteProject} />
         <DashboardSwarmsSection snapshot={props.snapshot} collapsed={!!collapsed().swarms} onToggle={() => toggleSection("swarms")} createSwarm={props.createSwarm} />
         <DashboardAttentionSection snapshot={props.snapshot} collapsed={!!collapsed().attention} onToggle={() => toggleSection("attention")} openSession={props.openSession} />
         <DashboardSessionsSection title="Recent Sessions" sessions={sessions()} snapshot={props.snapshot} collapsed={!!collapsed().sessions} onToggle={() => toggleSection("sessions")} openSession={props.openSession} createSession={() => props.createSession()} sessionPinned={props.sessionPinned} toggleSessionPinned={props.toggleSessionPinned} />
@@ -63,10 +81,10 @@ function DashboardActions(props: {
 }) {
   return (
     <section class="dashboard-actions" aria-label="Create new OpencodeX items">
-      <DashboardActionCard title="Project" description="Group work" meta={`${props.snapshot?.projects.length ?? 0} projects`} tone="primary" onClick={props.createProject} />
-      <DashboardActionCard title="Session" description="New chat" meta={`${props.sessionCount} sessions`} tone="blue" onClick={props.createSession} />
-      <DashboardActionCard title="Swarm" description="Agent team" meta={`${props.snapshot?.swarms.length ?? 0} swarms`} tone="warning" onClick={props.createSwarm} />
-      <DashboardActionCard title="View" description="Multi-session" meta={`${props.snapshot?.views.length ?? 0} views`} tone="info" onClick={props.createView} />
+      <DashboardActionCard title="Project" description="Create project" meta={`${props.snapshot?.projects.length ?? 0}`} tone="project" icon="folder" onClick={props.createProject} />
+      <DashboardActionCard title="Session" description="Start chat" meta={`${props.sessionCount}`} tone="session" icon="session" onClick={props.createSession} />
+      <DashboardActionCard title="Swarm" description="Agent team" meta={`${props.snapshot?.swarms.length ?? 0}`} tone="swarm" icon="swarm" onClick={props.createSwarm} />
+      <DashboardActionCard title="View" description="Multi-session" meta={`${props.snapshot?.views.length ?? 0}`} tone="view" icon="views" onClick={props.createView} />
     </section>
   )
 }
@@ -75,6 +93,7 @@ function DashboardProjectsSection(props: {
   snapshot?: GuiSnapshot
   collapsed: boolean
   onToggle: () => void
+  openProject: (projectID: string) => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
   renameProject: (projectID: string, current?: string) => void
@@ -87,22 +106,121 @@ function DashboardProjectsSection(props: {
         <For each={(props.snapshot?.projects ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create project" description="Group sessions, swarms, and views around a workspace." onClick={props.createProject} />}>
           {(project) => (
             <article class="dashboard-item-card project-card">
-              <div>
+              <button class="dashboard-project-open" onClick={() => props.openProject(project.id)}>
                 <strong>{title(project.name ?? project.project.name)}</strong>
-                <span>{projectSessions(project, props.snapshot).length} sessions - {projectSwarms(project, props.snapshot).length} swarms</span>
+                <span>{projectSessions(project, props.snapshot).length} sessions - {projectSwarms(project, props.snapshot).length} swarms - {projectViews(project, props.snapshot).length} views</span>
                 <small class="project-folder-label" title={project.folders[0]?.path}>{compactPath(project.folders[0]?.path)}</small>
-              </div>
+              </button>
               <div class="row-actions">
-                <button onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</button>
-                <button onClick={() => props.renameProject(project.id, project.name ?? project.project.name)}>Rename</button>
-                <button onClick={() => props.editProjectFolders(project.id, project.folders.map((folder) => folder.path))}>Folders</button>
-                <button class="danger" onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))}><Icon name="trash" /> Delete</button>
+                <Button size="sm" icon="session" onClick={() => props.createSession(project.id, project.folders[0]?.path)}>Session</Button>
+                <IconButton icon="pencil" label={`Rename ${title(project.name ?? project.project.name)}`} onClick={() => props.renameProject(project.id, project.name ?? project.project.name)} />
+                <IconButton icon="folder" label={`Edit folders for ${title(project.name ?? project.project.name)}`} onClick={() => props.editProjectFolders(project.id, project.folders.map((folder) => folder.path))} />
+                <IconButton class="danger" variant="danger" icon="trash" label={`Delete ${title(project.name ?? project.project.name)}`} onClick={() => props.deleteProject(project.id, title(project.name ?? project.project.name))} />
               </div>
             </article>
           )}
         </For>
       </div>
     </DashboardSection>
+  )
+}
+
+function DashboardProjectView(props: {
+  project: GuiSnapshot["projects"][number]
+  snapshot?: GuiSnapshot
+  openSession: (sessionID: string) => void
+  openView: (viewID: string) => void
+  createSession: (projectID?: string, directory?: string) => void
+  editProjectFolders: (projectID: string, folders: string[]) => void
+  close: () => void
+}) {
+  const sessions = createMemo(() => projectSessions(props.project, props.snapshot))
+  const recent = createMemo(() => sessions().filter((session) => isRecentSessionUpdate(session.time.updated)).slice(0, 5))
+  const past = createMemo(() => sessions().filter((session) => !isRecentSessionUpdate(session.time.updated)).slice(0, 6))
+  const attention = createMemo(() => projectAttentionItems(props.project, props.snapshot).slice(0, 5))
+  const views = createMemo(() => projectViews(props.project, props.snapshot).slice(0, 5))
+  return (
+    <section class="dashboard-project-view">
+      <header>
+        <div>
+          <button class="secondary" onClick={props.close}><Icon name="chevronLeft" /> Projects</button>
+          <h2>{title(props.project.name ?? props.project.project.name)}</h2>
+          <p>{sessions().length} sessions - {views().length} views - {props.project.folders.length} folders</p>
+        </div>
+        <div class="row-actions">
+          <Button size="sm" icon="session" onClick={() => props.createSession(props.project.id, props.project.folders[0]?.path)}>Session</Button>
+          <IconButton icon="folder" label={`Edit folders for ${title(props.project.name ?? props.project.project.name)}`} onClick={() => props.editProjectFolders(props.project.id, props.project.folders.map((folder) => folder.path))} />
+        </div>
+      </header>
+      <div class="dashboard-project-view-grid">
+        <ProjectDetailList title="Attention" count={attention().length} empty="Nothing needs attention.">
+          <For each={attention()}>
+            {(item) => (
+              <button class="project-detail-row warning" onClick={() => props.openSession(item.sessionID)}>
+                <strong>{item.title}</strong>
+                <span>{item.detail}</span>
+              </button>
+            )}
+          </For>
+        </ProjectDetailList>
+        <ProjectDetailList title="Recent Sessions" count={recent().length} empty="No recent sessions.">
+          <For each={recent()}>
+            {(session) => (
+              <button class="project-detail-row" onClick={() => props.openSession(session.id)}>
+                <strong>{title(session.title)}</strong>
+                <span>{formatRelative(session.time.updated)}</span>
+              </button>
+            )}
+          </For>
+        </ProjectDetailList>
+        <ProjectDetailList title="Views" count={views().length} empty="No views include this project yet.">
+          <For each={views()}>
+            {(view) => (
+              <button class="project-detail-row" onClick={() => props.openView(view.id)}>
+                <strong>{title(view.title)}</strong>
+                <span>{viewDashboardMeta(view)}</span>
+              </button>
+            )}
+          </For>
+        </ProjectDetailList>
+        <ProjectDetailList title="Past Sessions" count={past().length} empty="No past sessions.">
+          <For each={past()}>
+            {(session) => (
+              <button class="project-detail-row" onClick={() => props.openSession(session.id)}>
+                <strong>{title(session.title)}</strong>
+                <span>{formatRelative(session.time.updated)}</span>
+              </button>
+            )}
+          </For>
+        </ProjectDetailList>
+        <ProjectDetailList title="Folders" count={props.project.folders.length} empty="No folders assigned.">
+          <For each={props.project.folders}>
+            {(folder) => (
+              <div class="project-detail-row">
+                <strong>{compactPath(folder.path)}</strong>
+                <span>{folder.path}</span>
+              </div>
+            )}
+          </For>
+        </ProjectDetailList>
+      </div>
+    </section>
+  )
+}
+
+function ProjectDetailList(props: { title: string; count: number; empty: string; children: JSX.Element }) {
+  return (
+    <section class="project-detail-list">
+      <header>
+        <strong>{props.title}</strong>
+        <small>{props.count}</small>
+      </header>
+      <div>
+        <Show when={props.count > 0} fallback={<div class="empty">{props.empty}</div>}>
+          {props.children}
+        </Show>
+      </div>
+    </section>
   )
 }
 
@@ -291,76 +409,29 @@ function DashboardViewCard(props: {
   )
 }
 
-function DashboardActionCard(props: { title: string; description: string; meta: string; tone: "primary" | "blue" | "warning" | "info"; onClick: () => void }) {
-  return (
-    <button class={`dashboard-action-card ${props.tone}`} onClick={props.onClick}>
-      <span class="action-plus">+</span>
-      <strong>{props.title}</strong>
-      <span>{props.description}</span>
-      <small>{props.meta}</small>
-    </button>
-  )
-}
-
-function DashboardSection(props: { title: string; count: number; collapsed: boolean; onToggle: () => void; action?: string; onAction?: () => void; children: JSX.Element }) {
-  return (
-    <section class="dashboard-section">
-      <header>
-        <div>
-          <button class="section-collapse" aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.title}`} aria-expanded={!props.collapsed} onClick={props.onToggle}>
-            <span class="section-chevron"><Icon name={props.collapsed ? "chevronRight" : "chevronDown"} /></span>
-            <strong>{props.title} <span class="section-count">({props.count})</span></strong>
-          </button>
-        </div>
-        <Show when={props.action && props.onAction}>
-          <button class="secondary" onClick={props.onAction}>{props.action}</button>
-        </Show>
-      </header>
-      <div class="dashboard-section-content" classList={{ collapsed: props.collapsed }}>
-        <div>{props.children}</div>
-      </div>
-    </section>
-  )
-}
-
-function EmptyCreateDashboardCard(props: { title: string; description: string; onClick: () => void }) {
-  return (
-    <button class="dashboard-item-card empty-create interactive" onClick={props.onClick}>
-      <strong>+ {props.title}</strong>
-      <span>{props.description}</span>
-      <small>create</small>
-    </button>
-  )
-}
-
-function Empty(props: { text: string }) {
-  return <div class="empty">{props.text}</div>
-}
-
-function isTUISidebarSession(session: Session) {
-  return !session.parentID && !isSwarmSession(session) && isRenderableSession(session)
-}
-
-function isSwarmSession(session: Session) {
-  const opencodex = session.metadata?.opencodex
-  return typeof opencodex === "object" && opencodex !== null && "swarmID" in opencodex && typeof opencodex.swarmID === "string"
-}
-
-function tuiSidebarSessions(snapshot?: GuiSnapshot) {
-  return (snapshot?.sessions ?? []).filter(isTUISidebarSession).toSorted((a, b) => b.time.updated - a.time.updated)
-}
-
-function projectSessions(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
-  const byID = new Map(tuiSidebarSessions(snapshot).map((session) => [session.id, session]))
-  return project.sessions
-    .filter(isTUISidebarSession)
-    .map((session) => byID.get(session.id) ?? session)
-    .filter(isTUISidebarSession)
-    .toSorted((a, b) => b.time.updated - a.time.updated)
-}
-
 function projectSwarms(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
   return (snapshot?.swarms ?? []).filter((swarm) => swarm.projectID === project.id)
+}
+
+function projectViews(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
+  const sessionIDs = new Set(projectSessions(project, snapshot).map((session) => session.id))
+  return (snapshot?.views ?? [])
+    .filter((view) => view.sessionIDs.some((sessionID) => sessionIDs.has(sessionID)) || pendingViewSessions(view).some((item) => item.projectID === project.id))
+    .toSorted((a, b) => new Date(b.timeUpdated).getTime() - new Date(a.timeUpdated).getTime())
+}
+
+function projectAttentionItems(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
+  const sessionIDs = new Set(projectSessions(project, snapshot).map((session) => session.id))
+  const permissions = (snapshot?.permissions ?? [])
+    .filter((request) => sessionIDs.has(request.sessionID))
+    .map((request) => ({ sessionID: request.sessionID, title: "Permission required", detail: request.permission }))
+  const questions = (snapshot?.questions ?? [])
+    .filter((request) => sessionIDs.has(request.sessionID))
+    .map((request) => ({ sessionID: request.sessionID, title: "Question pending", detail: request.questions[0]?.question ?? "Agent needs input" }))
+  const jobs = (snapshot?.jobs ?? [])
+    .filter((job) => job.sessionID && sessionIDs.has(job.sessionID) && ["input_needed", "approval_needed", "blocked", "failed"].includes(job.status))
+    .map((job) => ({ sessionID: job.sessionID!, title: title(job.title ?? job.kind), detail: job.status }))
+  return [...permissions, ...questions, ...jobs]
 }
 
 function sessionProjectName(session: Session, snapshot?: GuiSnapshot) {

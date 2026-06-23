@@ -13,11 +13,14 @@ import { DialogModal, type ChoiceOption, type DialogState } from "./components/d
 import { PluginsPage } from "./components/plugins-page"
 import { RailSidebar, type RailDragTarget, type RailDropTarget, type RailSectionName } from "./components/rail-sidebar"
 import { SessionPage } from "./components/session-page"
+import { SessionSidePanel, type SessionSidePanelContextOption, type SessionSidePanelRequest, type SessionSidePanelTarget } from "./components/session-side-panel"
 import { SwarmEditorPage, SwarmsPage } from "./components/swarms-page"
 import { ViewPaneHost } from "./components/view-pane-host"
 import { ViewEditorPage, ViewsManagerPage } from "./components/views-manager-page"
 import { WorkbenchPage } from "./components/workbench-page"
 import { connectGuiClient } from "./lib/client"
+import { readBoolPreference, readRecentModels, readThemeMode, writeBoolPreference, writeRecentModels, type GuiThemeMode } from "./lib/app-preferences"
+import { mergeRecentModels, projectSessions, recentModelsFromSessions, tuiSidebarSessions } from "./lib/app-session-lists"
 import { runCreateProjectSessionAction } from "./lib/creation-actions"
 import { compactPath, formatRelative, title } from "./lib/format"
 import {
@@ -60,6 +63,7 @@ import { runSelectedSessionSync, shouldShowViewSessionLoading, shouldSkipViewSes
 import { runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest } from "./lib/session-actions"
 import { liveServerSyncPlan, visibleSessionSyncTarget } from "./lib/live-sync"
 import { buildSessionSlashCommands, type SessionSlashCommand, type SessionSlashCommandContext } from "./lib/session-slash-commands"
+import { DEFAULT_RAIL_SECTION_ORDER, dropPlacement, readSidebarPreferences, writeSidebarPreferences } from "./lib/sidebar-preferences"
 import { syncViewSessionsInParallel, viewSessionsInOrder } from "./lib/view-sync"
 import { runViewPromptAction } from "./lib/view-prompt"
 import { runSessionPromptAction } from "./lib/session-prompt"
@@ -134,7 +138,6 @@ import {
   updateProjectFolders,
   updateViewFocus,
   validateProjectFolders,
-  isRenderableSession,
   revertSession,
   warpSessionWorkspace,
   workspaceStatus,
@@ -175,11 +178,8 @@ const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 28_000 }
 const LIVE_SYNC_INTERVAL_MS = CLIENT_SESSION_SYNC_INTERVAL_MS
 const SNAPSHOT_SYNC_INTERVAL_MS = 5_000
 const SEEN_EVENT_ID_LIMIT = 2_000
-const DEFAULT_RAIL_SECTION_ORDER: RailSectionName[] = ["pinned", "projects", "recent", "views"]
-const DEFAULT_RAIL_SECTIONS: Record<RailSectionName, boolean> = { pinned: false, projects: false, recent: false, views: true }
 const CUSTOM_PROVIDER_OPTION = "__custom_provider__"
 const CUSTOM_PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
-type GuiThemeMode = "dark" | "light"
 export function App() {
   const sidebarPreferences = readSidebarPreferences()
   const [client, setClient] = createSignal<GuiClient>()
@@ -217,6 +217,10 @@ export function App() {
   const [guiPlugins, setGuiPlugins] = createSignal<InstalledGuiPlugin[]>(readInstalledGuiPlugins())
   const [focusedViewSessionID, setFocusedViewSessionID] = createSignal("")
   const [viewComposerFocusRequest, setViewComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
+  const [viewSidePanelOpen, setViewSidePanelOpen] = createSignal(false)
+  const [viewSidePanelWidthRatio, setViewSidePanelWidthRatio] = createSignal(0.4)
+  const [viewSidePanelSessionID, setViewSidePanelSessionID] = createSignal("")
+  const [viewSidePanelRequest, setViewSidePanelRequest] = createSignal<SessionSidePanelRequest>()
   const [recentModels, setRecentModels] = createSignal(readRecentModels())
   const [dragTarget, setDragTarget] = createSignal<RailDragTarget>()
   const [dropTarget, setDropTarget] = createSignal<RailDropTarget>()
@@ -236,7 +240,7 @@ export function App() {
   const activeSessionID = createMemo(() => activeSessionIDForRoute(route()))
   const activeSessionRouteKey = createMemo(() => sessionRouteKey(route()))
   const activeSessionData = createMemo(() => sessionDataSessionID() === activeSessionID() ? sessionData() : EMPTY_SESSION_DATA)
-  const activeSessionLoading = createMemo(() => Boolean(activeSessionID()) && sessionDataSessionID() !== activeSessionID())
+  const activeSessionLoading = createMemo(() => Boolean(activeSessionID()) && loadingSessionID() === activeSessionID() && sessionDataSessionID() !== activeSessionID())
   const activeView = createMemo(() => activeViewForRoute(route(), snapshot()?.views ?? []))
   const editingView = createMemo(() => {
     const current = route()
@@ -259,6 +263,20 @@ export function App() {
     return viewItemsMembershipKey(view?.id, activeViewItems())
   })
   const activeViewFocusedSessionID = createMemo(() => focusedViewItemID({ localID: focusedViewSessionID(), persistedID: activeView()?.focusedSessionID, items: activeViewItems() }))
+  const viewSidePanelContextOptions = createMemo<SessionSidePanelContextOption[]>(() =>
+    activeViewSessions().map((session) => ({
+      id: session.id,
+      label: title(session.title),
+      description: compactPath(session.directory),
+    })),
+  )
+  const viewSidePanelSession = createMemo(() => {
+    const sessions = activeViewSessions()
+    if (sessions.length === 0) return
+    return sessions.find((session) => session.id === viewSidePanelSessionID())
+      ?? sessions.find((session) => session.id === activeViewFocusedSessionID())
+      ?? sessions[0]
+  })
   const selectedPermissions = createMemo(() => {
     const session = selectedSession()
     if (!session) return []
@@ -699,8 +717,16 @@ export function App() {
       setViewPaneStates((states) => pruneRecordKeys(states, paneIDs))
       setViewSessionData((data) => pruneRecordKeys(data, sessionIDs))
       setFocusedViewSessionID("")
+      setViewSidePanelSessionID("")
     }
     untrack(() => { void syncActiveViewSessions() })
+  })
+
+  createEffect(() => {
+    if (route().name !== "views") return
+    const session = viewSidePanelSession()
+    if (!session) return
+    if (viewSidePanelSessionID() !== session.id) setViewSidePanelSessionID(session.id)
   })
 
   createEffect(() => {
@@ -820,10 +846,44 @@ export function App() {
   function focusViewSession(sessionID: string, options: { focusComposer?: boolean } = {}) {
     const view = activeView()
     if (!view) return
+    setViewSidePanelSessionID(sessionID)
     if (activeViewFocusedSessionID() === sessionID) return
     setFocusedViewSessionID(sessionID)
     if (options.focusComposer) setViewComposerFocusRequest({ sessionID, token: ++viewComposerFocusToken })
     scheduleViewFocusPersistence(view, sessionID)
+  }
+
+  function openViewSidePanel(sessionID = activeViewFocusedSessionID(), target: SessionSidePanelTarget = { tab: "git" }) {
+    const session = activeViewSessions().find((item) => item.id === sessionID) ?? viewSidePanelSession()
+    if (session) setViewSidePanelSessionID(session.id)
+    setViewSidePanelOpen(true)
+    setViewSidePanelRequest({ ...target, token: Date.now() } as SessionSidePanelRequest)
+  }
+
+  function toggleViewSidePanel() {
+    if (viewSidePanelOpen()) {
+      setViewSidePanelOpen(false)
+      return
+    }
+    openViewSidePanel()
+  }
+
+  const startViewSidePanelResize = (event: PointerEvent & { currentTarget: HTMLElement }) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    const container = event.currentTarget.parentElement
+    const containerWidth = container?.getBoundingClientRect().width ?? window.innerWidth
+    const startX = event.clientX
+    const startRatio = viewSidePanelWidthRatio()
+    const onMove = (moveEvent: PointerEvent) => {
+      setViewSidePanelWidthRatio(clampViewSidePanelWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
+    }
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
   }
 
   function scheduleViewFocusPersistence(view: OpencodeXView, sessionID: string) {
@@ -1084,6 +1144,12 @@ export function App() {
       return (await loadSessionDiff(gui, { sessionID: input.session.id, directory: input.session.directory })).data ?? []
     }
     return (await loadVcsDiff(gui, { mode: "git", context: 12 })).data ?? []
+  }
+
+  function sidePanelDirectoryForSession(session?: Session) {
+    if (!session) return client()?.directory
+    const project = snapshot()?.projects.find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
+    return project?.folders[0]?.path || session.directory || client()?.directory
   }
 
   async function updateDiffReviewedFiles(session: Session, reviewedFiles: string[]) {
@@ -2173,6 +2239,7 @@ export function App() {
         selectedVariant={viewVariantValue(paneID(), session())}
         setSelectedVariant={(sessionID, value) => updateViewPaneState(sessionID, (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value })}
         focus={(sessionID, focusComposer) => focusViewSession(sessionID, { focusComposer })}
+        openSidePanelTarget={(sessionID, target) => openViewSidePanel(sessionID, target)}
         submit={(event, item, text) => void runAction(() => submitViewPrompt(event, item, text))}
         replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
         replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
@@ -2349,6 +2416,8 @@ export function App() {
                     status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
                     pending={route().name === "new-session"}
                     loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
+                    gui={client()}
+                    sidePanelDirectory={sidePanelDirectoryForSession(selectedSession())}
                   />
                 )}
               </Show>
@@ -2423,6 +2492,32 @@ export function App() {
                 projects={snapshot()?.projects ?? []}
                 items={activeViewItems()}
                 renderItem={renderViewPane}
+                sidePanelOpen={viewSidePanelOpen()}
+                toggleSidePanel={activeViewSessions().length > 0 ? toggleViewSidePanel : undefined}
+                sidePanel={(
+                  <Show when={viewSidePanelSession()}>
+                    {(session) => (
+                      <SessionSidePanel
+                        open={viewSidePanelOpen()}
+                        widthRatio={viewSidePanelWidthRatio()}
+                        session={session()}
+                        data={viewSessionData()[session().id] ?? EMPTY_SESSION_DATA}
+                        providers={snapshot()?.providers ?? []}
+                        mcp={snapshot()?.mcp ?? {}}
+                        lsp={snapshot()?.lsp ?? []}
+                        config={snapshot()?.config}
+                        gui={client()}
+                        directory={sidePanelDirectoryForSession(session())}
+                        request={viewSidePanelRequest()}
+                        contextOptions={viewSidePanelContextOptions()}
+                        selectedContextID={session().id}
+                        selectContext={setViewSidePanelSessionID}
+                        startResize={startViewSidePanelResize}
+                        close={() => setViewSidePanelOpen(false)}
+                      />
+                    )}
+                  </Show>
+                )}
                 openView={(viewID) => setRoute({ name: "views", viewID })}
                 createView={() => void runAction(handleCreateView)}
                 editView={(viewID) => setRoute({ name: "view-edit", viewID })}
@@ -2495,6 +2590,8 @@ export function App() {
                 sendToComposer={openWorkbenchPrompt}
                 openDiff={() => setRoute({ name: "diff", mode: "git", sessionID: selectedSession()?.id })}
                 openExternal={(url) => void globalThis.open(url, "_blank", "noopener")}
+                askText={askText}
+                confirm={confirm}
               />
             </Match>
             <Match when={route().name === "diff"}>
@@ -2543,160 +2640,6 @@ export function App() {
   )
 }
 
-function isTUISidebarSession(session: Session) {
-  return !session.parentID && !isSwarmSession(session) && isRenderableSession(session)
-}
-
-function isSwarmSession(session: Session) {
-  const opencodex = session.metadata?.opencodex
-  return typeof opencodex === "object" && opencodex !== null && "swarmID" in opencodex && typeof opencodex.swarmID === "string"
-}
-
-function tuiSidebarSessions(snapshot?: GuiSnapshot) {
-  return (snapshot?.sessions ?? []).filter(isTUISidebarSession).toSorted((a, b) => b.time.updated - a.time.updated)
-}
-
-function projectSessions(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
-  const byID = new Map(tuiSidebarSessions(snapshot).map((session) => [session.id, session]))
-  return project.sessions
-    .filter(isTUISidebarSession)
-    .map((session) => byID.get(session.id) ?? session)
-    .filter(isTUISidebarSession)
-    .toSorted((a, b) => b.time.updated - a.time.updated)
-}
-
-function sessionProjectName(session: Session, snapshot?: GuiSnapshot) {
-  const project = (snapshot?.projects ?? []).find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
-  if (!project) return
-  return title(project.name ?? project.project.name)
-}
-
-function recentModelsFromSessions(sessions: Session[]) {
-  return mergeRecentModels(
-    sessions
-      .filter((session) => session.model)
-      .toSorted((a, b) => b.time.updated - a.time.updated)
-      .map((session) => modelValue(session.model!.providerID, session.model!.id)),
-  )
-}
-
-function mergeRecentModels(...groups: string[][]) {
-  return Array.from(new Set(groups.flat().filter(Boolean))).slice(0, 10)
-}
-
-function readRecentModels() {
-  if (typeof localStorage === "undefined") return []
-  try {
-    const raw = localStorage.getItem("opencodex.gui.recentModels")
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((value): value is string => typeof value === "string").slice(0, 10)
-  } catch {
-    return []
-  }
-}
-
-function writeRecentModels(values: string[]) {
-  if (typeof localStorage === "undefined") return
-  try {
-    localStorage.setItem("opencodex.gui.recentModels", JSON.stringify(values.slice(0, 10)))
-  } catch {
-    return
-  }
-}
-
-function readThemeMode(): GuiThemeMode {
-  if (typeof localStorage === "undefined") return "dark"
-  return localStorage.getItem("opencodex.gui.theme") === "light" ? "light" : "dark"
-}
-
-function readBoolPreference(key: string, fallback: boolean) {
-  if (typeof localStorage === "undefined") return fallback
-  const value = localStorage.getItem(key)
-  if (value === "true") return true
-  if (value === "false") return false
-  return fallback
-}
-
-function writeBoolPreference(key: string, value: boolean) {
-  if (typeof localStorage === "undefined") return
-  localStorage.setItem(key, value ? "true" : "false")
-}
-
-type SidebarPreferences = {
-  railCollapsed: boolean
-  railSectionOrder: RailSectionName[]
-  railSections: Record<RailSectionName, boolean>
-  expandedProjectIDs: Record<string, boolean>
-  pinnedSessionIDs: string[]
-  pinnedViewIDs: string[]
-}
-
-function readSidebarPreferences(): SidebarPreferences {
-  if (typeof localStorage === "undefined") return defaultSidebarPreferences()
-  try {
-    const raw = localStorage.getItem("opencodex.gui.sidebar")
-    if (!raw) return defaultSidebarPreferences()
-    const parsed = JSON.parse(raw)
-    if (typeof parsed !== "object" || parsed === null) return defaultSidebarPreferences()
-    const input = parsed as Record<string, unknown>
-    return {
-      railCollapsed: typeof input.railCollapsed === "boolean" ? input.railCollapsed : false,
-      railSectionOrder: mergeOrderedIDs(DEFAULT_RAIL_SECTION_ORDER, Array.isArray(input.railSectionOrder) ? input.railSectionOrder.filter((value): value is string => typeof value === "string") : []),
-      railSections: readRailSections(input.railSections),
-      expandedProjectIDs: readBooleanMap(input.expandedProjectIDs),
-      pinnedSessionIDs: readStringList(input.pinnedSessionIDs),
-      pinnedViewIDs: readStringList(input.pinnedViewIDs),
-    }
-  } catch {
-    return defaultSidebarPreferences()
-  }
-}
-
-function writeSidebarPreferences(value: SidebarPreferences) {
-  if (typeof localStorage === "undefined") return
-  try {
-    localStorage.setItem("opencodex.gui.sidebar", JSON.stringify(value))
-  } catch {
-    return
-  }
-}
-
-function defaultSidebarPreferences(): SidebarPreferences {
-  return {
-    railCollapsed: false,
-    railSectionOrder: DEFAULT_RAIL_SECTION_ORDER,
-    railSections: DEFAULT_RAIL_SECTIONS,
-    expandedProjectIDs: {},
-    pinnedSessionIDs: [],
-    pinnedViewIDs: [],
-  }
-}
-
-function readRailSections(value: unknown): Record<RailSectionName, boolean> {
-  if (typeof value !== "object" || value === null) return DEFAULT_RAIL_SECTIONS
-  const input = value as Record<string, unknown>
-  return {
-    pinned: typeof input.pinned === "boolean" ? input.pinned : DEFAULT_RAIL_SECTIONS.pinned,
-    projects: typeof input.projects === "boolean" ? input.projects : DEFAULT_RAIL_SECTIONS.projects,
-    recent: typeof input.recent === "boolean" ? input.recent : DEFAULT_RAIL_SECTIONS.recent,
-    views: typeof input.views === "boolean" ? input.views : DEFAULT_RAIL_SECTIONS.views,
-  }
-}
-
-function readBooleanMap(value: unknown): Record<string, boolean> {
-  if (typeof value !== "object" || value === null) return {}
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"))
-}
-
-function readStringList(value: unknown) {
-  if (!Array.isArray(value)) return []
-  return Array.from(new Set(value.filter((item): item is string => typeof item === "string")))
-}
-
-function dropPlacement(event: DragEvent): "before" | "after" {
-  const rect = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : undefined
-  if (!rect) return "before"
-  return event.clientY > rect.top + rect.height / 2 ? "after" : "before"
+function clampViewSidePanelWidthRatio(value: number) {
+  return Math.max(0.28, Math.min(0.7, value))
 }

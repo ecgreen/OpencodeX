@@ -54,7 +54,7 @@ export function CodeEditor(props: {
           modified.of(modifiedLineDecorations(props.original)),
           diagnostics.of(diagnosticLineDecorations(props.diagnostics ?? [])),
           lintGutter(),
-          linter(syntaxErrorDiagnostics, { delay: 250 }),
+          linter((view) => syntaxErrorDiagnostics(view, props.path), { delay: 250 }),
           syntaxHighlighting(vsCodeDarkHighlightStyle),
           keymap.of([{
             key: "Mod-s",
@@ -139,6 +139,20 @@ export function CodeEditor(props: {
             ".cm-lint-marker-warning": {
               color: "#ce9178",
             },
+            ".cm-tooltip.cm-tooltip-lint": {
+              backgroundColor: "#121417",
+              border: "1px solid rgba(255, 255, 255, 0.16)",
+              borderRadius: "7px",
+              color: "#e5e7eb",
+              boxShadow: "0 18px 48px rgba(0, 0, 0, 0.45)",
+            },
+            ".cm-tooltip-lint .cm-diagnostic": {
+              padding: "8px 10px",
+              color: "#e5e7eb",
+            },
+            ".cm-tooltip-lint .cm-diagnostic-error": {
+              borderLeft: "3px solid #fb7185",
+            },
             "&.cm-focused": {
               outline: "none",
             },
@@ -216,20 +230,43 @@ function diagnosticLineDecorations(diagnostics: readonly WorkbenchDiagnostic[]):
   )
 }
 
-function syntaxErrorDiagnostics(view: EditorView): Diagnostic[] {
+function syntaxErrorDiagnostics(view: EditorView, path: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = []
   syntaxTree(view.state).iterate({
     enter(node) {
       if (!node.type.isError) return
+      if (syntaxErrorInsideComment(view.state, path, node.from)) return
       diagnostics.push({
         from: node.from,
         to: Math.max(node.to, node.from + 1),
         severity: "error",
-        message: "Syntax error",
+        message: "Syntax error. Check for a missing delimiter, quote, or closing bracket near this line.",
       })
     },
   })
   return diagnostics.slice(0, 100)
+}
+
+function syntaxErrorInsideComment(state: EditorState, path: string, position: number) {
+  const line = state.doc.lineAt(position)
+  const text = line.text.trimStart()
+  const language = workbenchLanguageID(path)
+  if (lineCommentPrefixes(language).some((prefix) => text.startsWith(prefix))) return true
+  if (!blockCommentLanguages().has(language)) return false
+  const before = state.sliceDoc(0, position)
+  return before.lastIndexOf("/*") > before.lastIndexOf("*/")
+}
+
+function lineCommentPrefixes(language: string) {
+  if (["javascript", "rust", "go", "c", "cpp", "java", "csharp", "kotlin", "scala", "dart"].includes(language)) return ["//"]
+  if (["python", "shell", "powershell", "ruby", "yaml", "toml", "properties"].includes(language)) return ["#"]
+  if (language === "sql") return ["--"]
+  if (language === "html") return ["<!--"]
+  return []
+}
+
+function blockCommentLanguages() {
+  return new Set(["javascript", "css", "rust", "go", "c", "cpp", "java", "csharp", "kotlin", "scala", "dart", "sql"])
 }
 
 function languageForPath(file: string): Extension {

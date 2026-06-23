@@ -15,6 +15,8 @@ import { useBindings } from "../keymap"
 import { useOxSidebar } from "./opencodex-sidebar"
 import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
 import { deriveStatus, statusColor, statusLabel } from "./opencodex-session-status"
+import { PermissionPrompt } from "../routes/session/permission"
+import { QuestionPrompt } from "../routes/session/question"
 
 type SyncContext = ReturnType<typeof useSync>
 type SyncSession = SyncContext["data"]["session"][number]
@@ -102,15 +104,96 @@ function truncate(input: string, length: number) {
   return input.slice(0, Math.max(0, length - 3)) + "..."
 }
 
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function arrayValue(value: unknown) {
+  return Array.isArray(value) ? value : []
+}
+
+function compactPath(value: string) {
+  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
+}
+
+function toolInput(part: SyncPart) {
+  if (part.type !== "tool" || part.state.status === "pending") return {}
+  return part.state.input ?? {}
+}
+
+function toolTitle(part: Extract<SyncPart, { type: "tool" }>) {
+  const input = toolInput(part)
+  const stateTitle = part.state.status === "running" || part.state.status === "completed" ? stringValue(part.state.title) : ""
+  const description = stringValue(input.description)
+  const command = stringValue(input.command)
+  const filePath = stringValue(input.filePath)
+  const path = stringValue(input.path)
+  const pattern = stringValue(input.pattern)
+  const query = stringValue(input.query)
+  const url = stringValue(input.url)
+  const name = stringValue(input.name)
+
+  switch (part.tool) {
+    case "bash":
+    case "shell":
+      return command ? `$ ${command}` : stateTitle || "Shell command"
+    case "glob":
+      return pattern ? `Glob: ${pattern}` : stateTitle || "Glob search"
+    case "grep":
+      return pattern ? `Grep: ${pattern}` : stateTitle || "Grep search"
+    case "read":
+      return filePath ? `Read: ${compactPath(filePath)}` : stateTitle || "Read file"
+    case "write":
+      return filePath ? `Write: ${compactPath(filePath)}` : stateTitle || "Write file"
+    case "edit":
+      return filePath ? `Edit: ${compactPath(filePath)}` : stateTitle || "Edit file"
+    case "apply_patch":
+      return stateTitle || "Apply patch"
+    case "todowrite": {
+      const count = arrayValue(input.todos).length
+      return count > 0 ? `Todo update: ${count} item${count === 1 ? "" : "s"}` : stateTitle || "Todo update"
+    }
+    case "task":
+      return description ? `Task: ${description}` : stateTitle || "Task"
+    case "skill":
+      return name ? `Loaded skill: ${name}` : stateTitle || "Loaded skill"
+    case "question":
+      return questionInputTitle(input) || stateTitle || "Question"
+    case "webfetch":
+      return url ? `Fetch: ${url}` : stateTitle || "Web fetch"
+    case "websearch":
+      return query ? `Web search: ${query}` : stateTitle || "Web search"
+    case "list":
+      return path ? `List: ${compactPath(path)}` : stateTitle || "List files"
+    default:
+      return stateTitle || `${part.tool} ${Object.values(input).map(stringValue).find(Boolean) ?? ""}`.trim()
+  }
+}
+
+function questionInputTitle(input: Record<string, unknown>) {
+  const questions = arrayValue(input.questions)
+  const first = questions.find(isRecord)
+  if (!first) return ""
+  return stringValue(first.question) || stringValue(first.header)
+}
+
 function partText(part: SyncPart) {
-  if (part.type === "text") return part.text.trim()
+  if (part.type === "text") {
+    if (part.synthetic || part.ignored) return ""
+    return part.text.trim()
+  }
+  if (part.type === "reasoning") return part.text.trim() ? "Thinking" : ""
   if (part.type === "file") return `[file] ${part.filename ?? part.url}`
   if (part.type === "agent") return `[agent] ${part.name}`
   if (part.type === "tool") {
-    if (part.state.status === "running") return `[tool] ${part.tool}${part.state.title ? ` ${part.state.title}` : ""}`
-    if (part.state.status === "completed") return `[tool] ${part.tool}${part.state.title ? ` ${part.state.title}` : ""}`
-    return `[tool] ${part.tool}`
+    const title = toolTitle(part)
+    if (part.state.status === "running") return `${title} (running)`
+    if (part.state.status === "error") return `${title} failed: ${part.state.error}`
+    if (part.state.status === "pending") return `${title} (pending)`
+    return title
   }
+  if (part.type === "patch") return `Patch: ${part.files.join(", ")}`
+  if (part.type === "compaction") return `Compaction: ${part.auto ? "auto" : "manual"}`
   return ""
 }
 
@@ -180,6 +263,8 @@ function ViewPane(props: {
   const messages = createMemo(() => session() ? sync.data.message[session()!.id] ?? [] : [])
   const recent = createMemo(() => messages().slice(Math.max(0, messages().length - 24)))
   const status = createMemo(() => session() ? deriveStatus(session()!.id, sync) : "dormant")
+  const permissions = createMemo(() => session() ? sync.data.permission[session()!.id] ?? [] : [])
+  const questions = createMemo(() => session() ? sync.data.question[session()!.id] ?? [] : [])
 
   createEffect(() => {
     const current = ref()
@@ -260,6 +345,12 @@ function ViewPane(props: {
         </Show>
       </scrollbox>
       <box flexShrink={0} paddingLeft={1} paddingRight={1}>
+        <Show when={props.focused() && permissions().length > 0}>
+          <PermissionPrompt request={permissions()[0]} />
+        </Show>
+        <Show when={props.focused() && permissions().length === 0 && questions().length > 0}>
+          <QuestionPrompt request={questions()[0]} />
+        </Show>
         <Prompt
           ref={setRef}
           sessionID={session()?.id}
