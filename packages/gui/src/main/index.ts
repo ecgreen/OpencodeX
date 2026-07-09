@@ -1,10 +1,22 @@
 import path from "node:path"
-import { spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import * as pty from "@lydell/node-pty"
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, session, shell, type MessageBoxOptions, type WebContents } from "electron"
+import launch from "cross-spawn"
+import {
+  app,
+  BrowserWindow,
+  WebContentsView,
+  dialog,
+  ipcMain,
+  session,
+  shell,
+  type MessageBoxOptions,
+  type Session,
+  type WebContents,
+} from "electron"
 import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
+import { editorCommand } from "./editor-command.js"
 
 const isDev = !app.isPackaged
 const RENDERER_CSP = [
@@ -18,9 +30,16 @@ const RENDERER_CSP = [
   "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* data:",
 ].join("; ")
 let authorizedSidecar: { origin: string; header: string } | undefined
-const browserViews = new Map<string, WebContentsView>()
+const browserViews = new Map<string, BrowserView>()
 const visibleBrowserViews = new Set<string>()
 const terminalProcesses = new Map<string, TerminalProcess>()
+const securedSessions = new WeakSet<Session>()
+
+type BrowserView = {
+  ownerID: number
+  windowID: number
+  view: WebContentsView
+}
 
 type TerminalProcess = {
   ownerID: number
@@ -94,39 +113,40 @@ function validString(value: unknown) {
 }
 
 function validBrowserInput(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { id?: unknown; url?: unknown }
   const id = validString(input.id)
-  if (!id) return
+  if (!id) return undefined
   return { id, url: validString(input.url) }
 }
 
 function validBrowserBounds(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { id?: unknown; x?: unknown; y?: unknown; width?: unknown; height?: unknown }
   const id = validString(input.id)
   const x = typeof input.x === "number" ? input.x : undefined
   const y = typeof input.y === "number" ? input.y : undefined
   const width = typeof input.width === "number" ? input.width : undefined
   const height = typeof input.height === "number" ? input.height : undefined
-  if (!id || x === undefined || y === undefined || width === undefined || height === undefined) return
-  if (width < 1 || height < 1) return
+  if (!id || x === undefined || y === undefined || width === undefined || height === undefined) return undefined
+  if (width < 1 || height < 1) return undefined
   return { id, x: Math.max(0, x), y: Math.max(0, y), width: Math.max(1, width), height: Math.max(1, height) }
 }
 
 function validBrowserAction(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { id?: unknown; action?: unknown }
   const id = validString(input.id)
-  if (!id) return
+  if (!id) return undefined
   if (input.action === "back" || input.action === "forward" || input.action === "reload" || input.action === "stop") {
     return { id, action: input.action }
   }
+  return undefined
 }
 
 function normalizeBrowserURL(input: string) {
   const raw = input.trim()
-  if (!raw) return
+  if (!raw) return undefined
   const value = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)
     ? raw
     : /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/|$)/.test(raw)
@@ -134,10 +154,10 @@ function normalizeBrowserURL(input: string) {
       : `https://${raw}`
   try {
     const url = new URL(value)
-    if (!["http:", "https:"].includes(url.protocol)) return
+    if (!["http:", "https:"].includes(url.protocol)) return undefined
     return url.toString()
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -166,13 +186,14 @@ function isAbortedNavigation(cause: unknown) {
   return cause instanceof Error && "code" in cause && cause.code === "ERR_ABORTED"
 }
 
-function activeBrowserView(id: string) {
-  return browserViews.get(id)
+function activeBrowserView(id: string, ownerID: number) {
+  const entry = browserViews.get(id)
+  return entry?.ownerID === ownerID ? entry.view : undefined
 }
 
-function createBrowserView(id: string) {
+function createBrowserView(id: string, owner: WebContents, windowID: number) {
   const existing = browserViews.get(id)
-  if (existing) return existing
+  if (existing) return existing.ownerID === owner.id ? existing.view : undefined
   const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
@@ -186,8 +207,35 @@ function createBrowserView(id: string) {
     openExternalURL(url)
     return { action: "deny" }
   })
-  browserViews.set(id, view)
+  secureSession(view.webContents.session)
+  browserViews.set(id, { ownerID: owner.id, windowID, view })
+  owner.once("destroyed", () => {
+    browserViews.forEach((entry, browserID) => {
+      if (entry.ownerID === owner.id) destroyBrowserView(browserID)
+    })
+  })
   return view
+}
+
+function destroyBrowserView(id: string, ownerID?: number) {
+  const entry = browserViews.get(id)
+  if (!entry || (ownerID !== undefined && entry.ownerID !== ownerID)) return false
+  const window = BrowserWindow.fromId(entry.windowID)
+  hideBrowserView(id, entry.view)
+  if (visibleBrowserViews.has(id)) window?.contentView.removeChildView(entry.view)
+  entry.view.webContents.close()
+  browserViews.delete(id)
+  visibleBrowserViews.delete(id)
+  return true
+}
+
+function secureSession(target: Session) {
+  if (securedSessions.has(target)) return
+  securedSessions.add(target)
+  target.setPermissionCheckHandler(() => false)
+  target.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  target.setDevicePermissionHandler(() => false)
+  target.on("will-download", (event) => event.preventDefault())
 }
 
 function showBrowserView(id: string, window: BrowserWindow, view: WebContentsView) {
@@ -204,19 +252,19 @@ function hideBrowserView(id: string, view: WebContentsView) {
 }
 
 function validEditorInput(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { value?: unknown; cwd?: unknown }
   const text = validString(input.value)
-  if (text === undefined) return
+  if (text === undefined) return undefined
   const cwd = validString(input.cwd)
   return { value: text, ...(cwd ? { cwd } : {}) }
 }
 
 function validTerminalCreateInput(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { id?: unknown; cwd?: unknown; cols?: unknown; rows?: unknown }
   const id = validString(input.id)
-  if (!id) return
+  if (!id) return undefined
   const cwd = validString(input.cwd)?.trim()
   return {
     id,
@@ -227,19 +275,19 @@ function validTerminalCreateInput(value: unknown) {
 }
 
 function validTerminalWriteInput(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { id?: unknown; data?: unknown }
   const id = validString(input.id)
   const data = validString(input.data)
-  if (!id || data === undefined) return
+  if (!id || data === undefined) return undefined
   return { id, data }
 }
 
 function validTerminalResizeInput(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const input = value as { id?: unknown; cols?: unknown; rows?: unknown }
   const id = validString(input.id)
-  if (!id) return
+  if (!id) return undefined
   return { id, cols: terminalDimension(input.cols, 100), rows: terminalDimension(input.rows, 30) }
 }
 
@@ -252,19 +300,22 @@ function terminalShell() {
   if (process.platform === "win32") {
     const command = process.env.OPENCODEX_TERMINAL_SHELL || "powershell.exe"
     const shellName = path.basename(command).toLowerCase()
-    const isPowerShell = shellName === "powershell.exe" || shellName === "powershell" || shellName === "pwsh.exe" || shellName === "pwsh"
+    const isPowerShell =
+      shellName === "powershell.exe" || shellName === "powershell" || shellName === "pwsh.exe" || shellName === "pwsh"
     return { command, args: isPowerShell ? ["-NoLogo", "-NoProfile", "-NoExit"] : [] }
   }
   return { command: process.env.SHELL || "/bin/sh", args: [] as string[] }
 }
 
 function terminalEnvironment() {
-  return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
 }
 
-function destroyTerminal(id: string) {
+function destroyTerminal(id: string, ownerID?: number) {
   const terminal = terminalProcesses.get(id)
-  if (!terminal) return false
+  if (!terminal || (ownerID !== undefined && terminal.ownerID !== ownerID)) return false
   terminal.closed = true
   terminalProcesses.delete(id)
   try {
@@ -286,14 +337,18 @@ function handleTerminalError(id: string) {
   closeTerminal(id)
 }
 
-function sendTerminalEvent(sender: WebContents, channel: "opencodex:terminal:data" | "opencodex:terminal:exit", payload: object) {
+function sendTerminalEvent(
+  sender: WebContents,
+  channel: "opencodex:terminal:data" | "opencodex:terminal:exit",
+  payload: object,
+) {
   if (sender.isDestroyed()) return
   sender.send(channel, payload)
 }
 
-function writeTerminal(id: string, data: string) {
+function writeTerminal(id: string, data: string, ownerID: number) {
   const terminal = terminalProcesses.get(id)
-  if (!terminal || terminal.closed) return false
+  if (!terminal || terminal.closed || terminal.ownerID !== ownerID) return false
   try {
     terminal.proc.write(data)
     return true
@@ -303,9 +358,9 @@ function writeTerminal(id: string, data: string) {
   }
 }
 
-function resizeTerminal(id: string, cols: number, rows: number) {
+function resizeTerminal(id: string, cols: number, rows: number, ownerID: number) {
   const terminal = terminalProcesses.get(id)
-  if (!terminal || terminal.closed) return false
+  if (!terminal || terminal.closed || terminal.ownerID !== ownerID) return false
   try {
     terminal.proc.resize(cols, rows)
     return true
@@ -337,7 +392,7 @@ async function createWindow() {
       preload: path.join(app.getAppPath(), "dist", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
 
@@ -422,7 +477,7 @@ ipcMain.handle("opencodex:contextPaths", async (event, defaultPath?: unknown) =>
   }
   const choice = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options)
   if (choice.response === 2) return undefined
-  const type = choice.response === 1 ? "directory" as const : "file" as const
+  const type = choice.response === 1 ? ("directory" as const) : ("file" as const)
   const result = await dialog.showOpenDialog({
     properties: [type === "directory" ? "openDirectory" : "openFile", "multiSelections"],
     defaultPath: validString(defaultPath),
@@ -434,20 +489,21 @@ ipcMain.handle("opencodex:contextPaths", async (event, defaultPath?: unknown) =>
 ipcMain.handle("opencodex:editor", async (_event, raw: unknown) => {
   const input = validEditorInput(raw)
   if (!input) return undefined
-  const editor = process.env.VISUAL || process.env.EDITOR
+  const editor = editorCommand(process.env.VISUAL || process.env.EDITOR || "")
   if (!editor) return undefined
   const dir = await mkdtemp(path.join(tmpdir(), "opencodex-editor-"))
   const file = path.join(dir, "prompt.md")
   await writeFile(file, input.value)
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(`${editor} "${file}"`, {
+      const child = launch(editor.command, [...editor.args, file], {
         cwd: input.cwd,
-        shell: true,
+        shell: false,
         stdio: "inherit",
+        windowsHide: true,
       })
       child.on("error", reject)
-      child.on("exit", (code) => {
+      child.on("exit", (code: number | null) => {
         if (code === 0) return resolve()
         reject(new Error(`Editor exited with code ${code ?? "unknown"}`))
       })
@@ -463,7 +519,10 @@ ipcMain.handle("opencodex:terminal:create", (event, raw: unknown) => {
   const input = validTerminalCreateInput(raw)
   if (!input) return { ok: false, message: "Invalid terminal request." }
   const existing = terminalProcesses.get(input.id)
-  if (existing) return { ok: true, pid: existing.proc.pid }
+  if (existing)
+    return existing.ownerID === event.sender.id
+      ? { ok: true, pid: existing.proc.pid }
+      : { ok: false, message: "Terminal belongs to another renderer." }
   const shell = terminalShell()
   const sender = event.sender
   const ownerID = sender.id
@@ -497,40 +556,41 @@ ipcMain.handle("opencodex:terminal:create", (event, raw: unknown) => {
   }
 })
 
-ipcMain.handle("opencodex:terminal:write", (_event, raw: unknown) => {
+ipcMain.handle("opencodex:terminal:write", (event, raw: unknown) => {
   const input = validTerminalWriteInput(raw)
   if (!input) return false
-  return writeTerminal(input.id, input.data)
+  return writeTerminal(input.id, input.data, event.sender.id)
 })
 
-ipcMain.on("opencodex:terminal:write", (_event, raw: unknown) => {
+ipcMain.on("opencodex:terminal:write", (event, raw: unknown) => {
   const input = validTerminalWriteInput(raw)
   if (!input) return
-  writeTerminal(input.id, input.data)
+  writeTerminal(input.id, input.data, event.sender.id)
 })
 
-ipcMain.handle("opencodex:terminal:resize", (_event, raw: unknown) => {
+ipcMain.handle("opencodex:terminal:resize", (event, raw: unknown) => {
   const input = validTerminalResizeInput(raw)
   if (!input) return false
-  return resizeTerminal(input.id, input.cols, input.rows)
+  return resizeTerminal(input.id, input.cols, input.rows, event.sender.id)
 })
 
-ipcMain.on("opencodex:terminal:resize", (_event, raw: unknown) => {
+ipcMain.on("opencodex:terminal:resize", (event, raw: unknown) => {
   const input = validTerminalResizeInput(raw)
   if (!input) return
-  resizeTerminal(input.id, input.cols, input.rows)
+  resizeTerminal(input.id, input.cols, input.rows, event.sender.id)
 })
 
-ipcMain.handle("opencodex:terminal:destroy", (_event, id: unknown) => {
+ipcMain.handle("opencodex:terminal:destroy", (event, id: unknown) => {
   const terminalID = validString(id)
-  return terminalID ? destroyTerminal(terminalID) : false
+  return terminalID ? destroyTerminal(terminalID, event.sender.id) : false
 })
 
 ipcMain.handle("opencodex:browser:create", async (event, raw: unknown) => {
   const input = validBrowserInput(raw)
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!input || !window) return undefined
-  const view = createBrowserView(input.id)
+  const view = createBrowserView(input.id, event.sender, window.id)
+  if (!view) return undefined
   if (input.url) {
     const url = normalizeBrowserURL(input.url)
     if (url) await loadBrowserURL(view, url)
@@ -542,7 +602,7 @@ ipcMain.handle("opencodex:browser:bounds", (event, raw: unknown) => {
   const input = validBrowserBounds(raw)
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!input || !window) return undefined
-  const view = activeBrowserView(input.id)
+  const view = activeBrowserView(input.id, event.sender.id)
   if (!view) return undefined
   showBrowserView(input.id, window, view)
   view.setBounds({ x: input.x, y: input.y, width: input.width, height: input.height })
@@ -553,7 +613,7 @@ ipcMain.handle("opencodex:browser:hide", (event, id: unknown) => {
   const browserID = validString(id)
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!browserID || !window) return undefined
-  const view = activeBrowserView(browserID)
+  const view = activeBrowserView(browserID, event.sender.id)
   if (!view) return undefined
   hideBrowserView(browserID, view)
   return browserState(browserID, view)
@@ -565,7 +625,8 @@ ipcMain.handle("opencodex:browser:navigate", async (event, raw: unknown) => {
   if (!input || !input.url || !window) return undefined
   const url = normalizeBrowserURL(input.url)
   if (!url) return undefined
-  const view = createBrowserView(input.id)
+  const view = createBrowserView(input.id, event.sender, window.id)
+  if (!view) return undefined
   await loadBrowserURL(view, url)
   return browserState(input.id, view)
 })
@@ -574,27 +635,29 @@ ipcMain.handle("opencodex:browser:action", (event, raw: unknown) => {
   const input = validBrowserAction(raw)
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!input || !window) return undefined
-  const view = activeBrowserView(input.id)
+  const view = activeBrowserView(input.id, event.sender.id)
   if (!view) return undefined
-  if (input.action === "back" && view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
-  if (input.action === "forward" && view.webContents.navigationHistory.canGoForward()) view.webContents.navigationHistory.goForward()
+  if (input.action === "back" && view.webContents.navigationHistory.canGoBack())
+    view.webContents.navigationHistory.goBack()
+  if (input.action === "forward" && view.webContents.navigationHistory.canGoForward())
+    view.webContents.navigationHistory.goForward()
   if (input.action === "reload") view.webContents.reload()
   if (input.action === "stop") view.webContents.stop()
   return browserState(input.id, view)
 })
 
-ipcMain.handle("opencodex:browser:screenshot", async (_event, id: unknown) => {
+ipcMain.handle("opencodex:browser:screenshot", async (event, id: unknown) => {
   const browserID = validString(id)
   if (!browserID) return undefined
-  const view = activeBrowserView(browserID)
+  const view = activeBrowserView(browserID, event.sender.id)
   if (!view) return undefined
   return (await view.webContents.capturePage()).toDataURL()
 })
 
-ipcMain.handle("opencodex:browser:devtools", (_event, id: unknown) => {
+ipcMain.handle("opencodex:browser:devtools", (event, id: unknown) => {
   const browserID = validString(id)
   if (!browserID) return undefined
-  const view = activeBrowserView(browserID)
+  const view = activeBrowserView(browserID, event.sender.id)
   if (!view) return undefined
   if (view.webContents.isDevToolsOpened()) view.webContents.closeDevTools()
   else view.webContents.openDevTools({ mode: "detach" })
@@ -605,14 +668,7 @@ ipcMain.handle("opencodex:browser:destroy", (event, id: unknown) => {
   const browserID = validString(id)
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!browserID || !window) return undefined
-  const view = activeBrowserView(browserID)
-  if (!view) return undefined
-  hideBrowserView(browserID, view)
-  if (visibleBrowserViews.has(browserID)) window.contentView.removeChildView(view)
-  view.webContents.close()
-  browserViews.delete(browserID)
-  visibleBrowserViews.delete(browserID)
-  return true
+  return destroyBrowserView(browserID, event.sender.id)
 })
 
 async function runSmokeCheck(window: BrowserWindow) {
@@ -634,19 +690,25 @@ async function checkSidecarHealth(connection: SidecarConnection) {
       signal: controller.signal,
     })
     if (!response.ok) throw new Error(`sidecar health returned ${response.status}`)
-    const body = (await response.json()) as { healthy?: unknown }
-    if (body.healthy !== true) throw new Error("sidecar health response was not healthy")
+    const body = await response.json()
+    if (!body || typeof body !== "object" || !("healthy" in body) || body.healthy !== true) {
+      throw new Error("sidecar health response was not healthy")
+    }
   } finally {
     clearTimeout(timeout)
   }
 }
 
-app.whenReady().then(() => {
-  registerAppIcon()
-  registerContentSecurityPolicy()
-  registerSidecarAuthorization()
-  return createWindow()
-})
+void app
+  .whenReady()
+  .then(() => {
+    registerAppIcon()
+    secureSession(session.defaultSession)
+    registerContentSecurityPolicy()
+    registerSidecarAuthorization()
+    return createWindow()
+  })
+  .catch((error) => console.error(error))
 app.on("window-all-closed", () => {
   stopSidecar()
   if (process.platform !== "darwin") app.quit()
