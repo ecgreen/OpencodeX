@@ -57,7 +57,7 @@ import * as SessionError from "./session-errors"
 import { installPlugin, patchPluginConfig, readPluginManifest } from "@/plugin/install"
 import { PluginLoader } from "@/plugin/loader"
 import { readPluginId, readV1Plugin, resolvePluginId } from "@/plugin/shared"
-import { internalTuiPlugins } from "@/cli/cmd/tui/plugin/internal"
+import { internalTuiPluginManifest } from "@/plugin/internal-tui-manifest"
 import * as InstanceState from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Filesystem } from "@/util/filesystem"
@@ -87,19 +87,6 @@ function stateEventData(data: OpencodeXState.OpencodeXStateStreamFrame) {
   }
 }
 
-function mapProjectNotFound<A, R>(effect: Effect.Effect<A, Project.NotFoundError, R>) {
-  return effect.pipe(
-    Effect.catchTag("Project.NotFoundError", (error) =>
-      Effect.fail(
-        new ProjectNotFoundError({
-          projectID: error.projectID,
-          message: `Project not found: ${error.projectID}`,
-        }),
-      ),
-    ),
-  )
-}
-
 function mapSwarmCreateErrors<A, R>(
   effect: Effect.Effect<A, Project.NotFoundError | OpencodeXSwarm.ValidationError, R>,
 ) {
@@ -116,9 +103,10 @@ function mapSwarmCreateErrors<A, R>(
   )
 }
 
-function mapJobNotFound<A, R>(effect: Effect.Effect<A, OpencodeXJob.NotFoundError, R>) {
+function mapJobErrors<A, R>(effect: Effect.Effect<A, OpencodeXJob.NotFoundError | OpencodeXJob.TransitionError, R>) {
   return effect.pipe(
     Effect.catchTag("OpencodeX.Job.NotFoundError", (error) => Effect.fail(notFound(`Job not found: ${error.jobID}`))),
+    Effect.catchTag("OpencodeX.Job.TransitionError", () => Effect.fail(new HttpApiError.BadRequest({}))),
   )
 }
 
@@ -437,7 +425,7 @@ function internalTuiPluginRows(flags: Pick<RuntimeFlags.Info, "experimentalEvent
   return Effect.gen(function* () {
     const globalTuiConfig = yield* existingTuiConfigFile(ConfigPaths.fileInDirectory(Global.Path.config, "tui"), fs)
     const enabled = yield* readTuiEnabledMap(globalTuiConfig, fs)
-    return internalTuiPlugins(flags).map((item) => {
+    return internalTuiPluginManifest(flags).map((item) => {
       const state = enabled[item.id] ?? item.enabled ?? true
       return pluginRow({
         kind: "tui",
@@ -1473,18 +1461,57 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     })
 
     const getJob = Effect.fn("OpencodeXHttpApi.getJob")(function* (ctx: { params: { jobID: string } }) {
-      return yield* mapJobNotFound(jobs.get(ctx.params.jobID))
+      return yield* mapJobErrors(jobs.get(ctx.params.jobID))
     })
 
     const updateJob = Effect.fn("OpencodeXHttpApi.updateJob")(function* (ctx: {
       params: { jobID: string }
       payload: typeof UpdateJobPayload.Type
     }) {
-      return yield* mapJobNotFound(jobs.update({ ...ctx.payload, id: ctx.params.jobID }))
+      return yield* mapJobErrors(jobs.update({ ...ctx.payload, id: ctx.params.jobID }))
     })
 
     const cancelJob = Effect.fn("OpencodeXHttpApi.cancelJob")(function* (ctx: { params: { jobID: string } }) {
-      return yield* mapJobNotFound(jobs.cancel(ctx.params.jobID))
+      return yield* mapJobErrors(jobs.cancel(ctx.params.jobID))
+    })
+
+    const claimJob = Effect.fn("OpencodeXHttpApi.claimJob")(function* (ctx: {
+      params: { jobID: string }
+      payload: Omit<OpencodeXJob.ClaimInput, "jobID">
+    }) {
+      return yield* mapJobErrors(jobs.claim({ ...ctx.payload, jobID: ctx.params.jobID }))
+    })
+
+    const startJob = Effect.fn("OpencodeXHttpApi.startJob")(function* (ctx: {
+      params: { jobID: string }
+      payload: { owner: string }
+    }) {
+      return yield* mapJobErrors(jobs.start(ctx.params.jobID, ctx.payload.owner))
+    })
+
+    const renewJob = Effect.fn("OpencodeXHttpApi.renewJob")(function* (ctx: {
+      params: { jobID: string }
+      payload: Omit<OpencodeXJob.ClaimInput, "jobID">
+    }) {
+      return yield* mapJobErrors(jobs.renew({ ...ctx.payload, jobID: ctx.params.jobID }))
+    })
+
+    const succeedJob = Effect.fn("OpencodeXHttpApi.succeedJob")(function* (ctx: {
+      params: { jobID: string }
+      payload: Omit<OpencodeXJob.CompleteInput, "jobID">
+    }) {
+      return yield* mapJobErrors(jobs.succeed({ ...ctx.payload, jobID: ctx.params.jobID }))
+    })
+
+    const failJob = Effect.fn("OpencodeXHttpApi.failJob")(function* (ctx: {
+      params: { jobID: string }
+      payload: Omit<OpencodeXJob.FailInput, "jobID">
+    }) {
+      return yield* mapJobErrors(jobs.fail({ ...ctx.payload, jobID: ctx.params.jobID }))
+    })
+
+    const retryJob = Effect.fn("OpencodeXHttpApi.retryJob")(function* (ctx: { params: { jobID: string } }) {
+      return yield* mapJobErrors(jobs.retry(ctx.params.jobID))
     })
 
     const listSwarms = Effect.fn("OpencodeXHttpApi.listSwarms")(function* () {
@@ -1641,6 +1668,12 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("getJob", getJob)
       .handle("updateJob", updateJob)
       .handle("cancelJob", cancelJob)
+      .handle("claimJob", claimJob)
+      .handle("startJob", startJob)
+      .handle("renewJob", renewJob)
+      .handle("succeedJob", succeedJob)
+      .handle("failJob", failJob)
+      .handle("retryJob", retryJob)
       .handle("listSwarms", listSwarms)
       .handle("createSwarm", createSwarm)
       .handle("getSwarm", getSwarm)

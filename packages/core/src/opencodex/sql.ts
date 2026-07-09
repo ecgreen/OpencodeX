@@ -85,6 +85,7 @@ export const OpencodeXStateEventTable = sqliteTable(
     event_type: text().notNull(),
     operation: text().notNull(),
     payload: text({ mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    created_at: integer().notNull(),
   },
   (table) => [
     index("opencodex_state_event_scope_position_idx").on(
@@ -112,6 +113,7 @@ export const OpencodeXViewTable = sqliteTable(
       .$type<SessionSchema.ID>()
       .references(() => SessionTable.id, { onDelete: "set null" }),
     layout: text().notNull().default("auto"),
+    sort_order: integer().notNull().default(0),
     metadata_json: text(),
     ...Timestamps,
   },
@@ -159,9 +161,18 @@ export const OpencodeXJobTable = sqliteTable(
     agent: text(),
     provider_id: text(),
     model_id: text(),
+    idempotency_key: text().unique(),
+    attempt: integer().notNull().default(0),
+    max_attempts: integer().notNull().default(1),
+    lease_owner: text(),
+    lease_expires_at: integer(),
+    timeout_at: integer(),
+    cancel_requested_at: integer(),
     started_at: integer(),
     completed_at: integer(),
     status_reason: text(),
+    result_json: text({ mode: "json" }).$type<Record<string, unknown>>(),
+    failure_json: text({ mode: "json" }).$type<Record<string, unknown>>(),
     metadata_json: text(),
     ...Timestamps,
   },
@@ -170,6 +181,7 @@ export const OpencodeXJobTable = sqliteTable(
     index("opencodex_job_session_idx").on(table.session_id),
     index("opencodex_job_swarm_idx").on(table.swarm_id),
     index("opencodex_job_status_idx").on(table.status),
+    index("opencodex_job_lease_idx").on(table.status, table.lease_expires_at),
     index("opencodex_job_updated_idx").on(table.time_updated),
   ],
 )

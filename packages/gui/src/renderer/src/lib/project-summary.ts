@@ -1,4 +1,4 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
 import { projectSessions, type SessionOrderState } from "./app-session-lists"
 import { deriveSessionStatus, sessionStatusLabel } from "./session-status"
 import type { GuiSnapshot } from "./store"
@@ -78,7 +78,7 @@ export function projectAttentionItems(
       !sessionID ||
       !sessionIDs.has(sessionID) ||
       attentionSessionIDs.has(sessionID) ||
-      !["input_needed", "approval_needed", "blocked", "failed"].includes(job.status)
+      !["interrupted", "failed"].includes(job.status)
     )
       return []
     return [

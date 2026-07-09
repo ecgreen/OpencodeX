@@ -1,13 +1,8 @@
-import {
-  OpencodeXSwarmEventTable,
-  OpencodeXSwarmRoleTable,
-  OpencodeXSwarmTable,
-} from "@opencode-ai/core/opencodex/sql"
-import { Database } from "@opencode-ai/core/database/database"
-import { Identifier } from "@opencode-ai/core/util/identifier"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Effect, Schema } from "effect"
 import { OpencodeXProject } from "@/opencodex/project"
-import * as Tool from "./tool"
+import type { PlanService } from "@/opencodex/swarm"
+import { Tool } from "./tool"
 
 const RoleInput = Schema.Struct({
   name: Schema.String.annotate({ description: "Role name, for example Architect or QA Engineer" }),
@@ -38,78 +33,11 @@ type Metadata = {
   roleCount?: number
 }
 
-function defaultTitle(prompt: string) {
-  const firstLine = prompt.trim().split(/\r?\n/)[0] ?? "New swarm"
-  return firstLine.length > 80 ? firstLine.slice(0, 77) + "..." : firstLine || "New swarm"
-}
-
-function serializeMetadata(metadata: Record<string, unknown> | undefined) {
-  return metadata ? JSON.stringify(metadata) : undefined
-}
-
-function defaultRoles(prompt: string): Schema.Schema.Type<typeof RoleInput>[] {
-  return [
-    {
-      name: "Orchestrator",
-      skill: "orchestrator",
-      instructions: `Coordinate the swarm, send discovery work to Product Manager and Designer when relevant, convert their findings into detailed engineering tickets, identify dependencies between roles, and produce a final handoff for this request:\n\n${prompt}`,
-    },
-    {
-      name: "Product Manager",
-      skill: "product-manager",
-      instructions: `Clarify the product goal, user workflows, acceptance criteria, and tradeoffs for this request:\n\n${prompt}`,
-    },
-    {
-      name: "Designer",
-      skill: "designer",
-      instructions: `Analyze the UI and UX implications for this request, including flows, layout, interaction states, accessibility, and ticket-ready design requirements:\n\n${prompt}`,
-    },
-    {
-      name: "Architect",
-      skill: "architect",
-      instructions: `Identify the technical design, integration points, data flow, and implementation risks for this request:\n\n${prompt}`,
-    },
-    {
-      name: "Senior Engineer",
-      skill: "senior-engineer",
-      instructions: `Plan or implement the engineering work for this request, using orchestrator tickets plus Product Manager, Designer, and Architect handoffs when available:\n\n${prompt}`,
-    },
-    {
-      name: "QA Engineer",
-      skill: "qa-engineer",
-      instructions: `Define validation strategy, edge cases, and regression risks for this request:\n\n${prompt}`,
-    },
-    {
-      name: "Code Reviewer",
-      skill: "code-reviewer",
-      instructions: `Review completed or proposed work for correctness, maintainability, regressions, and missing validation:\n\n${prompt}`,
-    },
-  ]
-}
-
-function isOrchestratorRole(role: Schema.Schema.Type<typeof RoleInput>) {
-  return role.skill === "orchestrator" || role.name.trim().toLowerCase() === "orchestrator"
-}
-
-function validateRoles(roles: readonly Schema.Schema.Type<typeof RoleInput>[]) {
-  if (roles.length < 2) return "A swarm requires at least two agents: one Orchestrator and one other role."
-  if (roles.length > 10) return "A swarm can run at most 10 agents."
-  if (!isOrchestratorRole(roles[0]!)) return "A swarm requires the first role to be the Orchestrator."
-  if (!roles.some((role) => !isOrchestratorRole(role))) return "A swarm requires at least one non-Orchestrator role."
-  if (roles.some((role) => role.name.trim().length === 0)) return "Every swarm role needs a name."
-  if (roles.some((role) => role.instructions.trim().length === 0)) return "Every swarm role needs instructions."
-  return undefined
-}
-
-export const OpencodeXSwarmCreateTool = Tool.define<
-  typeof Parameters,
-  Metadata,
-  Database.Service | OpencodeXProject.Service
->(
+export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata, OpencodeXProject.Service | PlanService>(
   "opencodex_swarm_create",
   Effect.gen(function* () {
-    const { db } = yield* Database.Service
     const projects = yield* OpencodeXProject.Service
+    const swarms = yield* (yield* Effect.promise(() => import("@/opencodex/swarm"))).PlanService
 
     return {
       description: [
@@ -137,7 +65,9 @@ export const OpencodeXSwarmCreateTool = Tool.define<
                   .some((value) => value.toLowerCase().includes(projectQuery)),
               )
             : undefined
-          const bySession = available.find((project) => project.sessions.some((session) => session.id === ctx.sessionID))
+          const bySession = available.find((project) =>
+            project.sessions.some((session) => session.id === ctx.sessionID),
+          )
           const project = byID ?? byName ?? bySession ?? (available.length === 1 ? available[0] : undefined)
 
           if (!project) {
@@ -149,101 +79,42 @@ export const OpencodeXSwarmCreateTool = Tool.define<
                   : [
                       "Choose an OpenCodeX project before creating a swarm.",
                       "Available projects:",
-                      ...available.map((item) => `- ${item.id}: ${item.name ?? item.project.name ?? item.project.worktree}`),
+                      ...available.map(
+                        (item) => `- ${item.id}: ${item.name ?? item.project.name ?? item.project.worktree}`,
+                      ),
                     ].join("\n"),
               metadata: {},
             }
           }
 
-          const roles = params.roles && params.roles.length > 0 ? params.roles : defaultRoles(params.prompt)
-          const title = params.title?.trim() || defaultTitle(params.prompt)
-          const invalid = validateRoles(roles)
-
-          if (invalid) {
-            return {
-              title: "Invalid swarm plan",
-              output: invalid,
-              metadata: {},
-            }
-          }
-
-          const swarmID = `swm_${Identifier.ascending()}`
-          const now = Date.now()
-
-          yield* db
-            .transaction(
-              (tx) =>
-                Effect.gen(function* () {
-                  yield* tx
-                    .insert(OpencodeXSwarmTable)
-                    .values({
-                      id: swarmID,
-                      opencodex_project_id: project.id,
-                      title,
-                      prompt: params.prompt,
-                      status: "planned",
-                      source: "manual",
-                      created_by: ctx.agent,
-                      metadata_json: serializeMetadata({ createdByTool: "opencodex_swarm_create" }),
-                      time_created: now,
-                      time_updated: now,
-                    })
-                    .run()
-                  yield* Effect.forEach(
-                    roles,
-                    (role, index) =>
-                      tx
-                        .insert(OpencodeXSwarmRoleTable)
-                        .values({
-                          id: `swr_${Identifier.ascending()}`,
-                          swarm_id: swarmID,
-                          name: role.name,
-                          agent: role.agent,
-                          skill: role.skill,
-                          provider_id: role.providerID,
-                          model_id: role.modelID,
-                          model_profile: role.modelProfile,
-                          status: "planned",
-                          instructions: role.instructions,
-                          sort_order: index,
-                          metadata_json: undefined,
-                          time_created: now,
-                          time_updated: now,
-                        })
-                        .run(),
-                    { discard: true },
-                  )
-                  yield* tx
-                    .insert(OpencodeXSwarmEventTable)
-                    .values({
-                      id: `oxe_${Identifier.ascending()}`,
-                      swarm_id: swarmID,
-                      kind: "swarm.created",
-                      message: "Swarm plan created by OpenCodeX tool",
-                      metadata_json: serializeMetadata({ sessionID: ctx.sessionID }),
-                      time_created: now,
-                      time_updated: now,
-                    })
-                    .run()
-                }),
-              { behavior: "immediate" },
-            )
-            .pipe(Effect.orDie)
+          const created = yield* swarms.create({
+            projectID: project.id,
+            title: params.title,
+            prompt: params.prompt,
+            source: "manual",
+            createdBy: ctx.agent,
+            roles: params.roles?.map((role) => ({
+              ...role,
+              providerID: role.providerID ? ProviderV2.ID.make(role.providerID) : undefined,
+              modelID: role.modelID ? ProviderV2.ModelID.make(role.modelID) : undefined,
+            })),
+            metadata: { createdByTool: "opencodex_swarm_create", sessionID: ctx.sessionID },
+          })
 
           return {
-            title: `Created team: ${title}`,
+            title: `Created team: ${created.title}`,
             output: [
-              `Created OpenCodeX swarm team "${title}".`,
-              `Team ID: ${swarmID}`,
+              `Created OpenCodeX swarm team "${created.title}".`,
+              `Team ID: ${created.id}`,
               `Project: ${project.name ?? project.project.name ?? project.project.worktree}`,
-              `Roles: ${roles.map((role) => role.name).join(", ")}`,
+              `Roles: ${created.roles.map((role) => role.name).join(", ")}`,
               "",
               "Open the teams dashboard to inspect it or start a run.",
             ].join("\n"),
             metadata: {
-              swarmID,
+              swarmID: created.id,
               projectID: project.id,
-              roleCount: roles.length,
+              roleCount: created.roles.length,
             },
           }
         }),

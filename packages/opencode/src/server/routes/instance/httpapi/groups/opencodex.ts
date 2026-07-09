@@ -20,6 +20,10 @@ const root = "/experimental/opencodex"
 
 export const UpdateProjectPayload = Schema.Struct(Struct.omit(OpencodeXProject.UpdateInput.fields, ["projectID"]))
 export const UpdateJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.UpdateInput.fields, ["id"]))
+export const ClaimJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.ClaimInput.fields, ["jobID"]))
+export const CompleteJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.CompleteInput.fields, ["jobID"]))
+export const FailJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.FailInput.fields, ["jobID"]))
+export const StartJobPayload = Schema.Struct({ owner: Schema.String })
 export const UpdateViewPayload = Schema.Struct(Struct.omit(OpencodeXView.UpdateInput.fields, ["id"]))
 export const UpdateSessionStatePayload = Schema.Struct(
   Struct.omit(OpencodeXSessionState.UpdateInput.fields, ["sessionID"]),
@@ -716,6 +720,71 @@ export const OpencodeXApi = HttpApi.make("opencodex")
           OpenApi.annotations({
             identifier: "opencodex.job.cancel",
             summary: "Cancel OpencodeX job",
+          }),
+        ),
+        HttpApiEndpoint.post("claimJob", `${root}/job/:jobID/claim`, {
+          params: { jobID: Schema.String },
+          payload: ClaimJobPayload,
+          success: described(OpencodeXJob.Info, "Claimed OpencodeX job"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.job.claim",
+            summary: "Claim an OpencodeX job lease",
+          }),
+        ),
+        HttpApiEndpoint.post("startJob", `${root}/job/:jobID/start`, {
+          params: { jobID: Schema.String },
+          payload: StartJobPayload,
+          success: described(OpencodeXJob.Info, "Running OpencodeX job"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.job.start",
+            summary: "Start a claimed OpencodeX job",
+          }),
+        ),
+        HttpApiEndpoint.post("renewJob", `${root}/job/:jobID/renew`, {
+          params: { jobID: Schema.String },
+          payload: ClaimJobPayload,
+          success: described(OpencodeXJob.Info, "Renewed OpencodeX job lease"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.job.renew",
+            summary: "Renew an OpencodeX job lease",
+          }),
+        ),
+        HttpApiEndpoint.post("succeedJob", `${root}/job/:jobID/succeed`, {
+          params: { jobID: Schema.String },
+          payload: CompleteJobPayload,
+          success: described(OpencodeXJob.Info, "Succeeded OpencodeX job"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.job.succeed",
+            summary: "Complete an OpencodeX job successfully",
+          }),
+        ),
+        HttpApiEndpoint.post("failJob", `${root}/job/:jobID/fail`, {
+          params: { jobID: Schema.String },
+          payload: FailJobPayload,
+          success: described(OpencodeXJob.Info, "Failed OpencodeX job"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.job.fail",
+            summary: "Complete an OpencodeX job with a typed failure",
+          }),
+        ),
+        HttpApiEndpoint.post("retryJob", `${root}/job/:jobID/retry`, {
+          params: { jobID: Schema.String },
+          success: described(OpencodeXJob.Info, "Requeued OpencodeX job"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.job.retry",
+            summary: "Requeue an interrupted or failed OpencodeX job",
           }),
         ),
         HttpApiEndpoint.get("listSwarms", `${root}/swarm`, {

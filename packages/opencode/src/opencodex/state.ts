@@ -6,7 +6,7 @@ import { ProjectV2 } from "@opencode-ai/core/project"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
-import { and, asc, eq, gt, isNull, max } from "drizzle-orm"
+import { and, asc, desc, eq, gt, isNull, lt, max } from "drizzle-orm"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -19,10 +19,14 @@ import { SessionStatus } from "@/session/status"
 import { Todo } from "@/session/todo"
 import { Snapshot } from "@/snapshot"
 import { OpencodeXProject } from "./project"
+import { OpencodeXJob } from "./job"
 import { OpencodeXSessionState } from "./session-state"
+import { OpencodeXSwarm } from "./swarm"
 import { OpencodeXView } from "./view"
 
-export const EPOCH = "2026-07-09.1"
+export const EPOCH = "2026-07-09.2"
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
+const RETENTION_EVENTS = 100_000
 
 export const OpencodeXStateScope = Schema.Struct({
   projectID: ProjectV2.ID,
@@ -60,9 +64,14 @@ export const OpencodeXStateSnapshot = Schema.Struct({
   digest: Schema.String,
   domains: Schema.Struct({
     catalog: StateDomainRevision,
+    operations: StateDomainRevision,
   }),
   payloads: Schema.Struct({
     catalog: OpencodeXSessionState.SyncSnapshot,
+    operations: Schema.Struct({
+      jobs: Schema.Array(OpencodeXJob.Info),
+      swarms: Schema.Array(OpencodeXSwarm.Info),
+    }),
   }),
 }).annotate({ identifier: "OpencodeXStateSnapshot" })
 export type OpencodeXStateSnapshot = Schema.Schema.Type<typeof OpencodeXStateSnapshot>
@@ -94,7 +103,7 @@ export const OpencodeXStateEvent = Schema.Struct({
   epoch: Schema.String,
   cursor: OpencodeXStateCursor,
   aggregateSequence: NonNegativeInt,
-  domain: Schema.Literals(["catalog", "session"]),
+  domain: Schema.Literals(["catalog", "operations", "session"]),
   operation: Schema.Literal("invalidate"),
   payload: StateEventPayload,
 }).annotate({ identifier: "OpencodeXStateEvent" })
@@ -168,7 +177,8 @@ function aggregateID(event: EventV2.Payload) {
   return event.id
 }
 
-function domain(event: EventV2.Payload): "catalog" | "session" {
+function domain(event: EventV2.Payload): "catalog" | "operations" | "session" {
+  if (event.type.startsWith("opencodex.job.") || event.type.startsWith("opencodex.swarm.")) return "operations"
   if (
     (typeof event.data === "object" && event.data !== null && "sessionID" in event.data) ||
     event.type.startsWith("session.") ||
@@ -200,7 +210,7 @@ function hydrate(row: typeof OpencodeXStateEventTable.$inferSelect): OpencodeXSt
     epoch: EPOCH,
     cursor: encodeCursor(scope, row.position),
     aggregateSequence: row.aggregate_sequence,
-    domain: row.domain === "session" ? "session" : "catalog",
+    domain: row.domain === "session" ? "session" : row.domain === "operations" ? "operations" : "catalog",
     operation: "invalidate",
     payload: {
       aggregateID: row.aggregate_id,
@@ -216,7 +226,9 @@ export const layer = Layer.effect(
     const { db } = database
     const events = yield* EventV2Bridge.Service
     const projects = yield* OpencodeXProject.Service
+    const jobs = yield* OpencodeXJob.Service
     const sessions = yield* Session.Service
+    const swarms = yield* OpencodeXSwarm.ReadService
     const views = yield* OpencodeXView.Service
     const statuses = yield* SessionStatus.Service
     const permissions = yield* Permission.Service
@@ -250,6 +262,35 @@ export const layer = Layer.effect(
     const cursor = Effect.fn("OpencodeXState.cursor")(function* () {
       const current = yield* scope()
       return encodeCursor(current, yield* position(current))
+    })
+
+    const prune = Effect.fn("OpencodeXState.prune")(function* (current: OpencodeXStateScope) {
+      const boundary = yield* db
+        .select({ position: OpencodeXStateEventTable.position })
+        .from(OpencodeXStateEventTable)
+        .where(whereScope(current))
+        .orderBy(desc(OpencodeXStateEventTable.position))
+        .limit(1)
+        .offset(RETENTION_EVENTS - 1)
+        .get()
+        .pipe(Effect.orDie)
+      yield* Effect.all(
+        [
+          db
+            .delete(OpencodeXStateEventTable)
+            .where(and(whereScope(current), lt(OpencodeXStateEventTable.created_at, Date.now() - RETENTION_MS)))
+            .run()
+            .pipe(Effect.orDie),
+          boundary
+            ? db
+                .delete(OpencodeXStateEventTable)
+                .where(and(whereScope(current), lt(OpencodeXStateEventTable.position, boundary.position)))
+                .run()
+                .pipe(Effect.orDie)
+            : Effect.void,
+        ],
+        { concurrency: "unbounded", discard: true },
+      )
     })
 
     const unsubscribe = yield* events.listen((event) =>
@@ -307,6 +348,7 @@ export const layer = Layer.effect(
             event_type: event.type,
             operation: "invalidate",
             payload: { aggregateID: aggregate, eventType: event.type },
+            created_at: Date.now(),
           })
           .onConflictDoNothing({ target: OpencodeXStateEventTable.id })
           .run()
@@ -318,6 +360,7 @@ export const layer = Layer.effect(
           .get()
           .pipe(Effect.orDie)
         if (!row) return
+        yield* prune(current)
         const persisted = hydrate(row)
         for (const listener of listeners) listener(persisted)
       }),
@@ -377,17 +420,20 @@ export const layer = Layer.effect(
       return yield* events.barrier(
         Effect.gen(function* () {
           const current = yield* scope()
-          const [projectList, sessionList, viewList, statusList, permissionList, questionList] = yield* Effect.all(
-            [
-              projects.list(),
-              sessions.list({ scope: "project" }),
-              views.list(),
-              statuses.list(),
-              permissions.list(),
-              questions.list(),
-            ],
-            { concurrency: "unbounded" },
-          )
+          const [projectList, sessionList, viewList, statusList, permissionList, questionList, jobList, swarmList] =
+            yield* Effect.all(
+              [
+                projects.list(),
+                sessions.list({ scope: "project" }),
+                views.list(),
+                statuses.list(),
+                permissions.list(),
+                questions.list(),
+                jobs.list(),
+                swarms.list(),
+              ],
+              { concurrency: "unbounded" },
+            )
           const state = yield* sessionState.list(sessionList.map((session) => session.id))
           const catalog = {
             projects: projectList,
@@ -410,14 +456,20 @@ export const layer = Layer.effect(
             ),
           }
           const stateCursor = encodeCursor(current, yield* position(current))
-          const digest = Bun.hash(JSON.stringify(catalog)).toString(36)
+          const operations = { jobs: jobList, swarms: swarmList }
+          const catalogDigest = Bun.hash(JSON.stringify(catalog)).toString(36)
+          const operationsDigest = Bun.hash(JSON.stringify(operations)).toString(36)
+          const digest = Bun.hash(`${catalogDigest}:${operationsDigest}`).toString(36)
           return {
             scope: current,
             epoch: EPOCH,
             cursor: stateCursor,
             digest,
-            domains: { catalog: { revision: digest, digest } },
-            payloads: { catalog },
+            domains: {
+              catalog: { revision: catalogDigest, digest: catalogDigest },
+              operations: { revision: operationsDigest, digest: operationsDigest },
+            },
+            payloads: { catalog, operations },
           }
         }),
       )
@@ -485,7 +537,9 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Database.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(OpencodeXProject.defaultLayer),
+  Layer.provide(OpencodeXJob.defaultLayer),
   Layer.provide(Session.defaultLayer),
+  Layer.provide(OpencodeXSwarm.readLayer.pipe(Layer.provide(Database.defaultLayer))),
   Layer.provide(OpencodeXView.defaultLayer),
   Layer.provide(SessionStatus.defaultLayer),
   Layer.provide(Permission.defaultLayer),

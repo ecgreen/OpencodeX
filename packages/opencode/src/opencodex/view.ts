@@ -5,11 +5,11 @@ import { Identifier } from "@opencode-ai/core/util/identifier"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
-import { Context, Effect, Layer, Schema } from "effect"
-import { eq } from "drizzle-orm"
+import { Context, Effect, Layer, Option, Schema } from "effect"
+import { asc, eq, inArray, max } from "drizzle-orm"
 
 const Metadata = Schema.Record(Schema.String, Schema.Any)
-const decodeMetadata = Schema.decodeUnknownSync(Schema.fromJsonString(Metadata))
+const decodeMetadata = Schema.decodeUnknownOption(Schema.fromJsonString(Metadata))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -134,34 +134,45 @@ export const layer = Layer.effect(
     const session = yield* Session.Service
     const events = yield* EventV2Bridge.Service
 
-    const assignedSessionIDs = Effect.fn("OpencodeXView.assignedSessionIDs")(function* (viewID: string) {
-      return (yield* db
+    const hydrateMany = Effect.fn("OpencodeXView.hydrateMany")(function* (
+      rows: (typeof OpencodeXViewTable.$inferSelect)[],
+    ) {
+      if (rows.length === 0) return []
+      const assignments = yield* db
         .select()
         .from(OpencodeXViewSessionTable)
-        .where(eq(OpencodeXViewSessionTable.view_id, viewID))
-        .orderBy(OpencodeXViewSessionTable.sort_order)
+        .where(
+          inArray(
+            OpencodeXViewSessionTable.view_id,
+            rows.map((row) => row.id),
+          ),
+        )
+        .orderBy(OpencodeXViewSessionTable.view_id, OpencodeXViewSessionTable.sort_order)
         .all()
-        .pipe(Effect.orDie)).map((row) => row.session_id)
+        .pipe(Effect.orDie)
+      const all = assignments.length === 0 ? [] : yield* session.listGlobal({ limit: 5_000 })
+      const byID = new Map(all.map((item) => [item.id, item]))
+      const byView = Map.groupBy(assignments, (assignment) => assignment.view_id)
+      return rows.map((row) => {
+        const sessions = (byView.get(row.id) ?? [])
+          .map((assignment) => byID.get(assignment.session_id))
+          .filter((item): item is Session.GlobalInfo => item !== undefined)
+        return {
+          id: row.id,
+          title: row.title,
+          focusedSessionID: row.focused_session_id ?? sessions[0]?.id,
+          layout: row.layout,
+          sessions,
+          sessionIDs: sessions.map((item) => item.id),
+          metadata: row.metadata_json ? Option.getOrUndefined(decodeMetadata(row.metadata_json)) : undefined,
+          timeCreated: row.time_created,
+          timeUpdated: row.time_updated,
+        }
+      })
     })
 
     const hydrate = Effect.fn("OpencodeXView.hydrate")(function* (row: typeof OpencodeXViewTable.$inferSelect) {
-      const sessionIDs = yield* assignedSessionIDs(row.id)
-      const all = sessionIDs.length === 0 ? [] : yield* session.listGlobal({ limit: 5_000 })
-      const byID = new Map(all.map((item) => [item.id, item]))
-      const sessions = sessionIDs
-        .map((sessionID) => byID.get(sessionID))
-        .filter((item): item is Session.GlobalInfo => item !== undefined)
-      return {
-        id: row.id,
-        title: row.title,
-        focusedSessionID: row.focused_session_id ?? sessions[0]?.id,
-        layout: row.layout,
-        sessions,
-        sessionIDs: sessions.map((item) => item.id),
-        metadata: row.metadata_json ? decodeMetadata(row.metadata_json) : undefined,
-        timeCreated: row.time_created,
-        timeUpdated: row.time_updated,
-      }
+      return (yield* hydrateMany([row]))[0]!
     })
 
     const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (
@@ -202,11 +213,14 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("OpencodeXView.list")(function* () {
-      return yield* Effect.forEach(
-        yield* db.select().from(OpencodeXViewTable).orderBy(OpencodeXViewTable.time_updated).all().pipe(Effect.orDie),
-        hydrate,
-        { concurrency: "unbounded" },
-      ).pipe(Effect.map((views) => views.toReversed()))
+      return yield* hydrateMany(
+        yield* db
+          .select()
+          .from(OpencodeXViewTable)
+          .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
+          .all()
+          .pipe(Effect.orDie),
+      )
     })
 
     const get = Effect.fn("OpencodeXView.get")(function* (viewID: string) {
@@ -230,6 +244,12 @@ export const layer = Layer.effect(
       })
       const now = Date.now()
       const id = input.id ?? `oxv_${Identifier.ascending()}`
+      const sortOrder =
+        ((yield* db
+          .select({ value: max(OpencodeXViewTable.sort_order) })
+          .from(OpencodeXViewTable)
+          .get()
+          .pipe(Effect.orDie))?.value ?? -1) + 1
       yield* db
         .insert(OpencodeXViewTable)
         .values({
@@ -237,6 +257,7 @@ export const layer = Layer.effect(
           title: input.title?.trim() || "Multi-session view",
           focused_session_id: focusedSessionID,
           layout: input.layout ?? "auto",
+          sort_order: sortOrder,
           metadata_json: serializeMetadata(input.metadata),
           time_created: now,
           time_updated: now,
@@ -257,10 +278,10 @@ export const layer = Layer.effect(
         : current.sessionIDs
       const focusedSessionID =
         input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
-        ? input.focusedSessionID
-        : current.focusedSessionID && sessionIDs.includes(current.focusedSessionID)
-          ? current.focusedSessionID
-          : sessionIDs[0]
+          ? input.focusedSessionID
+          : current.focusedSessionID && sessionIDs.includes(current.focusedSessionID)
+            ? current.focusedSessionID
+            : sessionIDs[0]
       const result = yield* db
         .update(OpencodeXViewTable)
         .set({
@@ -279,22 +300,21 @@ export const layer = Layer.effect(
     })
 
     const reorder = Effect.fn("OpencodeXView.reorder")(function* (input: ReorderInput) {
-      const current = (yield* db
+      const current = yield* db
         .select()
         .from(OpencodeXViewTable)
-        .orderBy(OpencodeXViewTable.time_updated)
+        .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
         .all()
-        .pipe(Effect.orDie)).toReversed()
+        .pipe(Effect.orDie)
       const knownIDs = new Set(current.map((row) => row.id))
       const requestedIDs = [...new Set(input.viewIDs)].filter((id) => knownIDs.has(id))
       const orderedIDs = [...requestedIDs, ...current.map((row) => row.id).filter((id) => !requestedIDs.includes(id))]
-      const now = Date.now()
       yield* Effect.forEach(
         orderedIDs.map((id, index) => ({ id, index })),
         ({ id, index }) =>
           db
             .update(OpencodeXViewTable)
-            .set({ time_updated: now - index })
+            .set({ sort_order: index })
             .where(eq(OpencodeXViewTable.id, id))
             .run()
             .pipe(Effect.orDie),

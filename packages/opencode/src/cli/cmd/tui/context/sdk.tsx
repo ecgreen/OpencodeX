@@ -1,20 +1,10 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
-import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
 
 const SEEN_EVENT_ID_LIMIT = 2_000
-
-type SyncHistoryCursor = Record<string, number>
-type SyncHistoryEvent = {
-  id: string
-  aggregate_id: string
-  seq: number
-  type: string
-  data: Record<string, unknown>
-}
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -65,13 +55,9 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     let queue: GlobalEvent[] = []
     let timer: Timer | undefined
-    let historyTimer: Timer | undefined
     let last = 0
     const retryDelay = 1000
     const maxRetryDelay = 30000
-    let syncHistoryCursor: SyncHistoryCursor = {}
-    let syncHistoryPrimed = false
-    let syncHistoryRunning = false
     const seenEventIDs = new Set<string>()
     const seenEventIDOrder: string[] = []
 
@@ -125,70 +111,6 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       return typeof id === "string" ? id : undefined
     }
 
-    function syncHistoryEventToGlobalEvent(event: SyncHistoryEvent): GlobalEvent {
-      return {
-        directory: "global",
-        payload: { id: event.id, type: "sync", name: event.type, seq: event.seq, aggregateID: event.aggregate_id, data: event.data },
-      } as GlobalEvent
-    }
-
-    async function syncPersistedHistory() {
-      if (syncHistoryRunning) return
-      syncHistoryRunning = true
-      try {
-        let events: SyncHistoryEvent[]
-        try {
-          events = await sdk.sync.history.list({ directory: props.directory, body: syncHistoryCursor }).then((x) => x.data ?? [])
-        } catch {
-          return
-        }
-        if (events.length === 0) {
-          syncHistoryPrimed = true
-          return
-        }
-
-        const nextCursor = { ...syncHistoryCursor }
-        for (const event of events) nextCursor[event.aggregate_id] = Math.max(nextCursor[event.aggregate_id] ?? 0, event.seq)
-        syncHistoryCursor = nextCursor
-
-        if (!syncHistoryPrimed) {
-          const initialStatusIDs = latestSessionStatusEventIDs(events)
-          for (const event of events) {
-            if (initialStatusIDs.has(event.id)) handleEvent(syncHistoryEventToGlobalEvent(event))
-            else rememberEventID(event.id)
-          }
-          syncHistoryPrimed = true
-          return
-        }
-
-        for (const event of events) handleEvent(syncHistoryEventToGlobalEvent(event))
-      } finally {
-        syncHistoryRunning = false
-      }
-    }
-
-    function startHistoryPolling() {
-      if (historyTimer) return
-      const tick = () => {
-        void syncPersistedHistory().finally(() => {
-          if (!abort.signal.aborted) historyTimer = setTimeout(tick, CLIENT_SESSION_SYNC_INTERVAL_MS)
-        })
-      }
-      historyTimer = setTimeout(tick, CLIENT_SESSION_SYNC_INTERVAL_MS)
-    }
-
-    function latestSessionStatusEventIDs(events: SyncHistoryEvent[]) {
-      const latest = new Map<string, string>()
-      for (const event of events) {
-        if (syncHistoryEventKind(event) === "session.status") latest.set(event.aggregate_id, event.id)
-      }
-      return new Set(latest.values())
-    }
-
-    function syncHistoryEventKind(event: SyncHistoryEvent) {
-      return event.type.replace(/\.\d+$/, "")
-    }
-
     function startSSE() {
       sse?.abort()
       const ctrl = new AbortController()
@@ -203,10 +125,9 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
             sseMaxRetryAttempts: 0,
           })
 
-          // Start syncing after listening, then poll persisted sync history as
-          // a safety net for missed or cross-process events.
+          // Start projectors after listening. Durable replay is owned by the
+          // authoritative state controller rather than a second polling loop.
           await sdk.sync.start().catch(() => {})
-          startHistoryPolling()
 
           for await (const event of events.stream) {
             if (ctrl.signal.aborted) break
@@ -230,10 +151,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         const unsub = await props.events.subscribe(handleEvent)
         onCleanup(unsub)
 
-        // Start syncing after listening, then poll persisted sync history as a
-        // safety net for missed or cross-process events.
+        // Start projectors after listening. The state controller owns replay.
         await sdk.sync.start().catch(() => {})
-        startHistoryPolling()
       } else {
         startSSE()
       }
@@ -243,7 +162,6 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       abort.abort()
       sse?.abort()
       if (timer) clearTimeout(timer)
-      if (historyTimer) clearTimeout(historyTimer)
     })
 
     return {

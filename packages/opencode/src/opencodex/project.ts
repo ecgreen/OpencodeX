@@ -141,8 +141,8 @@ function mergeMetadata(input: { session?: Record<string, unknown>; project: Reco
 }
 
 export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderError>()("OpencodeX.InvalidFolderError", {
-    path: Schema.String,
-    message: Schema.String,
+  path: Schema.String,
+  message: Schema.String,
 }) {}
 
 export interface Interface {
@@ -235,10 +235,10 @@ export const layer = Layer.effect(
         trackedSessionIDs.length === 0
           ? []
           : (yield* db
-                .select({ id: SessionTable.id })
-                .from(SessionTable)
-                .where(inArray(SessionTable.id, trackedSessionIDs))
-                .all()
+              .select({ id: SessionTable.id })
+              .from(SessionTable)
+              .where(inArray(SessionTable.id, trackedSessionIDs))
+              .all()
               .pipe(Effect.orDie)).map((session) => session.id),
       )
       yield* Effect.forEach(
@@ -261,17 +261,61 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("OpencodeXProject.list")(function* () {
-      return (yield* Effect.forEach(
-        yield* OpencodeXProjectFolder.listProjects(db),
-        (row) =>
-          hydrate(row).pipe(
-        Effect.map((item) => [item]),
-        Effect.catchTag("Project.NotFoundError", () => Effect.succeed([] as Info[])),
-          ),
-        {
-        concurrency: "unbounded",
-        },
-      )).flat()
+      const rows = yield* OpencodeXProjectFolder.listProjects(db)
+      if (rows.length === 0) return []
+      const [upstream, folders, tracked, globalSessions] = yield* Effect.all(
+        [
+          project.list(),
+          OpencodeXProjectFolder.listFoldersForOpencodeProjects(db, [
+            ...new Set(rows.map((row) => ProjectV2.ID.make(row.project_id))),
+          ]),
+          OpencodeXProjectFolder.listAllSessionIDs(db),
+          sessions.listGlobal({ roots: true, limit: 5_000 }),
+        ],
+        { concurrency: "unbounded" },
+      )
+      const upstreamByID = new Map(upstream.map((item) => [item.id, item]))
+      const sessionByID = new Map(globalSessions.map((item) => [item.id, item]))
+      const existingIDs = new Set(
+        tracked.length === 0
+          ? []
+          : (yield* db
+              .select({ id: SessionTable.id })
+              .from(SessionTable)
+              .where(
+                inArray(
+                  SessionTable.id,
+                  tracked.map((item) => item.session_id),
+                ),
+              )
+              .all()
+              .pipe(Effect.orDie)).map((item) => item.id),
+      )
+      const missingIDs = tracked.filter((item) => !existingIDs.has(item.session_id)).map((item) => item.session_id)
+      if (missingIDs.length > 0) {
+        yield* Effect.forEach(missingIDs, (sessionID) => OpencodeXProjectFolder.removeSession(db, sessionID), {
+          concurrency: "unbounded",
+          discard: true,
+        })
+      }
+      const foldersByProject = Map.groupBy(folders, (folder) => folder.opencodex_project_id)
+      const sessionsByProject = Map.groupBy(
+        tracked.filter((item) => existingIDs.has(item.session_id)),
+        (item) => item.opencodex_project_id,
+      )
+      return rows.flatMap((row) => {
+        const item = upstreamByID.get(row.project_id)
+        if (!item) return []
+        return [
+          {
+            id: row.id,
+            name: row.name ?? undefined,
+            project: item,
+            folders: (foldersByProject.get(row.id) ?? []).map((folder) => ({ path: folder.path })),
+            sessions: (sessionsByProject.get(row.id) ?? []).flatMap((entry) => sessionByID.get(entry.session_id) ?? []),
+          },
+        ]
+      })
     })
 
     const get = Effect.fn("OpencodeXProject.get")(function* (projectID: string) {
@@ -313,8 +357,8 @@ export const layer = Layer.effect(
         : undefined
       const upstream =
         folders && folders.length > 0
-        ? (yield* project.fromDirectory(folders[0])).project
-        : yield* project.get(current.project_id)
+          ? (yield* project.fromDirectory(folders[0])).project
+          : yield* project.get(current.project_id)
       if (!upstream) return yield* new Project.NotFoundError({ projectID: current.project_id })
       const name = input.name?.trim()
       yield* OpencodeXProjectFolder.updateProject(db, {

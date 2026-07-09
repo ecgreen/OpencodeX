@@ -81,6 +81,11 @@ export type Event =
   | EventPtyDeleted
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventOpencodexJobCreated
+  | EventOpencodexJobTransitioned
+  | EventOpencodexSwarmCreated
+  | EventOpencodexSwarmUpdated
+  | EventOpencodexSwarmDeleted
   | EventOpencodexViewCreated
   | EventOpencodexViewUpdated
   | EventOpencodexViewReordered
@@ -110,7 +115,7 @@ export type OpencodeXStateEvent = {
   epoch: string
   cursor: OpencodeXStateCursor
   aggregateSequence: number
-  domain: "catalog" | "session"
+  domain: "catalog" | "operations" | "session"
   operation: "invalidate"
   payload: {
     aggregateID: string
@@ -1490,6 +1495,43 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.job.created"
+        properties: {
+          jobID: string
+          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.job.transitioned"
+        properties: {
+          jobID: string
+          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.created"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.updated"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.deleted"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
         type: "opencodex.view.created"
         properties: {
           viewID: string
@@ -1601,6 +1643,11 @@ export type GlobalEvent = {
     | SyncEventOpencodexProjectReordered
     | SyncEventOpencodexProjectDeleted
     | SyncEventOpencodexProjectSessionAssigned
+    | SyncEventOpencodexJobCreated
+    | SyncEventOpencodexJobTransitioned
+    | SyncEventOpencodexSwarmCreated
+    | SyncEventOpencodexSwarmUpdated
+    | SyncEventOpencodexSwarmDeleted
     | SyncEventOpencodexViewCreated
     | SyncEventOpencodexViewUpdated
     | SyncEventOpencodexViewReordered
@@ -2585,69 +2632,17 @@ export type OpencodeXStateScope = {
 
 export type OpencodeXStateCursor = string
 
-export type OpencodeXStateSnapshot = {
-  scope: OpencodeXStateScope
-  epoch: string
-  cursor: OpencodeXStateCursor
-  digest: string
-  domains: {
-    catalog: {
-      revision: string
-      digest: string
-    }
-  }
-  payloads: {
-    catalog: OpencodeXSessionSyncSnapshot
-  }
-}
-
-export type OpencodeXSessionSnapshot = {
-  scope: OpencodeXStateScope
-  epoch: string
-  cursor: OpencodeXStateCursor
-  digest: string
-  session: Session
-  messages: {
-    items: Array<{
-      info: Message
-      parts: Array<Part>
-    }>
-    coverage: {
-      firstMessageID?: string
-      lastMessageID?: string
-    }
-    boundary: {
-      hasMore: boolean
-      next?: string
-    }
-  }
-  todos: Array<Todo>
-  diff: Array<SnapshotFileDiff>
-  pendingInteractions: {
-    permissions: Array<PermissionRequest>
-    questions: Array<QuestionRequest>
-  }
-}
-
-export type OpencodeXSessionMoveInput = {
-  projectID: string
-  sessionID: string
+export type OpencodeXJobFailure = {
+  code: string
+  message: string
+  details?: unknown
 }
 
 export type OpencodeXJob = {
   id: string
   kind: string
   title?: string
-  status:
-    | "queued"
-    | "running"
-    | "input_needed"
-    | "approval_needed"
-    | "blocked"
-    | "failed"
-    | "completed"
-    | "cancelled"
-    | "stale"
+  status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
   source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
   projectID?: string
   sessionID?: string
@@ -2657,84 +2652,25 @@ export type OpencodeXJob = {
   agent?: string
   providerID?: string
   modelID?: string
+  idempotencyKey?: string
+  attempt: number
+  maxAttempts: number
+  leaseOwner?: string
+  leaseExpiresAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  cancelRequestedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   statusReason?: string
+  result?: {
+    [key: string]: unknown
+  }
+  failure?: OpencodeXJobFailure
   metadata?: {
     [key: string]: unknown
   }
   timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type OpencodeXPlugin = {
-  id: string
-  pluginID: string
-  kind: "server" | "tui"
-  spec: string
-  source: string
-  scope: "global" | "local" | "internal"
-  enabled: boolean
-  active: boolean
-  canToggle: boolean
-  target?: string
-  note?: string
-}
-
-export type OpencodeXPluginInstallInput = {
-  spec: string
-  global?: boolean
-  force?: boolean
-}
-
-export type OpencodeXPluginInstallItem = {
-  kind: "server" | "tui"
-  mode: "noop" | "add" | "replace"
-  file: string
-}
-
-export type OpencodeXPluginInstallResult = {
-  ok: boolean
-  message?: string
-  dir?: string
-  tui: boolean
-  server: boolean
-  items: Array<OpencodeXPluginInstallItem>
-}
-
-export type OpencodeXPluginToggleInput = {
-  id: string
-  enabled: boolean
-}
-
-export type OpencodeXJobCreateInput = {
-  id?: string
-  kind: string
-  title?: string
-  status?:
-    | "queued"
-    | "running"
-    | "input_needed"
-    | "approval_needed"
-    | "blocked"
-    | "failed"
-    | "completed"
-    | "cancelled"
-    | "stale"
-  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
-  projectID?: string
-  sessionID?: string
-  parentJobID?: string
-  swarmID?: string
-  roleID?: string
-  agent?: string
-  providerID?: string
-  modelID?: string
-  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  statusReason?: string
-  metadata?: {
-    [key: string]: unknown
-  }
 }
 
 export type OpencodeXSwarmRole = {
@@ -2848,6 +2784,125 @@ export type OpencodeXSwarm = {
   events: Array<OpencodeXSwarmEvent>
   timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXStateSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  digest: string
+  domains: {
+    catalog: {
+      revision: string
+      digest: string
+    }
+    operations: {
+      revision: string
+      digest: string
+    }
+  }
+  payloads: {
+    catalog: OpencodeXSessionSyncSnapshot
+    operations: {
+      jobs: Array<OpencodeXJob>
+      swarms: Array<OpencodeXSwarm>
+    }
+  }
+}
+
+export type OpencodeXSessionSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  digest: string
+  session: Session
+  messages: {
+    items: Array<{
+      info: Message
+      parts: Array<Part>
+    }>
+    coverage: {
+      firstMessageID?: string
+      lastMessageID?: string
+    }
+    boundary: {
+      hasMore: boolean
+      next?: string
+    }
+  }
+  todos: Array<Todo>
+  diff: Array<SnapshotFileDiff>
+  pendingInteractions: {
+    permissions: Array<PermissionRequest>
+    questions: Array<QuestionRequest>
+  }
+}
+
+export type OpencodeXSessionMoveInput = {
+  projectID: string
+  sessionID: string
+}
+
+export type OpencodeXPlugin = {
+  id: string
+  pluginID: string
+  kind: "server" | "tui"
+  spec: string
+  source: string
+  scope: "global" | "local" | "internal"
+  enabled: boolean
+  active: boolean
+  canToggle: boolean
+  target?: string
+  note?: string
+}
+
+export type OpencodeXPluginInstallInput = {
+  spec: string
+  global?: boolean
+  force?: boolean
+}
+
+export type OpencodeXPluginInstallItem = {
+  kind: "server" | "tui"
+  mode: "noop" | "add" | "replace"
+  file: string
+}
+
+export type OpencodeXPluginInstallResult = {
+  ok: boolean
+  message?: string
+  dir?: string
+  tui: boolean
+  server: boolean
+  items: Array<OpencodeXPluginInstallItem>
+}
+
+export type OpencodeXPluginToggleInput = {
+  id: string
+  enabled: boolean
+}
+
+export type OpencodeXJobCreateInput = {
+  id?: string
+  kind: string
+  title?: string
+  status?: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  projectID?: string
+  sessionID?: string
+  parentJobID?: string
+  swarmID?: string
+  roleID?: string
+  agent?: string
+  providerID?: string
+  modelID?: string
+  idempotencyKey?: string
+  maxAttempts?: number
+  timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type OpencodeXSwarmRoleInput = {
@@ -3978,6 +4033,63 @@ export type SyncEventOpencodexProjectSessionAssigned = {
   data: {
     projectID: string
     sessionID: string
+  }
+}
+
+export type SyncEventOpencodexJobCreated = {
+  type: "sync"
+  name: "opencodex.job.created.1"
+  id: string
+  seq: number
+  aggregateID: "jobID"
+  data: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type SyncEventOpencodexJobTransitioned = {
+  type: "sync"
+  name: "opencodex.job.transitioned.1"
+  id: string
+  seq: number
+  aggregateID: "jobID"
+  data: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type SyncEventOpencodexSwarmCreated = {
+  type: "sync"
+  name: "opencodex.swarm.created.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexSwarmUpdated = {
+  type: "sync"
+  name: "opencodex.swarm.updated.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexSwarmDeleted = {
+  type: "sync"
+  name: "opencodex.swarm.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
   }
 }
 
@@ -5205,6 +5317,48 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
+  }
+}
+
+export type EventOpencodexJobCreated = {
+  id: string
+  type: "opencodex.job.created"
+  properties: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventOpencodexJobTransitioned = {
+  id: string
+  type: "opencodex.job.transitioned"
+  properties: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventOpencodexSwarmCreated = {
+  id: string
+  type: "opencodex.swarm.created"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexSwarmUpdated = {
+  id: string
+  type: "opencodex.swarm.updated"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexSwarmDeleted = {
+  id: string
+  type: "opencodex.swarm.deleted"
+  properties: {
+    swarmID: string
   }
 }
 
@@ -8517,19 +8671,9 @@ export type OpencodexJobGetResponse = OpencodexJobGetResponses[keyof OpencodexJo
 export type OpencodexJobUpdateData = {
   body?: {
     title?: string
-    status?:
-      | "queued"
-      | "running"
-      | "input_needed"
-      | "approval_needed"
-      | "blocked"
-      | "failed"
-      | "completed"
-      | "cancelled"
-      | "stale"
+    status?: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
     sessionID?: string
-    startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     statusReason?: string
     metadata?: {
       [key: string]: unknown
@@ -8594,6 +8738,208 @@ export type OpencodexJobCancelResponses = {
 }
 
 export type OpencodexJobCancelResponse = OpencodexJobCancelResponses[keyof OpencodexJobCancelResponses]
+
+export type OpencodexJobClaimData = {
+  body?: {
+    owner: string
+    leaseMs: number
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/claim"
+}
+
+export type OpencodexJobClaimErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobClaimError = OpencodexJobClaimErrors[keyof OpencodexJobClaimErrors]
+
+export type OpencodexJobClaimResponses = {
+  /**
+   * Claimed OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobClaimResponse = OpencodexJobClaimResponses[keyof OpencodexJobClaimResponses]
+
+export type OpencodexJobStartData = {
+  body?: {
+    owner: string
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/start"
+}
+
+export type OpencodexJobStartErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobStartError = OpencodexJobStartErrors[keyof OpencodexJobStartErrors]
+
+export type OpencodexJobStartResponses = {
+  /**
+   * Running OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobStartResponse = OpencodexJobStartResponses[keyof OpencodexJobStartResponses]
+
+export type OpencodexJobRenewData = {
+  body?: {
+    owner: string
+    leaseMs: number
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/renew"
+}
+
+export type OpencodexJobRenewErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobRenewError = OpencodexJobRenewErrors[keyof OpencodexJobRenewErrors]
+
+export type OpencodexJobRenewResponses = {
+  /**
+   * Renewed OpencodeX job lease
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobRenewResponse = OpencodexJobRenewResponses[keyof OpencodexJobRenewResponses]
+
+export type OpencodexJobSucceedData = {
+  body?: {
+    owner: string
+    result?: {
+      [key: string]: unknown
+    }
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/succeed"
+}
+
+export type OpencodexJobSucceedErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobSucceedError = OpencodexJobSucceedErrors[keyof OpencodexJobSucceedErrors]
+
+export type OpencodexJobSucceedResponses = {
+  /**
+   * Succeeded OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobSucceedResponse = OpencodexJobSucceedResponses[keyof OpencodexJobSucceedResponses]
+
+export type OpencodexJobFailData = {
+  body?: {
+    owner: string
+    failure: OpencodeXJobFailure
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/fail"
+}
+
+export type OpencodexJobFailErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobFailError = OpencodexJobFailErrors[keyof OpencodexJobFailErrors]
+
+export type OpencodexJobFailResponses = {
+  /**
+   * Failed OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobFailResponse = OpencodexJobFailResponses[keyof OpencodexJobFailResponses]
+
+export type OpencodexJobRetryData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/retry"
+}
+
+export type OpencodexJobRetryErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobRetryError = OpencodexJobRetryErrors[keyof OpencodexJobRetryErrors]
+
+export type OpencodexJobRetryResponses = {
+  /**
+   * Requeued OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobRetryResponse = OpencodexJobRetryResponses[keyof OpencodexJobRetryResponses]
 
 export type OpencodexSwarmListData = {
   body?: never

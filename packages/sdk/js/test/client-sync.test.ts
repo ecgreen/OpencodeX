@@ -12,6 +12,7 @@ import {
   applyClientStateEvent,
   applyClientStateSnapshot,
   createClientStateSync,
+  selectClientOperationsSnapshot,
   selectClientStateSyncSnapshot,
   selectClientSessionMessages,
   type ClientStateSyncTransport,
@@ -66,6 +67,21 @@ describe("client state sync", () => {
     expect(refreshed.cursor).toBe("cursor-2")
     expect(hydrated.cursor).toBe("cursor-2")
     expect(refreshed.sessions.records["session-1"]?.title).toBe("Renamed")
+  })
+
+  test("invalidates operations without dirtying catalog or loaded sessions", () => {
+    const controller = createClientStateSync({ transport: unusedTransport() })
+    const current = applyClientStateSnapshot(controller.getState(), snapshot("cursor-1", "digest-1", []))
+    const result = applyClientStateEvent(current, {
+      ...event("cursor-2", 0),
+      domain: "operations",
+      payload: { aggregateID: "job-1", eventType: "opencodex.job.transitioned" },
+    })
+
+    expect(result.state.dirtyOperations).toBe(true)
+    expect(result.state.dirtyCatalog).toBe(false)
+    expect(result.state.dirtySessions).toEqual({})
+    expect(selectClientOperationsSnapshot(current)).toEqual({ jobs: [], swarms: [] })
   })
 
   test("projects the same filtered catalog shape consumed by GUI and TUI", () => {
@@ -150,7 +166,7 @@ describe("client state sync", () => {
     expect(controller.getState().phase).toBe("ready")
     expect(controller.getState().dirtyCatalog).toBe(false)
     expect(controller.getState().dirtySessions["session-1"]).toBe(true)
-    expect(snapshotLoads).toBe(2)
+    expect(snapshotLoads).toBe(1)
     const canonical = controller.getState().sessions
     await expect(
       controller.runMutation("seen:session-1", async () => {
@@ -176,7 +192,10 @@ function snapshot(cursor: string, digest: string, sessions: Session[]): Opencode
     epoch: "epoch-1",
     cursor,
     digest,
-    domains: { catalog: { revision: digest, digest } },
+    domains: {
+      catalog: { revision: digest, digest },
+      operations: { revision: digest, digest },
+    },
     payloads: {
       catalog: {
         projects: [],
@@ -187,6 +206,7 @@ function snapshot(cursor: string, digest: string, sessions: Session[]): Opencode
         questions: [],
         sessionUiState: {},
       },
+      operations: { jobs: [], swarms: [] },
     },
   }
 }

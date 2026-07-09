@@ -10,8 +10,8 @@ import type {
   Session,
 } from "@opencode-ai/sdk/v2/client"
 import {
-  CLIENT_SESSION_SYNC_INTERVAL_MS,
   createClientStateSync,
+  selectClientOperationsSnapshot,
   selectClientStateSyncSnapshot,
   type ClientStateSyncState,
 } from "@opencode-ai/sdk/v2/client-sync"
@@ -137,7 +137,7 @@ import {
   viewSessionLoadKey,
 } from "./lib/session-sync"
 import { runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest } from "./lib/session-actions"
-import { liveServerSyncPlan, visibleSessionSyncTarget } from "./lib/live-sync"
+import { visibleSessionSyncTarget } from "./lib/live-sync"
 import {
   buildSessionSlashCommands,
   type SessionSlashCommand,
@@ -172,7 +172,6 @@ import {
   authorizeProviderOauth,
   completeProviderOauth,
   createProject,
-  createSession,
   createSwarm,
   createView,
   connectMcp,
@@ -308,8 +307,6 @@ const VIEW_MESSAGE_PAGE_LIMIT = 48
 const LOAD_MORE_MESSAGE_MULTIPLIER = 3
 const SESSION_MESSAGE_WINDOW: MessageWindow = { count: 128, budget: 100_000 }
 const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 28_000 }
-const LIVE_SYNC_INTERVAL_MS = CLIENT_SESSION_SYNC_INTERVAL_MS
-const SNAPSHOT_SYNC_INTERVAL_MS = 5_000
 const SESSION_VIEWED_MARK_DELAY_MS = 2_000
 const SEEN_EVENT_ID_LIMIT = 2_000
 const CUSTOM_PROVIDER_OPTION = "__custom_provider__"
@@ -392,8 +389,6 @@ export function App() {
   const seenEventIDOrder: string[] = []
   const routeHistory: Route[] = [{ name: "dashboard" }]
   const [routeHistoryIndex, setRouteHistoryIndex] = createSignal(0)
-  let liveSyncRunning = false
-  let lastSnapshotSync = 0
   let stateSync: ReturnType<typeof createClientStateSync> | undefined
 
   function setRoute(next: Route) {
@@ -465,8 +460,8 @@ export function App() {
   })
   const activeViewItems = createMemo<ViewItem[]>(() =>
     [
-    ...activeViewSessions().map((session): ViewItem => ({ kind: "session", session })),
-    ...pendingViewSessions(activeView()).map((slot): ViewItem => ({ kind: "pending", slot })),
+      ...activeViewSessions().map((session): ViewItem => ({ kind: "session", session })),
+      ...pendingViewSessions(activeView()).map((slot): ViewItem => ({ kind: "pending", slot })),
     ].slice(0, 8),
   )
   const activeViewLoadKey = createMemo(() => {
@@ -607,9 +602,26 @@ export function App() {
 
   function applyAuthoritativeState(state: ClientStateSyncState) {
     const catalog = selectClientStateSyncSnapshot(state, isRenderableSession)
+    const operations = selectClientOperationsSnapshot(state)
     if (!catalog) return
     const next = { ...catalog, sessionSyncRevision: state.digest }
-    setSnapshot((current) => (current ? mergeSessionCardSnapshot(current, next) : current))
+    setSnapshot((current) => {
+      if (!current) return current
+      const merged = mergeSessionCardSnapshot(current, next)
+      if (!operations) return merged
+      const jobs =
+        current.jobs.length === operations.jobs.length &&
+        current.jobs.every((job, index) => job === operations.jobs[index])
+          ? current.jobs
+          : operations.jobs
+      const swarms =
+        current.swarms.length === operations.swarms.length &&
+        current.swarms.every((swarm, index) => swarm === operations.swarms[index])
+          ? current.swarms
+          : operations.swarms
+      if (merged.jobs === jobs && merged.swarms === swarms) return merged
+      return { ...merged, jobs, swarms }
+    })
     Object.keys(state.sessionDetails).forEach((sessionID) => {
       const detail = state.sessionDetails[sessionID]
       if (!detail || appliedSessionDigests.get(sessionID) === detail.snapshot.digest) return
@@ -885,34 +897,6 @@ export function App() {
     setSnapshot((current) => applySessionStateSnapshot(current, sessionID, state))
   }
 
-  async function syncLiveServerState() {
-    const gui = client()
-    if (!gui || liveSyncRunning) return
-    liveSyncRunning = true
-    try {
-      const now = Date.now()
-      const plan = liveServerSyncPlan({
-        now,
-        route: route(),
-        snapshot: snapshot(),
-        loadedSessionID: sessionDataSessionID(),
-        loadedSessionData: sessionData(),
-        activeViewSessions: activeViewSessions(),
-        viewSessionData: viewSessionData(),
-        lastSnapshotSync,
-        snapshotSyncInterval: SNAPSHOT_SYNC_INTERVAL_MS,
-      })
-      if (plan.selectedSessionID) await syncSession(plan.selectedSessionID, { force: true })
-      await Promise.all(plan.viewSessions.map((session) => syncViewSession(session, { force: true })))
-      if (plan.refreshSnapshot) {
-        lastSnapshotSync = now
-        await refresh()
-      }
-    } finally {
-      liveSyncRunning = false
-    }
-  }
-
   function applySessionDataEvent(event: GlobalEvent) {
     const targets = sessionDataEventTargets(event, {
       route: route(),
@@ -946,11 +930,11 @@ export function App() {
     if (targets.visibleSessionIDs.length > 0) {
       setViewSessionData((data) =>
         patchVisibleViewSessionData({
-        data,
-        sessionIDs: targets.visibleSessionIDs,
-        event,
-        limit: VIEW_MESSAGE_WINDOW,
-        emptyData: EMPTY_SESSION_DATA,
+          data,
+          sessionIDs: targets.visibleSessionIDs,
+          event,
+          limit: VIEW_MESSAGE_WINDOW,
+          emptyData: EMPTY_SESSION_DATA,
         }),
       )
       const loadedTime = Date.now()
@@ -1028,24 +1012,6 @@ export function App() {
         setError(cause instanceof Error ? cause.message : String(cause))
       }
     })()
-  })
-
-  onMount(() => {
-    let disposed = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const tick = () => {
-      if (disposed) return
-      void syncLiveServerState()
-        .catch(() => undefined)
-        .finally(() => {
-        if (!disposed) timer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
-      })
-    }
-    timer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
-    onCleanup(() => {
-      disposed = true
-      if (timer) clearTimeout(timer)
-    })
   })
 
   function abortableSessionID() {
@@ -1130,7 +1096,7 @@ export function App() {
       },
       () => {
         const session = route().name === "session" ? selectedSession() : undefined
-    if (!session) return
+        if (!session) return
         const timer = setTimeout(
           () => markSessionViewed(session.id, Math.max(Date.now(), session.time.updated)),
           SESSION_VIEWED_MARK_DELAY_MS,
@@ -1149,7 +1115,7 @@ export function App() {
           .join("\n")
       },
       () => {
-    if (route().name !== "views") return
+        if (route().name !== "views") return
         const timers = activeViewSessions().map((session) =>
           setTimeout(
             () => markSessionViewed(session.id, Math.max(Date.now(), session.time.updated)),
@@ -1255,9 +1221,9 @@ export function App() {
     const project = snapshot()?.projects[0]
     setRoute(
       workbenchPromptTarget({
-      projectID: project?.id,
-      projectDirectory: project?.folders[0]?.path,
-      fallbackDirectory: client()?.directory,
+        projectID: project?.id,
+        projectDirectory: project?.folders[0]?.path,
+        fallbackDirectory: client()?.directory,
       }),
     )
     requestComposerFocus()
@@ -1645,7 +1611,7 @@ export function App() {
     )
     const target =
       action === "last-user"
-      ? messages.findLast((message) => message.classList.contains("user"))
+        ? messages.findLast((message) => message.classList.contains("user"))
         : messages[
             Math.max(0, Math.min(messages.length - 1, (current === -1 ? 0 : current) + (action === "next" ? 1 : -1)))
           ]
@@ -1715,18 +1681,18 @@ export function App() {
     setSnapshot((current) =>
       current
         ? {
-      ...current,
-      sessionUiState: {
-        ...current.sessionUiState,
-        [session.id]: {
-          sessionID: session.id,
-          displayStatus: current.sessionUiState[session.id]?.displayStatus ?? "idle",
-          reviewedFiles,
-          updated: current.sessionUiState[session.id]?.updated ?? false,
-          seenAt: current.sessionUiState[session.id]?.seenAt,
-          reviewedAt: reviewedAt ?? current.sessionUiState[session.id]?.reviewedAt,
-        },
-      },
+            ...current,
+            sessionUiState: {
+              ...current.sessionUiState,
+              [session.id]: {
+                sessionID: session.id,
+                displayStatus: current.sessionUiState[session.id]?.displayStatus ?? "idle",
+                reviewedFiles,
+                updated: current.sessionUiState[session.id]?.updated ?? false,
+                seenAt: current.sessionUiState[session.id]?.seenAt,
+                reviewedAt: reviewedAt ?? current.sessionUiState[session.id]?.reviewedAt,
+              },
+            },
           }
         : current,
     )
@@ -1879,7 +1845,7 @@ export function App() {
       providerValue === CUSTOM_PROVIDER_OPTION
         ? normalizeCustomProviderID(
             await askText({
-      title: "Custom Provider",
+              title: "Custom Provider",
               message:
                 "Provider ids must start with a lowercase letter or number and only use lowercase letters, numbers, hyphens, and underscores.",
             }),
@@ -1891,13 +1857,13 @@ export function App() {
       methods.length === 1
         ? "0"
         : await askChoice({
-      title: "Provider Auth",
-      options: methods.map((method, index) => ({
-        value: String(index),
-        title: method.label,
-        meta: method.type,
-      })),
-    })
+            title: "Provider Auth",
+            options: methods.map((method, index) => ({
+              value: String(index),
+              title: method.label,
+              meta: method.type,
+            })),
+          })
     if (!methodValue) return
     const methodIndex = Number(methodValue)
     const method = methods[methodIndex]
@@ -2251,15 +2217,15 @@ export function App() {
       }
       const value =
         prompt.type === "select"
-        ? await askChoice({
-          title: prompt.message,
-          options: prompt.options.map((option) => ({
-            value: option.value,
-            title: option.label,
-            description: option.hint,
-          })),
-        })
-        : await askText({ title: prompt.message, message: prompt.placeholder })
+          ? await askChoice({
+              title: prompt.message,
+              options: prompt.options.map((option) => ({
+                value: option.value,
+                title: option.label,
+                description: option.hint,
+              })),
+            })
+          : await askText({ title: prompt.message, message: prompt.placeholder })
       if (value === undefined) return
       inputs[prompt.key] = value
     }
@@ -2317,9 +2283,9 @@ export function App() {
         createSwarm: () => handleCreateSwarm(),
         createSwarmTask: () =>
           handleCreateSwarmTaskSlash({
-          selectedAgent: options.selectedAgent ?? selectedAgent(),
-          selectedVariant: options.selectedVariant ?? selectedVariant(),
-        }),
+            selectedAgent: options.selectedAgent ?? selectedAgent(),
+            selectedVariant: options.selectedVariant ?? selectedVariant(),
+          }),
         openView: () => {
           setRoute({ name: "views" })
         },
@@ -2370,11 +2336,11 @@ export function App() {
       .toSorted((left, right) => left.name.localeCompare(right.name))
       .map(
         (command): SessionSlashCommand => ({
-        name: command.name,
-        title: command.source === "mcp" ? `${command.name}:mcp` : command.name,
-        detail: command.description ?? "Run backend command",
-        category: command.source === "mcp" ? "MCP Commands" : "Project Commands",
-        run: (context) => context?.setDraftPrompt(`/${command.name} `),
+          name: command.name,
+          title: command.source === "mcp" ? `${command.name}:mcp` : command.name,
+          detail: command.description ?? "Run backend command",
+          category: command.source === "mcp" ? "MCP Commands" : "Project Commands",
+          run: (context) => context?.setDraftPrompt(`/${command.name} `),
         }),
       )
     return [...local, ...server]
@@ -2745,21 +2711,6 @@ export function App() {
     })
   }
 
-  async function chooseSessionIDs(sessions: Session[]) {
-    const options = sessions
-      .slice(0, 20)
-      .map((session) => `${session.id} - ${title(session.title)}`)
-      .join("\n")
-    const selected = await askText({ title: "Choose Sessions", message: `Comma-separated session IDs:\n${options}` })
-    if (!selected) return []
-    const available = new Set(sessions.map((session) => session.id))
-    return selected
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id, index, all) => available.has(id) && all.indexOf(id) === index)
-      .slice(0, 8)
-  }
-
   async function handleCreateProjectSession() {
     const projects = snapshot()?.projects ?? []
     await runCreateProjectSessionAction({
@@ -2823,9 +2774,9 @@ export function App() {
         createSwarm: () => handleCreateSwarm(),
         createSwarmTask: () =>
           handleCreateSwarmTaskSlash({
-          selectedAgent: selectedAgent(),
-          selectedVariant: selectedVariant(),
-        }),
+            selectedAgent: selectedAgent(),
+            selectedVariant: selectedVariant(),
+          }),
         createView: handleCreateView,
         editView: handleEditViewSlash,
         deleteView: handleDeleteViewSlash,
@@ -2869,11 +2820,11 @@ export function App() {
     }),
     ...guiPluginCommands(guiPlugins()).map(
       ({ plugin, command }): PaletteCommand => ({
-      name: `gui-plugin.${plugin.manifest.id}.${command.id}`,
-      title: command.title,
-      category: "GUI Plugins",
-      description: command.description ?? plugin.manifest.name,
-      run: () => openWorkbenchPrompt(command.prompt),
+        name: `gui-plugin.${plugin.manifest.id}.${command.id}`,
+        title: command.title,
+        category: "GUI Plugins",
+        description: command.description ?? plugin.manifest.name,
+        run: () => openWorkbenchPrompt(command.prompt),
       }),
     ),
   ])
@@ -2963,7 +2914,7 @@ export function App() {
                 updateViewPaneState(paneID(), (state) =>
                   state.selectedVariant === value ? state : { ...state, selectedVariant: value },
                 ),
-          }),
+            }),
           switchAgent: () =>
             switchAgentFor((value) =>
               updateViewPaneState(paneID(), (state) =>
@@ -2972,12 +2923,12 @@ export function App() {
             ),
           switchVariant: () =>
             switchVariantFor({
-            selectedModel: viewModelValue(paneID(), session()),
+              selectedModel: viewModelValue(paneID(), session()),
               setSelectedVariant: (value) =>
                 updateViewPaneState(paneID(), (state) =>
                   state.selectedVariant === value ? state : { ...state, selectedVariant: value },
                 ),
-          }),
+            }),
         })}
         showTimestamps={showTranscriptTimestamps()}
         concealCodeBlocks={concealTranscriptCodeBlocks()}
@@ -3073,32 +3024,32 @@ export function App() {
       />
       <main class="stage">
         <div class="stage-content">
-        <Show when={loading()}>
+          <Show when={loading()}>
             <AppLoadingSkeleton />
-        </Show>
-        <Show when={error()}>
-          <div class="error-card">{error()}</div>
-        </Show>
-        <Show when={!loading() && !error()}>
-          <Switch>
-            <Match when={route().name === "dashboard"}>
-              <Dashboard
-                snapshot={snapshot()}
+          </Show>
+          <Show when={error()}>
+            <div class="error-card">{error()}</div>
+          </Show>
+          <Show when={!loading() && !error()}>
+            <Switch>
+              <Match when={route().name === "dashboard"}>
+                <Dashboard
+                  snapshot={snapshot()}
                   sessionOrderState={sessionOrderState()}
-                logo={<OpencodeXLogo />}
+                  logo={<OpencodeXLogo />}
                   openProject={(projectID) => setRoute({ name: "projects", projectID })}
-                openSession={(sessionID) => setRoute({ name: "session", sessionID })}
-                openView={(viewID) => setRoute({ name: "views", viewID })}
-                sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
-                viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
-                createProject={() => void runAction(handleCreateProject)}
+                  openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                  openView={(viewID) => setRoute({ name: "views", viewID })}
+                  sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
+                  viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
+                  createProject={() => void runAction(handleCreateProject)}
                   createSession={(projectID, directory) =>
                     void runAction(() => handleCreateSession(projectID, directory))
                   }
-                createSwarm={() => void runAction(handleCreateSwarm)}
-                createView={() => void runAction(handleCreateView)}
-                toggleSessionPinned={toggleSessionPinned}
-                toggleViewPinned={toggleViewPinned}
+                  createSwarm={() => void runAction(handleCreateSwarm)}
+                  createView={() => void runAction(handleCreateView)}
+                  toggleSessionPinned={toggleSessionPinned}
+                  toggleViewPinned={toggleViewPinned}
                   renameSession={(session) => void runAction(() => handleRenameSession(session))}
                   deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
                   editView={(viewID) => setRoute({ name: "view-edit", viewID })}
@@ -3106,61 +3057,61 @@ export function App() {
                   editProject={(projectID, current, folders) =>
                     void runAction(() => handleEditProject(projectID, current, folders))
                   }
-                deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
-              />
-            </Match>
-            <Match when={route().name === "session" || route().name === "new-session"}>
-                  <SessionPage
-                    session={selectedSession()}
+                  deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
+                />
+              </Match>
+              <Match when={route().name === "session" || route().name === "new-session"}>
+                <SessionPage
+                  session={selectedSession()}
                   projectName={activeSessionProjectName()}
-                    data={activeSessionData()}
-                    loading={activeSessionLoading()}
-                    prompt={prompt()}
-                    setPrompt={setPrompt}
-                    providers={snapshot()?.providers ?? []}
+                  data={activeSessionData()}
+                  loading={activeSessionLoading()}
+                  prompt={prompt()}
+                  setPrompt={setPrompt}
+                  providers={snapshot()?.providers ?? []}
                   connectedProviderIDs={snapshot()?.connectedProviderIDs ?? []}
-                    mcp={snapshot()?.mcp ?? {}}
-                    mcpResources={snapshot()?.mcpResources ?? {}}
-                    lsp={snapshot()?.lsp ?? []}
-                    config={snapshot()?.config}
-                    agents={snapshot()?.agents ?? []}
+                  mcp={snapshot()?.mcp ?? {}}
+                  mcpResources={snapshot()?.mcpResources ?? {}}
+                  lsp={snapshot()?.lsp ?? []}
+                  config={snapshot()?.config}
+                  agents={snapshot()?.agents ?? []}
                   findFiles={(input) => (client() ? findFiles(client()!, input) : Promise.resolve([]))}
-                    selectedAgent={selectedAgent()}
-                    setSelectedAgent={setSelectedAgent}
-                    selectedModel={selectedModel()}
-                    recentModels={recentModels()}
-                    setSelectedModel={(value) => {
-                      setSelectedModel(value)
-                      setSelectedVariant("")
-                      if (value) rememberModel(value)
-                    }}
-                    selectedVariant={selectedVariant()}
-                    setSelectedVariant={setSelectedVariant}
-                    submit={submitPrompt}
-                    permissions={selectedPermissions()}
-                    questions={selectedQuestions()}
-                    replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
-                    replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
-                    rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
-                    renameSession={(session) => void runAction(() => handleRenameSession(session))}
-                    moveSession={(session) => void runAction(() => handleMoveSession(session))}
-                    deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
-                    slashCommands={sessionSlashCommands(selectedSession(), {
-                      data: activeSessionData(),
-                      restorePrompt: setPrompt,
-                    })}
-                    concealCodeBlocks={concealTranscriptCodeBlocks()}
-                    showTimestamps={showTranscriptTimestamps()}
-                    showThinking={showTranscriptThinking()}
-                    showToolDetails={showTranscriptToolDetails()}
-                    showScrollbar={showTranscriptScrollbar()}
-                    showGenericToolOutput={showTranscriptGenericToolOutput()}
-                    toggleCodeConceal={handleToggleCodeConcealSlash}
-                    toggleTimestamps={handleToggleTimestampsSlash}
-                    toggleThinking={handleToggleThinkingSlash}
-                    toggleToolDetails={handleToggleToolDetailsSlash}
-                    toggleScrollbar={handleToggleScrollbarSlash}
-                    toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
+                  selectedAgent={selectedAgent()}
+                  setSelectedAgent={setSelectedAgent}
+                  selectedModel={selectedModel()}
+                  recentModels={recentModels()}
+                  setSelectedModel={(value) => {
+                    setSelectedModel(value)
+                    setSelectedVariant("")
+                    if (value) rememberModel(value)
+                  }}
+                  selectedVariant={selectedVariant()}
+                  setSelectedVariant={setSelectedVariant}
+                  submit={submitPrompt}
+                  permissions={selectedPermissions()}
+                  questions={selectedQuestions()}
+                  replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
+                  replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
+                  rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
+                  renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                  moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                  deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                  slashCommands={sessionSlashCommands(selectedSession(), {
+                    data: activeSessionData(),
+                    restorePrompt: setPrompt,
+                  })}
+                  concealCodeBlocks={concealTranscriptCodeBlocks()}
+                  showTimestamps={showTranscriptTimestamps()}
+                  showThinking={showTranscriptThinking()}
+                  showToolDetails={showTranscriptToolDetails()}
+                  showScrollbar={showTranscriptScrollbar()}
+                  showGenericToolOutput={showTranscriptGenericToolOutput()}
+                  toggleCodeConceal={handleToggleCodeConcealSlash}
+                  toggleTimestamps={handleToggleTimestampsSlash}
+                  toggleThinking={handleToggleThinkingSlash}
+                  toggleToolDetails={handleToggleToolDetailsSlash}
+                  toggleScrollbar={handleToggleScrollbarSlash}
+                  toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
                   status={
                     route().name === "session" && selectedSession()
                       ? snapshot()?.sessionStatus[selectedSession()!.id]?.type
@@ -3172,31 +3123,31 @@ export function App() {
                       : false
                   }
                   markSessionReviewed={markSessionReviewed}
-                    pending={route().name === "new-session"}
+                  pending={route().name === "new-session"}
                   loadOlderMessages={(cursor) =>
                     selectedSession()
                       ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor))
                       : Promise.resolve()
                   }
-                    gui={client()}
-                    sidePanelDirectory={sidePanelDirectoryForSession(selectedSession())}
-                  />
-            </Match>
-            <Match when={route().name === "sessions"}>
-              <SessionCollectionPage
+                  gui={client()}
+                  sidePanelDirectory={sidePanelDirectoryForSession(selectedSession())}
+                />
+              </Match>
+              <Match when={route().name === "sessions"}>
+                <SessionCollectionPage
                   sessions={visibleSessions()}
-                projects={snapshot()?.projects ?? []}
-                sessionStatus={snapshot()?.sessionStatus ?? {}}
-                openSession={(sessionID) => setRoute({ name: "session", sessionID })}
-                renameSession={(session) => void runAction(() => handleRenameSession(session))}
-                moveSession={(session) => void runAction(() => handleMoveSession(session))}
-                deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
-                sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
-                toggleSessionPinned={toggleSessionPinned}
-              />
-            </Match>
-            <Match when={route().name === "projects"}>
-              <ProjectCollectionPage
+                  projects={snapshot()?.projects ?? []}
+                  sessionStatus={snapshot()?.sessionStatus ?? {}}
+                  openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                  renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                  moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                  deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                  sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
+                  toggleSessionPinned={toggleSessionPinned}
+                />
+              </Match>
+              <Match when={route().name === "projects"}>
+                <ProjectCollectionPage
                   snapshot={snapshot()}
                   sessionOrderState={sessionOrderState()}
                   projectID={activeProject()?.id}
@@ -3214,226 +3165,226 @@ export function App() {
                   createProjectView={(projectID, sessionIDs) =>
                     void runAction(() => handleCreateProjectView(projectID, sessionIDs))
                   }
-                createProject={() => void runAction(handleCreateProject)}
+                  createProject={() => void runAction(handleCreateProject)}
                   editProject={(projectID, currentName, folders) =>
                     void runAction(() => handleEditProject(projectID, currentName, folders))
                   }
-                deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
-                moveProject={(projectID, offset) => void runAction(() => handleMoveProject(projectID, offset))}
+                  deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
+                  moveProject={(projectID, offset) => void runAction(() => handleMoveProject(projectID, offset))}
                   reorderProject={(sourceID, targetID, placement) =>
                     void runAction(() => handleReorderProject(sourceID, targetID, placement))
                   }
                   sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
                   toggleSessionPinned={toggleSessionPinned}
-              />
-            </Match>
-            <Match when={route().name === "swarms"}>
-              {(() => {
-                const current = route()
-                return (
-                  <SwarmsPage
-                    snapshot={snapshot()}
-                    swarmID={current.name === "swarms" ? current.swarmID : undefined}
-                    openSwarm={(swarmID) => setRoute({ name: "swarms", swarmID })}
-                    createSwarm={() => void runAction(handleCreateSwarm)}
-                    editSwarm={(swarmID) => setRoute({ name: "swarm-create", swarmID })}
-                    openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                />
+              </Match>
+              <Match when={route().name === "swarms"}>
+                {(() => {
+                  const current = route()
+                  return (
+                    <SwarmsPage
+                      snapshot={snapshot()}
+                      swarmID={current.name === "swarms" ? current.swarmID : undefined}
+                      openSwarm={(swarmID) => setRoute({ name: "swarms", swarmID })}
+                      createSwarm={() => void runAction(handleCreateSwarm)}
+                      editSwarm={(swarmID) => setRoute({ name: "swarm-create", swarmID })}
+                      openSession={(sessionID) => setRoute({ name: "session", sessionID })}
                       assignTask={(swarmID, promptText) =>
                         void runAction(() => handleAssignSwarmTask(swarmID, promptText))
                       }
-                    cancelSwarm={(swarmID) => void runAction(() => handleCancelSwarm(swarmID))}
-                    deleteSwarm={(swarmID, name) => void runAction(() => handleDeleteSwarm(swarmID, name))}
-                    refresh={() => void runAction(refresh)}
-                  />
-                )
-              })()}
-            </Match>
-            <Match when={route().name === "swarm-create"}>
-              {(() => {
-                const current = route()
+                      cancelSwarm={(swarmID) => void runAction(() => handleCancelSwarm(swarmID))}
+                      deleteSwarm={(swarmID, name) => void runAction(() => handleDeleteSwarm(swarmID, name))}
+                      refresh={() => void runAction(refresh)}
+                    />
+                  )
+                })()}
+              </Match>
+              <Match when={route().name === "swarm-create"}>
+                {(() => {
+                  const current = route()
                   const swarm =
                     current.name === "swarm-create" && current.swarmID
-                  ? snapshot()?.swarms.find((item) => item.id === current.swarmID)
-                  : undefined
-                return (
-                  <SwarmEditorPage
-                    projects={snapshot()?.projects ?? []}
-                    providers={snapshot()?.providers ?? []}
-                    agents={snapshot()?.agents ?? []}
-                    swarm={swarm}
+                      ? snapshot()?.swarms.find((item) => item.id === current.swarmID)
+                      : undefined
+                  return (
+                    <SwarmEditorPage
+                      projects={snapshot()?.projects ?? []}
+                      providers={snapshot()?.providers ?? []}
+                      agents={snapshot()?.agents ?? []}
+                      swarm={swarm}
                       initialProjectID={current.name === "swarm-create" ? current.projectID : undefined}
-                    selectedModel={selectedModel()}
-                    save={(input) => void runAction(() => handleSaveSwarm(input))}
-                    cancel={() => setRoute(swarm ? { name: "swarms", swarmID: swarm.id } : { name: "swarms" })}
-                  />
-                )
-              })()}
-            </Match>
-            <Match when={route().name === "views"}>
-              <ViewsManagerPage
-                view={activeView()}
-                views={snapshot()?.views ?? []}
+                      selectedModel={selectedModel()}
+                      save={(input) => void runAction(() => handleSaveSwarm(input))}
+                      cancel={() => setRoute(swarm ? { name: "swarms", swarmID: swarm.id } : { name: "swarms" })}
+                    />
+                  )
+                })()}
+              </Match>
+              <Match when={route().name === "views"}>
+                <ViewsManagerPage
+                  view={activeView()}
+                  views={snapshot()?.views ?? []}
                   snapshot={snapshot()}
                   sessions={visibleSessions()}
-                projects={snapshot()?.projects ?? []}
-                items={activeViewItems()}
-                renderItem={renderViewPane}
-                sidePanelOpen={viewSidePanelOpen()}
-                toggleSidePanel={activeViewSessions().length > 0 ? toggleViewSidePanel : undefined}
+                  projects={snapshot()?.projects ?? []}
+                  items={activeViewItems()}
+                  renderItem={renderViewPane}
+                  sidePanelOpen={viewSidePanelOpen()}
+                  toggleSidePanel={activeViewSessions().length > 0 ? toggleViewSidePanel : undefined}
                   sidePanel={
-                  <Show when={viewSidePanelSession()}>
-                    {(session) => (
-                      <SessionSidePanel
-                        open={viewSidePanelOpen()}
-                        widthRatio={viewSidePanelWidthRatio()}
-                        session={session()}
-                        data={viewSessionData()[session().id] ?? EMPTY_SESSION_DATA}
-                        providers={snapshot()?.providers ?? []}
-                        mcp={snapshot()?.mcp ?? {}}
-                        lsp={snapshot()?.lsp ?? []}
-                        config={snapshot()?.config}
-                        gui={client()}
-                        directory={sidePanelDirectoryForSession(session())}
-                        request={viewSidePanelRequest()}
-                        contextOptions={viewSidePanelContextOptions()}
-                        selectedContextID={session().id}
-                        selectContext={setViewSidePanelSessionID}
-                        startResize={startViewSidePanelResize}
+                    <Show when={viewSidePanelSession()}>
+                      {(session) => (
+                        <SessionSidePanel
+                          open={viewSidePanelOpen()}
+                          widthRatio={viewSidePanelWidthRatio()}
+                          session={session()}
+                          data={viewSessionData()[session().id] ?? EMPTY_SESSION_DATA}
+                          providers={snapshot()?.providers ?? []}
+                          mcp={snapshot()?.mcp ?? {}}
+                          lsp={snapshot()?.lsp ?? []}
+                          config={snapshot()?.config}
+                          gui={client()}
+                          directory={sidePanelDirectoryForSession(session())}
+                          request={viewSidePanelRequest()}
+                          contextOptions={viewSidePanelContextOptions()}
+                          selectedContextID={session().id}
+                          selectContext={setViewSidePanelSessionID}
+                          startResize={startViewSidePanelResize}
                           close={() => setActiveViewSidePanelOpen(false)}
-                      />
-                    )}
-                  </Show>
+                        />
+                      )}
+                    </Show>
                   }
-                openView={(viewID) => setRoute({ name: "views", viewID })}
-                createView={() => void runAction(handleCreateView)}
-                editView={(viewID) => setRoute({ name: "view-edit", viewID })}
-                deleteView={(viewID, name) => void runAction(() => handleDeleteViewByID(viewID, name))}
-                moveView={(viewID, offset) => void runAction(() => handleMoveView(viewID, offset))}
+                  openView={(viewID) => setRoute({ name: "views", viewID })}
+                  createView={() => void runAction(handleCreateView)}
+                  editView={(viewID) => setRoute({ name: "view-edit", viewID })}
+                  deleteView={(viewID, name) => void runAction(() => handleDeleteViewByID(viewID, name))}
+                  moveView={(viewID, offset) => void runAction(() => handleMoveView(viewID, offset))}
                   reorderViews={(viewIDs) => void runAction(() => handleReorderViews(viewIDs))}
                   viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
                   toggleViewPinned={toggleViewPinned}
-              />
-            </Match>
-            <Match when={route().name === "view-edit"}>
-              <ViewEditorPage
-                view={editingView()}
+                />
+              </Match>
+              <Match when={route().name === "view-edit"}>
+                <ViewEditorPage
+                  view={editingView()}
                   sessions={visibleSessions()}
-                projects={snapshot()?.projects ?? []}
+                  projects={snapshot()?.projects ?? []}
                   save={handleSaveView}
-                cancel={() => {
-                  const view = editingView()
-                  setRoute(view ? { name: "views", viewID: view.id } : { name: "views" })
-                }}
-              />
-            </Match>
-            <Match when={route().name === "plugins"}>
-              <PluginsPage
-                plugins={snapshot()?.plugins ?? []}
-                guiPlugins={guiPlugins()}
-                refresh={() => runAction(refreshPlugins)}
-                install={(input) => runAction(() => handleInstallPlugin(input))}
-                toggle={(plugin) => runAction(() => handleTogglePlugin(plugin))}
-                installGuiPlugin={handleInstallGuiPlugin}
-                toggleGuiPlugin={handleToggleGuiPlugin}
-                removeGuiPlugin={handleRemoveGuiPlugin}
-              />
-            </Match>
-            <Match when={route().name === "workbench"}>
+                  cancel={() => {
+                    const view = editingView()
+                    setRoute(view ? { name: "views", viewID: view.id } : { name: "views" })
+                  }}
+                />
+              </Match>
+              <Match when={route().name === "plugins"}>
+                <PluginsPage
+                  plugins={snapshot()?.plugins ?? []}
+                  guiPlugins={guiPlugins()}
+                  refresh={() => runAction(refreshPlugins)}
+                  install={(input) => runAction(() => handleInstallPlugin(input))}
+                  toggle={(plugin) => runAction(() => handleTogglePlugin(plugin))}
+                  installGuiPlugin={handleInstallGuiPlugin}
+                  toggleGuiPlugin={handleToggleGuiPlugin}
+                  removeGuiPlugin={handleRemoveGuiPlugin}
+                />
+              </Match>
+              <Match when={route().name === "workbench"}>
                 {(() => {
                   const current = route()
                   return (
                     current.name === "workbench" && (
-              <WorkbenchPage
-                gui={client()}
-                snapshot={snapshot()}
-                projects={snapshot()?.projects ?? []}
+                      <WorkbenchPage
+                        gui={client()}
+                        snapshot={snapshot()}
+                        projects={snapshot()?.projects ?? []}
                         projectID={current.projectID}
-                recentModels={recentModels()}
-                selectedAgent={selectedAgent()}
-                setSelectedAgent={setSelectedAgent}
-                selectedModel={selectedModel()}
-                setSelectedModel={(value) => {
-                  setSelectedModel(value)
-                  setSelectedVariant("")
-                  if (value) rememberModel(value)
-                }}
-                selectedVariant={selectedVariant()}
-                setSelectedVariant={setSelectedVariant}
-                rememberModel={rememberModel}
-                refresh={refresh}
-                replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
+                        recentModels={recentModels()}
+                        selectedAgent={selectedAgent()}
+                        setSelectedAgent={setSelectedAgent}
+                        selectedModel={selectedModel()}
+                        setSelectedModel={(value) => {
+                          setSelectedModel(value)
+                          setSelectedVariant("")
+                          if (value) rememberModel(value)
+                        }}
+                        selectedVariant={selectedVariant()}
+                        setSelectedVariant={setSelectedVariant}
+                        rememberModel={rememberModel}
+                        refresh={refresh}
+                        replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
                         replyQuestion={(request, answers) =>
                           void runAction(() => handleQuestionReply(request, answers))
                         }
-                rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
-                abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
-                renameSession={(session) => void runAction(() => handleRenameSession(session))}
-                moveSession={(session) => void runAction(() => handleMoveSession(session))}
-                deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                        rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
+                        abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
+                        renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                        moveSession={(session) => void runAction(() => handleMoveSession(session))}
+                        deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
                         slashCommands={(session, data, restorePrompt) =>
                           sessionSlashCommands(session, { data, restorePrompt })
                         }
-                concealCodeBlocks={concealTranscriptCodeBlocks()}
-                showTimestamps={showTranscriptTimestamps()}
-                showThinking={showTranscriptThinking()}
-                showToolDetails={showTranscriptToolDetails()}
-                showScrollbar={showTranscriptScrollbar()}
-                showGenericToolOutput={showTranscriptGenericToolOutput()}
-                toggleCodeConceal={handleToggleCodeConcealSlash}
-                toggleTimestamps={handleToggleTimestampsSlash}
-                toggleThinking={handleToggleThinkingSlash}
-                toggleToolDetails={handleToggleToolDetailsSlash}
-                toggleScrollbar={handleToggleScrollbarSlash}
-                toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
-                sendToComposer={openWorkbenchPrompt}
-                openDiff={() => setRoute({ name: "diff", mode: "git", sessionID: selectedSession()?.id })}
-                openExternal={(url) => void globalThis.open(url, "_blank", "noopener")}
-                askText={askText}
-                confirm={confirm}
-              />
+                        concealCodeBlocks={concealTranscriptCodeBlocks()}
+                        showTimestamps={showTranscriptTimestamps()}
+                        showThinking={showTranscriptThinking()}
+                        showToolDetails={showTranscriptToolDetails()}
+                        showScrollbar={showTranscriptScrollbar()}
+                        showGenericToolOutput={showTranscriptGenericToolOutput()}
+                        toggleCodeConceal={handleToggleCodeConcealSlash}
+                        toggleTimestamps={handleToggleTimestampsSlash}
+                        toggleThinking={handleToggleThinkingSlash}
+                        toggleToolDetails={handleToggleToolDetailsSlash}
+                        toggleScrollbar={handleToggleScrollbarSlash}
+                        toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
+                        sendToComposer={openWorkbenchPrompt}
+                        openDiff={() => setRoute({ name: "diff", mode: "git", sessionID: selectedSession()?.id })}
+                        openExternal={(url) => void globalThis.open(url, "_blank", "noopener")}
+                        askText={askText}
+                        confirm={confirm}
+                      />
                     )
                   )
                 })()}
-            </Match>
-            <Match when={route().name === "diff"}>
-              {(() => {
-                const current = route()
+              </Match>
+              <Match when={route().name === "diff"}>
+                {(() => {
+                  const current = route()
                   const session =
                     current.name === "diff"
                       ? (snapshot()?.sessions.find((item) => item.id === current.sessionID) ?? selectedSession())
-                  : selectedSession()
+                      : selectedSession()
                   const mode = current.name === "diff" ? (current.mode ?? "git") : "git"
-                return (
-                  <DiffPage
-                    mode={mode}
-                    session={session}
-                    sessions={visibleSessions()}
-                    sessionUiState={snapshot()?.sessionUiState ?? {}}
-                    setMode={(mode) => setRoute({ name: "diff", mode, sessionID: session?.id })}
+                  return (
+                    <DiffPage
+                      mode={mode}
+                      session={session}
+                      sessions={visibleSessions()}
+                      sessionUiState={snapshot()?.sessionUiState ?? {}}
+                      setMode={(mode) => setRoute({ name: "diff", mode, sessionID: session?.id })}
                       selectSession={(sessionID) =>
                         setRoute({ name: "diff", mode: sessionID ? "last-turn" : "git", sessionID })
                       }
                       close={() =>
                         session ? setRoute({ name: "session", sessionID: session.id }) : setRoute({ name: "dashboard" })
                       }
-                    loadDiff={loadDiffForPage}
-                    updateReviewedFiles={updateDiffReviewedFiles}
-                  />
-                )
-              })()}
-            </Match>
-            <Match when={route().name === "status"}>
-              <StatusPage snapshot={snapshot()} />
-            </Match>
-            <Match when={route().name === "settings"}>
+                      loadDiff={loadDiffForPage}
+                      updateReviewedFiles={updateDiffReviewedFiles}
+                    />
+                  )
+                })()}
+              </Match>
+              <Match when={route().name === "status"}>
+                <StatusPage snapshot={snapshot()} />
+              </Match>
+              <Match when={route().name === "settings"}>
                 <CollectionPage
                   title="Settings"
                   count={snapshot()?.agents.length ?? 0}
                   description="Theme, provider, status, docs, debug, and safe GUI preferences are reserved here while settings parity is built out."
                 />
-            </Match>
-          </Switch>
-        </Show>
+              </Match>
+            </Switch>
+          </Show>
         </div>
       </main>
       <CommandPaletteModal

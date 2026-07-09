@@ -142,7 +142,8 @@ export const layer: Layer.Layer<
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
-    const opencodexSwarmCreate = yield* OpencodeXSwarmCreateTool
+    const swarm = yield* Effect.promise(() => import("@/opencodex/swarm"))
+    const opencodexSwarmCreate = yield* OpencodeXSwarmCreateTool.pipe(Effect.provide(swarm.planLayer))
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(

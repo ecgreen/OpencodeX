@@ -3,6 +3,7 @@ import type {
   Message,
   OpencodeClient,
   OpencodeXProject,
+  OpencodeXJob,
   OpencodeXSessionSnapshot,
   OpencodeXSessionState,
   OpencodeXSessionSyncResponse,
@@ -11,6 +12,7 @@ import type {
   OpencodeXStateScope,
   OpencodeXStateSnapshot,
   OpencodeXStateStreamFrame,
+  OpencodeXSwarm,
   OpencodeXSessionUiState,
   Part,
   PermissionRequest,
@@ -149,10 +151,13 @@ export type ClientStateSyncState = {
   views: ClientEntityState<OpencodeXSessionSyncSnapshot["views"][number]>
   permissions: ClientEntityState<PermissionRequest>
   questions: ClientEntityState<QuestionRequest>
+  jobs: ClientEntityState<OpencodeXJob>
+  swarms: ClientEntityState<OpencodeXSwarm>
   sessionStatus: Record<string, SessionStatus>
   sessionUiState: Record<string, OpencodeXSessionUiState>
   sessionDetails: Record<string, ClientSessionDetailState>
   dirtyCatalog: boolean
+  dirtyOperations: boolean
   dirtySessions: Record<string, true>
   tombstones: {
     sessions: Record<string, true>
@@ -223,8 +228,8 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     if (sessionRequestIDs.get(sessionID) !== requestID || stopped) return
     commit(applyClientSessionSnapshot(state, snapshot, { prepend: input.before !== undefined }))
   }
-  const reloadDirty = (catalog: boolean, sessions: string[]) => {
-    if (catalog) void refresh().catch(fail)
+  const reloadDirty = (root: boolean, sessions: string[]) => {
+    if (root) void refresh().catch(fail)
     sessions.forEach((sessionID) => {
       if (!state.sessionDetails[sessionID]) return
       void hydrateSession(sessionID, sessionLoadOptions.get(sessionID)).catch(fail)
@@ -241,6 +246,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     let next = state
     let reset = false
     let catalog = false
+    let operations = false
     const sessions = new Set<string>()
     for (const frame of frames) {
       if (frame.type === "ready") continue
@@ -252,7 +258,8 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       const changed = result.state !== next
       next = result.state
       if (result.gap) reset = true
-      if (changed) catalog = true
+      if (changed && frame.event.domain === "catalog") catalog = true
+      if (changed && frame.event.domain === "operations") operations = true
       if (changed && frame.event.domain === "session") sessions.add(frame.event.payload.aggregateID)
     }
     commit(next)
@@ -260,7 +267,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       void resetState().catch(fail)
       return
     }
-    reloadDirty(catalog, [...sessions])
+    reloadDirty(catalog || operations, [...sessions])
   }
   const queue = (generation: number, frame: OpencodeXStateStreamFrame) => {
     if (generation !== connectionGeneration) return
@@ -397,7 +404,8 @@ export function applyClientStateSnapshot(
     current.epoch === snapshot.epoch &&
     current.scope &&
     sameClientStateScope(current.scope, snapshot.scope) &&
-    !current.dirtyCatalog
+    !current.dirtyCatalog &&
+    !current.dirtyOperations
   )
     return current
   const reset =
@@ -410,6 +418,8 @@ export function applyClientStateSnapshot(
   const views = reconcileEntities(previous.views, catalog.views, (item) => item.id)
   const permissions = reconcileEntities(previous.permissions, catalog.permissions, (item) => item.id)
   const questions = reconcileEntities(previous.questions, catalog.questions, (item) => item.id)
+  const jobs = reconcileEntities(previous.jobs, snapshot.payloads.operations.jobs, (item) => item.id)
+  const swarms = reconcileEntities(previous.swarms, snapshot.payloads.operations.swarms, (item) => item.id)
   const deletedSessionIDs = previous.sessions.ids.filter((id) => !sessions.records[id])
   const sessionTombstones = deletedSessionIDs.reduce(
     (result, id) => ({ ...result, [id]: true as const }),
@@ -430,10 +440,13 @@ export function applyClientStateSnapshot(
     views,
     permissions,
     questions,
+    jobs,
+    swarms,
     sessionStatus: reconcileRecord(previous.sessionStatus, catalog.sessionStatus),
     sessionUiState: reconcileRecord(previous.sessionUiState, catalog.sessionUiState),
     sessionDetails,
     dirtyCatalog: false,
+    dirtyOperations: false,
     dirtySessions: Object.fromEntries(
       Object.entries(previous.dirtySessions).filter(([sessionID]) => Boolean(sessions.records[sessionID])),
     ),
@@ -580,8 +593,14 @@ export function applyClientStateEvent(
             },
             gap: false,
           }
+        case "operations":
+          return {
+            state: { ...current, cursor: event.cursor, aggregateSequences, dirtyOperations: true },
+            gap: false,
+          }
       }
   }
+  return { state: current, gap: true }
 }
 
 export function selectClientSessionMessages(state: ClientStateSyncState, sessionID: string) {
@@ -604,7 +623,7 @@ export function selectClientStateSyncSnapshot(
   state: ClientStateSyncState,
   filterSession?: (session: Session) => boolean,
 ): ClientSessionSyncSnapshot | undefined {
-  if (state.phase !== "ready") return
+  if (state.phase !== "ready") return undefined
   const projects = state.projects.ids.flatMap((id) => {
     const project = state.projects.records[id]
     if (!project) return []
@@ -627,6 +646,14 @@ export function selectClientStateSyncSnapshot(
     questions: state.questions.ids.flatMap((id) => state.questions.records[id] ?? []),
     sessionStatus: state.sessionStatus,
     sessionUiState: state.sessionUiState,
+  }
+}
+
+export function selectClientOperationsSnapshot(state: ClientStateSyncState) {
+  if (state.phase !== "ready") return undefined
+  return {
+    jobs: state.jobs.ids.flatMap((id) => state.jobs.records[id] ?? []),
+    swarms: state.swarms.ids.flatMap((id) => state.swarms.records[id] ?? []),
   }
 }
 
@@ -680,10 +707,13 @@ function emptyClientStateSyncState(): ClientStateSyncState {
     views: emptyEntities(),
     permissions: emptyEntities(),
     questions: emptyEntities(),
+    jobs: emptyEntities(),
+    swarms: emptyEntities(),
     sessionStatus: {},
     sessionUiState: {},
     sessionDetails: {},
     dirtyCatalog: false,
+    dirtyOperations: false,
     dirtySessions: {},
     tombstones: { sessions: {}, messages: {}, parts: {} },
     aggregateSequences: {},

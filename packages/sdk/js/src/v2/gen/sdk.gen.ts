@@ -106,13 +106,26 @@ import type {
   OpencodexGuiBridgeRegisterResponses,
   OpencodexJobCancelErrors,
   OpencodexJobCancelResponses,
+  OpencodexJobClaimErrors,
+  OpencodexJobClaimResponses,
   OpencodexJobCreateErrors,
   OpencodeXJobCreateInput,
   OpencodexJobCreateResponses,
+  OpencodexJobFailErrors,
+  OpencodexJobFailResponses,
+  OpencodeXJobFailure,
   OpencodexJobGetErrors,
   OpencodexJobGetResponses,
   OpencodexJobListErrors,
   OpencodexJobListResponses,
+  OpencodexJobRenewErrors,
+  OpencodexJobRenewResponses,
+  OpencodexJobRetryErrors,
+  OpencodexJobRetryResponses,
+  OpencodexJobStartErrors,
+  OpencodexJobStartResponses,
+  OpencodexJobSucceedErrors,
+  OpencodexJobSucceedResponses,
   OpencodexJobUpdateErrors,
   OpencodexJobUpdateResponses,
   OpencodexPluginInstallErrors,
@@ -2866,19 +2879,9 @@ export class Job extends HeyApiClient {
     parameters: {
       jobID: string
       title?: string
-      status?:
-        | "queued"
-        | "running"
-        | "input_needed"
-        | "approval_needed"
-        | "blocked"
-        | "failed"
-        | "completed"
-        | "cancelled"
-        | "stale"
+      status?: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
       sessionID?: string
-      startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-      completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       statusReason?: string
       metadata?: {
         [key: string]: unknown
@@ -2895,8 +2898,7 @@ export class Job extends HeyApiClient {
             { in: "body", key: "title" },
             { in: "body", key: "status" },
             { in: "body", key: "sessionID" },
-            { in: "body", key: "startedAt" },
-            { in: "body", key: "completedAt" },
+            { in: "body", key: "timeoutAt" },
             { in: "body", key: "statusReason" },
             { in: "body", key: "metadata" },
           ],
@@ -2927,6 +2929,200 @@ export class Job extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "jobID" }] }])
     return (options?.client ?? this.client).post<OpencodexJobCancelResponses, OpencodexJobCancelErrors, ThrowOnError>({
       url: "/experimental/opencodex/job/{jobID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Claim an OpencodeX job lease
+   */
+  public claim<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      leaseMs?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "leaseMs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobClaimResponses, OpencodexJobClaimErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/claim",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Start a claimed OpencodeX job
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobStartResponses, OpencodexJobStartErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Renew an OpencodeX job lease
+   */
+  public renew<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      leaseMs?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "leaseMs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobRenewResponses, OpencodexJobRenewErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/renew",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Complete an OpencodeX job successfully
+   */
+  public succeed<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      result?: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "result" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobSucceedResponses, OpencodexJobSucceedErrors, ThrowOnError>(
+      {
+        url: "/experimental/opencodex/job/{jobID}/succeed",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Complete an OpencodeX job with a typed failure
+   */
+  public fail<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      failure?: OpencodeXJobFailure
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "failure" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobFailResponses, OpencodexJobFailErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/fail",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Requeue an interrupted or failed OpencodeX job
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "jobID" }] }])
+    return (options?.client ?? this.client).post<OpencodexJobRetryResponses, OpencodexJobRetryErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/retry",
       ...options,
       ...params,
     })

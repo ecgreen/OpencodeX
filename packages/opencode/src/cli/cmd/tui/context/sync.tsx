@@ -21,6 +21,8 @@ import type {
   ClientStateSyncController,
   ClientStateSyncState,
   OpencodeXProject,
+  OpencodeXJob,
+  OpencodeXSwarm,
   OpencodeXView,
   OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
@@ -28,6 +30,7 @@ import {
   createClientStateSync,
   loadClientSessionSync,
   selectClientSessionMessages,
+  selectClientOperationsSnapshot,
   selectClientStateSyncSnapshot,
 } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -66,6 +69,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       }
       config: Config
       opencodex_project: OpencodeXProject[]
+      opencodex_job: OpencodeXJob[]
+      opencodex_swarm: OpencodeXSwarm[]
       opencodex_view: OpencodeXView[]
       session: Session[]
       session_status: {
@@ -113,6 +118,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       provider: [],
       provider_default: {},
       opencodex_project: [],
+      opencodex_job: [],
+      opencodex_swarm: [],
       opencodex_view: [],
       session: [],
       session_status: {},
@@ -177,11 +184,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     function applyStateSync(state: ClientStateSyncState) {
       const snapshot = selectClientStateSyncSnapshot(state)
+      const operations = selectClientOperationsSnapshot(state)
       if (!snapshot) return
       batch(() => {
         setStore("session_sync_revision", state.digest)
         setStore("opencodex_project", reconcile(snapshot.projects))
         setStore("opencodex_view", reconcile(snapshot.views))
+        if (operations) {
+          setStore("opencodex_job", reconcile(operations.jobs))
+          setStore("opencodex_swarm", reconcile(operations.swarms))
+        }
         setStore("session", reconcile(snapshot.sessions.toSorted((a, b) => a.id.localeCompare(b.id))))
         setStore("session_status", reconcile(snapshot.sessionStatus))
         setStore("session_ui_state", reconcile(snapshot.sessionUiState))
@@ -252,12 +264,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       sessionRefreshTimer = setTimeout(() => {
         sessionRefreshTimer = undefined
         void (stateSyncReady() ? stateSync!.refresh() : listSessionSync().then(applySessionSync)).catch((error) => {
-            Log.Default.error("tui session refresh failed", {
-              error: error instanceof Error ? error.message : String(error),
-              name: error instanceof Error ? error.name : undefined,
-              stack: error instanceof Error ? error.stack : undefined,
-            })
+          Log.Default.error("tui session refresh failed", {
+            error: error instanceof Error ? error.message : String(error),
+            name: error instanceof Error ? error.name : undefined,
+            stack: error instanceof Error ? error.stack : undefined,
           })
+        })
       }, 250)
     }
 
@@ -594,7 +606,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             const consoleState = responses[2]
             const agents = responses[3]
             const config = responses[4]
-              const sessionSync = responses[5]
+            const sessionSync = responses[5]
 
             batch(() => {
               setStore("provider", reconcile(providers.providers))

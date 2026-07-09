@@ -28,7 +28,6 @@ import {
 import { RGBA, TextAttributes } from "@opentui/core"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { Part, Session } from "@opencode-ai/sdk/v2"
-import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2"
 import {
   clientSessionOrderBucketForStatus,
   emptyClientSessionOrderState,
@@ -533,7 +532,6 @@ function OpencodeXSessionManager() {
   const sdk = useSDK()
   const dialog = useDialog()
   const local = useLocal()
-  const kv = useKV()
   const { theme } = useTheme()
   const [toDelete, setToDelete] = createSignal<string>()
   const [refresh, setRefresh] = createSignal(0)
@@ -894,11 +892,6 @@ export function OpencodeXSidebar() {
       })
   }
   onCleanup(onOpencodeXRefresh(refreshSidebar))
-
-  onMount(() => {
-    const timer = setInterval(refreshSidebar, CLIENT_SESSION_SYNC_INTERVAL_MS)
-    onCleanup(() => clearInterval(timer))
-  })
 
   const projects = createMemo(() => sync.data.opencodex_project as OpencodeXProjectInfo[])
   const refetch = () => void sync.session.refresh()

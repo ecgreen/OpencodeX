@@ -40,15 +40,20 @@ export function summarizeViews(input: { views: OpencodeXView[]; snapshot?: GuiSn
 }
 
 export function summarizeView(input: { view: OpencodeXView; snapshot?: GuiSnapshot; now?: number }): ViewSummary {
-  const sessionRows = viewSessionsInOrder({ sessionIDs: input.view.sessionIDs, sessions: input.snapshot?.sessions ?? [] })
-    .map((session) => ({
-      session,
-      status: deriveSessionStatus(input.snapshot, session),
-      projectLabel: sessionProjectLabel(session, input.snapshot?.projects ?? []),
-    }))
+  const sessionRows = viewSessionsInOrder({
+    sessionIDs: input.view.sessionIDs,
+    sessions: input.snapshot?.sessions ?? [],
+  }).map((session) => ({
+    session,
+    status: deriveSessionStatus(input.snapshot, session),
+    projectLabel: sessionProjectLabel(session, input.snapshot?.projects ?? []),
+  }))
   const attentionCounts = viewAttentionCounts(input.view, sessionRows, input.snapshot)
   const pendingCount = pendingViewSessions(input.view).length
-  const lastUpdated = Math.max(numericTime(input.view.timeUpdated), ...sessionRows.map((row) => row.session.time.updated))
+  const lastUpdated = Math.max(
+    numericTime(input.view.timeUpdated),
+    ...sessionRows.map((row) => row.session.time.updated),
+  )
   const status = attentionCounts.failed > 0 ? "failed" : deriveViewStatus(input.view, input.snapshot)
   const group = viewSummaryGroup({
     status,
@@ -64,8 +69,11 @@ export function summarizeView(input: { view: OpencodeXView; snapshot?: GuiSnapsh
     paneCount: input.view.sessionIDs.length + pendingCount,
     pendingCount,
     sessionRows,
-    projectLabels: Array.from(new Set(sessionRows.map((row) => row.projectLabel).filter((label): label is string => Boolean(label)))),
-    focusedSession: sessionRows.find((row) => row.session.id === input.view.focusedSessionID)?.session ?? sessionRows[0]?.session,
+    projectLabels: Array.from(
+      new Set(sessionRows.map((row) => row.projectLabel).filter((label): label is string => Boolean(label))),
+    ),
+    focusedSession:
+      sessionRows.find((row) => row.session.id === input.view.focusedSessionID)?.session ?? sessionRows[0]?.session,
     attentionCounts,
     attentionLabel: viewAttentionLabel(attentionCounts),
     lastUpdated,
@@ -93,21 +101,39 @@ export function viewStatusMeta(summary: ViewSummary) {
   return sessionStatusLabel(summary.status)
 }
 
-function viewSummaryGroup(input: { status: DerivedSessionStatus; attentionCounts: ViewAttentionCounts; lastUpdated: number; now: number }): ViewSummaryGroupID {
-  if (hasAttention(input.attentionCounts) || input.status === "input_needed" || input.status === "ready_for_review" || input.status === "failed") return "attention"
+function viewSummaryGroup(input: {
+  status: DerivedSessionStatus
+  attentionCounts: ViewAttentionCounts
+  lastUpdated: number
+  now: number
+}): ViewSummaryGroupID {
+  if (
+    hasAttention(input.attentionCounts) ||
+    input.status === "input_needed" ||
+    input.status === "ready_for_review" ||
+    input.status === "failed"
+  )
+    return "attention"
   if (input.status === "in_progress") return "active"
   if (input.lastUpdated >= input.now - RECENT_VIEW_WINDOW_MS) return "recent"
   return "quiet"
 }
 
-function viewAttentionCounts(view: OpencodeXView, rows: ViewSessionSummary[], snapshot?: GuiSnapshot): ViewAttentionCounts {
+function viewAttentionCounts(
+  view: OpencodeXView,
+  rows: ViewSessionSummary[],
+  snapshot?: GuiSnapshot,
+): ViewAttentionCounts {
   const sessionIDs = new Set(rows.map((row) => row.session.id))
   const jobs = snapshot?.jobs ?? []
   return {
     permissions: (snapshot?.permissions ?? []).filter((request) => sessionIDs.has(request.sessionID)).length,
     questions: (snapshot?.questions ?? []).filter((request) => sessionIDs.has(request.sessionID)).length,
     ready: rows.filter((row) => row.status === "ready_for_review").length,
-    failed: jobs.filter((job) => job.sessionID && view.sessionIDs.includes(job.sessionID) && ["blocked", "failed"].includes(job.status)).length,
+    failed: jobs.filter(
+      (job) =>
+        job.sessionID && view.sessionIDs.includes(job.sessionID) && ["interrupted", "failed"].includes(job.status),
+    ).length,
   }
 }
 
@@ -121,7 +147,9 @@ function viewAttentionLabel(counts: ViewAttentionCounts) {
     countLabel(counts.questions, "question"),
     countLabel(counts.ready, "ready"),
     countLabel(counts.failed, "failed"),
-  ].filter(Boolean).join(", ")
+  ]
+    .filter(Boolean)
+    .join(", ")
 }
 
 function countLabel(count: number, label: string) {
