@@ -4,6 +4,10 @@ import { Script } from "@opencode-ai/script"
 import { $ } from "bun"
 import { fileURLToPath } from "url"
 
+if (process.env.OPENCODEX_ENABLE_LEGACY_PUBLISH !== "1") {
+  throw new Error("Legacy upstream SDK publishing is disabled pending an OpencodeX registry policy.")
+}
+
 const dir = fileURLToPath(new URL("..", import.meta.url))
 process.chdir(dir)
 

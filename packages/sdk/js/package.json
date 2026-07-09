@@ -5,6 +5,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "test": "bun test test",
+    "test:ci": "mkdir -p .artifacts/unit && bun test test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit",
     "build": "bun ./script/build.ts"
   },

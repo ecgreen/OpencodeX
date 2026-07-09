@@ -262,12 +262,12 @@ To uninstall a local Windows install later:
 
 `build.sh` accepts a few options you may want to know about:
 
-| Flag | Effect |
-| --- | --- |
+| Flag              | Effect                                                           |
+| ----------------- | ---------------------------------------------------------------- |
 | `--target <name>` | Build for a specific platform (defaults to `win32-x64-baseline`) |
-| `--minify` | Enable minification (off by default to avoid Bun compile quirks) |
-| `--clean` | Wipe the build cache in `/tmp` before starting |
-| `--help` | Show the full list of supported targets |
+| `--minify`        | Enable minification (off by default to avoid Bun compile quirks) |
+| `--clean`         | Wipe the build cache in `/tmp` before starting                   |
+| `--help`          | Show the full list of supported targets                          |
 
 Valid targets today: `win32-x64`, `win32-x64-baseline`, `win32-arm64`, `linux-x64`, `linux-x64-baseline`, `darwin-arm64`, `darwin-x64`.
 
@@ -321,21 +321,21 @@ The dashboard groups them by recency, and the **Sessions** group in the sidebar 
 
 The default keybindings:
 
-| Key | Action |
-| --- | --- |
-| `Ctrl+S` | Toggle the sidebar |
-| `Ctrl+U` | Go to the OpencodeX dashboard |
-| `<leader>p` | Create a new project |
-| `Ctrl+O` | Manage sessions (move, delete, rebind) |
-| `Ctrl+N` | New session in the current project |
-| `Ctrl+P` | Open the command palette |
-| `Ctrl+L` | Cycle the theme |
-| `Enter` | Resume the selected session (or jump to its prompt if blocked) |
-| `n` | New session in the current project |
-| `Esc` | Cancel the current input or dismiss a dialog |
-| `Tab` / `Shift+Tab` | Cycle through the prompt, sidebar, and dashboard |
-| `o` | Open the dashboard |
-| `q` / `Ctrl+C` | Quit (with confirmation if any session is running) |
+| Key                 | Action                                                         |
+| ------------------- | -------------------------------------------------------------- |
+| `Ctrl+S`            | Toggle the sidebar                                             |
+| `Ctrl+U`            | Go to the OpencodeX dashboard                                  |
+| `<leader>p`         | Create a new project                                           |
+| `Ctrl+O`            | Manage sessions (move, delete, rebind)                         |
+| `Ctrl+N`            | New session in the current project                             |
+| `Ctrl+P`            | Open the command palette                                       |
+| `Ctrl+L`            | Cycle the theme                                                |
+| `Enter`             | Resume the selected session (or jump to its prompt if blocked) |
+| `n`                 | New session in the current project                             |
+| `Esc`               | Cancel the current input or dismiss a dialog                   |
+| `Tab` / `Shift+Tab` | Cycle through the prompt, sidebar, and dashboard               |
+| `o`                 | Open the dashboard                                             |
+| `q` / `Ctrl+C`      | Quit (with confirmation if any session is running)             |
 
 The full keymap, including every upstream opencode binding, is available from the command palette (`Ctrl+P`).
 
@@ -362,7 +362,7 @@ Yes, but you should avoid pointing both at the same session id simultaneously.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) for development setup, style guide, and PR conventions. The default branch is `dev`; open PRs against it.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) for development setup, style guide, and PR conventions. The default branch is `main`; open PRs against it.
 
 ## License
 

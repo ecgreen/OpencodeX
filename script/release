@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
+if [[ "${OPENCODEX_ENABLE_LEGACY_PUBLISH:-}" != "1" ]]; then
+  echo "Legacy upstream publish workflow is disabled. Use release-cli.yml or release-gui.yml." >&2
+  exit 1
+fi
+
 BUMP_TYPE=${1:-patch}
 
 gh workflow run publish.yml -f bump="$BUMP_TYPE"

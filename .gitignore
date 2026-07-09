@@ -25,6 +25,10 @@ target
 .scripts
 .direnv/
 .graphify_venv/
+graphify-out/
+.tmp/
+**/.artifacts/
+packages/gui/release/
 
 # Local dev files
 opencode-dev

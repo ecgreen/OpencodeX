@@ -43,7 +43,7 @@ runs:
           ${{ runner.os }}-bun-
 
     - name: Install setuptools for distutils compatibility
-      run: python3 -m pip install setuptools || pip install setuptools || true
+      run: python3 -m pip install setuptools==80.9.0
       shell: bash
 
     - name: Install dependencies
@@ -52,9 +52,9 @@ runs:
         # e.g. ./patches/ for standard-openapi
         # https://github.com/oven-sh/bun/issues/28147
         if [ "$RUNNER_OS" = "Windows" ]; then
-          bun install --linker hoisted ${{ inputs.install-flags }}
+          bun install --frozen-lockfile --linker hoisted ${{ inputs.install-flags }}
         else
-          bun install ${{ inputs.install-flags }}
+          bun install --frozen-lockfile ${{ inputs.install-flags }}
         fi
       shell: bash
 

@@ -29,9 +29,21 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    name: Release quality gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - run: bun run typecheck
+      - run: bun run test:ci
+      - run: bun run lint:ci
+      - run: git diff --check
+
   build:
     name: Build GUI preview assets (${{ matrix.name }})
     runs-on: ${{ matrix.host }}
+    needs: quality
     defaults:
       run:
         shell: bash
@@ -79,6 +91,12 @@ jobs:
             version="${INPUT_VERSION#v}"
           else
             version="$(node -p "require('./packages/gui/package.json').version")"
+          fi
+
+          package_version="$(node -p "require('./packages/gui/package.json').version")"
+          if [[ "$version" != "$package_version" ]]; then
+            echo "Release version $version does not match packages/gui/package.json ($package_version)."
+            exit 1
           fi
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -186,7 +204,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           pattern: opencodex-gui-*
           path: gui-release
@@ -203,6 +221,12 @@ jobs:
             version="${INPUT_VERSION#v}"
           else
             version="$(node -p "require('./packages/gui/package.json').version")"
+          fi
+
+          package_version="$(node -p "require('./packages/gui/package.json').version")"
+          if [[ "$version" != "$package_version" ]]; then
+            echo "Release version $version does not match packages/gui/package.json ($package_version)."
+            exit 1
           fi
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"

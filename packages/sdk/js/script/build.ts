@@ -10,6 +10,11 @@ import path from "path"
 import { createClient } from "@hey-api/openapi-ts"
 
 const opencode = path.resolve(dir, "../../opencode")
+const codegenHome = path.join(dir, ".artifacts", "codegen-home")
+process.env.XDG_CONFIG_HOME ??= path.join(codegenHome, "config")
+process.env.XDG_CACHE_HOME ??= path.join(codegenHome, "cache")
+process.env.XDG_DATA_HOME ??= path.join(codegenHome, "data")
+process.env.XDG_STATE_HOME ??= path.join(codegenHome, "state")
 
 await $`bun dev generate > ${dir}/openapi.json`.cwd(opencode)
 

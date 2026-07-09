@@ -1,11 +1,9 @@
 #!/bin/sh
 set -e
 
-.husky/graphify-update
+git diff --cached --check
 
-if [ -d "graphify-out" ]; then
-  git add graphify-out
-  if [ -f ".graphifyignore" ]; then
-    git add .graphifyignore
-  fi
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' '*.js' '*.jsx')
+if [ -n "$files" ]; then
+  bunx oxlint --quiet $files
 fi

@@ -13,6 +13,7 @@
     "build:main": "tsgo -p tsconfig.main.json && tsgo -p tsconfig.preload.json",
     "build": "vite --configLoader runner build && bun run build:main",
     "test": "bun test test",
+    "test:ci": "mkdir -p .artifacts/unit && bun test test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:functional": "bun test test/gui-functional.test.ts test/functional",
     "qa:backend-parity": "bun run scripts/qa-backend-parity.ts",
     "qa:issue": "bun run scripts/qa-issue.ts",
@@ -48,6 +49,7 @@
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "codemirror": "6.0.2",
+    "cross-spawn": "catalog:",
     "lucide-solid": "1.17.0",
     "solid-js": "catalog:",
     "vite": "catalog:",
@@ -55,6 +57,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/cross-spawn": "catalog:",
     "@typescript/native-preview": "catalog:",
     "concurrently": "^9.2.1",
     "electron": "^39.2.4",
