@@ -44,7 +44,12 @@ export function createAcpClient(acp: AcpHandle): AcpClient {
       yield* acp.send(message)
 
       while (true) {
-        const received = yield* acp.receive.pipe(Effect.timeout(Duration.seconds(15)))
+        const received = yield* acp.receive.pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.seconds(15),
+            orElse: () => Effect.fail(new Error(`ACP response timed out\n${acp.stderr().slice(-4000)}`)),
+          }),
+        )
         if (isJsonRpcResponse<T>(received) && received.id === id) return received
       }
     })
@@ -52,7 +57,12 @@ export function createAcpClient(acp: AcpHandle): AcpClient {
   const waitForNotification = <T>(method: string, predicate: (params: T) => boolean, timeoutMs = 15_000) =>
     Effect.gen(function* () {
       while (true) {
-        const received = yield* acp.receive.pipe(Effect.timeout(Duration.millis(timeoutMs)))
+        const received = yield* acp.receive.pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.millis(timeoutMs),
+            orElse: () => Effect.fail(new Error(`ACP notification timed out\n${acp.stderr().slice(-4000)}`)),
+          }),
+        )
         if (!isJsonRpcNotification<T>(received)) continue
         if (received.method === method && predicate(received.params as T)) return received
       }

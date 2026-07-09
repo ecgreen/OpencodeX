@@ -702,12 +702,11 @@ it.instance(
 )
 
 it.instance(
-  "defaultAgent returns plan when build is disabled and default_agent not set",
+  "defaultAgent returns goal when build is disabled and default_agent not set",
   () =>
     Effect.gen(function* () {
       const agent = yield* load((svc) => svc.defaultAgent())
-      // build is disabled, so it should return plan (next primary agent)
-      expect(agent).toBe("plan")
+      expect(agent).toBe("goal")
     }),
   {
     config: {
@@ -725,6 +724,7 @@ it.instance(
     config: {
       agent: {
         build: { disable: true },
+        goal: { disable: true },
         plan: { disable: true },
       },
     },

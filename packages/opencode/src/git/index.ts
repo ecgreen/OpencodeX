@@ -139,7 +139,14 @@ export const layer = Layer.effect(
     })
 
     const repository = Effect.fnUntraced(function* (cwd: string) {
-      return yield* resolveRepository(fs, cwd)
+      const result = yield* run(["rev-parse", "--absolute-git-dir", "--git-common-dir"], { cwd })
+      if (result.exitCode !== 0) return undefined
+      const [gitDir, store] = result.text().trim().split(/\r?\n/)
+      if (!gitDir || !store) return undefined
+      return {
+        gitDir: AppFileSystem.resolve(gitDir),
+        store: AppFileSystem.resolve(path.isAbsolute(store) ? store : path.join(cwd, store)),
+      } satisfies Repository
     })
 
     const gitDir = Effect.fn("Git.gitDir")(function* (cwd: string) {
@@ -357,42 +364,8 @@ interface Repository {
   readonly store: string
 }
 
-const gitdirPattern = /^gitdir:\s*(.+)$/i
 const sectionPattern = /^\s*\[([^\]\s]+)(?:\s+"(.+)")?\]\s*$/
 const keyValuePattern = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/
-
-function resolveRepository(fs: AppFileSystem.Interface, cwd: string) {
-  return Effect.gen(function* () {
-    const dotgit = yield* fs.up({ targets: [".git"], start: cwd }).pipe(
-      Effect.map((matches) => matches[0]),
-      Effect.catch(() => Effect.succeed(undefined)),
-    )
-    if (!dotgit) return undefined
-
-    const gitDir = yield* resolveGitDir(fs, path.dirname(dotgit), dotgit)
-    if (!gitDir) return undefined
-    const store = yield* resolveCommonDir(fs, gitDir)
-    return { gitDir, store } satisfies Repository
-  })
-}
-
-function resolveGitDir(fs: AppFileSystem.Interface, cwd: string, dotgit: string) {
-  return Effect.gen(function* () {
-    if (yield* fs.isDir(dotgit)) return AppFileSystem.resolve(dotgit)
-
-    const content = yield* readFileString(fs, dotgit)
-    const match = content?.match(gitdirPattern)
-    if (!match) return undefined
-    return AppFileSystem.resolve(resolvePath(cwd, match[1]!))
-  })
-}
-
-function resolveCommonDir(fs: AppFileSystem.Interface, gitDir: string) {
-  return Effect.gen(function* () {
-    const content = yield* readFileString(fs, path.join(gitDir, "commondir"))
-    return content ? AppFileSystem.resolve(resolvePath(gitDir, content)) : AppFileSystem.resolve(gitDir)
-  })
-}
 
 function readHeadBranch(fs: AppFileSystem.Interface, gitDir: string) {
   return Effect.gen(function* () {
@@ -486,12 +459,4 @@ function parseHead(content: string | undefined, prefix: string) {
   const ref = content?.trim().match(/^ref:\s*(.+)$/)?.[1]
   if (!ref?.startsWith(prefix)) return undefined
   return ref.slice(prefix.length)
-}
-
-function resolvePath(cwd: string, value: string) {
-  const trimmed = value.replace(/[\r\n]+$/, "")
-  if (!trimmed) return cwd
-  const normalized = AppFileSystem.windowsPath(trimmed)
-  if (path.isAbsolute(normalized)) return path.normalize(normalized)
-  return path.resolve(cwd, normalized)
 }

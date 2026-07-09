@@ -45,7 +45,11 @@ export const layer = Layer.effect(
       // its per-instance state scope. We just await materialization here.
       yield* Effect.forEach(
         [reference, lsp, shareNext, format, file, fileWatcher, vcs, snapshot, project],
-        (s) => s.init().pipe(Effect.catchCause((cause) => Effect.logWarning("init failed", { cause }))),
+        (s) =>
+          s.init().pipe(
+            Effect.timeout("5 seconds"),
+            Effect.catchCause((cause) => Effect.logWarning("init failed", { cause })),
+          ),
         { concurrency: "unbounded", discard: true },
       ).pipe(Effect.withSpan("InstanceBootstrap.init"))
     }).pipe(Effect.withSpan("InstanceBootstrap"))

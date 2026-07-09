@@ -385,7 +385,8 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       seenAt: currentState?.seenAt,
       reviewedAt: Math.max(reviewedAt ?? 0, currentState?.reviewedAt ?? 0) || undefined,
       reviewedFiles: [...next],
-      displayStatus: reviewedAt && currentState?.displayStatus === "needs_review" ? "idle" : (currentState?.displayStatus ?? "idle"),
+      displayStatus:
+        reviewedAt && currentState?.displayStatus === "needs_review" ? "idle" : (currentState?.displayStatus ?? "idle"),
       updated: currentState?.updated ?? false,
     })
     void updateClientSessionState(props.api.client, currentSessionID, {
@@ -395,20 +396,6 @@ function DiffViewer(props: { api: TuiPluginApi }) {
   }
 
   const commands = [
-    {
-      name: "diff.close",
-      title: "Close diff viewer",
-      category: "VCS",
-      run() {
-        const returnRoute = params()?.returnRoute
-        props.api.ui.dialog.clear()
-
-        props.api.route.navigate(
-          returnRoute?.name ?? "home",
-          returnRoute && "params" in returnRoute ? returnRoute.params : undefined,
-        )
-      },
-    },
     {
       name: "diff.down",
       title: "Move diff viewer down",
@@ -977,6 +964,29 @@ const tui: TuiPlugin = async (api) => {
         },
       },
     ],
+  })
+
+  api.keymap.registerLayer({
+    commands: [
+      {
+        name: "diff.close",
+        title: "Close diff viewer",
+        category: "VCS",
+        run() {
+          const params = ("params" in api.route.current ? api.route.current.params : undefined) as
+            | { returnRoute?: TuiRouteCurrent }
+            | undefined
+          const returnRoute = params?.returnRoute
+          api.ui.dialog.clear()
+          api.route.navigate(
+            returnRoute?.name ?? "home",
+            returnRoute && "params" in returnRoute ? returnRoute.params : undefined,
+          )
+        },
+      },
+    ],
+    bindings: api.tuiConfig.keybinds.gather("diff", ["diff.close"]),
+    enabled: () => api.route.current.name === ROUTE,
   })
 }
 

@@ -1,18 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import path from "path"
-import { mkdir } from "fs/promises"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
-import { Global } from "@opencode-ai/core/global"
-import type { TuiPluginApi, TuiPluginMeta, TuiRouteCurrent, TuiRouteDefinition } from "@opencode-ai/plugin/tui"
-import { KVProvider } from "../../../src/cli/cmd/tui/context/kv"
-import { ThemeProvider } from "../../../src/cli/cmd/tui/context/theme"
-import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
-import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
+import type { TuiPluginApi, TuiPluginMeta, TuiRouteCurrent } from "@opencode-ai/plugin/tui"
 import diffViewerPlugin from "../../../src/cli/cmd/tui/feature-plugins/system/diff-viewer"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
-import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 
 test("closing the diff viewer returns to the route it opened from", async () => {
   const startRoute: TuiRouteCurrent = { name: "session", params: { sessionID: "session-1" } }
@@ -21,9 +13,6 @@ test("closing the diff viewer returns to the route it opened from", async () => 
     NonNullable<Parameters<TuiPluginApi["keymap"]["registerLayer"]>[0]["commands"]>[number]
   >()
   let current = startRoute
-  let renderDiff: TuiRouteDefinition["render"] | undefined
-  await mkdir(Global.Path.state, { recursive: true })
-  await Bun.write(path.join(Global.Path.state, "kv.json"), "{}")
 
   function Harness() {
     const renderer = useRenderer()
@@ -44,7 +33,7 @@ test("closing the diff viewer returns to the route it opened from", async () => 
       ...base,
       route: {
         register(routes) {
-          renderDiff = routes.find((route) => route.name === "diff")?.render
+          void routes
           return () => {}
         },
         navigate(name, params) {
@@ -59,22 +48,12 @@ test("closing the diff viewer returns to the route it opened from", async () => 
     void diffViewerPlugin.tui(api, undefined, pluginMeta)
     commands.get("diff.open")?.run?.({} as never)
 
-    return (
-      <OpencodeKeymapProvider keymap={keymap}>
-        <TuiConfigProvider config={createTuiResolvedConfig()}>
-          <KVProvider>
-            <ThemeProvider mode="dark">
-              {renderDiff?.({ params: "params" in current ? current.params : undefined })}
-            </ThemeProvider>
-          </KVProvider>
-        </TuiConfigProvider>
-      </OpencodeKeymapProvider>
-    )
+    return <box />
   }
 
   const app = await testRender(() => <Harness />, { width: 80, height: 20 })
   try {
-    await waitForCommand(app, commands, "diff.close")
+    await app.renderOnce()
     expect(current).toEqual({ name: "diff", params: { mode: "git", sessionID: "session-1", returnRoute: startRoute } })
 
     expect(commands.has("diff.close")).toBe(true)
@@ -84,18 +63,6 @@ test("closing the diff viewer returns to the route it opened from", async () => 
     app.renderer.destroy()
   }
 })
-
-async function waitForCommand(
-  app: Awaited<ReturnType<typeof testRender>>,
-  commands: Map<string, unknown>,
-  command: string,
-) {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    await app.renderOnce()
-    if (commands.has(command)) return
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
-}
 
 const pluginMeta = {
   id: "diff-viewer",

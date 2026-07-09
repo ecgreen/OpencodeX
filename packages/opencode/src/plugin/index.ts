@@ -6,6 +6,7 @@ import type {
   WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@opencode-ai/plugin"
 import { Config } from "@/config/config"
+import { ConfigPlugin } from "@/config/plugin"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { ServerAuth } from "@/server/auth"
@@ -24,7 +25,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
 import { PluginLoader } from "./loader"
-import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
+import { isPathPluginSpec, parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
 import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -177,7 +178,9 @@ export const layer = Layer.effect(
         if (flags.pure && cfg.plugin_origins?.length) {
           log.info("skipping external plugins in pure mode", { count: cfg.plugin_origins.length })
         }
-        if (plugins.length) yield* config.waitForDependencies()
+        if (plugins.some((plugin) => !isPathPluginSpec(ConfigPlugin.pluginSpecifier(plugin.spec)))) {
+          yield* config.waitForDependencies()
+        }
 
         const loaded = yield* Effect.promise(() =>
           PluginLoader.loadExternal({

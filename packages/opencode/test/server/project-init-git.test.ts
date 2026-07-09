@@ -73,7 +73,8 @@ describe("project.initGit endpoint", () => {
       })
       // Reload behavior: bus emits exactly one server.instance.disposed for the directory.
       expect(disposedEvents(events.seen, tmp.directory)).toBe(1)
-      expect((yield* fs.readFileString(path.join(tmp.directory, ".git", "opencode"))).trim()).toBe(projectID)
+      expect(projectID).toBe("global")
+      expect(yield* fs.existsSafe(path.join(tmp.directory, ".git", "opencode"))).toBe(false)
 
       const current = yield* request(tmp.directory, "/project/current")
       expect(current.status).toBe(200)

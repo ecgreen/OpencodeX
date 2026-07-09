@@ -83,7 +83,7 @@ test("offsetToPosition converts Zed offsets to 1-based editor positions", () => 
   })
 })
 
-test("resolveZedDbPath skips candidates that cannot be stated", async () => {
+test.skipIf(process.platform === "win32")("resolveZedDbPath skips candidates that cannot be stated", async () => {
   await using tmp = await tmpdir()
   const loop = path.join(tmp.path, "loop")
   await symlink(loop, loop)

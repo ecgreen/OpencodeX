@@ -31,6 +31,7 @@ const shellLayer = Layer.mergeAll(
   testInstanceStoreLayer,
 )
 const it = testEffect(shellLayer)
+const timeoutCommand = process.platform === "win32" ? "Write-Output started; Start-Sleep -Seconds 60" : "echo started && sleep 60"
 type ShellTestServices =
   | (typeof shellLayer extends Layer.Layer<infer ROut, infer _E, infer _RIn> ? ROut : never)
   | InstanceStore.Service
@@ -1070,7 +1071,7 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const result = yield* run({
-            command: `echo started && sleep 60`,
+            command: timeoutCommand,
             description: "Timeout test",
             timeout: 500,
           })
@@ -1092,7 +1093,7 @@ describe("tool.shell abort", () => {
           expect(tool.description).toContain("commands will time out after 500ms")
           const result = yield* tool.execute(
             {
-              command: `echo started && sleep 60`,
+              command: timeoutCommand,
               description: "Default timeout test",
             },
             ctx,
