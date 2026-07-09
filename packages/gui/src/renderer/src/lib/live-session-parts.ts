@@ -16,20 +16,14 @@ export function mergePartLists(parts: Part[], incoming: Part[]) {
 
 export function upsertPartList(parts: Part[], part: Part) {
   const index = parts.findIndex((item) => item.id === part.id)
-  const next = index >= 0
-    ? parts.map((item, i) => i === index ? mergeLivePart(item, part) : item)
-    : [...parts, part]
+  const next = index >= 0 ? parts.map((item, i) => (i === index ? part : item)) : [...parts, part]
   return sortParts(next)
 }
 
 export function mergeLoadedParts(current: Part[], incoming: Part[]) {
-  const currentParts = new Map(current.map((part) => [part.id, part]))
   const incomingPartIDs = new Set(incoming.map((part) => part.id))
   return sortParts([
-    ...incoming.map((part) => {
-      const existing = currentParts.get(part.id)
-      return existing ? mergeLivePart(existing, part) : part
-    }),
+    ...incoming,
     ...current.filter((part) => !incomingPartIDs.has(part.id) && isTextPart(part) && !textPartEnded(part)),
   ])
 }
@@ -58,14 +52,19 @@ export function forgetPendingPart(messageID: string, partID: string) {
   }
   const deltas = pendingLivePartDeltas.get(messageID)
   if (!deltas) return
-  Array.from(deltas.keys()).filter((key) => key.startsWith(`${partID}\0`)).forEach((key) => deltas.delete(key))
+  Array.from(deltas.keys())
+    .filter((key) => key.startsWith(`${partID}\0`))
+    .forEach((key) => deltas.delete(key))
   if (deltas.size === 0) pendingLivePartDeltas.delete(messageID)
 }
 
 export function rememberPendingPartDelta(messageID: string, partID: string, field: string, delta: string) {
   const pending = pendingLiveParts.get(messageID)
   if (pending?.some((part) => part.id === partID)) {
-    pendingLiveParts.set(messageID, pending.map((part) => part.id === partID ? applyDeltaToPart(part, field, delta) : part))
+    pendingLiveParts.set(
+      messageID,
+      pending.map((part) => (part.id === partID ? applyDeltaToPart(part, field, delta) : part)),
+    )
     return
   }
   const deltas = pendingLivePartDeltas.get(messageID) ?? new Map<string, string>()
@@ -85,16 +84,6 @@ export function applyPendingDeltasToPart(part: Part): Part {
   }, part)
   if (deltas.size === 0) pendingLivePartDeltas.delete(part.messageID)
   return next
-}
-
-function mergeLivePart(current: Part, incoming: Part): Part {
-  if (!isTextPart(current) || !isTextPart(incoming)) return incoming
-  if (textPartEnded(incoming)) return incoming
-  if (!incoming.text) return current
-  if (!current.text) return incoming
-  if (incoming.text === current.text || incoming.text.startsWith(current.text)) return incoming
-  if (current.text.startsWith(incoming.text) || current.text.endsWith(incoming.text)) return { ...incoming, text: current.text } as Part
-  return { ...incoming, text: current.text + incoming.text } as Part
 }
 
 function isTextPart(part: Part): part is Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }> {

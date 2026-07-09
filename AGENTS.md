@@ -46,6 +46,22 @@ Privacy and scope notes:
 - Query commands may log metadata to the default Graphify query log. Set `GRAPHIFY_QUERY_LOG_DISABLE=1` if needed.
 - Treat graph results as navigation hints. Always confirm behavior against the actual files before making changes.
 
+## GUI Session Scroll Behavior
+
+Session transcript scroll behavior is intentionally centralized and should stay simple.
+
+- The scroll controller lives in `packages/gui/src/renderer/src/components/session-transcript-panel.tsx`.
+- Pure scroll decision helpers live in `packages/gui/src/renderer/src/lib/transcript-scroll.ts`, with coverage in `packages/gui/test/transcript-scroll.test.ts`.
+- Session transcript layout CSS is split across the GUI style sections, with base `.transcript` scrolling in `packages/gui/src/renderer/src/styles/section-05.css`, Load More affordance styling in `packages/gui/src/renderer/src/styles/section-10.css`, and final stage/session overflow constraints in `packages/gui/src/renderer/src/styles/section-22.css`.
+
+Keep exactly these automatic transcript scroll rules:
+
+- If the active session is at or near the bottom, within `200px`, keep the transcript pinned to the bottom when transcript content or viewport size changes.
+- If the user provides scroll input, including wheel-up, touch, or scrollbar interaction, stop automatic bottom-follow for the short release window defined in `packages/gui/src/renderer/src/lib/transcript-scroll.ts`; after that, re-enable only when the user is near-bottom again.
+- When using Load More, preserve the clicked Load More button's viewport anchor while older content is inserted above it.
+
+Do not reintroduce layered automatic scroll behavior such as open-session settle loops, submit-time prompt-follow scrolling, first-visible-message prepend anchors, multi-frame restore loops, or smooth automatic transcript scrolling. Composer height changes must not move session content unless bottom-follow is already active. Explicit transcript navigation commands, such as keyboard or palette jumps in `packages/gui/src/renderer/src/app.tsx`, are user-directed and may remain separate from this automatic scroll policy.
+
 ## Commits and PR Titles
 
 Use conventional commit-style messages and PR titles: `type(scope): summary`.

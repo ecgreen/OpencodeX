@@ -184,18 +184,18 @@ export const layer = Layer.effect(
     const list = Effect.fn("OpencodeXSessionState.list")(function* (sessionIDs: readonly SessionID[]) {
       if (sessionIDs.length === 0) return {}
       return Object.fromEntries(
-        (
-          yield* db
+        (yield* db
             .select()
             .from(OpencodeXSessionStateTable)
             .where(inArray(OpencodeXSessionStateTable.session_id, [...new Set(sessionIDs)]))
             .all()
-            .pipe(Effect.orDie)
-        ).map((row) => [row.session_id, hydrate(row)]),
+          .pipe(Effect.orDie)).map((row) => [row.session_id, hydrate(row)]),
       )
     })
 
     const update = Effect.fn("OpencodeXSessionState.update")(function* (input: UpdateInput) {
+      return yield* events.barrier(
+        Effect.gen(function* () {
       const current = yield* get(input.sessionID)
       const state = {
         sessionID: input.sessionID,
@@ -210,6 +210,8 @@ export const layer = Layer.effect(
       }
       yield* events.publish(Event.Updated, { sessionID: input.sessionID, state })
       return state
+        }),
+      )
     })
 
     return Service.of({ get, list, update })

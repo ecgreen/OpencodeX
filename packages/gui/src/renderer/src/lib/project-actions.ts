@@ -1,7 +1,8 @@
 import type { GuiSnapshot } from "./store"
 
-type TextDialogInput = { title: string; message?: string; value?: string; multiline?: boolean }
 type ConfirmDialogInput = { title: string; message: string; confirm?: string }
+type ProjectDialogInput = { title: string; message?: string; name: string; folders: string[] }
+type ProjectDialogValue = { name: string; folders: string[] }
 
 export type ProjectFolderValidation = {
   data?: {
@@ -34,49 +35,18 @@ export function newSessionDirectory(input: {
 
 export async function runCreateProjectAction(input: {
   fallbackDirectory: string
-  chooseFolder: (fallback: string) => Promise<string | undefined>
+  chooseFolders: (fallback: string) => Promise<string[] | undefined>
   validateProjectFolders: (folders: string[]) => Promise<ProjectFolderValidation>
-  createProject: (name: string, directory: string) => Promise<void>
+  createProject: (name: string, directory: string, folders: string[]) => Promise<void>
   refresh: () => Promise<void>
   alert: (message: string) => void
 }) {
-  const directory = await input.chooseFolder(input.fallbackDirectory || ".")
+  const folders = uniqueFolders(await input.chooseFolders(input.fallbackDirectory || ".") ?? [])
+  const directory = folders[0]
   if (!directory) return
-  const validationMessage = projectFolderValidationMessage(await input.validateProjectFolders([directory]))
+  const validationMessage = projectFolderValidationMessage(await input.validateProjectFolders(folders))
   if (validationMessage) return input.alert(validationMessage)
-  await input.createProject(projectNameFromDirectory(directory), directory)
-  await input.refresh()
-}
-
-export async function runRenameProjectAction(input: {
-  projectID: string
-  current?: string
-  askText: (input: TextDialogInput) => Promise<string | undefined>
-  renameProject: (projectID: string, name: string) => Promise<void>
-  refresh: () => Promise<void>
-}) {
-  const name = (await input.askText({ title: "Rename Project", value: input.current ?? "" }))?.trim()
-  if (!name) return
-  await input.renameProject(input.projectID, name)
-  await input.refresh()
-}
-
-export async function runEditProjectFoldersAction(input: {
-  projectID: string
-  folders: string[]
-  askText: (input: TextDialogInput) => Promise<string | undefined>
-  validateProjectFolders: (projectID: string, folders: string[]) => Promise<ProjectFolderValidation>
-  updateProjectFolders: (projectID: string, folders: string[]) => Promise<void>
-  refresh: () => Promise<void>
-  alert: (message: string) => void
-}) {
-  const text = await input.askText({ title: "Project Folders", message: "One folder per line", value: input.folders.join("\n"), multiline: true })
-  if (!text) return
-  const folders = projectFoldersFromText(text)
-  if (folders.length === 0) return
-  const validationMessage = projectFolderValidationMessage(await input.validateProjectFolders(input.projectID, folders))
-  if (validationMessage) return input.alert(validationMessage)
-  await input.updateProjectFolders(input.projectID, folders)
+  await input.createProject(projectNameFromDirectory(directory), directory, folders)
   await input.refresh()
 }
 
@@ -84,22 +54,27 @@ export async function runEditProjectAction(input: {
   projectID: string
   currentName?: string
   folders: string[]
-  askText: (input: TextDialogInput) => Promise<string | undefined>
+  askProject: (input: ProjectDialogInput) => Promise<ProjectDialogValue | undefined>
   validateProjectFolders: (projectID: string, folders: string[]) => Promise<ProjectFolderValidation>
   updateProject: (projectID: string, next: { name: string; folders: string[] }) => Promise<void>
   refresh: () => Promise<void>
   alert: (message: string) => void
 }) {
-  const name = (await input.askText({ title: "Edit Project Name", value: input.currentName ?? "" }))?.trim()
-  if (!name) return
-  const text = await input.askText({ title: "Edit Project Folders", message: "One folder per line", value: input.folders.join("\n"), multiline: true })
-  if (!text) return
-  const folders = projectFoldersFromText(text)
-  if (folders.length === 0) return
-  const validationMessage = projectFolderValidationMessage(await input.validateProjectFolders(input.projectID, folders))
+  const next = await input.askProject({
+    title: "Edit project",
+    message: "Update the project name and the workspace folders used for sessions, views, swarms, and workbench actions.",
+    name: input.currentName ?? "",
+    folders: input.folders,
+  })
+  if (!next) return
+  const validationMessage = projectFolderValidationMessage(await input.validateProjectFolders(input.projectID, next.folders))
   if (validationMessage) return input.alert(validationMessage)
-  await input.updateProject(input.projectID, { name, folders })
+  await input.updateProject(input.projectID, next)
   await input.refresh()
+}
+
+function uniqueFolders(folders: string[]) {
+  return [...new Set(folders.map((folder) => folder.trim()).filter(Boolean))]
 }
 
 export async function runDeleteProjectAction(input: {
@@ -132,4 +107,5 @@ export function runCreateSessionRouteAction(input: {
   input.setPrompt("")
   input.openNewSession(input.projectID, directory)
   input.focusComposer()
+  return { projectID: input.projectID, directory }
 }

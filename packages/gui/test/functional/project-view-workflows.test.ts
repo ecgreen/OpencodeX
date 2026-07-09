@@ -11,38 +11,37 @@ describe("GUI functional project and view workflows", () => {
 
     await runCreateProjectAction({
       fallbackDirectory: "C:/Work",
-      chooseFolder: async (fallback) => {
+      chooseFolders: async (fallback) => {
         calls.push(`choose:${fallback}`)
-        return "C:/Work/OpencodeX"
+        return ["C:/Work/OpencodeX", "C:/Work/Docs"]
       },
       validateProjectFolders: async (folders) => {
         calls.push(`validate:${folders.join(",")}`)
         return { data: { valid: true, folders: [] } }
       },
-      createProject: async (name, directory) => calls.push(`create:${name}:${directory}`),
+      createProject: async (name, directory, folders) => calls.push(`create:${name}:${directory}:${folders.join("|")}`),
       refresh: async () => calls.push("refresh"),
       alert: (message) => calls.push(`alert:${message}`),
     })
 
     expect(calls).toEqual([
       "choose:C:/Work",
-      "validate:C:/Work/OpencodeX",
-      "create:OpencodeX:C:/Work/OpencodeX",
+      "validate:C:/Work/OpencodeX,C:/Work/Docs",
+      "create:OpencodeX:C:/Work/OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
       "refresh",
     ])
   })
 
   test("edits project name and folders as a single validated operation", async () => {
     const calls: string[] = []
-    const answers = ["Renamed", "C:/One\nC:/Two"]
 
     await runEditProjectAction({
       projectID: "project-1",
       currentName: "Project",
       folders: ["C:/Old"],
-      askText: async (input) => {
-        calls.push(`ask:${input.title}`)
-        return answers.shift()
+      askProject: async (input) => {
+        calls.push(`ask:${input.title}:${input.name}:${input.folders.join("|")}`)
+        return { name: "Renamed", folders: ["C:/One", "C:/Two"] }
       },
       validateProjectFolders: async (_projectID, folders) => {
         calls.push(`validate:${folders.join("|")}`)
@@ -54,8 +53,7 @@ describe("GUI functional project and view workflows", () => {
     })
 
     expect(calls).toEqual([
-      "ask:Edit Project Name",
-      "ask:Edit Project Folders",
+      "ask:Edit project:Project:C:/Old",
       "validate:C:/One|C:/Two",
       "update:project-1:Renamed:C:/One|C:/Two",
       "refresh",

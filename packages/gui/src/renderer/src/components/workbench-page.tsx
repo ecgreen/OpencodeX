@@ -65,7 +65,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const [notice, setNotice] = createSignal("")
   const [filesByPath, setFilesByPath] = createSignal<Record<string, FileNode[]>>({})
   const [expandedFolders, setExpandedFolders] = createSignal<Set<string>>(new Set())
-  const [selectedProjectID, setSelectedProjectID] = createSignal("")
+  const [selectedProjectID, setSelectedProjectID] = createSignal(props.projectID ?? "")
   const [filePath, setFilePath] = createSignal("")
   const [explorerCollapsed, setExplorerCollapsed] = createSignal(persistedWorkbench.explorerCollapsed ?? false)
   const [explorerWidth, setExplorerWidth] = createSignal(workbenchClampPaneWidth(persistedWorkbench.explorerWidth, WORKBENCH_EXPLORER_WIDTH))
@@ -191,6 +191,10 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
 
   createEffect(() => {
     const options = projectOptions()
+    if (props.projectID && options.some((option) => option.id === props.projectID)) {
+      setSelectedProjectID(props.projectID)
+      return
+    }
     if (options.some((option) => option.id === selectedProjectID())) return
     setSelectedProjectID(options[0]?.id ?? "")
   })
@@ -843,18 +847,15 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
                 replyPermission: (request, reply) => props.replyPermission?.(request, reply),
                 replyQuestion: (request, answers) => props.replyQuestion?.(request, answers),
                 rejectQuestion: (request) => props.rejectQuestion?.(request),
-                abortSession: props.abortSession ?? (() => {}),
                 renameSession: props.renameSession ?? (() => {}),
                 moveSession: props.moveSession ?? (() => {}),
                 deleteSession: props.deleteSession ?? (() => {}),
                 slashCommands: assistantSession() ? props.slashCommands?.(assistantSession()!, assistantData(), assistant.restorePrompt) ?? [] : [],
-                concealCodeBlocks: props.concealCodeBlocks ?? false,
                 showTimestamps: props.showTimestamps ?? false,
                 showThinking: props.showThinking ?? true,
                 showToolDetails: props.showToolDetails ?? true,
                 showScrollbar: props.showScrollbar ?? true,
                 showGenericToolOutput: props.showGenericToolOutput ?? true,
-                toggleCodeConceal: props.toggleCodeConceal ?? (() => {}),
                 toggleTimestamps: props.toggleTimestamps ?? (() => {}),
                 toggleThinking: props.toggleThinking ?? (() => {}),
                 toggleToolDetails: props.toggleToolDetails ?? (() => {}),

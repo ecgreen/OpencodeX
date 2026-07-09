@@ -1,5 +1,7 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { projectSessionPreviewItems, sessionOrderBucket } from "../lib/app-session-lists"
 import { title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/store"
@@ -8,10 +10,8 @@ import { Icon } from "./icon"
 import { ProjectDragPreview, type ProjectDragPreviewState } from "./rail-project-drag-preview"
 import { SidebarSessionLink, SidebarViewLink } from "./rail-sidebar-links"
 import { animateLayoutRows } from "./rail-sidebar-motion"
-import type { RailDragTarget, RailDropTarget } from "./rail-sidebar-types"
+import type { RailDragTarget, RailDropTarget, RailSectionName } from "./rail-sidebar-types"
 
-const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
-const PROJECT_RECENT_SESSION_LIMIT = 4
 type ProjectRow =
   | { type: "project"; project: GuiSnapshot["projects"][number] }
   | { type: "placeholder"; id: string; height: number }
@@ -27,15 +27,20 @@ export function RailPinnedSection(props: {
   dragTarget?: RailDragTarget
   dropTarget?: RailDropTarget
   toggle: () => void
+  createSession: () => void
   openSession: (sessionID: string) => void
   openView: (viewID: string) => void
   toggleSessionPinned: (sessionID: string) => void
   toggleViewPinned: (viewID: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  editView: (viewID: string) => void
+  deleteView: (viewID: string, name: string) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
-  sectionPointerDrag: (sourceID: "pinned" | "projects" | "recent" | "views", targetID?: "pinned" | "projects" | "recent" | "views", placement?: "before" | "after") => void
-  reorderSection: (sourceID: "pinned" | "projects" | "recent" | "views", targetID: "pinned" | "projects" | "recent" | "views", placement: "before" | "after") => void
+  sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+  reorderSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
   dropSection: (targetID: string, placement: "before" | "after") => void
   moveSection: (offset: number) => void
 }) {
@@ -46,6 +51,7 @@ export function RailPinnedSection(props: {
       count={count()}
       collapsed={props.collapsed}
       toggle={props.toggle}
+      action={props.createSession}
       drag={sectionDrag("pinned", props)}
     >
       <For each={props.sessions}>
@@ -57,6 +63,8 @@ export function RailPinnedSection(props: {
             pinned
             onClick={() => props.openSession(session.id)}
             togglePinned={() => props.toggleSessionPinned(session.id)}
+            renameSession={() => props.renameSession(session)}
+            deleteSession={() => props.deleteSession(session)}
           />
         )}
       </For>
@@ -69,6 +77,8 @@ export function RailPinnedSection(props: {
             pinned
             onClick={() => props.openView(view.id)}
             togglePinned={() => props.toggleViewPinned(view.id)}
+            editView={() => props.editView(view.id)}
+            deleteView={() => props.deleteView(view.id, title(view.title))}
           />
         )}
       </For>
@@ -92,11 +102,13 @@ export function RailProjectsSection(props: {
   createSession: (projectID?: string, directory?: string) => void
   openSession: (sessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
-  sectionPointerDrag: (sourceID: "pinned" | "projects" | "recent" | "views", targetID?: "pinned" | "projects" | "recent" | "views", placement?: "before" | "after") => void
-  reorderSection: (sourceID: "pinned" | "projects" | "recent" | "views", targetID: "pinned" | "projects" | "recent" | "views", placement: "before" | "after") => void
+  sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+  reorderSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
   projectPointerDrag: (sourceID: string, targetID?: string, placement?: "before" | "after") => void
   reorderProject: (sourceID: string, targetID: string, placement: "before" | "after") => void
   dropProject: (targetID: string, placement: "before" | "after") => void
@@ -132,7 +144,7 @@ export function RailProjectsSection(props: {
   const previewSessions = createMemo(() => {
     const project = previewProject()
     if (!project || !props.projectExpanded(project.id)) return []
-    return recentProjectSessions(props.projectSessions(project)).slice(0, 3)
+    return recentProjectSessions(props.projectSessions(project), props.snapshot).slice(0, 3)
   })
   let projectRowRects = new Map<string, DOMRect>()
   let projectAnimationFrame = 0
@@ -172,6 +184,7 @@ export function RailProjectsSection(props: {
           >
             <div
               class="project-heading"
+              classList={{ recent: hasRecentProjectSession(props.projectSessions(row.project), props.snapshot) }}
               onPointerDown={(event) => startProjectPointerDrag(event, row.project.id, props, setProjectDragPreview)}
             >
               <button class="project-toggle" title={`${props.projectExpanded(row.project.id) ? "Collapse" : "Expand"} project`} aria-expanded={props.projectExpanded(row.project.id)} onClick={() => props.toggleProject(row.project.id)}><Icon name={props.projectExpanded(row.project.id) ? "folder-open" : "folder"} /></button>
@@ -190,7 +203,7 @@ export function RailProjectsSection(props: {
             </div>
             <div class="project-sessions" classList={{ collapsed: !props.projectExpanded(row.project.id) }}>
               <div>
-                <For each={recentProjectSessions(props.projectSessions(row.project))} fallback={(
+                <For each={recentProjectSessions(props.projectSessions(row.project), props.snapshot)} fallback={(
                   <div class="project-empty">
                     <span>No sessions in this project yet.</span>
                     <button onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</button>
@@ -205,6 +218,8 @@ export function RailProjectsSection(props: {
                       pinned={props.sessionPinned(session.id)}
                       onClick={() => props.openSession(session.id)}
                       togglePinned={() => props.toggleSessionPinned(session.id)}
+                      renameSession={() => props.renameSession(session)}
+                      deleteSession={() => props.deleteSession(session)}
                     />
                   )}
                 </For>
@@ -317,15 +332,17 @@ export function RailRecentSessionsSection(props: {
   createSession: () => void
   openSession: (sessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
-  sectionPointerDrag: (sourceID: "pinned" | "projects" | "recent" | "views", targetID?: "pinned" | "projects" | "recent" | "views", placement?: "before" | "after") => void
-  reorderSection: (sourceID: "pinned" | "projects" | "recent" | "views", targetID: "pinned" | "projects" | "recent" | "views", placement: "before" | "after") => void
+  sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+  reorderSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
   dropSection: (targetID: string, placement: "before" | "after") => void
   moveSection: (offset: number) => void
 }) {
-  const recentSessions = createMemo(() => props.sessions.filter((session) => !props.sessionPinned(session.id) && isRecentSessionUpdate(session.time.updated)))
+  const recentSessions = createMemo(() => props.sessions.filter((session) => !props.sessionPinned(session.id) && (sessionOrderBucket(props.snapshot, session) !== "inactive" || isRecentClientSessionUpdate(session.time.updated))))
   return (
     <RailSection
       title="Recent Sessions"
@@ -344,6 +361,56 @@ export function RailRecentSessionsSection(props: {
             pinned={props.sessionPinned(session.id)}
             onClick={() => props.openSession(session.id)}
             togglePinned={() => props.toggleSessionPinned(session.id)}
+            renameSession={() => props.renameSession(session)}
+            deleteSession={() => props.deleteSession(session)}
+          />
+        )}
+      </For>
+    </RailSection>
+  )
+}
+
+export function RailPriorSessionsSection(props: {
+  sessions: Session[]
+  snapshot?: GuiSnapshot
+  collapsed: boolean
+  activeSessionID: string
+  dragTarget?: RailDragTarget
+  dropTarget?: RailDropTarget
+  sessionPinned: (sessionID: string) => boolean
+  toggle: () => void
+  openSession: (sessionID: string) => void
+  toggleSessionPinned: (sessionID: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  startDrag: (event: DragEvent, target: RailDragTarget) => void
+  dragOver: (event: DragEvent, target: RailDragTarget) => void
+  clearDragTarget: () => void
+  sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+  reorderSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
+  dropSection: (targetID: string, placement: "before" | "after") => void
+  moveSection: (offset: number) => void
+}) {
+  const priorSessions = createMemo(() => props.sessions.filter((session) => !props.sessionPinned(session.id) && sessionOrderBucket(props.snapshot, session) === "inactive" && !isRecentClientSessionUpdate(session.time.updated)))
+  return (
+    <RailSection
+      title="Prior Sessions"
+      count={priorSessions().length}
+      collapsed={props.collapsed}
+      toggle={props.toggle}
+      drag={sectionDrag("prior", props)}
+    >
+      <For each={priorSessions()}>
+        {(session) => (
+          <SidebarSessionLink
+            session={session}
+            snapshot={props.snapshot}
+            active={props.activeSessionID === session.id}
+            pinned={props.sessionPinned(session.id)}
+            onClick={() => props.openSession(session.id)}
+            togglePinned={() => props.toggleSessionPinned(session.id)}
+            renameSession={() => props.renameSession(session)}
+            deleteSession={() => props.deleteSession(session)}
           />
         )}
       </For>
@@ -363,11 +430,13 @@ export function RailViewsSection(props: {
   createView: () => void
   openView: (viewID: string) => void
   toggleViewPinned: (viewID: string) => void
+  editView: (viewID: string) => void
+  deleteView: (viewID: string, name: string) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
-  sectionPointerDrag: (sourceID: "pinned" | "projects" | "recent" | "views", targetID?: "pinned" | "projects" | "recent" | "views", placement?: "before" | "after") => void
-  reorderSection: (sourceID: "pinned" | "projects" | "recent" | "views", targetID: "pinned" | "projects" | "recent" | "views", placement: "before" | "after") => void
+  sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+  reorderSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
   dropView: (targetID: string, placement: "before" | "after") => void
   moveView: (viewID: string, offset: number) => void
   dropSection: (targetID: string, placement: "before" | "after") => void
@@ -412,6 +481,8 @@ export function RailViewsSection(props: {
                 pinned={props.viewPinned(view.id)}
                 onClick={() => props.openView(view.id)}
                 togglePinned={() => props.toggleViewPinned(view.id)}
+                editView={() => props.editView(view.id)}
+                deleteView={() => props.deleteView(view.id, title(view.title))}
               />
             </div>
           </div>
@@ -421,14 +492,12 @@ export function RailViewsSection(props: {
   )
 }
 
-function isRecentSessionUpdate(timeUpdated: number, now = Date.now()) {
-  return timeUpdated >= now - RECENT_SESSION_WINDOW_MS
+function recentProjectSessions(sessions: Session[], snapshot?: GuiSnapshot) {
+  return projectSessionPreviewItems(sessions, snapshot)
 }
 
-function recentProjectSessions(sessions: Session[]) {
-  const sorted = sessions.toSorted((a, b) => b.time.updated - a.time.updated)
-  const recent = sorted.filter((session) => isRecentSessionUpdate(session.time.updated))
-  return recent.length >= PROJECT_RECENT_SESSION_LIMIT ? recent : sorted.slice(0, PROJECT_RECENT_SESSION_LIMIT)
+function hasRecentProjectSession(sessions: Session[], snapshot?: GuiSnapshot) {
+  return sessions.some((session) => sessionOrderBucket(snapshot, session) !== "inactive" || isRecentClientSessionUpdate(session.time.updated))
 }
 
 function dropPlacement(event: DragEvent): "before" | "after" {
@@ -439,15 +508,15 @@ function dropPlacement(event: DragEvent): "before" | "after" {
 }
 
 function sectionDrag(
-  id: "pinned" | "projects" | "recent" | "views",
+  id: RailSectionName,
   props: {
     dragTarget?: RailDragTarget
     dropTarget?: RailDropTarget
     startDrag: (event: DragEvent, target: RailDragTarget) => void
     dragOver: (event: DragEvent, target: RailDragTarget) => void
     clearDragTarget: () => void
-    sectionPointerDrag: (sourceID: "pinned" | "projects" | "recent" | "views", targetID?: "pinned" | "projects" | "recent" | "views", placement?: "before" | "after") => void
-    reorderSection: (sourceID: "pinned" | "projects" | "recent" | "views", targetID: "pinned" | "projects" | "recent" | "views", placement: "before" | "after") => void
+    sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+    reorderSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
     dropSection: (targetID: string, placement: "before" | "after") => void
     moveSection: (offset: number) => void
   },

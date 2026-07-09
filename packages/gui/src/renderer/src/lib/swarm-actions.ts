@@ -66,28 +66,103 @@ export function primaryAgents(agents: Agent[]) {
   return agents.filter((agent) => agent.mode === "primary" || agent.mode === "all")
 }
 
+export type SwarmRolePreset = {
+  name: string
+  skill: string
+  description: string
+  default?: boolean
+}
+
+export const ORCHESTRATOR_SWARM_ROLE_PRESET: SwarmRolePreset = {
+  name: "Orchestrator",
+  skill: "orchestrator",
+  description: "Coordinates the swarm, manages dependencies, and plans synthesis.",
+  default: true,
+}
+
+export const SWARM_ROLE_PRESETS: SwarmRolePreset[] = [
+  {
+    name: "Product Manager",
+    skill: "product-manager",
+    description: "Frames goals, workflows, acceptance criteria, and tradeoffs.",
+    default: true,
+  },
+  {
+    name: "Designer",
+    skill: "designer",
+    description: "Reviews UI/UX flows, visual hierarchy, interaction states, and accessibility.",
+    default: true,
+  },
+  {
+    name: "Architect",
+    skill: "architect",
+    description: "Designs integration boundaries, data flow, and rollout risks.",
+    default: true,
+  },
+  {
+    name: "Senior Engineer",
+    skill: "senior-engineer",
+    description: "Plans or implements the concrete engineering work.",
+    default: true,
+  },
+  {
+    name: "QA Engineer",
+    skill: "qa-engineer",
+    description: "Defines validation, edge cases, and regression coverage.",
+    default: true,
+  },
+  {
+    name: "Code Reviewer",
+    skill: "code-reviewer",
+    description: "Reviews for bugs, regressions, maintainability, and missing tests.",
+    default: true,
+  },
+  {
+    name: "Docs Engineer",
+    skill: "docs-engineer",
+    description: "Produces guides, API docs, migration notes, and release docs.",
+  },
+  {
+    name: "Release Engineer",
+    skill: "release-engineer",
+    description: "Plans packaging, changelog, rollout, and rollback steps.",
+  },
+  {
+    name: "Security Reviewer",
+    skill: "security-reviewer",
+    description: "Reviews trust boundaries, permissions, secrets, and automation safety.",
+  },
+]
+
+export const SWARM_ROLE_PRESET_OPTIONS = [ORCHESTRATOR_SWARM_ROLE_PRESET, ...SWARM_ROLE_PRESETS]
+
 export function defaultSwarmRoles(input: { agents: Agent[]; providerID?: string; modelID?: string }): OpencodeXSwarmRoleInput[] {
   const agents = primaryAgents(input.agents)
-  const orchestrator = agents.find((agent) => agent.name === "orchestrator") ?? agents[0]
-  const specialist = agents.find((agent) => agent.name !== orchestrator?.name)
+  const orchestrator = agents.find((agent) => agent.name === "orchestrator")
   return [
-    roleInput({
-      name: "Orchestrator",
-      agent: orchestrator?.name,
-      skill: "orchestrator",
+    presetRoleInput(ORCHESTRATOR_SWARM_ROLE_PRESET, {
       providerID: input.providerID ?? orchestrator?.model?.providerID,
       modelID: input.modelID ?? orchestrator?.model?.modelID,
-      instructions: "Coordinate the swarm, break down the task, and synthesize the final result.",
-    }),
-    roleInput({
-      name: "Specialist",
-      agent: specialist?.name,
-      skill: specialist?.name ?? "specialist",
-      providerID: input.providerID ?? specialist?.model?.providerID,
-      modelID: input.modelID ?? specialist?.model?.modelID,
-      instructions: "Handle delegated implementation or research work and report concise findings.",
     }),
   ]
+}
+
+export function nextSwarmRolePreset(roles: readonly Pick<OpencodeXSwarmRoleInput, "skill" | "name">[]) {
+  const used = new Set(roles.map((role) => role.skill ?? role.name.trim().toLowerCase().replace(/\s+/g, "-")))
+  return SWARM_ROLE_PRESETS.find((preset) => !used.has(preset.skill))
+}
+
+export function swarmRolePresetBySkill(skill: string | undefined) {
+  return SWARM_ROLE_PRESET_OPTIONS.find((preset) => preset.skill === skill)
+}
+
+export function presetRoleInput(preset: SwarmRolePreset, model: { providerID?: string; modelID?: string } = {}): OpencodeXSwarmRoleInput {
+  return roleInput({
+    name: preset.name,
+    skill: preset.skill,
+    providerID: model.providerID,
+    modelID: model.modelID,
+  })
 }
 
 export function roleInput(input: Partial<OpencodeXSwarmRoleInput> & { name: string }): OpencodeXSwarmRoleInput {
@@ -98,7 +173,7 @@ export function roleInput(input: Partial<OpencodeXSwarmRoleInput> & { name: stri
     providerID: cleanOptional(input.providerID),
     modelID: cleanOptional(input.modelID),
     modelProfile: cleanOptional(input.modelProfile),
-    instructions: input.instructions?.trim() || "Use the configured role guidance and report progress clearly.",
+    instructions: input.instructions?.trim() ?? "",
     metadata: input.metadata,
   }
 }

@@ -10,7 +10,17 @@ import { useRoute, useRouteData } from "@tui/context/route"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  type JSX,
+} from "solid-js"
 import { useBindings } from "../keymap"
 import { useOxSidebar } from "./opencodex-sidebar"
 import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
@@ -22,6 +32,7 @@ type SyncContext = ReturnType<typeof useSync>
 type SyncSession = SyncContext["data"]["session"][number]
 type SyncMessage = NonNullable<SyncContext["data"]["message"][string]>[number]
 type SyncPart = NonNullable<SyncContext["data"]["part"][string]>[number]
+const SESSION_VIEWED_MARK_DELAY_MS = 2_000
 
 type OpencodeXView = {
   id: string
@@ -123,7 +134,8 @@ function toolInput(part: SyncPart) {
 
 function toolTitle(part: Extract<SyncPart, { type: "tool" }>) {
   const input = toolInput(part)
-  const stateTitle = part.state.status === "running" || part.state.status === "completed" ? stringValue(part.state.title) : ""
+  const stateTitle =
+    part.state.status === "running" || part.state.status === "completed" ? stringValue(part.state.title) : ""
   const description = stringValue(input.description)
   const command = stringValue(input.command)
   const filePath = stringValue(input.filePath)
@@ -236,10 +248,7 @@ function itemID(item: ViewItem) {
 }
 
 function messageText(message: SyncMessage, parts: SyncPart[]) {
-  const text = parts
-    .map(partText)
-    .filter(Boolean)
-    .join("\n")
+  const text = parts.map(partText).filter(Boolean).join("\n")
   if (text) return text
   return message.role === "assistant" ? "Thinking..." : ""
 }
@@ -257,14 +266,14 @@ function ViewPane(props: {
   const route = useRoute()
   const { theme } = useTheme()
   const [ref, setRef] = createSignal<PromptRef>()
-  const session = createMemo(() => props.item.kind === "session" ? props.item.session : undefined)
-  const pending = createMemo(() => props.item.kind === "pending" ? props.item.slot : undefined)
+  const session = createMemo(() => (props.item.kind === "session" ? props.item.session : undefined))
+  const pending = createMemo(() => (props.item.kind === "pending" ? props.item.slot : undefined))
   const id = createMemo(() => itemID(props.item))
-  const messages = createMemo(() => session() ? sync.data.message[session()!.id] ?? [] : [])
+  const messages = createMemo(() => (session() ? (sync.data.message[session()!.id] ?? []) : []))
   const recent = createMemo(() => messages().slice(Math.max(0, messages().length - 24)))
-  const status = createMemo(() => session() ? deriveStatus(session()!.id, sync) : "dormant")
-  const permissions = createMemo(() => session() ? sync.data.permission[session()!.id] ?? [] : [])
-  const questions = createMemo(() => session() ? sync.data.question[session()!.id] ?? [] : [])
+  const status = createMemo(() => (session() ? deriveStatus(session()!.id, sync) : "dormant"))
+  const permissions = createMemo(() => (session() ? (sync.data.permission[session()!.id] ?? []) : []))
+  const questions = createMemo(() => (session() ? (sync.data.question[session()!.id] ?? []) : []))
 
   createEffect(() => {
     const current = ref()
@@ -278,7 +287,11 @@ function ViewPane(props: {
     if (current) void sync.session.sync(current.id)
   })
 
-  async function createSession(input: { workspaceID?: string; agent: string; model: { providerID: string; id: string; variant?: string } }) {
+  async function createSession(input: {
+    workspaceID?: string
+    agent: string
+    model: { providerID: string; id: string; variant?: string }
+  }) {
     const slot = pending()
     if (!slot) return undefined
     if (slot.projectID) {
@@ -320,13 +333,23 @@ function ViewPane(props: {
       onMouseUp={props.onFocus}
     >
       <box flexShrink={0} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
-        <text attributes={props.focused() ? TextAttributes.BOLD : undefined} fg={props.focused() ? theme.primary : theme.text}>
+        <text
+          attributes={props.focused() ? TextAttributes.BOLD : undefined}
+          fg={props.focused() ? theme.primary : theme.text}
+        >
           {truncate(session()?.title ?? "New session", 42)}
         </text>
         <text fg={statusColor(status())}>{statusLabel(status())}</text>
       </box>
       <scrollbox flexGrow={1} minHeight={0} paddingLeft={1} paddingRight={1} stickyScroll={true} stickyStart="bottom">
-        <Show when={recent().length > 0} fallback={<text fg={theme.textMuted}>{pending() ? "This pane will create a session when you send a prompt." : "No messages yet."}</text>}>
+        <Show
+          when={recent().length > 0}
+          fallback={
+            <text fg={theme.textMuted}>
+              {pending() ? "This pane will create a session when you send a prompt." : "No messages yet."}
+            </text>
+          }
+        >
           <For each={recent()}>
             {(message) => {
               const text = createMemo(() => messageText(message, sync.data.part[message.id] ?? []))
@@ -399,10 +422,16 @@ function renderLayout(input: {
     )
   }
   return (
-    <box flexGrow={1} flexBasis={0} flexShrink={1} minHeight={0} minWidth={0} flexDirection={input.node.direction} gap={1}>
-      <For each={input.node.children}>
-        {(node) => renderLayout({ ...input, node })}
-      </For>
+    <box
+      flexGrow={1}
+      flexBasis={0}
+      flexShrink={1}
+      minHeight={0}
+      minWidth={0}
+      flexDirection={input.node.direction}
+      gap={1}
+    >
+      <For each={input.node.children}>{(node) => renderLayout({ ...input, node })}</For>
     </box>
   )
 }
@@ -417,10 +446,12 @@ export function OpencodeXViewRoute() {
   const { theme } = useTheme()
   const [, setOxSidebarOpen] = useOxSidebar()
   const [localFocus, setLocalFocus] = createSignal<string>()
-  const [view, { refetch }] = createResource(
+  let authoritativeFocusRevision = ""
+  const [loadedView, { refetch }] = createResource(
     () => route.viewID,
     (viewID) => sdk.request<OpencodeXView>(`/experimental/opencodex/view/${viewID}`),
   )
+  const view = createMemo(() => sync.data.opencodex_view.find((item) => item.id === route.viewID) ?? loadedView())
   const sessions = createMemo(() => {
     const byID = new Map(sync.data.session.map((session) => [session.id, session]))
     return (view()?.sessionIDs ?? [])
@@ -428,10 +459,12 @@ export function OpencodeXViewRoute() {
       .filter((session): session is SyncSession => session !== undefined)
       .slice(0, 8)
   })
-  const items = createMemo<ViewItem[]>(() => [
+  const items = createMemo<ViewItem[]>(() =>
+    [
     ...sessions().map((session): ViewItem => ({ kind: "session", session })),
     ...pendingViewSessions(view()).map((slot): ViewItem => ({ kind: "pending", slot })),
-  ].slice(0, 8))
+    ].slice(0, 8),
+  )
   const focusedItemID = createMemo(() => {
     const known = new Set(items().map(itemID))
     const local = localFocus()
@@ -443,6 +476,14 @@ export function OpencodeXViewRoute() {
   const layout = createMemo(() => viewLayout(items().length))
 
   createEffect(() => {
+    const current = view()
+    const revision = current ? `${current.id}:${current.timeUpdated}:${current.focusedSessionID ?? ""}` : ""
+    if (revision === authoritativeFocusRevision) return
+    authoritativeFocusRevision = revision
+    setLocalFocus(undefined)
+  })
+
+  createEffect(() => {
     const focused = focusedItemID()
     if (!focused || items().some((item) => itemID(item) === focused)) return
     const first = items()[0]
@@ -450,18 +491,26 @@ export function OpencodeXViewRoute() {
   })
 
   createEffect(() => {
-    sessions()
+    const timers = sessions()
       .filter((session) => local.session.lastViewed(session.id) < session.time.updated)
-      .forEach((session) => local.session.markViewed(session.id, Math.max(Date.now(), session.time.updated)))
+      .map((session) =>
+        setTimeout(
+          () => local.session.markViewed(session.id, Math.max(Date.now(), session.time.updated)),
+          SESSION_VIEWED_MARK_DELAY_MS,
+        ),
+      )
+    onCleanup(() => timers.forEach((timer) => clearTimeout(timer)))
   })
 
   onMount(() => {
     setOxSidebarOpen(() => true)
   })
 
-  onCleanup(onOpencodeXRefresh(() => {
+  onCleanup(
+    onOpencodeXRefresh(() => {
     if (router.data.type === "opencodex-view") void refetch()
-  }))
+    }),
+  )
 
   function focus(id: string) {
     if (focusedItemID() === id) return
@@ -473,13 +522,19 @@ export function OpencodeXViewRoute() {
         method: "PATCH",
         body: JSON.stringify({ focusedSessionID: item.session.id }),
       })
-      .catch(() => {})
+      .catch(() => {
+        setLocalFocus(undefined)
+        void refetch()
+      })
   }
 
   function move(offset: number) {
     const list = items()
     if (list.length === 0) return
-    const index = Math.max(0, list.findIndex((item) => itemID(item) === focusedItemID()))
+    const index = Math.max(
+      0,
+      list.findIndex((item) => itemID(item) === focusedItemID()),
+    )
     focus(itemID(list[(index + offset + list.length) % list.length]))
   }
 
@@ -487,15 +542,19 @@ export function OpencodeXViewRoute() {
     const current = view()
     const pending = pendingViewSessions(current).filter((item) => item.id !== slot.id)
     const sessionIDs = [...(current?.sessionIDs ?? []).filter((sessionID) => sessionID !== session.id), session.id]
-    await sdk.request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
+    await sdk
+      .request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
       method: "PATCH",
       body: JSON.stringify({
         sessionIDs,
         focusedSessionID: session.id,
         metadata: metadataWithPendingSessions(current?.metadata, pending),
       }),
-    }).catch(async (error: Error) => {
-      await sdk.request<boolean>(`/experimental/opencodex/session/${session.id}`, { method: "DELETE" }).catch(() => undefined)
+      })
+      .catch(async (error: Error) => {
+        await sdk
+          .request<boolean>(`/experimental/opencodex/session/${session.id}`, { method: "DELETE" })
+          .catch(() => undefined)
       throw error
     })
     setLocalFocus(session.id)
@@ -522,9 +581,27 @@ export function OpencodeXViewRoute() {
   useBindings(() => ({
     enabled: router.data.type === "opencodex-view",
     commands: [
-      { name: "opencodex.view.next", title: "Focus next view pane", category: "Views", hidden: true, run: () => move(1) },
-      { name: "opencodex.view.previous", title: "Focus previous view pane", category: "Views", hidden: true, run: () => move(-1) },
-      { name: "opencodex.view.delete_current", title: "Delete current view", category: "Views", hidden: true, run: () => void deleteView() },
+      {
+        name: "opencodex.view.next",
+        title: "Focus next view pane",
+        category: "Views",
+        hidden: true,
+        run: () => move(1),
+      },
+      {
+        name: "opencodex.view.previous",
+        title: "Focus previous view pane",
+        category: "Views",
+        hidden: true,
+        run: () => move(-1),
+      },
+      {
+        name: "opencodex.view.delete_current",
+        title: "Delete current view",
+        category: "Views",
+        hidden: true,
+        run: () => void deleteView(),
+      },
     ],
     bindings: [
       { key: "right", desc: "Focus next pane", group: "OpencodeX View", cmd: () => move(1) },

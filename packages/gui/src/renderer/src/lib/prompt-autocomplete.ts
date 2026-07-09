@@ -48,6 +48,7 @@ export function prunePromptPartsForInput(input: string, parts: PromptPart[]) {
 }
 
 export function restorePromptPartsFromEditedText(previous: PromptPart[], edited: string) {
+  if (!edited.includes("@")) return previous
   return prunePromptPartsForInput(edited, previous)
 }
 

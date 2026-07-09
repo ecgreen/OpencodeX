@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Database } from "@opencode-ai/core/database/database"
 import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql"
@@ -201,6 +201,49 @@ describe("EventV2", () => {
       yield* events.publish(SyncMessage, { id: "one", text: "after unsubscribe" })
 
       expect(received).toEqual(["projector", "listener", "projector"])
+    }),
+  )
+
+  it.effect("barrier waits for projector and listener completion without reentrant deadlock", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const projectorStarted = yield* Deferred.make<void>()
+      const releaseProjector = yield* Deferred.make<void>()
+      const listenerStarted = yield* Deferred.make<void>()
+      const releaseListener = yield* Deferred.make<void>()
+      const order = new Array<string>()
+
+      yield* events.project(SyncMessage, () =>
+        Effect.gen(function* () {
+          order.push("projector")
+          yield* Deferred.succeed(projectorStarted, undefined)
+          yield* Deferred.await(releaseProjector)
+        }),
+      )
+      yield* events.listen(() =>
+        Effect.gen(function* () {
+          order.push("listener")
+          yield* Deferred.succeed(listenerStarted, undefined)
+          yield* events.barrier(Effect.sync(() => order.push("reentrant")))
+          yield* Deferred.await(releaseListener)
+        }),
+      )
+
+      const publish = yield* events.publish(SyncMessage, { id: "barrier", text: "hello" }).pipe(Effect.forkScoped)
+      yield* Deferred.await(projectorStarted)
+      const read = yield* events.barrier(Effect.sync(() => order.push("read"))).pipe(Effect.forkScoped)
+      yield* Effect.yieldNow
+      expect(order).toEqual(["projector"])
+
+      yield* Deferred.succeed(releaseProjector, undefined)
+      yield* Deferred.await(listenerStarted)
+      yield* Effect.yieldNow
+      expect(order).toEqual(["projector", "listener", "reentrant"])
+
+      yield* Deferred.succeed(releaseListener, undefined)
+      yield* Fiber.join(publish)
+      yield* Fiber.join(read)
+      expect(order).toEqual(["projector", "listener", "reentrant", "read"])
     }),
   )
 

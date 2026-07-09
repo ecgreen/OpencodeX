@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { runSelectedSessionSync, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-sync"
+import { runSelectedSessionSync, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowSelectedSessionLoading, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-sync"
 import type { SessionData } from "../src/renderer/src/lib/store"
 
 describe("GUI session sync decisions", () => {
@@ -21,6 +21,27 @@ describe("GUI session sync decisions", () => {
   test("shows view loading only before a pane has loaded data", () => {
     expect(shouldShowViewSessionLoading()).toBe(true)
     expect(shouldShowViewSessionLoading(data())).toBe(false)
+  })
+
+  test("shows selected session loading only when no selected cache can cover it", () => {
+    expect(shouldShowSelectedSessionLoading({
+      sessionID: "s1",
+      loadedSessionID: "s2",
+    })).toBe(true)
+    expect(shouldShowSelectedSessionLoading({
+      sessionID: "s1",
+      loadedSessionID: "s2",
+      cachedData: data(),
+    })).toBe(false)
+    expect(shouldShowSelectedSessionLoading({
+      sessionID: "s1",
+      loadedSessionID: "s1",
+    })).toBe(false)
+    expect(shouldShowSelectedSessionLoading({
+      sessionID: "s1",
+      materializingSessionID: "s1",
+      loadedSessionID: "",
+    })).toBe(false)
   })
 
   test("keys concurrent view loads by session identity, directory, and update time", () => {

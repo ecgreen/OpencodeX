@@ -1,15 +1,14 @@
 import type { JSX } from "solid-js"
-import { For, Show } from "solid-js"
+import { For, Show, createSignal } from "solid-js"
 import type { PromptPart } from "../lib/store"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
-import { prunePromptPartsForInput } from "../lib/prompt-autocomplete"
 import { Icon } from "./icon"
 
 export function SessionComposer(props: {
   blocked: boolean
   running: boolean
-  mode: "plan" | "build"
+  mode: "plan" | "build" | "goal"
   draftPrompt: string
   draftParts: PromptPart[]
   draftText: string
@@ -39,13 +38,21 @@ export function SessionComposer(props: {
   selectSlashCommand: (offset: number) => void
   chooseMention: (option: PromptMentionOption) => void
   pasteFiles: (files: File[]) => void
+  addPickedContext: () => void
+  dropContext: (event: DragEvent) => void
   cycleVariant: () => void
   loadHistory: (offset: number) => boolean
   toggleMode: () => void
+  setMode: (mode: "build" | "plan" | "goal") => void
   selectVariant: (variant: string) => void
 }) {
+  const [addMenuOpen, setAddMenuOpen] = createSignal(false)
+  const chooseMode = (mode: "build" | "plan" | "goal") => {
+    props.setMode(mode)
+    setAddMenuOpen(false)
+  }
   return (
-    <form class="composer" onSubmit={props.submit}>
+    <form class="composer" onSubmit={props.submit} onDragOver={handleComposerDragOver} onDrop={props.dropContext}>
       <div class={`composer-input ${props.mode}`}>
         <Show when={props.slashMenuVisible}>
           <div class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
@@ -89,7 +96,6 @@ export function SessionComposer(props: {
           onInput={(event) => {
             const value = event.currentTarget.value
             props.setDraftPrompt(value)
-            props.setDraftParts((current) => prunePromptPartsForInput(value, current))
             props.setHistoryIndex(-1)
             props.setHistoryDraft("")
             props.setSlashMenuOpen(true)
@@ -104,10 +110,52 @@ export function SessionComposer(props: {
           onKeyDown={(event) => handleComposerKeyDown(event, props)}
           placeholder={props.blocked ? "Reply to the pending permission/question before continuing..." : "Message OpencodeX..."}
         />
+        <Show when={props.draftParts.length > 0}>
+          <div class="composer-context-preview" aria-label="Attached context">
+            <For each={props.draftParts}>
+              {(part) => (
+                <button type="button" title={partTitle(part)} onClick={() => removePart(part, props)}>
+                  <Show when={partPreviewURL(part)} fallback={<Icon name={partIcon(part)} />}>
+                    {(src) => <img class="composer-context-preview-image" src={src()} alt="" />}
+                  </Show>
+                  <span>{partLabel(part)}</span>
+                  <Icon name="x" />
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
         <div class="composer-footer">
           <div class="composer-meta" aria-live="polite">
-            <button class={`mode-chip ${props.mode}`} type="button" disabled={props.blocked} onClick={props.toggleMode} title="Toggle Build/Plan mode">
-              {props.mode === "plan" ? "Plan" : "Build"}
+            <div
+              class="composer-add-menu-wrap"
+              onFocusOut={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAddMenuOpen(false)
+              }}
+            >
+              <button
+                class="composer-add-context"
+                type="button"
+                disabled={props.blocked}
+                aria-haspopup="menu"
+                aria-expanded={addMenuOpen()}
+                onClick={() => setAddMenuOpen((open) => !open)}
+                title="Add context or change mode"
+                aria-label="Add context or change mode"
+              >
+                <Icon name="plus" />
+              </button>
+              <Show when={addMenuOpen()}>
+                <div class="composer-add-menu" role="menu" aria-label="Add context or change mode">
+                  <button type="button" role="menuitem" onClick={() => { props.addPickedContext(); setAddMenuOpen(false) }}>File & Folder context</button>
+                  <button type="button" role="menuitemradio" aria-checked={props.mode === "goal"} classList={{ selected: props.mode === "goal" }} onClick={() => chooseMode("goal")}>Goal mode</button>
+                  <button type="button" role="menuitemradio" aria-checked={props.mode === "build"} classList={{ selected: props.mode === "build" }} onClick={() => chooseMode("build")}>Build mode</button>
+                  <button type="button" role="menuitemradio" aria-checked={props.mode === "plan"} classList={{ selected: props.mode === "plan" }} onClick={() => chooseMode("plan")}>Plan mode</button>
+                </div>
+              </Show>
+            </div>
+            <button class={`mode-chip ${props.mode}`} type="button" disabled={props.blocked} onClick={props.toggleMode} title="Cycle mode">
+              {props.mode === "plan" ? "Plan" : props.mode === "goal" ? "Goal" : "Build"}
             </button>
             <button class="model-menu" type="button" disabled={props.blocked} onClick={() => props.setModelPickerOpen(true)} title="Choose model">{props.modelLabel}</button>
             <Show when={props.variants.length > 0}>
@@ -143,12 +191,7 @@ export function SessionComposer(props: {
               </div>
             </Show>
           </div>
-          <Show when={props.draftParts.length > 0}>
-            <div class="composer-stash-actions">
-              <span>{props.draftParts.length} attachment{props.draftParts.length === 1 ? "" : "s"}</span>
-            </div>
-          </Show>
-          <button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={props.blocked || props.draftText.length === 0}>
+          <button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={props.blocked || (props.draftText.length === 0 && props.draftParts.length === 0)}>
             <Icon name="arrowUp" />
           </button>
         </div>
@@ -172,6 +215,59 @@ export function SessionComposer(props: {
       </div>
     </form>
   )
+}
+
+function handleComposerDragOver(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes("Files")) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = "copy"
+}
+
+function removePart(part: PromptPart, props: Parameters<typeof SessionComposer>[0]) {
+  props.setDraftParts((current) => current.filter((item) => item !== part))
+  props.setDraftPrompt(partRemovalLabels(part).reduce((input, label) => input.replace(`@${label}`, ""), props.draftPrompt).replace(/\n{3,}/g, "\n\n").trim())
+}
+
+function partLabel(part: PromptPart) {
+  if (part.type === "agent") return part.name
+  if (part.type === "file") {
+    if (part.filename) return fileBasename(part.filename)
+    if (part.source?.type === "file") return fileBasename(part.source.path)
+    if (part.source?.type === "resource") return fileBasename(part.source.uri)
+    return "File"
+  }
+  return part.text.slice(0, 48) || "Text"
+}
+
+function partIcon(part: PromptPart) {
+  return part.type === "file" && part.mime === "application/x-directory" ? "folder" : "file"
+}
+
+function partPreviewURL(part: PromptPart) {
+  if (part.type !== "file" || !part.mime.startsWith("image/")) return
+  return part.url
+}
+
+function partTitle(part: PromptPart) {
+  if (part.type !== "file") return partLabel(part)
+  return part.source?.type === "file" ? part.source.path : part.source?.type === "resource" ? part.source.uri : part.filename ?? "File"
+}
+
+function partRemovalLabels(part: PromptPart) {
+  if (part.type === "agent") return [part.name]
+  if (part.type !== "file") return []
+  return [
+    part.filename,
+    part.filename ? fileBasename(part.filename) : undefined,
+    part.source?.type === "file" ? part.source.path : undefined,
+    part.source?.type === "file" ? fileBasename(part.source.path) : undefined,
+    part.source?.type === "resource" ? part.source.uri : undefined,
+    part.source?.type === "resource" ? fileBasename(part.source.uri) : undefined,
+  ].filter((item, index, labels): item is string => Boolean(item) && labels.indexOf(item) === index)
+}
+
+function fileBasename(value: string) {
+  return value.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).at(-1) ?? value
 }
 
 function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }, props: Parameters<typeof SessionComposer>[0]) {

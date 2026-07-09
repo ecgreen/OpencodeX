@@ -1,4 +1,4 @@
-import { createStore } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { updateClientSessionState } from "@opencode-ai/sdk/v2"
 import { batch, createEffect, createMemo } from "solid-js"
@@ -6,6 +6,7 @@ import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { useRoute } from "@tui/context/route"
 import { useEvent } from "@tui/context/event"
+import { markViewedSessionUiState } from "./session-viewed"
 import { uniqueBy } from "remeda"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
@@ -150,7 +151,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         moveSession(sessionID: string, direction: 1 | -1, currentName?: string) {
           batch(() => {
-            const current = agents().find((x) => x.name === currentName) ?? this.currentForSession(sessionID) ?? this.current()
+            const current =
+              agents().find((x) => x.name === currentName) ?? this.currentForSession(sessionID) ?? this.current()
             if (!current) return
             let next = agents().findIndex((x) => x.name === current.name) + direction
             if (next < 0) next = agents().length - 1
@@ -499,7 +501,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             return selectedVariant()
           },
           selectedForSession(sessionID: string, model: ModelSelection, fallback?: string) {
-            if (modelStore.sessionVariant[sessionID] !== undefined) return normalizeVariant(model, modelStore.sessionVariant[sessionID])
+            if (modelStore.sessionVariant[sessionID] !== undefined)
+              return normalizeVariant(model, modelStore.sessionVariant[sessionID])
             if (fallback !== undefined) return normalizeVariant(model, fallback)
             const session = sync.session.get(sessionID)
             if (session?.model?.variant !== undefined) return normalizeVariant(model, session.model.variant)
@@ -537,7 +540,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             setModelStore("variant", key, value ?? "default")
             save()
           },
-          setForSession(sessionID: string, model: ModelSelection, value: string | undefined, options?: { persist?: boolean }) {
+          setForSession(
+            sessionID: string,
+            model: ModelSelection,
+            value: string | undefined,
+            options?: { persist?: boolean },
+          ) {
             setModelStore("sessionVariant", sessionID, value ?? "default")
             if (options?.persist !== false) persistSessionModelForSession(sessionID, model, value)
             save()
@@ -650,25 +658,28 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return sessionStore.pinned.includes(sessionID)
         },
         lastViewed(sessionID: string) {
-          return sessionStore.viewed[sessionID] ?? 0
+          return Math.max(sessionStore.viewed[sessionID] ?? 0, sync.data.session_ui_state[sessionID]?.seenAt ?? 0)
         },
         markViewed(sessionID: string, time = Date.now()) {
+          const previous = sessionStore.viewed[sessionID]
           setSessionStore("viewed", sessionID, time)
           const session = sync.session.get(sessionID)
-          const current = sync.data.session_ui_state[sessionID]
-          const reviewedAt = Math.max(time, current?.reviewedAt ?? 0)
-          sync.set("session_ui_state", sessionID, {
+          sync.set(
+            "session_ui_state",
             sessionID,
-            seenAt: Math.max(time, current?.seenAt ?? 0),
-            reviewedAt,
-            reviewedFiles: current?.reviewedFiles ?? [],
-            displayStatus:
-              current?.displayStatus === "needs_review" && (session?.time.updated ?? 0) <= reviewedAt
-                ? "idle"
-                : (current?.displayStatus ?? "idle"),
-            updated: (session?.time.updated ?? 0) > time,
+            markViewedSessionUiState(sessionID, sync.data.session_ui_state[sessionID], time, session?.time.updated),
+          )
+          void updateClientSessionState(sdk.client, sessionID, { seenAt: time }).catch(() => {
+            setSessionStore(
+              "viewed",
+              produce((draft) => {
+                if (previous === undefined) delete draft[sessionID]
+                else draft[sessionID] = previous
+              }),
+            )
+            void sync.session.refresh().catch(() => {})
+            save()
           })
-          void updateClientSessionState(sdk.client, sessionID, { seenAt: time, reviewedAt: time }).catch(() => {})
           save()
         },
         togglePin(sessionID: string) {
@@ -738,9 +749,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         togglePin(viewID: string) {
           batch(() => {
             const exists = viewStore.pinned.includes(viewID)
-            const next = exists
-              ? viewStore.pinned.filter((x) => x !== viewID)
-              : [...viewStore.pinned, viewID]
+            const next = exists ? viewStore.pinned.filter((x) => x !== viewID) : [...viewStore.pinned, viewID]
             setViewStore("pinned", next)
             save()
           })

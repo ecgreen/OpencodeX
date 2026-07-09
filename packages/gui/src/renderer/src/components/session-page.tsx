@@ -1,4 +1,4 @@
-import type { Provider } from "@opencode-ai/sdk/v2/client"
+import type { Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
@@ -10,10 +10,11 @@ import {
   type GuiPromptInfo,
   type GuiPromptStashEntry,
 } from "../lib/prompt-state"
-import { buildPromptMentionOptions, prunePromptPartsForInput, referenceSearch, type PromptMentionOption } from "../lib/prompt-autocomplete"
+import { buildPromptMentionOptions, referenceSearch, type PromptMentionOption } from "../lib/prompt-autocomplete"
 import {
   clearComposerDraft,
   filePartFromFile,
+  filePartFromPath,
   formatTokenCount,
   isAssistantMessage,
   readComposerDraft,
@@ -37,8 +38,8 @@ export function SessionPage(props: SessionPageProps) {
   const session = () => props.session
   const blocked = () => props.permissions.length > 0 || props.questions.length > 0
   let transcriptExpandedSessionID = ""
+  let transcriptExpandedSessionKey = ""
   let composerTextarea: HTMLTextAreaElement | undefined
-  let startTranscriptPromptFollow: (() => void) | undefined
   const [modelPickerOpen, setModelPickerOpen] = createSignal(false)
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
   const [modelQuery, setModelQuery] = createSignal("")
@@ -48,12 +49,14 @@ export function SessionPage(props: SessionPageProps) {
   const [stash, setStash] = createSignal<GuiPromptStashEntry[]>(readComposerStash())
   const [localHistoryIndex, setLocalHistoryIndex] = createSignal(-1)
   const [localHistoryDraft, setLocalHistoryDraft] = createSignal("")
-  const [sidePanelOpen, setSidePanelOpen] = createSignal(readSidePanelOpen())
+  const sidePanelEnabled = () => props.sidePanelEnabled !== false
+  const [sidePanelOpen, setSidePanelOpen] = createSignal(sidePanelEnabled() ? initialSidePanelOpen(props.session) : false)
   const [sidePanelWidthRatio, setSidePanelWidthRatio] = createSignal(readSidePanelWidthRatio())
   const [sidePanelRequest, setSidePanelRequest] = createSignal<SessionSidePanelRequest>()
-  const sidePanelEnabled = () => props.sidePanelEnabled !== false
   const [slashMenuOpen, setSlashMenuOpen] = createSignal(false)
   const [selectedSlashCommand, setSelectedSlashCommand] = createSignal(0)
+  const [emptyStateDismissed, setEmptyStateDismissed] = createSignal(false)
+  let loadedSidePanelSessionID = props.session?.id ?? ""
   const composerState = () => props.composerState ?? EMPTY_VIEW_PANE_RUNTIME_STATE
   const draftPrompt = () => props.composerState ? composerState().draft.input : localDraftPrompt()
   const draftParts = () => props.composerState ? composerState().draft.parts : localDraftParts()
@@ -137,9 +140,15 @@ export function SessionPage(props: SessionPageProps) {
     return props.providers.find((provider) => provider.id === selection.providerID)?.models[selection.modelID]
   })
   const variants = createMemo(() => Object.keys(activeModel()?.variants ?? {}))
-  const mode = createMemo(() => props.selectedAgent === "plan" ? "plan" : "build")
+  const mode = createMemo(() => props.selectedAgent === "plan" ? "plan" : props.selectedAgent === "goal" ? "goal" : "build")
   const running = createMemo(() => props.status === "busy" || props.status === "retry")
-  const sessionStarted = createMemo(() => props.loading || props.data.messages.length > 0 || props.status === "busy" || props.status === "retry" || blocked())
+  const toolbarSession = createMemo(() => {
+    const selected = session()
+    if (!selected || selected.id.startsWith("pending:")) return
+    return selected
+  })
+  const sidePanelSession = createMemo(() => sidePanelEnabled() ? session() : undefined)
+  const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
   const slashQuery = createMemo(() => {
     const draft = draftPrompt()
@@ -209,7 +218,8 @@ export function SessionPage(props: SessionPageProps) {
   })
   const modelLabel = () => props.selectedModel && activeProvider() && activeModel() ? `${activeModel()!.name ?? activeModel()!.id} ${activeProvider()!.name}` : "Select model"
   const variantLabel = () => props.selectedVariant || "Default"
-  const toggleMode = () => props.setSelectedAgent(mode() === "plan" ? "build" : "plan")
+  const setMode = (mode: "build" | "plan" | "goal") => props.setSelectedAgent(mode)
+  const toggleMode = () => props.setSelectedAgent(mode() === "build" ? "plan" : mode() === "plan" ? "goal" : "build")
   const selectVariant = (variant: string) => {
     props.setSelectedVariant(variant)
     setVariantPickerOpen(false)
@@ -243,11 +253,12 @@ export function SessionPage(props: SessionPageProps) {
   const submitComposer = (event: SubmitEvent) => {
     event.preventDefault()
     const text = draftText()
-    if (blocked() || !text) return
     const parts = draftParts()
+    if (blocked() || (!text && parts.length === 0)) return
+    if (props.pending && sidePanelOpen()) requestPendingSidePanelOpenHandoff(props.session)
     const shellText = text.startsWith("!") ? text.slice(1).trimStart() : undefined
     const promptText = shellText ?? text
-    startTranscriptPromptFollow?.()
+    setEmptyStateDismissed(true)
     setDraftPrompt("")
     setDraftParts([])
     setHistoryIndex(-1)
@@ -256,7 +267,7 @@ export function SessionPage(props: SessionPageProps) {
     clearComposerDraft(session()?.id)
     props.submit(event, {
       input: promptText,
-      parts: shellText !== undefined ? [] : parts.length ? [{ type: "text", text }, ...parts] : [{ type: "text", text }],
+      parts: shellText !== undefined ? [] : parts.length ? [...(text ? [{ type: "text" as const, text }] : []), ...parts] : [{ type: "text", text }],
       ...(shellText !== undefined ? { mode: "shell" } : {}),
     })
   }
@@ -276,9 +287,9 @@ export function SessionPage(props: SessionPageProps) {
     requestAnimationFrame(resizeComposer)
   }
   const chooseMention = (option: PromptMentionOption) => {
-    const nextPrompt = draftPrompt().replace(/(^|\s)@[^\s@]*$/, `$1${option.replacement}`)
+    const nextPrompt = removeTrailingMentionQuery(draftPrompt())
     setDraftPrompt(nextPrompt)
-    setDraftParts((current) => [...prunePromptPartsForInput(nextPrompt, current), option.part])
+    setDraftParts((current) => [...current, option.part])
     requestAnimationFrame(resizeComposer)
   }
   const stashPrompt = () => {
@@ -320,6 +331,26 @@ export function SessionPage(props: SessionPageProps) {
     const parts = await Promise.all(files.map(filePartFromFile))
     setDraftParts((current) => [...current, ...parts])
   }
+  const addContextPaths = (items: Array<{ path: string; type?: "file" | "directory" }>) => {
+    const context = items.map((item) => ({ ...item, path: item.path.trim() })).filter((item) => item.path)
+    if (context.length === 0) return
+    setDraftParts((current) => [...current, ...context.map((item) => filePartFromPath(item))])
+    requestAnimationFrame(resizeComposer)
+  }
+  const addPickedContext = async () => {
+    const items = await window.opencodex?.contextPaths?.(session()?.directory)
+    if (!items?.length) return
+    addContextPaths(items)
+  }
+  const dropContext = async (event: DragEvent) => {
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    if (files.length === 0) return
+    event.preventDefault()
+    const dropped = files.map((file) => ({ file, path: window.opencodex?.pathForFile?.(file) || file.webkitRelativePath }))
+    const paths = dropped.map((item) => item.path).filter((item): item is string => Boolean(item))
+    if (paths.length > 0) addContextPaths(paths.map((path) => ({ path })))
+    if (paths.length < files.length) await pasteFiles(dropped.filter((item) => !item.path).map((item) => item.file))
+  }
   const selectSlashCommand = (offset: number) => {
     const count = visibleSlashCommands().length
     if (count === 0) return
@@ -343,8 +374,12 @@ export function SessionPage(props: SessionPageProps) {
   })
   createEffect(() => {
     const id = props.session?.id ?? ""
-    if (id === transcriptExpandedSessionID) return
+    const key = `${id}:${props.session?.directory ?? ""}:${props.pending ? "pending" : "ready"}`
+    if (key === transcriptExpandedSessionKey) return
+    const previousID = transcriptExpandedSessionID
+    transcriptExpandedSessionKey = key
     transcriptExpandedSessionID = id
+    if (!(emptyStateDismissed() && previousID.startsWith("pending:") && id && !id.startsWith("pending:"))) setEmptyStateDismissed(false)
     if (!props.composerState) {
       const saved = readComposerDraft(id)
       setDraftPrompt(saved?.input ?? props.prompt)
@@ -364,7 +399,16 @@ export function SessionPage(props: SessionPageProps) {
   })
   createEffect(() => {
     if (!sidePanelEnabled()) return
-    writeSidePanelOpen(sidePanelOpen())
+    const id = props.session?.id ?? ""
+    if (id === loadedSidePanelSessionID) return
+    const keepPendingPanelOpen = loadedSidePanelSessionID.startsWith("pending:") && sidePanelOpen()
+    loadedSidePanelSessionID = id
+    setSidePanelOpen(id ? keepPendingPanelOpen || initialSidePanelOpen(props.session) : false)
+  })
+  createEffect(() => {
+    if (!sidePanelEnabled()) return
+    const id = props.session?.id
+    if (id && loadedSidePanelSessionID === id) writeSidePanelOpen(id, sidePanelOpen())
     writeSidePanelWidthRatio(sidePanelWidthRatio())
   })
   const openSidePanelTarget = (request: SessionSidePanelTarget = { tab: "git" }) => {
@@ -375,9 +419,9 @@ export function SessionPage(props: SessionPageProps) {
     if (!sidePanelEnabled()) return
     openSidePanel(request)
   }
-  const openSidePanel = (request: SessionSidePanelTarget = { tab: "git" }) => {
+  const openSidePanel = (request?: SessionSidePanelTarget) => {
     setSidePanelOpen(true)
-    setSidePanelRequest({ ...request, token: Date.now() } as SessionSidePanelRequest)
+    if (request) setSidePanelRequest({ ...request, token: Date.now() } as SessionSidePanelRequest)
   }
   const toggleSidePanel = () => {
     if (sidePanelOpen()) {
@@ -389,6 +433,7 @@ export function SessionPage(props: SessionPageProps) {
   const startSidePanelResize = (event: PointerEvent & { currentTarget: HTMLElement }) => {
     event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
+    window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-start"))
     const container = event.currentTarget.parentElement
     const containerWidth = container?.getBoundingClientRect().width ?? window.innerWidth
     const startX = event.clientX
@@ -399,13 +444,30 @@ export function SessionPage(props: SessionPageProps) {
     const onUp = () => {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
+      window.removeEventListener("pointercancel", onUp)
+      window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-end"))
     }
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
+    window.addEventListener("pointercancel", onUp)
   }
   const openTranscriptTarget = (event: MouseEvent) => {
     const target = event.target
-    if (!(target instanceof HTMLElement)) return
+    if (!(target instanceof Element)) return
+    const gitTarget = target.closest<HTMLElement>("[data-side-panel-git-file]")
+    const gitPath = gitTarget?.dataset.sidePanelGitFile
+    if (gitPath) {
+      event.preventDefault()
+      openSidePanelTarget({ tab: "git", value: gitPath })
+      return
+    }
+    const openTarget = target.closest<HTMLElement>("[data-side-panel-open-file]")
+    const openPath = openTarget?.dataset.sidePanelOpenFile
+    if (openPath) {
+      event.preventDefault()
+      openSidePanelTarget({ tab: "open", value: openPath })
+      return
+    }
     const fileTarget = target.closest<HTMLElement>("[data-side-panel-file]")
     const filePath = fileTarget?.dataset.sidePanelFile
     if (filePath) {
@@ -427,35 +489,54 @@ export function SessionPage(props: SessionPageProps) {
     }
   }
   return (
-    <div class="page session-page" data-session-id={session()?.id} classList={{ "session-empty": !sessionStarted() }}>
-      <Show when={session()} fallback={<Empty text="Session not found" />}>
-        {(selected) => (
-          <>
-            <div class="session-page-top">
-              <SessionToolbar
-                session={selected()}
-                status={props.status}
-                blocked={blocked()}
-                pending={props.pending}
-                concealCodeBlocks={props.concealCodeBlocks}
-                showTimestamps={props.showTimestamps}
-                showThinking={props.showThinking}
-                showToolDetails={props.showToolDetails}
-                showScrollbar={props.showScrollbar}
-                showGenericToolOutput={props.showGenericToolOutput}
-                abortSession={props.abortSession}
-                renameSession={props.renameSession}
-                moveSession={props.moveSession}
-                deleteSession={props.deleteSession}
-                toggleCodeConceal={props.toggleCodeConceal}
-                toggleTimestamps={props.toggleTimestamps}
-                toggleThinking={props.toggleThinking}
-                toggleToolDetails={props.toggleToolDetails}
-                toggleScrollbar={props.toggleScrollbar}
-                toggleGenericToolOutput={props.toggleGenericToolOutput}
-                sidePanelOpen={sidePanelEnabled() ? sidePanelOpen() : undefined}
-                toggleSidePanel={sidePanelEnabled() ? toggleSidePanel : undefined}
-              />
+    <div class="page session-page" data-session-id={session()?.id}>
+      <div class="session-page-top">
+        <Show when={toolbarSession()}>
+          {(selected) => (
+            <SessionToolbar
+              session={selected()}
+              projectName={props.projectName}
+              pending={props.pending}
+              showTimestamps={props.showTimestamps}
+              showThinking={props.showThinking}
+              showToolDetails={props.showToolDetails}
+              showScrollbar={props.showScrollbar}
+              showGenericToolOutput={props.showGenericToolOutput}
+              renameSession={props.renameSession}
+              moveSession={props.moveSession}
+              deleteSession={props.deleteSession}
+              readyForReview={props.readyForReview}
+              markSessionReviewed={props.markSessionReviewed}
+              toggleTimestamps={props.toggleTimestamps}
+              toggleThinking={props.toggleThinking}
+              toggleToolDetails={props.toggleToolDetails}
+              toggleScrollbar={props.toggleScrollbar}
+              toggleGenericToolOutput={props.toggleGenericToolOutput}
+              sidePanelOpen={sidePanelEnabled() ? sidePanelOpen() : undefined}
+              toggleSidePanel={sidePanelEnabled() ? toggleSidePanel : undefined}
+            />
+          )}
+        </Show>
+      </div>
+      <div class="session-main" onClick={openTranscriptTarget}>
+        <div class="session-workspace">
+          <TranscriptPanel
+            sessionID={transcriptSessionID()}
+            data={props.data}
+            loading={props.loading}
+            providers={props.providers}
+            showTimestamps={props.showTimestamps}
+            showThinking={props.showThinking}
+            showToolDetails={props.showToolDetails}
+            showScrollbar={props.showScrollbar}
+            showGenericToolOutput={props.showGenericToolOutput}
+            running={running()}
+            emptyStateDismissed={emptyStateDismissed()}
+            emptyStateHandoff={props.pending === true && emptyStateDismissed()}
+            loadOlderMessages={props.loadOlderMessages}
+          />
+          <Show when={blocked()}>
+            <div class="session-feedback">
               <For each={props.permissions}>
                 {(request) => <PermissionPanel request={request} tool={permissionToolPart(request, props.data.messages)} reply={props.replyPermission} />}
               </For>
@@ -463,93 +544,83 @@ export function SessionPage(props: SessionPageProps) {
                 {(request) => <QuestionPanel request={request} reply={props.replyQuestion} reject={props.rejectQuestion} />}
               </For>
             </div>
-            <div class="session-main" onClick={openTranscriptTarget}>
-              <TranscriptPanel
-                sessionID={selected().id}
-                data={props.data}
-                loading={props.loading}
-                providers={props.providers}
-                concealCodeBlocks={props.concealCodeBlocks}
-                showTimestamps={props.showTimestamps}
-                showThinking={props.showThinking}
-                showToolDetails={props.showToolDetails}
-                showScrollbar={props.showScrollbar}
-                showGenericToolOutput={props.showGenericToolOutput}
-                setPromptFollowStarter={(start) => { startTranscriptPromptFollow = start }}
-                loadOlderMessages={props.loadOlderMessages}
-              />
-              <Show when={sidePanelEnabled()}>
-                <SessionSidePanel
-                  open={sidePanelOpen()}
-                  widthRatio={sidePanelWidthRatio()}
-                  session={selected()}
-                  data={props.data}
-                  providers={props.providers}
-                  mcp={props.mcp}
-                  lsp={props.lsp}
-                  config={props.config}
-                  gui={props.gui}
-                  directory={props.sidePanelDirectory ?? selected().directory}
-                  request={sidePanelRequest()}
-                  startResize={startSidePanelResize}
-                  close={() => setSidePanelOpen(false)}
-                />
-              </Show>
-            </div>
-            <SessionComposer
-              blocked={blocked()}
-              running={running()}
-              mode={mode()}
-              draftPrompt={draftPrompt()}
-              draftParts={draftParts()}
-              draftText={draftText()}
-              slashMenuVisible={slashMenuVisible()}
-              visibleSlashCommands={visibleSlashCommands()}
-              selectedSlashCommand={selectedSlashCommand()}
-              mentionMenuVisible={mentionMenuVisible()}
-              mentionOptions={mentionOptions()}
-              variants={variants()}
-              variantPickerOpen={variantPickerOpen()}
-              selectedVariant={props.selectedVariant}
-              modelLabel={modelLabel()}
-              variantLabel={variantLabel()}
-              usageLabel={usageLabel()}
-              submit={submitComposer}
-              setTextarea={(element) => { composerTextarea = element }}
-              setDraftPrompt={setDraftPrompt}
-              setDraftParts={setDraftParts}
-              setHistoryIndex={setHistoryIndex}
-              setHistoryDraft={setHistoryDraft}
-              setSlashMenuOpen={setSlashMenuOpen}
-              setSelectedSlashCommand={setSelectedSlashCommand}
-              setModelPickerOpen={setModelPickerOpen}
-              setVariantPickerOpen={setVariantPickerOpen}
-              runSlashCommand={runSlashCommand}
-              completeSlashCommand={completeSlashCommand}
-              selectSlashCommand={selectSlashCommand}
-              chooseMention={chooseMention}
-              pasteFiles={(files) => void pasteFiles(files)}
-              cycleVariant={cycleVariant}
-              loadHistory={loadHistory}
-              toggleMode={toggleMode}
-              selectVariant={selectVariant}
+          </Show>
+          <SessionComposer
+            blocked={blocked()}
+            running={running()}
+            mode={mode()}
+            draftPrompt={draftPrompt()}
+            draftParts={draftParts()}
+            draftText={draftText()}
+            slashMenuVisible={slashMenuVisible()}
+            visibleSlashCommands={visibleSlashCommands()}
+            selectedSlashCommand={selectedSlashCommand()}
+            mentionMenuVisible={mentionMenuVisible()}
+            mentionOptions={mentionOptions()}
+            variants={variants()}
+            variantPickerOpen={variantPickerOpen()}
+            selectedVariant={props.selectedVariant}
+            modelLabel={modelLabel()}
+            variantLabel={variantLabel()}
+            usageLabel={usageLabel()}
+            submit={submitComposer}
+            setTextarea={(element) => { composerTextarea = element }}
+            setDraftPrompt={setDraftPrompt}
+            setDraftParts={setDraftParts}
+            setHistoryIndex={setHistoryIndex}
+            setHistoryDraft={setHistoryDraft}
+            setSlashMenuOpen={setSlashMenuOpen}
+            setSelectedSlashCommand={setSelectedSlashCommand}
+            setModelPickerOpen={setModelPickerOpen}
+            setVariantPickerOpen={setVariantPickerOpen}
+            runSlashCommand={runSlashCommand}
+            completeSlashCommand={completeSlashCommand}
+            selectSlashCommand={selectSlashCommand}
+            chooseMention={chooseMention}
+            pasteFiles={(files) => void pasteFiles(files)}
+            addPickedContext={() => void addPickedContext()}
+            dropContext={(event) => void dropContext(event)}
+            cycleVariant={cycleVariant}
+            loadHistory={loadHistory}
+            toggleMode={toggleMode}
+            setMode={setMode}
+            selectVariant={selectVariant}
+          />
+        </div>
+        <Show when={sidePanelSession()}>
+          {(selected) => (
+            <SessionSidePanel
+              open={sidePanelOpen()}
+              widthRatio={sidePanelWidthRatio()}
+              session={selected()}
+              data={props.data}
+              providers={props.providers}
+              mcp={props.mcp}
+              lsp={props.lsp}
+              config={props.config}
+              gui={props.gui}
+              directory={props.sidePanelDirectory ?? selected().directory}
+              request={sidePanelRequest()}
+              startResize={startSidePanelResize}
+              close={() => setSidePanelOpen(false)}
             />
-            <Show when={modelPickerOpen()}>
-              <SessionModelPicker
-                query={modelQuery()}
-                favorites={favoriteModels()}
-                selectedModel={props.selectedModel}
-                favoriteOptions={filteredFavoriteModelOptions()}
-                recentOptions={filteredRecentModelOptions()}
-                providerGroups={filteredProviderModelOptions()}
-                close={() => setModelPickerOpen(false)}
-                setQuery={setModelQuery}
-                select={selectModel}
-                toggleFavorite={toggleFavoriteModel}
-              />
-            </Show>
-          </>
-        )}
+          )}
+        </Show>
+      </div>
+      <Show when={modelPickerOpen()}>
+        <SessionModelPicker
+          query={modelQuery()}
+          favorites={favoriteModels()}
+          selectedModel={props.selectedModel}
+          favoriteOptions={filteredFavoriteModelOptions()}
+          recentOptions={filteredRecentModelOptions()}
+          providerGroups={filteredProviderModelOptions()}
+          connectedProviderIDs={props.connectedProviderIDs ?? []}
+          close={() => setModelPickerOpen(false)}
+          setQuery={setModelQuery}
+          select={selectModel}
+          toggleFavorite={toggleFavoriteModel}
+        />
       </Show>
     </div>
   )
@@ -561,21 +632,43 @@ function filterModelOptions(options: ModelPickerOption[], query: string) {
   return options.filter((option) => `${option.model.name ?? option.model.id} ${option.provider.name}`.toLowerCase().includes(needle))
 }
 
-function Empty(props: { text: string }) {
-  return <div class="empty">{props.text}</div>
+function removeTrailingMentionQuery(input: string) {
+  return input.replace(/(^|\s)@[^\s@]*$/, "$1").replace(/[ \t]+$/, "")
 }
 
-const SIDE_PANEL_OPEN_KEY = "opencodex.gui.sessionSidePanel.open"
 const SIDE_PANEL_WIDTH_KEY = "opencodex.gui.sessionSidePanel.width"
+const sidePanelOpenBySessionID = new Map<string, boolean>()
+let pendingSidePanelOpenHandoff: { directory: string; expires: number } | undefined
 
-function readSidePanelOpen() {
-  if (typeof localStorage === "undefined") return false
-  return localStorage.getItem(SIDE_PANEL_OPEN_KEY) === "open"
+function readSidePanelOpen(sessionID: string) {
+  return sidePanelOpenBySessionID.get(sessionID) ?? false
 }
 
-function writeSidePanelOpen(value: boolean) {
-  if (typeof localStorage === "undefined") return
-  localStorage.setItem(SIDE_PANEL_OPEN_KEY, value ? "open" : "closed")
+function writeSidePanelOpen(sessionID: string, value: boolean) {
+  sidePanelOpenBySessionID.set(sessionID, value)
+}
+
+function initialSidePanelOpen(session: Session | undefined) {
+  if (!session?.id) return false
+  if (takePendingSidePanelOpenHandoff(session)) return true
+  if (session.id.startsWith("pending:")) return false
+  return readSidePanelOpen(session.id)
+}
+
+function requestPendingSidePanelOpenHandoff(session: Session | undefined) {
+  pendingSidePanelOpenHandoff = { directory: session?.directory ?? "", expires: Date.now() + 30_000 }
+}
+
+function takePendingSidePanelOpenHandoff(session: Session | undefined) {
+  const handoff = pendingSidePanelOpenHandoff
+  if (!handoff) return false
+  if (Date.now() > handoff.expires) {
+    pendingSidePanelOpenHandoff = undefined
+    return false
+  }
+  if (handoff.directory && session?.directory && handoff.directory !== session.directory) return false
+  pendingSidePanelOpenHandoff = undefined
+  return true
 }
 
 function readSidePanelWidthRatio() {

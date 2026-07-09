@@ -142,7 +142,7 @@
 .slash-command-menu button,
 .choice-list button,
 .command-palette-list button,
-.model-picker-section button {
+.model-option-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background:
@@ -159,8 +159,8 @@
 .choice-list button:hover,
 .command-palette-list button:hover:not(:disabled),
 .command-palette-list button.selected:not(:disabled),
-.model-picker-section button:hover,
-.model-picker-section button.selected {
+.model-option-card:hover,
+.model-option-card.selected {
   border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
   background: var(--surface-hover);
   transform: translateY(-1px);
@@ -284,7 +284,7 @@
 
 .command-palette-list button,
 .choice-list button,
-.model-picker-section button {
+.model-option-card {
   background: color-mix(in srgb, var(--surface-raised) 80%, var(--bg));
 }
 

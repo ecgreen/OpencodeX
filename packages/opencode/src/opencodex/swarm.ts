@@ -233,57 +233,42 @@ function defaultTitle(prompt?: string) {
   return firstLine.length > 80 ? firstLine.slice(0, 77) + "..." : firstLine || "New swarm"
 }
 
-function defaultRoles(prompt?: string): RoleInput[] {
-  const task = prompt?.trim()
+function defaultRoles(): RoleInput[] {
   return [
     {
       name: "Orchestrator",
       skill: "orchestrator",
-      instructions: task
-        ? `Coordinate the swarm, send discovery work to Product Manager and Designer when relevant, convert their findings into detailed engineering tickets, identify dependencies between roles, and produce a final handoff for this request:\n\n${task}`
-        : "Coordinate the swarm, send discovery work to Product Manager and Designer when relevant, convert their findings into detailed engineering tickets, identify dependencies between roles, and produce a final handoff for assigned tasks.",
+      instructions: "",
     },
     {
       name: "Product Manager",
       skill: "product-manager",
-      instructions: task
-        ? `Clarify the product goal, user workflows, acceptance criteria, and tradeoffs for this request:\n\n${task}`
-        : "Clarify the product goal, user workflows, acceptance criteria, and tradeoffs for assigned tasks.",
+      instructions: "",
     },
     {
       name: "Designer",
       skill: "designer",
-      instructions: task
-        ? `Analyze the UI and UX implications for this request, including flows, layout, interaction states, accessibility, and ticket-ready design requirements:\n\n${task}`
-        : "Analyze UI and UX implications for assigned tasks, including flows, layout, interaction states, accessibility, and ticket-ready design requirements.",
+      instructions: "",
     },
     {
       name: "Architect",
       skill: "architect",
-      instructions: task
-        ? `Identify the technical design, integration points, data flow, and implementation risks for this request:\n\n${task}`
-        : "Identify the technical design, integration points, data flow, and implementation risks for assigned tasks.",
+      instructions: "",
     },
     {
       name: "Senior Engineer",
       skill: "senior-engineer",
-      instructions: task
-        ? `Plan or implement the engineering work for this request, using orchestrator tickets plus Product Manager, Designer, and Architect handoffs when available:\n\n${task}`
-        : "Plan or implement engineering work for assigned tasks, using orchestrator tickets plus Product Manager, Designer, and Architect handoffs when available.",
+      instructions: "",
     },
     {
       name: "QA Engineer",
       skill: "qa-engineer",
-      instructions: task
-        ? `Define validation strategy, edge cases, and regression risks for this request:\n\n${task}`
-        : "Define validation strategy, edge cases, and regression risks for assigned tasks.",
+      instructions: "",
     },
     {
       name: "Code Reviewer",
       skill: "code-reviewer",
-      instructions: task
-        ? `Review completed or proposed work for correctness, maintainability, regressions, and missing validation:\n\n${task}`
-        : "Review completed or proposed work for correctness, maintainability, regressions, and missing validation on assigned tasks.",
+      instructions: "",
     },
   ]
 }
@@ -302,7 +287,6 @@ function validateRoles(roles: readonly RoleInput[]) {
     return "A swarm requires at least one non-Orchestrator role."
   }
   if (roles.some((role) => role.name.trim().length === 0)) return "Every swarm role needs a name."
-  if (roles.some((role) => role.instructions.trim().length === 0)) return "Every swarm role needs instructions."
   return undefined
 }
 
@@ -419,18 +403,19 @@ function errorMessage(error: unknown) {
 
 function rolePrompt(input: { swarm: Info; role: Role }) {
   const skill = input.role.skill ? `Use the "${input.role.skill}" role skill if it is available.` : undefined
+  const instructions = input.role.instructions.trim()
   return [
     `You are running as the "${input.role.name}" role in an OpencodeX swarm.`,
     "",
     "Swarm goal:",
     input.swarm.prompt,
-    "",
-    "Role instructions:",
-    input.role.instructions,
-    "",
+    instructions ? "" : undefined,
+    instructions ? "Custom role instructions:" : undefined,
+    instructions || undefined,
+    instructions ? "" : undefined,
     skill,
     "Work independently and produce a concise handoff for the rest of the swarm.",
-    "Do not wait for other roles unless your role instructions explicitly require it.",
+    instructions ? "Do not wait for other roles unless your custom instructions explicitly require it." : undefined,
     "",
     "End with this handoff format:",
     "",
@@ -510,7 +495,7 @@ function orchestratorRunPrompt(input: { swarm: Info; run: Run; orchestrator: Rol
     "If team members share the same name or skill, disambiguate them in your own plan before starting workers; do not send identical broad prompts to duplicate roles.",
     "",
     "Use the task tool to start private worker sessions for specific team members.",
-    'When a role does not specify an agent, use the "general" subagent and include that role\'s instructions in the prompt.',
+    'When a role does not specify an agent, use the "general" subagent and include custom role instructions when present.',
     "When delegating, include the role identity, user goal, current stage, relevant prior handoffs, exact scope, non-goals, expected deliverable, verification expectation, and whether the worker may edit files.",
     "Use background=true for independent work when that option is available; otherwise use foreground delegation for the most important worker first.",
     "Do not tell the user to inspect worker sessions. Summarize worker findings yourself.",
@@ -847,7 +832,7 @@ export const layer = Layer.effect(
       yield* projects.get(input.projectID)
       const swarmID = `swm_${Identifier.ascending()}`
       const now = Date.now()
-      const roles = input.roles && input.roles.length > 0 ? input.roles : defaultRoles(input.prompt)
+      const roles = input.roles && input.roles.length > 0 ? input.roles : defaultRoles()
       const promptText = input.prompt?.trim() ?? ""
       const invalid = validateRoles(roles)
       if (invalid) return yield* new ValidationError({ message: invalid })

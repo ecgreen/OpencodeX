@@ -7,6 +7,7 @@ export type WorkbenchPageProps = {
   gui?: GuiClient
   snapshot?: GuiSnapshot
   projects?: OpencodeXProject[]
+  projectID?: string
   recentModels?: string[]
   selectedAgent?: string
   setSelectedAgent?: (value: string) => void

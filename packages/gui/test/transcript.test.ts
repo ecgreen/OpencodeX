@@ -2,6 +2,7 @@ import type { Part, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { describe, expect, test } from "bun:test"
 import type { MessageBundle } from "../src/renderer/src/lib/store"
 import { formatSessionTranscript } from "../src/renderer/src/lib/transcript"
+import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../src/renderer/src/lib/transcript-visibility"
 
 describe("GUI session transcript formatting", () => {
   test("includes thinking and tool details by default", () => {
@@ -15,7 +16,7 @@ describe("GUI session transcript formatting", () => {
     expect(transcript).toContain("_Thinking:_")
     expect(transcript).toContain("hidden chain")
     expect(transcript).toContain("**Input:**")
-    expect(transcript).toContain("\"command\": \"echo ok\"")
+    expect(transcript).toContain('"command": "echo ok"')
     expect(transcript).toContain("**Output:**")
     expect(transcript).toContain("ok")
   })
@@ -38,6 +39,28 @@ describe("GUI session transcript formatting", () => {
     expect(transcript).not.toContain("**Input:**")
     expect(transcript).not.toContain("**Output:**")
     expect(transcript).toContain("**Tool:**")
+  })
+
+  test("hides synthetic user-only transcript messages", () => {
+    const messages = [
+      userMessage("msg_compaction", [compactionPart()]),
+      userMessage("msg_blank", [textPart("")]),
+      userMessage("msg_real", [textPart("actual input"), compactionPart()]),
+    ]
+    const result = visibleTranscriptMessages(messages)
+
+    expect(visibleTranscriptMessageIDs(messages)).toEqual(["msg_real"])
+    expect(result.map((message) => message.info.id)).toEqual(["msg_real"])
+    expect(result[0].parts.map((part) => part.type)).toEqual(["text"])
+  })
+
+  test("preserves unchanged visible message identities", () => {
+    const first = userMessage("msg_first", [textPart("first")])
+    const second = userMessage("msg_second", [textPart("second")])
+    const result = visibleTranscriptMessages([first, second])
+
+    expect(result[0]).toBe(first)
+    expect(result[1]).toBe(second)
   })
 })
 
@@ -65,11 +88,19 @@ function assistantMessage(): MessageBundle {
       tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: 1_700_000_000_000, completed: 1_700_000_001_000 },
     },
-    parts: [
-      textPart("Visible answer"),
-      reasoningPart("hidden chain"),
-      toolPart(),
-    ],
+    parts: [textPart("Visible answer"), reasoningPart("hidden chain"), toolPart()],
+  } as MessageBundle
+}
+
+function userMessage(id: string, parts: Part[]): MessageBundle {
+  return {
+    info: {
+      id,
+      sessionID: "ses_test",
+      role: "user",
+      time: { created: 1_700_000_000_000 },
+    },
+    parts,
   } as MessageBundle
 }
 
@@ -106,6 +137,16 @@ function toolPart(): Part {
       input: { command: "echo ok" },
       output: "ok",
     },
+  } as Part
+}
+
+function compactionPart(): Part {
+  return {
+    id: "prt_compaction",
+    sessionID: "ses_test",
+    messageID: "msg_compaction",
+    type: "compaction",
+    auto: true,
   } as Part
 }
 

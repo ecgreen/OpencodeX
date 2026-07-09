@@ -27,7 +27,9 @@
 }
 
 .session-link.status-unviewed,
-.session-link.status-ready-for-review {
+.session-link.status-ready-for-review,
+.session-link.status-needs-review,
+.session-link.status-review-ready {
   --session-state-color: #d946ef;
   --session-card-bg: linear-gradient(90deg, rgba(217, 70, 239, 0.16), #101010 48%);
   --session-active-bg: linear-gradient(90deg, rgba(217, 70, 239, 0.28), #272727 48%);
@@ -59,7 +61,9 @@
 }
 
 .session-link.status-unviewed > span:first-child,
-.session-link.status-ready-for-review > span:first-child {
+.session-link.status-ready-for-review > span:first-child,
+.session-link.status-needs-review > span:first-child,
+.session-link.status-review-ready > span:first-child {
   color: transparent;
   background: linear-gradient(100deg, var(--session-state-color) 0%, var(--session-state-color) 42%, #f5d0fe 50%, #ffffff 53%, #f5d0fe 56%, var(--session-state-color) 64%, var(--session-state-color) 100%);
   background-size: 220% 100%;
@@ -122,12 +126,13 @@
 }
 
 @keyframes sidebar-title-shimmer {
-  from {
-    background-position: 130% 0;
+  0% {
+    background-position: 160% 0;
   }
 
-  to {
-    background-position: -130% 0;
+  92%,
+  100% {
+    background-position: -160% 0;
   }
 }
 
@@ -167,13 +172,6 @@
 .session-page .composer {
   z-index: 2;
   padding-bottom: 8px;
-  transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1), width 560ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.session-page.session-empty .composer {
-  width: min(780px, calc(100% - 56px));
-  justify-self: center;
-  transform: translateY(clamp(-380px, -34vh, -220px));
 }
 
 .session-toolbar {
@@ -312,6 +310,19 @@
   background: #1b1b1b;
 }
 
+.transcript-shell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.transcript-shell > .transcript {
+  grid-area: 1 / 1;
+  height: 100%;
+}
+
 .transcript {
   padding: 10px;
   border-color: #1d1d1d;
@@ -325,9 +336,13 @@
   min-height: 100%;
 }
 
-.transcript-window-button {
-  align-self: center;
+.transcript-load-more-anchor {
+  display: flex;
+  justify-content: center;
   margin: 0 0 14px;
+}
+
+.transcript-window-button {
   border: 1px solid #242424;
   border-radius: 999px;
   padding: 7px 12px;
@@ -349,16 +364,10 @@
   opacity: 0.68;
 }
 
-.transcript-latest-button {
-  margin: 10px auto 0;
-}
-
 .transcript-page-loader {
   display: inline-flex;
-  align-self: center;
   align-items: center;
   gap: 8px;
-  margin: 0 0 14px;
   color: rgba(251, 146, 60, 0.86);
   font-size: 12px;
   font-weight: 800;
@@ -371,17 +380,43 @@
 }
 
 .session-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
   display: grid;
   place-items: center;
   align-content: center;
   gap: 12px;
-  min-height: 100%;
+  min-height: 0;
   padding: 48px 20px 240px;
   color: var(--muted);
   text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.985);
   background:
     radial-gradient(circle at 50% 34%, rgba(250, 178, 131, 0.1), transparent 32%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 38%);
+  transition:
+    opacity 1300ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 1300ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 1300ms;
+}
+
+.session-empty-state.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.session-empty-state.handoff {
+  background:
+    radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--muted) 12%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 8%, transparent), transparent 42%);
 }
 
 .session-empty-state .opencodex-logo {
@@ -402,26 +437,6 @@
   line-height: 1.6;
 }
 
-.session-loading-state {
-  display: grid;
-  flex: 1 1 auto;
-  place-items: center;
-  align-content: center;
-  gap: 14px;
-  min-height: 0;
-  padding: 0 20px;
-  color: #fb923c;
-  text-align: center;
-}
-
-.session-loading-state p {
-  margin: 0;
-  color: rgba(251, 146, 60, 0.86);
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
 .session-loading-spinner {
   width: 58px;
   height: 58px;
@@ -431,4 +446,155 @@
   border-radius: 999px;
   animation: composer-spinner 760ms linear infinite;
   box-shadow: 0 0 40px rgba(251, 146, 60, 0.26);
+}
+
+.session-loading-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, transparent), color-mix(in srgb, var(--bg) 86%, transparent)),
+    radial-gradient(circle at 62% 8%, color-mix(in srgb, var(--secondary) 9%, transparent), transparent 36%),
+    var(--bg);
+  transition: opacity 140ms ease, visibility 0s linear 140ms;
+}
+
+.session-loading-skeleton.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 90ms ease;
+}
+
+.session-loading-skeleton-stack {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  min-height: 100%;
+  padding: 10px 12px;
+}
+
+.session-loading-skeleton-message {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-height: 86px;
+  padding: 0 0 0 24px;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.session-loading-skeleton-message[data-kind="user"] {
+  width: min(760px, 88%);
+  max-width: 92%;
+  min-height: 70px;
+  justify-self: end;
+  margin-left: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--element) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.session-loading-skeleton-line {
+  position: relative;
+  overflow: hidden;
+  width: 84%;
+  height: 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.session-loading-skeleton-line.title {
+  width: 34%;
+  height: 8px;
+  margin-bottom: 3px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.session-loading-skeleton-line.short {
+  width: 58%;
+}
+
+.session-loading-skeleton-message[data-kind="assistant"] .session-loading-skeleton-line:nth-child(2) {
+  width: min(72%, 860px);
+}
+
+.session-loading-skeleton-message[data-kind="assistant"] .session-loading-skeleton-line:nth-child(3) {
+  width: min(94%, 1120px);
+}
+
+.session-loading-skeleton-message[data-kind="assistant"] .session-loading-skeleton-line:nth-child(4) {
+  width: min(68%, 760px);
+}
+
+.session-loading-skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 16%, transparent), transparent);
+  transform: translateX(-110%);
+  animation: transcript-skeleton-shimmer 1350ms ease-in-out infinite;
+}
+
+.session-loading-skeleton-message:nth-child(2) .session-loading-skeleton-line {
+  width: 74%;
+}
+
+.session-loading-skeleton-message:nth-child(2) .session-loading-skeleton-line.title {
+  width: 28%;
+}
+
+.session-loading-skeleton-message:nth-child(3) .session-loading-skeleton-line {
+  width: 92%;
+}
+
+.session-loading-skeleton-message:nth-child(3) .session-loading-skeleton-line.short {
+  width: 46%;
+}
+
+.session-loading-skeleton-message:nth-child(4) {
+  min-height: 108px;
+}
+
+.session-loading-skeleton-message:nth-child(5) {
+  min-height: 128px;
+}
+
+.session-loading-skeleton-message:nth-child(6) {
+  min-height: 92px;
+}
+
+.session-loading-skeleton-message:nth-child(7) {
+  min-height: 116px;
+}
+
+@keyframes transcript-skeleton-shimmer {
+  100% {
+    transform: translateX(110%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-empty-state,
+  .session-empty-state.visible,
+  .session-loading-skeleton,
+  .session-loading-skeleton.visible {
+    transition: none;
+  }
+
+  .session-loading-skeleton-line::after {
+    animation: none;
+    transform: translateX(0);
+    opacity: 0.5;
+  }
 }

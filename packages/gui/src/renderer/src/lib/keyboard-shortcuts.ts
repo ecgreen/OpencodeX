@@ -17,13 +17,13 @@ export type GuiShortcutAction =
 export type GuiShortcutContext = {
   editing: boolean
   dialogOpen: boolean
-  noticeVisible: boolean
+  noticeVisible?: boolean
   abortableSessionID?: string
 }
 
 export type GuiShortcutHandlers = {
   abortSession: (sessionID: string) => void
-  clearNotice: () => void
+  clearNotice?: () => void
   openCommandPalette: () => void
   toggleRail: () => void
   focusComposer: () => void
@@ -49,9 +49,23 @@ const DIRECT_ACTIONS_BY_KEY: Record<string, GuiShortcutAction | undefined> = {
   n: { type: "create-session" },
   r: { type: "refresh" },
 }
-const GLOBAL_SHORTCUT_KEYS = new Set(["p", "?", "c", "home", "end", "arrowdown", "arrowup", "u", ...Object.keys(DIRECT_ACTIONS_BY_KEY), ...Object.keys(ROUTES_BY_KEY)])
+const GLOBAL_SHORTCUT_KEYS = new Set([
+  "p",
+  "?",
+  "c",
+  "home",
+  "end",
+  "arrowdown",
+  "arrowup",
+  "u",
+  ...Object.keys(DIRECT_ACTIONS_BY_KEY),
+  ...Object.keys(ROUTES_BY_KEY),
+])
 
-export function guiShortcutAction(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">, context: GuiShortcutContext): GuiShortcutAction | undefined {
+export function guiShortcutAction(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  context: GuiShortcutContext,
+): GuiShortcutAction | undefined {
   const key = event.key.toLowerCase()
   const escapeAction = escapeShortcutAction(event.key, context)
   if (escapeAction) return escapeAction
@@ -66,7 +80,8 @@ export function guiShortcutAction(event: Pick<KeyboardEvent, "key" | "ctrlKey" |
   if (key === "?" || (event.shiftKey && key === "/")) return { type: "show-keyboard-help" }
   if (event.shiftKey && key === "c") return { type: "copy-last-assistant" }
   if (key === "p") return commandPaletteShortcutAction(context)
-  if (context.dialogOpen || context.editing) return GLOBAL_SHORTCUT_KEYS.has(key) ? { type: "prevent-global-shortcut" } : undefined
+  if (context.dialogOpen || context.editing)
+    return GLOBAL_SHORTCUT_KEYS.has(key) ? { type: "prevent-global-shortcut" } : undefined
   const action = DIRECT_ACTIONS_BY_KEY[key]
   if (action) return action
   const route = ROUTES_BY_KEY[key]
@@ -75,7 +90,7 @@ export function guiShortcutAction(event: Pick<KeyboardEvent, "key" | "ctrlKey" |
 
 export function runGuiShortcutAction(action: GuiShortcutAction, handlers: GuiShortcutHandlers) {
   if (action.type === "abort-session") return handlers.abortSession(action.sessionID)
-  if (action.type === "clear-notice") return handlers.clearNotice()
+  if (action.type === "clear-notice") return handlers.clearNotice?.()
   if (action.type === "open-command-palette") return handlers.openCommandPalette()
   if (action.type === "prevent-global-shortcut") return
   if (action.type === "toggle-rail") return handlers.toggleRail()
@@ -90,8 +105,9 @@ export function runGuiShortcutAction(action: GuiShortcutAction, handlers: GuiSho
 
 function escapeShortcutAction(key: string, context: GuiShortcutContext): GuiShortcutAction | undefined {
   if (key !== "Escape") return
-  if (!context.dialogOpen && context.abortableSessionID) return { type: "abort-session", sessionID: context.abortableSessionID }
-  return context.noticeVisible ? { type: "clear-notice" } : undefined
+  if (!context.dialogOpen && context.abortableSessionID)
+    return { type: "abort-session", sessionID: context.abortableSessionID }
+  if (context.noticeVisible) return { type: "clear-notice" }
 }
 
 function commandPaletteShortcutAction(context: GuiShortcutContext): GuiShortcutAction {

@@ -28,15 +28,17 @@ describe("GUI store backend parity", () => {
     const gui = fakeGui(calls)
     const snapshot = await loadSnapshot(gui)
 
-    expect(calls).toEqual(expect.arrayContaining([
-      "project.current",
-      "opencodex.session.sync",
-      "config.providers",
-      "app.agents",
-      "swarm.list",
-      "job.list",
-    ]))
-    expect(calls).not.toContain("project.list")
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        "project.current",
+        "opencodex.session.sync",
+        "config.providers",
+        "app.agents",
+        "project.list",
+        "swarm.list",
+        "job.list",
+      ]),
+    )
     expect(calls).not.toContain("session.list")
     expect(calls).not.toContain("session.status")
     expect(calls).not.toContain("permission.list")
@@ -49,6 +51,15 @@ describe("GUI store backend parity", () => {
     expect(snapshot.sessionUiState["session-list"]?.displayStatus).toBe("input_needed")
     expect(snapshot.providers[0]?.id).toBe("anthropic")
     expect(snapshot.agents[0]?.name).toBe("build")
+  })
+
+  test("loads projects directly so folder-only edits refresh", async () => {
+    const calls: string[] = []
+    const gui = fakeGui(calls, { projectFolders: ["C:/Work/OpencodeX", "C:/Work/Second"] })
+    const snapshot = await loadSnapshot(gui)
+
+    expect(calls).toContain("project.list")
+    expect(snapshot.projects[0]?.folders.map((folder) => folder.path)).toEqual(["C:/Work/OpencodeX", "C:/Work/Second"])
   })
 
   test("loads lightweight session card state without session content", async () => {
@@ -107,6 +118,11 @@ describe("GUI store backend parity", () => {
     await createSession(gui, { projectID: "project-1", directory: "C:/Work/OpencodeX", title: "QA Session" })
     await createSwarm(gui, { projectID: "project-1", title: "QA Swarm", prompt: "Test" })
     await createView(gui, { title: "QA View", sessionIDs: ["session-list"] })
+    await createView(gui, {
+      title: "Pending View",
+      sessionIDs: [],
+      metadata: { opencodex: { pendingSessions: [{ id: "new:1", directory: "C:/Work/OpencodeX" }] } },
+    })
     await sendPrompt(gui, "session-list", "hello", {
       agent: "build",
       model: { providerID: "anthropic", modelID: "claude-sonnet" },
@@ -117,8 +133,11 @@ describe("GUI store backend parity", () => {
     expect(calls).toContain("opencodex.session.create:project-1")
     expect(calls).toContain("swarm.create:project-1")
     expect(calls).toContain("view.create:session-list")
+    expect(calls).toContain("view.create.pending:1")
     expect(calls).toContain("session.promptAsync:session-list:hello:build:anthropic/claude-sonnet:fast")
-    expect(calls.find((call) => call.startsWith("session.promptAsync.messageID:"))).toMatch(/^session\.promptAsync\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    expect(calls.find((call) => call.startsWith("session.promptAsync.messageID:"))).toMatch(
+      /^session\.promptAsync\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
+    )
   })
 
   test("sends server command and shell payloads through TUI-equivalent APIs", async () => {
@@ -143,9 +162,13 @@ describe("GUI store backend parity", () => {
     })
 
     expect(calls).toContain("session.command:session-list:review:staged changes:build:anthropic/claude-sonnet:fast:1")
-    expect(calls.find((call) => call.startsWith("session.command.messageID:"))).toMatch(/^session\.command\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    expect(calls.find((call) => call.startsWith("session.command.messageID:"))).toMatch(
+      /^session\.command\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
+    )
     expect(calls).toContain("session.shell:session-list:bun test:build:anthropic/claude-sonnet")
-    expect(calls.find((call) => call.startsWith("session.shell.messageID:"))).toMatch(/^session\.shell\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    expect(calls.find((call) => call.startsWith("session.shell.messageID:"))).toMatch(
+      /^session\.shell\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
+    )
   })
 
   test("prepares prompt targets for existing and pending sessions", async () => {
@@ -155,7 +178,11 @@ describe("GUI store backend parity", () => {
 
     expect(await prepareSessionPromptTarget(gui, { name: "session" }, existing)).toEqual({ target: existing })
 
-    const pending = await prepareSessionPromptTarget(gui, { name: "new-session", projectID: "project-1" }, session("pending-session", 2))
+    const pending = await prepareSessionPromptTarget(
+      gui,
+      { name: "new-session", projectID: "project-1" },
+      session("pending-session", 2),
+    )
 
     expect(calls).toContain("opencodex.session.create:project-1")
     expect(pending.target.id).toBe("session-list")
@@ -194,7 +221,11 @@ describe("GUI store backend parity", () => {
   test("loads budgeted session messages without extra count overfetch", async () => {
     const calls: string[] = []
     const gui = fakeGui(calls)
-    const data = await loadSession(gui, "session-list", undefined, { messageLimit: 96, messageRenderBudget: 28_000, includeSideData: false })
+    const data = await loadSession(gui, "session-list", undefined, {
+      messageLimit: 96,
+      messageRenderBudget: 28_000,
+      includeSideData: false,
+    })
 
     expect(calls).toContain("session.messages:session-list")
     expect(calls).toContain("session.messages.limit:96")
@@ -206,7 +237,12 @@ describe("GUI store backend parity", () => {
   test("loads paged session messages with cursor", async () => {
     const calls: string[] = []
     const gui = fakeGui(calls)
-    const data = await loadSession(gui, "session-list", undefined, { messageLimit: 48, messageRenderBudget: 14_000, messageBefore: "cursor-1", includeSideData: false })
+    const data = await loadSession(gui, "session-list", undefined, {
+      messageLimit: 48,
+      messageRenderBudget: 14_000,
+      messageBefore: "cursor-1",
+      includeSideData: false,
+    })
 
     expect(calls).toContain("session.messages.limit:48")
     expect(calls).toContain("session.messages.renderBudget:14000")
@@ -242,7 +278,13 @@ describe("GUI store backend parity", () => {
             parts: [{ type: "step-start" }],
           },
           {
-            info: { id: "assistant-new", sessionID: "session-list", role: "assistant", finish: "stop", time: { created: now - 1_000, completed: now } },
+            info: {
+              id: "assistant-new",
+              sessionID: "session-list",
+              role: "assistant",
+              finish: "stop",
+              time: { created: now - 1_000, completed: now },
+            },
             parts: [{ type: "step-start" }, { type: "step-finish" }],
           },
         ],
@@ -291,7 +333,18 @@ describe("GUI store backend parity", () => {
   })
 })
 
-function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unknown>; sessionUiState?: Record<string, unknown>; messages?: Record<string, unknown[]>; updated?: number; headerCursor?: string | null; viewSessions?: ReturnType<typeof session>[] } = {}) {
+function fakeGui(
+  calls: string[],
+  options: {
+    sessionStatus?: Record<string, unknown>
+    sessionUiState?: Record<string, unknown>
+    messages?: Record<string, unknown[]>
+    updated?: number
+    headerCursor?: string | null
+    viewSessions?: ReturnType<typeof session>[]
+    projectFolders?: string[]
+  } = {},
+) {
   const sessionList = session("session-list", options.updated ?? 1)
   const projectSession = session("project-session", options.updated ?? 2)
   const viewSessions = options.viewSessions ?? []
@@ -300,6 +353,12 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
     url: "http://127.0.0.1:4096",
     authHeader: "",
     client: {
+      provider: {
+        list: async () => {
+          calls.push("provider.list")
+          return { data: undefined }
+        },
+      },
       opencodex: {
         project: {
           list: async () => {
@@ -310,7 +369,7 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
                   id: "project-1",
                   name: "Project",
                   project: { id: "project-core", name: "Project", time: { created: 1, updated: 1 } },
-                  folders: [{ path: "C:/Work/OpencodeX" }],
+                  folders: (options.projectFolders ?? ["C:/Work/OpencodeX"]).map((path) => ({ path })),
                   sessions: [projectSession],
                 },
               ],
@@ -321,7 +380,9 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
             return { data: undefined }
           },
           validate: async (input: { opencodeXProjectValidateInput?: { projectID?: string; folders: string[] } }) => {
-            calls.push(`project.validate:${input.opencodeXProjectValidateInput?.projectID}:${input.opencodeXProjectValidateInput?.folders.join(",")}`)
+            calls.push(
+              `project.validate:${input.opencodeXProjectValidateInput?.projectID}:${input.opencodeXProjectValidateInput?.folders.join(",")}`,
+            )
             return { data: { valid: true, folders: [] } }
           },
           update: async (input: { projectID: string; name?: string; folders?: string[] }) => {
@@ -353,18 +414,21 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
                     },
                   ],
                   sessions: [projectSession, sessionList],
-                  views: viewSessions.length > 0
-                    ? [{
-                      id: "view-1",
-                      title: "View",
-                      focusedSessionID: viewSessions[0]?.id,
-                      layout: "auto",
-                      sessions: viewSessions,
-                      sessionIDs: viewSessions.map((item) => item.id),
-                      timeCreated: 1,
-                      timeUpdated: 1,
-                    }]
-                    : [],
+                  views:
+                    viewSessions.length > 0
+                      ? [
+                          {
+                            id: "view-1",
+                            title: "View",
+                            focusedSessionID: viewSessions[0]?.id,
+                            layout: "auto",
+                            sessions: viewSessions,
+                            sessionIDs: viewSessions.map((item) => item.id),
+                            timeCreated: 1,
+                            timeUpdated: 1,
+                          },
+                        ]
+                      : [],
                   sessionStatus: options.sessionStatus ?? { "session-list": { type: "idle" } },
                   permissions: [
                     {
@@ -380,7 +444,9 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
                     {
                       id: "question-1",
                       sessionID: "session-list",
-                      questions: [{ header: "Choice", question: "Pick one", options: [{ label: "A", description: "Option A" }] }],
+                      questions: [
+                        { header: "Choice", question: "Pick one", options: [{ label: "A", description: "Option A" }] },
+                      ],
                     },
                   ],
                   sessionUiState: {
@@ -407,7 +473,9 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
             return { data: sessionList }
           },
           move: async (input: { opencodeXSessionMoveInput?: { sessionID: string; projectID: string } }) => {
-            calls.push(`opencodex.session.move:${input.opencodeXSessionMoveInput?.sessionID}:${input.opencodeXSessionMoveInput?.projectID}`)
+            calls.push(
+              `opencodex.session.move:${input.opencodeXSessionMoveInput?.sessionID}:${input.opencodeXSessionMoveInput?.projectID}`,
+            )
             return { data: sessionList }
           },
           delete: async (input: { sessionID: string }) => {
@@ -436,8 +504,18 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
             calls.push("view.list")
             return { data: [] }
           },
-          create: async (input: { opencodeXViewCreateInput?: { sessionIDs: string[] } }) => {
+          create: async (input: {
+            opencodeXViewCreateInput?: {
+              sessionIDs: string[]
+              metadata?: { opencodex?: { pendingSessions?: unknown[] } }
+            }
+          }) => {
             calls.push(`view.create:${input.opencodeXViewCreateInput?.sessionIDs.join(",")}`)
+            if (input.opencodeXViewCreateInput?.metadata?.opencodex?.pendingSessions) {
+              calls.push(
+                `view.create.pending:${input.opencodeXViewCreateInput.metadata.opencodex.pendingSessions.length}`,
+              )
+            }
             return { data: undefined }
           },
         },
@@ -505,7 +583,14 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
       project: {
         current: async () => {
           calls.push("project.current")
-          return { data: { id: "project-core", name: "Project", worktree: "C:/Work/OpencodeX", time: { created: 1, updated: 1 } } }
+          return {
+            data: {
+              id: "project-core",
+              name: "Project",
+              worktree: "C:/Work/OpencodeX",
+              time: { created: 1, updated: 1 },
+            },
+          }
         },
       },
       session: {
@@ -518,18 +603,46 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
           calls.push(`session.status.workspace:${input?.workspace ?? ""}`)
           return { data: options.sessionStatus ?? { "session-list": { type: "idle" } } }
         },
-        promptAsync: async (input: { sessionID: string; messageID?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: Array<{ type: string; text?: string }> }) => {
-          calls.push(`session.promptAsync:${input.sessionID}:${input.parts?.[0]?.text}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}:${input.variant ?? ""}`)
+        promptAsync: async (input: {
+          sessionID: string
+          messageID?: string
+          agent?: string
+          model?: { providerID: string; modelID: string }
+          variant?: string
+          parts?: Array<{ type: string; text?: string }>
+        }) => {
+          calls.push(
+            `session.promptAsync:${input.sessionID}:${input.parts?.[0]?.text}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}:${input.variant ?? ""}`,
+          )
           calls.push(`session.promptAsync.messageID:${input.messageID ?? ""}`)
           return { data: true }
         },
-        command: async (input: { sessionID: string; messageID?: string; command: string; arguments: string; agent?: string; model?: string; variant?: string; parts?: Array<{ type: string }> }) => {
-          calls.push(`session.command:${input.sessionID}:${input.command}:${input.arguments}:${input.agent ?? ""}:${input.model ?? ""}:${input.variant ?? ""}:${input.parts?.length ?? 0}`)
+        command: async (input: {
+          sessionID: string
+          messageID?: string
+          command: string
+          arguments: string
+          agent?: string
+          model?: string
+          variant?: string
+          parts?: Array<{ type: string }>
+        }) => {
+          calls.push(
+            `session.command:${input.sessionID}:${input.command}:${input.arguments}:${input.agent ?? ""}:${input.model ?? ""}:${input.variant ?? ""}:${input.parts?.length ?? 0}`,
+          )
           calls.push(`session.command.messageID:${input.messageID ?? ""}`)
           return { data: true }
         },
-        shell: async (input: { sessionID: string; messageID?: string; command: string; agent?: string; model?: { providerID: string; modelID: string } }) => {
-          calls.push(`session.shell:${input.sessionID}:${input.command}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}`)
+        shell: async (input: {
+          sessionID: string
+          messageID?: string
+          command: string
+          agent?: string
+          model?: { providerID: string; modelID: string }
+        }) => {
+          calls.push(
+            `session.shell:${input.sessionID}:${input.command}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}`,
+          )
           calls.push(`session.shell.messageID:${input.messageID ?? ""}`)
           return { data: true }
         },
@@ -538,9 +651,34 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
           calls.push(`session.messages.limit:${input.limit ?? ""}`)
           calls.push(`session.messages.renderBudget:${input.renderBudget ?? ""}`)
           calls.push(`session.messages.before:${input.before ?? ""}`)
-          const response = { headers: { get: (name: string) => name.toLowerCase() === "x-next-cursor" ? options.headerCursor === undefined ? "next-cursor" : options.headerCursor : null } }
+          const response = {
+            headers: {
+              get: (name: string) =>
+                name.toLowerCase() === "x-next-cursor"
+                  ? options.headerCursor === undefined
+                    ? "next-cursor"
+                    : options.headerCursor
+                  : null,
+            },
+          }
           if (options.messages?.[input.sessionID]) return { data: options.messages[input.sessionID], response }
-          return { data: [{ info: sessionList, parts: [{ id: "part-1", sessionID: input.sessionID, messageID: sessionList.id, type: "text", text: JSON.stringify({ final: "hello" }) }] }], response }
+          return {
+            data: [
+              {
+                info: sessionList,
+                parts: [
+                  {
+                    id: "part-1",
+                    sessionID: input.sessionID,
+                    messageID: sessionList.id,
+                    type: "text",
+                    text: JSON.stringify({ final: "hello" }),
+                  },
+                ],
+              },
+            ],
+            response,
+          }
         },
         todo: async (input: { sessionID: string }) => {
           calls.push(`session.todo:${input.sessionID}`)
@@ -548,7 +686,9 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
         },
         diff: async (input: { sessionID: string }) => {
           calls.push(`session.diff:${input.sessionID}`)
-          return { data: [{ file: "packages/gui/src/renderer/src/app.tsx", additions: 1, deletions: 0, status: "modified" }] }
+          return {
+            data: [{ file: "packages/gui/src/renderer/src/app.tsx", additions: 1, deletions: 0, status: "modified" }],
+          }
         },
         update: async (input: { sessionID: string; title?: string }) => {
           calls.push(`session.update:${input.sessionID}:${input.title}`)
@@ -580,7 +720,9 @@ function fakeGui(calls: string[], options: { sessionStatus?: Record<string, unkn
               {
                 id: "question-1",
                 sessionID: "session-list",
-                questions: [{ header: "Choice", question: "Pick one", options: [{ label: "A", description: "Option A" }] }],
+                questions: [
+                  { header: "Choice", question: "Pick one", options: [{ label: "A", description: "Option A" }] },
+                ],
               },
             ],
           }

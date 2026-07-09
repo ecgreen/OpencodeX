@@ -1,11 +1,11 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Mark } from "@opencode-ai/ui/logo"
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo } from "solid-js"
 import { title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/store"
 import { Icon } from "./icon"
-import { RailPinnedSection, RailProjectsSection, RailRecentSessionsSection, RailViewsSection } from "./rail-sidebar-sections"
+import { RailPinnedSection, RailPriorSessionsSection, RailProjectsSection, RailRecentSessionsSection, RailViewsSection } from "./rail-sidebar-sections"
 import type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
 
 export type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
@@ -38,9 +38,14 @@ export function RailSidebar(props: {
   openView: (viewID: string) => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
+  createPinnedSession: () => void
   createView: () => void
   toggleSessionPinned: (sessionID: string) => void
   toggleViewPinned: (viewID: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  editView: (viewID: string) => void
+  deleteView: (viewID: string, name: string) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
@@ -100,10 +105,15 @@ export function RailSidebar(props: {
                   dragTarget={props.dragTarget}
                   dropTarget={props.dropTarget}
                   toggle={() => props.toggleRailSection("pinned")}
+                  createSession={props.createPinnedSession}
                   openSession={props.openSession}
                   openView={props.openView}
                   toggleSessionPinned={props.toggleSessionPinned}
                   toggleViewPinned={props.toggleViewPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
+                  editView={props.editView}
+                  deleteView={props.deleteView}
                   startDrag={props.startDrag}
                   dragOver={props.dragOver}
                   clearDragTarget={props.clearDragTarget}
@@ -130,6 +140,8 @@ export function RailSidebar(props: {
                   createSession={props.createSession}
                   openSession={props.openSession}
                   toggleSessionPinned={props.toggleSessionPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
                   startDrag={props.startDrag}
                   dragOver={props.dragOver}
                   clearDragTarget={props.clearDragTarget}
@@ -156,6 +168,8 @@ export function RailSidebar(props: {
                   createSession={() => props.createSession()}
                   openSession={props.openSession}
                   toggleSessionPinned={props.toggleSessionPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
                   startDrag={props.startDrag}
                   dragOver={props.dragOver}
                   clearDragTarget={props.clearDragTarget}
@@ -163,6 +177,29 @@ export function RailSidebar(props: {
                   reorderSection={props.reorderRailSection}
                   dropSection={props.dropRailSection}
                   moveSection={(offset) => props.moveRailSection("recent", offset)}
+                />
+              </Match>
+              <Match when={section === "prior"}>
+                <RailPriorSessionsSection
+                  sessions={props.sessions}
+                  snapshot={props.snapshot}
+                  collapsed={props.railSections.prior}
+                  activeSessionID={props.activeSessionID}
+                  dragTarget={props.dragTarget}
+                  dropTarget={props.dropTarget}
+                  sessionPinned={props.sessionPinned}
+                  toggle={() => props.toggleRailSection("prior")}
+                  openSession={props.openSession}
+                  toggleSessionPinned={props.toggleSessionPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
+                  startDrag={props.startDrag}
+                  dragOver={props.dragOver}
+                  clearDragTarget={props.clearDragTarget}
+                  sectionPointerDrag={props.sectionPointerDrag}
+                  reorderSection={props.reorderRailSection}
+                  dropSection={props.dropRailSection}
+                  moveSection={(offset) => props.moveRailSection("prior", offset)}
                 />
               </Match>
               <Match when={section === "views"}>
@@ -178,6 +215,8 @@ export function RailSidebar(props: {
                   createView={props.createView}
                   openView={props.openView}
                   toggleViewPinned={props.toggleViewPinned}
+                  editView={props.editView}
+                  deleteView={props.deleteView}
                   startDrag={props.startDrag}
                   dragOver={props.dragOver}
                   clearDragTarget={props.clearDragTarget}
@@ -269,32 +308,17 @@ function RailNav(props: {
   collapsed: boolean
   openRoute: (name: RailRouteName) => void
 }) {
-  const [expanded, setExpanded] = createSignal(false)
-  const visibleItemName = createMemo(() => props.items.some((item) => item.name === props.activeRouteName) ? props.activeRouteName : props.items[0]?.name)
   return (
     <nav
       class="nav"
-      classList={{ "nav-collapsed": props.collapsed, "nav-expanded": props.collapsed && expanded() }}
-      onPointerEnter={() => props.collapsed && setExpanded(true)}
-      onPointerLeave={(event) => {
-        if (!props.collapsed) return
-        if (event.currentTarget.contains(document.activeElement)) return
-        setExpanded(false)
-      }}
-      onFocusIn={() => props.collapsed && setExpanded(true)}
-      onFocusOut={(event) => {
-        if (!props.collapsed) return
-        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
-        setExpanded(false)
-      }}
+      classList={{ "nav-collapsed": props.collapsed }}
     >
       <For each={props.items}>
         {(item) => (
           <button
             aria-label={`${item.label}: ${item.description}`}
             title={`${item.label}: ${item.description} (${item.shortcut})`}
-            tabIndex={props.collapsed && !expanded() && visibleItemName() !== item.name ? -1 : undefined}
-            classList={{ active: props.activeRouteName === item.name, "nav-visible": visibleItemName() === item.name }}
+            classList={{ active: props.activeRouteName === item.name }}
             onClick={() => props.openRoute(item.name)}
           >
             <Icon name={item.icon} />

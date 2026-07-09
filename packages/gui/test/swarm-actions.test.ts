@@ -3,8 +3,10 @@ import type { Agent, OpencodeXSwarm, OpencodeXSwarmRun } from "@opencode-ai/sdk/
 import {
   defaultSwarmRoles,
   isActiveSwarmStatus,
+  nextSwarmRolePreset,
   opencodeXSwarmExecutionMode,
   roleInput,
+  swarmRolePresetBySkill,
   swarmDisplayStatus,
   swarmRunSessionID,
 } from "../src/renderer/src/lib/swarm-actions"
@@ -28,18 +30,38 @@ describe("GUI swarm action helpers", () => {
       modelProfile: undefined,
       metadata: undefined,
     })
+    expect(roleInput({ name: "  Lead  " }).instructions).toBe("")
   })
 
-  test("builds default orchestrator and specialist roles from primary agents", () => {
+  test("starts new swarms with only the orchestrator role", () => {
     expect(defaultSwarmRoles({
       agents: [
         { name: "orchestrator", mode: "primary", model: { providerID: "p1", modelID: "m1" } } as Agent,
         { name: "build", mode: "all", model: { providerID: "p2", modelID: "m2" } } as Agent,
       ],
-    }).map((role) => [role.name, role.agent, role.providerID, role.modelID])).toEqual([
-      ["Orchestrator", "orchestrator", "p1", "m1"],
-      ["Specialist", "build", "p2", "m2"],
+      providerID: "p3",
+      modelID: "m3",
+    }).map((role) => [role.name, role.skill, role.agent, role.providerID, role.modelID])).toEqual([
+      ["Orchestrator", "orchestrator", undefined, "p3", "m3"],
     ])
+    expect(defaultSwarmRoles({ agents: [] })[0]?.instructions).toBe("")
+  })
+
+  test("adds remaining TUI specialist presets before falling back to custom roles", () => {
+    expect(nextSwarmRolePreset([{ name: "Product Manager", skill: "product-manager" }])?.name).toBe("Designer")
+    expect(nextSwarmRolePreset([
+      { name: "Product Manager", skill: "product-manager" },
+      { name: "Designer", skill: "designer" },
+      { name: "Architect", skill: "architect" },
+      { name: "Senior Engineer", skill: "senior-engineer" },
+      { name: "QA Engineer", skill: "qa-engineer" },
+      { name: "Code Reviewer", skill: "code-reviewer" },
+    ])?.name).toBe("Docs Engineer")
+  })
+
+  test("finds role presets by skill for the GUI skill picker", () => {
+    expect(swarmRolePresetBySkill("designer")?.name).toBe("Designer")
+    expect(swarmRolePresetBySkill("unknown")).toBeUndefined()
   })
 
   test("opens the best available session for a swarm run", () => {

@@ -32,6 +32,21 @@ import { ProviderError } from "./error"
 
 const log = Log.create({ service: "provider" })
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
+const LOCAL_MODEL_DISCOVERY_TIMEOUT = 1_000
+const LOCAL_MODEL_PROVIDERS = [
+  {
+    id: ProviderV2.ID.make("lmstudio"),
+    name: "LMStudio",
+    api: "http://127.0.0.1:1234/v1",
+    env: ["LMSTUDIO_API_KEY"],
+  },
+  {
+    id: ProviderV2.ID.make("ollama"),
+    name: "Ollama",
+    api: "http://127.0.0.1:11434/v1",
+    env: ["OLLAMA_API_KEY"],
+  },
+]
 
 function wrapSSE(res: Response, ms: number, ctl: AbortController) {
   if (typeof ms !== "number" || ms <= 0) return res
@@ -977,6 +992,163 @@ export function defaultModelIDs<T extends { models: Record<string, { id: string 
   return mapValues(providers, (item) => sort(Object.values(item.models))[0].id)
 }
 
+function localProviderInfo(input: LocalModelProvider, existing?: Info): Info {
+  return {
+    id: input.id,
+    source: existing?.source ?? "custom",
+    name: existing?.name ?? input.name,
+    env: existing?.env ?? input.env,
+    key: existing?.key,
+    options: mergeDeep({ apiKey: "local" }, existing?.options ?? {}),
+    models: existing?.models ?? {},
+  }
+}
+
+function addLocalProviders(database: Record<ProviderV2.ID, Info>) {
+  for (const item of LOCAL_MODEL_PROVIDERS) {
+    database[item.id] = localProviderInfo(item, database[item.id])
+  }
+}
+
+function localProviderAPI(provider: Info, fallback: LocalModelProvider) {
+  if (typeof provider.options.baseURL === "string" && provider.options.baseURL) return provider.options.baseURL
+  return Object.values(provider.models)[0]?.api.url || fallback.api
+}
+
+async function refreshLocalProviders(input: {
+  state: State
+  config: Config.Info
+  env: Record<string, string | undefined>
+  enableExperimentalModels: boolean
+}) {
+  const disabled = new Set(input.config.disabled_providers ?? [])
+  const enabled = input.config.enabled_providers ? new Set(input.config.enabled_providers) : undefined
+
+  await Promise.all(
+    LOCAL_MODEL_PROVIDERS.map(async (item) => {
+      if (disabled.has(item.id) || (enabled && !enabled.has(item.id))) {
+        delete input.state.providers[item.id]
+        return
+      }
+
+      const existing = input.state.providers[item.id] ?? input.state.catalog[item.id] ?? localProviderInfo(item)
+      const provider = localProviderInfo(item, existing)
+      const api = localProviderAPI(provider, item)
+
+      try {
+        const models = await discoverOpenAICompatibleModels({
+          provider,
+          providerID: item.id,
+          api,
+          apiKey: localProviderAPIKey(provider, input.env),
+        })
+        provider.models = filterProviderModels(models, item.id, input.config, input.enableExperimentalModels)
+        if (Object.keys(provider.models).length === 0) {
+          delete input.state.providers[item.id]
+          return
+        }
+        input.state.providers[item.id] = provider
+        input.state.catalog[item.id] = provider
+      } catch (cause) {
+        log.debug("local model discovery failed", { providerID: item.id, error: cause })
+        delete input.state.providers[item.id]
+      }
+    }),
+  )
+}
+
+function localProviderAPIKey(provider: Info, env: Record<string, string | undefined>) {
+  if (typeof provider.options.apiKey === "string" && provider.options.apiKey) return provider.options.apiKey
+  return provider.key ?? provider.env.map((item) => env[item]).find(Boolean) ?? "local"
+}
+
+async function discoverOpenAICompatibleModels(input: {
+  provider: Info
+  providerID: ProviderV2.ID
+  api: string
+  apiKey: string
+}) {
+  const response = await fetch(`${input.api.replace(/\/+$/, "")}/models`, {
+    signal: AbortSignal.timeout(LOCAL_MODEL_DISCOVERY_TIMEOUT),
+    headers: { Authorization: `Bearer ${input.apiKey}` },
+  })
+  if (!response.ok) throw new Error(`Model discovery failed with HTTP ${response.status}`)
+
+  const body = (await response.json()) as OpenAIModelListResponse
+  if (!Array.isArray(body.data)) return {}
+
+  return Object.fromEntries(
+    body.data.flatMap((item: OpenAIModelListItem) => {
+      if (!isRecord(item) || typeof item.id !== "string" || item.id.trim() === "") return []
+      return [[item.id, localModel(input.providerID, item.id, input.api, input.provider.models[item.id])]]
+    }),
+  )
+}
+
+function localModel(providerID: ProviderV2.ID, modelID: string, api: string, existing?: Model): Model {
+  const model: Model = {
+    id: ProviderV2.ModelID.make(modelID),
+    providerID,
+    name: existing?.name ?? modelID,
+    family: existing?.family ?? "",
+    api: {
+      id: existing?.api.id ?? modelID,
+      url: api,
+      npm: existing?.api.npm ?? "@ai-sdk/openai-compatible",
+    },
+    status: existing?.status ?? "active",
+    headers: existing?.headers ?? {},
+    options: existing?.options ?? {},
+    cost: existing?.cost ?? { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: existing?.limit ?? { context: 0, output: 0 },
+    capabilities: existing?.capabilities ?? {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      output: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      interleaved: false,
+    },
+    release_date: existing?.release_date ?? "",
+    variants: existing?.variants ?? {},
+  }
+  if (!model.variants || Object.keys(model.variants).length === 0) {
+    model.variants = mapValues(ProviderTransform.variants(model), (v) => v)
+  }
+  return model
+}
+
+function filterProviderModels(
+  models: Record<string, Model>,
+  providerID: ProviderV2.ID,
+  config: Config.Info,
+  enableExperimentalModels: boolean,
+) {
+  const configProvider = config.provider?.[providerID]
+  return Object.fromEntries(
+    Object.entries(models).filter(([modelID, model]) => {
+      if (model.status === "alpha" && !enableExperimentalModels) return false
+      if (model.status === "deprecated") return false
+      if (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) return false
+      if (configProvider?.whitelist && !configProvider.whitelist.includes(modelID)) return false
+      return true
+    }),
+  )
+}
+
 export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundError>()("ProviderModelNotFoundError", {
   providerID: ProviderV2.ID,
   modelID: ProviderV2.ModelID,
@@ -1040,6 +1212,16 @@ interface State {
   sdk: Map<string, BundledSDK>
   modelLoaders: Record<string, CustomModelLoader>
   varsLoaders: Record<string, CustomVarsLoader>
+}
+
+type LocalModelProvider = (typeof LOCAL_MODEL_PROVIDERS)[number]
+
+type OpenAIModelListItem = {
+  id?: unknown
+}
+
+type OpenAIModelListResponse = {
+  data?: unknown
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Provider") {}
@@ -1212,6 +1394,7 @@ export const layer = Layer.effect(
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
         const database = mapValues(catalog, toPublicInfo)
+        addLocalProviders(database)
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -1295,7 +1478,10 @@ export const layer = Layer.effect(
             id: ProviderV2.ID.make(providerID),
             name: provider.name ?? existing?.name ?? providerID,
             env: provider.env ?? existing?.env ?? [],
-            options: mergeDeep(existing?.options ?? {}, provider.options ?? {}),
+            options: mergeDeep(
+              mergeDeep(existing?.options ?? {}, provider.api ? { baseURL: provider.api } : {}),
+              provider.options ?? {},
+            ),
             source: "config",
             models: existing?.models ?? {},
           }
@@ -1474,6 +1660,15 @@ export const layer = Layer.effect(
           })
         }
 
+        yield* Effect.promise(() =>
+          refreshLocalProviders({
+            state: { models: languages, providers, catalog, sdk, modelLoaders, varsLoaders },
+            config: cfg,
+            env: envs,
+            enableExperimentalModels: runtimeFlags.enableExperimentalModels,
+          }),
+        )
+
         for (const [id, provider] of Object.entries(providers)) {
           const providerID = ProviderV2.ID.make(id)
           if (!isProviderAllowed(providerID)) {
@@ -1536,7 +1731,20 @@ export const layer = Layer.effect(
       }),
     )
 
-    const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+    const list = Effect.fn("Provider.list")(function* () {
+      const s = yield* InstanceState.get(state)
+      const cfg = yield* config.get()
+      const envs = yield* env.all()
+      yield* Effect.promise(() =>
+        refreshLocalProviders({
+          state: s,
+          config: cfg,
+          env: envs,
+          enableExperimentalModels: runtimeFlags.enableExperimentalModels,
+        }),
+      )
+      return s.providers
+    })
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
@@ -1704,6 +1912,19 @@ export const layer = Layer.effect(
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ProviderV2.ModelID) {
       const s = yield* InstanceState.get(state)
+      const localProvider = LOCAL_MODEL_PROVIDERS.find((item) => item.id === providerID)
+      if (localProvider && !s.providers[providerID]?.models[modelID]) {
+        const cfg = yield* config.get()
+        const envs = yield* env.all()
+        yield* Effect.promise(() =>
+          refreshLocalProviders({
+            state: s,
+            config: cfg,
+            env: envs,
+            enableExperimentalModels: runtimeFlags.enableExperimentalModels,
+          }),
+        )
+      }
       const provider = s.providers[providerID]
       if (!provider) {
         const catalogProvider = s.catalog[providerID]

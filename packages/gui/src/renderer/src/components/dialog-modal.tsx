@@ -1,18 +1,22 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import type { GuiTranscriptExportOptions } from "../lib/transcript-export"
 import { ModalFrame } from "./modal-frame"
-import { Button, CommandRow, TextArea, TextInput } from "./ui"
+import { Button, CommandRow, IconButton, TextArea, TextInput } from "./ui"
 
 export type ChoiceOption = { value: string; title: string; description?: string; meta?: string }
+export type ProjectDialogValue = { name: string; folders: string[] }
 
 export type DialogState =
   | { type: "text"; title: string; message?: string; value?: string; multiline?: boolean; resolve: (value: string | undefined) => void }
   | { type: "confirm"; title: string; message: string; confirm?: string; resolve: (value: boolean) => void }
   | { type: "choice"; title: string; message?: string; options: ChoiceOption[]; resolve: (value: string | undefined) => void }
   | { type: "export"; title: string; message?: string; defaults: GuiTranscriptExportOptions; resolve: (value: GuiTranscriptExportOptions | undefined) => void }
+  | { type: "project"; title: string; message?: string; name: string; folders: string[]; resolve: (value: ProjectDialogValue | undefined) => void }
 
 export function DialogModal(props: { dialog?: DialogState; close: () => void }) {
   const [value, setValue] = createSignal("")
+  const [folders, setFolders] = createSignal<string[]>([])
+  const [manualFolder, setManualFolder] = createSignal("")
   const [thinking, setThinking] = createSignal(true)
   const [toolDetails, setToolDetails] = createSignal(true)
   const [assistantMetadata, setAssistantMetadata] = createSignal(true)
@@ -38,7 +42,15 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
       setOpenWithoutSaving(current.defaults.openWithoutSaving)
       return
     }
+    if (current?.type === "project") {
+      setValue(current.name)
+      setFolders(uniqueFolders(current.folders))
+      setManualFolder("")
+      return
+    }
     setValue("")
+    setFolders([])
+    setManualFolder("")
   })
   function cancel() {
     const current = props.dialog
@@ -46,6 +58,28 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
     if (!current) return
     if (current.type === "confirm") current.resolve(false)
     else current.resolve(undefined)
+  }
+  function projectValue() {
+    const name = value().trim()
+    const currentFolders = uniqueFolders(folders())
+    return name && currentFolders.length > 0 ? { name, folders: currentFolders } : undefined
+  }
+  async function addSelectedFolders() {
+    const current = props.dialog
+    if (current?.type !== "project") return
+    const selected = await window.opencodex?.folders?.(folders()[0] ?? undefined)
+      ?? await window.opencodex?.folder(folders()[0] ?? undefined).then((folder) => folder ? [folder] : undefined)
+    if (!selected?.length) return
+    setFolders((currentFolders) => uniqueFolders([...currentFolders, ...selected]))
+  }
+  function addManualFolder() {
+    const next = manualFolder().trim()
+    if (!next) return
+    setFolders((currentFolders) => uniqueFolders([...currentFolders, next]))
+    setManualFolder("")
+  }
+  function removeFolder(folder: string) {
+    setFolders((currentFolders) => currentFolders.filter((item) => item !== folder))
   }
   function choose(value: string) {
     const current = props.dialog
@@ -60,6 +94,7 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
     if (!current) return
     if (current.type === "text") current.resolve(value())
     else if (current.type === "confirm") current.resolve(true)
+    else if (current.type === "project") current.resolve(projectValue())
     else if (current.type === "export") current.resolve({
       filename: value(),
       thinking: thinking(),
@@ -75,12 +110,14 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
         <ModalFrame
           title={current().title}
           description={current().message}
+          class={current().type === "project" ? "dialog-card project-editor-modal" : current().type === "text" ? `dialog-card text-dialog-card${current().title === "Edit Session" ? " session-edit-modal" : ""}` : "dialog-card"}
           close={cancel}
+          showClose={current().type !== "confirm"}
           onSubmit={submit}
           footer={(
             <div class="dialog-actions">
               <Button onClick={cancel}>Cancel</Button>
-              <Button type="submit" variant="primary">{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</Button>
+              <Button type="submit" variant="primary" disabled={current().type === "project" && !projectValue()}>{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</Button>
             </div>
           )}
         >
@@ -128,9 +165,47 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
                 </label>
               </div>
             </Show>
+            <Show when={current().type === "project"}>
+              <div class="project-editor-form">
+                <label>
+                  <span>Project name</span>
+                  <TextInput value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="Project name" autofocus />
+                </label>
+                <section class="project-editor-folders">
+                  <header>
+                    <div>
+                      <strong>Folders</strong>
+                      <span>{folders().length} selected</span>
+                    </div>
+                    <Button icon="folder-open" onClick={() => void addSelectedFolders()}>Add folder</Button>
+                  </header>
+                  <div class="project-editor-folder-list">
+                    <For each={folders()} fallback={<div class="project-editor-empty">No folders selected.</div>}>
+                      {(folder) => (
+                        <div class="project-editor-folder-row">
+                          <span title={folder}>{folder}</span>
+                          <IconButton icon="x" label={`Remove ${folder}`} onClick={() => removeFolder(folder)} />
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                  <div class="project-editor-manual">
+                    <TextInput value={manualFolder()} onInput={(event) => setManualFolder(event.currentTarget.value)} placeholder="Paste a folder path" />
+                    <Button onClick={addManualFolder} disabled={!manualFolder().trim()}>Add path</Button>
+                  </div>
+                </section>
+                <Show when={!projectValue()}>
+                  <p class="project-editor-error">Project name and at least one folder are required.</p>
+                </Show>
+              </div>
+            </Show>
           </>
         </ModalFrame>
       )}
     </Show>
   )
+}
+
+function uniqueFolders(folders: string[]) {
+  return [...new Set(folders.map((folder) => folder.trim()).filter(Boolean))]
 }

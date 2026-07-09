@@ -1,7 +1,23 @@
-import type { GlobalEvent, Message, OpencodeXSessionState, Part, PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type {
+  GlobalEvent,
+  Message,
+  OpencodeXSessionState,
+  Part,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SnapshotFileDiff,
+  Todo,
+} from "@opencode-ai/sdk/v2/client"
 import { trimToLiveTail, type MessageWindow } from "./message-window"
 import { reconcileSessionUiState } from "./session-status"
-import { isRenderableSession, type GuiSnapshot, type MessageBundle, type SessionCardSnapshot, type SessionData } from "./store"
+import {
+  isRenderableSession,
+  type GuiSnapshot,
+  type MessageBundle,
+  type SessionCardSnapshot,
+  type SessionData,
+} from "./store"
 import { setRecordEntry } from "./view-pane-state"
 import {
   eventAggregateID,
@@ -56,7 +72,12 @@ export type SessionDataEventTargets = {
 }
 
 export type GlobalEventAction =
-  | { type: "status"; sessionID: string; status: NonNullable<GuiSnapshot["sessionStatus"][string]>; syncVisible: boolean }
+  | {
+      type: "status"
+      sessionID: string
+      status: NonNullable<GuiSnapshot["sessionStatus"][string]>
+      syncVisible: boolean
+    }
   | { type: "state"; sessionID: string; state: OpencodeXSessionState }
   | { type: "session-data" }
   | { type: "snapshot" }
@@ -65,13 +86,16 @@ export type GlobalEventAction =
 
 export type GlobalEventRefreshAction = { sessionID?: string }
 
-export function runGlobalEventAction(action: GlobalEventAction, handlers: {
-  applyStatus: (sessionID: string, status: NonNullable<GuiSnapshot["sessionStatus"][string]>) => void
-  syncVisible: (sessionID: string) => void
-  applyState: (sessionID: string, state: OpencodeXSessionState) => void
-  applySessionData: () => void
-  applySnapshot: () => void
-}): GlobalEventRefreshAction | undefined {
+export function runGlobalEventAction(
+  action: GlobalEventAction,
+  handlers: {
+    applyStatus: (sessionID: string, status: NonNullable<GuiSnapshot["sessionStatus"][string]>) => void
+    syncVisible: (sessionID: string) => void
+    applyState: (sessionID: string, state: OpencodeXSessionState) => void
+    applySessionData: () => void
+    applySnapshot: () => void
+  },
+): GlobalEventRefreshAction | undefined {
   switch (action.type) {
     case "status":
       handlers.applyStatus(action.sessionID, action.status)
@@ -93,34 +117,46 @@ export function runGlobalEventAction(action: GlobalEventAction, handlers: {
   }
 }
 
-export function applySessionStatusSnapshot(snapshot: GuiSnapshot | undefined, sessionID: string, status: NonNullable<GuiSnapshot["sessionStatus"][string]>) {
+export function applySessionStatusSnapshot(
+  snapshot: GuiSnapshot | undefined,
+  sessionID: string,
+  status: NonNullable<GuiSnapshot["sessionStatus"][string]>,
+) {
   if (!snapshot) return snapshot
-  const next = status.type === "idle"
-    ? {
-      ...snapshot,
-      sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== sessionID)),
-    }
-    : { ...snapshot, sessionStatus: { ...snapshot.sessionStatus, [sessionID]: status } }
+  const next =
+    status.type === "idle"
+      ? {
+          ...snapshot,
+          sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== sessionID)),
+        }
+      : { ...snapshot, sessionStatus: { ...snapshot.sessionStatus, [sessionID]: status } }
   return reconcileSessionUiState(next, sessionID)
 }
 
-export function applySessionStateSnapshot(snapshot: GuiSnapshot | undefined, sessionID: string, state: OpencodeXSessionState) {
+export function applySessionStateSnapshot(
+  snapshot: GuiSnapshot | undefined,
+  sessionID: string,
+  state: OpencodeXSessionState,
+) {
   if (!snapshot) return snapshot
   const existing = snapshot.sessionUiState[sessionID]
-  return reconcileSessionUiState({
-    ...snapshot,
-    sessionUiState: {
-      ...snapshot.sessionUiState,
-      [sessionID]: {
-        sessionID,
-        ...(state.seenAt === undefined ? {} : { seenAt: state.seenAt }),
-        ...(state.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
-        reviewedFiles: state.reviewedFiles,
-        displayStatus: existing?.displayStatus ?? "idle",
-        updated: existing?.updated ?? false,
+  return reconcileSessionUiState(
+    {
+      ...snapshot,
+      sessionUiState: {
+        ...snapshot.sessionUiState,
+        [sessionID]: {
+          sessionID,
+          ...(state.seenAt === undefined ? {} : { seenAt: state.seenAt }),
+          ...(state.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
+          reviewedFiles: state.reviewedFiles,
+          displayStatus: existing?.displayStatus ?? "idle",
+          updated: existing?.updated ?? false,
+        },
       },
     },
-  }, sessionID)
+    sessionID,
+  )
 }
 
 export function mergeSnapshot(snapshot: GuiSnapshot, next: GuiSnapshot): GuiSnapshot {
@@ -129,35 +165,37 @@ export function mergeSnapshot(snapshot: GuiSnapshot, next: GuiSnapshot): GuiSnap
     ...snapshot,
     ...cardSnapshot,
     providers: stableValue(snapshot.providers, next.providers),
+    connectedProviderIDs: stableValue(snapshot.connectedProviderIDs, next.connectedProviderIDs),
     agents: stableValue(snapshot.agents, next.agents),
     commands: stableValue(snapshot.commands, next.commands),
     lsp: stableValue(snapshot.lsp, next.lsp),
     mcp: stableValue(snapshot.mcp, next.mcp),
+    mcpResources: stableValue(snapshot.mcpResources, next.mcpResources),
     config: stableValue(snapshot.config, next.config),
     plugins: stableValue(snapshot.plugins, next.plugins),
     swarms: stableValue(snapshot.swarms, next.swarms),
     jobs: stableValue(snapshot.jobs, next.jobs),
   }
-  return snapshot === merged
-    || (
-      snapshot.projects === merged.projects
-      && snapshot.sessions === merged.sessions
-      && snapshot.views === merged.views
-      && snapshot.sessionStatus === merged.sessionStatus
-      && snapshot.sessionUiState === merged.sessionUiState
-      && snapshot.permissions === merged.permissions
-      && snapshot.questions === merged.questions
-      && snapshot.providers === merged.providers
-      && snapshot.agents === merged.agents
-      && snapshot.commands === merged.commands
-      && snapshot.lsp === merged.lsp
-      && snapshot.mcp === merged.mcp
-      && snapshot.config === merged.config
-      && snapshot.plugins === merged.plugins
-      && snapshot.swarms === merged.swarms
-      && snapshot.jobs === merged.jobs
-      && snapshot.sessionSyncRevision === merged.sessionSyncRevision
-    )
+  return snapshot === merged ||
+    (snapshot.projects === merged.projects &&
+      snapshot.sessions === merged.sessions &&
+      snapshot.views === merged.views &&
+      snapshot.sessionStatus === merged.sessionStatus &&
+      snapshot.sessionUiState === merged.sessionUiState &&
+      snapshot.permissions === merged.permissions &&
+      snapshot.questions === merged.questions &&
+      snapshot.providers === merged.providers &&
+      snapshot.connectedProviderIDs === merged.connectedProviderIDs &&
+      snapshot.agents === merged.agents &&
+      snapshot.commands === merged.commands &&
+      snapshot.lsp === merged.lsp &&
+      snapshot.mcp === merged.mcp &&
+      snapshot.mcpResources === merged.mcpResources &&
+      snapshot.config === merged.config &&
+      snapshot.plugins === merged.plugins &&
+      snapshot.swarms === merged.swarms &&
+      snapshot.jobs === merged.jobs &&
+      snapshot.sessionSyncRevision === merged.sessionSyncRevision)
     ? snapshot
     : merged
 }
@@ -174,38 +212,42 @@ export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCar
     questions: stableValue(snapshot.questions, next.questions),
     sessionSyncRevision: next.sessionSyncRevision,
   }
-  return snapshot.projects === merged.projects
-    && snapshot.sessions === merged.sessions
-    && snapshot.views === merged.views
-    && snapshot.sessionStatus === merged.sessionStatus
-    && snapshot.sessionUiState === merged.sessionUiState
-    && snapshot.permissions === merged.permissions
-    && snapshot.questions === merged.questions
-    && snapshot.sessionSyncRevision === merged.sessionSyncRevision
+  return snapshot.projects === merged.projects &&
+    snapshot.sessions === merged.sessions &&
+    snapshot.views === merged.views &&
+    snapshot.sessionStatus === merged.sessionStatus &&
+    snapshot.sessionUiState === merged.sessionUiState &&
+    snapshot.permissions === merged.permissions &&
+    snapshot.questions === merged.questions &&
+    snapshot.sessionSyncRevision === merged.sessionSyncRevision
     ? snapshot
     : merged
 }
 
 export function isSessionDataEvent(event: GlobalEvent) {
   const kind = eventKind(event)
-  return kind === "message.updated"
-    || kind === "message.removed"
-    || kind === "message.part.updated"
-    || kind === "message.part.removed"
-    || kind === "message.part.delta"
-    || kind === "todo.updated"
-    || kind === "session.diff"
+  return (
+    kind === "message.updated" ||
+    kind === "message.removed" ||
+    kind === "message.part.updated" ||
+    kind === "message.part.removed" ||
+    kind === "message.part.delta" ||
+    kind === "todo.updated" ||
+    kind === "session.diff"
+  )
 }
 
 export function isSnapshotPatchEvent(event: GlobalEvent) {
   const kind = eventKind(event)
-  return kind === "session.updated"
-    || kind === "session.deleted"
-    || kind === "permission.asked"
-    || kind === "permission.replied"
-    || kind === "question.asked"
-    || kind === "question.replied"
-    || kind === "question.rejected"
+  return (
+    kind === "session.updated" ||
+    kind === "session.deleted" ||
+    kind === "permission.asked" ||
+    kind === "permission.replied" ||
+    kind === "question.asked" ||
+    kind === "question.replied" ||
+    kind === "question.rejected"
+  )
 }
 
 export function isHighFrequencySessionEvent(event: GlobalEvent) {
@@ -229,6 +271,7 @@ export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, l
 
 export function mergeLiveSessionData(current: SessionData | undefined, incoming: SessionData): SessionData {
   if (!current) return incoming
+  if (current.messageWindowExpanded) return mergeExpandedSessionData(current, incoming)
   const currentMessages = new Map(current.messages.map((bundle) => [bundle.info.id, bundle]))
   return stableValue(current, {
     ...incoming,
@@ -237,6 +280,24 @@ export function mergeLiveSessionData(current: SessionData | undefined, incoming:
       if (!existing) return bundle
       return { ...bundle, parts: mergeLoadedParts(existing.parts, bundle.parts) }
     }),
+  })
+}
+
+function mergeExpandedSessionData(current: SessionData, incoming: SessionData): SessionData {
+  const incomingMessages = new Map(incoming.messages.map((bundle) => [bundle.info.id, bundle]))
+  const currentMessageIDs = new Set(current.messages.map((bundle) => bundle.info.id))
+  return stableValue(current, {
+    ...incoming,
+    messages: sortMessageBundles([
+      ...current.messages.map((bundle) => {
+        const next = incomingMessages.get(bundle.info.id)
+        if (!next) return bundle
+        return { ...next, parts: mergeLoadedParts(bundle.parts, next.parts) }
+      }),
+      ...incoming.messages.filter((bundle) => !currentMessageIDs.has(bundle.info.id)),
+    ]),
+    messageCursor: current.messageCursor,
+    messageWindowExpanded: true,
   })
 }
 
@@ -272,13 +333,16 @@ export function markViewSessionsLoaded(current: Record<string, number>, sessionI
   return sessionIDs.reduce((next, sessionID) => setRecordEntry(next, sessionID, time), current)
 }
 
-export function sessionDataEventTargets(event: GlobalEvent, context: {
-  route: RouteLike
-  activeViewSessions: Session[]
-  loadedSessionID?: string
-  loadedSessionData?: SessionData
-  viewSessionData: Record<string, SessionData>
-}): SessionDataEventTargets | undefined {
+export function sessionDataEventTargets(
+  event: GlobalEvent,
+  context: {
+    route: RouteLike
+    activeViewSessions: Session[]
+    loadedSessionID?: string
+    loadedSessionData?: SessionData
+    viewSessionData: Record<string, SessionData>
+  },
+): SessionDataEventTargets | undefined {
   if (!isSessionDataEvent(event)) return
   const sessionIDs = sessionDataEventSessionIDs(event, {
     currentSessionID: context.route.name === "session" ? context.route.sessionID : undefined,
@@ -289,8 +353,14 @@ export function sessionDataEventTargets(event: GlobalEvent, context: {
   })
 
   return {
-    selectedSessionID: context.route.name === "session" && context.route.sessionID && sessionIDs.has(context.route.sessionID) ? context.route.sessionID : undefined,
-    visibleSessionIDs: context.route.name === "views" ? context.activeViewSessions.filter((session) => sessionIDs.has(session.id)).map((session) => session.id) : [],
+    selectedSessionID:
+      context.route.name === "session" && context.route.sessionID && sessionIDs.has(context.route.sessionID)
+        ? context.route.sessionID
+        : undefined,
+    visibleSessionIDs:
+      context.route.name === "views"
+        ? context.activeViewSessions.filter((session) => sessionIDs.has(session.id)).map((session) => session.id)
+        : [],
   }
 }
 
@@ -299,18 +369,29 @@ export function sessionDataEventSessionIDs(event: GlobalEvent, context: SessionD
   if (sessionID) return new Set([sessionID])
 
   const aggregateID = eventAggregateID(event)
-  if (aggregateID && (context.currentSessionID === aggregateID || context.activeViewSessionIDs?.includes(aggregateID))) return new Set([aggregateID])
+  if (aggregateID && (context.currentSessionID === aggregateID || context.activeViewSessionIDs?.includes(aggregateID)))
+    return new Set([aggregateID])
 
   const messageID = eventMessageID(event)
   if (!messageID) return new Set<string>()
 
   return new Set([
-    ...(context.loadedSessionID && context.loadedSessionData && sessionDataHasMessage(context.loadedSessionData, messageID) ? [context.loadedSessionID] : []),
-    ...Object.entries(context.viewSessionData).flatMap(([viewSessionID, data]) => sessionDataHasMessage(data, messageID) ? [viewSessionID] : []),
+    ...(context.loadedSessionID &&
+    context.loadedSessionData &&
+    sessionDataHasMessage(context.loadedSessionData, messageID)
+      ? [context.loadedSessionID]
+      : []),
+    ...Object.entries(context.viewSessionData).flatMap(([viewSessionID, data]) =>
+      sessionDataHasMessage(data, messageID) ? [viewSessionID] : [],
+    ),
   ])
 }
 
-export function patchSessionData(data: SessionData, event: GlobalEvent, options: SessionDataPatchOptions = {}): SessionData {
+export function patchSessionData(
+  data: SessionData,
+  event: GlobalEvent,
+  options: SessionDataPatchOptions = {},
+): SessionData {
   const properties = eventData(event)
   if (!properties) return data
   switch (eventKind(event)) {
@@ -318,10 +399,16 @@ export function patchSessionData(data: SessionData, event: GlobalEvent, options:
       return { ...data, messages: upsertMessage(data.messages, (properties as { info: Message }).info, options) }
     case "message.removed": {
       forgetPendingMessageParts((properties as { messageID: string }).messageID)
-      return { ...data, messages: data.messages.filter((bundle) => bundle.info.id !== (properties as { messageID: string }).messageID) }
+      return {
+        ...data,
+        messages: data.messages.filter((bundle) => bundle.info.id !== (properties as { messageID: string }).messageID),
+      }
     }
     case "message.part.updated":
-      return { ...data, messages: upsertPart(data.messages, normalizeLivePart((properties as { part: Part }).part), options) }
+      return {
+        ...data,
+        messages: upsertPart(data.messages, normalizeLivePart((properties as { part: Part }).part), options),
+      }
     case "message.part.removed": {
       const removed = properties as { messageID: string; partID: string }
       forgetPendingPart(removed.messageID, removed.partID)
@@ -329,7 +416,10 @@ export function patchSessionData(data: SessionData, event: GlobalEvent, options:
     }
     case "message.part.delta": {
       const delta = properties as { messageID: string; partID: string; field: string; delta: string }
-      return { ...data, messages: applyPartDelta(data.messages, delta.messageID, delta.partID, delta.field, delta.delta, options) }
+      return {
+        ...data,
+        messages: applyPartDelta(data.messages, delta.messageID, delta.partID, delta.field, delta.delta, options),
+      }
     }
     case "todo.updated":
       return { ...data, todos: (properties as { todos: Todo[] }).todos }
@@ -359,8 +449,12 @@ export function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSna
           ...project,
           sessions: project.sessions.filter((session) => session.id !== deletedSessionID),
         })),
-        sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== deletedSessionID)),
-        sessionUiState: Object.fromEntries(Object.entries(snapshot.sessionUiState).filter(([id]) => id !== deletedSessionID)),
+        sessionStatus: Object.fromEntries(
+          Object.entries(snapshot.sessionStatus).filter(([id]) => id !== deletedSessionID),
+        ),
+        sessionUiState: Object.fromEntries(
+          Object.entries(snapshot.sessionUiState).filter(([id]) => id !== deletedSessionID),
+        ),
         permissions: snapshot.permissions.filter((request) => request.sessionID !== deletedSessionID),
         questions: snapshot.questions.filter((request) => request.sessionID !== deletedSessionID),
       }
@@ -376,12 +470,19 @@ export function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSna
         always: requestProperties.always,
         tool: requestProperties.tool,
       }
-      return reconcileSessionUiState({ ...snapshot, permissions: upsertByID(snapshot.permissions, request) }, request.sessionID)
+      return reconcileSessionUiState(
+        { ...snapshot, permissions: upsertByID(snapshot.permissions, request) },
+        request.sessionID,
+      )
     }
     case "permission.replied": {
       const reply = properties as { requestID: string; sessionID?: string }
-      const sessionID = reply.sessionID ?? snapshot.permissions.find((request) => request.id === reply.requestID)?.sessionID
-      const next = { ...snapshot, permissions: snapshot.permissions.filter((request) => request.id !== reply.requestID) }
+      const sessionID =
+        reply.sessionID ?? snapshot.permissions.find((request) => request.id === reply.requestID)?.sessionID
+      const next = {
+        ...snapshot,
+        permissions: snapshot.permissions.filter((request) => request.id !== reply.requestID),
+      }
       return sessionID ? reconcileSessionUiState(next, sessionID) : next
     }
     case "question.asked": {
@@ -392,12 +493,16 @@ export function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSna
         questions: requestProperties.questions,
         tool: requestProperties.tool,
       }
-      return reconcileSessionUiState({ ...snapshot, questions: upsertByID(snapshot.questions, request) }, request.sessionID)
+      return reconcileSessionUiState(
+        { ...snapshot, questions: upsertByID(snapshot.questions, request) },
+        request.sessionID,
+      )
     }
     case "question.replied":
     case "question.rejected": {
       const reply = properties as { requestID: string; sessionID?: string }
-      const sessionID = reply.sessionID ?? snapshot.questions.find((request) => request.id === reply.requestID)?.sessionID
+      const sessionID =
+        reply.sessionID ?? snapshot.questions.find((request) => request.id === reply.requestID)?.sessionID
       const next = { ...snapshot, questions: snapshot.questions.filter((request) => request.id !== reply.requestID) }
       return sessionID ? reconcileSessionUiState(next, sessionID) : next
     }
@@ -417,9 +522,12 @@ function upsertMessage(messages: MessageBundle[], info: Message, options: Sessio
     return messages
   }
   const pendingParts = takePendingParts(info.id)
-  const next = index >= 0
-    ? messages.map((bundle, i) => i === index ? { ...bundle, info, parts: mergePartLists(bundle.parts, pendingParts) } : bundle)
-    : [...messages, { info, parts: pendingParts }]
+  const next =
+    index >= 0
+      ? messages.map((bundle, i) =>
+          i === index ? { ...bundle, info, parts: mergePartLists(bundle.parts, pendingParts) } : bundle,
+        )
+      : [...messages, { info, parts: pendingParts }]
   return sortMessageBundles(next)
 }
 
@@ -440,12 +548,19 @@ function upsertPart(messages: MessageBundle[], part: Part, options: SessionDataP
 }
 
 function removePart(messages: MessageBundle[], messageID: string, partID: string) {
-  return messages.map((bundle) => bundle.info.id === messageID
-    ? { ...bundle, parts: bundle.parts.filter((part) => part.id !== partID) }
-    : bundle)
+  return messages.map((bundle) =>
+    bundle.info.id === messageID ? { ...bundle, parts: bundle.parts.filter((part) => part.id !== partID) } : bundle,
+  )
 }
 
-function applyPartDelta(messages: MessageBundle[], messageID: string, partID: string, field: string, delta: string, options: SessionDataPatchOptions = {}) {
+function applyPartDelta(
+  messages: MessageBundle[],
+  messageID: string,
+  partID: string,
+  field: string,
+  delta: string,
+  options: SessionDataPatchOptions = {},
+) {
   if (field !== "text") {
     if (options.appendMissingMessages !== false) rememberPendingPartDelta(messageID, partID, field, delta)
     return messages
@@ -471,27 +586,35 @@ function sortMessageBundles(messages: MessageBundle[]) {
 }
 
 function patchSnapshotSession(snapshot: GuiSnapshot, info: Session): GuiSnapshot {
-  return reconcileSessionUiState({
-    ...snapshot,
-    sessions: upsertSession(snapshot.sessions, info),
-    projects: snapshot.projects.map((project) => project.sessions.some((session) => session.id === info.id)
-      ? { ...project, sessions: upsertSession(project.sessions, info) }
-      : project),
-    views: snapshot.views.map((view) => view.sessions.some((session) => session.id === info.id)
-      ? { ...view, sessions: upsertSession(view.sessions, info) }
-      : view),
-  }, info.id)
+  return reconcileSessionUiState(
+    {
+      ...snapshot,
+      sessions: upsertSession(snapshot.sessions, info),
+      projects: snapshot.projects.map((project) =>
+        project.sessions.some((session) => session.id === info.id)
+          ? { ...project, sessions: upsertSession(project.sessions, info) }
+          : project,
+      ),
+      views: snapshot.views.map((view) =>
+        view.sessions.some((session) => session.id === info.id)
+          ? { ...view, sessions: upsertSession(view.sessions, info) }
+          : view,
+      ),
+    },
+    info.id,
+  )
 }
 
 function upsertSession<T extends Session>(sessions: T[], session: Session): T[] {
   if (!isRenderableSession(session)) return sessions.filter((item) => item.id !== session.id)
   const index = sessions.findIndex((item) => item.id === session.id)
-  const next = index >= 0 ? sessions.map((item, i) => i === index ? { ...item, ...session } : item) : [...sessions, session as T]
+  const next =
+    index >= 0 ? sessions.map((item, i) => (i === index ? { ...item, ...session } : item)) : [...sessions, session as T]
   return next.toSorted((a, b) => b.time.updated - a.time.updated)
 }
 
 function upsertByID<T extends { id: string }>(items: T[], item: T) {
   return items.some((current) => current.id === item.id)
-    ? items.map((current) => current.id === item.id ? item : current)
+    ? items.map((current) => (current.id === item.id ? item : current))
     : [...items, item]
 }

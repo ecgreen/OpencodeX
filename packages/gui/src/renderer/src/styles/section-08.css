@@ -90,12 +90,62 @@
   gap: 7px;
 }
 
-.model-picker-section h3 {
+.model-picker-section-heading,
+.model-picker-section-toggle {
   color: var(--primary);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.model-picker-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0 2px;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.model-picker-section-toggle:hover,
+.model-picker-section-toggle:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.model-picker-section-toggle > .icon {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.model-picker-section-toggle small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.provider-auth-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(133, 194, 139, 0.4);
+  border-radius: 999px;
+  color: var(--success);
+  background: rgba(133, 194, 139, 0.1);
+}
+
+.provider-auth-badge .icon {
+  width: 8px;
+  height: 8px;
 }
 
 .model-picker-section > div {
@@ -104,11 +154,12 @@
   gap: 6px;
 }
 
-.model-picker-section button {
+.model-option-card {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3px 10px;
+  grid-template-rows: minmax(0, 1fr) auto auto minmax(0, 1fr);
+  gap: 2px 10px;
   min-height: 52px;
   padding: 9px 10px;
   border: 1px solid #242424;
@@ -117,37 +168,46 @@
   background: #101010;
 }
 
-.model-picker-section button:hover,
-.model-picker-section button.selected {
+.model-option-card:hover,
+.model-option-card.selected {
   border-color: rgba(250, 178, 131, 0.6);
   background: #181818;
 }
 
-.model-picker-section button.selected {
+.model-option-card.selected {
   box-shadow: inset 3px 0 0 var(--primary);
 }
 
-.model-picker-section button span,
-.model-picker-section button small {
+.model-option-card .model-option-name,
+.model-option-card > small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.model-picker-section button span {
+.model-option-card .model-option-header {
+  display: flex;
+  grid-column: 1;
+  grid-row: 2;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.model-option-card .model-option-name {
+  min-width: 0;
   font-weight: 800;
 }
 
-.model-picker-section button small {
+.model-option-card > small {
   grid-column: 1;
+  grid-row: 3;
   color: var(--muted);
   font-size: 11px;
 }
 
-.model-picker-section button em {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  align-self: center;
+.model-option-card em {
+  flex: none;
   color: var(--success);
   font-size: 10px;
   font-style: normal;
@@ -159,6 +219,7 @@
 .model-favorite-toggle {
   display: inline-flex;
   grid-column: 2;
+  grid-row: 1 / -1;
   align-self: center;
   align-items: center;
   gap: 4px;

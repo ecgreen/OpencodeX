@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { GlobalSession, OpencodeXView, PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
-import { deriveSessionStatus, deriveViewStatus, markSessionViewedInSnapshot, reconcileSessionUiState, type DerivedSessionStatus } from "../src/renderer/src/lib/session-status"
+import { deriveSessionStatus, deriveViewStatus, markSessionSeenInSnapshot, markSessionViewedInSnapshot, reconcileSessionUiState, type DerivedSessionStatus } from "../src/renderer/src/lib/session-status"
 import { deriveStatus as deriveTuiStatus } from "../../opencode/src/cli/cmd/tui/component/opencodex-session-status-core"
 
 const sessionID = "ses_sync"
@@ -35,7 +35,7 @@ describe("GUI session status parity", () => {
       },
       {
         name: "ready",
-        snapshot: snapshot({ sessionUiState: { [sessionID]: uiState("needs_review") } }),
+        snapshot: snapshot({ sessionUiState: { [sessionID]: uiState("needs_review", sessionID, true) } }),
       },
       {
         name: "idle",
@@ -128,6 +128,33 @@ describe("GUI session status parity", () => {
     expect(markSessionViewedInSnapshot(next, sessionID, 100)).toBe(next)
   })
 
+  test("marks opened sessions as seen without clearing review metadata", () => {
+    const current = snapshot({
+      sessions: [session(sessionID, 200)],
+      sessionUiState: {
+        [sessionID]: {
+          sessionID,
+          seenAt: 20,
+          reviewedAt: 30,
+          reviewedFiles: ["src/app.tsx"],
+          displayStatus: "needs_review",
+          updated: true,
+        },
+      },
+    })
+
+    const next = markSessionSeenInSnapshot(current, sessionID, 200)
+
+    expect(next.sessionUiState[sessionID]).toMatchObject({
+      seenAt: 200,
+      reviewedAt: 30,
+      reviewedFiles: ["src/app.tsx"],
+      displayStatus: "needs_review",
+      updated: false,
+    })
+    expect(deriveSessionStatus(next, next.sessions[0])).toBe("dormant")
+  })
+
   test("keeps dashboard and sidebar view status derivation on the same helper", () => {
     const current = snapshot({
       sessions: [session(sessionID, 200), session("ses_review", 300)],
@@ -210,13 +237,13 @@ function view(sessionIDs: string[]): OpencodeXView {
   }
 }
 
-function uiState(displayStatus: GuiSnapshot["sessionUiState"][string]["displayStatus"], id = sessionID): GuiSnapshot["sessionUiState"][string] {
+function uiState(displayStatus: GuiSnapshot["sessionUiState"][string]["displayStatus"], id = sessionID, updated = false): GuiSnapshot["sessionUiState"][string] {
   return {
     sessionID: id,
     reviewedAt: 100,
     reviewedFiles: [],
     displayStatus,
-    updated: false,
+    updated,
   }
 }
 

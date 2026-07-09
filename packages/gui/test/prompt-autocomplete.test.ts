@@ -63,6 +63,14 @@ describe("GUI prompt autocomplete helpers", () => {
       { type: "file", mime: "text/plain", filename: "src/app.ts", url: "file:///src/app.ts" },
     ])
   })
+
+  test("keeps hidden prompt parts when edited text has no visible mentions", () => {
+    const parts: PromptPart[] = [
+      { type: "file", mime: "text/plain", filename: "src/app.ts", url: "file:///src/app.ts" },
+    ]
+
+    expect(restorePromptPartsFromEditedText(parts, "review this")).toEqual(parts)
+  })
 })
 
 function agent(name: string, mode: Agent["mode"], description?: string): Agent {

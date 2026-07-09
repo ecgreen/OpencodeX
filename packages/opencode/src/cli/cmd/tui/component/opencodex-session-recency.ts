@@ -1,13 +1,19 @@
-const RECENT_SESSION_WINDOW_MS = 4 * 60 * 60 * 1000
-export const PROJECT_RECENT_SESSION_LIMIT = 4
+import {
+  CLIENT_PROJECT_RECENT_SESSION_LIMIT,
+  isRecentClientSessionUpdate,
+  projectClientSessionItems,
+  type ClientSessionOrderInput,
+  type ClientSessionOrderState,
+} from "@opencode-ai/sdk/v2/session-order"
 
 export function isRecentSessionUpdate(timeUpdated: number, now = Date.now()) {
-  return timeUpdated >= now - RECENT_SESSION_WINDOW_MS
+  return isRecentClientSessionUpdate(timeUpdated, now)
 }
 
-export function recentProjectItems<T>(items: T[], timeUpdated: (item: T) => number, now = Date.now()) {
-  const sorted = items.toSorted((a, b) => timeUpdated(b) - timeUpdated(a))
-  const recent = sorted.filter((item) => isRecentSessionUpdate(timeUpdated(item), now))
-  if (recent.length >= PROJECT_RECENT_SESSION_LIMIT) return recent
-  return sorted.slice(0, PROJECT_RECENT_SESSION_LIMIT)
+export function recentProjectItems<T extends ClientSessionOrderInput>(
+  items: readonly T[],
+  state: ClientSessionOrderState,
+  now = Date.now(),
+) {
+  return projectClientSessionItems(items, state, now, CLIENT_PROJECT_RECENT_SESSION_LIMIT)
 }

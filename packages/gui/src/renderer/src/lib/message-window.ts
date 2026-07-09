@@ -15,10 +15,12 @@ export function prependOlderMessages(data: SessionData, page: MessagePage): Sess
     ...data,
     messages: mergeMessageBundles([...page.messages, ...data.messages]),
     messageCursor: page.cursor,
+    messageWindowExpanded: true,
   }
 }
 
 export function trimToLiveTail(data: SessionData, limit: number | MessageWindow): SessionData {
+  if (data.messageWindowExpanded) return data
   const window = messagesFromEnd(data.messages, limit)
   if (!window.trimmed) return data
   return {

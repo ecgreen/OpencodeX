@@ -46,7 +46,7 @@ function formatMessage(message: MessageBundle, providers: Provider[], options: G
         const error = toolError(part.state)
         return [
           [
-            `**Tool:** ${toolDisplayTitle(part.tool, input, metadata)}`,
+            `**Tool:** ${toolDisplayTitle(part.tool, input, metadata, part.state.status)}`,
             ...(options.toolDetails && Object.keys(input).length > 0 ? [`**Input:**\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\``] : []),
             ...(options.toolDetails && output ? [`**Output:**\n\`\`\`\n${output}\n\`\`\``] : []),
             ...(options.toolDetails && error ? [`**Error:**\n\`\`\`\n${error}\n\`\`\``] : []),

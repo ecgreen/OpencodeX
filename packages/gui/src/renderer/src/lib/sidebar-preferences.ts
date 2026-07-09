@@ -1,8 +1,8 @@
 import type { RailSectionName } from "../components/rail-sidebar"
 import { mergeOrderedIDs } from "./reorder"
 
-export const DEFAULT_RAIL_SECTION_ORDER: RailSectionName[] = ["pinned", "projects", "recent", "views"]
-export const DEFAULT_RAIL_SECTIONS: Record<RailSectionName, boolean> = { pinned: false, projects: false, recent: false, views: true }
+export const DEFAULT_RAIL_SECTION_ORDER: RailSectionName[] = ["pinned", "projects", "recent", "prior", "views"]
+export const DEFAULT_RAIL_SECTIONS: Record<RailSectionName, boolean> = { pinned: false, projects: false, recent: false, prior: true, views: true }
 
 export type SidebarPreferences = {
   railCollapsed: boolean
@@ -67,6 +67,7 @@ function readRailSections(value: unknown): Record<RailSectionName, boolean> {
     pinned: typeof input.pinned === "boolean" ? input.pinned : DEFAULT_RAIL_SECTIONS.pinned,
     projects: typeof input.projects === "boolean" ? input.projects : DEFAULT_RAIL_SECTIONS.projects,
     recent: typeof input.recent === "boolean" ? input.recent : DEFAULT_RAIL_SECTIONS.recent,
+    prior: typeof input.prior === "boolean" ? input.prior : DEFAULT_RAIL_SECTIONS.prior,
     views: typeof input.views === "boolean" ? input.views : DEFAULT_RAIL_SECTIONS.views,
   }
 }

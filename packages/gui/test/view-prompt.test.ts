@@ -16,6 +16,11 @@ describe("GUI view prompt decisions", () => {
       draftID: "session-1",
       prompt: textPrompt("hello"),
     })
+    expect(prepareViewPromptSubmission({
+      gui: client,
+      item,
+      prompt: { input: "", parts: [{ type: "file", mime: "text/plain", filename: "app.ts", url: "file:///app.ts" }] },
+    })?.prompt.parts).toEqual([{ type: "file", mime: "text/plain", filename: "app.ts", url: "file:///app.ts" }])
     expect(prepareViewPromptSubmission({ item, prompt: textPrompt("hello") })).toBeUndefined()
     expect(prepareViewPromptSubmission({ gui: client, item, prompt: textPrompt("") })).toBeUndefined()
   })

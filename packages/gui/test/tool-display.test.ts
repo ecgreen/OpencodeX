@@ -18,6 +18,7 @@ describe("GUI tool display helpers", () => {
     expect(toolDisplayTitle("grep", { pattern: "needle", path: "src" }, { matches: 2 })).toBe('Grep "needle" in src (2 matches)')
     expect(toolDisplayTitle("question", { questions: [{}] }, {})).toBe("Ask 1 question")
     expect(toolDisplayTitle("task", { subagent_type: "review", description: "check changes" }, {})).toBe("review task: check changes")
+    expect(toolDisplayTitle("todowrite", {}, {}, "error")).toBe("Todo update failed")
   })
 
   test("strips shell control sequences from visible output", () => {

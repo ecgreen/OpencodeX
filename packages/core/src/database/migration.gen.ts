@@ -31,5 +31,6 @@ export const migrations = (
     import("./migration/20260602010000_opencodex_swarm_runs"),
     import("./migration/20260602020000_opencodex_views"),
     import("./migration/20260602030000_opencodex_session_state"),
+    import("./migration/20260709000000_opencodex_state_event"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

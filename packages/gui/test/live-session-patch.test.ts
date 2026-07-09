@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import type { GlobalEvent, Part, PermissionRequest, QuestionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  GlobalEvent,
+  Part,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SessionStatus,
+} from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot, MessageBundle, SessionCardSnapshot, SessionData } from "../src/renderer/src/lib/store"
 import {
   applySessionStateSnapshot,
@@ -13,6 +20,7 @@ import {
   isSessionDataEvent,
   markViewSessionsLoaded,
   mergeLiveSessionData,
+  mergeSnapshot,
   mergeSessionCardSnapshot,
   patchBoundedSessionData,
   patchSelectedSessionData,
@@ -35,27 +43,46 @@ describe("GUI live session patching", () => {
   })
 
   test("routes global status and session state events", () => {
-    expect(globalEventSessionStatus(event("session.status", { sessionID: "ses_status", status: { type: "idle" } }))).toEqual({
+    expect(
+      globalEventSessionStatus(event("session.status", { sessionID: "ses_status", status: { type: "idle" } })),
+    ).toEqual({
       sessionID: "ses_status",
       status: { type: "idle" },
       syncVisible: true,
     })
-    expect(globalEventSessionStatus(event("session.status", { sessionID: "ses_status", status: { type: "busy" } }))?.syncVisible).toBe(false)
+    expect(
+      globalEventSessionStatus(event("session.status", { sessionID: "ses_status", status: { type: "busy" } }))
+        ?.syncVisible,
+    ).toBe(true)
+    expect(
+      globalEventSessionStatus(event("session.status", { sessionID: "ses_status", status: { type: "retry" } }))
+        ?.syncVisible,
+    ).toBe(true)
     expect(globalEventSessionStatus(event("session.idle", { sessionID: "ses_idle" }))).toEqual({
       sessionID: "ses_idle",
       status: { type: "idle" },
       syncVisible: true,
     })
-    expect(globalEventSessionState(event("opencodex.session_state.updated", { sessionID: "ses_state", state: { displayStatus: "needs_review" } }))).toEqual({
+    expect(
+      globalEventSessionState(
+        event("opencodex.session_state.updated", { sessionID: "ses_state", state: { displayStatus: "needs_review" } }),
+      ),
+    ).toEqual({
       sessionID: "ses_state",
       state: { displayStatus: "needs_review" },
     })
-    expect(globalEventAction(event("session.status", { sessionID: "ses_status", status: { type: "busy" } }))).toMatchObject({
+    expect(
+      globalEventAction(event("session.status", { sessionID: "ses_status", status: { type: "busy" } })),
+    ).toMatchObject({
       type: "status",
       sessionID: "ses_status",
-      syncVisible: false,
+      syncVisible: true,
     })
-    expect(globalEventAction(event("opencodex.session_state.updated", { sessionID: "ses_state", state: { displayStatus: "needs_review" } }))).toMatchObject({
+    expect(
+      globalEventAction(
+        event("opencodex.session_state.updated", { sessionID: "ses_state", state: { displayStatus: "needs_review" } }),
+      ),
+    ).toMatchObject({
       type: "state",
       sessionID: "ses_state",
     })
@@ -72,10 +99,23 @@ describe("GUI live session patching", () => {
       applySnapshot: () => calls.push("snapshot"),
     }
 
-    expect(runGlobalEventAction({ type: "status", sessionID: "ses_status", status: { type: "idle" }, syncVisible: true }, handlers)).toBeUndefined()
+    expect(
+      runGlobalEventAction(
+        { type: "status", sessionID: "ses_status", status: { type: "idle" }, syncVisible: true },
+        handlers,
+      ),
+    ).toBeUndefined()
+    expect(
+      runGlobalEventAction(
+        { type: "status", sessionID: "ses_busy", status: { type: "busy" }, syncVisible: true },
+        handlers,
+      ),
+    ).toBeUndefined()
     expect(runGlobalEventAction({ type: "session-data" }, handlers)).toBeUndefined()
-    expect(runGlobalEventAction({ type: "refresh", sessionID: "ses_refresh" }, handlers)).toEqual({ sessionID: "ses_refresh" })
-    expect(calls).toEqual(["status:ses_status", "sync:ses_status", "data"])
+    expect(runGlobalEventAction({ type: "refresh", sessionID: "ses_refresh" }, handlers)).toEqual({
+      sessionID: "ses_refresh",
+    })
+    expect(calls).toEqual(["status:ses_status", "sync:ses_status", "status:ses_busy", "sync:ses_busy", "data"])
   })
 
   test("applies status events to snapshots and removes idle statuses", () => {
@@ -126,20 +166,25 @@ describe("GUI live session patching", () => {
     expect(result.messages[0]?.parts[0]).toMatchObject({ id: "prt_delta", text: "hello world" })
   })
 
-  test("keeps accumulated streaming text when a stale part update arrives", () => {
+  test("treats part updates as authoritative after transient deltas", () => {
     const withDelta = patchSessionData(
       sessionData([{ ...bundle("msg_stream", 1), parts: [textPart("msg_stream", "prt_stream", "first line")] }]),
-      event("message.part.delta", { messageID: "msg_stream", partID: "prt_stream", field: "text", delta: "\nsecond line" }),
+      event("message.part.delta", {
+        messageID: "msg_stream",
+        partID: "prt_stream",
+        field: "text",
+        delta: "\nsecond line",
+      }),
     )
     const result = patchSessionData(
       withDelta,
       event("message.part.updated", { part: textPart("msg_stream", "prt_stream", "first line") }),
     )
 
-    expect(result.messages[0]?.parts[0]).toMatchObject({ id: "prt_stream", text: "first line\nsecond line" })
+    expect(result.messages[0]?.parts[0]).toMatchObject({ id: "prt_stream", text: "first line" })
   })
 
-  test("appends chunk-like live part updates until a final full part arrives", () => {
+  test("replaces text for every authoritative part update", () => {
     const withFirstLine = patchSessionData(
       sessionData([{ ...bundle("msg_lines", 1), parts: [textPart("msg_lines", "prt_lines", "first line\n")] }]),
       event("message.part.updated", { part: textPart("msg_lines", "prt_lines", "second line\n") }),
@@ -150,28 +195,34 @@ describe("GUI live session patching", () => {
     )
     const withFinalText = patchSessionData(
       withRepeatedLine,
-      event("message.part.updated", { part: textPart("msg_lines", "prt_lines", "final rewritten text", { time: { end: 10 } }) }),
+      event("message.part.updated", {
+        part: textPart("msg_lines", "prt_lines", "final rewritten text", { time: { end: 10 } }),
+      }),
     )
 
-    expect(withFirstLine.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "first line\nsecond line\n" })
-    expect(withRepeatedLine.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "first line\nsecond line\n" })
+    expect(withFirstLine.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "second line\n" })
+    expect(withRepeatedLine.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "second line\n" })
     expect(withFinalText.messages[0]?.parts[0]).toMatchObject({ id: "prt_lines", text: "final rewritten text" })
   })
 
-  test("preserves accumulated live text when a polling reload has stale part text", () => {
+  test("treats reloaded part text as authoritative", () => {
     const current = sessionData([
-      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "first line\nsecond line\nthird line")] },
+      {
+        ...bundle("msg_reload", 1),
+        parts: [textPart("msg_reload", "prt_reload", "first line\nsecond line\nthird line")],
+      },
     ])
-    const staleReload = sessionData([
-      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "")] },
-    ])
+    const staleReload = sessionData([{ ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "")] }])
     const finalReload = sessionData([
-      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "final text", { time: { end: 10 } })] },
+      {
+        ...bundle("msg_reload", 1),
+        parts: [textPart("msg_reload", "prt_reload", "final text", { time: { end: 10 } })],
+      },
     ])
 
     expect(mergeLiveSessionData(current, staleReload).messages[0]?.parts[0]).toMatchObject({
       id: "prt_reload",
-      text: "first line\nsecond line\nthird line",
+      text: "",
     })
     expect(mergeLiveSessionData(current, finalReload).messages[0]?.parts[0]).toMatchObject({
       id: "prt_reload",
@@ -184,9 +235,38 @@ describe("GUI live session patching", () => {
       { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "same text", { time: { end: 10 } })] },
     ])
 
-    expect(mergeLiveSessionData(current, sessionData([
-      { ...bundle("msg_reload", 1), parts: [textPart("msg_reload", "prt_reload", "same text", { time: { end: 10 } })] },
-    ]))).toBe(current)
+    expect(
+      mergeLiveSessionData(
+        current,
+        sessionData([
+          {
+            ...bundle("msg_reload", 1),
+            parts: [textPart("msg_reload", "prt_reload", "same text", { time: { end: 10 } })],
+          },
+        ]),
+      ),
+    ).toBe(current)
+  })
+
+  test("preserves older loaded messages while replacing covered parts", () => {
+    const current = sessionData(
+      [
+        bundle("msg_older", 1),
+        { ...bundle("msg_existing", 2), parts: [textPart("msg_existing", "prt_existing", "live text")] },
+      ],
+      { messageCursor: "older", messageWindowExpanded: true },
+    )
+    const incoming = sessionData(
+      [{ ...bundle("msg_existing", 2), parts: [textPart("msg_existing", "prt_existing", "")] }, bundle("msg_new", 3)],
+      { messageCursor: "tail" },
+    )
+
+    const result = mergeLiveSessionData(current, incoming)
+
+    expect(result.messages.map((item) => item.info.id)).toEqual(["msg_older", "msg_existing", "msg_new"])
+    expect(result.messages[1]?.parts[0]).toMatchObject({ text: "" })
+    expect(result.messageCursor).toBe("older")
+    expect(result.messageWindowExpanded).toBe(true)
   })
 
   test("keeps appending the live tail when older content was loaded", () => {
@@ -207,6 +287,20 @@ describe("GUI live session patching", () => {
     )
 
     expect(result.messages.map((item) => item.info.id)).toEqual(["msg_existing", "msg_new"])
+  })
+
+  test("does not trim manually expanded messages when live updates arrive", () => {
+    const result = patchBoundedSessionData(
+      sessionData([bundle("msg_older", 1), bundle("msg_existing", 2)], {
+        messageCursor: "older",
+        messageWindowExpanded: true,
+      }),
+      event("message.updated", { info: message("msg_new", 3) }),
+      { count: 2, budget: Number.POSITIVE_INFINITY },
+    )
+
+    expect(result.messages.map((item) => item.info.id)).toEqual(["msg_older", "msg_existing", "msg_new"])
+    expect(result.messageWindowExpanded).toBe(true)
   })
 
   test("removes deleted sessions from snapshot side channels", () => {
@@ -238,52 +332,102 @@ describe("GUI live session patching", () => {
     expect(result).toBe(current)
   })
 
-  test("routes session data events by explicit and aggregate session IDs", () => {
-    expect(Array.from(sessionDataEventSessionIDs(event("message.updated", { info: message("msg_direct", 1) }), {
-      currentSessionID: "ses_other",
-      activeViewSessionIDs: [],
-      viewSessionData: {},
-    }))).toEqual(["ses_live"])
+  test("applies connected-provider-only and MCP-resource-only snapshot changes", () => {
+    const current = snapshot({
+      connectedProviderIDs: ["anthropic"],
+      mcpResources: {},
+    })
+    const connected = mergeSnapshot(
+      current,
+      snapshot({
+        connectedProviderIDs: ["anthropic", "openai"],
+        mcpResources: {},
+      }),
+    )
+    const resources = mergeSnapshot(
+      connected,
+      snapshot({
+        connectedProviderIDs: ["anthropic", "openai"],
+        mcpResources: {
+          "docs://sync": {
+            name: "Synchronization docs",
+            uri: "docs://sync",
+            client: "docs",
+          },
+        },
+      }),
+    )
 
-    expect(Array.from(sessionDataEventSessionIDs(aggregateEvent("message.part.delta", "ses_view", { messageID: "msg_unknown" }), {
-      currentSessionID: "ses_other",
-      activeViewSessionIDs: ["ses_view"],
-      viewSessionData: {},
-    }))).toEqual(["ses_view"])
+    expect(connected).not.toBe(current)
+    expect(connected.connectedProviderIDs).toEqual(["anthropic", "openai"])
+    expect(resources).not.toBe(connected)
+    expect(resources.mcpResources?.["docs://sync"]?.name).toBe("Synchronization docs")
+  })
+
+  test("routes session data events by explicit and aggregate session IDs", () => {
+    expect(
+      Array.from(
+        sessionDataEventSessionIDs(event("message.updated", { info: message("msg_direct", 1) }), {
+          currentSessionID: "ses_other",
+          activeViewSessionIDs: [],
+          viewSessionData: {},
+        }),
+      ),
+    ).toEqual(["ses_live"])
+
+    expect(
+      Array.from(
+        sessionDataEventSessionIDs(aggregateEvent("message.part.delta", "ses_view", { messageID: "msg_unknown" }), {
+          currentSessionID: "ses_other",
+          activeViewSessionIDs: ["ses_view"],
+          viewSessionData: {},
+        }),
+      ),
+    ).toEqual(["ses_view"])
   })
 
   test("routes session data events by loaded message IDs", () => {
-    expect(Array.from(sessionDataEventSessionIDs(event("message.part.delta", { messageID: "msg_shared" }), {
-      currentSessionID: "ses_current",
-      activeViewSessionIDs: ["ses_view"],
-      loadedSessionID: "ses_current",
-      loadedSessionData: sessionData([bundle("msg_shared", 1)]),
-      viewSessionData: {
-        ses_view: sessionData([bundle("msg_shared", 2)]),
-        ses_other: sessionData([bundle("msg_other", 3)]),
-      },
-    }))).toEqual(["ses_current", "ses_view"])
+    expect(
+      Array.from(
+        sessionDataEventSessionIDs(event("message.part.delta", { messageID: "msg_shared" }), {
+          currentSessionID: "ses_current",
+          activeViewSessionIDs: ["ses_view"],
+          loadedSessionID: "ses_current",
+          loadedSessionData: sessionData([bundle("msg_shared", 1)]),
+          viewSessionData: {
+            ses_view: sessionData([bundle("msg_shared", 2)]),
+            ses_other: sessionData([bundle("msg_other", 3)]),
+          },
+        }),
+      ),
+    ).toEqual(["ses_current", "ses_view"])
   })
 
   test("selects route-aware session data patch targets", () => {
     const view = session("ses_view", 1)
-    expect(sessionDataEventTargets(event("message.updated", { info: message("msg_direct", 1) }), {
-      route: { name: "session", sessionID: "ses_live" },
-      activeViewSessions: [view],
-      viewSessionData: {},
-    })).toEqual({ selectedSessionID: "ses_live", visibleSessionIDs: [] })
+    expect(
+      sessionDataEventTargets(event("message.updated", { info: message("msg_direct", 1) }), {
+        route: { name: "session", sessionID: "ses_live" },
+        activeViewSessions: [view],
+        viewSessionData: {},
+      }),
+    ).toEqual({ selectedSessionID: "ses_live", visibleSessionIDs: [] })
 
-    expect(sessionDataEventTargets(aggregateEvent("message.part.delta", "ses_view", { messageID: "msg_unknown" }), {
-      route: { name: "views" },
-      activeViewSessions: [view],
-      viewSessionData: {},
-    })).toEqual({ visibleSessionIDs: ["ses_view"] })
+    expect(
+      sessionDataEventTargets(aggregateEvent("message.part.delta", "ses_view", { messageID: "msg_unknown" }), {
+        route: { name: "views" },
+        activeViewSessions: [view],
+        viewSessionData: {},
+      }),
+    ).toEqual({ visibleSessionIDs: ["ses_view"] })
 
-    expect(sessionDataEventTargets(event("session.updated", {}), {
-      route: { name: "views" },
-      activeViewSessions: [view],
-      viewSessionData: {},
-    })).toBeUndefined()
+    expect(
+      sessionDataEventTargets(event("session.updated", {}), {
+        route: { name: "views" },
+        activeViewSessions: [view],
+        viewSessionData: {},
+      }),
+    ).toBeUndefined()
   })
 
   test("patches selected session data from the loaded session or an empty fallback", () => {
@@ -325,13 +469,15 @@ describe("GUI live session patching", () => {
       ses_other: sessionData([bundle("msg_other", 1)]),
     }
 
-    expect(patchVisibleViewSessionData({
-      data,
-      sessionIDs: [],
-      event: event("message.updated", { info: message("msg_new", 2) }),
-      limit: 10,
-      emptyData: sessionData([]),
-    })).toBe(data)
+    expect(
+      patchVisibleViewSessionData({
+        data,
+        sessionIDs: [],
+        event: event("message.updated", { info: message("msg_new", 2) }),
+        limit: 10,
+        emptyData: sessionData([]),
+      }),
+    ).toBe(data)
     expect(markViewSessionsLoaded({ ses_live: 10 }, ["ses_live"], 10)).toEqual({ ses_live: 10 })
   })
 })

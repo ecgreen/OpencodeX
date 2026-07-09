@@ -439,7 +439,15 @@ body {
   overflow: hidden;
 }
 
-.views-manager-main > .views-page {
+.views-manager-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.views-manager-content > .views-page {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;

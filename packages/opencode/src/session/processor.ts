@@ -194,14 +194,15 @@ export const layer = Layer.effect(
 
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return false
+        if (!match || (match.part.state.status !== "pending" && match.part.state.status !== "running")) return false
+        const end = Date.now()
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "error",
             input: match.part.state.input,
             error: errorMessage(error),
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: match.part.state.status === "running" ? match.part.state.time.start : end, end },
           },
         })
         if (error instanceof Permission.RejectedError || error instanceof Question.RejectedError) {

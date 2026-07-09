@@ -3,11 +3,12 @@ import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXPlugin } from "@/opencodex/plugin"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
+import { OpencodeXState } from "@/opencodex/state"
 import { OpencodeXView } from "@/opencodex/view"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { Schema, Struct } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQueryFields } from "../middleware/workspace-routing"
@@ -69,10 +70,12 @@ export const WorkbenchGithubCreatePullPayload = Schema.Struct({
   head: Schema.optional(Schema.String),
 })
 export const WorkbenchBridgeRegisterPayload = Schema.Struct({
-  browserBridge: Schema.optional(Schema.Struct({
-    url: Schema.String,
-    token: Schema.String,
-  })),
+  browserBridge: Schema.optional(
+    Schema.Struct({
+      url: Schema.String,
+      token: Schema.String,
+    }),
+  ),
 })
 export const WorkbenchOperationResult = Schema.Struct({
   ok: Schema.Boolean,
@@ -159,6 +162,18 @@ export const SessionSyncQuery = Schema.Struct({
   limit: Schema.optional(Schema.NumberFromString),
   since: Schema.optional(Schema.String),
 })
+export const StateQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+})
+export const StateSessionQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0))),
+  before: Schema.optional(Schema.String),
+})
+export const StateEventQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  after: Schema.optional(Schema.String),
+})
 
 export const OpencodeXApi = HttpApi.make("opencodex")
   .add(
@@ -232,6 +247,36 @@ export const OpencodeXApi = HttpApi.make("opencodex")
           OpenApi.annotations({
             identifier: "opencodex.session.sync",
             summary: "Get lightweight OpencodeX session sync snapshot",
+          }),
+        ),
+        HttpApiEndpoint.get("stateSnapshot", `${root}/state`, {
+          query: StateQuery,
+          success: described(OpencodeXState.OpencodeXStateSnapshot, "Server-authoritative OpencodeX state snapshot"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.state.snapshot",
+            summary: "Get an atomic OpencodeX state snapshot",
+          }),
+        ),
+        HttpApiEndpoint.get("stateSession", `${root}/state/session/:sessionID`, {
+          params: { sessionID: SessionID },
+          query: StateSessionQuery,
+          success: described(OpencodeXState.OpencodeXSessionSnapshot, "Atomic OpencodeX session snapshot"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.state.session",
+            summary: "Get an atomic OpencodeX session snapshot",
+          }),
+        ),
+        HttpApiEndpoint.get("stateEvent", `${root}/state/event`, {
+          query: StateEventQuery,
+          success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/event-stream" })),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "opencodex.state.event",
+            summary: "Subscribe to server-authoritative OpencodeX state events",
           }),
         ),
         HttpApiEndpoint.patch("updateSessionState", `${root}/session-state/:sessionID`, {

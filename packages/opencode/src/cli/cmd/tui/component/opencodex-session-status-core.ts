@@ -14,7 +14,7 @@ export function deriveStatus(sessionID: string, sync: ReturnType<typeof useSync>
   if (uiState?.displayStatus === "input_needed") return "input_needed"
   if (uiState?.displayStatus === "in_progress") return "in_progress"
   if (isLikelyActiveSession(sessionID, sync)) return "in_progress"
-  if (uiState?.displayStatus === "needs_review") return "needs_review"
+  if (uiState?.displayStatus === "needs_review" && uiState.updated !== false) return "needs_review"
   return "dormant"
 }
 

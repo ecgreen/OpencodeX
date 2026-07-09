@@ -140,6 +140,116 @@ describe("plugin.codex", () => {
     await enabled.dispose?.()
   })
 
+  test("adds xhigh variant for GPT-5.5 OAuth models", async () => {
+    const hooks = await CodexAuthPlugin({} as never)
+    const models = await hooks.provider!.models!(
+      {
+        models: {
+          "gpt-5.5": {
+            id: "gpt-5.5",
+            name: "GPT-5.5",
+            api: { id: "gpt-5.5" },
+            variants: {
+              low: { reasoningEffort: "low" },
+              medium: { reasoningEffort: "medium" },
+              high: { reasoningEffort: "high" },
+            },
+            limit: {
+              context: 1_050_000,
+              input: 922_000,
+              output: 128_000,
+            },
+            cost: {
+              input: 5,
+              output: 30,
+              cache: { read: 0.5, write: 0 },
+            },
+          },
+        },
+      } as never,
+      { auth: { type: "oauth" } } as never,
+    )
+
+    expect(models["gpt-5.5"]?.variants?.xhigh).toEqual({
+      reasoningEffort: "xhigh",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+    })
+  })
+
+  test("adds xhigh variant for hyphenated GPT-5.5 OAuth models", async () => {
+    const hooks = await CodexAuthPlugin({} as never)
+    const models = await hooks.provider!.models!(
+      {
+        models: {
+          "gpt-5-5": {
+            id: "gpt-5-5",
+            name: "GPT-5.5",
+            api: { id: "gpt-5-5" },
+            variants: {
+              low: { reasoningEffort: "low" },
+              medium: { reasoningEffort: "medium" },
+              high: { reasoningEffort: "high" },
+            },
+            limit: {
+              context: 1_050_000,
+              input: 922_000,
+              output: 128_000,
+            },
+            cost: {
+              input: 5,
+              output: 30,
+              cache: { read: 0.5, write: 0 },
+            },
+          },
+        },
+      } as never,
+      { auth: { type: "oauth" } } as never,
+    )
+
+    expect(models["gpt-5-5"]?.variants?.xhigh).toEqual({
+      reasoningEffort: "xhigh",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+    })
+  })
+
+  test("preserves max variant for GPT-5.6 Sol OAuth models", async () => {
+    const hooks = await CodexAuthPlugin({} as never)
+    const models = await hooks.provider!.models!(
+      {
+        models: {
+          "gpt-5.6-sol": {
+            id: "gpt-5.6-sol",
+            name: "GPT-5.6 Sol",
+            api: { id: "gpt-5.6-sol" },
+            variants: {
+              low: { reasoningEffort: "low" },
+              medium: { reasoningEffort: "medium" },
+              high: { reasoningEffort: "high" },
+              xhigh: { reasoningEffort: "xhigh" },
+              max: { reasoningEffort: "max" },
+            },
+            limit: {
+              context: 1_050_000,
+              input: 922_000,
+              output: 128_000,
+            },
+            cost: {
+              input: 5,
+              output: 30,
+              cache: { read: 0.5, write: 0 },
+            },
+          },
+        },
+      } as never,
+      { auth: { type: "oauth" } } as never,
+    )
+
+    expect(models["gpt-5.6-sol"]?.variants?.max).toEqual({ reasoningEffort: "max" })
+    expect(models["gpt-5.6-sol"]?.variants?.ultra).toBeUndefined()
+  })
+
   test("deduplicates concurrent Codex token refreshes", async () => {
     let auth = {
       type: "oauth" as const,

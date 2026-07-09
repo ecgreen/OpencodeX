@@ -9,6 +9,7 @@ import { ViewPane } from "./view-pane"
 
 export function ViewPaneHost(props: {
   item: ViewItem
+  projectName?: string
   data: SessionData
   loading: boolean
   status: string
@@ -23,6 +24,7 @@ export function ViewPaneHost(props: {
   selectedModel: string
   selectedVariant: string
   providers: Provider[]
+  connectedProviderIDs?: string[]
   mcp?: GuiSnapshot["mcp"]
   mcpResources?: GuiSnapshot["mcpResources"]
   lsp?: GuiSnapshot["lsp"]
@@ -38,18 +40,17 @@ export function ViewPaneHost(props: {
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
-  abortSession: (sessionID: string) => void
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   slashCommands: SessionSlashCommand[]
-  concealCodeBlocks: boolean
+  concealCodeBlocks?: boolean
   showTimestamps: boolean
   showThinking: boolean
   showToolDetails: boolean
   showScrollbar: boolean
   showGenericToolOutput: boolean
-  toggleCodeConceal: () => void
+  toggleCodeConceal?: () => void
   toggleTimestamps: () => void
   toggleThinking: () => void
   toggleToolDetails: () => void
@@ -60,9 +61,10 @@ export function ViewPaneHost(props: {
   const session = () => viewItemSession(props.item)
   const id = () => viewItemID(props.item)
   return (
-    <ViewPane
-      session={session()}
-      pending={props.item.kind === "pending"}
+      <ViewPane
+        session={session()}
+        projectName={props.projectName}
+        pending={props.item.kind === "pending"}
       focused={() => props.focusedSessionID === id()}
       composerFocusToken={() => props.composerFocusRequest.sessionID === id() ? props.composerFocusRequest.token : 0}
       data={props.data}
@@ -71,6 +73,7 @@ export function ViewPaneHost(props: {
       composerState={props.composerState}
       updateComposerState={props.updateComposerState}
       providers={props.providers}
+      connectedProviderIDs={props.connectedProviderIDs}
       mcp={props.mcp ?? {}}
       mcpResources={props.mcpResources}
       lsp={props.lsp ?? []}
@@ -92,18 +95,15 @@ export function ViewPaneHost(props: {
       replyPermission={props.replyPermission}
       replyQuestion={props.replyQuestion}
       rejectQuestion={props.rejectQuestion}
-      abortSession={props.abortSession}
       renameSession={props.renameSession}
       moveSession={props.moveSession}
       deleteSession={props.deleteSession}
       slashCommands={props.slashCommands}
-      concealCodeBlocks={props.concealCodeBlocks}
       showTimestamps={props.showTimestamps}
       showThinking={props.showThinking}
       showToolDetails={props.showToolDetails}
       showScrollbar={props.showScrollbar}
       showGenericToolOutput={props.showGenericToolOutput}
-      toggleCodeConceal={props.toggleCodeConceal}
       toggleTimestamps={props.toggleTimestamps}
       toggleThinking={props.toggleThinking}
       toggleToolDetails={props.toggleToolDetails}

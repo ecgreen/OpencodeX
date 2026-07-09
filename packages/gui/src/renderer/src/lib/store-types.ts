@@ -33,6 +33,7 @@ export type MessageBundle = {
 export type SessionData = {
   messages: MessageBundle[]
   messageCursor?: string
+  messageWindowExpanded?: boolean
   todos: Todo[]
   diffs: SnapshotFileDiff[]
 }
@@ -164,6 +165,7 @@ export type GuiSnapshot = {
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   providers: Provider[]
+  connectedProviderIDs?: string[]
   agents: Agent[]
   commands?: Command[]
   lsp?: LspStatus[]

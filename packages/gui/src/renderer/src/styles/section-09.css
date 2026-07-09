@@ -96,43 +96,22 @@
   position: relative;
   z-index: 30;
   display: flex;
+  flex-direction: column;
   grid-template-columns: none;
   align-self: flex-start;
   width: 44px;
   margin-left: 8px;
   overflow: hidden;
-  transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
-}
-
-.rail-collapsed .nav.nav-expanded,
-.rail-collapsed .nav:hover,
-.rail-collapsed .nav:focus-within {
-  width: 158px;
-  border-color: rgba(250, 178, 131, 0.3);
-  background: #101010;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
 .rail-collapsed .nav button {
   flex: 0 0 34px;
   width: 34px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-8px);
-  transition: opacity 150ms ease, transform 260ms cubic-bezier(0.16, 1, 0.3, 1), color 140ms ease, background 140ms ease;
-}
-
-.rail-collapsed .nav button.nav-visible {
-  order: -1;
-}
-
-.rail-collapsed .nav button.nav-visible,
-.rail-collapsed .nav.nav-expanded button,
-.rail-collapsed .nav:hover button,
-.rail-collapsed .nav:focus-within button {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(0);
+  transition: color 140ms ease, background 140ms ease;
 }
 
 .nav button.active,

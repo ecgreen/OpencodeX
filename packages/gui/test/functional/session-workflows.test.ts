@@ -31,11 +31,11 @@ describe("GUI functional session workflows", () => {
     expect(calls).toEqual([
       "prompt:",
       "loading:draft",
+      "route:created",
       "send:created:build it:build:anthropic/claude-sonnet:fast",
       "remember:anthropic/claude-sonnet",
       "sync:created",
       "refresh",
-      "route:created",
     ])
   })
 

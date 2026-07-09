@@ -1,5 +1,5 @@
 export type RailRouteName = "dashboard" | "projects" | "swarms" | "views" | "plugins" | "workbench"
-export type RailSectionName = "pinned" | "projects" | "recent" | "views"
+export type RailSectionName = "pinned" | "projects" | "recent" | "prior" | "views"
 export type RailDragTarget =
   | { type: "section"; id: RailSectionName }
   | { type: "project"; id: string }

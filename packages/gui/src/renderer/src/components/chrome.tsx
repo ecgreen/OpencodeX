@@ -1,21 +1,90 @@
 import type { JSX } from "solid-js"
-import { Show, createSignal, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { Portal } from "solid-js/web"
-import { Mark } from "@opencode-ai/ui/logo"
 import { Icon } from "./icon"
 import type { RailDragTarget, RailSectionName } from "./rail-sidebar-types"
 
 type RailSectionDragTarget = Extract<RailDragTarget, { type: "section" }>
 type RailSectionDragPreview = { id: RailSectionName; title: string; count: number; x: number; y: number; width: number }
 
-export function Titlebar() {
+export function Titlebar(props: {
+  canGoBack: boolean
+  canGoForward: boolean
+  goBack: () => void
+  goForward: () => void
+  newSession: () => void
+  newProject: () => void
+  newView: () => void
+  newSwarm: () => void
+  openDashboard: () => void
+  openProjects: () => void
+  openSessions: () => void
+  openSwarms: () => void
+  openViews: () => void
+  openWorkbench: () => void
+  toggleLeftSidebar: () => void
+  toggleViewSidePanel?: () => void
+  openCommandPalette: () => void
+  openKeyboardHelp: () => void
+}) {
+  const [openMenu, setOpenMenu] = createSignal("")
+
+  onMount(() => {
+    const close = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".titlebar-menu, .titlebar-menu-popover")) return
+      setOpenMenu("")
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu("")
+    }
+    document.addEventListener("pointerdown", close)
+    document.addEventListener("keydown", escape)
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", close)
+      document.removeEventListener("keydown", escape)
+    })
+  })
+
   return (
     <header class="titlebar">
-      <div class="titlebar-drag">
-        <Mark />
-        <span>OpencodeX</span>
-        <small>Premium AI development environment</small>
+      <div
+        class="titlebar-menu"
+        aria-label="Application menu"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div class="titlebar-history" aria-label="Navigation history">
+          <button class="titlebar-history-button" title="Back" aria-label="Back" disabled={!props.canGoBack} onClick={props.goBack}><Icon name="chevronLeft" /></button>
+          <button class="titlebar-history-button" title="Forward" aria-label="Forward" disabled={!props.canGoForward} onClick={props.goForward}><Icon name="chevronRight" /></button>
+        </div>
+        <TitlebarMenu label="File" open={openMenu() === "File"} toggle={() => setOpenMenu(openMenu() === "File" ? "" : "File")}>
+          <TitlebarMenuButton label="New Session" shortcut="Ctrl+N" action={props.newSession} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="New Project" action={props.newProject} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="New View" action={props.newView} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="New Swarm" action={props.newSwarm} close={() => setOpenMenu("")} />
+        </TitlebarMenu>
+        <TitlebarMenu label="Edit" open={openMenu() === "Edit"} toggle={() => setOpenMenu(openMenu() === "Edit" ? "" : "Edit")}>
+          <TitlebarMenuButton label="Cut" shortcut="Ctrl+X" action={() => document.execCommand("cut")} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Copy" shortcut="Ctrl+C" action={() => document.execCommand("copy")} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Paste" shortcut="Ctrl+V" action={() => document.execCommand("paste")} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Command Palette" shortcut="Ctrl+K" action={props.openCommandPalette} close={() => setOpenMenu("")} />
+        </TitlebarMenu>
+        <TitlebarMenu label="View" open={openMenu() === "View"} toggle={() => setOpenMenu(openMenu() === "View" ? "" : "View")}>
+          <TitlebarMenuButton label="Dashboard" action={props.openDashboard} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Projects" action={props.openProjects} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Sessions" action={props.openSessions} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Swarms" action={props.openSwarms} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Views" action={props.openViews} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Browser / Workbench" action={props.openWorkbench} close={() => setOpenMenu("")} />
+          <TitlebarMenuDivider />
+          <TitlebarMenuButton label="Toggle Left Sidebar" shortcut="Ctrl+B" action={props.toggleLeftSidebar} close={() => setOpenMenu("")} />
+          <TitlebarMenuButton label="Toggle View Side Panel" disabled={!props.toggleViewSidePanel} action={() => props.toggleViewSidePanel?.()} close={() => setOpenMenu("")} />
+        </TitlebarMenu>
+        <TitlebarMenu label="Help" open={openMenu() === "Help"} toggle={() => setOpenMenu(openMenu() === "Help" ? "" : "Help")}>
+          <TitlebarMenuButton label="Keyboard Shortcuts" action={props.openKeyboardHelp} close={() => setOpenMenu("")} />
+        </TitlebarMenu>
       </div>
+      <div class="titlebar-drag" />
       <div class="window-controls">
         <button aria-label="Minimize" onClick={() => void window.opencodex?.window("minimize")}>-</button>
         <button aria-label="Maximize" onClick={() => void window.opencodex?.window("maximize")}>{"\u25a1"}</button>
@@ -23,6 +92,69 @@ export function Titlebar() {
       </div>
     </header>
   )
+}
+
+function TitlebarMenu(props: { label: string; open: boolean; toggle: () => void; children: JSX.Element }) {
+  let summary: HTMLElement | undefined
+  const [position, setPosition] = createSignal({ left: 0, top: 0 })
+
+  function updatePosition() {
+    const rect = summary?.getBoundingClientRect()
+    if (!rect) return
+    setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)), top: rect.bottom + 7 })
+  }
+
+  createEffect(() => {
+    if (!props.open) return
+    updatePosition()
+  })
+
+  return (
+    <details class="titlebar-menu-group" open={props.open}>
+      <summary
+        ref={summary}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          updatePosition()
+          props.toggle()
+        }}
+      >{props.label}</summary>
+      <Show when={props.open}>
+        <Portal>
+          <div
+            class="titlebar-menu-popover"
+            style={{ left: `${position().left}px`, top: `${position().top}px` }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {props.children}
+          </div>
+        </Portal>
+      </Show>
+    </details>
+  )
+}
+
+function TitlebarMenuButton(props: { label: string; shortcut?: string; disabled?: boolean; action: () => void; close: () => void }) {
+  return (
+    <button
+      class="titlebar-menu-item"
+      disabled={props.disabled}
+      onClick={(event) => {
+        event.stopPropagation()
+        props.action()
+        props.close()
+      }}
+    >
+      <span>{props.label}</span>
+      <Show when={props.shortcut}><kbd>{props.shortcut}</kbd></Show>
+    </button>
+  )
+}
+
+function TitlebarMenuDivider() {
+  return <div class="titlebar-menu-divider" role="separator" />
 }
 
 export function RailSection(props: {
@@ -189,7 +321,7 @@ function RailSectionDragPreviewView(props: { preview?: RailSectionDragPreview })
 }
 
 function railSectionName(value: string | undefined): RailSectionName | undefined {
-  if (value === "pinned" || value === "projects" || value === "recent" || value === "views") return value
+  if (value === "pinned" || value === "projects" || value === "recent" || value === "prior" || value === "views") return value
 }
 
 function suppressNextClick(event: MouseEvent) {
@@ -248,7 +380,7 @@ const LOGO = {
 type Rgb = { r: number; g: number; b: number }
 
 const LOGO_THEME = {
-  background: hexToRgb("#0a0a0a"),
+  background: hexToRgb("#000000"),
   primary: hexToRgb("#fab283"),
   warning: hexToRgb("#f5a742"),
   peak: hexToRgb("#ffffff"),
@@ -282,7 +414,7 @@ function renderTuiLogoLine(line: string, y: number, inkHex: string, off: number,
   return Array.from(line).map((char, i) => {
     const x = off + i
     const charInk = x >= 40 ? LOGO_THEME.warning : hexToRgb(inkHex)
-    const shadow = tint(LOGO_THEME.background, charInk, 0.25)
+    const shadow = LOGO_THEME.background
     const top = logoIdle(x, y * 2, t, ctx)
     const bot = logoIdle(x, y * 2 + 1, t, ctx)
     const inkTop = logoPeakTint(charInk, top)

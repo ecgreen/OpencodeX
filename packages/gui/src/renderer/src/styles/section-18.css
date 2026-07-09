@@ -247,8 +247,7 @@ summary:focus-visible,
 
 [data-ui="button"][data-size="icon"],
 .icon-button,
-.pin-toggle,
-.model-favorite-toggle[role="button"] {
+.pin-toggle {
   display: inline-grid;
   place-items: center;
   width: 32px;

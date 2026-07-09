@@ -11,6 +11,7 @@ export function ModalFrame(props: {
   children: JSX.Element
   footer?: JSX.Element
   onSubmit?: (event: SubmitEvent) => void
+  showClose?: boolean
 }) {
   const card = () => (
     <>
@@ -21,7 +22,9 @@ export function ModalFrame(props: {
             {(description) => <p>{description()}</p>}
           </Show>
         </div>
-        <IconButton icon="x" label={`Close ${props.title}`} onClick={props.close} />
+        <Show when={props.showClose ?? true}>
+          <IconButton icon="x" label={`Close ${props.title}`} onClick={props.close} />
+        </Show>
       </header>
       {props.children}
       <Show when={props.footer}>

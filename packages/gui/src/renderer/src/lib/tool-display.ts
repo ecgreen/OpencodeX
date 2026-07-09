@@ -89,7 +89,8 @@ export function toolVisibleOutput(tool: string, state: Extract<Part, { type: "to
   return ""
 }
 
-export function toolDisplayTitle(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>) {
+export function toolDisplayTitle(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>, status?: Extract<Part, { type: "tool" }>["state"]["status"]) {
+  if (tool === "todowrite" && status === "error") return "Todo update failed"
   return TOOL_TITLE_BY_ID[tool]?.(input, metadata) ?? tool
 }
 

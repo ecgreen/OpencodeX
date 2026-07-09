@@ -43,7 +43,7 @@ export async function runSessionPromptAction(input: {
   rememberModel: (model: string) => void
   syncSession: (sessionID: string) => Promise<void>
   refresh: () => Promise<void>
-  openCreatedSession: (sessionID: string) => void
+  openCreatedSession: (sessionID: string, session: Session) => void
   prepareTarget?: (gui: GuiClient, route: SessionPromptRoute, session: Session) => Promise<PreparedSessionPromptTarget>
 }) {
   const submission = prepareSessionPromptSubmission({
@@ -65,6 +65,7 @@ export async function runSessionPromptAction(input: {
     variant: input.variant,
     prompt: submission.prompt,
   })
+  if (prepared.createdSessionID) input.openCreatedSession(prepared.createdSessionID, prepared.target)
   const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
   if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
   else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
@@ -72,7 +73,6 @@ export async function runSessionPromptAction(input: {
   if (target.modelToRemember) input.rememberModel(target.modelToRemember)
   await input.syncSession(target.sessionID)
   await input.refresh()
-  if (prepared.createdSessionID) input.openCreatedSession(prepared.createdSessionID)
 }
 
 export function prepareSessionPromptSubmission(input: {
@@ -84,7 +84,7 @@ export function prepareSessionPromptSubmission(input: {
   questionCount: number
 }): SessionPromptSubmission | undefined {
   const route = sessionPromptRoute(input.route)
-  if (!input.gui || !route || !input.session || !input.prompt.input.trim() || input.permissionCount > 0 || input.questionCount > 0) return
+  if (!input.gui || !route || !input.session || (!input.prompt.input.trim() && input.prompt.parts.length === 0) || input.permissionCount > 0 || input.questionCount > 0) return
   return { gui: input.gui, route, session: input.session, prompt: input.prompt }
 }
 

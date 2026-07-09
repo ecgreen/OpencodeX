@@ -17,6 +17,14 @@ describe("GUI session prompt decisions", () => {
       permissionCount: 0,
       questionCount: 0,
     })).toEqual({ gui: client, route: { name: "session" }, session: current, prompt: textPrompt("hello") })
+    expect(prepareSessionPromptSubmission({
+      gui: client,
+      route: { name: "session" },
+      session: current,
+      prompt: { input: "", parts: [{ type: "file", mime: "text/plain", filename: "app.ts", url: "file:///app.ts" }] },
+      permissionCount: 0,
+      questionCount: 0,
+    })?.prompt.parts).toEqual([{ type: "file", mime: "text/plain", filename: "app.ts", url: "file:///app.ts" }])
     expect(prepareSessionPromptSubmission({ gui: client, route: { name: "dashboard" }, session: current, prompt: textPrompt("hello"), permissionCount: 0, questionCount: 0 })).toBeUndefined()
     expect(prepareSessionPromptSubmission({ gui: client, route: { name: "session" }, session: current, prompt: textPrompt(""), permissionCount: 0, questionCount: 0 })).toBeUndefined()
     expect(prepareSessionPromptSubmission({ gui: client, route: { name: "session" }, session: current, prompt: textPrompt("hello"), permissionCount: 1, questionCount: 0 })).toBeUndefined()
@@ -69,11 +77,11 @@ describe("GUI session prompt decisions", () => {
     expect(calls).toEqual([
       "prompt:",
       "loading:draft",
+      "route:created",
       "send:created:hello:build:anthropic/claude-sonnet:fast",
       "remember:anthropic/claude-sonnet",
       "sync:created",
       "refresh",
-      "route:created",
     ])
   })
 

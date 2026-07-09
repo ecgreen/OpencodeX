@@ -1,4 +1,5 @@
 import { Database } from "@opencode-ai/core/database/database"
+import { EventV2 } from "@opencode-ai/core/event"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ProjectV2 } from "@opencode-ai/core/project"
@@ -9,6 +10,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { Context, Effect, Layer, Schema } from "effect"
 import { inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { Project } from "@/project/project"
 import { InstanceStore } from "@/project/instance-store"
@@ -49,6 +51,34 @@ export const ReorderInput = Schema.Struct({
   projectIDs: Schema.Array(Schema.String),
 }).annotate({ identifier: "OpencodeXProjectReorderInput" })
 export type ReorderInput = Schema.Schema.Type<typeof ReorderInput>
+
+export const Event = {
+  Created: EventV2.define({
+    type: "opencodex.project.created",
+    sync: { aggregate: "projectID", version: 1 },
+    schema: { projectID: Schema.String },
+  }),
+  Updated: EventV2.define({
+    type: "opencodex.project.updated",
+    sync: { aggregate: "projectID", version: 1 },
+    schema: { projectID: Schema.String },
+  }),
+  Reordered: EventV2.define({
+    type: "opencodex.project.reordered",
+    sync: { aggregate: "collectionID", version: 1 },
+    schema: { collectionID: Schema.String },
+  }),
+  Deleted: EventV2.define({
+    type: "opencodex.project.deleted",
+    sync: { aggregate: "projectID", version: 1 },
+    schema: { projectID: Schema.String },
+  }),
+  SessionAssigned: EventV2.define({
+    type: "opencodex.project.session_assigned",
+    sync: { aggregate: "projectID", version: 1 },
+    schema: { projectID: Schema.String, sessionID: SessionID },
+  }),
+}
 
 export const CreateSessionInput = Schema.Struct({
   projectID: Schema.String,
@@ -110,13 +140,10 @@ function mergeMetadata(input: { session?: Record<string, unknown>; project: Reco
   }
 }
 
-export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderError>()(
-  "OpencodeX.InvalidFolderError",
-  {
+export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderError>()("OpencodeX.InvalidFolderError", {
     path: Schema.String,
     message: Schema.String,
-  },
-) {}
+}) {}
 
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
@@ -128,7 +155,9 @@ export interface Interface {
   readonly createSession: (
     input: CreateSessionInput,
   ) => Effect.Effect<Session.Info, InvalidFolderError | Project.NotFoundError>
-  readonly moveSession: (input: MoveSessionInput) => Effect.Effect<Session.Info, Project.NotFoundError | Session.NotFound>
+  readonly moveSession: (
+    input: MoveSessionInput,
+  ) => Effect.Effect<Session.Info, Project.NotFoundError | Session.NotFound>
   readonly removeProject: (projectID: string) => Effect.Effect<boolean>
   readonly removeSession: (sessionID: SessionID) => Effect.Effect<boolean, Session.NotFound>
 }
@@ -143,6 +172,7 @@ export const layer = Layer.effect(
     const sessions = yield* Session.Service
     const share = yield* SessionShare.Service
     const store = yield* InstanceStore.Service
+    const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
 
     const validate = Effect.fn("OpencodeXProject.validate")(function* (input: ValidateInput) {
@@ -204,14 +234,12 @@ export const layer = Layer.effect(
       const existingIDs = new Set(
         trackedSessionIDs.length === 0
           ? []
-          : (
-              yield* db
+          : (yield* db
                 .select({ id: SessionTable.id })
                 .from(SessionTable)
                 .where(inArray(SessionTable.id, trackedSessionIDs))
                 .all()
-                .pipe(Effect.orDie)
-            ).map((session) => session.id),
+              .pipe(Effect.orDie)).map((session) => session.id),
       )
       yield* Effect.forEach(
         tracked.filter((session) => !existingIDs.has(session.session_id)),
@@ -226,19 +254,24 @@ export const layer = Layer.effect(
         name: row.name ?? undefined,
         project: item,
         folders: folders.map((folder) => ({ path: folder.path })),
-        sessions: (yield* sessions.listGlobal({ roots: true, limit: 5_000 })).filter(
-          (session) => trackedIDs.has(session.id),
+        sessions: (yield* sessions.listGlobal({ roots: true, limit: 5_000 })).filter((session) =>
+          trackedIDs.has(session.id),
         ),
       }
     })
 
     const list = Effect.fn("OpencodeXProject.list")(function* () {
-      return (yield* Effect.forEach(yield* OpencodeXProjectFolder.listProjects(db), (row) => hydrate(row).pipe(
+      return (yield* Effect.forEach(
+        yield* OpencodeXProjectFolder.listProjects(db),
+        (row) =>
+          hydrate(row).pipe(
         Effect.map((item) => [item]),
         Effect.catchTag("Project.NotFoundError", () => Effect.succeed([] as Info[])),
-      ), {
+          ),
+        {
         concurrency: "unbounded",
-      })).flat()
+        },
+      )).flat()
     })
 
     const get = Effect.fn("OpencodeXProject.get")(function* (projectID: string) {
@@ -254,7 +287,9 @@ export const layer = Layer.effect(
       const name = input.name?.trim()
       yield* OpencodeXProjectFolder.createProject(db, { id, projectID: item.id, name: name || undefined })
       yield* OpencodeXProjectFolder.replaceFolders(db, { opencodexProjectID: id, projectID: item.id, folders })
-      return yield* get(id)
+      const result = yield* get(id)
+      yield* events.publish(Event.Created, { projectID: id })
+      return result
     })
 
     const metadata = Effect.fn("OpencodeXProject.metadata")(function* (projectID: string) {
@@ -276,7 +311,8 @@ export const layer = Layer.effect(
       const folders = input.folders
         ? yield* normalizeFolders({ projectID: input.projectID, folders: input.folders })
         : undefined
-      const upstream = folders && folders.length > 0
+      const upstream =
+        folders && folders.length > 0
         ? (yield* project.fromDirectory(folders[0])).project
         : yield* project.get(current.project_id)
       if (!upstream) return yield* new Project.NotFoundError({ projectID: current.project_id })
@@ -293,7 +329,9 @@ export const layer = Layer.effect(
           folders,
         })
       }
-      return yield* get(input.projectID)
+      const result = yield* get(input.projectID)
+      yield* events.publish(Event.Updated, { projectID: input.projectID })
+      return result
     })
 
     const reorder = Effect.fn("OpencodeXProject.reorder")(function* (input: ReorderInput) {
@@ -304,7 +342,9 @@ export const layer = Layer.effect(
         ...requestedIDs,
         ...rows.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
       ])
-      return yield* list()
+      const result = yield* list()
+      yield* events.publish(Event.Reordered, { collectionID: "opencodex.projects" })
+      return result
     })
 
     const createSession = Effect.fn("OpencodeXProject.createSession")(function* (input: CreateSessionInput) {
@@ -334,6 +374,7 @@ export const layer = Layer.effect(
           sessionID: result.id,
           path: directory,
         })
+        yield* events.publish(Event.SessionAssigned, { projectID: input.projectID, sessionID: result.id })
       }
       return result
     })
@@ -351,11 +392,13 @@ export const layer = Layer.effect(
         sessionID: session.id,
         path: session.directory,
       })
+      yield* events.publish(Event.SessionAssigned, { projectID: input.projectID, sessionID: session.id })
       return session
     })
 
     const removeProject = Effect.fn("OpencodeXProject.removeProject")(function* (projectID: string) {
       yield* OpencodeXProjectFolder.removeProject(db, projectID)
+      yield* events.publish(Event.Deleted, { projectID })
       return true
     })
 
@@ -386,6 +429,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Project.defaultLayer),
   Layer.provide(Session.defaultLayer),
   Layer.provide(SessionShare.defaultLayer),
+  Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))),
 )
 

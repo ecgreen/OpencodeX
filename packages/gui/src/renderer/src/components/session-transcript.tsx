@@ -30,43 +30,62 @@ import {
 import { DisclosureChevron, Icon } from "./icon"
 
 export type ToolPart = Extract<Part, { type: "tool" }>
-export type DisplayPart = { type: "part"; part: Part } | { type: "tool-group"; tool: string; parts: ToolPart[] }
+type ReasoningPart = Extract<Part, { type: "reasoning" }>
+export type DisplayPart = { type: "part"; part: Part } | { type: "tool-group"; tool: string; parts: ToolPart[] } | { type: "reasoning-group"; parts: ReasoningPart[] }
 
 export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
   const result: DisplayPart[] = []
-  let pending: ToolPart[] = []
+  let pendingTools: ToolPart[] = []
+  let pendingReasoning: ReasoningPart[] = []
 
-  function flush() {
-    if (pending.length === 0) return
-    if (pending.length === 1) result.push({ type: "part", part: pending[0] })
-    else result.push({ type: "tool-group", tool: pending[0].tool, parts: pending })
-    pending = []
+  function flushTools() {
+    if (pendingTools.length === 0) return
+    if (pendingTools.length === 1) result.push({ type: "part", part: pendingTools[0] })
+    else result.push({ type: "tool-group", tool: pendingTools[0].tool, parts: pendingTools })
+    pendingTools = []
+  }
+
+  function flushReasoning() {
+    if (pendingReasoning.length === 0) return
+    if (pendingReasoning.length === 1) result.push({ type: "part", part: pendingReasoning[0] })
+    else result.push({ type: "reasoning-group", parts: pendingReasoning })
+    pendingReasoning = []
   }
 
   for (const part of parts) {
     if (part.type === "tool" && isGroupableTool(part.tool)) {
-      if (pending.length === 0 || pending[0].tool === part.tool) {
-        pending.push(part)
+      flushReasoning()
+      if (pendingTools.length === 0 || pendingTools[0].tool === part.tool) {
+        pendingTools.push(part)
         continue
       }
     }
-    flush()
+    if (part.type === "reasoning") {
+      flushTools()
+      pendingReasoning.push(part)
+      continue
+    }
+    flushTools()
+    flushReasoning()
     result.push({ type: "part", part })
   }
-  flush()
+  flushTools()
+  flushReasoning()
   return result
 }
 
-export function DisplayPartView(props: { item: DisplayPart; concealCodeBlocks: boolean; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
+export function DisplayPartView(props: { item: DisplayPart; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
   return (
     <Switch>
       <Match when={props.item.type === "tool-group"}>
         <ToolGroupView item={props.item as Extract<DisplayPart, { type: "tool-group" }>} />
       </Match>
+      <Match when={props.item.type === "reasoning-group"}>
+        <ThinkingGroupView item={props.item as Extract<DisplayPart, { type: "reasoning-group" }>} showThinking={props.showThinking} />
+      </Match>
       <Match when={props.item.type === "part"}>
         <PartView
           part={(props.item as Extract<DisplayPart, { type: "part" }>).part}
-          concealCodeBlocks={props.concealCodeBlocks}
           showThinking={props.showThinking}
           showToolDetails={props.showToolDetails}
           showGenericToolOutput={props.showGenericToolOutput}
@@ -80,16 +99,47 @@ function isGroupableTool(tool: string) {
   return tool === "read" || tool === "grep" || tool === "glob" || tool === "webfetch" || tool === "websearch" || tool === "skill"
 }
 
+function ThinkingGroupView(props: { item: Extract<DisplayPart, { type: "reasoning-group" }>; showThinking: boolean }) {
+  const visibleParts = createMemo(() => props.item.parts.filter((part) => part.text.trim()))
+  return (
+    <Show when={visibleParts().length > 0}>
+      <div class="part text reasoning">
+        <details class="thinking-block" open>
+          <summary>
+            <DisclosureChevron />
+            <span>Thinking</span>
+          </summary>
+          <Show when={props.showThinking}>
+            <div class="thinking-segments">
+              <For each={visibleParts()}>
+                {(part, index) => (
+                  <section class="thinking-segment">
+                    <header>Thinking {index() + 1}</header>
+                    <Markdown text={part.text.trim()} cacheKey={part.id} streaming={false} />
+                  </section>
+                )}
+              </For>
+            </div>
+          </Show>
+        </details>
+      </div>
+    </Show>
+  )
+}
+
 function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" }> }) {
   const status = createMemo(() => toolGroupStatus(props.item.parts))
   const startCollapsed = createMemo(() => props.item.tool === "read" && props.item.parts.length > 10)
   const [expanded, setExpanded] = createSignal(!startCollapsed())
+  const statusLabel = createMemo(() => startCollapsed() && !expanded() ? "Click to expand" : status() === "completed" ? "" : status())
   return (
     <details class={`part tool tool-group ${status()}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>
         <DisclosureChevron />
         <strong>{toolGroupTitle(props.item.tool, props.item.parts)}</strong>
-        <span class="tool-status">{startCollapsed() && !expanded() ? "Click to expand" : status()}</span>
+        <Show when={statusLabel()}>
+          {(label) => <span class="tool-status">{label()}</span>}
+        </Show>
       </summary>
       <Show when={expanded()}>
         <div class="tool-group-list">
@@ -99,8 +149,10 @@ function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" 
               const metadata = toolMetadata(part.state) ?? {}
               return (
                 <div class="tool-group-item">
-                  <span>{toolDisplayTitle(part.tool, input, metadata)}</span>
-                  <small>{part.state.status}</small>
+                  <span>{toolDisplayTitle(part.tool, input, metadata, part.state.status)}</span>
+                  <Show when={part.state.status !== "completed"}>
+                    <small>{part.state.status}</small>
+                  </Show>
                 </div>
               )
             }}
@@ -128,7 +180,7 @@ function toolGroupTitle(tool: string, parts: ToolPart[]) {
   return `${tool} x${parts.length}`
 }
 
-function PartView(props: { part: MessageBundle["parts"][number]; concealCodeBlocks: boolean; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
+function PartView(props: { part: MessageBundle["parts"][number]; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
   return (
     <Switch fallback={<pre class="part muted">{JSON.stringify(props.part, null, 2)}</pre>}>
       <Match when={isStructuralPart(props.part)}>
@@ -137,7 +189,6 @@ function PartView(props: { part: MessageBundle["parts"][number]; concealCodeBloc
       <Match when={props.part.type === "text" || props.part.type === "reasoning"}>
         <TextPartView
           part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>}
-          concealCodeBlocks={props.concealCodeBlocks}
           showThinking={props.showThinking}
         />
       </Match>
@@ -164,7 +215,7 @@ function isStructuralPart(part: MessageBundle["parts"][number]) {
   return part.type === "step-start" || part.type === "step-finish" || part.type === "snapshot" || part.type === "retry" || part.type === "subtask"
 }
 
-function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; concealCodeBlocks: boolean; showThinking: boolean }) {
+function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; showThinking: boolean }) {
   const text = createMemo(() => {
     if ("synthetic" in props.part && props.part.synthetic) return ""
     if ("ignored" in props.part && props.part.ignored) return ""
@@ -172,7 +223,7 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
   })
   return (
     <Show when={text()}>
-      <div class={`part text ${props.part.type}`} classList={{ "conceal-code": props.concealCodeBlocks }}>
+      <div class={`part text ${props.part.type}`}>
         <Show when={props.part.type === "reasoning"} fallback={<Markdown text={text()} cacheKey={props.part.id} streaming={false} />}>
           <details class="thinking-block" open>
             <summary>
@@ -191,13 +242,16 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
 
 function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGenericOutput: boolean }) {
   const state = () => props.part.state
-  const toolClass = () => props.part.tool === "todowrite" ? "todo-update" : ""
+  const toolClass = () => props.part.tool === "todowrite" ? "todo-update" : props.part.tool === "apply_patch" ? "patch-update" : ""
   const input = createMemo(() => toolStateInput(state()))
   const metadata = createMemo(() => toolMetadata(state()) ?? {})
   const error = createMemo(() => toolError(state()))
   const output = createMemo(() => toolVisibleOutput(props.part.tool, state(), metadata()))
-  const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata()))
-  const hasDetails = createMemo(() => toolHasVisibleDetails(props.part.tool, input(), metadata(), output(), error()))
+  const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata(), state().status))
+  const patchSummary = createMemo(() => props.part.tool === "apply_patch" ? patchSummaryFiles(metadata()) : "")
+  const patchPending = createMemo(() => props.part.tool === "apply_patch" && state().status !== "completed" && state().status !== "error" && !patchHasDiff(metadata()))
+  const statusLabel = createMemo(() => state().status === "completed" ? "" : state().status)
+  const hasDetails = createMemo(() => patchPending() || toolHasVisibleDetails(props.part.tool, input(), metadata(), output(), error()))
   const visibleDetails = createMemo(() => props.showDetails && hasDetails())
   const defaultOpen = createMemo(() => visibleDetails() && (props.part.tool === "todowrite" || props.part.tool === "apply_patch" || state().status === "running" || state().status === "error"))
   const [expanded, setExpanded] = createSignal(defaultOpen())
@@ -209,7 +263,9 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
       <div class={`part tool ${state().status} ${toolClass()} no-details`}>
         <div class="tool-summary">
           <strong>{title()}</strong>
-          <span class="tool-status">{state().status}</span>
+          <Show when={statusLabel()}>
+            {(label) => <span class="tool-status">{label()}</span>}
+          </Show>
         </div>
       </div>
     }>
@@ -217,10 +273,15 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
         <summary>
           <DisclosureChevron />
           <strong>{title()}</strong>
-          <span class="tool-status">{state().status}</span>
+          <Show when={patchSummary()}>
+            {(summary) => <span class="tool-patch-files">{summary()}</span>}
+          </Show>
+          <Show when={statusLabel()}>
+            {(label) => <span class="tool-status">{label()}</span>}
+          </Show>
         </summary>
         <Show when={expanded()}>
-          <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} showGenericOutput={props.showGenericOutput} />
+          <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} showGenericOutput={props.showGenericOutput} patchPending={patchPending()} />
           <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
             <details class="tool-raw">
               <summary>
@@ -243,7 +304,26 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
   )
 }
 
-function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string; showGenericOutput: boolean }) {
+function patchSummaryFiles(metadata: Record<string, unknown>) {
+  const files = arrayValue(metadata.files).filter(isRecordValue)
+  if (files.length === 0) return ""
+  return files
+    .map((file) => stringValue(file.relativePath) ?? stringValue(file.filePath) ?? stringValue(file.movePath))
+    .map((file) => fileBasename(file ?? ""))
+    .filter((file): file is string => Boolean(file))
+    .join(", ")
+}
+
+function patchHasDiff(metadata: Record<string, unknown>) {
+  if (stringValue(metadata.diff)) return true
+  return arrayValue(metadata.files).filter(isRecordValue).some((file) => stringValue(file.patch) || stringValue(file.type) === "delete")
+}
+
+function fileBasename(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
+
+function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string; showGenericOutput: boolean; patchPending?: boolean }) {
   const diagnostics = createMemo(() => arrayValue(props.metadata.diagnostics))
   return (
     <div class="tool-details">
@@ -270,7 +350,9 @@ function ToolDetails(props: { tool: string; input: Record<string, unknown>; meta
           <ToolOutput output={props.output} />
         </Match>
         <Match when={props.tool === "apply_patch"}>
-          <ToolDiffs input={props.input} metadata={props.metadata} />
+          <Show when={props.patchPending} fallback={<ToolDiffs input={props.input} metadata={props.metadata} collapsibleFiles />}>
+            <PatchPendingDiff />
+          </Show>
           <ToolDiagnostics diagnostics={diagnostics()} />
         </Match>
         <Match when={props.tool === "todowrite"}>
@@ -293,6 +375,14 @@ function ToolDetails(props: { tool: string; input: Record<string, unknown>; meta
       <Show when={props.error}>
         {(error) => <pre class="tool-error">{error()}</pre>}
       </Show>
+    </div>
+  )
+}
+
+function PatchPendingDiff() {
+  return (
+    <div class="tool-pending-diff" aria-live="polite" aria-busy="true">
+      <span class="tool-pending-text">Thinking through patch diff</span>
     </div>
   )
 }
@@ -340,10 +430,15 @@ function ToolOutput(props: { output: string; maxLines?: number; compact?: boolea
   const trimmed = createMemo(() => props.output.trim())
   const collapsed = createMemo(() => props.maxLines ? collapseLineOutput(trimmed(), props.maxLines) : collapseDiffOutput(trimmed()))
   const visible = createMemo(() => expanded() || !collapsed().overflow ? trimmed() : collapsed().output)
+  const visibleParts = createMemo(() => linkToolOutput(visible()))
   return (
     <Show when={trimmed()}>
       <div class="tool-output" classList={{ compact: props.compact === true }}>
-        <pre>{visible()}</pre>
+        <pre>
+          <For each={visibleParts()}>
+            {(part) => part.href ? <a href={part.href}>{part.text}</a> : part.text}
+          </For>
+        </pre>
         <Show when={collapsed().overflow}>
           <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Click to collapse" : "Click to expand"}</button>
         </Show>
@@ -352,12 +447,31 @@ function ToolOutput(props: { output: string; maxLines?: number; compact?: boolea
   )
 }
 
+function linkToolOutput(value: string) {
+  const pattern = /(?:https?:\/\/|localhost(?::\d+)?|127\.0\.0\.1(?::\d+)?|\[::1\](?::\d+)?)(?:\/[^\s<>"'`]*)?/gi
+  const parts: Array<{ text: string; href?: string }> = []
+  let index = 0
+  for (const match of value.matchAll(pattern)) {
+    const start = match.index ?? 0
+    const raw = match[0]
+    const stripped = raw.replace(/[),.;:!?]+$/, "")
+    if (start > index) parts.push({ text: value.slice(index, start) })
+    parts.push({ text: stripped, href: /^https?:\/\//i.test(stripped) ? stripped : `http://${stripped}` })
+    const trailing = raw.slice(stripped.length)
+    if (trailing) parts.push({ text: trailing })
+    index = start + raw.length
+  }
+  if (index < value.length) parts.push({ text: value.slice(index) })
+  return parts
+}
+
 function ToolCodeBlock(props: { code: string; language?: string; class?: string }) {
   return <CodeBlock class={props.class} language={props.language || "text"} code={props.code} />
 }
 
-function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<string, unknown> }) {
+function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<string, unknown>; collapsibleFiles?: boolean }) {
   const files = createMemo(() => arrayValue(props.metadata.files).filter(isRecordValue))
+  const collapsible = createMemo(() => props.collapsibleFiles === true && files().length > 1)
   return (
     <>
       <Show when={files().length === 0 ? stringValue(props.metadata.diff) : undefined}>
@@ -371,8 +485,8 @@ function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<str
           const type = stringValue(file.type)
           return (
             <Show when={patch || type === "delete"}>
-              <Show when={patch} fallback={<ToolDeletedLines title={toolPatchTitle(type, name, file)} filePath={filePath} deletions={numberValue(file.deletions) ?? 0} />}>
-                {(diff) => <ToolDiff title={toolPatchTitle(type, name, file)} diff={diff()} filePath={filePath} />}
+              <Show when={patch} fallback={<ToolDeletedLines title={toolPatchTitle(type, name, file)} filePath={filePath} deletions={numberValue(file.deletions) ?? 0} collapsible={collapsible()} />}>
+                {(diff) => <ToolDiff title={toolPatchTitle(type, name, file)} diff={diff()} filePath={filePath} collapsible={collapsible()} />}
               </Show>
             </Show>
           )
@@ -382,43 +496,101 @@ function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<str
   )
 }
 
-function ToolDiff(props: { title: string; diff: string; filePath?: string }) {
+function ToolDiff(props: { title: string; diff: string; filePath?: string; collapsible?: boolean }) {
   const contents = createMemo(() => patchContents(props.diff, props.filePath ?? props.title))
+  const [expanded, setExpanded] = createSignal(true)
+  const body = () => (
+    <div class="tool-unified-patch">
+      <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
+        {(value) => (
+          <FileDiffView
+            mode="diff"
+            before={value().before}
+            after={value().after}
+            diffStyle="unified"
+            overflow="scroll"
+            virtualize={false}
+            hunkSeparators="simple"
+          />
+        )}
+      </Show>
+    </div>
+  )
   return (
     <section class="tool-diff">
-      <div class="tool-file-diff">
-        <ToolDiffHeader title={props.title} filePath={props.filePath} />
-        <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
-          {(value) => (
-            <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle="split" virtualize={false} hunkSeparators="simple" />
-          )}
-        </Show>
-      </div>
+      <Show when={props.collapsible} fallback={<><ToolDiffHeader title={props.title} filePath={props.filePath} />{body()}</>}>
+        <details class="tool-file-diff-collapse" open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+          <summary class="tool-file-diff-header">
+            <ToolDiffHeaderContent title={props.title} filePath={props.filePath} disclosure />
+          </summary>
+          <Show when={expanded()}>
+            {body()}
+          </Show>
+        </details>
+      </Show>
     </section>
   )
 }
 
-function ToolDeletedLines(props: { title: string; filePath?: string; deletions: number }) {
+function ToolDeletedLines(props: { title: string; filePath?: string; deletions: number; collapsible?: boolean }) {
+  const [expanded, setExpanded] = createSignal(true)
+  const body = () => <p class="tool-deleted-lines">-{props.deletions} line{props.deletions === 1 ? "" : "s"}</p>
   return (
     <section class="tool-diff">
-      <div class="tool-file-diff">
-        <ToolDiffHeader title={props.title} filePath={props.filePath} />
-        <p class="tool-deleted-lines">-{props.deletions} line{props.deletions === 1 ? "" : "s"}</p>
-      </div>
+      <Show when={props.collapsible} fallback={<div class="tool-file-diff"><ToolDiffHeader title={props.title} filePath={props.filePath} />{body()}</div>}>
+        <details class="tool-file-diff-collapse" open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+          <summary class="tool-file-diff-header">
+            <ToolDiffHeaderContent title={props.title} filePath={props.filePath} disclosure />
+          </summary>
+          <Show when={expanded()}>
+            {body()}
+          </Show>
+        </details>
+      </Show>
     </section>
   )
 }
 
 function ToolDiffHeader(props: { title: string; filePath?: string }) {
+  return <header class="tool-file-diff-header"><ToolDiffHeaderContent title={props.title} filePath={props.filePath} /></header>
+}
+
+function ToolDiffHeaderContent(props: { title: string; filePath?: string; disclosure?: boolean }) {
   const path = createMemo(() => props.filePath ?? props.title)
-  const filename = createMemo(() => path().split(/[\\/]/).filter(Boolean).at(-1) ?? path())
+  const filename = createMemo(() => fileBasename(path()))
   return (
-    <header class="tool-file-diff-header" data-side-panel-file={path()}>
+    <>
+      <Show when={props.disclosure}>
+        <DisclosureChevron />
+      </Show>
       <strong>{filename()}</strong>
       <Show when={path() !== filename()}>
-        <span>{path()}</span>
+        <span class="tool-file-diff-separator">|</span>
+        <span class="tool-file-diff-path">{path()}</span>
       </Show>
-    </header>
+      <div class="tool-file-diff-actions" aria-label={`Open ${filename()}`}>
+        <button
+          type="button"
+          class="tool-file-diff-action git"
+          title={`Open ${filename()} in Git`}
+          aria-label={`Open ${filename()} in Git`}
+          data-side-panel-git-file={path()}
+          onClick={(event) => event.preventDefault()}
+        >
+          <Icon name="branch" />
+        </button>
+        <button
+          type="button"
+          class="tool-file-diff-action file"
+          title={`Open ${filename()} as file`}
+          aria-label={`Open ${filename()} as file`}
+          data-side-panel-open-file={path()}
+          onClick={(event) => event.preventDefault()}
+        >
+          <Icon name="file" />
+        </button>
+      </div>
+    </>
   )
 }
 

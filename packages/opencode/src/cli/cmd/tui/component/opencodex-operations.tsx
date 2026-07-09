@@ -17,6 +17,15 @@ import { DialogModel } from "@tui/component/dialog-model"
 import { Toast } from "@tui/ui/toast"
 import { createColors, createFrames } from "@tui/ui/spinner"
 import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2"
+import {
+  clientSessionOrderBucketForStatus,
+  emptyClientSessionOrderState,
+  priorClientSessionItems,
+  projectClientSessionItems,
+  recentClientSessionItems,
+  reconcileClientSessionOrderState,
+  type ClientSessionOrderInput,
+} from "@opencode-ai/sdk/v2/session-order"
 import "opentui-spinner/solid"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
 import { useBindings, useCommandShortcut } from "../keymap"
@@ -27,7 +36,6 @@ import { createOpencodeXProjectDialog, useOxSidebar } from "./opencodex-sidebar"
 import { setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
 import { createOpencodeXViewDialog } from "./opencodex-view-dialog"
 import { onOpencodeXRefresh, refreshOpencodeXSidebar } from "./opencodex-refresh"
-import { isRecentSessionUpdate, recentProjectItems } from "./opencodex-session-recency"
 import {
   NEW_RESULT_COLOR,
   type DerivedStatus,
@@ -69,6 +77,8 @@ type DashboardRow = {
   view?: OpencodeXView
   open: () => void
 }
+
+type DashboardSessionOrderItem = ClientSessionOrderInput & { row: DashboardRow & { session: DashboardSession } }
 
 type DashboardProjectSummary = {
   project: OpencodeXProject
@@ -1335,16 +1345,27 @@ export function OpencodeXDashboard() {
   const dashboardSessionRows = createMemo(() =>
     dashboardRows().filter((row): row is DashboardRow & { session: DashboardSession } => row.kind === "session" && row.session !== undefined),
   )
+  const [dashboardSessionOrderState, setDashboardSessionOrderState] = createSignal(emptyClientSessionOrderState())
+  const dashboardSessionOrderItems = createMemo(() => dashboardSessionRows().map((row): DashboardSessionOrderItem => ({
+    id: row.session.id,
+    bucket: clientSessionOrderBucketForStatus(row.dashboardStatus ?? row.status),
+    timeUpdated: row.timeUpdated,
+    timeCreated: row.session.time.created,
+    row,
+  })))
+  createEffect(() => {
+    setDashboardSessionOrderState((state) => reconcileClientSessionOrderState(state, dashboardSessionOrderItems()))
+  })
   const primaryDashboardSessionRows = createMemo(() =>
     selectedProjectID()
-      ? recentProjectItems(dashboardSessionRows(), (row) => row.timeUpdated)
-      : dashboardSessionRows().filter((row) => isRecentSessionUpdate(row.timeUpdated)),
+      ? projectClientSessionItems(dashboardSessionOrderItems(), dashboardSessionOrderState()).map((item) => item.row)
+      : recentClientSessionItems(dashboardSessionOrderItems(), dashboardSessionOrderState()).map((item) => item.row),
   )
   const primaryDashboardSessionIDs = createMemo(() => new Set(primaryDashboardSessionRows().map((row) => row.id)))
   const priorDashboardSessionRows = createMemo(() =>
     selectedProjectID()
       ? dashboardSessionRows().filter((row) => !primaryDashboardSessionIDs().has(row.id))
-      : dashboardSessionRows().filter((row) => !isRecentSessionUpdate(row.timeUpdated)),
+      : priorClientSessionItems(dashboardSessionOrderItems(), dashboardSessionOrderState()).map((item) => item.row),
   )
   const sessionSectionTitle = createMemo(() => selectedProjectID() ? "Recent Project Sessions" : "Recent Sessions")
   const priorSessionSectionTitle = createMemo(() => selectedProjectID() ? "Older Project Sessions" : "Prior Sessions")

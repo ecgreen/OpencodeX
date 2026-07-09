@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
-import { activeSessionIDForRoute, activeSessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "../src/renderer/src/lib/route-selection"
+import { activeProjectForRoute, activeSessionIDForRoute, activeSessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "../src/renderer/src/lib/route-selection"
 import { viewItemsMembershipKey, viewSessionsSyncKey, type ViewItem } from "../src/renderer/src/lib/view-items"
 
 describe("GUI route selection helpers", () => {
@@ -32,6 +32,15 @@ describe("GUI route selection helpers", () => {
     expect(focusedViewItemID({ localID: "s1", persistedID: "s2", items })).toBe("s1")
     expect(focusedViewItemID({ localID: "missing", persistedID: "s2", items })).toBe("s2")
     expect(focusedViewItemID({ localID: "", items })).toBe("s1")
+  })
+
+  test("selects project routes only when the project exists", () => {
+    const current = snapshot()
+
+    expect(activeProjectForRoute({ name: "projects", projectID: "p1" }, current.projects)?.id).toBe("p1")
+    expect(activeProjectForRoute({ name: "projects" }, current.projects)).toBeUndefined()
+    expect(activeProjectForRoute({ name: "projects", projectID: "missing" }, current.projects)).toBeUndefined()
+    expect(activeProjectForRoute({ name: "dashboard" }, current.projects)).toBeUndefined()
   })
 
   test("separates stable view membership from volatile sync keys", () => {

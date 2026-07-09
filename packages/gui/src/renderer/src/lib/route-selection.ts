@@ -34,6 +34,12 @@ export function activeViewForRoute(route: RouteLike, views: OpencodeXView[]): Op
   return views.find((view) => view.id === route.viewID) ?? views[0]
 }
 
+export function activeProjectForRoute(route: RouteLike, projects: GuiSnapshot["projects"]) {
+  if (route.name !== "projects") return
+  if (!route.projectID) return
+  return projects.find((project) => project.id === route.projectID)
+}
+
 export function focusedViewItemID(input: {
   localID: string
   persistedID?: string

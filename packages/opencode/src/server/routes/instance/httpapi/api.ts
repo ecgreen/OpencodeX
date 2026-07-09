@@ -3,6 +3,7 @@ import { HttpApi } from "effect/unstable/httpapi"
 import { EventV2 } from "@opencode-ai/core/event"
 import { InstanceDisposed } from "@/server/event"
 import { Question } from "@/question"
+import { OpencodeXState } from "@/opencodex/state"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { EventApi } from "./groups/event"
@@ -70,7 +71,13 @@ export const OpenCodeHttpApi = HttpApi.make("opencode")
   .addHttpApi(EventApi)
   .addHttpApi(InstanceHttpApi)
   .addHttpApi(PtyConnectApi)
-  .annotate(HttpApi.AdditionalSchemas, [EventSchema, Question.Replied, Question.Rejected])
+  .annotate(HttpApi.AdditionalSchemas, [
+    EventSchema,
+    Question.Replied,
+    Question.Rejected,
+    OpencodeXState.OpencodeXStateEvent,
+    OpencodeXState.OpencodeXStateStreamFrame,
+  ])
 
 export type RootHttpApiType = typeof RootHttpApi
 export type InstanceHttpApiType = typeof InstanceHttpApi

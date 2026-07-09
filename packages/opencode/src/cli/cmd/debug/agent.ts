@@ -13,6 +13,7 @@ import { iife } from "../../../util/iife"
 import { effectCmd, fail } from "../../effect-cmd"
 import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
+import { errorMessage } from "@/util/error"
 
 export const AgentCommand = effectCmd({
   command: "agent <name>",
@@ -66,7 +67,9 @@ const run = Effect.fn("Cli.debug.agent.body")(function* (
     }
     const params = parseToolParams(args.params)
     const toolCtx = yield* createToolContext(agent, ctx)
-    const result = yield* tool.execute(params, toolCtx)
+    const result = yield* tool.execute(params, toolCtx).pipe(
+      Effect.catchCause((cause) => fail(`Tool execution failed: ${errorMessage(Cause.squash(cause))}`)),
+    )
     process.stdout.write(JSON.stringify({ tool: toolID, input: params, result }, null, 2) + EOL)
     return
   }

@@ -13,21 +13,18 @@ export function DashboardActionCard(props: { title: string; description: string;
   )
 }
 
-export function DashboardSection(props: { title: string; count: number; collapsed: boolean; onToggle: () => void; action?: string; onAction?: () => void; children: JSX.Element }) {
+export function DashboardSection(props: { title: string; count: number; action?: string; onAction?: () => void; children: JSX.Element }) {
   return (
     <section class="dashboard-section">
       <header>
         <div>
-          <button class="section-collapse" aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.title}`} aria-expanded={!props.collapsed} onClick={props.onToggle}>
-            <span class="section-chevron"><Icon name={props.collapsed ? "chevronRight" : "chevronDown"} /></span>
-            <strong>{props.title} <span class="section-count">({props.count})</span></strong>
-          </button>
+          <strong class="dashboard-section-title">{props.title} <span class="section-count">({props.count})</span></strong>
         </div>
         <Show when={props.action && props.onAction}>
           <button class="secondary" onClick={props.onAction}>{props.action}</button>
         </Show>
       </header>
-      <div class="dashboard-section-content" classList={{ collapsed: props.collapsed }}>
+      <div class="dashboard-section-content">
         <div>{props.children}</div>
       </div>
     </section>
@@ -36,14 +33,19 @@ export function DashboardSection(props: { title: string; count: number; collapse
 
 export function EmptyCreateDashboardCard(props: { title: string; description: string; onClick: () => void }) {
   return (
-    <button class="dashboard-item-card empty-create interactive" onClick={props.onClick}>
-      <strong><Icon name="plus" /> {props.title}</strong>
+    <button class="dashboard-empty-state dashboard-empty-action" onClick={props.onClick}>
+      <span><Icon name="plus" /></span>
+      <strong>{props.title}</strong>
       <span>{props.description}</span>
-      <small>create</small>
     </button>
   )
 }
 
 export function Empty(props: { text: string }) {
-  return <div class="empty">{props.text}</div>
+  return (
+    <div class="dashboard-empty-state">
+      <span><Icon name="dashboard" /></span>
+      <strong>{props.text}</strong>
+    </div>
+  )
 }

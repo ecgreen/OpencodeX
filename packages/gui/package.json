@@ -40,10 +40,13 @@
     "@codemirror/state": "6.6.0",
     "@codemirror/view": "6.43.1",
     "@lezer/highlight": "1.2.3",
+    "@lydell/node-pty": "catalog:",
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@solidjs/router": "catalog:",
     "@tailwindcss/vite": "catalog:",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "codemirror": "6.0.2",
     "lucide-solid": "1.17.0",
     "solid-js": "catalog:",
@@ -73,6 +76,10 @@
     ],
     "extraResources": [
       {
+        "from": "build/icon.png",
+        "to": "app-icon.png"
+      },
+      {
         "from": "resources/sidecar",
         "to": "sidecar",
         "filter": [
@@ -81,6 +88,7 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -92,12 +100,14 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "zip"
       ]
     },
     "linux": {
+      "icon": "build/icons",
       "target": [
         "AppImage",
         "deb"

@@ -11,6 +11,7 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m1", "m2", "m3", "m4"])
     expect(result.messageCursor).toBe("older")
+    expect(result.messageWindowExpanded).toBe(true)
   })
 
   test("prepends older pages without trimming newer messages", () => {
@@ -40,6 +41,16 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m3", "m4"])
     expect(result.messageCursor).toBeTruthy()
+  })
+
+  test("keeps manually expanded windows during live tail trimming", () => {
+    const result = trimToLiveTail(
+      sessionData([bundle("m1", 1), bundle("m2", 2), bundle("m3", 3), bundle("m4", 4)], { messageWindowExpanded: true }),
+      2,
+    )
+
+    expect(messageIDs(result)).toEqual(["m1", "m2", "m3", "m4"])
+    expect(result.messageWindowExpanded).toBe(true)
   })
 
   test("keeps the newest heavy message when following the live content budget", () => {

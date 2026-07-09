@@ -149,6 +149,32 @@ export const layer = Layer.effect(
             // override `agent.build.steps` in config.
             steps: 100,
           },
+          goal: {
+            name: "goal",
+            description: "Long-horizon goal mode. Iterates autonomously toward the user's stated goal until complete or blocked.",
+            options: {},
+            color: "#ff4fd8",
+            prompt: [
+              "You are in Goal mode, a long-horizon autonomous execution mode.",
+              "Treat the user's prompt as the target outcome, not just the next immediate task.",
+              "Work in deliberate iterations: assess the current state, choose the highest-impact next step, execute it, validate the result, and continue until the goal is met or you are blocked.",
+              "Use the todo list to track objective-level progress and update it as evidence changes.",
+              "Prefer small verifiable steps over large speculative rewrites. Run focused validation whenever practical.",
+              "Stop only when the goal is complete, the remaining work is clearly blocked on the user or external systems, or continuing would be unsafe.",
+              "When blocked or complete, summarize the evidence, remaining risks, and exact next action.",
+            ].join("\n"),
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                question: "allow",
+                plan_enter: "allow",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+            steps: 100,
+          },
           plan: {
             name: "plan",
             description: "Plan mode. Disallows all edit tools.",

@@ -71,12 +71,46 @@ export const OpencodeXSessionStateTable = sqliteTable(
   (table) => [index("opencodex_session_state_updated_idx").on(table.time_updated)],
 )
 
+export const OpencodeXStateEventTable = sqliteTable(
+  "opencodex_state_event",
+  {
+    position: integer().primaryKey({ autoIncrement: true }),
+    id: text().notNull().unique(),
+    project_id: text().notNull(),
+    workspace_id: text(),
+    directory: text().notNull(),
+    aggregate_id: text().notNull(),
+    aggregate_sequence: integer().notNull(),
+    domain: text().notNull(),
+    event_type: text().notNull(),
+    operation: text().notNull(),
+    payload: text({ mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  },
+  (table) => [
+    index("opencodex_state_event_scope_position_idx").on(
+      table.project_id,
+      table.workspace_id,
+      table.directory,
+      table.position,
+    ),
+    index("opencodex_state_event_aggregate_idx").on(
+      table.project_id,
+      table.workspace_id,
+      table.directory,
+      table.aggregate_id,
+      table.aggregate_sequence,
+    ),
+  ],
+)
+
 export const OpencodeXViewTable = sqliteTable(
   "opencodex_view",
   {
     id: text().primaryKey(),
     title: text().notNull(),
-    focused_session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    focused_session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     layout: text().notNull().default("auto"),
     metadata_json: text(),
     ...Timestamps,
@@ -116,7 +150,9 @@ export const OpencodeXJobTable = sqliteTable(
     status: text().notNull(),
     source: text().notNull(),
     opencodex_project_id: text().references(() => OpencodeXProjectTable.id, { onDelete: "set null" }),
-    session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     parent_job_id: text(),
     swarm_id: text(),
     role_id: text(),
@@ -150,7 +186,9 @@ export const OpencodeXSwarmTable = sqliteTable(
     status: text().notNull(),
     source: text().notNull(),
     created_by: text(),
-    synthesis_session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    synthesis_session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     started_at: integer(),
     completed_at: integer(),
     metadata_json: text(),
@@ -175,8 +213,12 @@ export const OpencodeXSwarmRunTable = sqliteTable(
     prompt: text().notNull(),
     status: text().notNull(),
     source: text().notNull(),
-    orchestrator_session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
-    result_session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    orchestrator_session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
+    result_session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     started_at: integer(),
     completed_at: integer(),
     metadata_json: text(),
@@ -207,7 +249,9 @@ export const OpencodeXSwarmRoleTable = sqliteTable(
     status: text().notNull(),
     instructions: text().notNull(),
     sort_order: integer().notNull().default(0),
-    session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     job_id: text().references(() => OpencodeXJobTable.id, { onDelete: "set null" }),
     metadata_json: text(),
     ...Timestamps,
@@ -233,7 +277,9 @@ export const OpencodeXSwarmAgentRunTable = sqliteTable(
     role_id: text().references(() => OpencodeXSwarmRoleTable.id, { onDelete: "set null" }),
     status: text().notNull(),
     prompt: text().notNull(),
-    session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     job_id: text().references(() => OpencodeXJobTable.id, { onDelete: "set null" }),
     metadata_json: text(),
     started_at: integer(),
@@ -259,7 +305,9 @@ export const OpencodeXSwarmEventTable = sqliteTable(
       .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
     run_id: text().references(() => OpencodeXSwarmRunTable.id, { onDelete: "set null" }),
     role_id: text().references(() => OpencodeXSwarmRoleTable.id, { onDelete: "set null" }),
-    session_id: text().$type<SessionSchema.ID>().references(() => SessionTable.id, { onDelete: "set null" }),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
     kind: text().notNull(),
     message: text().notNull(),
     metadata_json: text(),

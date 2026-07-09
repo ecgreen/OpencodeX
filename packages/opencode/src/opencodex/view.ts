@@ -1,6 +1,8 @@
 import { OpencodeXViewSessionTable, OpencodeXViewTable } from "@opencode-ai/core/opencodex/sql"
 import { Database } from "@opencode-ai/core/database/database"
+import { EventV2 } from "@opencode-ai/core/event"
 import { Identifier } from "@opencode-ai/core/util/identifier"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -64,6 +66,29 @@ export const ReorderInput = Schema.Struct({
 }).annotate({ identifier: "OpencodeXViewReorderInput" })
 export type ReorderInput = Schema.Schema.Type<typeof ReorderInput>
 
+export const Event = {
+  Created: EventV2.define({
+    type: "opencodex.view.created",
+    sync: { aggregate: "viewID", version: 1 },
+    schema: { viewID: Schema.String },
+  }),
+  Updated: EventV2.define({
+    type: "opencodex.view.updated",
+    sync: { aggregate: "viewID", version: 1 },
+    schema: { viewID: Schema.String },
+  }),
+  Reordered: EventV2.define({
+    type: "opencodex.view.reordered",
+    sync: { aggregate: "collectionID", version: 1 },
+    schema: { collectionID: Schema.String },
+  }),
+  Deleted: EventV2.define({
+    type: "opencodex.view.deleted",
+    sync: { aggregate: "viewID", version: 1 },
+    schema: { viewID: Schema.String },
+  }),
+}
+
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("OpencodeX.View.NotFoundError", {
   viewID: Schema.String,
 }) {}
@@ -107,6 +132,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const session = yield* Session.Service
+    const events = yield* EventV2Bridge.Service
 
     const assignedSessionIDs = Effect.fn("OpencodeXView.assignedSessionIDs")(function* (viewID: string) {
       return (yield* db
@@ -138,9 +164,16 @@ export const layer = Layer.effect(
       }
     })
 
-    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (viewID: string, sessionIDs: readonly SessionID[], options?: { allowEmpty?: boolean }) {
+    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (
+      viewID: string,
+      sessionIDs: readonly SessionID[],
+      options?: { allowEmpty?: boolean },
+    ) {
       const normalized = yield* validateSessionIDs(sessionIDs, options)
-      yield* Effect.forEach(normalized, (sessionID) => session.get(sessionID), { concurrency: "unbounded", discard: true })
+      yield* Effect.forEach(normalized, (sessionID) => session.get(sessionID), {
+        concurrency: "unbounded",
+        discard: true,
+      })
       const now = Date.now()
       yield* db
         .transaction(
@@ -189,10 +222,12 @@ export const layer = Layer.effect(
 
     const create = Effect.fn("OpencodeXView.create")(function* (input: CreateInput) {
       const sessionIDs = yield* validateSessionIDs(input.sessionIDs, { allowEmpty: hasPendingSessions(input.metadata) })
-      const focusedSessionID = input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
-        ? input.focusedSessionID
-        : sessionIDs[0]
-      yield* Effect.forEach(sessionIDs, (sessionID) => session.get(sessionID), { concurrency: "unbounded", discard: true })
+      const focusedSessionID =
+        input.focusedSessionID && sessionIDs.includes(input.focusedSessionID) ? input.focusedSessionID : sessionIDs[0]
+      yield* Effect.forEach(sessionIDs, (sessionID) => session.get(sessionID), {
+        concurrency: "unbounded",
+        discard: true,
+      })
       const now = Date.now()
       const id = input.id ?? `oxv_${Identifier.ascending()}`
       yield* db
@@ -209,7 +244,9 @@ export const layer = Layer.effect(
         .run()
         .pipe(Effect.orDie)
       yield* replaceSessions(id, sessionIDs, { allowEmpty: hasPendingSessions(input.metadata) })
-      return yield* get(id).pipe(Effect.orDie)
+      const result = yield* get(id).pipe(Effect.orDie)
+      yield* events.publish(Event.Created, { viewID: id })
+      return result
     })
 
     const update = Effect.fn("OpencodeXView.update")(function* (input: UpdateInput) {
@@ -218,12 +255,13 @@ export const layer = Layer.effect(
       const sessionIDs = input.sessionIDs
         ? yield* replaceSessions(input.id, input.sessionIDs, { allowEmpty: hasPendingSessions(metadata) })
         : current.sessionIDs
-      const focusedSessionID = input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
+      const focusedSessionID =
+        input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
         ? input.focusedSessionID
         : current.focusedSessionID && sessionIDs.includes(current.focusedSessionID)
           ? current.focusedSessionID
           : sessionIDs[0]
-      return yield* db
+      const result = yield* db
         .update(OpencodeXViewTable)
         .set({
           title: input.title?.trim() || undefined,
@@ -236,18 +274,20 @@ export const layer = Layer.effect(
         .returning()
         .get()
         .pipe(Effect.orDie, Effect.flatMap(hydrate))
+      yield* events.publish(Event.Updated, { viewID: input.id })
+      return result
     })
 
     const reorder = Effect.fn("OpencodeXView.reorder")(function* (input: ReorderInput) {
-      const current = (
-        yield* db.select().from(OpencodeXViewTable).orderBy(OpencodeXViewTable.time_updated).all().pipe(Effect.orDie)
-      ).toReversed()
+      const current = (yield* db
+        .select()
+        .from(OpencodeXViewTable)
+        .orderBy(OpencodeXViewTable.time_updated)
+        .all()
+        .pipe(Effect.orDie)).toReversed()
       const knownIDs = new Set(current.map((row) => row.id))
       const requestedIDs = [...new Set(input.viewIDs)].filter((id) => knownIDs.has(id))
-      const orderedIDs = [
-        ...requestedIDs,
-        ...current.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
-      ]
+      const orderedIDs = [...requestedIDs, ...current.map((row) => row.id).filter((id) => !requestedIDs.includes(id))]
       const now = Date.now()
       yield* Effect.forEach(
         orderedIDs.map((id, index) => ({ id, index })),
@@ -260,12 +300,15 @@ export const layer = Layer.effect(
             .pipe(Effect.orDie),
         { discard: true },
       )
-      return yield* list()
+      const result = yield* list()
+      yield* events.publish(Event.Reordered, { collectionID: "opencodex.views" })
+      return result
     })
 
     const remove = Effect.fn("OpencodeXView.remove")(function* (viewID: string) {
       yield* get(viewID)
       yield* db.delete(OpencodeXViewTable).where(eq(OpencodeXViewTable.id, viewID)).run().pipe(Effect.orDie)
+      yield* events.publish(Event.Deleted, { viewID })
       return true
     })
 
@@ -273,6 +316,10 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer), Layer.provide(Session.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provide(Session.defaultLayer),
+  Layer.provide(EventV2Bridge.defaultLayer),
+)
 
 export * as OpencodeXView from "./view"

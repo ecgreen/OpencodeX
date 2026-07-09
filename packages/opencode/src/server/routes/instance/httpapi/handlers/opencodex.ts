@@ -5,6 +5,7 @@ import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXPlugin } from "@/opencodex/plugin"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
+import { OpencodeXState } from "@/opencodex/state"
 import { OpencodeXView } from "@/opencodex/view"
 import { Config } from "@/config/config"
 import { ConfigPlugin } from "@/config/plugin"
@@ -24,12 +25,16 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser"
 import path from "path"
 import { and, asc, eq, inArray } from "drizzle-orm"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { encode } from "effect/unstable/encoding/Sse"
 import { InstanceHttpApi } from "../api"
 import {
   PluginListQuery,
   SessionSyncQuery,
+  StateEventQuery,
+  StateSessionQuery,
   UpdateJobPayload,
   UpdateProjectPayload,
   UpdateSessionStatePayload,
@@ -61,9 +66,7 @@ import { Process } from "@/util/process"
 
 function mapErrors<A, R>(effect: Effect.Effect<A, OpencodeXProject.InvalidFolderError | Project.NotFoundError, R>) {
   return effect.pipe(
-    Effect.catchTag("OpencodeX.InvalidFolderError", () =>
-      Effect.fail(new HttpApiError.BadRequest({})),
-    ),
+    Effect.catchTag("OpencodeX.InvalidFolderError", () => Effect.fail(new HttpApiError.BadRequest({}))),
     Effect.catchTag("Project.NotFoundError", (error) =>
       Effect.fail(
         new ProjectNotFoundError({
@@ -73,6 +76,15 @@ function mapErrors<A, R>(effect: Effect.Effect<A, OpencodeXProject.InvalidFolder
       ),
     ),
   )
+}
+
+function stateEventData(data: OpencodeXState.OpencodeXStateStreamFrame) {
+  return {
+    _tag: "Event" as const,
+    event: data.type,
+    id: data.type === "event" ? data.event.cursor : undefined,
+    data: JSON.stringify(data),
+  }
 }
 
 function mapProjectNotFound<A, R>(effect: Effect.Effect<A, Project.NotFoundError, R>) {
@@ -88,7 +100,9 @@ function mapProjectNotFound<A, R>(effect: Effect.Effect<A, Project.NotFoundError
   )
 }
 
-function mapSwarmCreateErrors<A, R>(effect: Effect.Effect<A, Project.NotFoundError | OpencodeXSwarm.ValidationError, R>) {
+function mapSwarmCreateErrors<A, R>(
+  effect: Effect.Effect<A, Project.NotFoundError | OpencodeXSwarm.ValidationError, R>,
+) {
   return effect.pipe(
     Effect.catchTag("Project.NotFoundError", (error) =>
       Effect.fail(
@@ -109,7 +123,11 @@ function mapJobNotFound<A, R>(effect: Effect.Effect<A, OpencodeXJob.NotFoundErro
 }
 
 function mapSwarmNotFound<A, R>(
-  effect: Effect.Effect<A, OpencodeXSwarm.NotFoundError | OpencodeXSwarm.RoleNotFoundError | OpencodeXSwarm.ValidationError, R>,
+  effect: Effect.Effect<
+    A,
+    OpencodeXSwarm.NotFoundError | OpencodeXSwarm.RoleNotFoundError | OpencodeXSwarm.ValidationError,
+    R
+  >,
 ) {
   return effect.pipe(
     Effect.catchTag("OpencodeX.Swarm.NotFoundError", (error) =>
@@ -122,9 +140,7 @@ function mapSwarmNotFound<A, R>(
   )
 }
 
-function mapViewErrors<A, R>(
-  effect: Effect.Effect<A, OpencodeXView.NotFoundError | OpencodeXView.ValidationError, R>,
-) {
+function mapViewErrors<A, R>(effect: Effect.Effect<A, OpencodeXView.NotFoundError | OpencodeXView.ValidationError, R>) {
   return effect.pipe(
     Effect.catchTag("OpencodeX.View.NotFoundError", (error) =>
       Effect.fail(notFound(`View not found: ${error.viewID}`)),
@@ -136,8 +152,9 @@ function mapViewErrors<A, R>(
 function mergeSessions(sessions: readonly Session.Info[], projects: readonly OpencodeXProject.Info[]): Session.Info[] {
   return [
     ...new Map(
-      [...sessions.map(asSessionInfo), ...projects.flatMap((project) => project.sessions.map(asSessionInfo))]
-        .map((session): [SessionID, Session.Info] => [session.id, session]),
+      [...sessions.map(asSessionInfo), ...projects.flatMap((project) => project.sessions.map(asSessionInfo))].map(
+        (session): [SessionID, Session.Info] => [session.id, session],
+      ),
     ).values(),
   ].sort((a, b) => b.time.updated - a.time.updated || String(b.id).localeCompare(String(a.id)))
 }
@@ -146,7 +163,9 @@ function asSessionInfo(session: Session.Info | OpencodeXProject.Info["sessions"]
   return stripSessionSummaryDiffs(session) as unknown as Session.Info
 }
 
-function stripSessionSummaryDiffs<T extends { summary?: { additions: number; deletions: number; files: number; diffs?: unknown } }>(session: T): T {
+function stripSessionSummaryDiffs<
+  T extends { summary?: { additions: number; deletions: number; files: number; diffs?: unknown } },
+>(session: T): T {
   if (!session.summary?.diffs) return session
   return {
     ...session,
@@ -202,12 +221,7 @@ function persistedSessionStatus(db: Database.Interface["db"], sessionIDs: readon
       data: EventTable.data,
     })
     .from(EventTable)
-    .where(
-      and(
-        inArray(EventTable.aggregate_id, [...new Set(sessionIDs)]),
-        eq(EventTable.type, sessionStatusEventType),
-      ),
-    )
+    .where(and(inArray(EventTable.aggregate_id, [...new Set(sessionIDs)]), eq(EventTable.type, sessionStatusEventType)))
     .orderBy(EventTable.aggregate_id, asc(EventTable.seq))
     .all()
     .pipe(
@@ -227,16 +241,12 @@ function persistedSessionStatus(db: Database.Interface["db"], sessionIDs: readon
     )
 }
 
-function sessionStatusSnapshot(
-  persisted: Map<SessionID, SessionStatus.Info>,
+export function sessionStatusSnapshot(
+  _persisted: Map<SessionID, SessionStatus.Info>,
   active: Map<SessionID, SessionStatus.Info>,
 ) {
   return Object.fromEntries(
-    [...active.entries()]
-      .reduce((result, [sessionID, status]) => {
-        if (!result.has(sessionID)) result.set(sessionID, status)
-        return result
-      }, new Map(persisted))
+    active
       .entries()
       .toArray()
       .toSorted(([a], [b]) => a.localeCompare(b)),
@@ -263,7 +273,9 @@ function normalizeTuiConfig(input: unknown) {
 
 function enabledMap(input: unknown) {
   if (!isRecord(input)) return {}
-  return Object.fromEntries(Object.entries(input).filter((item): item is [string, boolean] => typeof item[1] === "boolean"))
+  return Object.fromEntries(
+    Object.entries(input).filter((item): item is [string, boolean] => typeof item[1] === "boolean"),
+  )
 }
 
 function pluginRow(input: {
@@ -286,13 +298,13 @@ function pluginRow(input: {
 }
 
 function dedupePlugins(items: OpencodeXPlugin.Info[]) {
-  return [...new Map(items.map((item): [string, OpencodeXPlugin.Info] => [item.id, item])).values()]
-    .toSorted((a, b) =>
-      (a.kind === "tui" ? 0 : 1) - (b.kind === "tui" ? 0 : 1)
-      || (a.scope === "local" ? 0 : a.scope === "global" ? 1 : 2)
-        - (b.scope === "local" ? 0 : b.scope === "global" ? 1 : 2)
-      || a.spec.localeCompare(b.spec),
-    )
+  return [...new Map(items.map((item): [string, OpencodeXPlugin.Info] => [item.id, item])).values()].toSorted(
+    (a, b) =>
+      (a.kind === "tui" ? 0 : 1) - (b.kind === "tui" ? 0 : 1) ||
+      (a.scope === "local" ? 0 : a.scope === "global" ? 1 : 2) -
+        (b.scope === "local" ? 0 : b.scope === "global" ? 1 : 2) ||
+      a.spec.localeCompare(b.spec),
+  )
 }
 
 function tuiPluginFiles(directory: string) {
@@ -323,10 +335,11 @@ function existingTuiConfigFile(files: string[], fs: AppFileSystem.Interface) {
   return Effect.gen(function* () {
     const checks = yield* Effect.forEach(
       files,
-      (file) => fs.readFileStringSafe(file).pipe(
-        Effect.orDie,
-        Effect.map((text) => ({ file, exists: text !== undefined })),
-      ),
+      (file) =>
+        fs.readFileStringSafe(file).pipe(
+          Effect.orDie,
+          Effect.map((text) => ({ file, exists: text !== undefined })),
+        ),
       { concurrency: "unbounded" },
     )
     return checks.find((item) => item.exists)?.file ?? files[0]
@@ -511,9 +524,7 @@ function branchNameValid(value: string) {
 }
 
 function gitPaths(input: readonly string[]) {
-  return input
-    .map((item) => item.trim())
-    .filter((item) => item && !item.startsWith("-"))
+  return input.map((item) => item.trim()).filter((item) => item && !item.startsWith("-"))
 }
 
 async function gitRun(args: string[], cwd: string) {
@@ -607,38 +618,42 @@ function gitOperationResult(result: { exitCode: number; text(): string; stderr: 
 }
 
 function parseGitStatus(text: string) {
-  return text.split("\0").filter(Boolean).flatMap((item) => {
-    const code = item.slice(0, 2)
-    const file = item.slice(3)
-    if (!file) return []
-    return [{
-      path: file,
-      code,
-      status: code === "??"
-        ? "added"
-        : code.includes("D")
-          ? "deleted"
-          : code.includes("A")
-            ? "added"
-            : "modified",
-      staged: code !== "??" && code[0] !== " " && code[0] !== "?",
-      unstaged: code === "??" || (code[1] !== " " && code[1] !== "?"),
-      untracked: code === "??",
-    }]
-  })
+  return text
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((item) => {
+      const code = item.slice(0, 2)
+      const file = item.slice(3)
+      if (!file) return []
+      return [
+        {
+          path: file,
+          code,
+          status: code === "??" ? "added" : code.includes("D") ? "deleted" : code.includes("A") ? "added" : "modified",
+          staged: code !== "??" && code[0] !== " " && code[0] !== "?",
+          unstaged: code === "??" || (code[1] !== " " && code[1] !== "?"),
+          untracked: code === "??",
+        },
+      ]
+    })
 }
 
 function parseGitStashes(text: string) {
-  return text.split("\x1e").filter(Boolean).flatMap((item) => {
-    const [ref, hash, age, ...messageParts] = item.split("\0")
-    if (!ref) return []
-    return [{
-      ref,
-      hash,
-      age,
-      message: messageParts.join("\0"),
-    }]
-  })
+  return text
+    .split("\x1e")
+    .filter(Boolean)
+    .flatMap((item) => {
+      const [ref, hash, age, ...messageParts] = item.split("\0")
+      if (!ref) return []
+      return [
+        {
+          ref,
+          hash,
+          age,
+          message: messageParts.join("\0"),
+        },
+      ]
+    })
 }
 
 function stashRefValid(ref: string) {
@@ -658,52 +673,60 @@ async function githubApiData(cwd: string, resource: string) {
       accept: "application/vnd.github+json",
       "user-agent": "OpencodeX-Workbench",
     },
-  }).then(async (response) => {
-    if (!response.ok) {
-      return {
-        ok: false,
-        message: response.status === 404 || response.status === 401 || response.status === 403
-          ? "GitHub did not allow API access for this repository. Browser links still work, and private repositories can use your normal browser login."
-          : `GitHub returned HTTP ${response.status}.`,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        return {
+          ok: false,
+          message:
+            response.status === 404 || response.status === 401 || response.status === 403
+              ? "GitHub did not allow API access for this repository. Browser links still work, and private repositories can use your normal browser login."
+              : `GitHub returned HTTP ${response.status}.`,
+        }
       }
-    }
-    return {
-      ok: true,
-      data: await response.json(),
-    }
-  }).catch((error) => ({
-    ok: false,
-    message: errorMessage(error) || "Could not reach GitHub. Browser links and local Git operations are still available.",
-  }))
+      return {
+        ok: true,
+        data: await response.json(),
+      }
+    })
+    .catch((error) => ({
+      ok: false,
+      message:
+        errorMessage(error) || "Could not reach GitHub. Browser links and local Git operations are still available.",
+    }))
 }
 
 function githubIssueRows(data: unknown) {
   if (!Array.isArray(data)) return []
-  return data.filter((item): item is Record<string, unknown> =>
-    typeof item === "object" && item !== null && !("pull_request" in item),
-  ).map((item) => ({
-    number: item.number,
-    title: item.title,
-    state: item.state,
-    author: githubUser(item.user),
-    updatedAt: item.updated_at,
-    labels: item.labels,
-    url: item.html_url,
-  }))
+  return data
+    .filter(
+      (item): item is Record<string, unknown> => typeof item === "object" && item !== null && !("pull_request" in item),
+    )
+    .map((item) => ({
+      number: item.number,
+      title: item.title,
+      state: item.state,
+      author: githubUser(item.user),
+      updatedAt: item.updated_at,
+      labels: item.labels,
+      url: item.html_url,
+    }))
 }
 
 function githubPullRows(data: unknown) {
   if (!Array.isArray(data)) return []
-  return data.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null).map((item) => ({
-    number: item.number,
-    title: item.title,
-    state: item.state,
-    author: githubUser(item.user),
-    updatedAt: item.updated_at,
-    headRefName: githubRefName(item.head),
-    baseRefName: githubRefName(item.base),
-    url: item.html_url,
-  }))
+  return data
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      number: item.number,
+      title: item.title,
+      state: item.state,
+      author: githubUser(item.user),
+      updatedAt: item.updated_at,
+      headRefName: githubRefName(item.head),
+      baseRefName: githubRefName(item.base),
+      url: item.html_url,
+    }))
 }
 
 function githubUser(input: unknown) {
@@ -727,6 +750,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     const permission = yield* Permission.Service
     const question = yield* Question.Service
     const sessionState = yield* OpencodeXSessionState.Service
+    const state = yield* OpencodeXState.Service
     const config = yield* Config.Service
     const fs = yield* AppFileSystem.Service
     const runtimeFlags = yield* RuntimeFlags.Service
@@ -799,7 +823,10 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       }))
       const lightSessions = mergeSessions(listed.map(stripSessionSummaryDiffs), lightProjects)
       const sessionStatus = sessionStatusSnapshot(
-        yield* persistedSessionStatus(db, lightSessions.map((session) => session.id)),
+        yield* persistedSessionStatus(
+          db,
+          lightSessions.map((session) => session.id),
+        ),
         statusMap,
       )
       const sessionStates = yield* sessionState.list(lightSessions.map((session) => session.id))
@@ -828,6 +855,80 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       const revision = sessionSyncRevision(snapshot)
       if (ctx.query.since === revision) return { changed: false as const, revision }
       return { changed: true as const, revision, snapshot }
+    })
+
+    const stateSnapshot = Effect.fn("OpencodeXHttpApi.stateSnapshot")(function* () {
+      return yield* state.snapshot()
+    })
+
+    const stateSession = Effect.fn("OpencodeXHttpApi.stateSession")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: typeof StateSessionQuery.Type
+    }) {
+      return yield* SessionError.mapStorageNotFound(
+        state.session({ sessionID: ctx.params.sessionID, limit: ctx.query.limit, before: ctx.query.before }),
+      )
+    })
+
+    const stateEvent = Effect.fn("OpencodeXHttpApi.stateEvent")(function* (ctx: {
+      query: typeof StateEventQuery.Type
+    }) {
+      const currentScope = yield* state.scope()
+      const queue = yield* Queue.unbounded<OpencodeXState.OpencodeXStateEvent>()
+      const unsubscribe = yield* state.listen((event) => Queue.offerUnsafe(queue, event))
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const replay = yield* state.barrier(
+        Effect.gen(function* () {
+          const result = yield* state.replay(ctx.query.after)
+          while (Option.isSome(yield* Queue.poll(queue))) {
+            // Drain events already covered by the barrier cursor before switching to live delivery.
+          }
+          return result
+        }),
+      )
+      const ready: OpencodeXState.OpencodeXStateStreamFrame = {
+        type: "ready",
+        scope: currentScope,
+        epoch: OpencodeXState.EPOCH,
+        cursor: replay.cursor,
+      }
+      const initial: OpencodeXState.OpencodeXStateStreamFrame[] = replay.reset
+        ? [
+            ready,
+            {
+              type: "reset_required",
+              scope: currentScope,
+              epoch: OpencodeXState.EPOCH,
+              cursor: replay.cursor,
+              reason: replay.reason,
+            },
+          ]
+        : [ready, ...replay.events.map((event) => ({ type: "event" as const, event }))]
+      const live = Stream.fromQueue(queue).pipe(
+        Stream.filter(
+          (event) =>
+            event.scope.projectID === currentScope.projectID &&
+            event.scope.workspaceID === currentScope.workspaceID &&
+            event.scope.directory === currentScope.directory,
+        ),
+        Stream.map((event): OpencodeXState.OpencodeXStateStreamFrame => ({ type: "event", event })),
+      )
+      return HttpServerResponse.stream(
+        Stream.fromIterable(initial).pipe(
+          Stream.concat(live),
+          Stream.map(stateEventData),
+          Stream.pipeThroughChannel(encode()),
+          Stream.encodeText,
+        ),
+        {
+          contentType: "text/event-stream",
+          headers: {
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+          },
+        },
+      )
     })
 
     const updateSessionState = Effect.fn("OpencodeXHttpApi.updateSessionState")(function* (ctx: {
@@ -903,9 +1004,10 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       if (!manifest.ok) {
         return {
           ok: false,
-          message: manifest.code === "manifest_no_targets"
-            ? `"${spec}" does not expose plugin entrypoints or oc-themes in package.json`
-            : `Installed "${spec}" but failed to read ${manifest.file}`,
+          message:
+            manifest.code === "manifest_no_targets"
+              ? `"${spec}" does not expose plugin entrypoints or oc-themes in package.json`
+              : `Installed "${spec}" but failed to read ${manifest.file}`,
           tui: false,
           server: false,
           items: [],
@@ -925,9 +1027,10 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       if (!patch.ok) {
         return {
           ok: false,
-          message: patch.code === "invalid_json"
-            ? `Invalid JSON in ${patch.file} (${patch.parse} at line ${patch.line}, column ${patch.col})`
-            : errorMessage(patch.error),
+          message:
+            patch.code === "invalid_json"
+              ? `Invalid JSON in ${patch.file} (${patch.parse} at line ${patch.line}, column ${patch.col})`
+              : errorMessage(patch.error),
           tui: false,
           server: false,
           items: [],
@@ -1019,14 +1122,19 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       const target = workbenchPath(ctx.payload.path, instance)
       if (!target) return workbenchFailure("escape", "Path is outside the active workspace.")
       if (!(yield* fs.existsSafe(target))) return workbenchFailure("missing", "File does not exist.")
-      if (yield* fs.isDir(target)) return workbenchFailure("directory", "Directory deletion is not supported in the preview Workbench.")
+      if (yield* fs.isDir(target))
+        return workbenchFailure("directory", "Directory deletion is not supported in the preview Workbench.")
       yield* fs.remove(target).pipe(Effect.orDie)
       return workbenchSuccess("Deleted.")
     })
 
     const workbenchGitStatus = Effect.fn("OpencodeXHttpApi.workbenchGitStatus")(function* () {
       const cwd = workbenchCwd(yield* InstanceState.context)
-      const status = gitResult(yield* Effect.promise(() => gitRun(["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], cwd)))
+      const status = gitResult(
+        yield* Effect.promise(() =>
+          gitRun(["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], cwd),
+        ),
+      )
       if (status.exitCode !== 0) {
         return { ok: false, message: gitMessage(status) || "Not a Git repository.", clean: true, files: [] }
       }
@@ -1051,11 +1159,16 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     const workbenchGitBranches = Effect.fn("OpencodeXHttpApi.workbenchGitBranches")(function* () {
       const cwd = workbenchCwd(yield* InstanceState.context)
       const list = gitResult(yield* Effect.promise(() => gitRun(["branch", "--format=%(refname:short)"], cwd)))
-      if (list.exitCode !== 0) return { ok: false, message: gitMessage(list) || "Could not list branches.", branches: [] }
+      if (list.exitCode !== 0)
+        return { ok: false, message: gitMessage(list) || "Could not list branches.", branches: [] }
       return {
         ok: true,
         current: yield* Effect.promise(() => gitBranch(cwd)),
-        branches: list.text().split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+        branches: list
+          .text()
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean),
       }
     })
 
@@ -1131,9 +1244,11 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       if (!message) return workbenchFailure("empty", "Commit message is required.")
       const body = ctx.payload.body?.trim()
       const cwd = workbenchCwd(yield* InstanceState.context)
-      const result = gitResult(yield* Effect.promise(() =>
-        gitRun(["commit", "--no-gpg-sign", "-m", message, ...(body ? ["-m", body] : [])], cwd),
-      ))
+      const result = gitResult(
+        yield* Effect.promise(() =>
+          gitRun(["commit", "--no-gpg-sign", "-m", message, ...(body ? ["-m", body] : [])], cwd),
+        ),
+      )
       return gitOperationResult(result, "Committed changes.")
     })
 
@@ -1158,15 +1273,19 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     const workbenchGitPublish = Effect.fn("OpencodeXHttpApi.workbenchGitPublish")(function* () {
       const cwd = workbenchCwd(yield* InstanceState.context)
       const branch = yield* Effect.promise(() => gitBranch(cwd))
-      if (!branch || !branchNameValid(branch)) return workbenchFailure("invalid_branch", "Checkout a named branch before publishing.")
+      if (!branch || !branchNameValid(branch))
+        return workbenchFailure("invalid_branch", "Checkout a named branch before publishing.")
       const result = gitResult(yield* Effect.promise(() => gitRun(["push", "--set-upstream", "origin", branch], cwd)))
       return gitOperationResult(result, `Published ${branch}.`)
     })
 
     const workbenchGitStashes = Effect.fn("OpencodeXHttpApi.workbenchGitStashes")(function* () {
       const cwd = workbenchCwd(yield* InstanceState.context)
-      const result = gitResult(yield* Effect.promise(() => gitRun(["stash", "list", "--format=%gd%x00%H%x00%cr%x00%s%x1e"], cwd)))
-      if (result.exitCode !== 0) return { ok: false, message: gitMessage(result) || "Could not list Git stashes.", data: [] }
+      const result = gitResult(
+        yield* Effect.promise(() => gitRun(["stash", "list", "--format=%gd%x00%H%x00%cr%x00%s%x1e"], cwd)),
+      )
+      if (result.exitCode !== 0)
+        return { ok: false, message: gitMessage(result) || "Could not list Git stashes.", data: [] }
       return {
         ok: true,
         data: parseGitStashes(result.text()),
@@ -1178,7 +1297,9 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     }) {
       const message = ctx.payload.message?.trim() || "Workbench changes"
       const cwd = workbenchCwd(yield* InstanceState.context)
-      const result = gitResult(yield* Effect.promise(() => gitRun(["stash", "push", "--include-untracked", "-m", message], cwd)))
+      const result = gitResult(
+        yield* Effect.promise(() => gitRun(["stash", "push", "--include-untracked", "-m", message], cwd)),
+      )
       return gitOperationResult(result, "Stashed changes.")
     })
 
@@ -1236,7 +1357,8 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       const cwd = workbenchCwd(yield* InstanceState.context)
       const result = yield* Effect.promise(() => githubApiData(cwd, ""))
       if (!result.ok) return result
-      const data = typeof result.data === "object" && result.data !== null ? result.data as Record<string, unknown> : {}
+      const data =
+        typeof result.data === "object" && result.data !== null ? (result.data as Record<string, unknown>) : {}
       return {
         ok: true,
         data: {
@@ -1271,7 +1393,8 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       payload: typeof WorkbenchGithubPullPayload.Type
     }) {
       const cwd = workbenchCwd(yield* InstanceState.context)
-      if (!Number.isInteger(ctx.payload.number) || ctx.payload.number < 1) return { ok: false, message: "Pull request number is required." }
+      if (!Number.isInteger(ctx.payload.number) || ctx.payload.number < 1)
+        return { ok: false, message: "Pull request number is required." }
       const result = yield* Effect.promise(() => githubApiData(cwd, `/pulls/${ctx.payload.number}`))
       if (!result.ok) return result
       const rows = githubPullRows([result.data])
@@ -1285,11 +1408,13 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       payload: typeof WorkbenchGithubPullPayload.Type
     }) {
       const cwd = workbenchCwd(yield* InstanceState.context)
-      if (!Number.isInteger(ctx.payload.number) || ctx.payload.number < 1) return { ok: false, message: "Pull request number is required." }
+      if (!Number.isInteger(ctx.payload.number) || ctx.payload.number < 1)
+        return { ok: false, message: "Pull request number is required." }
       const pull = yield* Effect.promise(() => githubApiData(cwd, `/pulls/${ctx.payload.number}`))
       if (!pull.ok) return pull
-      const pullData = typeof pull.data === "object" && pull.data !== null ? pull.data as Record<string, unknown> : {}
-      const head = typeof pullData.head === "object" && pullData.head !== null ? pullData.head as Record<string, unknown> : {}
+      const pullData = typeof pull.data === "object" && pull.data !== null ? (pull.data as Record<string, unknown>) : {}
+      const head =
+        typeof pullData.head === "object" && pullData.head !== null ? (pullData.head as Record<string, unknown>) : {}
       if (typeof head.sha !== "string") return { ok: false, message: "Could not find the pull request head commit." }
       return yield* Effect.promise(() => githubApiData(cwd, `/commits/${head.sha}/check-runs`))
     })
@@ -1297,12 +1422,16 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     const workbenchGithubCheckoutPull = Effect.fn("OpencodeXHttpApi.workbenchGithubCheckoutPull")(function* (ctx: {
       payload: typeof WorkbenchGithubPullPayload.Type
     }) {
-      if (!Number.isInteger(ctx.payload.number) || ctx.payload.number < 1) return workbenchFailure("invalid_pull", "Pull request number is required.")
+      if (!Number.isInteger(ctx.payload.number) || ctx.payload.number < 1)
+        return workbenchFailure("invalid_pull", "Pull request number is required.")
       const cwd = workbenchCwd(yield* InstanceState.context)
       const remoteUrl = yield* Effect.promise(() => gitRemoteUrl(cwd))
-      if (!gitHubRepository(remoteUrl)) return workbenchFailure("no_github_remote", "Add a GitHub origin remote to checkout pull requests with Git.")
+      if (!gitHubRepository(remoteUrl))
+        return workbenchFailure("no_github_remote", "Add a GitHub origin remote to checkout pull requests with Git.")
       const branch = `pr-${ctx.payload.number}`
-      const fetch = gitResult(yield* Effect.promise(() => gitRun(["fetch", "origin", `pull/${ctx.payload.number}/head:${branch}`], cwd)))
+      const fetch = gitResult(
+        yield* Effect.promise(() => gitRun(["fetch", "origin", `pull/${ctx.payload.number}/head:${branch}`], cwd)),
+      )
       if (fetch.exitCode !== 0) return gitOperationResult(fetch, "Fetched pull request.")
       const checkout = gitResult(yield* Effect.promise(() => gitRun(["checkout", branch], cwd)))
       return gitOperationResult(checkout, `Checked out pull request #${ctx.payload.number}.`)
@@ -1325,7 +1454,9 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
         message: "Open this URL in your browser to create the pull request.",
         data: {
           title,
-          url: head ? `${repository.webUrl}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?quick_pull=1` : `${repository.webUrl}/compare`,
+          url: head
+            ? `${repository.webUrl}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?quick_pull=1`
+            : `${repository.webUrl}/compare`,
         },
       }
     })
@@ -1337,15 +1468,11 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return workbenchSuccess(ctx.payload.browserBridge ? "Browser bridge registered." : "GUI bridge registered.")
     })
 
-    const createJob = Effect.fn("OpencodeXHttpApi.createJob")(function* (ctx: {
-      payload: OpencodeXJob.CreateInput
-    }) {
+    const createJob = Effect.fn("OpencodeXHttpApi.createJob")(function* (ctx: { payload: OpencodeXJob.CreateInput }) {
       return yield* jobs.create(ctx.payload)
     })
 
-    const getJob = Effect.fn("OpencodeXHttpApi.getJob")(function* (ctx: {
-      params: { jobID: string }
-    }) {
+    const getJob = Effect.fn("OpencodeXHttpApi.getJob")(function* (ctx: { params: { jobID: string } }) {
       return yield* mapJobNotFound(jobs.get(ctx.params.jobID))
     })
 
@@ -1356,9 +1483,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* mapJobNotFound(jobs.update({ ...ctx.payload, id: ctx.params.jobID }))
     })
 
-    const cancelJob = Effect.fn("OpencodeXHttpApi.cancelJob")(function* (ctx: {
-      params: { jobID: string }
-    }) {
+    const cancelJob = Effect.fn("OpencodeXHttpApi.cancelJob")(function* (ctx: { params: { jobID: string } }) {
       return yield* mapJobNotFound(jobs.cancel(ctx.params.jobID))
     })
 
@@ -1372,9 +1497,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* mapSwarmCreateErrors(swarms.create(ctx.payload))
     })
 
-    const getSwarm = Effect.fn("OpencodeXHttpApi.getSwarm")(function* (ctx: {
-      params: { swarmID: string }
-    }) {
+    const getSwarm = Effect.fn("OpencodeXHttpApi.getSwarm")(function* (ctx: { params: { swarmID: string } }) {
       return yield* mapSwarmNotFound(swarms.get(ctx.params.swarmID))
     })
 
@@ -1385,9 +1508,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* mapSwarmNotFound(swarms.update(ctx.params.swarmID, ctx.payload))
     })
 
-    const startSwarm = Effect.fn("OpencodeXHttpApi.startSwarm")(function* (ctx: {
-      params: { swarmID: string }
-    }) {
+    const startSwarm = Effect.fn("OpencodeXHttpApi.startSwarm")(function* (ctx: { params: { swarmID: string } }) {
       return yield* mapSwarmNotFound(swarms.start(ctx.params.swarmID))
     })
 
@@ -1398,15 +1519,11 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* mapSwarmNotFound(swarms.assignTask(ctx.params.swarmID, ctx.payload))
     })
 
-    const cancelSwarm = Effect.fn("OpencodeXHttpApi.cancelSwarm")(function* (ctx: {
-      params: { swarmID: string }
-    }) {
+    const cancelSwarm = Effect.fn("OpencodeXHttpApi.cancelSwarm")(function* (ctx: { params: { swarmID: string } }) {
       return yield* mapSwarmNotFound(swarms.cancel(ctx.params.swarmID))
     })
 
-    const removeSwarm = Effect.fn("OpencodeXHttpApi.removeSwarm")(function* (ctx: {
-      params: { swarmID: string }
-    }) {
+    const removeSwarm = Effect.fn("OpencodeXHttpApi.removeSwarm")(function* (ctx: { params: { swarmID: string } }) {
       return yield* mapSwarmNotFound(swarms.remove(ctx.params.swarmID))
     })
 
@@ -1432,7 +1549,9 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       payload: OpencodeXView.CreateInput
     }) {
       return yield* views.create(ctx.payload).pipe(
-        Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." }))),
+        Effect.catchTag("NotFoundError", () =>
+          Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." })),
+        ),
         Effect.catchTag("OpencodeX.View.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
       )
     })
@@ -1443,9 +1562,7 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* views.reorder(ctx.payload)
     })
 
-    const getView = Effect.fn("OpencodeXHttpApi.getView")(function* (ctx: {
-      params: { viewID: string }
-    }) {
+    const getView = Effect.fn("OpencodeXHttpApi.getView")(function* (ctx: { params: { viewID: string } }) {
       return yield* mapViewErrors(views.get(ctx.params.viewID))
     })
 
@@ -1456,13 +1573,15 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       return yield* mapViewErrors(
         views
           .update({ ...ctx.payload, id: ctx.params.viewID })
-          .pipe(Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." })))),
+          .pipe(
+            Effect.catchTag("NotFoundError", () =>
+              Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." })),
+            ),
+          ),
       )
     })
 
-    const removeView = Effect.fn("OpencodeXHttpApi.removeView")(function* (ctx: {
-      params: { viewID: string }
-    }) {
+    const removeView = Effect.fn("OpencodeXHttpApi.removeView")(function* (ctx: { params: { viewID: string } }) {
       return yield* mapViewErrors(views.remove(ctx.params.viewID))
     })
 
@@ -1474,6 +1593,9 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("reorderProjects", reorderProjects)
       .handle("createSession", createSession)
       .handle("sessionSync", sessionSync)
+      .handle("stateSnapshot", stateSnapshot)
+      .handle("stateSession", stateSession)
+      .handleRaw("stateEvent", stateEvent)
       .handle("updateSessionState", updateSessionState)
       .handle("moveSession", moveSession)
       .handle("removeSession", removeSession)

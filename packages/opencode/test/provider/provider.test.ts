@@ -79,6 +79,21 @@ const languageBaseURL = (language: unknown) => (language as { config: { baseURL:
 const it = testEffect(Layer.mergeAll(Provider.defaultLayer, Env.defaultLayer, Plugin.defaultLayer))
 const experimentalModels = testEffect(providerLayer({ enableExperimentalModels: true }))
 
+const withOpenAIModelServer = <A, E, R>(models: string[], fn: (url: URL) => Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        port: 0,
+        fetch: (request) => {
+          if (new URL(request.url).pathname !== "/v1/models") return new Response("not found", { status: 404 })
+          return Response.json({ data: models.map((id) => ({ id })) })
+        },
+      }),
+    ),
+    (server) => fn(server.url),
+    (server) => Effect.sync(() => server.stop(true)),
+  )
+
 const alphaProviderConfig = {
   provider: {
     "custom-provider": {
@@ -215,6 +230,38 @@ it.instance(
       },
     },
   },
+)
+
+it.instance("local provider models are discovered from the live endpoint", () =>
+  withOpenAIModelServer(["live-model"], (url) =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const api = new URL("/v1", url).toString().replace(/\/$/, "")
+      yield* Effect.promise(() => Bun.write(
+        path.join(test.directory, "opencode.json"),
+        JSON.stringify({
+          enabled_providers: ["lmstudio"],
+          provider: {
+            lmstudio: {
+              api,
+              models: {
+                "stale-model": { name: "Stale Model" },
+              },
+            },
+          },
+        }),
+      ))
+
+      const providers = yield* list
+      const provider = providers[ProviderV2.ID.make("lmstudio")]
+      expect(provider).toBeDefined()
+      expect(Object.keys(provider.models)).toEqual(["live-model"])
+      expect(provider.models["stale-model"]).toBeUndefined()
+
+      const model = yield* Provider.use.getModel(ProviderV2.ID.make("lmstudio"), ProviderV2.ModelID.make("live-model"))
+      expect(model.api.url).toBe(api)
+    }),
+  ),
 )
 
 it.instance(

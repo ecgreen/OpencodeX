@@ -9,7 +9,7 @@ export function deriveSessionStatus(snapshot: GuiSnapshot | undefined, session: 
   const displayStatus = snapshot?.sessionUiState[session.id]?.displayStatus
   if (displayStatus === "input_needed") return "input_needed"
   if (displayStatus === "in_progress") return "in_progress"
-  if (displayStatus === "needs_review") return "ready_for_review"
+  if (displayStatus === "needs_review" && snapshot?.sessionUiState[session.id]?.updated !== false) return "ready_for_review"
   return "dormant"
 }
 
@@ -41,6 +41,25 @@ export function markSessionViewedInSnapshot(snapshot: GuiSnapshot, sessionID: st
         sessionID,
         seenAt: Math.max(time, state?.seenAt ?? 0),
         reviewedAt: Math.max(time, state?.reviewedAt ?? 0),
+        reviewedFiles: state?.reviewedFiles ?? [],
+        displayStatus: state?.displayStatus ?? "idle",
+        updated: state?.updated ?? false,
+      },
+    },
+  }, sessionID)
+}
+
+export function markSessionSeenInSnapshot(snapshot: GuiSnapshot, sessionID: string, time: number): GuiSnapshot {
+  const state = snapshot.sessionUiState[sessionID]
+  if ((state?.seenAt ?? 0) >= time) return snapshot
+  return reconcileSessionUiState({
+    ...snapshot,
+    sessionUiState: {
+      ...snapshot.sessionUiState,
+      [sessionID]: {
+        sessionID,
+        seenAt: Math.max(time, state?.seenAt ?? 0),
+        ...(state?.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
         reviewedFiles: state?.reviewedFiles ?? [],
         displayStatus: state?.displayStatus ?? "idle",
         updated: state?.updated ?? false,

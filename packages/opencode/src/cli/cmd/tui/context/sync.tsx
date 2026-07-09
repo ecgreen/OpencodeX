@@ -18,11 +18,18 @@ import type {
   ProviderAuthMethod,
   VcsInfo,
   ClientSessionSyncResult,
+  ClientStateSyncController,
+  ClientStateSyncState,
   OpencodeXProject,
   OpencodeXView,
   OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
-import { loadClientSessionSync } from "@opencode-ai/sdk/v2"
+import {
+  createClientStateSync,
+  loadClientSessionSync,
+  selectClientSessionMessages,
+  selectClientStateSyncSnapshot,
+} from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
@@ -32,7 +39,7 @@ import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import * as Log from "@opencode-ai/core/util/log"
 import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
@@ -128,7 +135,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const kv = useKV()
 
     const fullSyncedSessions = new Set<string>()
+    const appliedSessionDigests = new Map<string, string>()
     let sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
+    let stateSync: ClientStateSyncController | undefined
+    let unsubscribeStateSync: (() => void) | undefined
+    let stateSyncScope = ""
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
@@ -146,7 +157,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         directory: project.instance.directory() || sdk.directory,
         sessionQuery: sessionListQuery(),
         since: store.session_sync_revision,
-        statusWorkspaces: [project.workspace.current()],
       })
     }
 
@@ -163,6 +173,64 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         setStore("permission", reconcile(groupRequestsBySession(snapshot.permissions)))
         setStore("question", reconcile(groupRequestsBySession(snapshot.questions)))
       })
+    }
+
+    function applyStateSync(state: ClientStateSyncState) {
+      const snapshot = selectClientStateSyncSnapshot(state)
+      if (!snapshot) return
+      batch(() => {
+        setStore("session_sync_revision", state.digest)
+        setStore("opencodex_project", reconcile(snapshot.projects))
+        setStore("opencodex_view", reconcile(snapshot.views))
+        setStore("session", reconcile(snapshot.sessions.toSorted((a, b) => a.id.localeCompare(b.id))))
+        setStore("session_status", reconcile(snapshot.sessionStatus))
+        setStore("session_ui_state", reconcile(snapshot.sessionUiState))
+        setStore("permission", reconcile(groupRequestsBySession(snapshot.permissions)))
+        setStore("question", reconcile(groupRequestsBySession(snapshot.questions)))
+        Object.entries(state.sessionDetails).forEach(([sessionID, detail]) => {
+          if (appliedSessionDigests.get(sessionID) === detail.snapshot.digest) return
+          appliedSessionDigests.set(sessionID, detail.snapshot.digest)
+          const messages = selectClientSessionMessages(state, sessionID)
+          const messageIDs = new Set(messages.map((message) => message.info.id))
+          ;(store.message[sessionID] ?? []).forEach((message) => {
+            if (messageIDs.has(message.id)) return
+            setStore(
+              "part",
+              produce((draft) => {
+                delete draft[message.id]
+              }),
+            )
+          })
+          setStore("message", sessionID, reconcile(messages.map((message) => message.info)))
+          messages.forEach((message) => setStore("part", message.info.id, reconcile(message.parts)))
+          setStore("todo", sessionID, reconcile(detail.snapshot.todos))
+          setStore("session_diff", sessionID, reconcile(detail.snapshot.diff))
+          upsertSession(detail.snapshot.session)
+        })
+      })
+    }
+
+    function startStateSync() {
+      const workspace = project.workspace.current()
+      const directory = project.instance.directory() || sdk.directory
+      const scope = `${directory}\n${workspace ?? ""}`
+      if (scope === stateSyncScope) return
+      unsubscribeStateSync?.()
+      stateSync?.stop()
+      fullSyncedSessions.clear()
+      appliedSessionDigests.clear()
+      stateSyncScope = scope
+      stateSync = createClientStateSync({ client: sdk.client, directory, workspace })
+      unsubscribeStateSync = stateSync.subscribe(applyStateSync)
+      void stateSync.start().catch((error) => {
+        Log.Default.error("tui authoritative state sync failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    }
+
+    function stateSyncReady() {
+      return stateSync?.getState().phase === "ready"
     }
 
     function upsertSession(info: Session) {
@@ -183,9 +251,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer)
       sessionRefreshTimer = setTimeout(() => {
         sessionRefreshTimer = undefined
-        void listSessionSync()
-          .then(applySessionSync)
-          .catch((error) => {
+        void (stateSyncReady() ? stateSync!.refresh() : listSessionSync().then(applySessionSync)).catch((error) => {
             Log.Default.error("tui session refresh failed", {
               error: error instanceof Error ? error.message : String(error),
               name: error instanceof Error ? error.name : undefined,
@@ -197,7 +263,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     onCleanup(() => {
       if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer)
+      unsubscribeStateSync?.()
+      stateSync?.stop()
     })
+
+    createEffect(startStateSync)
 
     function groupRequestsBySession<T extends { id: string; sessionID: string }>(requests: readonly T[]) {
       return requests.reduce<Record<string, T[]>>(
@@ -217,6 +287,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           void bootstrap()
           break
         case "permission.replied": {
+          queueSessionRefresh()
           const requests = store.permission[event.properties.sessionID]
           if (!requests) break
           const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
@@ -232,6 +303,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
 
         case "permission.asked": {
+          queueSessionRefresh()
           const request = event.properties
           const requests = store.permission[request.sessionID]
           if (!requests) {
@@ -255,6 +327,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         case "question.replied":
         case "question.rejected": {
+          queueSessionRefresh()
           const requests = store.question[event.properties.sessionID]
           if (!requests) break
           const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
@@ -270,6 +343,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
 
         case "question.asked": {
+          queueSessionRefresh()
           const request = event.properties
           const requests = store.question[request.sessionID]
           if (!requests) {
@@ -325,8 +399,22 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         case "session.status": {
           setStore("session_status", event.properties.sessionID, event.properties.status)
+          queueSessionRefresh()
           break
         }
+
+        case "opencodex.session_state.updated":
+        case "opencodex.view.created":
+        case "opencodex.view.updated":
+        case "opencodex.view.reordered":
+        case "opencodex.view.deleted":
+        case "opencodex.project.created":
+        case "opencodex.project.updated":
+        case "opencodex.project.reordered":
+        case "opencodex.project.deleted":
+        case "opencodex.project.session_assigned":
+          queueSessionRefresh()
+          break
 
         case "message.updated": {
           const messages = store.message[event.properties.info.sessionID]
@@ -582,9 +670,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return sessionListQuery()
         },
         async refresh() {
+          if (stateSyncReady()) return stateSync!.refresh()
           applySessionSync(await listSessionSync())
         },
         async refreshStatus() {
+          if (stateSyncReady()) return stateSync!.refresh()
           applySessionSync(await listSessionSync())
         },
         status(sessionID: string) {
@@ -599,6 +689,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
+          if (stateSyncReady()) {
+            await stateSync!.hydrateSession(sessionID, { limit: 100 })
+            fullSyncedSessions.add(sessionID)
+            return
+          }
           const [session, messages, todo, diff] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
             sdk.client.session.messages({ sessionID, limit: 100 }),

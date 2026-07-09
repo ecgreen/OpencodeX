@@ -77,7 +77,11 @@ describe("tui sync", () => {
                 sessionID,
                 reviewedFiles: [],
                 reviewedAt,
-                displayStatus: statusPayload[sessionID] ? "in_progress" : sessionPayload.time.updated > reviewedAt ? "needs_review" : "idle",
+                displayStatus: statusPayload[sessionID]
+                  ? "in_progress"
+                  : sessionPayload.time.updated > reviewedAt
+                    ? "needs_review"
+                    : "idle",
                 updated: sessionPayload.time.updated > reviewedAt,
               },
             },
@@ -99,6 +103,97 @@ describe("tui sync", () => {
       await sync.session.refreshStatus()
 
       expect(deriveStatus(sessionID, sync)).toBe("needs_review")
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+
+  test("server-backed review and view events refresh the authoritative catalog", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+
+    const sessionID = "ses_shared"
+    const sessionPayload = {
+      id: sessionID,
+      title: "shared",
+      time: { created: 0, updated: 100 },
+      version: "1.15.13",
+      directory,
+      projectID: "proj_test",
+    }
+    let reviewedAt = 0
+    let views: Record<string, unknown>[] = []
+    let revision = 0
+    const { app, emit, sync } = await mount((url) => {
+      if (url.pathname !== "/experimental/opencodex/session-sync") return
+      return json({
+        changed: true,
+        revision: String(revision),
+        snapshot: {
+          projects: [],
+          sessions: [sessionPayload],
+          views,
+          sessionStatus: {},
+          permissions: [],
+          questions: [],
+          sessionUiState: {
+            [sessionID]: {
+              sessionID,
+              reviewedFiles: [],
+              reviewedAt,
+              displayStatus: sessionPayload.time.updated > reviewedAt ? "needs_review" : "idle",
+              updated: sessionPayload.time.updated > reviewedAt,
+            },
+          },
+        },
+      })
+    })
+
+    try {
+      expect(deriveStatus(sessionID, sync)).toBe("needs_review")
+
+      reviewedAt = 100
+      revision += 1
+      emit({
+        directory: "global",
+        project: "proj_test",
+        payload: {
+          id: "evt_shared_state",
+          type: "opencodex.session_state.updated",
+          properties: {
+            sessionID,
+            state: { sessionID, reviewedAt, reviewedFiles: [], timeUpdated: 101 },
+          },
+        },
+      })
+      await wait(() => deriveStatus(sessionID, sync) === "dormant")
+
+      views = [
+        {
+          id: "view_shared",
+          title: "Shared view",
+          focusedSessionID: sessionID,
+          layout: "auto",
+          sessions: [sessionPayload],
+          sessionIDs: [sessionID],
+          timeCreated: 1,
+          timeUpdated: 1,
+        },
+      ]
+      revision += 1
+      emit({
+        directory: "global",
+        project: "proj_test",
+        payload: {
+          id: "evt_shared_view",
+          type: "opencodex.view.created",
+          properties: { viewID: "view_shared" },
+        },
+      })
+      await wait(() => sync.data.opencodex_view.some((view) => view.id === "view_shared"))
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

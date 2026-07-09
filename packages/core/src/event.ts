@@ -1,6 +1,6 @@
 export * as EventV2 from "./event"
 
-import { Context, Effect, Layer, Option, PubSub, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, PubSub, Schema, Semaphore, Stream } from "effect"
 import { eq } from "drizzle-orm"
 import { Database } from "./database/database"
 import { EventSequenceTable, EventTable } from "./event/sql"
@@ -119,6 +119,7 @@ export interface Interface {
   readonly all: () => Stream.Stream<Payload>
   readonly sync: (handler: Sync) => Effect.Effect<Unsubscribe>
   readonly listen: (listener: Listener) => Effect.Effect<Unsubscribe>
+  readonly barrier: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
   readonly project: <D extends Definition>(definition: D, projector: Projector<D>) => Effect.Effect<void>
   readonly replay: (
     event: SerializedEvent,
@@ -142,6 +143,10 @@ export const layer = Layer.effect(
     const projectors = new Map<string, AnyProjector[]>()
     const listeners = new Array<Listener>()
     const syncHandlers = new Array<Sync>()
+    const applicationBarrier = Semaphore.makeUnsafe(1)
+    const InApplicationBarrier = Context.Reference<boolean>("@opencode/Event/InApplicationBarrier", {
+      defaultValue: () => false,
+    })
     const { db } = yield* Database.Service
 
     const getOrCreate = (definition: Definition) =>
@@ -242,97 +247,116 @@ export const layer = Layer.effect(
       })
     }
 
-    function publishEvent<D extends Definition>(event: Payload<D>) {
+    function barrier<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
       return Effect.gen(function* () {
-        for (const sync of syncHandlers) {
-          yield* sync(event as Payload)
-        }
-        yield* commitSyncEvent(event as Payload)
-        for (const listener of listeners) {
-          yield* listener(event as Payload)
-        }
-        const pubsub = typed.get(event.type)
-        if (pubsub) yield* PubSub.publish(pubsub, event as Payload)
-        yield* PubSub.publish(all, event as Payload)
-        return event
+        if (yield* InApplicationBarrier) return yield* effect
+        return yield* applicationBarrier.withPermit(Effect.provideService(effect, InApplicationBarrier, true))
       })
+    }
+
+    function publishEvent<D extends Definition>(event: Payload<D>) {
+      return barrier(
+        Effect.gen(function* () {
+          for (const sync of syncHandlers) {
+            yield* sync(event as Payload)
+          }
+          yield* commitSyncEvent(event as Payload)
+          for (const listener of listeners) {
+            yield* listener(event as Payload)
+          }
+          const pubsub = typed.get(event.type)
+          if (pubsub) yield* PubSub.publish(pubsub, event as Payload)
+          yield* PubSub.publish(all, event as Payload)
+          return event
+        }),
+      )
     }
 
     function publish<D extends Definition>(definition: D, data: Data<D>, options?: PublishOptions) {
-      return Effect.gen(function* () {
-        const serviceLocation = Option.getOrUndefined(yield* Effect.serviceOption(Location.Service))
-        const location =
-          options?.location ??
-          (serviceLocation
-            ? { directory: serviceLocation.directory, workspaceID: serviceLocation.workspaceID }
-            : undefined)
-        return yield* publishEvent({
-          id: options?.id ?? ID.create(),
-          ...(options?.metadata ? { metadata: options.metadata } : {}),
-          type: definition.type,
-          ...(definition.sync === undefined ? {} : { version: definition.sync.version }),
-          ...(location ? { location } : {}),
-          data,
-        } as Payload<D>)
-      })
+      return barrier(
+        Effect.gen(function* () {
+          const serviceLocation = Option.getOrUndefined(yield* Effect.serviceOption(Location.Service))
+          const location =
+            options?.location ??
+            (serviceLocation
+              ? { directory: serviceLocation.directory, workspaceID: serviceLocation.workspaceID }
+              : undefined)
+          return yield* publishEvent({
+            id: options?.id ?? ID.create(),
+            ...(options?.metadata ? { metadata: options.metadata } : {}),
+            type: definition.type,
+            ...(definition.sync === undefined ? {} : { version: definition.sync.version }),
+            ...(location ? { location } : {}),
+            data,
+          } as Payload<D>)
+        }),
+      )
     }
 
     function replay(event: SerializedEvent, options?: { readonly publish?: boolean; readonly ownerID?: string }) {
-      return Effect.gen(function* () {
-        const definition = syncRegistry.get(event.type)
-        if (!definition) {
-          yield* Effect.die(
-            new InvalidSyncEventError({ type: event.type, message: `Unknown sync event type ${event.type}` }),
-          )
-        } else {
-          const payload = {
-            id: event.id,
-            type: definition.type,
-            version: definition.sync.version,
-            data: event.data,
-          } as Payload
-          yield* commitSyncEvent(payload, { seq: event.seq, aggregateID: event.aggregateID, ownerID: options?.ownerID })
-          if (options?.publish) {
-            for (const listener of listeners) {
-              yield* listener(payload)
+      return barrier(
+        Effect.gen(function* () {
+          const definition = syncRegistry.get(event.type)
+          if (!definition) {
+            yield* Effect.die(
+              new InvalidSyncEventError({ type: event.type, message: `Unknown sync event type ${event.type}` }),
+            )
+          } else {
+            const payload = {
+              id: event.id,
+              type: definition.type,
+              version: definition.sync.version,
+              data: event.data,
+            } as Payload
+            yield* commitSyncEvent(payload, {
+              seq: event.seq,
+              aggregateID: event.aggregateID,
+              ownerID: options?.ownerID,
+            })
+            if (options?.publish) {
+              for (const listener of listeners) {
+                yield* listener(payload)
+              }
+              const pubsub = typed.get(payload.type)
+              if (pubsub) yield* PubSub.publish(pubsub, payload)
+              yield* PubSub.publish(all, payload)
             }
-            const pubsub = typed.get(payload.type)
-            if (pubsub) yield* PubSub.publish(pubsub, payload)
-            yield* PubSub.publish(all, payload)
           }
-        }
-      })
+        }),
+      )
     }
 
     function replayAll(events: SerializedEvent[], options?: { readonly publish?: boolean; readonly ownerID?: string }) {
-      return Effect.gen(function* () {
-        const source = events[0]?.aggregateID
-        if (!source) return undefined
-        if (events.some((event) => event.aggregateID !== source)) {
-          yield* Effect.die(
-            new InvalidSyncEventError({
-              type: events[0]?.type ?? "unknown",
-              message: "Replay events must belong to the same aggregate",
-            }),
-          )
-        }
-        const start = events[0]?.seq ?? 0
-        for (const [index, event] of events.entries()) {
-          const seq = start + index
-          if (event.seq !== seq) {
+      return barrier(
+        Effect.gen(function* () {
+          const source = events[0]?.aggregateID
+          if (!source) return undefined
+          if (events.some((event) => event.aggregateID !== source)) {
             yield* Effect.die(
               new InvalidSyncEventError({
-                type: event.type,
-                message: `Replay sequence mismatch at index ${index}: expected ${seq}, got ${event.seq}`,
+                type: events[0]?.type ?? "unknown",
+                message: "Replay events must belong to the same aggregate",
               }),
             )
           }
-        }
-        for (const event of events) {
-          yield* replay(event, options)
-        }
-        return source
-      })
+          const start = events[0]?.seq ?? 0
+          for (const [index, event] of events.entries()) {
+            const seq = start + index
+            if (event.seq !== seq) {
+              yield* Effect.die(
+                new InvalidSyncEventError({
+                  type: event.type,
+                  message: `Replay sequence mismatch at index ${index}: expected ${seq}, got ${event.seq}`,
+                }),
+              )
+            }
+          }
+          for (const event of events) {
+            yield* replay(event, options)
+          }
+          return source
+        }),
+      )
     }
 
     function remove(aggregateID: string) {
@@ -387,7 +411,19 @@ export const layer = Layer.effect(
         projectors.set(definition.type, list)
       })
 
-    return Service.of({ publish, subscribe, all: streamAll, sync, listen, project, replay, replayAll, remove, claim })
+    return Service.of({
+      publish,
+      subscribe,
+      all: streamAll,
+      sync,
+      listen,
+      barrier,
+      project,
+      replay,
+      replayAll,
+      remove,
+      claim,
+    })
   }),
 )
 

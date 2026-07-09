@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -102,6 +103,7 @@ const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
 const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
+const SESSION_VIEWED_MARK_DELAY_MS = 2_000
 
 function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
   if (!action) return
@@ -422,9 +424,12 @@ export function Session() {
 
   const local = useLocal()
 
-  createEffect(() => {
-    local.session.markViewed(route.sessionID, Math.max(Date.now(), session()?.time.updated ?? 0))
-  })
+  createEffect(on(() => `${route.sessionID}:${session()?.time.updated ?? 0}`, () => {
+    const current = session()
+    if (!current) return
+    const timer = setTimeout(() => local.session.markViewed(route.sessionID, Math.max(Date.now(), current.time.updated)), SESSION_VIEWED_MARK_DELAY_MS)
+    onCleanup(() => clearTimeout(timer))
+  }))
 
   function enterChild(sessionID: string) {
     navigate({

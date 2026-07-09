@@ -8,8 +8,6 @@ import {
   runCreateSessionRouteAction,
   runDeleteProjectAction,
   runEditProjectAction,
-  runEditProjectFoldersAction,
-  runRenameProjectAction,
 } from "../src/renderer/src/lib/project-actions"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
 
@@ -42,23 +40,23 @@ describe("GUI project action decisions", () => {
 
     await runCreateProjectAction({
       fallbackDirectory: "C:/Work",
-      chooseFolder: async (fallback) => {
+      chooseFolders: async (fallback) => {
         calls.push(`choose:${fallback}`)
-        return "C:/Work/OpencodeX"
+        return ["C:/Work/OpencodeX", "C:/Work/Docs"]
       },
       validateProjectFolders: async (folders) => {
         calls.push(`validate:${folders.join(",")}`)
         return { data: { valid: true, folders: [] } }
       },
-      createProject: async (name, directory) => calls.push(`create:${name}:${directory}`),
+      createProject: async (name, directory, folders) => calls.push(`create:${name}:${directory}:${folders.join("|")}`),
       refresh: async () => calls.push("refresh"),
       alert: (message) => calls.push(`alert:${message}`),
     })
 
     expect(calls).toEqual([
       "choose:C:/Work",
-      "validate:C:/Work/OpencodeX",
-      "create:OpencodeX:C:/Work/OpencodeX",
+      "validate:C:/Work/OpencodeX,C:/Work/Docs",
+      "create:OpencodeX:C:/Work/OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
       "refresh",
     ])
   })
@@ -68,9 +66,9 @@ describe("GUI project action decisions", () => {
 
     await runCreateProjectAction({
       fallbackDirectory: "",
-      chooseFolder: async (fallback) => {
+      chooseFolders: async (fallback) => {
         calls.push(`choose:${fallback}`)
-        return "C:/Missing"
+        return ["C:/Missing"]
       },
       validateProjectFolders: async () => ({ data: { valid: false, folders: [{ input: "C:/Missing", message: "Folder is missing" }] } }),
       createProject: async () => calls.push("create"),
@@ -86,7 +84,7 @@ describe("GUI project action decisions", () => {
 
     await runCreateProjectAction({
       fallbackDirectory: "C:/Work",
-      chooseFolder: async (fallback) => {
+      chooseFolders: async (fallback) => {
         calls.push(`choose:${fallback}`)
         return undefined
       },
@@ -102,60 +100,16 @@ describe("GUI project action decisions", () => {
     expect(calls).toEqual(["choose:C:/Work"])
   })
 
-  test("renames projects only when the entered name is non-empty", async () => {
-    const calls: string[] = []
-
-    await runRenameProjectAction({
-      projectID: "project-1",
-      current: "Old",
-      askText: async () => "  New  ",
-      renameProject: async (projectID, name) => calls.push(`rename:${projectID}:${name}`),
-      refresh: async () => calls.push("refresh"),
-    })
-    await runRenameProjectAction({
-      projectID: "project-2",
-      askText: async () => "   ",
-      renameProject: async () => calls.push("rename-empty"),
-      refresh: async () => calls.push("refresh-empty"),
-    })
-
-    expect(calls).toEqual(["rename:project-1:New", "refresh"])
-  })
-
-  test("edits project folders through text parsing, validation, backend update, and refresh", async () => {
-    const calls: string[] = []
-
-    await runEditProjectFoldersAction({
-      projectID: "project-1",
-      folders: ["C:/Old"],
-      askText: async () => "C:/One\n\n C:/Two ",
-      validateProjectFolders: async (projectID, folders) => {
-        calls.push(`validate:${projectID}:${folders.join("|")}`)
-        return { data: { valid: true, folders: [] } }
-      },
-      updateProjectFolders: async (projectID, folders) => calls.push(`update:${projectID}:${folders.join("|")}`),
-      refresh: async () => calls.push("refresh"),
-      alert: (message) => calls.push(`alert:${message}`),
-    })
-
-    expect(calls).toEqual([
-      "validate:project-1:C:/One|C:/Two",
-      "update:project-1:C:/One|C:/Two",
-      "refresh",
-    ])
-  })
-
   test("edits project name and folders together after validation", async () => {
     const calls: string[] = []
-    const answers = ["  New Name  ", "C:/One\n\n C:/Two "]
 
     await runEditProjectAction({
       projectID: "project-1",
       currentName: "Old",
       folders: ["C:/Old"],
-      askText: async (input) => {
-        calls.push(`ask:${input.title}:${input.value}`)
-        return answers.shift()
+      askProject: async (input) => {
+        calls.push(`ask:${input.title}:${input.name}:${input.folders.join("|")}`)
+        return { name: "New Name", folders: ["C:/One", "C:/Two"] }
       },
       validateProjectFolders: async (projectID, folders) => {
         calls.push(`validate:${projectID}:${folders.join("|")}`)
@@ -167,8 +121,7 @@ describe("GUI project action decisions", () => {
     })
 
     expect(calls).toEqual([
-      "ask:Edit Project Name:Old",
-      "ask:Edit Project Folders:C:/Old",
+      "ask:Edit project:Old:C:/Old",
       "validate:project-1:C:/One|C:/Two",
       "update:project-1:New Name:C:/One|C:/Two",
       "refresh",
@@ -177,13 +130,12 @@ describe("GUI project action decisions", () => {
 
   test("does not update project details when folder validation fails", async () => {
     const calls: string[] = []
-    const answers = ["New Name", "C:/Missing"]
 
     await runEditProjectAction({
       projectID: "project-1",
       currentName: "Old",
       folders: ["C:/Old"],
-      askText: async () => answers.shift(),
+      askProject: async () => ({ name: "New Name", folders: ["C:/Missing"] }),
       validateProjectFolders: async () => ({ data: { valid: false, folders: [{ input: "C:/Missing", message: "Missing folder" }] } }),
       updateProject: async () => calls.push("update"),
       refresh: async () => calls.push("refresh"),

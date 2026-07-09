@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { Deferred, Effect, Layer } from "effect"
 import type * as Scope from "effect/Scope"
@@ -13,6 +13,8 @@ import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { MessageV2 } from "../../src/session/message-v2"
+import { SessionStatus } from "../../src/session/status"
+import { sessionStatusSnapshot } from "../../src/server/routes/instance/httpapi/handlers/opencodex"
 
 import type { Config } from "@/config/config"
 import { Session as SessionNs } from "@/session/session"
@@ -323,6 +325,16 @@ afterEach(async () => {
 })
 
 describe("HttpApi SDK", () => {
+  test("session sync ignores persisted-only running status", () => {
+    const sessionID = SessionID.make("ses_stale_busy")
+    const persisted = new Map<SessionID, SessionStatus.Info>([[sessionID, { type: "busy" }]])
+
+    expect(sessionStatusSnapshot(persisted, new Map())).toEqual({})
+    expect(sessionStatusSnapshot(persisted, new Map([[sessionID, { type: "busy" }]]))).toEqual({
+      [sessionID]: { type: "busy" },
+    })
+  })
+
   httpapi(
     "uses the generated SDK for global and control routes",
     Effect.gen(function* () {
@@ -394,7 +406,6 @@ describe("HttpApi SDK", () => {
         const busy = yield* capture(() =>
           sdk.opencodex.session.sync({ limit: "10", since: String(firstBody.revision) }),
         )
-        const busySnapshot = record(record(busy.data).snapshot)
         const replayedIdle = yield* capture(() =>
           sdk.sync.replay({
             body_directory: directory,
@@ -408,9 +419,8 @@ describe("HttpApi SDK", () => {
           }),
         )
         const idle = yield* capture(() =>
-          sdk.opencodex.session.sync({ limit: "10", since: String(record(busy.data).revision) }),
+          sdk.opencodex.session.sync({ limit: "10", since: String(firstBody.revision) }),
         )
-        const idleSnapshot = record(record(idle.data).snapshot)
         const updated = yield* capture(() =>
           sdk.opencodex.sessionState.update({
             sessionID: firstID,
@@ -452,9 +462,8 @@ describe("HttpApi SDK", () => {
         expect(firstBody.changed).toBe(true)
         expect(firstSession.title).toBe("sync-one")
         expect(record(unchanged.data)).toEqual({ changed: false, revision: firstBody.revision })
-        expect(record(record(busySnapshot.sessionStatus)[firstID])).toEqual({ type: "busy" })
-        expect(record(record(busySnapshot.sessionUiState)[firstID]).displayStatus).toBe("in_progress")
-        expect(record(idleSnapshot.sessionStatus)[firstID]).toBeUndefined()
+        expect(record(busy.data)).toEqual({ changed: false, revision: firstBody.revision })
+        expect(record(idle.data)).toEqual({ changed: false, revision: firstBody.revision })
         expect(array(record(updated.data).reviewedFiles)).toEqual(["hello.txt"])
         expect(record(reviewed.data).changed).toBe(true)
         expect(reviewedUi.displayStatus).toBe("idle")

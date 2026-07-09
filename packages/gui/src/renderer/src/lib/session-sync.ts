@@ -66,6 +66,16 @@ export function shouldShowViewSessionLoading(data?: SessionData) {
   return data === undefined
 }
 
+export function shouldShowSelectedSessionLoading(input: {
+  sessionID?: string
+  materializingSessionID?: string
+  loadedSessionID: string
+  cachedData?: SessionData
+}) {
+  if (!input.sessionID || input.sessionID === input.materializingSessionID) return false
+  return input.loadedSessionID !== input.sessionID && input.cachedData === undefined
+}
+
 export function viewSessionLoadKey(session: Session) {
   return `${session.id}\n${session.directory ?? ""}\n${session.time.updated}`
 }

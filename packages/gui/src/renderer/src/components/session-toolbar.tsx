@@ -1,26 +1,23 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { Show } from "solid-js"
-import { compactPath, title } from "../lib/format"
+import { Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { title } from "../lib/format"
 import { Icon } from "./icon"
-import { StatusPill } from "./status-pill"
 import { IconButton } from "./ui"
 
 export function SessionToolbar(props: {
   session: Session
-  status?: string
-  blocked: boolean
+  projectName?: string
   pending?: boolean
-  concealCodeBlocks: boolean
   showTimestamps: boolean
   showThinking: boolean
   showToolDetails: boolean
   showScrollbar: boolean
   showGenericToolOutput: boolean
-  abortSession: (sessionID: string) => void
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
-  toggleCodeConceal: () => void
+  readyForReview?: boolean
+  markSessionReviewed?: (session: Session) => void
   toggleTimestamps: () => void
   toggleThinking: () => void
   toggleToolDetails: () => void
@@ -29,21 +26,35 @@ export function SessionToolbar(props: {
   sidePanelOpen?: boolean
   toggleSidePanel?: () => void
 }) {
+  const [actionsOpen, setActionsOpen] = createSignal(false)
+  let actionsMenu: HTMLDetailsElement | undefined
+
+  createEffect(() => {
+    if (!actionsOpen()) return
+    const closeActionsMenu = (event: PointerEvent) => {
+      if (event.target instanceof Node && actionsMenu?.contains(event.target)) return
+      if (actionsMenu) actionsMenu.open = false
+      setActionsOpen(false)
+    }
+    document.addEventListener("pointerdown", closeActionsMenu, true)
+    onCleanup(() => document.removeEventListener("pointerdown", closeActionsMenu, true))
+  })
+
   return (
     <header class="session-toolbar">
       <div class="session-titleline">
         <div>
           <h1>{title(props.session.title)}</h1>
-          <p>{compactPath(props.session.directory)}</p>
+          <Show when={props.projectName}>
+            {(projectName) => <p>{projectName()}</p>}
+          </Show>
         </div>
       </div>
       <div class="session-actions compact">
-        <Show when={props.status === "busy" || props.status === "retry" || props.blocked}>
-          <IconButton icon="stop" label="Interrupt session" onClick={() => props.abortSession(props.session.id)} />
-        </Show>
         <Show when={props.toggleSidePanel}>
           {(toggleSidePanel) => (
             <IconButton
+              class="session-side-panel-toggle"
               icon="panel"
               label={props.sidePanelOpen ? "Close side panel" : "Open side panel"}
               pressed={props.sidePanelOpen}
@@ -51,22 +62,60 @@ export function SessionToolbar(props: {
             />
           )}
         </Show>
-        <StatusPill status={props.blocked ? "input_needed" : props.status ?? "idle"} />
         <Show when={!props.pending}>
-          <details class="overflow-menu">
+          <details
+            class="overflow-menu"
+            ref={(element) => {
+              actionsMenu = element
+            }}
+            onToggle={(event) => setActionsOpen(event.currentTarget.open)}
+          >
             <summary title="Session actions" aria-label="Session actions"><Icon name="more" /></summary>
-            <div>
-              <button type="button" onClick={() => props.renameSession(props.session)}>Rename</button>
-              <button type="button" onClick={() => props.moveSession(props.session)}>Move to project</button>
+            <div class="session-actions-menu">
+              <div class="session-actions-menu-group">
+                <button type="button" class="session-actions-menu-item" onClick={() => props.renameSession(props.session)}>
+                  <Icon name="pencil" />
+                  <span>Rename</span>
+                </button>
+                <button type="button" class="session-actions-menu-item" onClick={() => props.moveSession(props.session)}>
+                  <Icon name="folder" />
+                  <span>Move to project</span>
+                </button>
+                <Show when={props.readyForReview && props.markSessionReviewed}>
+                  <button type="button" class="session-actions-menu-item" onClick={() => props.markSessionReviewed?.(props.session)}>
+                    <Icon name="check" />
+                    <span>Mark reviewed</span>
+                  </button>
+                </Show>
+              </div>
               <hr />
-              <button type="button" onClick={props.toggleCodeConceal}><Icon name={props.concealCodeBlocks ? "check" : "circle"} /> Code blocks</button>
-              <button type="button" onClick={props.toggleTimestamps}><Icon name={props.showTimestamps ? "check" : "circle"} /> Timestamps</button>
-              <button type="button" onClick={props.toggleThinking}><Icon name={props.showThinking ? "check" : "circle"} /> Thinking</button>
-              <button type="button" onClick={props.toggleToolDetails}><Icon name={props.showToolDetails ? "check" : "circle"} /> Tool details</button>
-              <button type="button" onClick={props.toggleScrollbar}><Icon name={props.showScrollbar ? "check" : "circle"} /> Scrollbar</button>
-              <button type="button" onClick={props.toggleGenericToolOutput}><Icon name={props.showGenericToolOutput ? "check" : "circle"} /> Generic tool output</button>
+              <div class="session-actions-menu-group">
+                <button type="button" class="session-actions-menu-item toggle" aria-pressed={props.showTimestamps} onClick={props.toggleTimestamps}>
+                  <span class="session-actions-menu-indicator" data-active={props.showTimestamps ? "true" : undefined}><Icon name="check" /></span>
+                  <span>Timestamps</span>
+                </button>
+                <button type="button" class="session-actions-menu-item toggle" aria-pressed={props.showThinking} onClick={props.toggleThinking}>
+                  <span class="session-actions-menu-indicator" data-active={props.showThinking ? "true" : undefined}><Icon name="check" /></span>
+                  <span>Thinking</span>
+                </button>
+                <button type="button" class="session-actions-menu-item toggle" aria-pressed={props.showToolDetails} onClick={props.toggleToolDetails}>
+                  <span class="session-actions-menu-indicator" data-active={props.showToolDetails ? "true" : undefined}><Icon name="check" /></span>
+                  <span>Tool details</span>
+                </button>
+                <button type="button" class="session-actions-menu-item toggle" aria-pressed={props.showScrollbar} onClick={props.toggleScrollbar}>
+                  <span class="session-actions-menu-indicator" data-active={props.showScrollbar ? "true" : undefined}><Icon name="check" /></span>
+                  <span>Scrollbar</span>
+                </button>
+                <button type="button" class="session-actions-menu-item toggle" aria-pressed={props.showGenericToolOutput} onClick={props.toggleGenericToolOutput}>
+                  <span class="session-actions-menu-indicator" data-active={props.showGenericToolOutput ? "true" : undefined}><Icon name="check" /></span>
+                  <span>Generic tool output</span>
+                </button>
+              </div>
               <hr />
-              <button type="button" class="danger" onClick={() => props.deleteSession(props.session)}><Icon name="trash" /> Delete</button>
+              <button type="button" class="session-actions-menu-item danger" onClick={() => props.deleteSession(props.session)}>
+                <Icon name="trash" />
+                <span>Delete session</span>
+              </button>
             </div>
           </details>
         </Show>

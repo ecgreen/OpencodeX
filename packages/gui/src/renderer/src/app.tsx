@@ -1,26 +1,73 @@
-import type { GlobalEvent, OpencodeXSessionState, OpencodeXSwarmRoleInput, OpencodeXView, PermissionRequest, ProviderAuthMethod, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { CLIENT_SESSION_SYNC_INTERVAL_MS } from "@opencode-ai/sdk/v2/client-sync"
+import type {
+  GlobalEvent,
+  OpencodeXSessionState,
+  OpencodeXSwarmRoleInput,
+  OpencodeXView,
+  PermissionRequest,
+  ProviderAuthMethod,
+  QuestionAnswer,
+  QuestionRequest,
+  Session,
+} from "@opencode-ai/sdk/v2/client"
+import {
+  CLIENT_SESSION_SYNC_INTERVAL_MS,
+  createClientStateSync,
+  selectClientStateSyncSnapshot,
+  type ClientStateSyncState,
+} from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./lib/client"
-import type { GuiSnapshot, MessageBundle, SessionData } from "./lib/store"
-import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type Accessor } from "solid-js"
+import type { GuiSnapshot, MessageBundle, SessionData, SessionLoadOptions } from "./lib/store"
+import {
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  untrack,
+  type Accessor,
+} from "solid-js"
 import { OpencodeXLogo, Titlebar } from "./components/chrome"
 import { CollectionPage, ProjectCollectionPage, SessionCollectionPage, StatusPage } from "./components/collection-pages"
 import { CommandPaletteModal, type PaletteCommand } from "./components/command-palette"
 import { Dashboard } from "./components/dashboard"
+import { DashboardSection } from "./components/dashboard-primitives"
 import { DiffPage, type DiffMode } from "./components/diff-page"
 import { KeyboardHelpModal } from "./components/keyboard-help"
-import { DialogModal, type ChoiceOption, type DialogState } from "./components/dialog-modal"
+import { DialogModal, type ChoiceOption, type DialogState, type ProjectDialogValue } from "./components/dialog-modal"
 import { PluginsPage } from "./components/plugins-page"
 import { RailSidebar, type RailDragTarget, type RailDropTarget, type RailSectionName } from "./components/rail-sidebar"
 import { SessionPage } from "./components/session-page"
-import { SessionSidePanel, type SessionSidePanelContextOption, type SessionSidePanelRequest, type SessionSidePanelTarget } from "./components/session-side-panel"
+import {
+  SessionSidePanel,
+  type SessionSidePanelContextOption,
+  type SessionSidePanelRequest,
+  type SessionSidePanelTarget,
+} from "./components/session-side-panel"
 import { SwarmEditorPage, SwarmsPage } from "./components/swarms-page"
 import { ViewPaneHost } from "./components/view-pane-host"
 import { ViewEditorPage, ViewsManagerPage } from "./components/views-manager-page"
 import { WorkbenchPage } from "./components/workbench-page"
 import { connectGuiClient } from "./lib/client"
-import { readBoolPreference, readRecentModels, readThemeMode, writeBoolPreference, writeRecentModels, type GuiThemeMode } from "./lib/app-preferences"
-import { mergeRecentModels, projectSessions, recentModelsFromSessions, tuiSidebarSessions } from "./lib/app-session-lists"
+import {
+  readBoolPreference,
+  readRecentModels,
+  readThemeMode,
+  writeBoolPreference,
+  writeRecentModels,
+  type GuiThemeMode,
+} from "./lib/app-preferences"
+import {
+  emptySessionOrderState,
+  mergeRecentModels,
+  projectSessions,
+  reconcileSessionOrderState,
+  recentModelsFromSessions,
+  tuiSidebarSessions,
+} from "./lib/app-session-lists"
 import { runCreateProjectSessionAction } from "./lib/creation-actions"
 import { compactPath, formatRelative, title } from "./lib/format"
 import {
@@ -34,14 +81,37 @@ import {
 } from "./lib/gui-plugins"
 import { guiShortcutAction, isKeyboardEditingTarget, runGuiShortcutAction } from "./lib/keyboard-shortcuts"
 import { prependOlderMessages, trimToLiveTail, type MessageWindow } from "./lib/message-window"
-import { runCycleVariantAction, runSwitchAgentAction, runSwitchModelAction, runSwitchVariantAction } from "./lib/model-actions"
-import { firstAvailableModel, modelValue, parseModelValue, selectedModelVariants, sessionModelDefaults } from "./lib/model-selection"
+import {
+  runCycleVariantAction,
+  runSwitchAgentAction,
+  runSwitchModelAction,
+  runSwitchVariantAction,
+} from "./lib/model-actions"
+import {
+  firstAvailableModel,
+  modelValue,
+  parseModelValue,
+  selectedModelVariants,
+  sessionModelDefaults,
+} from "./lib/model-selection"
 import { buildPaletteCommands } from "./lib/palette-commands"
 import { restorePromptPartsFromEditedText } from "./lib/prompt-autocomplete"
 import type { GuiPromptInfo } from "./lib/prompt-state"
-import { runCreateProjectAction, runCreateSessionRouteAction, runDeleteProjectAction, runEditProjectAction, runEditProjectFoldersAction, runRenameProjectAction } from "./lib/project-actions"
+import {
+  runCreateProjectAction,
+  runCreateSessionRouteAction,
+  runDeleteProjectAction,
+  runEditProjectAction,
+} from "./lib/project-actions"
 import { droppedReorderIDs, mergeOrderedIDs, moveByOffset } from "./lib/reorder"
-import { activeSessionIDForRoute, activeSessionRouteKey as sessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "./lib/route-selection"
+import {
+  activeProjectForRoute,
+  activeSessionIDForRoute,
+  activeSessionRouteKey,
+  activeViewForRoute,
+  focusedViewItemID,
+  selectedSessionForRoute,
+} from "./lib/route-selection"
 import {
   globalEventAction,
   globalEventID,
@@ -57,19 +127,38 @@ import {
   runGlobalEventAction,
   sessionDataEventTargets,
 } from "./lib/live-session-patch"
-import { markSessionViewedInSnapshot } from "./lib/session-status"
+import { markSessionSeenInSnapshot, markSessionViewedInSnapshot } from "./lib/session-status"
 import { opencodeXSwarmExecutionMode } from "./lib/swarm-actions"
-import { runSelectedSessionSync, shouldShowViewSessionLoading, shouldSkipViewSessionSync, viewSessionLoadKey } from "./lib/session-sync"
+import {
+  runSelectedSessionSync,
+  shouldShowSelectedSessionLoading,
+  shouldShowViewSessionLoading,
+  shouldSkipViewSessionSync,
+  viewSessionLoadKey,
+} from "./lib/session-sync"
 import { runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest } from "./lib/session-actions"
 import { liveServerSyncPlan, visibleSessionSyncTarget } from "./lib/live-sync"
-import { buildSessionSlashCommands, type SessionSlashCommand, type SessionSlashCommandContext } from "./lib/session-slash-commands"
-import { DEFAULT_RAIL_SECTION_ORDER, dropPlacement, readSidebarPreferences, writeSidebarPreferences } from "./lib/sidebar-preferences"
+import {
+  buildSessionSlashCommands,
+  type SessionSlashCommand,
+  type SessionSlashCommandContext,
+} from "./lib/session-slash-commands"
+import {
+  DEFAULT_RAIL_SECTION_ORDER,
+  dropPlacement,
+  readSidebarPreferences,
+  writeSidebarPreferences,
+} from "./lib/sidebar-preferences"
 import { syncViewSessionsInParallel, viewSessionsInOrder } from "./lib/view-sync"
 import { runViewPromptAction } from "./lib/view-prompt"
 import { runSessionPromptAction } from "./lib/session-prompt"
 import { workbenchPromptTarget } from "./lib/workbench"
 import { formatSessionTranscript } from "./lib/transcript"
-import { defaultTranscriptExportOptions, prepareSessionTranscriptExport, type GuiTranscriptExportOptions } from "./lib/transcript-export"
+import {
+  defaultTranscriptExportOptions,
+  prepareSessionTranscriptExport,
+  type GuiTranscriptExportOptions,
+} from "./lib/transcript-export"
 import {
   EMPTY_VIEW_PANE_RUNTIME_STATE,
   pruneRecordKeys,
@@ -97,12 +186,14 @@ import {
   forkSession,
   findFiles,
   installPlugin,
+  isRenderableSession,
   listConsoleOrgs,
   listMcpStatus,
   listProviderAuthMethods,
   listProviders,
   listPlugins,
   listSkills,
+  loadClientStateSession,
   loadSessionDiff,
   loadSession,
   loadSessionCards,
@@ -113,7 +204,6 @@ import {
   moveSession,
   rejectQuestion,
   removeWorkspace,
-  renameProject,
   renameSession,
   reorderProjects,
   reorderViews,
@@ -126,6 +216,7 @@ import {
   shareSession,
   summarizeSession,
   subscribeEvents,
+  sessionDataFromClientState,
   switchConsoleOrg,
   syncWorkspaces,
   togglePlugin,
@@ -135,38 +226,80 @@ import {
   updateSwarm,
   updateView,
   updateProject,
-  updateProjectFolders,
   updateViewFocus,
   validateProjectFolders,
   revertSession,
   warpSessionWorkspace,
   workspaceStatus,
 } from "./lib/store"
-import { pendingViewSessions, viewItemID, viewItemSession, viewItemsMembershipKey, viewSessionsSyncKey, type ViewItem } from "./lib/view-items"
+import {
+  pendingViewSessions,
+  viewItemID,
+  viewItemSession,
+  viewItemsMembershipKey,
+  viewSessionsSyncKey,
+  type ViewItem,
+} from "./lib/view-items"
 
 type Route =
   | { name: "dashboard" }
   | { name: "sessions" }
   | { name: "new-session"; projectID?: string; directory?: string }
-  | { name: "projects" }
+  | { name: "projects"; projectID?: string }
   | { name: "session"; sessionID: string }
   | { name: "swarms"; swarmID?: string }
-  | { name: "swarm-create"; swarmID?: string }
+  | { name: "swarm-create"; swarmID?: string; projectID?: string }
   | { name: "views"; viewID?: string }
   | { name: "view-edit"; viewID?: string }
   | { name: "plugins" }
-  | { name: "workbench" }
+  | { name: "workbench"; projectID?: string }
   | { name: "diff"; mode?: DiffMode; sessionID?: string }
   | { name: "settings" }
   | { name: "status" }
 
 const NAV_ITEMS = [
-  { name: "dashboard", label: "Dashboard", icon: "dashboard", shortcut: "Ctrl+D", description: "Workspace command center" },
-  { name: "projects", label: "Projects", icon: "folder", shortcut: "Ctrl+1", description: "Manage project groups and folders" },
-  { name: "swarms", label: "Swarms", icon: "swarm", shortcut: "Ctrl+2", description: "Create, manage, and run agent swarms" },
-  { name: "views", label: "Views", icon: "views", shortcut: "Ctrl+3", description: "Create and manage multi-session views" },
-  { name: "plugins", label: "Plugins", icon: "settings", shortcut: "Ctrl+4", description: "Install and manage plugins" },
-  { name: "workbench", label: "Workbench", icon: "browser", shortcut: "Ctrl+5", description: "Files, GitHub, Git, browser, and artifacts" },
+  {
+    name: "dashboard",
+    label: "Dashboard",
+    icon: "dashboard",
+    shortcut: "Ctrl+D",
+    description: "Workspace command center",
+  },
+  {
+    name: "projects",
+    label: "Projects",
+    icon: "folder",
+    shortcut: "Ctrl+1",
+    description: "Manage project groups and folders",
+  },
+  {
+    name: "swarms",
+    label: "Swarms",
+    icon: "swarm",
+    shortcut: "Ctrl+2",
+    description: "Create, manage, and run agent swarms",
+  },
+  {
+    name: "views",
+    label: "Views",
+    icon: "views",
+    shortcut: "Ctrl+3",
+    description: "Create and manage multi-session views",
+  },
+  {
+    name: "plugins",
+    label: "Plugins",
+    icon: "settings",
+    shortcut: "Ctrl+4",
+    description: "Install and manage plugins",
+  },
+  {
+    name: "workbench",
+    label: "Workbench",
+    icon: "browser",
+    shortcut: "Ctrl+5",
+    description: "Files, GitHub, Git, browser, and artifacts",
+  },
 ] as const
 
 const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
@@ -177,6 +310,7 @@ const SESSION_MESSAGE_WINDOW: MessageWindow = { count: 128, budget: 100_000 }
 const VIEW_MESSAGE_WINDOW: MessageWindow = { count: 48, budget: 28_000 }
 const LIVE_SYNC_INTERVAL_MS = CLIENT_SESSION_SYNC_INTERVAL_MS
 const SNAPSHOT_SYNC_INTERVAL_MS = 5_000
+const SESSION_VIEWED_MARK_DELAY_MS = 2_000
 const SEEN_EVENT_ID_LIMIT = 2_000
 const CUSTOM_PROVIDER_OPTION = "__custom_provider__"
 const CUSTOM_PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
@@ -184,8 +318,12 @@ export function App() {
   const sidebarPreferences = readSidebarPreferences()
   const [client, setClient] = createSignal<GuiClient>()
   const [snapshot, setSnapshot] = createSignal<GuiSnapshot>()
-  const [route, setRoute] = createSignal<Route>({ name: "dashboard" })
+  const [route, setRouteValue] = createSignal<Route>({ name: "dashboard" })
+  const [sessionOrderState, setSessionOrderState] = createSignal(emptySessionOrderState())
   const [sessionData, setSessionData] = createSignal<SessionData>(EMPTY_SESSION_DATA)
+  const [selectedSessionDataCache, setSelectedSessionDataCache] = createSignal<
+    Record<string, { data: SessionData; loadedTime: number }>
+  >({})
   const [viewSessionData, setViewSessionData] = createSignal<Record<string, SessionData>>({})
   const [viewPaneStates, setViewPaneStates] = createSignal<Record<string, ViewPaneRuntimeState>>({})
   const [sessionDataSessionID, setSessionDataSessionID] = createSignal("")
@@ -197,27 +335,45 @@ export function App() {
   const [selectedModel, setSelectedModel] = createSignal("")
   const [selectedVariant, setSelectedVariant] = createSignal("")
   const [themeMode, setThemeMode] = createSignal<GuiThemeMode>(readThemeMode())
-  const [concealTranscriptCodeBlocks, setConcealTranscriptCodeBlocks] = createSignal(readBoolPreference("opencodex.gui.transcript.concealCode", true))
-  const [showTranscriptTimestamps, setShowTranscriptTimestamps] = createSignal(readBoolPreference("opencodex.gui.transcript.timestamps", false))
-  const [showTranscriptThinking, setShowTranscriptThinking] = createSignal(readBoolPreference("opencodex.gui.transcript.thinking", true))
-  const [showTranscriptToolDetails, setShowTranscriptToolDetails] = createSignal(readBoolPreference("opencodex.gui.transcript.toolDetails", true))
-  const [showTranscriptScrollbar, setShowTranscriptScrollbar] = createSignal(readBoolPreference("opencodex.gui.transcript.scrollbar", true))
-  const [showTranscriptGenericToolOutput, setShowTranscriptGenericToolOutput] = createSignal(readBoolPreference("opencodex.gui.transcript.genericToolOutput", true))
-  const [notice, setNotice] = createSignal("")
+  const [concealTranscriptCodeBlocks, setConcealTranscriptCodeBlocks] = createSignal(
+    readBoolPreference("opencodex.gui.transcript.concealCode", true),
+  )
+  const [showTranscriptTimestamps, setShowTranscriptTimestamps] = createSignal(
+    readBoolPreference("opencodex.gui.transcript.timestamps", false),
+  )
+  const [showTranscriptThinking, setShowTranscriptThinking] = createSignal(
+    readBoolPreference("opencodex.gui.transcript.thinking", true),
+  )
+  const [showTranscriptToolDetails, setShowTranscriptToolDetails] = createSignal(
+    readBoolPreference("opencodex.gui.transcript.toolDetails", true),
+  )
+  const [showTranscriptScrollbar, setShowTranscriptScrollbar] = createSignal(
+    readBoolPreference("opencodex.gui.transcript.scrollbar", true),
+  )
+  const [showTranscriptGenericToolOutput, setShowTranscriptGenericToolOutput] = createSignal(
+    readBoolPreference("opencodex.gui.transcript.genericToolOutput", true),
+  )
   const [dialog, setDialog] = createSignal<DialogState>()
   const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
   const [keyboardHelpOpen, setKeyboardHelpOpen] = createSignal(false)
   const [railCollapsed, setRailCollapsed] = createSignal(sidebarPreferences.railCollapsed)
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
   const [railSectionOrder, setRailSectionOrder] = createSignal<RailSectionName[]>(sidebarPreferences.railSectionOrder)
-  const [railSections, setRailSections] = createSignal<Record<RailSectionName, boolean>>(sidebarPreferences.railSections)
-  const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>(sidebarPreferences.expandedProjectIDs)
+  const [railSections, setRailSections] = createSignal<Record<RailSectionName, boolean>>(
+    sidebarPreferences.railSections,
+  )
+  const [expandedProjectIDs, setExpandedProjectIDs] = createSignal<Record<string, boolean>>(
+    sidebarPreferences.expandedProjectIDs,
+  )
   const [pinnedSessionIDs, setPinnedSessionIDs] = createSignal(sidebarPreferences.pinnedSessionIDs)
   const [pinnedViewIDs, setPinnedViewIDs] = createSignal(sidebarPreferences.pinnedViewIDs)
+  const [pendingPinnedSessionRouteKey, setPendingPinnedSessionRouteKey] = createSignal("")
+  const [materializingSession, setMaterializingSession] = createSignal<Session>()
+  const [materializingSessionID, setMaterializingSessionID] = createSignal("")
   const [guiPlugins, setGuiPlugins] = createSignal<InstalledGuiPlugin[]>(readInstalledGuiPlugins())
   const [focusedViewSessionID, setFocusedViewSessionID] = createSignal("")
   const [viewComposerFocusRequest, setViewComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
-  const [viewSidePanelOpen, setViewSidePanelOpen] = createSignal(false)
+  const [viewSidePanelOpenByViewID, setViewSidePanelOpenByViewID] = createSignal<Record<string, boolean>>({})
   const [viewSidePanelWidthRatio, setViewSidePanelWidthRatio] = createSignal(0.4)
   const [viewSidePanelSessionID, setViewSidePanelSessionID] = createSignal("")
   const [viewSidePanelRequest, setViewSidePanelRequest] = createSignal<SessionSidePanelRequest>()
@@ -231,17 +387,74 @@ export function App() {
   let viewComposerFocusToken = 0
   let viewFocusPersistTimer: ReturnType<typeof setTimeout> | undefined
   const viewSessionLoadPromises = new Map<string, { key: string; promise: Promise<void> }>()
+  const appliedSessionDigests = new Map<string, string>()
   const seenEventIDs = new Set<string>()
   const seenEventIDOrder: string[] = []
+  const routeHistory: Route[] = [{ name: "dashboard" }]
+  const [routeHistoryIndex, setRouteHistoryIndex] = createSignal(0)
   let liveSyncRunning = false
   let lastSnapshotSync = 0
+  let stateSync: ReturnType<typeof createClientStateSync> | undefined
 
-  const selectedSession = createMemo(() => selectedSessionForRoute(route(), snapshot(), client()?.directory))
-  const activeSessionID = createMemo(() => activeSessionIDForRoute(route()))
-  const activeSessionRouteKey = createMemo(() => sessionRouteKey(route()))
-  const activeSessionData = createMemo(() => sessionDataSessionID() === activeSessionID() ? sessionData() : EMPTY_SESSION_DATA)
-  const activeSessionLoading = createMemo(() => Boolean(activeSessionID()) && loadingSessionID() === activeSessionID() && sessionDataSessionID() !== activeSessionID())
+  function setRoute(next: Route) {
+    const current = route()
+    if (JSON.stringify(current) === JSON.stringify(next)) return
+    routeHistory.splice(routeHistoryIndex() + 1)
+    routeHistory.push(next)
+    setRouteHistoryIndex(routeHistory.length - 1)
+    setRouteValue(next)
+  }
+
+  function goRouteHistory(offset: -1 | 1) {
+    const nextIndex = routeHistoryIndex() + offset
+    const next = routeHistory[nextIndex]
+    if (!next) return
+    setRouteHistoryIndex(nextIndex)
+    setRouteValue(next)
+  }
+
+  const selectedSession = createMemo(() => {
+    const current = route()
+    const materializing = materializingSession()
+    if (current.name === "new-session" && materializing) return materializing
+    if (current.name === "session" && current.sessionID === materializing?.id) return materializing
+    const selected = selectedSessionForRoute(current, snapshot(), client()?.directory)
+    if (selected) return selected
+  })
+  const activeSessionID = createMemo(() => {
+    const current = route()
+    const materializing = materializingSessionID()
+    if (current.name === "new-session" && materializing) return materializing
+    return activeSessionIDForRoute(current)
+  })
+  const activeSessionProjectName = createMemo(() => {
+    const current = route()
+    if (current.name === "new-session") return projectNameForProjectID(current.projectID)
+    return projectNameForSession(selectedSession())
+  })
+  const activeSessionCache = createMemo(() => {
+    const sessionID = activeSessionID()
+    return sessionID ? selectedSessionDataCache()[sessionID] : undefined
+  })
+  const activeSessionData = createMemo(() => {
+    const sessionID = activeSessionID()
+    if (!sessionID) return EMPTY_SESSION_DATA
+    return sessionDataSessionID() === sessionID ? sessionData() : (activeSessionCache()?.data ?? EMPTY_SESSION_DATA)
+  })
+  const activeSessionLoading = createMemo(() =>
+    shouldShowSelectedSessionLoading({
+      sessionID: selectedSession() ? activeSessionID() : undefined,
+      materializingSessionID: materializingSessionID(),
+      loadedSessionID: sessionDataSessionID(),
+      cachedData: activeSessionCache()?.data,
+    }),
+  )
+  const activeProject = createMemo(() => activeProjectForRoute(route(), snapshot()?.projects ?? []))
   const activeView = createMemo(() => activeViewForRoute(route(), snapshot()?.views ?? []))
+  const viewSidePanelOpen = createMemo(() => {
+    const id = activeView()?.id
+    return id ? (viewSidePanelOpenByViewID()[id] ?? false) : false
+  })
   const editingView = createMemo(() => {
     const current = route()
     if (current.name !== "view-edit" || !current.viewID) return
@@ -250,10 +463,12 @@ export function App() {
   const activeViewSessions = createMemo(() => {
     return viewSessionsInOrder(activeView()).slice(0, 8)
   })
-  const activeViewItems = createMemo<ViewItem[]>(() => [
+  const activeViewItems = createMemo<ViewItem[]>(() =>
+    [
     ...activeViewSessions().map((session): ViewItem => ({ kind: "session", session })),
     ...pendingViewSessions(activeView()).map((slot): ViewItem => ({ kind: "pending", slot })),
-  ].slice(0, 8))
+    ].slice(0, 8),
+  )
   const activeViewLoadKey = createMemo(() => {
     const view = activeView()
     return viewSessionsSyncKey(view?.id, activeViewSessions())
@@ -262,7 +477,13 @@ export function App() {
     const view = activeView()
     return viewItemsMembershipKey(view?.id, activeViewItems())
   })
-  const activeViewFocusedSessionID = createMemo(() => focusedViewItemID({ localID: focusedViewSessionID(), persistedID: activeView()?.focusedSessionID, items: activeViewItems() }))
+  const activeViewFocusedSessionID = createMemo(() =>
+    focusedViewItemID({
+      localID: focusedViewSessionID(),
+      persistedID: activeView()?.focusedSessionID,
+      items: activeViewItems(),
+    }),
+  )
   const viewSidePanelContextOptions = createMemo<SessionSidePanelContextOption[]>(() =>
     activeViewSessions().map((session) => ({
       id: session.id,
@@ -273,9 +494,11 @@ export function App() {
   const viewSidePanelSession = createMemo(() => {
     const sessions = activeViewSessions()
     if (sessions.length === 0) return
-    return sessions.find((session) => session.id === viewSidePanelSessionID())
-      ?? sessions.find((session) => session.id === activeViewFocusedSessionID())
-      ?? sessions[0]
+    return (
+      sessions.find((session) => session.id === viewSidePanelSessionID()) ??
+      sessions.find((session) => session.id === activeViewFocusedSessionID()) ??
+      sessions[0]
+    )
   })
   const selectedPermissions = createMemo(() => {
     const session = selectedSession()
@@ -287,16 +510,25 @@ export function App() {
     if (!session) return []
     return snapshot()?.questions.filter((request) => request.sessionID === session.id) ?? []
   })
-  const visibleSessions = createMemo(() => tuiSidebarSessions(snapshot()))
+  createEffect(() => {
+    const current = snapshot()
+    setSessionOrderState((state) => reconcileSessionOrderState(state, current))
+  })
+
+  const visibleSessions = createMemo(() => tuiSidebarSessions(snapshot(), sessionOrderState()))
   const pinnedSessionIDSet = createMemo(() => new Set(pinnedSessionIDs()))
   const pinnedViewIDSet = createMemo(() => new Set(pinnedViewIDs()))
   const pinnedSessions = createMemo(() => {
     const byID = new Map(visibleSessions().map((session) => [session.id, session]))
-    return pinnedSessionIDs().map((id) => byID.get(id)).filter((session): session is Session => session !== undefined)
+    return pinnedSessionIDs()
+      .map((id) => byID.get(id))
+      .filter((session): session is Session => session !== undefined)
   })
   const pinnedViews = createMemo(() => {
     const byID = new Map((snapshot()?.views ?? []).map((view) => [view.id, view]))
-    return pinnedViewIDs().map((id) => byID.get(id)).filter((view): view is OpencodeXView => view !== undefined)
+    return pinnedViewIDs()
+      .map((id) => byID.get(id))
+      .filter((view): view is OpencodeXView => view !== undefined)
   })
 
   createEffect(() => {
@@ -328,16 +560,32 @@ export function App() {
   })
 
   createEffect(() => {
+    const current = route()
+    const materializing = materializingSessionID()
+    if (!materializing) return
+    if (current.name !== "new-session" && !(current.name === "session" && current.sessionID === materializing)) {
+      setMaterializingSession(undefined)
+      setMaterializingSessionID("")
+      return
+    }
+    if (current.name === "session" && (snapshot()?.sessions ?? []).some((session) => session.id === materializing)) {
+      setMaterializingSession(undefined)
+      setMaterializingSessionID("")
+    }
+  })
+
+  createEffect(() => {
     const visualOrder = projectVisualOrder()
     if (visualOrder.length === 0) return
-    if ((snapshot()?.projects ?? []).map((project) => project.id).join("\n") === visualOrder.join("\n")) setProjectVisualOrder([])
+    if ((snapshot()?.projects ?? []).map((project) => project.id).join("\n") === visualOrder.join("\n"))
+      setProjectVisualOrder([])
   })
 
   async function refresh() {
     const gui = client()
     if (!gui) return
     const next = await loadSnapshot(gui)
-    setSnapshot((current) => current ? mergeSnapshot(current, next) : next)
+    setSnapshot((current) => (current ? mergeSnapshot(current, next) : next))
     const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
     if (models.join("\n") === recentModels().join("\n")) return
     setRecentModels(models)
@@ -350,7 +598,43 @@ export function App() {
     const result = await loadSessionCards(gui, snapshot()?.sessionSyncRevision)
     if (!result.changed) return
     const next = { ...result.snapshot, sessionSyncRevision: result.revision }
-    setSnapshot((current) => current ? mergeSessionCardSnapshot(current, next) : current)
+    setSnapshot((current) => (current ? mergeSessionCardSnapshot(current, next) : current))
+    const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
+    if (models.join("\n") === recentModels().join("\n")) return
+    setRecentModels(models)
+    writeRecentModels(models)
+  }
+
+  function applyAuthoritativeState(state: ClientStateSyncState) {
+    const catalog = selectClientStateSyncSnapshot(state, isRenderableSession)
+    if (!catalog) return
+    const next = { ...catalog, sessionSyncRevision: state.digest }
+    setSnapshot((current) => (current ? mergeSessionCardSnapshot(current, next) : current))
+    Object.keys(state.sessionDetails).forEach((sessionID) => {
+      const detail = state.sessionDetails[sessionID]
+      if (!detail || appliedSessionDigests.get(sessionID) === detail.snapshot.digest) return
+      appliedSessionDigests.set(sessionID, detail.snapshot.digest)
+      const data = sessionDataFromClientState(state, sessionID)
+      if (!data) return
+      const loadedTime = detail.snapshot.session.time.updated
+      setSelectedSessionDataCache((current) => {
+        const cached = current[sessionID]
+        if (!cached) return current
+        return setRecordEntry(current, sessionID, { data: mergeLiveSessionData(cached.data, data), loadedTime })
+      })
+      if (sessionDataSessionID() === sessionID) {
+        const merged = mergeLiveSessionData(sessionData(), data)
+        setSessionData(merged)
+        sessionDataLoadedTime = loadedTime
+        rememberSelectedSessionData(sessionID, merged, loadedTime)
+      }
+      if (viewSessionData()[sessionID]) {
+        setViewSessionData((current) =>
+          setRecordEntry(current, sessionID, mergeLiveSessionData(current[sessionID], data)),
+        )
+        setViewPaneLoadedTime(sessionID, loadedTime)
+      }
+    })
     const models = mergeRecentModels(recentModelsFromSessions(next.sessions), recentModels())
     if (models.join("\n") === recentModels().join("\n")) return
     setRecentModels(models)
@@ -361,19 +645,31 @@ export function App() {
     const gui = client()
     if (!gui) return
     const plugins = await listPlugins(gui)
-    setSnapshot((current) => current ? { ...current, plugins } : current)
+    setSnapshot((current) => (current ? { ...current, plugins } : current))
   }
 
   createEffect(() => {
     writeInstalledGuiPlugins(guiPlugins())
   })
 
+  createEffect(
+    on(
+      () => {
+        const view = activeView()
+        return view ? `${view.id}:${view.timeUpdated}:${view.focusedSessionID ?? ""}` : ""
+      },
+      () => setFocusedViewSessionID(""),
+    ),
+  )
+
   function handleInstallGuiPlugin(manifest: GuiPluginManifest, source: InstalledGuiPlugin["source"]) {
     setGuiPlugins((plugins) => installDeclarativeGuiPlugin(plugins, manifest, source))
   }
 
   function handleToggleGuiPlugin(id: string) {
-    setGuiPlugins((plugins) => plugins.map((plugin) => plugin.manifest.id === id ? { ...plugin, enabled: !plugin.enabled } : plugin))
+    setGuiPlugins((plugins) =>
+      plugins.map((plugin) => (plugin.manifest.id === id ? { ...plugin, enabled: !plugin.enabled } : plugin)),
+    )
   }
 
   function handleRemoveGuiPlugin(id: string) {
@@ -384,12 +680,12 @@ export function App() {
     try {
       await action()
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : String(cause))
+      console.error(cause)
     }
   }
 
   function alert(message: string) {
-    setNotice(message)
+    console.info(message)
   }
 
   function viewPaneState(paneID: string) {
@@ -401,15 +697,19 @@ export function App() {
   }
 
   function setViewPaneLoading(paneID: string, loading: boolean) {
-    updateViewPaneState(paneID, (state) => state.loading === loading ? state : { ...state, loading })
+    updateViewPaneState(paneID, (state) => (state.loading === loading ? state : { ...state, loading }))
   }
 
   function setViewPaneLoadedTime(paneID: string, loadedTime: number) {
-    updateViewPaneState(paneID, (state) => state.loadedTime === loadedTime ? state : { ...state, loadedTime })
+    updateViewPaneState(paneID, (state) => (state.loadedTime === loadedTime ? state : { ...state, loadedTime }))
   }
 
   function askText(input: { title: string; message?: string; value?: string; multiline?: boolean }) {
     return new Promise<string | undefined>((resolve) => setDialog({ type: "text", ...input, resolve }))
+  }
+
+  function askProject(input: { title: string; message?: string; name: string; folders: string[] }) {
+    return new Promise<ProjectDialogValue | undefined>((resolve) => setDialog({ type: "project", ...input, resolve }))
   }
 
   function confirm(input: { title: string; message: string; confirm?: string }) {
@@ -421,13 +721,47 @@ export function App() {
   }
 
   function askExportOptions(input: { title: string; message?: string; defaults: GuiTranscriptExportOptions }) {
-    return new Promise<GuiTranscriptExportOptions | undefined>((resolve) => setDialog({ type: "export", ...input, resolve }))
+    return new Promise<GuiTranscriptExportOptions | undefined>((resolve) =>
+      setDialog({ type: "export", ...input, resolve }),
+    )
+  }
+
+  function rememberSelectedSessionData(sessionID: string, data: SessionData, loadedTime: number) {
+    setSelectedSessionDataCache((current) => setRecordEntry(current, sessionID, { data, loadedTime }))
+  }
+
+  function restoreSelectedSessionData(sessionID: string) {
+    if (sessionDataSessionID() === sessionID) return
+    const cached = selectedSessionDataCache()[sessionID]
+    if (!cached) return
+    setSessionData(cached.data)
+    setSessionDataSessionID(sessionID)
+    sessionDataLoadedTime = cached.loadedTime
+  }
+
+  async function loadAuthoritativeSession(
+    gui: GuiClient,
+    sessionID: string,
+    directory: string | undefined,
+    options: SessionLoadOptions,
+  ) {
+    const controller = stateSync
+    if (controller?.getState().phase === "ready") {
+      return loadClientStateSession(controller, sessionID, {
+        limit: options.messageLimit,
+        before: options.messageBefore,
+      })
+    }
+    return loadSession(gui, sessionID, directory, options)
   }
 
   async function syncSession(sessionID: string, options: { force?: boolean } = {}) {
     const gui = client()
     if (!gui) return
-    const session = snapshot()?.sessions.find((item) => item.id === sessionID)
+    restoreSelectedSessionData(sessionID)
+    const session =
+      snapshot()?.sessions.find((item) => item.id === sessionID) ??
+      (materializingSessionID() === sessionID ? materializingSession() : undefined)
     await runSelectedSessionSync({
       force: options.force,
       sessionID,
@@ -436,18 +770,33 @@ export function App() {
       loadedTime: sessionDataLoadedTime,
       nextRequestID: () => ++sessionSyncRequestID,
       latestRequestID: () => sessionSyncRequestID,
-      route,
+      route: () =>
+        route().name === "new-session" && materializingSessionID() === sessionID
+          ? { name: "session", sessionID }
+          : route(),
       loadingSessionID,
       setLoadingSessionID,
       clearLoadingSessionID: () => setLoadingSessionID(""),
-      loadData: async (targetSessionID, directory) => trimToLiveTail(await loadSession(gui, targetSessionID, directory, { messageLimit: SESSION_MESSAGE_PAGE_LIMIT, messageRenderBudget: SESSION_MESSAGE_WINDOW.budget }), SESSION_MESSAGE_WINDOW),
+      loadData: async (targetSessionID, directory) =>
+        trimToLiveTail(
+          await loadAuthoritativeSession(gui, targetSessionID, directory, {
+            messageLimit: SESSION_MESSAGE_PAGE_LIMIT,
+            messageRenderBudget: SESSION_MESSAGE_WINDOW.budget,
+          }),
+          SESSION_MESSAGE_WINDOW,
+        ),
       applyData: (data, loadedTime) => {
-        setSessionData((current) => sessionDataSessionID() === sessionID ? mergeLiveSessionData(current, data) : data)
+        const next = sessionDataSessionID() === sessionID ? mergeLiveSessionData(sessionData(), data) : data
+        setSessionData(next)
         setSessionDataSessionID(sessionID)
         sessionDataLoadedTime = loadedTime
+        rememberSelectedSessionData(sessionID, next, loadedTime)
+        if (route().name === "new-session" && materializingSessionID() === sessionID)
+          setRoute({ name: "session", sessionID })
       },
       applyFailure: (cause) => {
-        setNotice(cause instanceof Error ? cause.message : String(cause))
+        console.error(cause)
+        if (sessionDataSessionID() === sessionID || selectedSessionDataCache()[sessionID]) return
         setSessionData(EMPTY_SESSION_DATA)
         setSessionDataSessionID(sessionID)
       },
@@ -457,16 +806,33 @@ export function App() {
   async function syncViewSession(session: Session, options: { force?: boolean } = {}) {
     const gui = client()
     if (!gui) return
-    if (shouldSkipViewSessionSync({ force: options.force, session, data: viewSessionData()[session.id], loadedTime: viewPaneState(session.id).loadedTime })) return
+    if (
+      shouldSkipViewSessionSync({
+        force: options.force,
+        session,
+        data: viewSessionData()[session.id],
+        loadedTime: viewPaneState(session.id).loadedTime,
+      })
+    )
+      return
     const loadKey = viewSessionLoadKey(session)
     const existing = viewSessionLoadPromises.get(session.id)
     if (existing?.key === loadKey) return existing.promise
     const showLoading = shouldShowViewSessionLoading(viewSessionData()[session.id])
     if (showLoading) setViewPaneLoading(session.id, true)
     const promise = (async () => {
-      const data = trimToLiveTail(await loadSession(gui, session.id, session.directory, { messageLimit: VIEW_MESSAGE_PAGE_LIMIT, messageRenderBudget: VIEW_MESSAGE_WINDOW.budget, includeSideData: false }), VIEW_MESSAGE_WINDOW)
+      const data = trimToLiveTail(
+        await loadAuthoritativeSession(gui, session.id, session.directory, {
+          messageLimit: VIEW_MESSAGE_PAGE_LIMIT,
+          messageRenderBudget: VIEW_MESSAGE_WINDOW.budget,
+          includeSideData: false,
+        }),
+        VIEW_MESSAGE_WINDOW,
+      )
       if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
-      setViewSessionData((current) => setRecordEntry(current, session.id, mergeLiveSessionData(current[session.id], data)))
+      setViewSessionData((current) =>
+        setRecordEntry(current, session.id, mergeLiveSessionData(current[session.id], data)),
+      )
       setViewPaneLoadedTime(session.id, session.time.updated)
     })().finally(() => {
       if (viewSessionLoadPromises.get(session.id)?.key !== loadKey) return
@@ -486,7 +852,10 @@ export function App() {
       renderBudget: SESSION_MESSAGE_WINDOW.budget * LOAD_MORE_MESSAGE_MULTIPLIER,
       before,
     })
-    setSessionData((data) => sessionDataSessionID() === sessionID ? prependOlderMessages(data, page) : data)
+    if (sessionDataSessionID() !== sessionID) return
+    const next = prependOlderMessages(sessionData(), page)
+    setSessionData(next)
+    rememberSelectedSessionData(sessionID, next, sessionDataLoadedTime)
   }
 
   async function loadOlderViewSessionMessages(sessionID: string, before: string) {
@@ -499,7 +868,9 @@ export function App() {
       renderBudget: VIEW_MESSAGE_WINDOW.budget * LOAD_MORE_MESSAGE_MULTIPLIER,
       before,
     })
-    setViewSessionData((current) => setRecordEntry(current, sessionID, prependOlderMessages(current[sessionID] ?? EMPTY_SESSION_DATA, page)))
+    setViewSessionData((current) =>
+      setRecordEntry(current, sessionID, prependOlderMessages(current[sessionID] ?? EMPTY_SESSION_DATA, page)),
+    )
   }
 
   async function syncActiveViewSessions() {
@@ -535,7 +906,7 @@ export function App() {
       await Promise.all(plan.viewSessions.map((session) => syncViewSession(session, { force: true })))
       if (plan.refreshSnapshot) {
         lastSnapshotSync = now
-        await refreshSessionCards()
+        await refresh()
       }
     } finally {
       liveSyncRunning = false
@@ -554,26 +925,34 @@ export function App() {
 
     if (targets.selectedSessionID) {
       const sessionID = targets.selectedSessionID
-      setSessionData((data) => patchSelectedSessionData({
-        data,
-        loadedSessionID: sessionDataSessionID(),
+      const next = patchSelectedSessionData({
+        data:
+          sessionDataSessionID() === sessionID
+            ? sessionData()
+            : (selectedSessionDataCache()[sessionID]?.data ?? EMPTY_SESSION_DATA),
+        loadedSessionID: sessionID,
         targetSessionID: sessionID,
         event,
         limit: SESSION_MESSAGE_WINDOW,
         emptyData: EMPTY_SESSION_DATA,
-      }))
+      })
       setSessionDataSessionID(sessionID)
-      sessionDataLoadedTime = Date.now()
+      setSessionData(next)
+      const loadedTime = Date.now()
+      sessionDataLoadedTime = loadedTime
+      rememberSelectedSessionData(sessionID, next, loadedTime)
     }
 
     if (targets.visibleSessionIDs.length > 0) {
-      setViewSessionData((data) => patchVisibleViewSessionData({
+      setViewSessionData((data) =>
+        patchVisibleViewSessionData({
         data,
         sessionIDs: targets.visibleSessionIDs,
         event,
         limit: VIEW_MESSAGE_WINDOW,
         emptyData: EMPTY_SESSION_DATA,
-      }))
+        }),
+      )
       const loadedTime = Date.now()
       targets.visibleSessionIDs.forEach((sessionID) => setViewPaneLoadedTime(sessionID, loadedTime))
     }
@@ -583,7 +962,7 @@ export function App() {
 
   function applySnapshotEvent(event: GlobalEvent) {
     if (!isSnapshotPatchEvent(event)) return false
-    setSnapshot((current) => current ? patchSnapshot(current, event) : current)
+    setSnapshot((current) => (current ? patchSnapshot(current, event) : current))
     return true
   }
 
@@ -627,7 +1006,12 @@ export function App() {
 
   onMount(() => {
     let unsubscribe: (() => void) | undefined
-    onCleanup(() => unsubscribe?.())
+    let unsubscribeState: (() => void) | undefined
+    onCleanup(() => {
+      unsubscribe?.()
+      unsubscribeState?.()
+      stateSync?.stop()
+    })
 
     void (async () => {
       try {
@@ -636,6 +1020,9 @@ export function App() {
         setLoading("Loading workspace")
         await refresh()
         unsubscribe = subscribeEvents(gui, handleGlobalEvent)
+        stateSync = createClientStateSync({ client: gui.client, directory: gui.directory || undefined })
+        unsubscribeState = stateSync.subscribe(applyAuthoritativeState)
+        await stateSync.start().catch((cause) => console.error(cause))
         setLoading("")
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -648,7 +1035,9 @@ export function App() {
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       if (disposed) return
-      void syncLiveServerState().catch(() => undefined).finally(() => {
+      void syncLiveServerState()
+        .catch(() => undefined)
+        .finally(() => {
         if (!disposed) timer = setTimeout(tick, LIVE_SYNC_INTERVAL_MS)
       })
     }
@@ -670,17 +1059,16 @@ export function App() {
       const action = guiShortcutAction(event, {
         editing: isKeyboardEditingTarget(event.target),
         dialogOpen: Boolean(dialog()),
-        noticeVisible: Boolean(notice()),
         abortableSessionID: abortableSessionID(),
       })
       if (!action) return
       event.preventDefault()
       runGuiShortcutAction(action, {
         abortSession: (sessionID) => void runAction(() => handleAbortSession(sessionID)),
-        clearNotice: () => setNotice(""),
         openCommandPalette: () => setCommandPaletteOpen(true),
         toggleRail: () => setRailCollapsed((value) => !value),
-        focusComposer: () => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
+        focusComposer: () =>
+          document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
         createSession: () => void runAction(() => handleCreateSession()),
         refresh: () => void runAction(refresh),
         showKeyboardHelp: () => setKeyboardHelpOpen(true),
@@ -695,7 +1083,10 @@ export function App() {
 
   createEffect(() => {
     const current = route()
-    if (current.name === "session" && client()) untrack(() => { void syncSession(current.sessionID) })
+    if (current.name === "session" && client())
+      untrack(() => {
+        void syncSession(current.sessionID)
+      })
   })
 
   createEffect(() => {
@@ -719,7 +1110,9 @@ export function App() {
       setFocusedViewSessionID("")
       setViewSidePanelSessionID("")
     }
-    untrack(() => { void syncActiveViewSessions() })
+    untrack(() => {
+      void syncActiveViewSessions()
+    })
   })
 
   createEffect(() => {
@@ -729,17 +1122,44 @@ export function App() {
     if (viewSidePanelSessionID() !== session.id) setViewSidePanelSessionID(session.id)
   })
 
-  createEffect(() => {
-    if (route().name !== "session") return
-    const session = selectedSession()
+  createEffect(
+    on(
+      () => {
+        const session = route().name === "session" ? selectedSession() : undefined
+        return session ? `${session.id}:${session.time.updated}` : ""
+      },
+      () => {
+        const session = route().name === "session" ? selectedSession() : undefined
     if (!session) return
-    markSessionViewed(session.id, Math.max(Date.now(), session.time.updated))
-  })
+        const timer = setTimeout(
+          () => markSessionViewed(session.id, Math.max(Date.now(), session.time.updated)),
+          SESSION_VIEWED_MARK_DELAY_MS,
+        )
+        onCleanup(() => clearTimeout(timer))
+      },
+    ),
+  )
 
-  createEffect(() => {
+  createEffect(
+    on(
+      () => {
+        if (route().name !== "views") return ""
+        return activeViewSessions()
+          .map((session) => `${session.id}:${session.time.updated}`)
+          .join("\n")
+      },
+      () => {
     if (route().name !== "views") return
-    activeViewSessions().forEach((session) => markSessionViewed(session.id, Math.max(Date.now(), session.time.updated)))
-  })
+        const timers = activeViewSessions().map((session) =>
+          setTimeout(
+            () => markSessionViewed(session.id, Math.max(Date.now(), session.time.updated)),
+            SESSION_VIEWED_MARK_DELAY_MS,
+          ),
+        )
+        onCleanup(() => timers.forEach((timer) => clearTimeout(timer)))
+      },
+    ),
+  )
 
   createEffect(() => {
     if (route().name !== "session") return
@@ -754,14 +1174,36 @@ export function App() {
 
   createEffect(() => {
     if (selectedModel()) return
-    const model = recentModels()[0] ?? firstAvailableModel(snapshot()?.providers ?? [])
+    const providers = snapshot()?.providers ?? []
+    const model = recentModels().find((item) => modelAvailable(item, providers)) ?? firstAvailableModel(providers)
     if (model) setSelectedModel(model)
   })
+
+  createEffect(() => {
+    const key = pendingPinnedSessionRouteKey()
+    if (key && activeSessionRouteKey(route()) !== key) setPendingPinnedSessionRouteKey("")
+  })
+
+  createEffect(() => {
+    const current = selectedModel()
+    if (!current) return
+    const providers = snapshot()?.providers ?? []
+    if (modelAvailable(current, providers)) return
+    setSelectedModel(firstAvailableModel(providers) ?? "")
+    setSelectedVariant("")
+  })
+
+  function modelAvailable(value: string, providers: NonNullable<GuiSnapshot>["providers"]) {
+    const selection = parseModelValue(value)
+    if (!selection) return false
+    return Boolean(providers.find((provider) => provider.id === selection.providerID)?.models[selection.modelID])
+  }
 
   async function submitPrompt(event: SubmitEvent, value?: string | GuiPromptInfo) {
     event.preventDefault()
     const gui = client()
     const session = selectedSession()
+    const pinCreatedSession = pendingPinnedSessionRouteKey() === activeSessionRouteKey(route())
     await runSessionPromptAction({
       gui,
       route: route(),
@@ -774,14 +1216,31 @@ export function App() {
       variant: selectedVariant(),
       setPrompt,
       setLoadingSessionID,
-      sendPrompt: (sessionID, text, options) => gui ? sendPrompt(gui, sessionID, text, options).then(() => undefined) : Promise.resolve(),
-      runCommand: (sessionID, command, args, options) => gui ? runSessionCommand(gui, sessionID, { command, arguments: args, ...options }).then(() => undefined) : Promise.resolve(),
-      runShell: (sessionID, command, options) => gui ? runShellCommand(gui, sessionID, { command, directory: options.directory, agent: options.agent, model: options.model }).then(() => undefined) : Promise.resolve(),
+      sendPrompt: (sessionID, text, options) =>
+        gui ? sendPrompt(gui, sessionID, text, options).then(() => undefined) : Promise.resolve(),
+      runCommand: (sessionID, command, args, options) =>
+        gui
+          ? runSessionCommand(gui, sessionID, { command, arguments: args, ...options }).then(() => undefined)
+          : Promise.resolve(),
+      runShell: (sessionID, command, options) =>
+        gui
+          ? runShellCommand(gui, sessionID, {
+              command,
+              directory: options.directory,
+              agent: options.agent,
+              model: options.model,
+            }).then(() => undefined)
+          : Promise.resolve(),
       serverCommands: snapshot()?.commands ?? [],
       rememberModel,
       syncSession: (sessionID) => syncSession(sessionID, { force: true }),
       refresh,
-      openCreatedSession: (sessionID) => setRoute({ name: "session", sessionID }),
+      openCreatedSession: (sessionID, session) => {
+        if (pinCreatedSession) pinSession(sessionID)
+        setMaterializingSession(session)
+        setMaterializingSessionID(sessionID)
+        setPendingPinnedSessionRouteKey("")
+      },
     })
   }
 
@@ -794,16 +1253,35 @@ export function App() {
       return
     }
     const project = snapshot()?.projects[0]
-    setRoute(workbenchPromptTarget({
+    setRoute(
+      workbenchPromptTarget({
       projectID: project?.id,
       projectDirectory: project?.folders[0]?.path,
       fallbackDirectory: client()?.directory,
-    }))
+      }),
+    )
     requestComposerFocus()
   }
 
   function requestComposerFocus() {
-    setTimeout(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }), 0)
+    setTimeout(
+      () => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
+      0,
+    )
+  }
+
+  function projectNameForProjectID(projectID?: string) {
+    const project = snapshot()?.projects.find((item) => item.id === projectID)
+    return project?.name ?? project?.project.name
+  }
+
+  function projectNameForSession(session: Session | undefined) {
+    if (!session) return
+    const project = snapshot()?.projects.find(
+      (item) =>
+        item.id === session.projectID || item.sessions.some((projectSession) => projectSession.id === session.id),
+    )
+    return project?.name ?? project?.project.name
   }
 
   async function submitViewPrompt(event: SubmitEvent, item: ViewItem, value: GuiPromptInfo) {
@@ -821,9 +1299,21 @@ export function App() {
       setDraftLoading: setViewPaneLoading,
       setFocusedSessionID: setFocusedViewSessionID,
       alert,
-      sendPrompt: (sessionID, text, options) => gui ? sendPrompt(gui, sessionID, text, options).then(() => undefined) : Promise.resolve(),
-      runCommand: (sessionID, command, args, options) => gui ? runSessionCommand(gui, sessionID, { command, arguments: args, ...options }).then(() => undefined) : Promise.resolve(),
-      runShell: (sessionID, command, options) => gui ? runShellCommand(gui, sessionID, { command, directory: options.directory, agent: options.agent, model: options.model }).then(() => undefined) : Promise.resolve(),
+      sendPrompt: (sessionID, text, options) =>
+        gui ? sendPrompt(gui, sessionID, text, options).then(() => undefined) : Promise.resolve(),
+      runCommand: (sessionID, command, args, options) =>
+        gui
+          ? runSessionCommand(gui, sessionID, { command, arguments: args, ...options }).then(() => undefined)
+          : Promise.resolve(),
+      runShell: (sessionID, command, options) =>
+        gui
+          ? runShellCommand(gui, sessionID, {
+              command,
+              directory: options.directory,
+              agent: options.agent,
+              model: options.model,
+            }).then(() => undefined)
+          : Promise.resolve(),
       serverCommands: snapshot()?.commands ?? [],
       rememberModel,
       syncViewSession: (session) => syncViewSession(session, { force: true }),
@@ -836,7 +1326,10 @@ export function App() {
   }
 
   function viewModelValue(paneID: string, session: Session) {
-    return viewPaneState(paneID).selectedModel ?? (session.model ? modelValue(session.model.providerID, session.model.id) : selectedModel())
+    return (
+      viewPaneState(paneID).selectedModel ??
+      (session.model ? modelValue(session.model.providerID, session.model.id) : selectedModel())
+    )
   }
 
   function viewVariantValue(paneID: string, session: Session) {
@@ -853,16 +1346,22 @@ export function App() {
     scheduleViewFocusPersistence(view, sessionID)
   }
 
-  function openViewSidePanel(sessionID = activeViewFocusedSessionID(), target: SessionSidePanelTarget = { tab: "git" }) {
+  function setActiveViewSidePanelOpen(value: boolean) {
+    const id = activeView()?.id
+    if (!id) return
+    setViewSidePanelOpenByViewID((current) => (current[id] === value ? current : { ...current, [id]: value }))
+  }
+
+  function openViewSidePanel(sessionID = activeViewFocusedSessionID(), target?: SessionSidePanelTarget) {
     const session = activeViewSessions().find((item) => item.id === sessionID) ?? viewSidePanelSession()
     if (session) setViewSidePanelSessionID(session.id)
-    setViewSidePanelOpen(true)
-    setViewSidePanelRequest({ ...target, token: Date.now() } as SessionSidePanelRequest)
+    setActiveViewSidePanelOpen(true)
+    if (target) setViewSidePanelRequest({ ...target, token: Date.now() } as SessionSidePanelRequest)
   }
 
   function toggleViewSidePanel() {
     if (viewSidePanelOpen()) {
-      setViewSidePanelOpen(false)
+      setActiveViewSidePanelOpen(false)
       return
     }
     openViewSidePanel()
@@ -876,7 +1375,9 @@ export function App() {
     const startX = event.clientX
     const startRatio = viewSidePanelWidthRatio()
     const onMove = (moveEvent: PointerEvent) => {
-      setViewSidePanelWidthRatio(clampViewSidePanelWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
+      setViewSidePanelWidthRatio(
+        clampViewSidePanelWidthRatio(startRatio - (moveEvent.clientX - startX) / containerWidth),
+      )
     }
     const onUp = () => {
       window.removeEventListener("pointermove", onMove)
@@ -893,7 +1394,12 @@ export function App() {
       viewFocusPersistTimer = undefined
       const gui = client()
       if (!gui) return
-      void updateViewFocus(gui, view.id, sessionID).catch(() => undefined)
+      void updateViewFocus(gui, view.id, sessionID).catch(() => {
+        setFocusedViewSessionID("")
+        void (stateSync?.getState().phase === "ready" ? stateSync.refresh() : refreshSessionCards()).catch(
+          () => undefined,
+        )
+      })
     }, 150)
   }
 
@@ -909,8 +1415,21 @@ export function App() {
 
   function markSessionViewed(sessionID: string, time: number) {
     const gui = client()
-    setSnapshot((current) => current ? markSessionViewedInSnapshot(current, sessionID, time) : current)
-    if (gui) void updateSessionUiState(gui, sessionID, { seenAt: time, reviewedAt: time }).catch(() => undefined)
+    setSnapshot((current) => (current ? markSessionSeenInSnapshot(current, sessionID, time) : current))
+    if (gui)
+      void updateSessionUiState(gui, sessionID, { seenAt: time }).catch(() =>
+        (stateSync?.getState().phase === "ready" ? stateSync.refresh() : refreshSessionCards()).catch(() => undefined),
+      )
+  }
+
+  function markSessionReviewed(session: Session) {
+    const time = Math.max(Date.now(), session.time.updated)
+    const gui = client()
+    setSnapshot((current) => (current ? markSessionViewedInSnapshot(current, session.id, time) : current))
+    if (gui)
+      void updateSessionUiState(gui, session.id, { seenAt: time, reviewedAt: time }).catch(() =>
+        (stateSync?.getState().phase === "ready" ? stateSync.refresh() : refreshSessionCards()).catch(() => undefined),
+      )
   }
 
   function toggleRailSection(name: RailSectionName) {
@@ -918,11 +1437,19 @@ export function App() {
   }
 
   function toggleSessionPinned(sessionID: string) {
-    setPinnedSessionIDs((current) => current.includes(sessionID) ? current.filter((id) => id !== sessionID) : [...current, sessionID])
+    setPinnedSessionIDs((current) =>
+      current.includes(sessionID) ? current.filter((id) => id !== sessionID) : [...current, sessionID],
+    )
+  }
+
+  function pinSession(sessionID: string) {
+    setPinnedSessionIDs((current) => (current.includes(sessionID) ? current : [...current, sessionID]))
   }
 
   function toggleViewPinned(viewID: string) {
-    setPinnedViewIDs((current) => current.includes(viewID) ? current.filter((id) => id !== viewID) : [...current, viewID])
+    setPinnedViewIDs((current) =>
+      current.includes(viewID) ? current.filter((id) => id !== viewID) : [...current, viewID],
+    )
   }
 
   function toggleProject(projectID: string) {
@@ -953,7 +1480,13 @@ export function App() {
   async function handleRenameSession(session: Session) {
     const gui = client()
     if (!gui) return
-    const next = (await askText({ title: "Rename Session", value: session.title }))?.trim()
+    const next = (
+      await askText({
+        title: "Edit Session",
+        message: "Update the title shown in the sidebar and session list.",
+        value: session.title,
+      })
+    )?.trim()
     if (!next) return
     await renameSession(gui, session.id, next, session.directory)
     await refresh()
@@ -977,14 +1510,21 @@ export function App() {
   async function handleDeleteSession(session: Session) {
     const gui = client()
     if (!gui) return
-    if (!(await confirm({ title: "Delete Session", message: `Delete "${session.title}"?\n\nThis permanently deletes session data.`, confirm: "Delete" }))) return
+    if (
+      !(await confirm({
+        title: "Delete Session",
+        message: `Delete "${session.title}"?\n\nThis permanently deletes session data.`,
+        confirm: "Delete",
+      }))
+    )
+      return
     await deleteSession(gui, session.id)
     await refresh()
     setRoute({ name: "dashboard" })
   }
 
   async function handleSwitchSession() {
-    const sessions = tuiSidebarSessions(snapshot())
+    const sessions = visibleSessions()
     if (sessions.length === 0) return alert("No sessions available.")
     const sessionID = await askChoice({
       title: "Switch Session",
@@ -1040,10 +1580,7 @@ export function App() {
     })
   }
 
-  async function switchVariantFor(input: {
-    selectedModel: string
-    setSelectedVariant: (value: string) => void
-  }) {
+  async function switchVariantFor(input: { selectedModel: string; setSelectedVariant: (value: string) => void }) {
     await runSwitchVariantAction({
       providers: snapshot()?.providers ?? [],
       selectedModel: input.selectedModel,
@@ -1072,8 +1609,11 @@ export function App() {
 
   function focusComposer() {
     const current = route()
-    if (current.name !== "session" && current.name !== "new-session" && visibleSessions().length > 0) setRoute({ name: "session", sessionID: visibleSessions()[0].id })
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }))
+    if (current.name !== "session" && current.name !== "new-session" && visibleSessions().length > 0)
+      setRoute({ name: "session", sessionID: visibleSessions()[0].id })
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
+    )
   }
 
   function showHelp() {
@@ -1100,16 +1640,24 @@ export function App() {
       transcript.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" })
       return
     }
-    const current = messages.findIndex((message) => message.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top + 12)
-    const target = action === "last-user"
+    const current = messages.findIndex(
+      (message) => message.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top + 12,
+    )
+    const target =
+      action === "last-user"
       ? messages.findLast((message) => message.classList.contains("user"))
-      : messages[Math.max(0, Math.min(messages.length - 1, (current === -1 ? 0 : current) + (action === "next" ? 1 : -1)))]
+        : messages[
+            Math.max(0, Math.min(messages.length - 1, (current === -1 ? 0 : current) + (action === "next" ? 1 : -1)))
+          ]
     target?.scrollIntoView({ block: "start", behavior: "smooth" })
   }
 
   async function copyLastAssistantMessage() {
     const message = activeSessionData().messages.findLast((bundle) => bundle.info.role === "assistant")
-    const text = message?.parts.flatMap((part) => part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : []).join("\n").trim()
+    const text = message?.parts
+      .flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : []))
+      .join("\n")
+      .trim()
     if (!text) return alert("No assistant text is available to copy.")
     await navigator.clipboard.writeText(text)
     alert("Assistant message copied.")
@@ -1141,23 +1689,32 @@ export function App() {
     if (!gui) return []
     if (input.mode === "last-turn") {
       if (!input.session) return []
-      return (await loadSessionDiff(gui, { sessionID: input.session.id, directory: input.session.directory })).data ?? []
+      return (
+        (await loadSessionDiff(gui, { sessionID: input.session.id, directory: input.session.directory })).data ?? []
+      )
     }
     return (await loadVcsDiff(gui, { mode: "git", context: 12 })).data ?? []
   }
 
   function sidePanelDirectoryForSession(session?: Session) {
     if (!session) return client()?.directory
-    const project = snapshot()?.projects.find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
+    const project = snapshot()?.projects.find((item) =>
+      item.sessions.some((projectSession) => projectSession.id === session.id),
+    )
     return project?.folders[0]?.path || session.directory || client()?.directory
   }
 
   async function updateDiffReviewedFiles(session: Session, reviewedFiles: string[]) {
     const gui = client()
     if (!gui) return
-    const reviewedAt = reviewedFiles.length > 0 && session.summary?.files === reviewedFiles.length ? Math.max(Date.now(), session.time.updated) : undefined
+    const reviewedAt =
+      reviewedFiles.length > 0 && session.summary?.files === reviewedFiles.length
+        ? Math.max(Date.now(), session.time.updated)
+        : undefined
     await updateSessionUiState(gui, session.id, { reviewedFiles, reviewedAt })
-    setSnapshot((current) => current ? {
+    setSnapshot((current) =>
+      current
+        ? {
       ...current,
       sessionUiState: {
         ...current.sessionUiState,
@@ -1170,7 +1727,9 @@ export function App() {
           reviewedAt: reviewedAt ?? current.sessionUiState[session.id]?.reviewedAt,
         },
       },
-    } : current)
+          }
+        : current,
+    )
   }
 
   function handleToggleTimestampsSlash() {
@@ -1235,7 +1794,7 @@ export function App() {
 
   async function handleEditorSlash(session?: Session, context?: SessionSlashCommandContext) {
     if (!window.opencodex?.editor) return alert("External editor support is not available in this environment.")
-    const current = context?.draftPrompt.trim().startsWith("/") ? "" : context?.draftPrompt ?? ""
+    const current = context?.draftPrompt.trim().startsWith("/") ? "" : (context?.draftPrompt ?? "")
     const content = await window.opencodex.editor({
       value: current,
       cwd: session?.directory || client()?.directory,
@@ -1253,10 +1812,19 @@ export function App() {
       value: name,
       title: name,
       meta: item.status,
-      description: "error" in item ? item.error : item.status === "connected" ? "Disconnect this MCP server" : "Connect this MCP server",
+      description:
+        "error" in item
+          ? item.error
+          : item.status === "connected"
+            ? "Disconnect this MCP server"
+            : "Connect this MCP server",
     }))
     if (options.length === 0) return alert("No MCP servers are configured.")
-    const name = await askChoice({ title: "Toggle MCP", message: "Connected servers will be disconnected; other servers will be connected.", options })
+    const name = await askChoice({
+      title: "Toggle MCP",
+      message: "Connected servers will be disconnected; other servers will be connected.",
+      options,
+    })
     if (!name) return
     if (status[name]?.status === "connected") {
       await disconnectMcp(gui, name)
@@ -1307,13 +1875,22 @@ export function App() {
       ],
     })
     if (!providerValue) return
-    const providerID = providerValue === CUSTOM_PROVIDER_OPTION ? normalizeCustomProviderID(await askText({
+    const providerID =
+      providerValue === CUSTOM_PROVIDER_OPTION
+        ? normalizeCustomProviderID(
+            await askText({
       title: "Custom Provider",
-      message: "Provider ids must start with a lowercase letter or number and only use lowercase letters, numbers, hyphens, and underscores.",
-    })) : providerValue
+              message:
+                "Provider ids must start with a lowercase letter or number and only use lowercase letters, numbers, hyphens, and underscores.",
+            }),
+          )
+        : providerValue
     if (!providerID) return alert("Invalid provider ID.")
     const methods = authMethods[providerID] ?? [{ type: "api" as const, label: "API key" }]
-    const methodValue = methods.length === 1 ? "0" : await askChoice({
+    const methodValue =
+      methods.length === 1
+        ? "0"
+        : await askChoice({
       title: "Provider Auth",
       options: methods.map((method, index) => ({
         value: String(index),
@@ -1328,7 +1905,12 @@ export function App() {
     const inputs = await promptProviderInputs(method.prompts ?? [])
     if (!inputs) return
     if (method.type === "api") {
-      const key = (await askText({ title: method.label, message: providerID === "opencode" ? "Enter your OpenCode Zen API key." : undefined }))?.trim()
+      const key = (
+        await askText({
+          title: method.label,
+          message: providerID === "opencode" ? "Enter your OpenCode Zen API key." : undefined,
+        })
+      )?.trim()
       if (!key) return
       await setProviderApiAuth(gui, providerID, key, Object.keys(inputs).length > 0 ? inputs : undefined)
       await disposeInstance(gui).catch(() => undefined)
@@ -1412,7 +1994,11 @@ export function App() {
     await deleteView(gui, viewID)
     await refresh()
     const current = route()
-    if ((current.name === "views" && current.viewID === viewID) || (current.name === "view-edit" && current.viewID === viewID)) setRoute({ name: "views" })
+    if (
+      (current.name === "views" && current.viewID === viewID) ||
+      (current.name === "view-edit" && current.viewID === viewID)
+    )
+      setRoute({ name: "views" })
     alert("View deleted.")
   }
 
@@ -1421,7 +2007,9 @@ export function App() {
     if (!gui) return
     await syncWorkspaces(gui).catch(() => undefined)
     const workspaces = (await listWorkspaces(gui)).data ?? []
-    const statuses = new Map(((await workspaceStatus(gui)).data ?? []).map((status) => [status.workspaceID, status.status]))
+    const statuses = new Map(
+      ((await workspaceStatus(gui)).data ?? []).map((status) => [status.workspaceID, status.status]),
+    )
     if (workspaces.length === 0) return alert("No workspaces are available.")
     const value = await askChoice({
       title: "Manage Workspaces",
@@ -1435,7 +2023,8 @@ export function App() {
     })
     const workspace = workspaces.find((item) => item.id === value)
     if (!workspace) return
-    if (!(await confirm({ title: "Remove Workspace", message: `Remove "${workspace.name}"?`, confirm: "Remove" }))) return
+    if (!(await confirm({ title: "Remove Workspace", message: `Remove "${workspace.name}"?`, confirm: "Remove" })))
+      return
     await removeWorkspace(gui, workspace.id)
     await refresh()
     alert("Workspace removed.")
@@ -1469,7 +2058,11 @@ export function App() {
       ],
     })
     if (!copyChanges) return
-    await warpSessionWorkspace(gui, { id: value === "__local__" ? null : value, sessionID: session.id, copyChanges: copyChanges === "yes" })
+    await warpSessionWorkspace(gui, {
+      id: value === "__local__" ? null : value,
+      sessionID: session.id,
+      copyChanges: copyChanges === "yes",
+    })
     await refresh()
     await reloadSessionAfterSlash(session)
     alert("Session workspace updated.")
@@ -1503,12 +2096,18 @@ export function App() {
     alert("Session compaction started.")
   }
 
-  async function handleUndoSlash(session?: Session, data = activeSessionData(), restorePrompt: (value: string) => void = setPrompt) {
+  async function handleUndoSlash(
+    session?: Session,
+    data = activeSessionData(),
+    restorePrompt: (value: string) => void = setPrompt,
+  ) {
     const gui = client()
     if (!gui || !session) return
     const status = snapshot()?.sessionStatus[session.id]?.type
     if (status && status !== "idle") await abortSession(gui, session.id, session.directory).catch(() => undefined)
-    const message = data.messages.findLast((item) => (!session.revert?.messageID || item.info.id < session.revert.messageID) && item.info.role === "user")
+    const message = data.messages.findLast(
+      (item) => (!session.revert?.messageID || item.info.id < session.revert.messageID) && item.info.role === "user",
+    )
     if (!message) return alert("No previous user message to undo.")
     await revertSession(gui, { sessionID: session.id, messageID: message.info.id })
     restorePrompt(message.parts.map(textPartContent).join(""))
@@ -1538,7 +2137,10 @@ export function App() {
       ],
     })
     if (!value) return
-    const forked = await forkSession(gui, { sessionID: session.id, messageID: value === "__full__" ? undefined : value })
+    const forked = await forkSession(gui, {
+      sessionID: session.id,
+      messageID: value === "__full__" ? undefined : value,
+    })
     const next = forked.data
     if (!next) return alert("No forked session returned.")
     if (value !== "__full__") {
@@ -1639,10 +2241,16 @@ export function App() {
     for (const prompt of prompts) {
       if (prompt.when) {
         const value = inputs[prompt.when.key]
-        const matches = value === undefined ? false : prompt.when.op === "eq" ? value === prompt.when.value : value !== prompt.when.value
+        const matches =
+          value === undefined
+            ? false
+            : prompt.when.op === "eq"
+              ? value === prompt.when.value
+              : value !== prompt.when.value
         if (!matches) continue
       }
-      const value = prompt.type === "select"
+      const value =
+        prompt.type === "select"
         ? await askChoice({
           title: prompt.message,
           options: prompt.options.map((option) => ({
@@ -1699,15 +2307,16 @@ export function App() {
         openDashboard: () => {
           setRoute({ name: "dashboard" })
         },
-        createProject: handleCreateProject,
+        createProject: () => handleCreateProject(),
         openSwarms: () => {
           setRoute({ name: "swarms" })
         },
         openSwarm: () => {
           setRoute({ name: "swarms" })
         },
-        createSwarm: handleCreateSwarm,
-        createSwarmTask: () => handleCreateSwarmTaskSlash({
+        createSwarm: () => handleCreateSwarm(),
+        createSwarmTask: () =>
+          handleCreateSwarmTaskSlash({
           selectedAgent: options.selectedAgent ?? selectedAgent(),
           selectedVariant: options.selectedVariant ?? selectedVariant(),
         }),
@@ -1739,7 +2348,7 @@ export function App() {
         warpWorkspace: () => handleWarpSlash(session),
         openDiff: () => handleDiffSlash(session),
         shareSession: () => handleShareSlash(session),
-        renameSession: () => session ? handleRenameSession(session) : undefined,
+        renameSession: () => (session ? handleRenameSession(session) : undefined),
         forkSession: () => handleForkSlash(session, options.data),
         compactSession: () => handleCompactSlash(session, options.selectedModel),
         unshareSession: () => handleUnshareSlash(session),
@@ -1759,13 +2368,15 @@ export function App() {
     const server = (snapshot()?.commands ?? [])
       .filter((command) => command.source !== "skill" && !localNames.has(command.name))
       .toSorted((left, right) => left.name.localeCompare(right.name))
-      .map((command): SessionSlashCommand => ({
+      .map(
+        (command): SessionSlashCommand => ({
         name: command.name,
         title: command.source === "mcp" ? `${command.name}:mcp` : command.name,
         detail: command.description ?? "Run backend command",
         category: command.source === "mcp" ? "MCP Commands" : "Project Commands",
         run: (context) => context?.setDraftPrompt(`/${command.name} `),
-      }))
+        }),
+      )
     return [...local, ...server]
   }
 
@@ -1778,7 +2389,8 @@ export function App() {
       sessions: snapshot()?.sessions ?? [],
       askText,
       confirm,
-      replyPermission: (requestID, reply, message, directory) => replyPermission(gui, requestID, reply, message, directory).then(() => undefined),
+      replyPermission: (requestID, reply, message, directory) =>
+        replyPermission(gui, requestID, reply, message, directory).then(() => undefined),
       refresh,
     })
   }
@@ -1801,40 +2413,22 @@ export function App() {
     return window.opencodex?.folder(fallback || undefined)
   }
 
+  async function chooseFolders(fallback: string) {
+    const folders = await window.opencodex?.folders?.(fallback || undefined)
+    if (folders) return folders
+    const folder = await chooseFolder(fallback)
+    return folder ? [folder] : undefined
+  }
+
   async function handleCreateProject() {
     const gui = client()
     if (!gui) return
     await runCreateProjectAction({
       fallbackDirectory: gui.directory,
-      chooseFolder,
+      chooseFolders,
       validateProjectFolders: (folders) => validateProjectFolders(gui, { folders }),
-      createProject: (name, directory) => createProject(gui, { name, directory }).then(() => undefined),
-      refresh,
-      alert,
-    })
-  }
-
-  async function handleRenameProject(projectID: string, current?: string) {
-    const gui = client()
-    if (!gui) return
-    await runRenameProjectAction({
-      projectID,
-      current,
-      askText,
-      renameProject: (targetProjectID, name) => renameProject(gui, targetProjectID, name).then(() => undefined),
-      refresh,
-    })
-  }
-
-  async function handleEditProjectFolders(projectID: string, folders: string[]) {
-    const gui = client()
-    if (!gui) return
-    await runEditProjectFoldersAction({
-      projectID,
-      folders,
-      askText,
-      validateProjectFolders: (targetProjectID, next) => validateProjectFolders(gui, { projectID: targetProjectID, folders: next }),
-      updateProjectFolders: (targetProjectID, next) => updateProjectFolders(gui, targetProjectID, next).then(() => undefined),
+      createProject: (name, directory, folders) =>
+        createProject(gui, { name, directory, folders }).then(() => undefined),
       refresh,
       alert,
     })
@@ -1847,8 +2441,9 @@ export function App() {
       projectID,
       currentName,
       folders,
-      askText,
-      validateProjectFolders: (targetProjectID, next) => validateProjectFolders(gui, { projectID: targetProjectID, folders: next }),
+      askProject,
+      validateProjectFolders: (targetProjectID, next) =>
+        validateProjectFolders(gui, { projectID: targetProjectID, folders: next }),
       updateProject: (targetProjectID, next) => updateProject(gui, targetProjectID, next).then(() => undefined),
       refresh,
       alert,
@@ -1868,30 +2463,53 @@ export function App() {
   }
 
   async function handleCreateSession(projectID?: string, directory?: string) {
+    openCreateSessionRoute(projectID, directory)
+  }
+
+  function openCreateSessionRoute(projectID?: string, directory?: string) {
     const gui = client()
     if (!gui) return
-    runCreateSessionRouteAction({
+    return runCreateSessionRouteAction({
       projectID,
       directory,
       projects: snapshot()?.projects ?? [],
       guiDirectory: gui.directory,
       setPrompt,
-      openNewSession: (targetProjectID, targetDirectory) => setRoute({ name: "new-session", projectID: targetProjectID, directory: targetDirectory }),
-      focusComposer: () => requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true })),
+      openNewSession: (targetProjectID, targetDirectory) =>
+        setRoute({ name: "new-session", projectID: targetProjectID, directory: targetDirectory }),
+      focusComposer: () =>
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
+        ),
     })
   }
 
-  async function handleCreateSwarm() {
-    if ((snapshot()?.projects.length ?? 0) === 0) return alert("Create or load a project before creating a swarm.")
-    setRoute({ name: "swarm-create" })
+  async function handleCreatePinnedSession() {
+    const target = openCreateSessionRoute()
+    if (!target) return
+    setPendingPinnedSessionRouteKey(
+      activeSessionRouteKey({ name: "new-session", projectID: target.projectID, directory: target.directory }),
+    )
   }
 
-  async function handleSaveSwarm(input: { projectID: string; title?: string; roles: OpencodeXSwarmRoleInput[]; swarmID?: string }) {
+  async function handleCreateSwarm(projectID?: string) {
+    if ((snapshot()?.projects.length ?? 0) === 0) return alert("Create or load a project before creating a swarm.")
+    setRoute({ name: "swarm-create", projectID })
+  }
+
+  async function handleSaveSwarm(input: {
+    projectID: string
+    title?: string
+    roles: OpencodeXSwarmRoleInput[]
+    swarmID?: string
+  }) {
     const gui = client()
     if (!gui) return
     const swarm = input.swarmID
       ? await updateSwarm(gui, input.swarmID, { title: input.title, roles: input.roles }).then((result) => result.data)
-      : await createSwarm(gui, { projectID: input.projectID, title: input.title, roles: input.roles }).then((result) => result.data)
+      : await createSwarm(gui, { projectID: input.projectID, title: input.title, roles: input.roles }).then(
+          (result) => result.data,
+        )
     await refresh()
     setRoute({ name: "swarms", swarmID: swarm?.id ?? input.swarmID })
   }
@@ -1919,7 +2537,14 @@ export function App() {
   async function handleDeleteSwarm(swarmID: string, name: string) {
     const gui = client()
     if (!gui) return
-    if (!(await confirm({ title: "Delete Swarm", message: `Delete "${name}"? This removes the swarm, roles, tasks, and events.`, confirm: "Delete" }))) return
+    if (
+      !(await confirm({
+        title: "Delete Swarm",
+        message: `Delete "${name}"? This removes the swarm, roles, tasks, and events.`,
+        confirm: "Delete",
+      }))
+    )
+      return
     await deleteSwarm(gui, swarmID)
     await refresh()
     setRoute({ name: "swarms" })
@@ -1929,15 +2554,36 @@ export function App() {
     setRoute({ name: "view-edit" })
   }
 
-  async function handleSaveView(input: { viewID?: string; title: string; sessionIDs: string[]; metadata?: Record<string, unknown> }) {
+  async function handleCreateProjectView(projectID: string, sessionIDs: string[]) {
+    const gui = client()
+    const project = snapshot()?.projects.find((item) => item.id === projectID)
+    if (!gui || !project) return
+    if (sessionIDs.length === 0) return alert("Create a project session before creating a view.")
+    const view = await createView(gui, {
+      title: `${title(project.name ?? project.project.name)} view`,
+      sessionIDs: sessionIDs.slice(0, 8),
+    }).then((result) => result.data)
+    await refresh()
+    setRoute({ name: "views", viewID: view?.id })
+  }
+
+  async function handleSaveView(input: {
+    viewID?: string
+    title: string
+    sessionIDs: string[]
+    metadata?: Record<string, unknown>
+  }) {
     const gui = client()
     if (!gui) return
     const view = input.viewID
-      ? await updateView(gui, input.viewID, { title: input.title, sessionIDs: input.sessionIDs, metadata: input.metadata }).then((result) => result.data)
-      : await createView(gui, { title: input.title, sessionIDs: input.sessionIDs }).then(async (result) => {
-        if (input.metadata && result.data) await updateView(gui, result.data.id, { metadata: input.metadata })
-        return result.data
-      })
+      ? await updateView(gui, input.viewID, {
+          title: input.title,
+          sessionIDs: input.sessionIDs,
+          metadata: input.metadata,
+        }).then((result) => result.data)
+      : await createView(gui, { title: input.title, sessionIDs: input.sessionIDs, metadata: input.metadata }).then(
+          (result) => result.data,
+        )
     await refresh()
     setRoute({ name: "views", viewID: view?.id ?? input.viewID })
   }
@@ -1949,7 +2595,7 @@ export function App() {
     if (!result.ok) throw new Error(result.message ?? "Failed to install plugin.")
     await refresh()
     const targets = [result.server ? "server" : "", result.tui ? "TUI" : ""].filter(Boolean).join(" and ")
-    setNotice(`Installed ${input.spec}${targets ? ` for ${targets}` : ""}.`)
+    alert(`Installed ${input.spec}${targets ? ` for ${targets}` : ""}.`)
   }
 
   async function handleTogglePlugin(plugin: NonNullable<GuiSnapshot["plugins"]>[number]) {
@@ -1957,7 +2603,7 @@ export function App() {
     if (!gui) return
     await togglePlugin(gui, { id: plugin.id, enabled: !plugin.enabled })
     await refreshPlugins()
-    setNotice(`${plugin.enabled ? "Disabled" : "Enabled"} ${plugin.spec}.`)
+    alert(`${plugin.enabled ? "Disabled" : "Enabled"} ${plugin.spec}.`)
   }
 
   function handleMoveRailSection(section: RailSectionName, offset: number) {
@@ -1983,7 +2629,11 @@ export function App() {
     clearDragTarget()
   }
 
-  function handleReorderRailSection(sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") {
+  function handleReorderRailSection(
+    sourceID: RailSectionName,
+    targetID: RailSectionName,
+    placement: "before" | "after",
+  ) {
     const sectionOrder = droppedReorderIDs({
       ids: railSectionOrder(),
       source: { type: "section", id: sourceID },
@@ -2009,7 +2659,18 @@ export function App() {
   }
 
   async function handleMoveView(viewID: string, offset: number) {
-    const viewIDs = moveByOffset((snapshot()?.views ?? []).map((view) => view.id), viewID, offset)
+    const viewIDs = moveByOffset(
+      (snapshot()?.views ?? []).map((view) => view.id),
+      viewID,
+      offset,
+    )
+    const gui = client()
+    if (!gui || viewIDs.length === 0) return
+    await reorderViews(gui, viewIDs)
+    await refresh()
+  }
+
+  async function handleReorderViews(viewIDs: string[]) {
     const gui = client()
     if (!gui || viewIDs.length === 0) return
     await reorderViews(gui, viewIDs)
@@ -2085,7 +2746,10 @@ export function App() {
   }
 
   async function chooseSessionIDs(sessions: Session[]) {
-    const options = sessions.slice(0, 20).map((session) => `${session.id} - ${title(session.title)}`).join("\n")
+    const options = sessions
+      .slice(0, 20)
+      .map((session) => `${session.id} - ${title(session.title)}`)
+      .join("\n")
     const selected = await askText({ title: "Choose Sessions", message: `Comma-separated session IDs:\n${options}` })
     if (!selected) return []
     const available = new Set(sessions.map((session) => session.id))
@@ -2149,15 +2813,16 @@ export function App() {
         switchSession: handleSwitchSession,
         createSession: () => handleCreateSession(),
         openRoute: (name) => setRoute({ name }),
-        createProject: handleCreateProject,
+        createProject: () => handleCreateProject(),
         createProjectSession: handleCreateProjectSession,
         toggleRail: () => setRailCollapsed((prev) => !prev),
         focusSidebar: () => {
           setRailCollapsed(false)
           requestAnimationFrame(() => document.querySelector<HTMLElement>(".rail button")?.focus())
         },
-        createSwarm: handleCreateSwarm,
-        createSwarmTask: () => handleCreateSwarmTaskSlash({
+        createSwarm: () => handleCreateSwarm(),
+        createSwarmTask: () =>
+          handleCreateSwarmTaskSlash({
           selectedAgent: selectedAgent(),
           selectedVariant: selectedVariant(),
         }),
@@ -2175,7 +2840,9 @@ export function App() {
         switchOrg: handleOrgSlash,
         switchTheme: handleThemeSlash,
         showHelp,
-        showKeyboardHelp: () => { setKeyboardHelpOpen(true) },
+        showKeyboardHelp: () => {
+          setKeyboardHelpOpen(true)
+        },
         copyLastAssistantMessage,
         copyTranscript: () => handleCopyTranscriptSlash(selectedSession()),
         toggleCodeConceal: handleToggleCodeConcealSlash,
@@ -2191,60 +2858,93 @@ export function App() {
         transcriptLastUser: () => moveTranscript("last-user"),
         focusComposer,
         refresh,
-        installPlugin: () => { setRoute({ name: "plugins" }) },
-        openDocs: () => { window.open("https://opencode.ai/docs", "_blank", "noopener,noreferrer") },
+        installPlugin: () => {
+          setRoute({ name: "plugins" })
+        },
+        openDocs: () => {
+          window.open("https://opencode.ai/docs", "_blank", "noopener,noreferrer")
+        },
         exitApp: () => void window.opencodex?.window("close"),
       },
     }),
-    ...guiPluginCommands(guiPlugins()).map(({ plugin, command }): PaletteCommand => ({
+    ...guiPluginCommands(guiPlugins()).map(
+      ({ plugin, command }): PaletteCommand => ({
       name: `gui-plugin.${plugin.manifest.id}.${command.id}`,
       title: command.title,
       category: "GUI Plugins",
       description: command.description ?? plugin.manifest.name,
       run: () => openWorkbenchPrompt(command.prompt),
-    })),
+      }),
+    ),
   ])
 
   function renderViewPane(item: Accessor<ViewItem>) {
     const paneID = createMemo(() => viewItemID(item()))
     const session = createMemo(() => viewItemSession(item()))
+    const projectName = createMemo(() => {
+      const current = item()
+      if (current.kind === "pending")
+        return current.slot.projectLabel ?? projectNameForProjectID(current.slot.projectID)
+      return projectNameForSession(session())
+    })
     const paneState = createMemo(() => viewPaneState(paneID()))
     return (
       <ViewPaneHost
         item={item()}
-        data={item().kind === "session" ? viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA : EMPTY_SESSION_DATA}
+        projectName={projectName()}
+        data={item().kind === "session" ? (viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA) : EMPTY_SESSION_DATA}
         loading={paneState().loading}
-        status={item().kind === "session" ? snapshot()?.sessionStatus[paneID()]?.type ?? "idle" : "idle"}
-        permissions={item().kind === "session" ? snapshot()?.permissions.filter((request) => request.sessionID === paneID()) ?? [] : []}
-        questions={item().kind === "session" ? snapshot()?.questions.filter((request) => request.sessionID === paneID()) ?? [] : []}
+        status={item().kind === "session" ? (snapshot()?.sessionStatus[paneID()]?.type ?? "idle") : "idle"}
+        permissions={
+          item().kind === "session"
+            ? (snapshot()?.permissions.filter((request) => request.sessionID === paneID()) ?? [])
+            : []
+        }
+        questions={
+          item().kind === "session"
+            ? (snapshot()?.questions.filter((request) => request.sessionID === paneID()) ?? [])
+            : []
+        }
         composerState={paneState()}
         updateComposerState={(update) => updateViewPaneState(paneID(), update)}
         focusedSessionID={activeViewFocusedSessionID()}
         composerFocusRequest={viewComposerFocusRequest()}
         providers={snapshot()?.providers ?? []}
+        connectedProviderIDs={snapshot()?.connectedProviderIDs ?? []}
         mcp={snapshot()?.mcp ?? {}}
         mcpResources={snapshot()?.mcpResources ?? {}}
         lsp={snapshot()?.lsp ?? []}
         config={snapshot()?.config}
         agents={snapshot()?.agents ?? []}
-        findFiles={(input) => client() ? findFiles(client()!, input) : Promise.resolve([])}
+        findFiles={(input) => (client() ? findFiles(client()!, input) : Promise.resolve([]))}
         recentModels={recentModels()}
         selectedAgent={viewAgentValue(paneID(), session())}
-        setSelectedAgent={(sessionID, value) => updateViewPaneState(sessionID, (state) => state.selectedAgent === value ? state : { ...state, selectedAgent: value })}
+        setSelectedAgent={(sessionID, value) =>
+          updateViewPaneState(sessionID, (state) =>
+            state.selectedAgent === value ? state : { ...state, selectedAgent: value },
+          )
+        }
         selectedModel={viewModelValue(paneID(), session())}
         setSelectedModel={(sessionID, value) => {
-          updateViewPaneState(sessionID, (state) => state.selectedModel === value && state.selectedVariant === "" ? state : { ...state, selectedModel: value, selectedVariant: "" })
+          updateViewPaneState(sessionID, (state) =>
+            state.selectedModel === value && state.selectedVariant === ""
+              ? state
+              : { ...state, selectedModel: value, selectedVariant: "" },
+          )
           if (value) rememberModel(value)
         }}
         selectedVariant={viewVariantValue(paneID(), session())}
-        setSelectedVariant={(sessionID, value) => updateViewPaneState(sessionID, (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value })}
+        setSelectedVariant={(sessionID, value) =>
+          updateViewPaneState(sessionID, (state) =>
+            state.selectedVariant === value ? state : { ...state, selectedVariant: value },
+          )
+        }
         focus={(sessionID, focusComposer) => focusViewSession(sessionID, { focusComposer })}
         openSidePanelTarget={(sessionID, target) => openViewSidePanel(sessionID, target)}
         submit={(event, item, text) => void runAction(() => submitViewPrompt(event, item, text))}
         replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
         replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
         rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
-        abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
         renameSession={(session) => void runAction(() => handleRenameSession(session))}
         moveSession={(session) => void runAction(() => handleMoveSession(session))}
         deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
@@ -2253,14 +2953,30 @@ export function App() {
           selectedAgent: viewAgentValue(paneID(), session()),
           selectedModel: viewModelValue(paneID(), session()),
           selectedVariant: viewVariantValue(paneID(), session()),
-          switchModel: () => switchModelFor({
-            setSelectedModel: (value) => updateViewPaneState(paneID(), (state) => state.selectedModel === value ? state : { ...state, selectedModel: value }),
-            setSelectedVariant: (value) => updateViewPaneState(paneID(), (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value }),
+          switchModel: () =>
+            switchModelFor({
+              setSelectedModel: (value) =>
+                updateViewPaneState(paneID(), (state) =>
+                  state.selectedModel === value ? state : { ...state, selectedModel: value },
+                ),
+              setSelectedVariant: (value) =>
+                updateViewPaneState(paneID(), (state) =>
+                  state.selectedVariant === value ? state : { ...state, selectedVariant: value },
+                ),
           }),
-          switchAgent: () => switchAgentFor((value) => updateViewPaneState(paneID(), (state) => state.selectedAgent === value ? state : { ...state, selectedAgent: value })),
-          switchVariant: () => switchVariantFor({
+          switchAgent: () =>
+            switchAgentFor((value) =>
+              updateViewPaneState(paneID(), (state) =>
+                state.selectedAgent === value ? state : { ...state, selectedAgent: value },
+              ),
+            ),
+          switchVariant: () =>
+            switchVariantFor({
             selectedModel: viewModelValue(paneID(), session()),
-            setSelectedVariant: (value) => updateViewPaneState(paneID(), (state) => state.selectedVariant === value ? state : { ...state, selectedVariant: value }),
+              setSelectedVariant: (value) =>
+                updateViewPaneState(paneID(), (state) =>
+                  state.selectedVariant === value ? state : { ...state, selectedVariant: value },
+                ),
           }),
         })}
         showTimestamps={showTranscriptTimestamps()}
@@ -2283,7 +2999,26 @@ export function App() {
   return (
     <div class="app-shell" classList={{ "rail-collapsed": railCollapsed() }}>
       <style>{guiPluginThemeCss(guiPlugins())}</style>
-      <Titlebar />
+      <Titlebar
+        canGoBack={routeHistoryIndex() > 0}
+        canGoForward={routeHistoryIndex() < routeHistory.length - 1}
+        goBack={() => goRouteHistory(-1)}
+        goForward={() => goRouteHistory(1)}
+        newSession={() => void runAction(() => handleCreateSession())}
+        newProject={() => void runAction(handleCreateProject)}
+        newView={() => void runAction(handleCreateView)}
+        newSwarm={() => void runAction(handleCreateSwarm)}
+        openDashboard={() => setRoute({ name: "dashboard" })}
+        openProjects={() => setRoute({ name: "projects" })}
+        openSessions={() => setRoute({ name: "sessions" })}
+        openSwarms={() => setRoute({ name: "swarms" })}
+        openViews={() => setRoute({ name: "views" })}
+        openWorkbench={() => setRoute({ name: "workbench" })}
+        toggleLeftSidebar={() => setRailCollapsed((value) => !value)}
+        toggleViewSidePanel={activeViewSessions().length > 0 ? toggleViewSidePanel : undefined}
+        openCommandPalette={() => setCommandPaletteOpen(true)}
+        openKeyboardHelp={() => setKeyboardHelpOpen(true)}
+      />
       <RailSidebar
         snapshot={snapshot()}
         sessions={visibleSessions()}
@@ -2299,7 +3034,7 @@ export function App() {
         dragTarget={dragTarget()}
         dropTarget={dropTarget()}
         projectVisualOrder={projectVisualOrder()}
-        projectSessions={(project) => projectSessions(project, snapshot())}
+        projectSessions={(project) => projectSessions(project, snapshot(), sessionOrderState())}
         projectExpanded={projectExpanded}
         sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
         viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
@@ -2312,16 +3047,23 @@ export function App() {
         openView={(viewID) => setRoute({ name: "views", viewID })}
         createProject={() => void runAction(handleCreateProject)}
         createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
+        createPinnedSession={() => void runAction(handleCreatePinnedSession)}
         createView={() => void runAction(handleCreateView)}
         toggleSessionPinned={toggleSessionPinned}
         toggleViewPinned={toggleViewPinned}
+        renameSession={(session) => void runAction(() => handleRenameSession(session))}
+        deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+        editView={(viewID) => setRoute({ name: "view-edit", viewID })}
+        deleteView={(viewID, name) => void runAction(() => handleDeleteViewByID(viewID, name))}
         startDrag={startDrag}
         dragOver={dragOver}
         clearDragTarget={clearDragTarget}
         sectionPointerDrag={sectionPointerDrag}
         reorderRailSection={handleReorderRailSection}
         projectPointerDrag={projectPointerDrag}
-        reorderProject={(sourceID, targetID, placement) => void runAction(() => handleReorderProject(sourceID, targetID, placement))}
+        reorderProject={(sourceID, targetID, placement) =>
+          void runAction(() => handleReorderProject(sourceID, targetID, placement))
+        }
         dropRailSection={handleDropRailSection}
         dropProject={(targetID, placement) => void runAction(() => handleDropProject(targetID, placement))}
         dropView={(targetID, placement) => void runAction(() => handleDropView(targetID, placement))}
@@ -2330,11 +3072,9 @@ export function App() {
         moveView={(viewID, offset) => void runAction(() => handleMoveView(viewID, offset))}
       />
       <main class="stage">
-        <Show when={notice()}>
-          <button class="notice" onClick={() => setNotice("")}>{notice()}</button>
-        </Show>
+        <div class="stage-content">
         <Show when={loading()}>
-          <div class="loading-card">{loading()}...</div>
+            <AppLoadingSkeleton />
         </Show>
         <Show when={error()}>
           <div class="error-card">{error()}</div>
@@ -2344,38 +3084,47 @@ export function App() {
             <Match when={route().name === "dashboard"}>
               <Dashboard
                 snapshot={snapshot()}
+                  sessionOrderState={sessionOrderState()}
                 logo={<OpencodeXLogo />}
+                  openProject={(projectID) => setRoute({ name: "projects", projectID })}
                 openSession={(sessionID) => setRoute({ name: "session", sessionID })}
                 openView={(viewID) => setRoute({ name: "views", viewID })}
                 sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
                 viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
                 createProject={() => void runAction(handleCreateProject)}
-                createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
+                  createSession={(projectID, directory) =>
+                    void runAction(() => handleCreateSession(projectID, directory))
+                  }
                 createSwarm={() => void runAction(handleCreateSwarm)}
                 createView={() => void runAction(handleCreateView)}
                 toggleSessionPinned={toggleSessionPinned}
                 toggleViewPinned={toggleViewPinned}
-                renameProject={(projectID, current) => void runAction(() => handleRenameProject(projectID, current))}
-                editProjectFolders={(projectID, folders) => void runAction(() => handleEditProjectFolders(projectID, folders))}
+                  renameSession={(session) => void runAction(() => handleRenameSession(session))}
+                  deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
+                  editView={(viewID) => setRoute({ name: "view-edit", viewID })}
+                  deleteView={(viewID, name) => void runAction(() => handleDeleteViewByID(viewID, name))}
+                  editProject={(projectID, current, folders) =>
+                    void runAction(() => handleEditProject(projectID, current, folders))
+                  }
                 deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
               />
             </Match>
             <Match when={route().name === "session" || route().name === "new-session"}>
-              <Show when={activeSessionRouteKey()} keyed={true}>
-                {(_key) => (
                   <SessionPage
                     session={selectedSession()}
+                  projectName={activeSessionProjectName()}
                     data={activeSessionData()}
                     loading={activeSessionLoading()}
                     prompt={prompt()}
                     setPrompt={setPrompt}
                     providers={snapshot()?.providers ?? []}
+                  connectedProviderIDs={snapshot()?.connectedProviderIDs ?? []}
                     mcp={snapshot()?.mcp ?? {}}
                     mcpResources={snapshot()?.mcpResources ?? {}}
                     lsp={snapshot()?.lsp ?? []}
                     config={snapshot()?.config}
                     agents={snapshot()?.agents ?? []}
-                    findFiles={(input) => client() ? findFiles(client()!, input) : Promise.resolve([])}
+                  findFiles={(input) => (client() ? findFiles(client()!, input) : Promise.resolve([]))}
                     selectedAgent={selectedAgent()}
                     setSelectedAgent={setSelectedAgent}
                     selectedModel={selectedModel()}
@@ -2393,7 +3142,6 @@ export function App() {
                     replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
                     replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
                     rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
-                    abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
                     renameSession={(session) => void runAction(() => handleRenameSession(session))}
                     moveSession={(session) => void runAction(() => handleMoveSession(session))}
                     deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
@@ -2413,18 +3161,30 @@ export function App() {
                     toggleToolDetails={handleToggleToolDetailsSlash}
                     toggleScrollbar={handleToggleScrollbarSlash}
                     toggleGenericToolOutput={handleToggleGenericToolOutputSlash}
-                    status={route().name === "session" && selectedSession() ? snapshot()?.sessionStatus[selectedSession()!.id]?.type : undefined}
+                  status={
+                    route().name === "session" && selectedSession()
+                      ? snapshot()?.sessionStatus[selectedSession()!.id]?.type
+                      : undefined
+                  }
+                  readyForReview={
+                    selectedSession()
+                      ? snapshot()?.sessionUiState[selectedSession()!.id]?.displayStatus === "needs_review"
+                      : false
+                  }
+                  markSessionReviewed={markSessionReviewed}
                     pending={route().name === "new-session"}
-                    loadOlderMessages={(cursor) => selectedSession() ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor)) : Promise.resolve()}
+                  loadOlderMessages={(cursor) =>
+                    selectedSession()
+                      ? runAction(() => loadOlderSessionMessages(selectedSession()!.id, cursor))
+                      : Promise.resolve()
+                  }
                     gui={client()}
                     sidePanelDirectory={sidePanelDirectoryForSession(selectedSession())}
                   />
-                )}
-              </Show>
             </Match>
             <Match when={route().name === "sessions"}>
               <SessionCollectionPage
-                sessions={tuiSidebarSessions(snapshot())}
+                  sessions={visibleSessions()}
                 projects={snapshot()?.projects ?? []}
                 sessionStatus={snapshot()?.sessionStatus ?? {}}
                 openSession={(sessionID) => setRoute({ name: "session", sessionID })}
@@ -2437,13 +3197,34 @@ export function App() {
             </Match>
             <Match when={route().name === "projects"}>
               <ProjectCollectionPage
-                projects={snapshot()?.projects ?? []}
-                sessionCount={(project) => projectSessions(project, snapshot()).length}
-                createSession={(projectID, directory) => void runAction(() => handleCreateSession(projectID, directory))}
+                  snapshot={snapshot()}
+                  sessionOrderState={sessionOrderState()}
+                  projectID={activeProject()?.id}
+                  openProject={(projectID) =>
+                    setRoute(projectID ? { name: "projects", projectID } : { name: "projects" })
+                  }
+                  openSession={(sessionID) => setRoute({ name: "session", sessionID })}
+                  openView={(viewID) => setRoute({ name: "views", viewID })}
+                  openSwarm={(swarmID) => setRoute({ name: "swarms", swarmID })}
+                  openWorkbenchProject={(projectID) => setRoute({ name: "workbench", projectID })}
+                  createSession={(projectID, directory) =>
+                    void runAction(() => handleCreateSession(projectID, directory))
+                  }
+                  createSwarm={(projectID) => void runAction(() => handleCreateSwarm(projectID))}
+                  createProjectView={(projectID, sessionIDs) =>
+                    void runAction(() => handleCreateProjectView(projectID, sessionIDs))
+                  }
                 createProject={() => void runAction(handleCreateProject)}
-                editProject={(projectID, currentName, folders) => void runAction(() => handleEditProject(projectID, currentName, folders))}
+                  editProject={(projectID, currentName, folders) =>
+                    void runAction(() => handleEditProject(projectID, currentName, folders))
+                  }
                 deleteProject={(projectID, name) => void runAction(() => handleDeleteProject(projectID, name))}
                 moveProject={(projectID, offset) => void runAction(() => handleMoveProject(projectID, offset))}
+                  reorderProject={(sourceID, targetID, placement) =>
+                    void runAction(() => handleReorderProject(sourceID, targetID, placement))
+                  }
+                  sessionPinned={(sessionID) => pinnedSessionIDSet().has(sessionID)}
+                  toggleSessionPinned={toggleSessionPinned}
               />
             </Match>
             <Match when={route().name === "swarms"}>
@@ -2457,7 +3238,9 @@ export function App() {
                     createSwarm={() => void runAction(handleCreateSwarm)}
                     editSwarm={(swarmID) => setRoute({ name: "swarm-create", swarmID })}
                     openSession={(sessionID) => setRoute({ name: "session", sessionID })}
-                    assignTask={(swarmID, promptText) => void runAction(() => handleAssignSwarmTask(swarmID, promptText))}
+                      assignTask={(swarmID, promptText) =>
+                        void runAction(() => handleAssignSwarmTask(swarmID, promptText))
+                      }
                     cancelSwarm={(swarmID) => void runAction(() => handleCancelSwarm(swarmID))}
                     deleteSwarm={(swarmID, name) => void runAction(() => handleDeleteSwarm(swarmID, name))}
                     refresh={() => void runAction(refresh)}
@@ -2468,7 +3251,8 @@ export function App() {
             <Match when={route().name === "swarm-create"}>
               {(() => {
                 const current = route()
-                const swarm = current.name === "swarm-create" && current.swarmID
+                  const swarm =
+                    current.name === "swarm-create" && current.swarmID
                   ? snapshot()?.swarms.find((item) => item.id === current.swarmID)
                   : undefined
                 return (
@@ -2477,6 +3261,7 @@ export function App() {
                     providers={snapshot()?.providers ?? []}
                     agents={snapshot()?.agents ?? []}
                     swarm={swarm}
+                      initialProjectID={current.name === "swarm-create" ? current.projectID : undefined}
                     selectedModel={selectedModel()}
                     save={(input) => void runAction(() => handleSaveSwarm(input))}
                     cancel={() => setRoute(swarm ? { name: "swarms", swarmID: swarm.id } : { name: "swarms" })}
@@ -2488,13 +3273,14 @@ export function App() {
               <ViewsManagerPage
                 view={activeView()}
                 views={snapshot()?.views ?? []}
-                sessions={tuiSidebarSessions(snapshot())}
+                  snapshot={snapshot()}
+                  sessions={visibleSessions()}
                 projects={snapshot()?.projects ?? []}
                 items={activeViewItems()}
                 renderItem={renderViewPane}
                 sidePanelOpen={viewSidePanelOpen()}
                 toggleSidePanel={activeViewSessions().length > 0 ? toggleViewSidePanel : undefined}
-                sidePanel={(
+                  sidePanel={
                   <Show when={viewSidePanelSession()}>
                     {(session) => (
                       <SessionSidePanel
@@ -2513,24 +3299,27 @@ export function App() {
                         selectedContextID={session().id}
                         selectContext={setViewSidePanelSessionID}
                         startResize={startViewSidePanelResize}
-                        close={() => setViewSidePanelOpen(false)}
+                          close={() => setActiveViewSidePanelOpen(false)}
                       />
                     )}
                   </Show>
-                )}
+                  }
                 openView={(viewID) => setRoute({ name: "views", viewID })}
                 createView={() => void runAction(handleCreateView)}
                 editView={(viewID) => setRoute({ name: "view-edit", viewID })}
                 deleteView={(viewID, name) => void runAction(() => handleDeleteViewByID(viewID, name))}
                 moveView={(viewID, offset) => void runAction(() => handleMoveView(viewID, offset))}
+                  reorderViews={(viewIDs) => void runAction(() => handleReorderViews(viewIDs))}
+                  viewPinned={(viewID) => pinnedViewIDSet().has(viewID)}
+                  toggleViewPinned={toggleViewPinned}
               />
             </Match>
             <Match when={route().name === "view-edit"}>
               <ViewEditorPage
                 view={editingView()}
-                sessions={tuiSidebarSessions(snapshot())}
+                  sessions={visibleSessions()}
                 projects={snapshot()?.projects ?? []}
-                save={(input) => void runAction(() => handleSaveView(input))}
+                  save={handleSaveView}
                 cancel={() => {
                   const view = editingView()
                   setRoute(view ? { name: "views", viewID: view.id } : { name: "views" })
@@ -2550,10 +3339,15 @@ export function App() {
               />
             </Match>
             <Match when={route().name === "workbench"}>
+                {(() => {
+                  const current = route()
+                  return (
+                    current.name === "workbench" && (
               <WorkbenchPage
                 gui={client()}
                 snapshot={snapshot()}
                 projects={snapshot()?.projects ?? []}
+                        projectID={current.projectID}
                 recentModels={recentModels()}
                 selectedAgent={selectedAgent()}
                 setSelectedAgent={setSelectedAgent}
@@ -2568,13 +3362,17 @@ export function App() {
                 rememberModel={rememberModel}
                 refresh={refresh}
                 replyPermission={(request, reply) => void runAction(() => handlePermission(request, reply))}
-                replyQuestion={(request, answers) => void runAction(() => handleQuestionReply(request, answers))}
+                        replyQuestion={(request, answers) =>
+                          void runAction(() => handleQuestionReply(request, answers))
+                        }
                 rejectQuestion={(request) => void runAction(() => handleQuestionReject(request))}
                 abortSession={(sessionID) => void runAction(() => handleAbortSession(sessionID))}
                 renameSession={(session) => void runAction(() => handleRenameSession(session))}
                 moveSession={(session) => void runAction(() => handleMoveSession(session))}
                 deleteSession={(session) => void runAction(() => handleDeleteSession(session))}
-                slashCommands={(session, data, restorePrompt) => sessionSlashCommands(session, { data, restorePrompt })}
+                        slashCommands={(session, data, restorePrompt) =>
+                          sessionSlashCommands(session, { data, restorePrompt })
+                        }
                 concealCodeBlocks={concealTranscriptCodeBlocks()}
                 showTimestamps={showTranscriptTimestamps()}
                 showThinking={showTranscriptThinking()}
@@ -2593,14 +3391,18 @@ export function App() {
                 askText={askText}
                 confirm={confirm}
               />
+                    )
+                  )
+                })()}
             </Match>
             <Match when={route().name === "diff"}>
               {(() => {
                 const current = route()
-                const session = current.name === "diff"
-                  ? snapshot()?.sessions.find((item) => item.id === current.sessionID) ?? selectedSession()
+                  const session =
+                    current.name === "diff"
+                      ? (snapshot()?.sessions.find((item) => item.id === current.sessionID) ?? selectedSession())
                   : selectedSession()
-                const mode = current.name === "diff" ? current.mode ?? "git" : "git"
+                  const mode = current.name === "diff" ? (current.mode ?? "git") : "git"
                 return (
                   <DiffPage
                     mode={mode}
@@ -2608,8 +3410,12 @@ export function App() {
                     sessions={visibleSessions()}
                     sessionUiState={snapshot()?.sessionUiState ?? {}}
                     setMode={(mode) => setRoute({ name: "diff", mode, sessionID: session?.id })}
-                    selectSession={(sessionID) => setRoute({ name: "diff", mode: sessionID ? "last-turn" : "git", sessionID })}
-                    close={() => session ? setRoute({ name: "session", sessionID: session.id }) : setRoute({ name: "dashboard" })}
+                      selectSession={(sessionID) =>
+                        setRoute({ name: "diff", mode: sessionID ? "last-turn" : "git", sessionID })
+                      }
+                      close={() =>
+                        session ? setRoute({ name: "session", sessionID: session.id }) : setRoute({ name: "dashboard" })
+                      }
                     loadDiff={loadDiffForPage}
                     updateReviewedFiles={updateDiffReviewedFiles}
                   />
@@ -2620,10 +3426,15 @@ export function App() {
               <StatusPage snapshot={snapshot()} />
             </Match>
             <Match when={route().name === "settings"}>
-              <CollectionPage title="Settings" count={snapshot()?.agents.length ?? 0} description="Theme, provider, status, docs, debug, and safe GUI preferences are reserved here while settings parity is built out." />
+                <CollectionPage
+                  title="Settings"
+                  count={snapshot()?.agents.length ?? 0}
+                  description="Theme, provider, status, docs, debug, and safe GUI preferences are reserved here while settings parity is built out."
+                />
             </Match>
           </Switch>
         </Show>
+        </div>
       </main>
       <CommandPaletteModal
         open={commandPaletteOpen()}
@@ -2631,12 +3442,122 @@ export function App() {
         close={() => setCommandPaletteOpen(false)}
         run={(command) => {
           setCommandPaletteOpen(false)
-          void runAction(async () => { await command.run() })
+          void runAction(async () => {
+            await command.run()
+          })
         }}
       />
-      <KeyboardHelpModal open={keyboardHelpOpen()} commands={paletteCommands()} close={() => setKeyboardHelpOpen(false)} />
+      <KeyboardHelpModal
+        open={keyboardHelpOpen()}
+        commands={paletteCommands()}
+        close={() => setKeyboardHelpOpen(false)}
+      />
       <DialogModal dialog={dialog()} close={() => setDialog(undefined)} />
     </div>
+  )
+}
+
+function AppLoadingSkeleton() {
+  return (
+    <div class="page dashboard-page app-loading-skeleton" aria-label="Loading OpencodeX workspace" aria-busy="true">
+      <OpencodeXLogo />
+      <section class="dashboard-sections app-loading-sections">
+        <AppLoadingSessionsPanel />
+        <AppLoadingCardPanel title="Projects" kind="projects" />
+        <AppLoadingCardPanel title="Swarms" kind="swarms" />
+        <AppLoadingCardPanel title="Views" kind="views" />
+      </section>
+    </div>
+  )
+}
+
+function AppLoadingSessionsPanel() {
+  return (
+    <DashboardSection title="Sessions" count={0} action="New" onAction={() => undefined}>
+      <div class="dashboard-session-groups app-loading-panel" aria-hidden="true">
+        {["Needs Feedback", "Ready For Review", "In Progress", "Inactive Sessions"].map((title, index) => (
+          <section class="dashboard-session-bucket">
+            <header>
+              <button class="dashboard-bucket-toggle" aria-expanded={index !== 3} tabindex={-1}>
+                <span class="app-loading-bucket-chevron" />
+                <strong>{title}</strong>
+              </button>
+              <small>0</small>
+            </header>
+            <div class="dashboard-bucket-content" classList={{ collapsed: index === 3 }}>
+              <div class="dashboard-card-grid compact">
+                <AppLoadingStatusCard short={index === 1} />
+              </div>
+            </div>
+          </section>
+        ))}
+      </div>
+    </DashboardSection>
+  )
+}
+
+function AppLoadingCardPanel(props: { title: string; kind: "projects" | "swarms" | "views" }) {
+  return (
+    <DashboardSection title={props.title} count={0} action="New" onAction={() => undefined}>
+      <div class="dashboard-card-grid app-loading-panel" aria-hidden="true">
+        {[0, 1, 2, 3].map((item) =>
+          props.kind === "projects" ? (
+            <AppLoadingProjectCard short={item === 2} />
+          ) : props.kind === "views" ? (
+            <AppLoadingStatusCard short={item === 1 || item === 3} />
+          ) : (
+            <AppLoadingPlainCard short={item === 1 || item === 3} />
+          ),
+        )}
+      </div>
+    </DashboardSection>
+  )
+}
+
+function AppLoadingProjectCard(props: { short?: boolean }) {
+  return (
+    <article class="dashboard-item-card project-card app-loading-card">
+      <div class="dashboard-project-open">
+        <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
+        <span class="app-loading-line app-loading-detail" />
+        <small class="project-folder-label app-loading-line app-loading-meta" />
+      </div>
+      <div class="row-actions">
+        <span class="app-loading-control" />
+        <span class="app-loading-icon-control" />
+        <span class="app-loading-icon-control" />
+      </div>
+    </article>
+  )
+}
+
+function AppLoadingPlainCard(props: { short?: boolean }) {
+  return (
+    <article class="dashboard-item-card app-loading-card">
+      <div>
+        <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
+        <span class="app-loading-line app-loading-detail" />
+      </div>
+      <footer>
+        <small class="app-loading-line app-loading-meta" />
+      </footer>
+    </article>
+  )
+}
+
+function AppLoadingStatusCard(props: { short?: boolean }) {
+  return (
+    <article class="dashboard-item-card dashboard-status-card interactive status-dormant app-loading-card">
+      <div class="dashboard-card-open">
+        <div>
+          <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
+        </div>
+        <footer>
+          <small class="app-loading-line app-loading-meta" />
+        </footer>
+      </div>
+      <span class="pin-toggle app-loading-pin" />
+    </article>
   )
 }
 

@@ -25,7 +25,7 @@ export function globalEventSessionStatus(event: GlobalEvent) {
   if (kind !== "session.status") return
   const properties = eventData(event)
   if (!isRecordValue(properties) || typeof properties.sessionID !== "string" || !isSessionStatus(properties.status)) return
-  return { sessionID: properties.sessionID, status: properties.status, syncVisible: properties.status.type === "idle" }
+  return { sessionID: properties.sessionID, status: properties.status, syncVisible: true }
 }
 
 export function globalEventSessionState(event: GlobalEvent) {

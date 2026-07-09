@@ -8,11 +8,13 @@ import type { SessionSidePanelTarget } from "./session-side-panel"
 
 export type SessionPageProps = {
   session?: Session
+  projectName?: string
   data: SessionData
   loading: boolean
   prompt: string
   setPrompt: (value: string) => void
   providers: Provider[]
+  connectedProviderIDs?: string[]
   mcp: Record<string, McpStatus>
   mcpResources?: Record<string, McpResource>
   lsp: LspStatus[]
@@ -32,24 +34,25 @@ export type SessionPageProps = {
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
-  abortSession: (sessionID: string) => void
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   slashCommands: SessionSlashCommand[]
-  concealCodeBlocks: boolean
+  concealCodeBlocks?: boolean
   showTimestamps: boolean
   showThinking: boolean
   showToolDetails: boolean
   showScrollbar: boolean
   showGenericToolOutput: boolean
-  toggleCodeConceal: () => void
+  toggleCodeConceal?: () => void
   toggleTimestamps: () => void
   toggleThinking: () => void
   toggleToolDetails: () => void
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
   status?: string
+  readyForReview?: boolean
+  markSessionReviewed?: (session: Session) => void
   pending?: boolean
   composerState?: ViewPaneRuntimeState
   updateComposerState?: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void

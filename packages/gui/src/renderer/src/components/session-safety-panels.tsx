@@ -124,8 +124,11 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
         }
       }}
     >
-      <div>
-        <p class="eyebrow">Question Pending</p>
+      <div class="question-panel-content">
+        <div class="question-panel-header">
+          <p class="eyebrow">Pending question</p>
+          <span>{props.request.questions.length > 1 ? `${active() + 1} / ${props.request.questions.length}` : "Needs reply"}</span>
+        </div>
         <For each={props.request.questions}>
           {(question, index) => (
             <div class="question-block" classList={{ active: active() === index() }}>
@@ -135,10 +138,11 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
                 <For each={question.options}>
                   {(option, optionIndex) => (
                     <button
+                      class="question-option"
                       classList={{ selected: answers()[index()].includes(option.label) }}
                       onClick={() => choose(index(), option.label, question.multiple)}
                     >
-                      <strong>{optionIndex() + 1}. {option.label}</strong>
+                      <strong><span>{optionIndex() + 1}</span>{option.label}</strong>
                       <span>{option.description}</span>
                     </button>
                   )}

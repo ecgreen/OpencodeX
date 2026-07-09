@@ -24,6 +24,22 @@ export function writeFavoriteModels(values: string[]) {
   localStorage.setItem("opencodex.gui.favoriteModels", JSON.stringify(values.slice(0, 20)))
 }
 
+export function readCollapsedModelProviders() {
+  if (typeof localStorage === "undefined") return []
+  try {
+    const parsed = JSON.parse(localStorage.getItem("opencodex.gui.collapsedModelProviders") ?? "[]")
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((value): value is string => typeof value === "string")
+  } catch {
+    return []
+  }
+}
+
+export function writeCollapsedModelProviders(values: string[]) {
+  if (typeof localStorage === "undefined") return
+  localStorage.setItem("opencodex.gui.collapsedModelProviders", JSON.stringify(values))
+}
+
 export function readComposerStash() {
   if (typeof localStorage === "undefined") return []
   return parsePromptStash(localStorage.getItem("opencodex.gui.promptStash") ?? "")
@@ -63,6 +79,21 @@ export async function filePartFromFile(file: File): Promise<PromptPart> {
   }
 }
 
+export function filePartFromPath(input: { path: string; type?: "file" | "directory"; label?: string }): PromptPart {
+  const label = input.label ?? fileBasename(input.path)
+  return {
+    type: "file",
+    filename: label,
+    mime: input.type === "directory" ? "application/x-directory" : imageMime(input.path) ?? "text/plain",
+    url: fileURL(input.path),
+    source: {
+      type: "file",
+      path: input.path,
+      text: { value: label, start: 0, end: label.length },
+    },
+  }
+}
+
 export function textPart(part: MessageBundle["parts"][number]) {
   return part.type === "text" ? part.text : ""
 }
@@ -86,6 +117,28 @@ function fileToDataURL(file: File) {
   })
 }
 
+function imageMime(value: string) {
+  const extension = value.split(/[/.\\]/).at(-1)?.toLowerCase()
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg"
+  if (extension === "png") return "image/png"
+  if (extension === "gif") return "image/gif"
+  if (extension === "webp") return "image/webp"
+  if (extension === "svg") return "image/svg+xml"
+  if (extension === "bmp") return "image/bmp"
+  if (extension === "avif") return "image/avif"
+}
+
+function fileBasename(value: string) {
+  return value.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).at(-1) ?? value
+}
+
 function trimCompactNumber(value: number) {
   return value >= 100 ? Math.round(value).toString() : value.toFixed(1).replace(/\.0$/, "")
+}
+
+function fileURL(value: string) {
+  const normalized = value.replaceAll("\\", "/")
+  if (/^[a-zA-Z]:\//.test(normalized)) return `file:///${encodeURI(normalized)}`
+  if (normalized.startsWith("/")) return `file://${encodeURI(normalized)}`
+  return `file://${encodeURI(normalized)}`
 }

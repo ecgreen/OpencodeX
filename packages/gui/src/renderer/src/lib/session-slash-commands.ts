@@ -337,7 +337,7 @@ export function buildSessionSlashCommands(input: {
     {
       name: "conceal",
       title: "Toggle code concealment",
-      detail: "Show or conceal markdown code blocks",
+      detail: "Conceal or expand transcript code blocks",
       category: "Session",
       aliases: ["toggle-conceal", "code-conceal"],
       run: input.actions.toggleCodeConceal,

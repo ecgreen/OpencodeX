@@ -2,12 +2,12 @@ import type { OpencodeXSwarmRoleInput } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./client"
 import { authHeaders } from "./store-auth"
 
-export async function createProject(gui: GuiClient, input: { name?: string; directory: string }) {
+export async function createProject(gui: GuiClient, input: { name?: string; directory: string; folders?: string[] }) {
   return gui.client.opencodex.project.create({
     opencodeXProjectCreateInput: {
       name: input.name,
       directory: input.directory,
-      folders: [input.directory],
+      folders: input.folders ?? [input.directory],
     },
   }, { headers: authHeaders(gui), throwOnError: true })
 }
@@ -116,13 +116,14 @@ export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { 
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function createView(gui: GuiClient, input: { title?: string; sessionIDs: string[] }) {
+export async function createView(gui: GuiClient, input: { title?: string; sessionIDs: string[]; metadata?: Record<string, unknown> }) {
   return gui.client.opencodex.view.create({
     opencodeXViewCreateInput: {
       title: input.title,
       sessionIDs: input.sessionIDs,
       focusedSessionID: input.sessionIDs[0],
       layout: "auto",
+      metadata: input.metadata,
     },
   }, { headers: authHeaders(gui), throwOnError: true })
 }

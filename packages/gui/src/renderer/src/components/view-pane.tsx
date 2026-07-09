@@ -8,6 +8,7 @@ import { SessionPage } from "./session-page"
 
 export function ViewPane(props: {
   session: Session
+  projectName?: string
   pending?: boolean
   focused: () => boolean
   composerFocusToken: () => number
@@ -17,6 +18,7 @@ export function ViewPane(props: {
   composerState: ViewPaneRuntimeState
   updateComposerState: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   providers: Provider[]
+  connectedProviderIDs?: string[]
   mcp: Record<string, McpStatus>
   mcpResources?: Record<string, McpResource>
   lsp: LspStatus[]
@@ -38,18 +40,15 @@ export function ViewPane(props: {
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
-  abortSession: (sessionID: string) => void
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   slashCommands: SessionSlashCommand[]
-  concealCodeBlocks: boolean
   showTimestamps: boolean
   showThinking: boolean
   showToolDetails: boolean
   showScrollbar: boolean
   showGenericToolOutput: boolean
-  toggleCodeConceal: () => void
   toggleTimestamps: () => void
   toggleThinking: () => void
   toggleToolDetails: () => void
@@ -65,11 +64,13 @@ export function ViewPane(props: {
     <article class="view-pane" classList={{ focused: props.focused() }} onPointerDown={handlePointerDown}>
       <SessionPage
         session={props.session}
+        projectName={props.projectName}
         data={props.data}
         loading={props.loading}
         prompt=""
         setPrompt={() => undefined}
         providers={props.providers}
+        connectedProviderIDs={props.connectedProviderIDs}
         mcp={props.mcp}
         mcpResources={props.mcpResources}
         lsp={props.lsp}
@@ -89,18 +90,15 @@ export function ViewPane(props: {
         replyPermission={props.replyPermission}
         replyQuestion={props.replyQuestion}
         rejectQuestion={props.rejectQuestion}
-        abortSession={props.abortSession}
         renameSession={props.renameSession}
         moveSession={props.moveSession}
         deleteSession={props.deleteSession}
         slashCommands={props.slashCommands}
-        concealCodeBlocks={props.concealCodeBlocks}
         showTimestamps={props.showTimestamps}
         showThinking={props.showThinking}
         showToolDetails={props.showToolDetails}
         showScrollbar={props.showScrollbar}
         showGenericToolOutput={props.showGenericToolOutput}
-        toggleCodeConceal={props.toggleCodeConceal}
         toggleTimestamps={props.toggleTimestamps}
         toggleThinking={props.toggleThinking}
         toggleToolDetails={props.toggleToolDetails}

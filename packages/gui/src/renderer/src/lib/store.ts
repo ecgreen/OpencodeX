@@ -1,13 +1,10 @@
-﻿import type {
-  GlobalEvent,
-  Part,
-  QuestionAnswer,
-  SnapshotFileDiff,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { GlobalEvent, Part, QuestionAnswer, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 import {
   loadClientSessionSync,
+  selectClientSessionMessages,
   updateClientSessionState,
+  type ClientStateSyncController,
+  type ClientStateSyncState,
   type ClientSessionStateUpdate,
   type ClientSessionSyncResult,
 } from "@opencode-ai/sdk/v2/client-sync"
@@ -103,16 +100,48 @@ export async function loadSessionCards(gui: GuiClient, since?: string): Promise<
 
 export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
   const directory = gui.directory || undefined
-  const [cards, providers, agents, commands, lsp, mcp, config, mcpResources, plugins, swarms, jobs] = await Promise.all([
+  const [
+    cards,
+    providerList,
+    configProviders,
+    agents,
+    commands,
+    lsp,
+    mcp,
+    config,
+    mcpResources,
+    plugins,
+    projects,
+    swarms,
+    jobs,
+  ] = await Promise.all([
     loadSessionCards(gui),
+    gui.client.provider
+      .list({ directory }, { headers: authHeaders(gui) })
+      .then((x) => x.data)
+      .catch(() => undefined),
     gui.client.config.providers({ directory }).then((x) => x.data?.providers ?? []),
     gui.client.app.agents({ directory }).then((x) => x.data ?? []),
-    Promise.resolve(gui.client.command?.list?.({ directory })).then((x) => x?.data ?? []).catch(() => []),
-    Promise.resolve(gui.client.lsp?.status?.({ directory })).then((x) => x?.data ?? []).catch(() => []),
-    Promise.resolve(gui.client.mcp?.status?.({ directory })).then((x) => x?.data ?? {}).catch(() => ({})),
-    Promise.resolve(gui.client.config.get?.({ directory })).then((x) => x?.data).catch(() => undefined),
-    Promise.resolve(gui.client.experimental.resource?.list?.({ directory })).then((x) => x?.data ?? {}).catch(() => ({})),
+    Promise.resolve(gui.client.command?.list?.({ directory }))
+      .then((x) => x?.data ?? [])
+      .catch(() => []),
+    Promise.resolve(gui.client.lsp?.status?.({ directory }))
+      .then((x) => x?.data ?? [])
+      .catch(() => []),
+    Promise.resolve(gui.client.mcp?.status?.({ directory }))
+      .then((x) => x?.data ?? {})
+      .catch(() => ({})),
+    Promise.resolve(gui.client.config.get?.({ directory }))
+      .then((x) => x?.data)
+      .catch(() => undefined),
+    Promise.resolve(gui.client.experimental.resource?.list?.({ directory }))
+      .then((x) => x?.data ?? {})
+      .catch(() => ({})),
     loadGuiPlugins(gui).catch(() => []),
+    gui.client.opencodex.project
+      .list({ headers: authHeaders(gui) })
+      .then((x) => x.data ?? [])
+      .catch(() => undefined),
     gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
     gui.client.opencodex.job.list().then((x) => x.data ?? []),
   ])
@@ -120,8 +149,10 @@ export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
 
   return {
     ...cardSnapshot,
+    projects: projects ?? cardSnapshot.projects,
     sessionSyncRevision: cards.revision,
-    providers,
+    providers: providerList?.all ?? configProviders,
+    connectedProviderIDs: providerList?.connected ?? [],
     agents,
     commands,
     lsp,
@@ -138,28 +169,53 @@ export async function updateSessionUiState(gui: GuiClient, sessionID: string, in
   return updateClientSessionState(gui.client, sessionID, input)
 }
 
-export async function loadSessionDiff(gui: GuiClient, input: { sessionID: string; directory?: string; messageID?: string }) {
-  return gui.client.session.diff({
+export async function loadSessionDiff(
+  gui: GuiClient,
+  input: { sessionID: string; directory?: string; messageID?: string },
+) {
+  return gui.client.session.diff(
+    {
     sessionID: input.sessionID,
     directory: input.directory || gui.directory || undefined,
     messageID: input.messageID,
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
-export async function loadVcsDiff(gui: GuiClient, input: { mode: "git" | "branch"; context?: number; directory?: string }) {
-  return gui.client.vcs.diff({
+export async function loadVcsDiff(
+  gui: GuiClient,
+  input: { mode: "git" | "branch"; context?: number; directory?: string },
+) {
+  return gui.client.vcs.diff(
+    {
     directory: input.directory || gui.directory || undefined,
     mode: input.mode,
     context: input.context,
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
-export async function loadSession(gui: GuiClient, sessionID: string, directory?: string, options: SessionLoadOptions = {}): Promise<SessionData> {
+export async function loadSession(
+  gui: GuiClient,
+  sessionID: string,
+  directory?: string,
+  options: SessionLoadOptions = {},
+): Promise<SessionData> {
   const queryDirectory = directory || gui.directory || undefined
   const [messagePage, todos, diffs] = await Promise.all([
-    loadSessionMessages(gui, sessionID, directory, { limit: options.messageLimit ?? 200, renderBudget: options.messageRenderBudget, before: options.messageBefore }),
-    options.includeSideData === false ? Promise.resolve({ data: [] as Todo[] }) : gui.client.session.todo({ sessionID, directory: queryDirectory }),
-    options.includeSideData === false ? Promise.resolve({ data: [] as SnapshotFileDiff[] }) : gui.client.session.diff({ sessionID, directory: queryDirectory }),
+    loadSessionMessages(gui, sessionID, directory, {
+      limit: options.messageLimit ?? 200,
+      renderBudget: options.messageRenderBudget,
+      before: options.messageBefore,
+    }),
+    options.includeSideData === false
+      ? Promise.resolve({ data: [] as Todo[] })
+      : gui.client.session.todo({ sessionID, directory: queryDirectory }),
+    options.includeSideData === false
+      ? Promise.resolve({ data: [] as SnapshotFileDiff[] })
+      : gui.client.session.diff({ sessionID, directory: queryDirectory }),
   ])
   return {
     messages: messagePage.messages,
@@ -169,7 +225,34 @@ export async function loadSession(gui: GuiClient, sessionID: string, directory?:
   }
 }
 
-export async function loadSessionMessages(gui: GuiClient, sessionID: string, directory: string | undefined, options: { limit: number; renderBudget?: number; before?: string }) {
+export async function loadClientStateSession(
+  controller: ClientStateSyncController,
+  sessionID: string,
+  options: { limit?: number; before?: string } = {},
+) {
+  await controller.hydrateSession(sessionID, options)
+  const data = sessionDataFromClientState(controller.getState(), sessionID)
+  if (!data) throw new Error(`Authoritative session snapshot missing for ${sessionID}`)
+  return data
+}
+
+export function sessionDataFromClientState(state: ClientStateSyncState, sessionID: string): SessionData | undefined {
+  const detail = state.sessionDetails[sessionID]
+  if (!detail) return
+  return {
+    messages: normalizeMessageText(selectClientSessionMessages(state, sessionID)),
+    messageCursor: detail.snapshot.messages.boundary.next,
+    todos: detail.snapshot.todos,
+    diffs: detail.snapshot.diff,
+  }
+}
+
+export async function loadSessionMessages(
+  gui: GuiClient,
+  sessionID: string,
+  directory: string | undefined,
+  options: { limit: number; renderBudget?: number; before?: string },
+) {
   const response = await gui.client.session.messages({
     sessionID,
     directory: directory || gui.directory || undefined,
@@ -181,7 +264,10 @@ export async function loadSessionMessages(gui: GuiClient, sessionID: string, dir
   const visible = options.renderBudget === undefined ? messages.slice(-options.limit) : messages
   return {
     messages: visible,
-    cursor: options.renderBudget === undefined && visible.length < messages.length && visible[0] ? messageCursorBefore(visible[0]) : response.response?.headers.get("x-next-cursor") ?? undefined,
+    cursor:
+      options.renderBudget === undefined && visible.length < messages.length && visible[0]
+        ? messageCursorBefore(visible[0])
+        : (response.response?.headers.get("x-next-cursor") ?? undefined),
   }
 }
 
@@ -199,9 +285,16 @@ export async function sendPrompt(
   gui: GuiClient,
   sessionID: string,
   text: string,
-  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: PromptPart[] } = {},
+  options: {
+    directory?: string
+    agent?: string
+    model?: { providerID: string; modelID: string }
+    variant?: string
+    parts?: PromptPart[]
+  } = {},
 ) {
-  return gui.client.session.promptAsync({
+  return gui.client.session.promptAsync(
+    {
     sessionID,
     directory: options.directory || gui.directory || undefined,
     messageID: createClientMessageID(),
@@ -209,7 +302,9 @@ export async function sendPrompt(
     model: options.model,
     variant: options.variant,
     parts: options.parts ?? [{ type: "text", text }],
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 export async function runSessionCommand(
@@ -225,7 +320,8 @@ export async function runSessionCommand(
     parts?: PromptPart[]
   },
 ) {
-  return gui.client.session.command({
+  return gui.client.session.command(
+    {
     sessionID,
     command: input.command,
     arguments: input.arguments,
@@ -234,8 +330,10 @@ export async function runSessionCommand(
     agent: input.agent,
     model: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
     variant: input.variant,
-    parts: input.parts?.flatMap((part) => part.type === "file" ? [part] : []),
-  }, { headers: authHeaders(gui), throwOnError: true })
+      parts: input.parts?.flatMap((part) => (part.type === "file" ? [part] : [])),
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 export async function runShellCommand(
@@ -248,14 +346,17 @@ export async function runShellCommand(
     model?: { providerID: string; modelID: string }
   },
 ) {
-  return gui.client.session.shell({
+  return gui.client.session.shell(
+    {
     sessionID,
     command: input.command,
     directory: input.directory || gui.directory || undefined,
     messageID: createClientMessageID(),
     agent: input.agent,
     model: input.model,
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 function createClientMessageID() {
@@ -278,7 +379,10 @@ function randomBase62(length: number) {
 }
 
 export async function abortSession(gui: GuiClient, sessionID: string, directory?: string) {
-  return gui.client.session.abort({ sessionID, directory: directory || gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
+  return gui.client.session.abort(
+    { sessionID, directory: directory || gui.directory || undefined },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 export async function shareSession(gui: GuiClient, sessionID: string) {
@@ -289,7 +393,10 @@ export async function unshareSession(gui: GuiClient, sessionID: string) {
   return gui.client.session.unshare({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function summarizeSession(gui: GuiClient, input: { sessionID: string; providerID: string; modelID: string }) {
+export async function summarizeSession(
+  gui: GuiClient,
+  input: { sessionID: string; providerID: string; modelID: string },
+) {
   return gui.client.session.summarize(input, { headers: authHeaders(gui), throwOnError: true })
 }
 
@@ -312,27 +419,36 @@ export async function replyPermission(
   message?: string,
   directory?: string,
 ) {
-  return gui.client.permission.reply({
+  return gui.client.permission.reply(
+    {
     requestID,
     directory: directory || gui.directory || undefined,
     reply,
     message,
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 export async function replyQuestion(gui: GuiClient, requestID: string, answers: QuestionAnswer[], directory?: string) {
-  return gui.client.question.reply({
+  return gui.client.question.reply(
+    {
     requestID,
     directory: directory || gui.directory || undefined,
     answers,
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 export async function rejectQuestion(gui: GuiClient, requestID: string, directory?: string) {
-  return gui.client.question.reject({
+  return gui.client.question.reject(
+    {
     requestID,
     directory: directory || gui.directory || undefined,
-  }, { headers: authHeaders(gui), throwOnError: true })
+    },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
 }
 
 export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) => void) {
@@ -354,4 +470,3 @@ export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) =>
   })()
   return () => controller.abort()
 }
-
