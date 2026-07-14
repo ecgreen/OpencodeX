@@ -19,24 +19,74 @@ function branchEvent(branch: string, workspace?: string): GlobalEvent {
   }
 }
 
+function stateSnapshot(input: {
+  revision: string
+  sessions: Record<string, unknown>[]
+  views?: Record<string, unknown>[]
+  status?: Record<string, { type: "busy" }>
+  sessionUiState?: Record<string, unknown>
+}) {
+  return json({
+    scope: { projectID: "proj_test", directory },
+    epoch: "test-epoch",
+    cursor: `cursor-${input.revision}`,
+    digest: input.revision,
+    domains: {
+      catalog: { revision: input.revision, digest: input.revision },
+      operations: { revision: "operations", digest: "operations" },
+    },
+    payloads: {
+      catalog: {
+        projects: [],
+        sessions: input.sessions,
+        views: input.views ?? [],
+        sessionStatus: input.status ?? {},
+        permissions: [],
+        questions: [],
+        sessionUiState: input.sessionUiState ?? {},
+      },
+      operations: { jobs: [], swarms: [] },
+    },
+  })
+}
+
 describe("tui sync", () => {
-  test("refresh scopes sessions by default and lists project sessions when disabled", async () => {
+  test("filters the canonical project catalog by directory until disabled", async () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
     await Bun.write(`${tmp.path}/kv.json`, "{}")
-    const { app, kv, sync, session } = await mount()
+    const sessions = [
+      {
+        id: "ses_current",
+        title: "current",
+        time: { created: 0, updated: 0 },
+        version: "1.15.13",
+        directory,
+        projectID: "proj_test",
+      },
+      {
+        id: "ses_other",
+        title: "other",
+        time: { created: 0, updated: 0 },
+        version: "1.15.13",
+        directory: `${directory}/other`,
+        projectID: "proj_test",
+      },
+    ]
+    const { app, kv, sync } = await mount((url) => {
+      if (url.pathname === "/experimental/opencodex/state") return stateSnapshot({ revision: "catalog", sessions })
+      return undefined
+    })
 
     try {
       expect(kv.get("session_directory_filter_enabled", true)).toBe(true)
-      expect(session.at(-1)?.searchParams.get("scope")).toBeNull()
-      expect(session.at(-1)?.searchParams.get("path")).toBe("packages/opencode")
+      expect(sync.data.session.map((session) => session.id)).toEqual(["ses_current"])
 
       kv.set("session_directory_filter_enabled", false)
       await sync.session.refresh()
 
-      expect(session.at(-1)?.searchParams.get("scope")).toBe("project")
-      expect(session.at(-1)?.searchParams.get("path")).toBeNull()
+      expect(sync.data.session.map((session) => session.id)).toEqual(["ses_current", "ses_other"])
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous
@@ -61,29 +111,22 @@ describe("tui sync", () => {
     let statusPayload: Record<string, { type: "busy" }> = {}
     let reviewedAt = sessionPayload.time.updated
     const { app, sync } = await mount((url) => {
-      if (url.pathname === "/experimental/opencodex/session-sync")
-        return json({
-          changed: true,
+      if (url.pathname === "/experimental/opencodex/state")
+        return stateSnapshot({
           revision: statusPayload[sessionID] ? "busy" : `reviewed-${reviewedAt}`,
-          snapshot: {
-            projects: [],
-            sessions: [sessionPayload],
-            views: [],
-            sessionStatus: statusPayload,
-            permissions: [],
-            questions: [],
-            sessionUiState: {
-              [sessionID]: {
-                sessionID,
-                reviewedFiles: [],
-                reviewedAt,
-                displayStatus: statusPayload[sessionID]
-                  ? "in_progress"
-                  : sessionPayload.time.updated > reviewedAt
-                    ? "needs_review"
-                    : "idle",
-                updated: sessionPayload.time.updated > reviewedAt,
-              },
+          sessions: [sessionPayload],
+          status: statusPayload,
+          sessionUiState: {
+            [sessionID]: {
+              sessionID,
+              reviewedFiles: [],
+              reviewedAt,
+              displayStatus: statusPayload[sessionID]
+                ? "in_progress"
+                : sessionPayload.time.updated > reviewedAt
+                  ? "needs_review"
+                  : "idle",
+              updated: sessionPayload.time.updated > reviewedAt,
             },
           },
         })
@@ -128,25 +171,18 @@ describe("tui sync", () => {
     let views: Record<string, unknown>[] = []
     let revision = 0
     const { app, emit, sync } = await mount((url) => {
-      if (url.pathname !== "/experimental/opencodex/session-sync") return
-      return json({
-        changed: true,
+      if (url.pathname !== "/experimental/opencodex/state") return undefined
+      return stateSnapshot({
         revision: String(revision),
-        snapshot: {
-          projects: [],
-          sessions: [sessionPayload],
-          views,
-          sessionStatus: {},
-          permissions: [],
-          questions: [],
-          sessionUiState: {
-            [sessionID]: {
-              sessionID,
-              reviewedFiles: [],
-              reviewedAt,
-              displayStatus: sessionPayload.time.updated > reviewedAt ? "needs_review" : "idle",
-              updated: sessionPayload.time.updated > reviewedAt,
-            },
+        sessions: [sessionPayload],
+        views,
+        sessionUiState: {
+          [sessionID]: {
+            sessionID,
+            reviewedFiles: [],
+            reviewedAt,
+            displayStatus: sessionPayload.time.updated > reviewedAt ? "needs_review" : "idle",
+            updated: sessionPayload.time.updated > reviewedAt,
           },
         },
       })

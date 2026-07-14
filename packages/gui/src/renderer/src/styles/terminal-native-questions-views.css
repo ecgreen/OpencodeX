@@ -1,0 +1,458 @@
+
+.question-panel-header .eyebrow {
+  margin: 0;
+  color: color-mix(in srgb, var(--primary) 72%, var(--text));
+  letter-spacing: 0.16em;
+}
+
+.question-panel-header > span {
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border-subtle));
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: color-mix(in srgb, var(--primary) 78%, var(--text));
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  background: color-mix(in srgb, var(--primary) 10%, var(--element));
+}
+
+.question-panel .question-block {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.question-panel .question-block.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.question-panel .question-block h2,
+.question-panel .question-block p {
+  margin: 0;
+}
+
+.question-panel .question-block h2 {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.question-panel .question-block > p {
+  max-width: 78ch;
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  line-height: 1.4;
+}
+
+.question-panel .option-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.question-panel .option-list button {
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--element) 54%, transparent);
+  box-shadow: none;
+}
+
+.question-panel .question-option strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.question-panel .option-list span {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.question-panel .question-option strong > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border-active));
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.question-panel .option-list button:hover,
+.question-panel .option-list button.selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border-active));
+  background: color-mix(in srgb, var(--element) 72%, var(--primary) 14%);
+  transform: translateY(-1px);
+}
+
+.question-panel .question-option.selected strong > span,
+.question-panel .question-option:hover strong > span {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--border-active));
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.question-panel .custom-answer {
+  margin-top: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border-subtle));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg) 54%, var(--element));
+}
+
+.question-panel .custom-answer:focus {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border-active));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.question-panel .safety-actions {
+  align-self: stretch;
+  align-content: start;
+  gap: 8px;
+}
+
+.question-panel .safety-actions button {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 0 12px;
+  box-shadow: none;
+}
+
+.question-panel .safety-actions .danger {
+  border-color: color-mix(in srgb, var(--error) 34%, var(--border-subtle));
+  color: color-mix(in srgb, var(--error) 78%, var(--text));
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+
+.question-panel .safety-actions .primary {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border-active));
+  color: var(--bg);
+  background: color-mix(in srgb, var(--primary) 88%, #fff 8%);
+}
+
+.dialog-backdrop,
+.command-palette-backdrop,
+.workbench-open-file-backdrop {
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: none;
+}
+
+.dialog-card,
+.command-palette-modal,
+.model-picker-modal,
+.keyboard-help-modal,
+.workbench-open-file-modal {
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.command-palette-modal,
+.model-picker-modal {
+  width: min(820px, calc(100vw - 36px));
+  border-radius: 0;
+}
+
+.dialog-card > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 20px 15px;
+}
+
+.dialog-card > header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.dialog-card > header p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.dialog-card > header .ui-icon-button {
+  margin-top: -5px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.text-dialog-card {
+  gap: 0;
+  width: min(520px, calc(100vw - 36px));
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border-active));
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--element) 34%, transparent), transparent 42%),
+    var(--panel);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.52);
+}
+
+.session-edit-modal > header {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.session-edit-modal > input {
+  min-height: 44px;
+  padding-inline: 13px;
+}
+
+.text-dialog-card .dialog-actions {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--element) 32%, transparent);
+  padding: 14px 20px 18px;
+}
+
+.text-dialog-card .dialog-actions .ui-button {
+  min-height: 36px;
+  padding-inline: 15px;
+}
+
+.text-dialog-card .dialog-actions .ui-button[data-variant="primary"] {
+  min-width: 104px;
+}
+
+.command-palette-modal header,
+.model-picker-modal header,
+.keyboard-help-modal header,
+.workbench-open-file-modal > header {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.command-palette-modal > input,
+.model-picker-modal input,
+.keyboard-help-modal > input,
+.dialog-card input,
+.dialog-card textarea,
+.workbench-open-file-search {
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.text-dialog-card > input,
+.text-dialog-card > textarea {
+  margin: 18px 20px 0;
+  width: calc(100% - 40px);
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 86%, var(--element));
+  font-size: 14px;
+}
+
+.text-dialog-card > input:focus,
+.text-dialog-card > textarea:focus {
+  border-color: color-mix(in srgb, var(--primary) 68%, var(--border-active));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.command-palette-group {
+  border: 0;
+}
+
+.command-palette-group h3 {
+  color: var(--secondary);
+}
+
+.command-palette-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.command-palette-list small {
+  grid-column: 1;
+}
+
+.command-palette-list kbd {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.view-pane,
+.workbench-files,
+.workbench-sidebar,
+.workbench-editor,
+.workbench-assistant-panel,
+.workbench-browser-panel,
+.workbench-artifacts-panel,
+.workbench-git-panel,
+.workbench-editor > header,
+.workbench-editor-tabs,
+.workbench-diagnostics-bar,
+.workbench-open-file-modal {
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.view-pane {
+  border-color: var(--border);
+}
+
+.view-pane.focused {
+  border-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.workbench-sidebar,
+.diff-file-list {
+  border-right: 1px solid var(--border);
+}
+
+.workbench-editor > header,
+.workbench-editor-tabs,
+.diff-header,
+.diff-subbar,
+.diff-file-header {
+  background: var(--panel);
+}
+
+.workbench-diagnostics-bar,
+.workbench-diagnostic-row > button:first-child,
+.workbench-diagnostic-fix,
+.workbench-open-file-trigger,
+.view-card-actions button,
+.active-view-actions button,
+.diff-actions button,
+.diff-file-header button,
+.diff-subbar select,
+.diff-file-tree-toolbar button {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 1180px) {
+  .session-inspector {
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 860px) {
+  body {
+    min-width: 360px;
+  }
+
+  .stage {
+    padding: 8px;
+  }
+
+  .dashboard-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-action-card {
+    min-height: 52px;
+  }
+}
+
+/* Follow-up tuning: keep the GUI darker, denser, and less card-driven. */
+.dashboard-page > .opencodex-logo {
+  justify-self: center;
+  margin: clamp(12px, 3vh, 32px) 0 clamp(4px, 1.4vh, 16px);
+  font-size: clamp(8px, 1.28vw, 15px);
+  opacity: 0.96;
+}
+
+.rail nav button[aria-label^="Workbench:"],
+.rail nav button[aria-label^="Plugins:"] {
+  display: none;
+}
+
+.rail button:hover,
+.rail button:focus-visible,
+.session-link:hover,
+.session-link:focus-visible,
+.session-link.active {
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-section header,
+.project-heading {
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.project-heading:hover,
+.project-heading:focus-within {
+  border-color: var(--border-subtle);
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-section .section-toggle,
+.project-toggle,
+.project-title {
+  border: 0;
+  background: transparent;
+}
+
+.rail-section header > .section-new,
+.project-new {
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header > .section-new:hover,
+.rail-section header > .section-new:focus-visible,
+.project-new:hover,
+.project-new:focus-visible {
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+}
+
+.session-page {
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+}
+
+.session-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  align-self: stretch;
+  margin: 0;
+  min-height: 40px;
+  padding: 6px 8px 8px;
+  border: 0;
+  background: var(--bg);
+}

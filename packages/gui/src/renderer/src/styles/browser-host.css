@@ -1,0 +1,31 @@
+.browser-host-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--muted);
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--secondary) 10%, transparent), transparent 32%),
+    #050505;
+  text-align: center;
+}
+
+.browser-host-fallback svg {
+  width: 32px;
+  height: 32px;
+  color: var(--secondary);
+}
+
+.browser-host-fallback strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.browser-host-fallback span {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.55;
+}

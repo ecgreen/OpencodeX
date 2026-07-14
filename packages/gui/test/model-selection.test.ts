@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Provider, Session } from "@opencode-ai/sdk/v2/client"
 import {
   firstAvailableModel,
+  modelPickerProviders,
   selectedModelVariants,
   sessionModelDefaults,
 } from "../src/renderer/src/lib/model-selection"
@@ -52,6 +53,21 @@ describe("GUI model selection helpers", () => {
     expect(selectedModelVariants([provider("openai", "OpenAI", { "gpt-5.6-sol": sol })], "openai/gpt-5.6-sol")).toEqual(
       ["low", "medium", "high", "xhigh", "max"],
     )
+  })
+
+  test("limits inline model controls to connected providers while preserving saved selections", () => {
+    const providers = [
+      provider("catalog", "Catalog", { huge: model("huge", "Huge") }),
+      provider("anthropic", "Anthropic", { claude: model("claude", "Claude") }),
+      provider("opencode", "OpenCode", { free: model("free", "Free") }),
+      provider("saved", "Saved", { old: model("old", "Old") }),
+    ]
+
+    expect(modelPickerProviders(providers, ["anthropic"], ["saved"]).map((item) => item.id)).toEqual([
+      "opencode",
+      "anthropic",
+      "saved",
+    ])
   })
 })
 

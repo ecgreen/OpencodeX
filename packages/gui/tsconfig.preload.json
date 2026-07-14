@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/preload/**/*.ts"]
+  "include": ["src/preload/**/*.cts"]
 }

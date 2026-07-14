@@ -1,7 +1,26 @@
 import { describe, expect, test } from "bun:test"
-import { viewLayout } from "../src/renderer/src/components/views"
+import { viewDensity, viewLayout, viewLayoutDimensions } from "../src/renderer/src/components/views"
 
 describe("GUI view layouts", () => {
+  test("uses a compact presentation for multi-pane views", () => {
+    expect(viewDensity(1)).toBe("comfortable")
+    expect(viewDensity(2)).toBe("compact")
+    expect(viewDensity(8)).toBe("compact")
+  })
+
+  test("reserves usable rows and columns for every supported layout", () => {
+    expect(Array.from({ length: 8 }, (_, index) => viewLayoutDimensions(viewLayout(index + 1)))).toEqual([
+      { columns: 1, rows: 1 },
+      { columns: 2, rows: 1 },
+      { columns: 2, rows: 2 },
+      { columns: 2, rows: 2 },
+      { columns: 2, rows: 3 },
+      { columns: 3, rows: 2 },
+      { columns: 2, rows: 4 },
+      { columns: 4, rows: 2 },
+    ])
+  })
+
   test("matches the TUI layout tree for one through eight panes", () => {
     expect(Array.from({ length: 8 }, (_, index) => viewLayout(index + 1))).toEqual([
       0,

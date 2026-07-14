@@ -13,8 +13,16 @@ export function ViewsPage(props: {
   const itemIDs = createMemo(() => props.items.map((item) => viewItemID(item)))
   const itemsByID = createMemo(() => new Map(props.items.map((item) => [viewItemID(item), item])))
   const layout = createMemo(() => viewLayout(props.items.length))
+  const layoutSize = createMemo(() => viewLayoutDimensions(layout()))
   return (
-    <div class="page views-page">
+    <div
+      class="page views-page"
+      data-pane-density={viewDensity(props.items.length)}
+      style={{
+        "--view-layout-min-width": `${layoutSize().columns * 260 + (layoutSize().columns - 1) * 8}px`,
+        "--view-layout-min-height": `${layoutSize().rows * 220 + (layoutSize().rows - 1) * 8}px`,
+      }}
+    >
       <Show when={props.view} fallback={<Empty text="Create a view to work across multiple sessions." />}>
         <Show when={props.items.length > 0} fallback={<Empty text="This view has no available sessions." />}>
           {renderViewLayout({ node: layout(), itemIDs: itemIDs(), itemsByID, renderItem: props.renderItem })}
@@ -22,6 +30,25 @@ export function ViewsPage(props: {
       </Show>
     </div>
   )
+}
+
+export function viewDensity(count: number) {
+  return count > 1 ? "compact" : "comfortable"
+}
+
+export function viewLayoutDimensions(node: LayoutNode): { columns: number; rows: number } {
+  if (typeof node === "number") return { columns: 1, rows: 1 }
+  const children = node.children.map(viewLayoutDimensions)
+  if (node.direction === "row") {
+    return {
+      columns: children.reduce((total, child) => total + child.columns, 0),
+      rows: Math.max(...children.map((child) => child.rows)),
+    }
+  }
+  return {
+    columns: Math.max(...children.map((child) => child.columns)),
+    rows: children.reduce((total, child) => total + child.rows, 0),
+  }
 }
 
 export function viewLayout(count: number): LayoutNode {

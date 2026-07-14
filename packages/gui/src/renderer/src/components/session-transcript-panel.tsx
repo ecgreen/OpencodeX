@@ -337,6 +337,7 @@ function progressPartKey(part: MessageBundle["parts"][number]) {
   if (part.type === "file") return `${part.id}:file`
   if (part.type === "agent") return `${part.id}:agent`
   if (part.type === "patch") return `${part.id}:patch:${part.files.join(",")}`
+  return undefined
 }
 
 function toolStateProgressKey(state: Extract<MessageBundle["parts"][number], { type: "tool" }>["state"]) {
@@ -427,7 +428,7 @@ function SessionEmptyState(props: { visible: boolean; handoff: boolean }) {
       classList={{ visible: props.visible, handoff: props.handoff }}
       aria-hidden={!props.visible}
     >
-      <OpencodeXLogo />
+      <OpencodeXLogo active={props.visible} />
       <p>What should OpencodeX work on?</p>
     </div>
   )

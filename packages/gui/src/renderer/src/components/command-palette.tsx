@@ -100,10 +100,16 @@ export function CommandPaletteModal(props: { open: boolean; commands: PaletteCom
           props.close()
         }}
       >
-        <section class="command-palette-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <section
+          class="command-palette-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command palette"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
           <header>
             <div>
-              <h2>Commands</h2>
+              <h2 id="command-palette-title">Commands</h2>
               <p>Search actions, then press Enter.</p>
             </div>
             <IconButton icon="x" label="Close command palette" onClick={props.close} />

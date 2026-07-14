@@ -161,7 +161,7 @@ export type GuiSnapshot = {
   sessions: Session[]
   sessionStatus: Record<string, SessionStatus>
   sessionUiState: Record<string, OpencodeXSessionUiState>
-  sessionSyncRevision?: string
+  stateRevision?: string
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   providers: Provider[]
@@ -180,5 +180,10 @@ export type GuiSnapshot = {
 
 export type SessionCardSnapshot = Pick<
   GuiSnapshot,
-  "projects" | "sessions" | "sessionStatus" | "sessionUiState" | "sessionSyncRevision" | "permissions" | "questions" | "views"
+  "projects" | "sessions" | "sessionStatus" | "sessionUiState" | "stateRevision" | "permissions" | "questions" | "views"
+>
+
+export type GuiCapabilitiesSnapshot = Pick<
+  GuiSnapshot,
+  "providers" | "connectedProviderIDs" | "agents" | "commands" | "lsp" | "mcp" | "config" | "mcpResources" | "plugins"
 >

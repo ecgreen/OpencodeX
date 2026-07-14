@@ -1,0 +1,458 @@
+
+.swarm-editor-fields label,
+.swarm-role-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.swarm-editor-fields input,
+.swarm-editor-fields select,
+.swarm-role-fields input,
+.swarm-role-fields select,
+.swarm-role-fields textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--element);
+  font-size: 12px;
+}
+
+.swarm-editor-fields input,
+.swarm-editor-fields select,
+.swarm-role-fields input,
+.swarm-role-fields select {
+  height: 34px;
+  padding: 7px 9px;
+}
+
+.swarm-role-fields textarea {
+  min-height: 92px;
+  padding: 9px;
+  resize: vertical;
+}
+
+.swarm-editor-summary dl {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.swarm-editor-summary dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.swarm-editor-summary dl > div:first-child {
+  border-top: 0;
+}
+
+.swarm-editor-summary dt,
+.swarm-editor-summary dd {
+  margin: 0;
+}
+
+.swarm-editor-summary dd {
+  overflow: hidden;
+  color: var(--text);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.swarm-editor-team {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.swarm-editor-team > header {
+  min-height: 32px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.swarm-role-card {
+  gap: 12px;
+  padding: 12px;
+  border-color: color-mix(in srgb, var(--border) 78%, transparent);
+  border-left-color: var(--secondary);
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.swarm-role-card > header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.swarm-role-card > header > div {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.swarm-role-fields {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.swarm-role-instructions {
+  grid-column: 1 / -1;
+}
+
+.swarm-editor-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 0;
+  padding: 12px 0 0;
+  background: linear-gradient(180deg, transparent, var(--bg) 34%);
+}
+
+@media (max-width: 1100px) {
+  .swarm-editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .swarm-editor-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .swarm-editor-sidebar,
+  .swarm-role-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.transcript {
+  padding: 10px 12px;
+  border-color: transparent;
+  background: var(--bg);
+}
+
+.message {
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.message header {
+  margin: 0 0 5px;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.message.user {
+  display: grid;
+  gap: 0;
+  align-self: flex-end;
+  justify-self: end;
+  width: min(760px, 88%);
+  max-width: 92%;
+  margin-left: auto;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--element) 84%, white 5%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+}
+
+.message.user header {
+  order: 2;
+  margin: 7px 0 0;
+  padding-left: 0;
+  color: color-mix(in srgb, var(--text) 48%, var(--muted));
+  font-size: 10px;
+  text-align: right;
+}
+
+.message.user .part {
+  order: 1;
+}
+
+.message.user .part.text,
+.message.user [data-component="markdown"] {
+  color: var(--text);
+}
+
+.message.assistant {
+  padding-left: 24px;
+}
+
+.part.text {
+  margin: 6px 0 10px;
+}
+
+.message.assistant .part.text {
+  padding: 0;
+  background: transparent;
+}
+
+.session-main :is(
+  .transcript-shell a[href],
+  .session-side-context a[href],
+  [data-side-panel-file],
+  [data-side-panel-git-file],
+  [data-side-panel-open-file]
+) {
+  cursor: pointer;
+}
+
+.part.reasoning,
+.thinking-block,
+.part.badge,
+.part.file {
+  border-radius: 0;
+  background: transparent;
+}
+
+.part.tool,
+.tool-group,
+.part.tool.no-details {
+  margin: 10px 0 12px;
+  border: 0;
+  border-left: 3px solid var(--success);
+  border-radius: 0;
+  background: var(--panel);
+}
+
+.part.tool > summary,
+.part.tool .tool-summary,
+.tool-group > summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.tool-details,
+.tool-group-list,
+.tool-output,
+.tool-diff,
+.tool-raw,
+.permission-context,
+.question-block {
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.tool-output,
+.tool-diff,
+.permission-diff,
+.part.tool pre,
+.part.text [data-component="markdown"] pre {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--element);
+}
+
+.part.text [data-component="markdown"] code {
+  border-radius: 0;
+  background: var(--element);
+}
+
+.composer {
+  gap: 4px;
+}
+
+.composer-input {
+  border-color: var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.composer textarea {
+  min-height: 46px;
+  padding: 10px 12px;
+  background: transparent;
+}
+
+.composer-footer {
+  min-height: 34px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mode-chip,
+.model-menu,
+.variant-trigger,
+.composer-add-context {
+  border-radius: 0;
+  background: var(--element);
+}
+
+.mode-chip,
+.model-menu,
+.variant-trigger,
+.composer-add-context {
+  min-height: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mode-chip.build {
+  color: var(--secondary);
+}
+
+.mode-chip.plan {
+  color: var(--primary);
+}
+
+.mode-chip.goal {
+  color: #ff4fd8;
+}
+
+.model-menu::before,
+.variant-trigger::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.mode-chip:hover:not(:disabled),
+.mode-chip:focus-visible,
+.model-menu:hover:not(:disabled),
+.model-menu:focus-visible,
+.variant-trigger:hover:not(:disabled),
+.variant-trigger:focus-visible,
+.variant-trigger[aria-expanded="true"],
+.composer-add-context:hover:not(:disabled),
+.composer-add-context:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.composer-add-context {
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+
+.composer-add-context .icon {
+  stroke-width: 2.8;
+}
+
+.composer-add-menu {
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.composer-context-preview button {
+  border-radius: 0;
+  background: var(--element);
+}
+
+.composer-context-preview-image {
+  border-radius: 4px;
+}
+
+.send-button {
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 0;
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: none;
+}
+
+.send-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 88%, white 12%);
+  box-shadow: none;
+}
+
+.slash-command-menu,
+.variant-menu,
+.overflow-menu > div {
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.option-list button,
+.slash-command-menu button,
+.choice-list button,
+.command-palette-list button,
+.model-option-card,
+.workbench-open-file-results button,
+.project-detail-row {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.option-list button:hover,
+.option-list button.selected,
+.slash-command-menu button:hover,
+.slash-command-menu button.selected,
+.choice-list button:hover,
+.command-palette-list button:hover:not(:disabled),
+.command-palette-list button.selected:not(:disabled),
+.model-option-card:hover,
+.model-option-card.selected,
+.workbench-open-file-results button:hover,
+.workbench-open-file-results button:focus-visible,
+button.project-detail-row:hover,
+button.project-detail-row:focus-visible {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.question-panel {
+  align-items: start;
+  gap: 14px;
+  padding: 12px;
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border-subtle));
+  border-left: 3px solid var(--primary);
+  border-radius: 14px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, var(--panel)) 0%, color-mix(in srgb, var(--panel) 86%, transparent) 48%);
+  box-shadow: 0 14px 36px color-mix(in srgb, #000 18%, transparent);
+  backdrop-filter: none;
+}
+
+.question-panel-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.question-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}

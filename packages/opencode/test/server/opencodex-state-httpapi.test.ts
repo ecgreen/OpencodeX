@@ -81,6 +81,8 @@ describe("OpencodeX state HTTP API", () => {
         Object.values(record(path)).map((operation) => record(operation).operationId),
       )
       expect(operations).toContain("opencodex.state.snapshot")
+      expect(operations).toContain("opencodex.state.operations")
+      expect(operations).toContain("opencodex.state.capabilities")
       expect(operations).toContain("opencodex.state.session")
       expect(operations).toContain("opencodex.state.event")
       const schemas = record(record(doc).components).schemas
@@ -88,6 +90,8 @@ describe("OpencodeX state HTTP API", () => {
         "OpencodeXStateScope",
         "OpencodeXStateCursor",
         "OpencodeXStateSnapshot",
+        "OpencodeXOperationsSnapshot",
+        "OpencodeXCapabilitiesSnapshot",
         "OpencodeXSessionSnapshot",
         "OpencodeXStateEvent",
         "OpencodeXStateStreamFrame",
@@ -128,6 +132,23 @@ describe("OpencodeX state HTTP API", () => {
         reviewedFiles: ["src/app.tsx"],
       })
 
+      const capabilities = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state/capabilities").then((response) => response.json()),
+        ),
+      )
+      expect(capabilities.scope).toEqual(snapshot.scope)
+      expect(capabilities.revision).toBe(capabilities.digest)
+      expect(typeof capabilities.revision).toBe("string")
+      expect(Array.isArray(record(record(capabilities.payload).provider).all)).toBe(true)
+      expect(Array.isArray(record(capabilities.payload).agents)).toBe(true)
+      expect(Array.isArray(record(capabilities.payload).commands)).toBe(true)
+      expect(Array.isArray(record(capabilities.payload).lsp)).toBe(true)
+      expect(Array.isArray(record(capabilities.payload).formatter)).toBe(true)
+      expect(Array.isArray(record(capabilities.payload).plugins)).toBe(true)
+      expect(record(capabilities.payload).mcp).toEqual({})
+      expect(record(capabilities.payload).mcpResources).toEqual({})
+
       const session = record(
         yield* Effect.promise(() =>
           request(firstDirectory, `/experimental/opencodex/state/session/${sessionID}`).then((response) =>
@@ -167,6 +188,7 @@ describe("OpencodeX state HTTP API", () => {
       const live = record(yield* Effect.promise(() => events.next()))
       expect(live.type).toBe("event")
       expect(record(live.event).scope).toEqual(snapshot.scope)
+      expect(record(live.event).domain).toBe("catalog")
       expect(record(record(live.event).payload).aggregateID).toBe(sessionID)
       expect(record(record(live.event).payload).eventType).toBe("session.updated")
       const createdView = record(
@@ -181,6 +203,47 @@ describe("OpencodeX state HTTP API", () => {
       expect(viewLive.type).toBe("event")
       expect(record(record(viewLive.event).payload).aggregateID).toBe(createdView.id)
       expect(record(record(viewLive.event).payload).eventType).toBe("opencodex.view.created")
+      const beforeJob = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state").then((value) => value.json()),
+        ),
+      )
+
+      const createdJob = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/job", {
+            method: "POST",
+            body: JSON.stringify({ kind: "test.atomic", idempotencyKey: `atomic-${sessionID}` }),
+          }).then((value) => value.json()),
+        ),
+      )
+      const jobLive = record(yield* Effect.promise(() => events.next()))
+      expect(record(jobLive.event).domain).toBe("operations")
+      expect(record(record(jobLive.event).payload).aggregateID).toBe(createdJob.id)
+      expect(record(record(jobLive.event).payload).eventType).toBe("opencodex.job.created")
+      const afterJob = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state").then((value) => value.json()),
+        ),
+      )
+      const operationJobs = record(record(afterJob.payloads).operations).jobs
+      expect(Array.isArray(operationJobs) && operationJobs.some((job) => record(job).id === createdJob.id)).toBe(true)
+      expect(record(record(afterJob.domains).catalog).revision).toBe(record(record(beforeJob.domains).catalog).revision)
+      expect(record(record(afterJob.domains).operations).revision).not.toBe(
+        record(record(beforeJob.domains).operations).revision,
+      )
+      const operationSnapshot = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state/operations").then((value) => value.json()),
+        ),
+      )
+      expect(operationSnapshot.scope).toEqual(snapshot.scope)
+      expect(operationSnapshot.revision).toBe(operationSnapshot.digest)
+      expect(typeof operationSnapshot.cursor).toBe("string")
+      const operationSnapshotJobs = record(operationSnapshot.payload).jobs
+      expect(
+        Array.isArray(operationSnapshotJobs) && operationSnapshotJobs.some((job) => record(job).id === createdJob.id),
+      ).toBe(true)
       controller.abort()
 
       const second = yield* Effect.promise(() =>
@@ -205,7 +268,7 @@ describe("OpencodeX state HTTP API", () => {
       const replayResponse = yield* Effect.promise(() =>
         request(
           firstDirectory,
-          `/experimental/opencodex/state/event?after=${encodeURIComponent(String(record(viewLive.event).cursor))}`,
+          `/experimental/opencodex/state/event?after=${encodeURIComponent(String(record(jobLive.event).cursor))}`,
           { signal: replayController.signal },
         ),
       )
@@ -216,6 +279,7 @@ describe("OpencodeX state HTTP API", () => {
       expect(replayed.type).toBe("event")
       expect(record(record(replayed.event).scope).directory).toBe(firstDirectory)
       expect(record(record(replayed.event).payload).aggregateID).toBe(sessionID)
+      expect(Number(record(replayed.event).aggregateSequence)).toBe(Number(record(live.event).aggregateSequence) + 1)
       replayController.abort()
 
       const resetController = new AbortController()

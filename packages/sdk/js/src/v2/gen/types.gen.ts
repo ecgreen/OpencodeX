@@ -115,7 +115,7 @@ export type OpencodeXStateEvent = {
   epoch: string
   cursor: OpencodeXStateCursor
   aggregateSequence: number
-  domain: "catalog" | "operations" | "session"
+  domain: "capabilities" | "catalog" | "operations" | "session"
   operation: "invalidate"
   payload: {
     aggregateID: string
@@ -2534,6 +2534,7 @@ export type OpencodeXProjectReorderInput = {
 export type OpencodeXSessionCreateInput = {
   projectID: string
   directory: string
+  sessionID?: string
   title?: string
   agent?: string
   model?: {
@@ -2682,7 +2683,7 @@ export type OpencodeXSwarmRole = {
   providerID?: string
   modelID?: string
   modelProfile?: string
-  status: "planned" | "queued" | "running" | "blocked" | "failed" | "completed" | "cancelled"
+  status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
   instructions: string
   sortOrder: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   sessionID?: string
@@ -2699,7 +2700,7 @@ export type OpencodeXSwarmAgentRun = {
   runID: string
   swarmID: string
   roleID?: string
-  status: "planned" | "queued" | "running" | "blocked" | "failed" | "completed" | "cancelled"
+  status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
   prompt: string
   sessionID?: string
   jobID?: string
@@ -2723,9 +2724,11 @@ export type OpencodeXSwarmRun = {
     | "planned"
     | "queued"
     | "running"
+    | "cancelling"
     | "approval_needed"
     | "blocked"
     | "failed"
+    | "partially_failed"
     | "completed"
     | "cancelled"
   source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
@@ -2766,9 +2769,11 @@ export type OpencodeXSwarm = {
     | "planned"
     | "queued"
     | "running"
+    | "cancelling"
     | "approval_needed"
     | "blocked"
     | "failed"
+    | "partially_failed"
     | "completed"
     | "cancelled"
   source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
@@ -2810,6 +2815,62 @@ export type OpencodeXStateSnapshot = {
   }
 }
 
+export type OpencodeXOperationsSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  revision: string
+  digest: string
+  payload: {
+    jobs: Array<OpencodeXJob>
+    swarms: Array<OpencodeXSwarm>
+  }
+}
+
+export type OpencodeXPlugin = {
+  id: string
+  pluginID: string
+  kind: "server" | "tui"
+  spec: string
+  source: string
+  scope: "global" | "local" | "internal"
+  enabled: boolean
+  active: boolean
+  canToggle: boolean
+  target?: string
+  note?: string
+}
+
+export type OpencodeXCapabilitiesPayload = {
+  provider: {
+    all: Array<Provider>
+    default: {
+      [key: string]: string
+    }
+    connected: Array<string>
+  }
+  config: Config
+  agents: Array<Agent>
+  commands: Array<Command>
+  lsp: Array<LspStatus>
+  formatter: Array<FormatterStatus>
+  mcp: {
+    [key: string]: McpStatus
+  }
+  mcpResources: {
+    [key: string]: McpResource
+  }
+  plugins: Array<OpencodeXPlugin>
+}
+
+export type OpencodeXCapabilitiesSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  revision: string
+  digest: string
+  payload: OpencodeXCapabilitiesPayload
+}
+
 export type OpencodeXSessionSnapshot = {
   scope: OpencodeXStateScope
   epoch: string
@@ -2841,20 +2902,6 @@ export type OpencodeXSessionSnapshot = {
 export type OpencodeXSessionMoveInput = {
   projectID: string
   sessionID: string
-}
-
-export type OpencodeXPlugin = {
-  id: string
-  pluginID: string
-  kind: "server" | "tui"
-  spec: string
-  source: string
-  scope: "global" | "local" | "internal"
-  enabled: boolean
-  active: boolean
-  canToggle: boolean
-  target?: string
-  note?: string
 }
 
 export type OpencodeXPluginInstallInput = {
@@ -7230,6 +7277,64 @@ export type OpencodexStateSnapshotResponses = {
 
 export type OpencodexStateSnapshotResponse = OpencodexStateSnapshotResponses[keyof OpencodexStateSnapshotResponses]
 
+export type OpencodexStateOperationsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/state/operations"
+}
+
+export type OpencodexStateOperationsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateOperationsError = OpencodexStateOperationsErrors[keyof OpencodexStateOperationsErrors]
+
+export type OpencodexStateOperationsResponses = {
+  /**
+   * Atomic OpencodeX operations snapshot
+   */
+  200: OpencodeXOperationsSnapshot
+}
+
+export type OpencodexStateOperationsResponse =
+  OpencodexStateOperationsResponses[keyof OpencodexStateOperationsResponses]
+
+export type OpencodexStateCapabilitiesData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/state/capabilities"
+}
+
+export type OpencodexStateCapabilitiesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateCapabilitiesError = OpencodexStateCapabilitiesErrors[keyof OpencodexStateCapabilitiesErrors]
+
+export type OpencodexStateCapabilitiesResponses = {
+  /**
+   * Atomic OpencodeX capabilities snapshot
+   */
+  200: OpencodeXCapabilitiesSnapshot
+}
+
+export type OpencodexStateCapabilitiesResponse =
+  OpencodexStateCapabilitiesResponses[keyof OpencodexStateCapabilitiesResponses]
+
 export type OpencodexStateSessionData = {
   body?: never
   path: {
@@ -7525,6 +7630,41 @@ export type OpencodexPluginToggleResponses = {
 }
 
 export type OpencodexPluginToggleResponse = OpencodexPluginToggleResponses[keyof OpencodexPluginToggleResponses]
+
+export type OpencodexWorkbenchFileReadData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/experimental/opencodex/workbench/file/read"
+}
+
+export type OpencodexWorkbenchFileReadErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileReadError = OpencodexWorkbenchFileReadErrors[keyof OpencodexWorkbenchFileReadErrors]
+
+export type OpencodexWorkbenchFileReadResponses = {
+  /**
+   * Read exact text from the GUI workbench
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchFileReadResponse =
+  OpencodexWorkbenchFileReadResponses[keyof OpencodexWorkbenchFileReadResponses]
 
 export type OpencodexWorkbenchFileWriteData = {
   body?: {
@@ -10138,6 +10278,7 @@ export type SessionListResponse = SessionListResponses[keyof SessionListResponse
 
 export type SessionCreateData = {
   body?: {
+    id?: string
     parentID?: string
     title?: string
     agent?: string

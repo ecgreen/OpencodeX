@@ -1,21 +1,16 @@
 import type { GlobalEvent, Part, QuestionAnswer, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 import {
-  loadClientSessionSync,
   selectClientSessionMessages,
   updateClientSessionState,
   type ClientStateSyncController,
   type ClientStateSyncState,
   type ClientSessionStateUpdate,
-  type ClientSessionSyncResult,
 } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { messageCursorBefore } from "./message-window"
 import { displayMessageText } from "./message-text"
 import { authHeaders } from "./store-auth"
-import { isRenderableSession, sessionListQuery, sessionSyncSnapshot } from "./store-session-sync"
-import { listPlugins as loadGuiPlugins } from "./store-workbench"
 export { authHeaders } from "./store-auth"
-export { isRenderableSession } from "./store-session-sync"
 export * from "./store-opencodex-actions"
 export * from "./store-provider-actions"
 import type {
@@ -87,83 +82,6 @@ export {
 const ID_RANDOM_BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 let lastClientMessageIDTimestamp = 0
 let clientMessageIDCounter = 0
-
-export async function loadSessionCards(gui: GuiClient, since?: string): Promise<ClientSessionSyncResult> {
-  return loadClientSessionSync({
-    client: gui.client,
-    directory: gui.directory || undefined,
-    sessionQuery: await sessionListQuery(gui),
-    since,
-    filterSession: isRenderableSession,
-  })
-}
-
-export async function loadSnapshot(gui: GuiClient): Promise<GuiSnapshot> {
-  const directory = gui.directory || undefined
-  const [
-    cards,
-    providerList,
-    configProviders,
-    agents,
-    commands,
-    lsp,
-    mcp,
-    config,
-    mcpResources,
-    plugins,
-    projects,
-    swarms,
-    jobs,
-  ] = await Promise.all([
-    loadSessionCards(gui),
-    gui.client.provider
-      .list({ directory }, { headers: authHeaders(gui) })
-      .then((x) => x.data)
-      .catch(() => undefined),
-    gui.client.config.providers({ directory }).then((x) => x.data?.providers ?? []),
-    gui.client.app.agents({ directory }).then((x) => x.data ?? []),
-    Promise.resolve(gui.client.command?.list?.({ directory }))
-      .then((x) => x?.data ?? [])
-      .catch(() => []),
-    Promise.resolve(gui.client.lsp?.status?.({ directory }))
-      .then((x) => x?.data ?? [])
-      .catch(() => []),
-    Promise.resolve(gui.client.mcp?.status?.({ directory }))
-      .then((x) => x?.data ?? {})
-      .catch(() => ({})),
-    Promise.resolve(gui.client.config.get?.({ directory }))
-      .then((x) => x?.data)
-      .catch(() => undefined),
-    Promise.resolve(gui.client.experimental.resource?.list?.({ directory }))
-      .then((x) => x?.data ?? {})
-      .catch(() => ({})),
-    loadGuiPlugins(gui).catch(() => []),
-    gui.client.opencodex.project
-      .list({ headers: authHeaders(gui) })
-      .then((x) => x.data ?? [])
-      .catch(() => undefined),
-    gui.client.opencodex.swarm.list().then((x) => x.data ?? []),
-    gui.client.opencodex.job.list().then((x) => x.data ?? []),
-  ])
-  const cardSnapshot = sessionSyncSnapshot(cards)
-
-  return {
-    ...cardSnapshot,
-    projects: projects ?? cardSnapshot.projects,
-    sessionSyncRevision: cards.revision,
-    providers: providerList?.all ?? configProviders,
-    connectedProviderIDs: providerList?.connected ?? [],
-    agents,
-    commands,
-    lsp,
-    mcp,
-    config,
-    mcpResources,
-    plugins,
-    swarms,
-    jobs,
-  }
-}
 
 export async function updateSessionUiState(gui: GuiClient, sessionID: string, input: ClientSessionStateUpdate) {
   return updateClientSessionState(gui.client, sessionID, input)

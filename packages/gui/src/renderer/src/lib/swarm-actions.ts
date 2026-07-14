@@ -1,5 +1,15 @@
 import type { Agent, OpencodeXSwarm, OpencodeXSwarmRoleInput, OpencodeXSwarmRun, Session } from "@opencode-ai/sdk/v2/client"
+import {
+  clientSwarmDisplayStatus,
+  clientSwarmRunSessionID,
+  clientSwarmRunUpdated,
+  clientSwarmRuns,
+  currentClientSwarmRun,
+  isActiveSwarmStatus,
+} from "@opencode-ai/sdk/v2/swarm-presentation"
 import type { GuiSnapshot } from "./store"
+
+export { isActiveSwarmStatus } from "@opencode-ai/sdk/v2/swarm-presentation"
 
 export type SwarmExecutionMode = "build" | "plan"
 
@@ -8,23 +18,19 @@ export function opencodeXSwarmExecutionMode(agentName?: string): SwarmExecutionM
 }
 
 export function swarmRunUpdated(run: Pick<OpencodeXSwarmRun, "timeUpdated" | "completedAt" | "startedAt">) {
-  return numericTime(run.timeUpdated) || numericTime(run.completedAt) || numericTime(run.startedAt)
+  return clientSwarmRunUpdated(run)
 }
 
 export function swarmRuns(swarm: Pick<OpencodeXSwarm, "runs">) {
-  return swarm.runs.toSorted((a, b) => swarmRunUpdated(b) - swarmRunUpdated(a))
+  return clientSwarmRuns(swarm)
 }
 
 export function currentSwarmRun(swarm: OpencodeXSwarm) {
-  return swarmRuns(swarm)[0]
+  return currentClientSwarmRun(swarm)
 }
 
 export function swarmRunSessionID(run: OpencodeXSwarmRun) {
-  return run.resultSessionID ?? run.orchestratorSessionID ?? run.agents.find((agent) => agent.sessionID)?.sessionID
-}
-
-export function isActiveSwarmStatus(status: string) {
-  return ["planned", "queued", "running", "approval_needed", "blocked", "input_needed", "needs_review", "in_progress"].includes(status)
+  return clientSwarmRunSessionID(run)
 }
 
 export function swarmDisplayStatus(swarm: OpencodeXSwarm, snapshot?: GuiSnapshot) {
@@ -32,7 +38,7 @@ export function swarmDisplayStatus(swarm: OpencodeXSwarm, snapshot?: GuiSnapshot
   const sessionID = run ? swarmRunSessionID(run) : undefined
   const sessionStatus = sessionID ? snapshot?.sessionStatus[sessionID]?.type : undefined
   if (sessionStatus && sessionStatus !== "idle") return sessionStatus
-  return run?.status ?? swarm.status
+  return clientSwarmDisplayStatus(swarm)
 }
 
 export function swarmDisplayPrompt(swarm: OpencodeXSwarm) {
@@ -150,6 +156,10 @@ export function defaultSwarmRoles(input: { agents: Agent[]; providerID?: string;
 export function nextSwarmRolePreset(roles: readonly Pick<OpencodeXSwarmRoleInput, "skill" | "name">[]) {
   const used = new Set(roles.map((role) => role.skill ?? role.name.trim().toLowerCase().replace(/\s+/g, "-")))
   return SWARM_ROLE_PRESETS.find((preset) => !used.has(preset.skill))
+}
+
+export function swarmProviderSelectionKey(roles: readonly Pick<OpencodeXSwarmRoleInput, "providerID">[]) {
+  return [...new Set(roles.flatMap((role) => role.providerID ? [role.providerID] : []))].toSorted().join("\0")
 }
 
 export function swarmRolePresetBySkill(skill: string | undefined) {

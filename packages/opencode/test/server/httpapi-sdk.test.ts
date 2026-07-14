@@ -19,7 +19,7 @@ import { sessionStatusSnapshot } from "../../src/server/routes/instance/httpapi/
 import type { Config } from "@/config/config"
 import { Session as SessionNs } from "@/session/session"
 import { errorMessage } from "../../src/util/error"
-import { TestLLMServer } from "../lib/llm-server"
+import { TestLLMServer, httpError } from "../lib/llm-server"
 import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -116,6 +116,7 @@ function captureThrown(request: () => Promise<unknown>) {
   return call(async () => {
     try {
       await request()
+      return undefined
     } catch (error) {
       return error
     }
@@ -165,6 +166,56 @@ function statuses(input: Record<string, Captured>) {
   return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, value.status]))
 }
 
+function waitForSwarm(sdk: Sdk, swarmID: string) {
+  return Effect.gen(function* () {
+    let current: Captured | undefined
+    for (const _ of Array.from({ length: 400 })) {
+      current = yield* capture(() => sdk.opencodex.swarm.get({ swarmID }))
+      if (["completed", "partially_failed", "failed", "cancelled"].includes(String(record(current.data).status))) {
+        return current
+      }
+      yield* Effect.sleep(25)
+    }
+    return yield* Effect.die(`Timed out waiting for swarm ${swarmID}; last status ${record(current?.data).status}`)
+  })
+}
+
+function createDurableSwarm(input: { sdk: Sdk; directory: string; title: string; workers?: string[] }) {
+  return Effect.gen(function* () {
+    const project = yield* capture(() =>
+      input.sdk.opencodex.project.create({
+        opencodeXProjectCreateInput: { name: input.title, directory: input.directory, folders: [input.directory] },
+      }),
+    )
+    const swarm = yield* capture(() =>
+      input.sdk.opencodex.swarm.create({
+        opencodeXSwarmCreateInput: {
+          projectID: String(record(project.data).id),
+          title: input.title,
+          source: "manual",
+          roles: [
+            {
+              name: "Orchestrator",
+              skill: "orchestrator",
+              providerID: "test",
+              modelID: "test-model",
+              instructions: "Coordinate the worker.",
+            },
+            ...(input.workers ?? ["Worker"]).map((name) => ({
+              name,
+              skill: "engineer",
+              providerID: "test",
+              modelID: "test-model",
+              instructions: "Complete the assigned work.",
+            })),
+          ],
+        },
+      }),
+    )
+    return String(record(swarm.data).id)
+  })
+}
+
 function firstPartText(value: unknown) {
   return record(array(record(value).parts)[0]).text
 }
@@ -174,13 +225,6 @@ function sessionTitles(value: unknown) {
     .map((item) => record(item).title)
     .filter((title): title is string => typeof title === "string")
     .sort()
-}
-
-function resetState() {
-  return Effect.promise(async () => {
-    await disposeAllInstances()
-    await resetDatabase()
-  })
 }
 
 function httpapi<A, E>(name: string, effect: Effect.Effect<A, E, TestScope>) {
@@ -325,13 +369,15 @@ afterEach(async () => {
 })
 
 describe("HttpApi SDK", () => {
-  test("session sync ignores persisted-only running status", () => {
+  test("session sync projects runtime status without restoring historical activity", () => {
     const sessionID = SessionID.make("ses_stale_busy")
-    const persisted = new Map<SessionID, SessionStatus.Info>([[sessionID, { type: "busy" }]])
 
-    expect(sessionStatusSnapshot(persisted, new Map())).toEqual({})
-    expect(sessionStatusSnapshot(persisted, new Map([[sessionID, { type: "busy" }]]))).toEqual({
+    expect(sessionStatusSnapshot(new Map())).toEqual({})
+    expect(sessionStatusSnapshot(new Map([[sessionID, { type: "busy" }]]))).toEqual({
       [sessionID]: { type: "busy" },
+    })
+    expect(sessionStatusSnapshot(new Map([[sessionID, { type: "retry", attempt: 1, message: "retrying", next: 1 }]]))).toEqual({
+      [sessionID]: { type: "retry", attempt: 1, message: "retrying", next: 1 },
     })
   })
 
@@ -867,6 +913,162 @@ describe("HttpApi SDK", () => {
           persistedText: JSON.stringify(messages.data).includes("fake world"),
           userText: JSON.stringify(messages.data).includes("hello llm"),
         }
+      }),
+    ),
+  )
+
+  serverPathParity("executes every swarm phase through durable jobs", (serverPath) =>
+    withFakeLlm(serverPath, ({ sdk, llm, directory }) =>
+      Effect.gen(function* () {
+        yield* llm.text("orchestrator complete")
+        yield* llm.text("worker complete")
+        yield* llm.text("synthesis complete")
+        const swarmID = yield* createDurableSwarm({ sdk, directory, title: "Durable swarm" })
+        const assigned = yield* capture(() =>
+          sdk.opencodex.swarm.task.assign({
+            swarmID,
+            opencodeXSwarmAssignTaskInput: { prompt: "Exercise the durable runtime." },
+          }),
+        )
+        expect(assigned.status).toBe(200)
+
+        const completed = yield* waitForSwarm(sdk, swarmID)
+        const jobResponse = yield* capture(() => sdk.opencodex.job.list())
+        const jobs = array(jobResponse.data).filter((job) => record(job).swarmID === swarmID)
+
+        expect(record(completed.data).status).toBe("completed")
+        expect(jobs.map((job) => String(record(job).kind)).sort((left, right) => left.localeCompare(right))).toEqual([
+          "swarm.orchestrator",
+          "swarm.synthesis",
+          "swarm.worker",
+        ])
+        expect(jobs.every((job) => record(job).status === "succeeded")).toBe(true)
+        expect(
+          jobs.every((job) => {
+            const metadata = record(record(job).metadata)
+            return typeof metadata.sessionID === "string" && typeof metadata.messageID === "string"
+          }),
+        ).toBe(true)
+        expect((yield* llm.inputs).length).toBe(3)
+      }),
+    ),
+  )
+
+  for (const [phase, callCount] of [
+    ["orchestrator", 1],
+    ["worker", 2],
+    ["synthesis", 3],
+  ] as const) {
+    serverPathParity(`resumes ${phase} without duplicating its prompt after reload`, (serverPath) =>
+      withFakeLlm(serverPath, ({ sdk, llm, directory }) =>
+        Effect.gen(function* () {
+          yield* (phase === "orchestrator" ? llm.hang : llm.text("orchestrator complete"))
+          if (phase === "orchestrator") yield* llm.text("orchestrator recovered")
+          yield* (phase === "worker" ? llm.hang : llm.text("worker complete"))
+          if (phase === "worker") yield* llm.text("worker recovered")
+          yield* (phase === "synthesis" ? llm.hang : llm.text("synthesis complete"))
+          if (phase === "synthesis") yield* llm.text("synthesis recovered")
+          const swarmID = yield* createDurableSwarm({
+            sdk,
+            directory,
+            title: `Restart-safe ${phase} swarm`,
+          })
+          const assigned = yield* capture(() =>
+            sdk.opencodex.swarm.task.assign({
+              swarmID,
+              opencodeXSwarmAssignTaskInput: { prompt: `Survive a reload during ${phase}.` },
+            }),
+          )
+          expect(assigned.status).toBe(200)
+          yield* llm.wait(callCount)
+          const store = yield* InstanceStore.Service
+          yield* store.reload({ directory })
+
+          const completed = yield* waitForSwarm(sdk, swarmID)
+          const jobResponse = yield* capture(() => sdk.opencodex.job.list())
+          const jobs = array(jobResponse.data).filter((job) => record(job).swarmID === swarmID)
+          const restarted = jobs.find((job) => record(job).kind === `swarm.${phase}`)
+          const messages = yield* capture(() =>
+            sdk.session.messages({ sessionID: String(record(restarted).sessionID) }),
+          )
+          const promptMessages = array(messages.data).filter(
+            (message) => record(record(message).info).role === "user",
+          )
+
+          expect(record(completed.data).status).toBe("completed")
+          expect(jobs.filter((job) => record(job).kind === "swarm.synthesis")).toHaveLength(1)
+          expect(record(restarted).attempt).toBe(2)
+          expect(promptMessages).toHaveLength(1)
+          expect((yield* llm.inputs).length).toBe(4)
+        }),
+      ),
+    )
+  }
+
+  serverPathParity("synthesizes successful worker output after a partial failure", (serverPath) =>
+    withFakeLlm(serverPath, ({ sdk, llm, directory }) =>
+      Effect.gen(function* () {
+        yield* llm.text("orchestrator complete")
+        yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("Worker A"), "worker A complete")
+        yield* llm.pushMatch(
+          (hit) => JSON.stringify(hit.body).includes("Worker B"),
+          httpError(400, { error: { message: "worker B failed" } }),
+          httpError(400, { error: { message: "worker B failed again" } }),
+        )
+        yield* llm.textMatch(
+          (hit) => JSON.stringify(hit.body).includes("synthesis agent"),
+          "partial synthesis complete",
+        )
+        const swarmID = yield* createDurableSwarm({
+          sdk,
+          directory,
+          title: "Partial swarm",
+          workers: ["Worker A", "Worker B"],
+        })
+        yield* capture(() =>
+          sdk.opencodex.swarm.task.assign({
+            swarmID,
+            opencodeXSwarmAssignTaskInput: { prompt: "Synthesize the successful worker." },
+          }),
+        )
+
+        const completed = yield* waitForSwarm(sdk, swarmID)
+        const jobResponse = yield* capture(() => sdk.opencodex.job.list())
+        const jobs = array(jobResponse.data).filter((job) => record(job).swarmID === swarmID)
+        const workers = jobs.filter((job) => record(job).kind === "swarm.worker")
+
+        expect(record(completed.data).status).toBe("partially_failed")
+        expect(workers.map((job) => record(job).status).sort()).toEqual(["failed", "succeeded"])
+        expect(jobs.filter((job) => record(job).kind === "swarm.synthesis")).toHaveLength(1)
+        expect((yield* llm.inputs).length).toBe(5)
+      }),
+    ),
+  )
+
+  serverPathParity("acknowledges active swarm cancellation before committing terminal state", (serverPath) =>
+    withFakeLlm(serverPath, ({ sdk, llm, directory }) =>
+      Effect.gen(function* () {
+        yield* llm.hang
+        const swarmID = yield* createDurableSwarm({ sdk, directory, title: "Cancellable swarm" })
+        yield* capture(() =>
+          sdk.opencodex.swarm.task.assign({
+            swarmID,
+            opencodeXSwarmAssignTaskInput: { prompt: "Wait until cancelled." },
+          }),
+        )
+        yield* llm.wait(1)
+        const requested = yield* capture(() => sdk.opencodex.swarm.cancel({ swarmID }))
+        const cancelled = yield* waitForSwarm(sdk, swarmID)
+        const jobResponse = yield* capture(() => sdk.opencodex.job.list())
+        const jobs = array(jobResponse.data).filter((job) => record(job).swarmID === swarmID)
+        const orchestrator = jobs.find((job) => record(job).kind === "swarm.orchestrator")
+
+        expect(requested.status).toBe(200)
+        expect(["cancelling", "cancelled"]).toContain(record(requested.data).status)
+        expect(record(cancelled.data).status).toBe("cancelled")
+        expect(jobs.every((job) => record(job).status === "cancelled")).toBe(true)
+        expect(record(orchestrator).cancelRequestedAt).toBeNumber()
+        expect(jobs.some((job) => ["claimed", "running"].includes(String(record(job).status)))).toBe(false)
       }),
     ),
   )

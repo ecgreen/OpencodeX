@@ -226,6 +226,10 @@ export function DialogProvider() {
   return <DialogSelect title="Connect a provider" options={options()} />
 }
 
+export function DialogProviderList() {
+  return <DialogProvider />
+}
+
 interface AutoMethodProps {
   index: number
   providerID: string

@@ -9,20 +9,26 @@ export function WorkbenchDiagnosticsBar(props: {
   command: string
   diagnostics: WorkbenchDiagnostic[]
   total: number
+  onRun: () => void
   onOpen: (path: string) => void
   onFix: (diagnostic: WorkbenchDiagnostic) => void
 }) {
   const visible = createMemo(() => props.diagnostics.slice(0, 4))
-  const shouldShow = createMemo(() => props.loading || props.total > 0 || (props.message && props.message !== "Project checks passed."))
   return (
-    <Show when={shouldShow()}>
-      <div class="workbench-diagnostics-bar" classList={{ loading: props.loading, clean: !props.loading && props.total === 0 }}>
+    <div class="workbench-diagnostics-bar" classList={{ loading: props.loading, clean: !props.loading && props.total === 0 }}>
         <div class="workbench-diagnostics-summary">
           <Icon name={props.total > 0 ? "warning" : "check"} />
-          <span>{props.loading ? "Running project checks..." : props.total > 0 ? `${props.total} project issue${props.total === 1 ? "" : "s"}` : props.message}</span>
+          <span>{props.loading ? "Running project checks..." : props.total > 0 ? `${props.total} project issue${props.total === 1 ? "" : "s"}` : props.message || "Project checks run on demand."}</span>
           <Show when={props.command}>
             <small>{props.command}</small>
           </Show>
+          <IconButton
+            class="workbench-diagnostics-run"
+            icon="activity"
+            label={props.loading ? "Project checks running" : "Run project checks"}
+            disabled={props.loading}
+            onClick={props.onRun}
+          />
         </div>
         <For each={visible()}>
           {(item) => (
@@ -41,7 +47,6 @@ export function WorkbenchDiagnosticsBar(props: {
             </div>
           )}
         </For>
-      </div>
-    </Show>
+    </div>
   )
 }

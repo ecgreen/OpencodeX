@@ -17,8 +17,8 @@ import type {
   ProviderListResponse,
   ProviderAuthMethod,
   VcsInfo,
-  ClientSessionSyncResult,
   ClientStateSyncController,
+  ClientStateSyncLifecycle,
   ClientStateSyncState,
   OpencodeXProject,
   OpencodeXJob,
@@ -28,10 +28,6 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import {
   createClientStateSync,
-  loadClientSessionSync,
-  selectClientSessionMessages,
-  selectClientOperationsSnapshot,
-  selectClientStateSyncSnapshot,
 } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
@@ -41,19 +37,20 @@ import { Binary } from "@opencode-ai/core/util/binary"
 import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
-import { useArgs } from "./args"
 import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import * as Log from "@opencode-ai/core/util/log"
 import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
+import { projectTuiClientState } from "./sync-state"
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
   init: () => {
     const [store, setStore] = createStore<{
       status: "loading" | "partial" | "complete"
+      state_sync: ClientStateSyncLifecycle
       provider: Provider[]
       provider_default: Record<string, string>
       provider_next: ProviderListResponse
@@ -111,6 +108,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       provider_auth: {},
       config: {},
       status: "loading",
+      state_sync: { status: "idle", data: "empty", attempt: 0 },
       agent: [],
       permission: {},
       question: {},
@@ -142,9 +140,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const kv = useKV()
 
     const fullSyncedSessions = new Set<string>()
-    const appliedSessionDigests = new Map<string, string>()
-    let sessionRefreshTimer: ReturnType<typeof setTimeout> | undefined
+    const appliedSessionVersions = new Map<string, string>()
     let stateSync: ClientStateSyncController | undefined
+    let stateSyncStart: Promise<void> | undefined
     let unsubscribeStateSync: (() => void) | undefined
     let stateSyncScope = ""
 
@@ -158,51 +156,41 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       }
     }
 
-    function listSessionSync() {
-      return loadClientSessionSync({
-        client: sdk.client,
-        directory: project.instance.directory() || sdk.directory,
-        sessionQuery: sessionListQuery(),
-        since: store.session_sync_revision,
-      })
-    }
-
-    function applySessionSync(result: ClientSessionSyncResult) {
-      if (!result.changed) return
-      const snapshot = result.snapshot
-      batch(() => {
-        setStore("session_sync_revision", result.revision)
-        setStore("opencodex_project", reconcile(snapshot.projects))
-        setStore("opencodex_view", reconcile(snapshot.views))
-        setStore("session", reconcile(snapshot.sessions.toSorted((a, b) => a.id.localeCompare(b.id))))
-        setStore("session_status", reconcile(snapshot.sessionStatus))
-        setStore("session_ui_state", reconcile(snapshot.sessionUiState))
-        setStore("permission", reconcile(groupRequestsBySession(snapshot.permissions)))
-        setStore("question", reconcile(groupRequestsBySession(snapshot.questions)))
-      })
-    }
-
     function applyStateSync(state: ClientStateSyncState) {
-      const snapshot = selectClientStateSyncSnapshot(state)
-      const operations = selectClientOperationsSnapshot(state)
-      if (!snapshot) return
+      const projection = projectTuiClientState(state, {
+        directory: kv.get("session_directory_filter_enabled", true) ? project.instance.directory() : undefined,
+      })
       batch(() => {
-        setStore("session_sync_revision", state.digest)
-        setStore("opencodex_project", reconcile(snapshot.projects))
-        setStore("opencodex_view", reconcile(snapshot.views))
-        if (operations) {
-          setStore("opencodex_job", reconcile(operations.jobs))
-          setStore("opencodex_swarm", reconcile(operations.swarms))
+        setStore("state_sync", reconcile(state.lifecycle))
+        if (!projection) return
+        setStore("session_sync_revision", projection.revision)
+        setStore("opencodex_project", reconcile(projection.projects))
+        setStore("opencodex_view", reconcile(projection.views))
+        if (projection.jobs && projection.swarms) {
+          setStore("opencodex_job", reconcile(projection.jobs))
+          setStore("opencodex_swarm", reconcile(projection.swarms))
         }
-        setStore("session", reconcile(snapshot.sessions.toSorted((a, b) => a.id.localeCompare(b.id))))
-        setStore("session_status", reconcile(snapshot.sessionStatus))
-        setStore("session_ui_state", reconcile(snapshot.sessionUiState))
-        setStore("permission", reconcile(groupRequestsBySession(snapshot.permissions)))
-        setStore("question", reconcile(groupRequestsBySession(snapshot.questions)))
-        Object.entries(state.sessionDetails).forEach(([sessionID, detail]) => {
-          if (appliedSessionDigests.get(sessionID) === detail.snapshot.digest) return
-          appliedSessionDigests.set(sessionID, detail.snapshot.digest)
-          const messages = selectClientSessionMessages(state, sessionID)
+        setStore("session", reconcile(projection.sessions))
+        setStore("session_status", reconcile(projection.sessionStatus))
+        setStore("session_ui_state", reconcile(projection.sessionUiState))
+        setStore("permission", reconcile(projection.permissions))
+        setStore("question", reconcile(projection.questions))
+        if (projection.capabilities) {
+          setStore("provider", reconcile(projection.capabilities.providers))
+          setStore("provider_default", reconcile(projection.capabilities.providerDefaults))
+          setStore("provider_next", reconcile(projection.capabilities.providerList))
+          setStore("agent", reconcile(projection.capabilities.agents))
+          setStore("command", reconcile(projection.capabilities.commands))
+          setStore("lsp", reconcile(projection.capabilities.lsp))
+          setStore("mcp", reconcile(projection.capabilities.mcp))
+          if (projection.capabilities.config) setStore("config", reconcile(projection.capabilities.config))
+          setStore("mcp_resource", reconcile(projection.capabilities.mcpResources))
+          setStore("formatter", reconcile(projection.capabilities.formatter))
+        }
+        Object.entries(projection.details).forEach(([sessionID, detail]) => {
+          if (appliedSessionVersions.get(sessionID) === detail.version) return
+          appliedSessionVersions.set(sessionID, detail.version)
+          const messages = detail.messages
           const messageIDs = new Set(messages.map((message) => message.info.id))
           ;(store.message[sessionID] ?? []).forEach((message) => {
             if (messageIDs.has(message.id)) return
@@ -215,9 +203,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           })
           setStore("message", sessionID, reconcile(messages.map((message) => message.info)))
           messages.forEach((message) => setStore("part", message.info.id, reconcile(message.parts)))
-          setStore("todo", sessionID, reconcile(detail.snapshot.todos))
-          setStore("session_diff", sessionID, reconcile(detail.snapshot.diff))
-          upsertSession(detail.snapshot.session)
+          setStore("todo", sessionID, reconcile(detail.todos))
+          setStore("session_diff", sessionID, reconcile(detail.diff))
+          upsertSession(detail.session)
         })
       })
     }
@@ -229,20 +217,29 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       if (scope === stateSyncScope) return
       unsubscribeStateSync?.()
       stateSync?.stop()
+      stateSyncStart = undefined
       fullSyncedSessions.clear()
-      appliedSessionDigests.clear()
+      appliedSessionVersions.clear()
       stateSyncScope = scope
       stateSync = createClientStateSync({ client: sdk.client, directory, workspace })
       unsubscribeStateSync = stateSync.subscribe(applyStateSync)
-      void stateSync.start().catch((error) => {
+      stateSyncStart = stateSync.start()
+      void stateSyncStart.catch((error) => {
         Log.Default.error("tui authoritative state sync failed", {
           error: error instanceof Error ? error.message : String(error),
         })
       })
     }
 
-    function stateSyncReady() {
-      return stateSync?.getState().phase === "ready"
+    async function requireStateSync() {
+      startStateSync()
+      if (!stateSync || !stateSyncStart) throw new Error("TUI authoritative state sync did not start")
+      const controller = stateSync
+      await stateSyncStart
+      if (controller !== stateSync || controller.getState().phase !== "ready") {
+        throw new Error("TUI authoritative state sync changed scope before becoming ready")
+      }
+      return controller
     }
 
     function upsertSession(info: Session) {
@@ -259,163 +256,19 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       )
     }
 
-    function queueSessionRefresh() {
-      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer)
-      sessionRefreshTimer = setTimeout(() => {
-        sessionRefreshTimer = undefined
-        void (stateSyncReady() ? stateSync!.refresh() : listSessionSync().then(applySessionSync)).catch((error) => {
-          Log.Default.error("tui session refresh failed", {
-            error: error instanceof Error ? error.message : String(error),
-            name: error instanceof Error ? error.name : undefined,
-            stack: error instanceof Error ? error.stack : undefined,
-          })
-        })
-      }, 250)
-    }
-
     onCleanup(() => {
-      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer)
       unsubscribeStateSync?.()
       stateSync?.stop()
     })
 
     createEffect(startStateSync)
 
-    function groupRequestsBySession<T extends { id: string; sessionID: string }>(requests: readonly T[]) {
-      return requests.reduce<Record<string, T[]>>(
-        (result, request) => ({
-          ...result,
-          [request.sessionID]: [...(result[request.sessionID] ?? []), request].toSorted((a, b) =>
-            a.id.localeCompare(b.id),
-          ),
-        }),
-        {},
-      )
-    }
-
     event.subscribe((event, { workspace }) => {
+      if (stateSync?.applyEvent(event)) return
       switch (event.type) {
         case "server.instance.disposed":
-          void bootstrap()
+          void bootstrap({ refreshState: true })
           break
-        case "permission.replied": {
-          queueSessionRefresh()
-          const requests = store.permission[event.properties.sessionID]
-          if (!requests) break
-          const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
-          if (!match.found) break
-          setStore(
-            "permission",
-            event.properties.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 1)
-            }),
-          )
-          break
-        }
-
-        case "permission.asked": {
-          queueSessionRefresh()
-          const request = event.properties
-          const requests = store.permission[request.sessionID]
-          if (!requests) {
-            setStore("permission", request.sessionID, [request])
-            break
-          }
-          const match = Binary.search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("permission", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "permission",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
-          break
-        }
-
-        case "question.replied":
-        case "question.rejected": {
-          queueSessionRefresh()
-          const requests = store.question[event.properties.sessionID]
-          if (!requests) break
-          const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
-          if (!match.found) break
-          setStore(
-            "question",
-            event.properties.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 1)
-            }),
-          )
-          break
-        }
-
-        case "question.asked": {
-          queueSessionRefresh()
-          const request = event.properties
-          const requests = store.question[request.sessionID]
-          if (!requests) {
-            setStore("question", request.sessionID, [request])
-            break
-          }
-          const match = Binary.search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("question", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "question",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
-          break
-        }
-
-        case "todo.updated":
-          setStore("todo", event.properties.sessionID, event.properties.todos)
-          break
-
-        case "session.diff":
-          setStore("session_diff", event.properties.sessionID, event.properties.diff)
-          break
-
-        case "session.deleted": {
-          const result = Binary.search(store.session, event.properties.info.id, (s) => s.id)
-          if (result.found) {
-            setStore(
-              "session",
-              produce((draft) => {
-                draft.splice(result.index, 1)
-              }),
-            )
-          }
-          queueSessionRefresh()
-          break
-        }
-        case "session.created": {
-          upsertSession(event.properties.info)
-          queueSessionRefresh()
-          break
-        }
-        case "session.updated": {
-          upsertSession(event.properties.info)
-          queueSessionRefresh()
-          break
-        }
-
-        case "session.status": {
-          setStore("session_status", event.properties.sessionID, event.properties.status)
-          queueSessionRefresh()
-          break
-        }
-
-        case "opencodex.session_state.updated":
         case "opencodex.view.created":
         case "opencodex.view.updated":
         case "opencodex.view.reordered":
@@ -425,121 +278,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         case "opencodex.project.reordered":
         case "opencodex.project.deleted":
         case "opencodex.project.session_assigned":
-          queueSessionRefresh()
           break
-
-        case "message.updated": {
-          const messages = store.message[event.properties.info.sessionID]
-          if (!messages) {
-            setStore("message", event.properties.info.sessionID, [event.properties.info])
-            break
-          }
-          const result = Binary.search(messages, event.properties.info.id, (m) => m.id)
-          if (result.found) {
-            setStore("message", event.properties.info.sessionID, result.index, reconcile(event.properties.info))
-            break
-          }
-          setStore(
-            "message",
-            event.properties.info.sessionID,
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.info)
-            }),
-          )
-          const updated = store.message[event.properties.info.sessionID]
-          if (updated.length > 100) {
-            const oldest = updated[0]
-            batch(() => {
-              setStore(
-                "message",
-                event.properties.info.sessionID,
-                produce((draft) => {
-                  draft.shift()
-                }),
-              )
-              setStore(
-                "part",
-                produce((draft) => {
-                  delete draft[oldest.id]
-                }),
-              )
-            })
-          }
-          break
-        }
-        case "message.removed": {
-          const messages = store.message[event.properties.sessionID]
-          const result = Binary.search(messages, event.properties.messageID, (m) => m.id)
-          if (result.found) {
-            setStore(
-              "message",
-              event.properties.sessionID,
-              produce((draft) => {
-                draft.splice(result.index, 1)
-              }),
-            )
-          }
-          break
-        }
-        case "message.part.updated": {
-          const parts = store.part[event.properties.part.messageID]
-          if (!parts) {
-            setStore("part", event.properties.part.messageID, [event.properties.part])
-            break
-          }
-          const result = Binary.search(parts, event.properties.part.id, (p) => p.id)
-          if (result.found) {
-            setStore("part", event.properties.part.messageID, result.index, reconcile(event.properties.part))
-            break
-          }
-          setStore(
-            "part",
-            event.properties.part.messageID,
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.part)
-            }),
-          )
-          break
-        }
-
-        case "message.part.delta": {
-          const parts = store.part[event.properties.messageID]
-          if (!parts) break
-          const result = Binary.search(parts, event.properties.partID, (p) => p.id)
-          if (!result.found) break
-          setStore(
-            "part",
-            event.properties.messageID,
-            produce((draft) => {
-              const part = draft[result.index]
-              const field = event.properties.field as keyof typeof part
-              const existing = part[field] as string | undefined
-              ;(part[field] as string) = (existing ?? "") + event.properties.delta
-            }),
-          )
-          break
-        }
-
-        case "message.part.removed": {
-          const parts = store.part[event.properties.messageID]
-          const result = Binary.search(parts, event.properties.partID, (p) => p.id)
-          if (result.found) {
-            setStore(
-              "part",
-              event.properties.messageID,
-              produce((draft) => {
-                draft.splice(result.index, 1)
-              }),
-            )
-          }
-          break
-        }
-
-        case "lsp.updated": {
-          const workspace = project.workspace.current()
-          void sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", x.data ?? []))
-          break
-        }
 
         case "vcs.branch.updated": {
           if (workspace === project.workspace.current()) {
@@ -551,30 +290,25 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     })
 
     const exit = useExit()
-    const args = useArgs()
-
-    async function bootstrap(input: { fatal?: boolean } = {}) {
+    async function bootstrap(input: { fatal?: boolean; refreshState?: boolean } = {}) {
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
-      const sessionSyncPromise = projectPromise.then(() => listSessionSync())
+      const stateSyncPromise = projectPromise.then(async () => {
+        const controller = await requireStateSync()
+        await Promise.all([
+          input.refreshState ? controller.refresh() : Promise.resolve(),
+          controller.refreshCapabilities(),
+        ])
+      })
 
-      // blocking - include session.list when continuing a session
-      const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
-      const providerListPromise = sdk.client.provider.list({ workspace }, { throwOnError: true })
       const consoleStatePromise = sdk.client.experimental.console
         .get({ workspace }, { throwOnError: true })
         .then((x) => x.data)
         .catch(() => emptyConsoleState)
-      const agentsPromise = sdk.client.app.agents({ workspace }, { throwOnError: true })
-      const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
       const blockingRequests: { name: string; promise: Promise<unknown> }[] = [
-        { name: "config.providers", promise: providersPromise },
-        { name: "provider.list", promise: providerListPromise },
-        { name: "app.agents", promise: agentsPromise },
-        { name: "config.get", promise: configPromise },
         { name: "project.sync", promise: projectPromise },
-        ...(args.continue ? [{ name: "session.sync", promise: sessionSyncPromise }] : []),
+        { name: "opencodex.state", promise: stateSyncPromise },
       ]
 
       await Promise.allSettled(blockingRequests.map((r) => r.promise))
@@ -585,55 +319,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const failure = aggregateFailures(blockingRequests.map((r, i) => ({ name: r.name, result: settled[i] })))
           if (failure) throw failure
         })
-        .then(async () => {
-          const providersResponse = providersPromise.then((x) => x.data!)
-          const providerListResponse = providerListPromise.then((x) => x.data!)
-          const consoleStateResponse = consoleStatePromise
-          const agentsResponse = agentsPromise.then((x) => x.data ?? [])
-          const configResponse = configPromise.then((x) => x.data!)
-          const sessionSyncResponse = args.continue ? sessionSyncPromise : undefined
-
-          return Promise.all([
-            providersResponse,
-            providerListResponse,
-            consoleStateResponse,
-            agentsResponse,
-            configResponse,
-            ...(sessionSyncResponse ? [sessionSyncResponse] : []),
-          ]).then((responses) => {
-            const providers = responses[0]
-            const providerList = responses[1]
-            const consoleState = responses[2]
-            const agents = responses[3]
-            const config = responses[4]
-            const sessionSync = responses[5]
-
-            batch(() => {
-              setStore("provider", reconcile(providers.providers))
-              setStore("provider_default", reconcile(providers.default))
-              setStore("provider_next", reconcile(providerList))
-              setStore("console_state", reconcile(consoleState))
-              setStore("agent", reconcile(agents))
-              setStore("config", reconcile(config))
-              if (sessionSync !== undefined) {
-                applySessionSync(sessionSync as ClientSessionSyncResult)
-              }
-            })
-          })
-        })
         .then(() => {
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
           void Promise.all([
-            ...(args.continue ? [] : [sessionSyncPromise.then(applySessionSync)]),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
-            sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
-            sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
-            sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
-            sdk.client.experimental.resource
-              .list({ workspace })
-              .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
-            sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
@@ -682,12 +372,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return sessionListQuery()
         },
         async refresh() {
-          if (stateSyncReady()) return stateSync!.refresh()
-          applySessionSync(await listSessionSync())
+          const controller = await requireStateSync()
+          await controller.refresh()
+          applyStateSync(controller.getState())
         },
         async refreshStatus() {
-          if (stateSyncReady()) return stateSync!.refresh()
-          applySessionSync(await listSessionSync())
+          const controller = await requireStateSync()
+          await controller.refresh()
+          applyStateSync(controller.getState())
         },
         status(sessionID: string) {
           const session = result.session.get(sessionID)
@@ -701,33 +393,25 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
-          if (stateSyncReady()) {
-            await stateSync!.hydrateSession(sessionID, { limit: 100 })
-            fullSyncedSessions.add(sessionID)
-            return
-          }
-          const [session, messages, todo, diff] = await Promise.all([
-            sdk.client.session.get({ sessionID }, { throwOnError: true }),
-            sdk.client.session.messages({ sessionID, limit: 100 }),
-            sdk.client.session.todo({ sessionID }),
-            sdk.client.session.diff({ sessionID }),
-          ])
-          setStore(
-            produce((draft) => {
-              const match = Binary.search(draft.session, sessionID, (s) => s.id)
-              if (match.found) draft.session[match.index] = session.data!
-              if (!match.found) draft.session.splice(match.index, 0, session.data!)
-              draft.todo[sessionID] = todo.data ?? []
-              const infos: (typeof draft.message)[string] = []
-              for (const message of messages.data ?? []) {
-                infos.push(message.info)
-                draft.part[message.info.id] = message.parts
-              }
-              draft.message[sessionID] = infos
-              draft.session_diff[sessionID] = diff.data ?? []
-            }),
-          )
-          fullSyncedSessions.add(sessionID)
+          await (await requireStateSync())
+            .hydrateSession(sessionID, { limit: 100 })
+            .then(() => fullSyncedSessions.add(sessionID))
+            .catch((error) => {
+              Log.Default.warn("tui session hydration failed", {
+                sessionID,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            })
+        },
+      },
+      stateSync: {
+        get lifecycle() {
+          return store.state_sync
+        },
+        async retry() {
+          startStateSync()
+          if (!stateSync) throw new Error("TUI authoritative state sync did not start")
+          await stateSync.retry()
         },
       },
       bootstrap,

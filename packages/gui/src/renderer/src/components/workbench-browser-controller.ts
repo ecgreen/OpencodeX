@@ -31,9 +31,25 @@ export function createWorkbenchBrowserController(input: {
   const createdIDs = new Set<string>()
   let host: HTMLDivElement | undefined
   let resizeObserver: ResizeObserver | undefined
+  let boundsFrame = 0
+
+  const scheduleBounds = () => {
+    cancelAnimationFrame(boundsFrame)
+    boundsFrame = requestAnimationFrame(updateBounds)
+  }
+
+  window.addEventListener("resize", scheduleBounds)
+  window.addEventListener("focus", scheduleBounds)
+  window.visualViewport?.addEventListener("resize", scheduleBounds)
+  document.addEventListener("visibilitychange", scheduleBounds)
 
   onCleanup(() => {
+    cancelAnimationFrame(boundsFrame)
     resizeObserver?.disconnect()
+    window.removeEventListener("resize", scheduleBounds)
+    window.removeEventListener("focus", scheduleBounds)
+    window.visualViewport?.removeEventListener("resize", scheduleBounds)
+    document.removeEventListener("visibilitychange", scheduleBounds)
     tabs().forEach((item) => void window.opencodex?.browser?.destroy(item.id))
   })
 
@@ -60,13 +76,13 @@ export function createWorkbenchBrowserController(input: {
     })
     hideTabs(id())
     if (resizeObserver) return
-    resizeObserver = new ResizeObserver(updateBounds)
+    resizeObserver = new ResizeObserver(scheduleBounds)
     resizeObserver.observe(host)
   }
 
   function hideTabs(exceptID = "") {
     tabs().filter((item) => item.id !== exceptID).forEach((item) => {
-      void window.opencodex?.browser?.bounds({ id: item.id, x: 0, y: 0, width: 1, height: 1 })
+      void window.opencodex?.browser?.hide(item.id)
     })
   }
 
@@ -113,7 +129,7 @@ export function createWorkbenchBrowserController(input: {
     setTabs((items) => updateWorkbenchBrowserTabURL(items, id(), value))
   }
 
-  function createTab(url = "http://localhost:5173", title = "New tab") {
+  function createTab(url = "", title = "New tab") {
     const nextID = newBrowserID()
     setTabs((items) => addWorkbenchBrowserTab(items, { id: nextID, url: workbenchNormalizeBrowserURL(url), title }))
     setActiveID(nextID)
@@ -127,7 +143,7 @@ export function createWorkbenchBrowserController(input: {
 
   function closeTab(id: string) {
     const next = closeWorkbenchBrowserTab(tabs(), activeID(), id)
-    const fallback = next.tabs.length === 0 ? { id: newBrowserID(), url: "http://localhost:5173", title: "New tab" } : undefined
+    const fallback = next.tabs.length === 0 ? { id: newBrowserID(), url: "", title: "New tab" } : undefined
     setTabs(fallback ? [fallback] : next.tabs)
     setActiveID(fallback?.id ?? next.activeID)
     createdIDs.delete(id)

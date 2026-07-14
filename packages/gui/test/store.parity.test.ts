@@ -9,8 +9,6 @@ import {
   deleteProject,
   deleteSession,
   loadSession,
-  loadSessionCards,
-  loadSnapshot,
   moveSession,
   renameProject,
   renameSession,
@@ -23,93 +21,6 @@ import {
 } from "../src/renderer/src/lib/store"
 
 describe("GUI store backend parity", () => {
-  test("loads and merges session sources", async () => {
-    const calls: string[] = []
-    const gui = fakeGui(calls)
-    const snapshot = await loadSnapshot(gui)
-
-    expect(calls).toEqual(
-      expect.arrayContaining([
-        "project.current",
-        "opencodex.session.sync",
-        "config.providers",
-        "app.agents",
-        "project.list",
-        "swarm.list",
-        "job.list",
-      ]),
-    )
-    expect(calls).not.toContain("session.list")
-    expect(calls).not.toContain("session.status")
-    expect(calls).not.toContain("permission.list")
-    expect(calls).not.toContain("question.list")
-    expect(calls).not.toContain("view.list")
-    expect(calls).not.toContain("session.messages:session-list")
-    expect(snapshot.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
-    expect(snapshot.permissions).toHaveLength(1)
-    expect(snapshot.questions).toHaveLength(1)
-    expect(snapshot.sessionUiState["session-list"]?.displayStatus).toBe("input_needed")
-    expect(snapshot.providers[0]?.id).toBe("anthropic")
-    expect(snapshot.agents[0]?.name).toBe("build")
-  })
-
-  test("loads projects directly so folder-only edits refresh", async () => {
-    const calls: string[] = []
-    const gui = fakeGui(calls, { projectFolders: ["C:/Work/OpencodeX", "C:/Work/Second"] })
-    const snapshot = await loadSnapshot(gui)
-
-    expect(calls).toContain("project.list")
-    expect(snapshot.projects[0]?.folders.map((folder) => folder.path)).toEqual(["C:/Work/OpencodeX", "C:/Work/Second"])
-  })
-
-  test("loads lightweight session card state without session content", async () => {
-    const calls: string[] = []
-    const gui = fakeGui(calls)
-    const cards = await loadSessionCards(gui)
-
-    expect(calls).toContain("opencodex.session.sync")
-    expect(calls.filter((call) => call === "opencodex.session.sync")).toHaveLength(1)
-    expect(calls).not.toContain("project.list")
-    expect(calls).not.toContain("session.list")
-    expect(calls).not.toContain("session.status")
-    expect(calls).not.toContain("permission.list")
-    expect(calls).not.toContain("question.list")
-    expect(calls).not.toContain("session.messages:session-list")
-    expect(calls).not.toContain("config.providers")
-    expect(calls).not.toContain("app.agents")
-    expect(calls).not.toContain("job.list")
-    expect(calls).not.toContain("view.list")
-    expect(cards.changed).toBe(true)
-    if (cards.changed) {
-      expect(cards.snapshot.sessions.map((session) => session.id)).toEqual(["project-session", "session-list"])
-      expect(cards.snapshot.sessionUiState["session-list"]?.updated).toBe(true)
-    }
-  })
-
-  test("keeps view-only sessions on views without expanding the scoped session index", async () => {
-    const calls: string[] = []
-    const viewOnlySession = session("view-only-session", 3)
-    const cards = await loadSessionCards(fakeGui(calls, { viewSessions: [viewOnlySession] }))
-
-    expect(cards.changed).toBe(true)
-    if (cards.changed) {
-      expect(cards.snapshot.views[0]?.sessionIDs).toEqual(["view-only-session"])
-      expect(cards.snapshot.views[0]?.sessions.map((item) => item.id)).toEqual(["view-only-session"])
-      expect(cards.snapshot.sessions.map((item) => item.id)).not.toContain("view-only-session")
-    }
-  })
-
-  test("skips unchanged lightweight session sync revisions", async () => {
-    const calls: string[] = []
-    const gui = fakeGui(calls)
-
-    const cards = await loadSessionCards(gui, "rev-1")
-
-    expect(calls).toContain("opencodex.session.sync:rev-1")
-    expect(cards).toEqual({ changed: false, revision: "rev-1" })
-    expect(calls).not.toContain("session.messages:session-list")
-  })
-
   test("sends create and prompt payloads through existing APIs", async () => {
     const calls: string[] = []
     const gui = fakeGui(calls)
@@ -265,50 +176,6 @@ describe("GUI store backend parity", () => {
     expect(data.messageCursor).toBeTruthy()
   })
 
-  test("does not infer running when backend status is idle or omitted", async () => {
-    const now = Date.now()
-    const calls: string[] = []
-    const gui = fakeGui(calls, {
-      sessionStatus: {},
-      updated: now,
-      messages: {
-        "session-list": [
-          {
-            info: { id: "assistant-old", sessionID: "session-list", role: "assistant", time: { created: now - 2_000 } },
-            parts: [{ type: "step-start" }],
-          },
-          {
-            info: {
-              id: "assistant-new",
-              sessionID: "session-list",
-              role: "assistant",
-              finish: "stop",
-              time: { created: now - 1_000, completed: now },
-            },
-            parts: [{ type: "step-start" }, { type: "step-finish" }],
-          },
-        ],
-      },
-    })
-
-    const snapshot = await loadSnapshot(gui)
-
-    expect(snapshot.sessionStatus["session-list"]).toBeUndefined()
-  })
-
-  test("uses backend busy status as authoritative", async () => {
-    const now = Date.now()
-    const calls: string[] = []
-    const gui = fakeGui(calls, {
-      sessionStatus: { "session-list": { type: "busy" } },
-      updated: now,
-    })
-
-    const snapshot = await loadSnapshot(gui)
-
-    expect(snapshot.sessionStatus["session-list"]).toEqual({ type: "busy" })
-  })
-
   test("sends project/session CRUD payloads through existing APIs", async () => {
     const calls: string[] = []
     const gui = fakeGui(calls)
@@ -337,17 +204,13 @@ function fakeGui(
   calls: string[],
   options: {
     sessionStatus?: Record<string, unknown>
-    sessionUiState?: Record<string, unknown>
     messages?: Record<string, unknown[]>
     updated?: number
     headerCursor?: string | null
-    viewSessions?: ReturnType<typeof session>[]
-    projectFolders?: string[]
   } = {},
 ) {
   const sessionList = session("session-list", options.updated ?? 1)
   const projectSession = session("project-session", options.updated ?? 2)
-  const viewSessions = options.viewSessions ?? []
   return {
     directory: "C:/Work/OpencodeX",
     url: "http://127.0.0.1:4096",
@@ -369,7 +232,7 @@ function fakeGui(
                   id: "project-1",
                   name: "Project",
                   project: { id: "project-core", name: "Project", time: { created: 1, updated: 1 } },
-                  folders: (options.projectFolders ?? ["C:/Work/OpencodeX"]).map((path) => ({ path })),
+                  folders: [{ path: "C:/Work/OpencodeX" }],
                   sessions: [projectSession],
                 },
               ],
@@ -395,79 +258,6 @@ function fakeGui(
           },
         },
         session: {
-          sync: async (input?: { since?: string }) => {
-            calls.push("opencodex.session.sync")
-            calls.push(`opencodex.session.sync:${input?.since ?? ""}`)
-            if (input?.since === "rev-1") return { data: { changed: false, revision: "rev-1" } }
-            return {
-              data: {
-                changed: true,
-                revision: "rev-1",
-                snapshot: {
-                  projects: [
-                    {
-                      id: "project-1",
-                      name: "Project",
-                      project: { id: "project-core", name: "Project", time: { created: 1, updated: 1 } },
-                      folders: [{ path: "C:/Work/OpencodeX" }],
-                      sessions: [projectSession],
-                    },
-                  ],
-                  sessions: [projectSession, sessionList],
-                  views:
-                    viewSessions.length > 0
-                      ? [
-                          {
-                            id: "view-1",
-                            title: "View",
-                            focusedSessionID: viewSessions[0]?.id,
-                            layout: "auto",
-                            sessions: viewSessions,
-                            sessionIDs: viewSessions.map((item) => item.id),
-                            timeCreated: 1,
-                            timeUpdated: 1,
-                          },
-                        ]
-                      : [],
-                  sessionStatus: options.sessionStatus ?? { "session-list": { type: "idle" } },
-                  permissions: [
-                    {
-                      id: "permission-1",
-                      sessionID: "session-list",
-                      permission: "edit",
-                      patterns: ["**/*.ts"],
-                      metadata: {},
-                      always: [],
-                    },
-                  ],
-                  questions: [
-                    {
-                      id: "question-1",
-                      sessionID: "session-list",
-                      questions: [
-                        { header: "Choice", question: "Pick one", options: [{ label: "A", description: "Option A" }] },
-                      ],
-                    },
-                  ],
-                  sessionUiState: {
-                    "session-list": {
-                      sessionID: "session-list",
-                      reviewedFiles: [],
-                      displayStatus: "input_needed",
-                      updated: true,
-                    },
-                    "project-session": {
-                      sessionID: "project-session",
-                      reviewedFiles: [],
-                      displayStatus: "needs_review",
-                      updated: true,
-                    },
-                    ...options.sessionUiState,
-                  },
-                },
-              },
-            }
-          },
           create: async (input: { opencodeXSessionCreateInput?: { projectID?: string } }) => {
             calls.push(`opencodex.session.create:${input.opencodeXSessionCreateInput?.projectID}`)
             return { data: sessionList }

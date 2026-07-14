@@ -8,6 +8,7 @@ import {
   roleInput,
   swarmRolePresetBySkill,
   swarmDisplayStatus,
+  swarmProviderSelectionKey,
   swarmRunSessionID,
 } from "../src/renderer/src/lib/swarm-actions"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
@@ -64,6 +65,15 @@ describe("GUI swarm action helpers", () => {
     expect(swarmRolePresetBySkill("unknown")).toBeUndefined()
   })
 
+  test("keeps the provider selection identity stable when roles share providers", () => {
+    expect(swarmProviderSelectionKey([{ providerID: "opencode" }])).toBe(
+      swarmProviderSelectionKey([{ providerID: "opencode" }, { providerID: "opencode" }]),
+    )
+    expect(swarmProviderSelectionKey([{ providerID: "z" }, { providerID: "a" }])).toBe(
+      swarmProviderSelectionKey([{ providerID: "a" }, { providerID: "z" }]),
+    )
+  })
+
   test("opens the best available session for a swarm run", () => {
     expect(swarmRunSessionID(run({ resultSessionID: "result", orchestratorSessionID: "lead", agents: [{ sessionID: "agent" }] }))).toBe("result")
     expect(swarmRunSessionID(run({ orchestratorSessionID: "lead", agents: [{ sessionID: "agent" }] }))).toBe("lead")
@@ -76,6 +86,9 @@ describe("GUI swarm action helpers", () => {
 
     expect(swarmDisplayStatus(swarm, snapshot)).toBe("in_progress")
     expect(isActiveSwarmStatus("in_progress")).toBe(true)
+    expect(isActiveSwarmStatus("cancelling")).toBe(true)
+    expect(isActiveSwarmStatus("retrying")).toBe(true)
+    expect(isActiveSwarmStatus("partially_failed")).toBe(false)
     expect(isActiveSwarmStatus("completed")).toBe(false)
   })
 })

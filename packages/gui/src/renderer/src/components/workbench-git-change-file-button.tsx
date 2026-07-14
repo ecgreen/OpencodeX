@@ -8,6 +8,8 @@ export function WorkbenchGitChangeFileButton(props: {
   file: WorkbenchGitStatus["files"][number]
   diff?: WorkbenchDiffFile
   selected: boolean
+  position: number
+  size: number
   selectFile: (path: string) => void
   runGit: (action: "stage" | "unstage" | "discard", path: string) => void
 }) {
@@ -15,6 +17,10 @@ export function WorkbenchGitChangeFileButton(props: {
   return (
     <button
       type="button"
+      role="option"
+      aria-selected={props.selected}
+      aria-posinset={props.position}
+      aria-setsize={props.size}
       class="workbench-change-file"
       classList={{ selected: props.selected, staged: props.file.staged }}
       onClick={() => props.selectFile(props.file.path)}

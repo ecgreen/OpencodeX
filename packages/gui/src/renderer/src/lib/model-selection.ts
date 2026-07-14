@@ -23,6 +23,23 @@ export function modelPickerOptions(providers: Provider[]): ModelPickerOption[] {
     )
 }
 
+export function modelPickerProviders(
+  providers: Provider[],
+  connectedProviderIDs: string[],
+  selectedProviderIDs: string[] = [],
+) {
+  const visible = new Set(["opencode", ...connectedProviderIDs, ...selectedProviderIDs.filter(Boolean)])
+  const available = providers
+    .filter(
+      (provider) =>
+        visible.has(provider.id) && Object.values(provider.models).some((model) => model.status !== "deprecated"),
+    )
+    .toSorted((a, b) => Number(a.id !== "opencode") - Number(b.id !== "opencode") || a.name.localeCompare(b.name))
+  if (available.length > 0) return available
+  const fallback = modelPickerOptions(providers)[0]?.provider
+  return fallback ? [fallback] : []
+}
+
 export function selectedModelVariants(providers: Provider[], selectedModel: string) {
   const selection = parseModelValue(selectedModel)
   if (!selection) return []

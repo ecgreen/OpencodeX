@@ -5,7 +5,6 @@ import type { GuiPromptInfo } from "../lib/prompt-state"
 import { runSessionPromptAction } from "../lib/session-prompt"
 import {
   createSession,
-  loadSession,
   runSessionCommand,
   runShellCommand,
   sendPrompt,
@@ -117,22 +116,15 @@ export function createWorkbenchAssistantController(input: {
   }
 
   async function load(session: Session, cursor?: string) {
-    const gui = input.activeGui()
-    if (!gui) return
+    const hydrate = input.props.hydrateSession
+    if (!hydrate) return
     const showLoading = Boolean(cursor) || !dataBySession()[session.id]
     if (showLoading) setLoading(true)
     try {
-      const nextData = await loadSession(gui, session.id, session.directory, cursor ? { messageBefore: cursor } : {})
+      const nextData = await hydrate(session.id, cursor)
       setDataBySession((current) => ({
         ...current,
-        [session.id]: cursor
-          ? {
-              ...nextData,
-              messages: [...nextData.messages, ...(current[session.id]?.messages ?? [])],
-              todos: current[session.id]?.todos ?? nextData.todos,
-              diffs: current[session.id]?.diffs ?? nextData.diffs,
-            }
-          : nextData,
+        [session.id]: cursor ? { ...nextData, messageWindowExpanded: true } : nextData,
       }))
     } catch (err) {
       input.setNotice(errorText(err, "Failed to load the Workbench assistant session."))

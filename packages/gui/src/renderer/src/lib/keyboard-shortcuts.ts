@@ -115,5 +115,5 @@ function commandPaletteShortcutAction(context: GuiShortcutContext): GuiShortcutA
 }
 
 export function isKeyboardEditingTarget(value: EventTarget | null) {
-  return value instanceof HTMLInputElement || value instanceof HTMLTextAreaElement || value instanceof HTMLSelectElement
+  return value instanceof HTMLInputElement || value instanceof HTMLTextAreaElement || value instanceof HTMLSelectElement || (value instanceof HTMLElement && value.isContentEditable)
 }

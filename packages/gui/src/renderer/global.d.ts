@@ -19,6 +19,7 @@ declare global {
         onExit(listener: (event: TerminalExitEvent) => void): () => void
       }
       window(action: "minimize" | "maximize" | "close"): Promise<void>
+      edit?(action: "cut" | "copy" | "paste"): Promise<void>
       browser?: {
         create(input: { id: string; url?: string }): Promise<BrowserState | undefined>
         bounds(input: { id: string; x: number; y: number; width: number; height: number }): Promise<BrowserState | undefined>

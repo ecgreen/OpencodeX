@@ -98,7 +98,7 @@ export class ValidationError extends Schema.TaggedErrorClass<ValidationError>()(
 }) {}
 
 export interface Interface {
-  readonly list: () => Effect.Effect<Info[]>
+  readonly list: (input?: { sessions?: Session.GlobalInfo[] }) => Effect.Effect<Info[]>
   readonly get: (viewID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info, ValidationError | Session.NotFound>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError | ValidationError | Session.NotFound>
@@ -136,6 +136,7 @@ export const layer = Layer.effect(
 
     const hydrateMany = Effect.fn("OpencodeXView.hydrateMany")(function* (
       rows: (typeof OpencodeXViewTable.$inferSelect)[],
+      input?: { sessions?: Session.GlobalInfo[] },
     ) {
       if (rows.length === 0) return []
       const assignments = yield* db
@@ -150,7 +151,7 @@ export const layer = Layer.effect(
         .orderBy(OpencodeXViewSessionTable.view_id, OpencodeXViewSessionTable.sort_order)
         .all()
         .pipe(Effect.orDie)
-      const all = assignments.length === 0 ? [] : yield* session.listGlobal({ limit: 5_000 })
+      const all = assignments.length === 0 ? [] : (input?.sessions ?? (yield* session.listGlobal({ limit: 5_000 })))
       const byID = new Map(all.map((item) => [item.id, item]))
       const byView = Map.groupBy(assignments, (assignment) => assignment.view_id)
       return rows.map((row) => {
@@ -172,7 +173,7 @@ export const layer = Layer.effect(
     })
 
     const hydrate = Effect.fn("OpencodeXView.hydrate")(function* (row: typeof OpencodeXViewTable.$inferSelect) {
-      return (yield* hydrateMany([row]))[0]!
+      return (yield* hydrateMany([row]))[0]
     })
 
     const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (
@@ -212,7 +213,7 @@ export const layer = Layer.effect(
       return normalized
     })
 
-    const list = Effect.fn("OpencodeXView.list")(function* () {
+    const list = Effect.fn("OpencodeXView.list")(function* (input?: { sessions?: Session.GlobalInfo[] }) {
       return yield* hydrateMany(
         yield* db
           .select()
@@ -220,6 +221,7 @@ export const layer = Layer.effect(
           .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
           .all()
           .pipe(Effect.orDie),
+        input,
       )
     })
 

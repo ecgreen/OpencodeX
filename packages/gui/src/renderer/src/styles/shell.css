@@ -1,0 +1,182 @@
+.stage {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.stage[data-layout] {
+  padding: 0;
+}
+
+.stage-content {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stage[data-layout="scroll-page"] > .stage-content.scroll-page {
+  display: block;
+  overflow: auto;
+  padding: 10px;
+  scrollbar-gutter: stable;
+}
+
+.stage[data-layout="full-bleed"] > .stage-content.full-bleed {
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+}
+
+.stage-content.full-bleed > :is(
+  .session-page,
+  .views-manager-page,
+  .diff-page,
+  .workbench-page
+) {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stage-content.full-bleed > .session-page {
+  padding: 0 5px 10px 10px;
+}
+
+.stage-content.full-bleed > .workbench-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-page > .workbench-tabs,
+.workbench-page > .notice {
+  flex: 0 0 auto;
+}
+
+.workbench-page > :is(
+  .workbench-files,
+  .workbench-git-desktop,
+  .workbench-browser,
+  .workbench-artifacts
+) {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench-files,
+.workbench-editor,
+.workbench-codemirror,
+.workbench-codemirror .cm-editor,
+.workbench-codemirror .cm-scroller,
+.workbench-git-desktop,
+.workbench-git-main,
+.workbench-diff-panel,
+.workbench-diff-body,
+.workbench-diff-preview,
+.workbench-browser,
+.workbench-browser-host,
+.workbench-artifacts {
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench-codemirror .cm-scroller {
+  height: 100%;
+  overflow: auto;
+}
+
+.workbench-image-preview {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench-image-preview img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.workbench-git-desktop,
+.workbench-browser {
+  overflow: hidden;
+}
+
+.workbench-browser-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workbench-artifacts {
+  align-content: start;
+  overflow: auto;
+}
+
+.sync-status-banner {
+  display: flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-block: 1px solid color-mix(in srgb, var(--warning) 48%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
+}
+
+.sync-status-banner span {
+  min-width: 0;
+}
+
+.sync-status-banner button {
+  flex: 0 0 auto;
+}
+
+.stage-content > .error-card {
+  display: flex;
+  width: min(560px, 100%);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 48px auto;
+  padding: 20px;
+}
+
+.dashboard-status-card.status-cancelling,
+.dashboard-status-card.status-retrying,
+.dashboard-status-card.status-partially-failed {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber);
+}
+
+@media (max-width: 720px) {
+  .sync-status-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-status-banner,
+  .sync-status-banner * {
+    scroll-behavior: auto;
+    transition: none !important;
+    animation: none !important;
+  }
+}

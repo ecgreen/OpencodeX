@@ -1,0 +1,432 @@
+﻿
+.titlebar {
+  border-bottom-color: var(--line-soft);
+  background: color-mix(in srgb, var(--bg) 88%, black 12%);
+}
+
+.titlebar-drag {
+  color: var(--muted);
+}
+
+.window-controls button {
+  color: var(--muted);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.window-controls button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.window-controls .close:hover {
+  color: #fff;
+  background: var(--danger);
+}
+
+.rail {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 220px),
+    color-mix(in srgb, var(--bg) 86%, black 14%);
+  border-right-color: var(--line-soft);
+}
+
+.brand {
+  border: 1px solid transparent;
+}
+
+.brand:hover,
+.brand:focus-within {
+  border-color: var(--line);
+  background: var(--surface-glass);
+}
+
+.brand-mark {
+  border-color: var(--line);
+  background:
+    linear-gradient(145deg, var(--brand-soft), rgba(255, 255, 255, 0.035)),
+    var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.new-button,
+.rail-toggle {
+  border-color: var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
+    var(--surface-raised);
+  box-shadow: var(--shadow-button);
+}
+
+.new-button:hover,
+.rail-toggle:hover,
+.new-button:focus-visible,
+.rail-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--brand) 44%, var(--line-strong));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent),
+    var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+}
+
+.nav {
+  border-color: var(--line-soft);
+  background: color-mix(in srgb, var(--surface) 70%, var(--bg));
+}
+
+.nav button {
+  border: 1px solid transparent;
+  color: var(--muted);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.nav button:hover,
+.nav button.active {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.nav button.active {
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+
+.rail-section header {
+  color: var(--muted);
+}
+
+.rail-section header:hover,
+.project-heading:hover {
+  background: var(--surface);
+}
+
+.rail-section .section-toggle,
+.project-title {
+  color: var(--text);
+}
+
+.rail-section .section-toggle strong,
+.project-title {
+  font-weight: 780;
+}
+
+.rail-section header > .section-new,
+.project-new {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+
+.session-link {
+  --session-card-bg: var(--surface);
+  --session-active-bg: var(--surface-active);
+  min-height: 50px;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms ease;
+}
+
+.session-link:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+.session-link.active {
+  border-color: color-mix(in srgb, var(--brand) 58%, var(--line));
+  background: var(--session-active-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.session-link.status-in-progress {
+  --session-state-color: var(--blue);
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--blue) 22%, transparent), var(--surface-active) 48%);
+}
+
+.session-link.status-input-needed {
+  --session-state-color: var(--amber);
+  --session-card-bg: linear-gradient(90deg, var(--amber-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--amber) 22%, transparent), var(--surface-active) 48%);
+}
+
+.session-link.status-unviewed,
+.session-link.status-ready-for-review {
+  --session-state-color: var(--purple);
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--purple) 22%, transparent), var(--surface-active) 48%);
+}
+
+.session-link.status-failed {
+  --session-state-color: var(--danger);
+  --session-card-bg: linear-gradient(90deg, var(--danger-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--danger) 22%, transparent), var(--surface-active) 48%);
+}
+
+.stage {
+  background: var(--bg);
+}
+
+.dashboard-page {
+  gap: 16px;
+}
+
+.opencodex-logo {
+  opacity: 0.94;
+  filter: drop-shadow(0 18px 32px rgba(0, 0, 0, 0.22));
+}
+
+.dashboard-actions {
+  gap: 10px;
+}
+
+.dashboard-action-card {
+  min-height: 86px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+    var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.dashboard-action-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--action-color);
+  opacity: 0.82;
+}
+
+.dashboard-action-card.primary {
+  --action-color: var(--brand);
+}
+
+.dashboard-action-card.blue {
+  --action-color: var(--blue);
+}
+
+.dashboard-action-card.warning {
+  --action-color: var(--amber);
+}
+
+.dashboard-action-card.info {
+  --action-color: var(--purple);
+}
+
+.dashboard-action-card:hover,
+.dashboard-action-card:focus-visible {
+  border-color: color-mix(in srgb, var(--action-color) 48%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--action-color) 8%, transparent), transparent),
+    var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-2px);
+}
+
+.dashboard-action-card strong {
+  align-self: end;
+  font-size: 14px;
+  font-weight: 840;
+}
+
+.dashboard-action-card span:not(.action-plus) {
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.dashboard-action-card small {
+  display: inline-grid;
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  place-items: center;
+  justify-self: end;
+  align-self: end;
+  min-width: 26px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--action-color) 28%, var(--line));
+  border-radius: 999px;
+  color: var(--action-color);
+  background: color-mix(in srgb, var(--action-color) 12%, transparent);
+  font-size: 11px;
+}
+
+.action-plus {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border: 1px solid color-mix(in srgb, var(--action-color) 32%, var(--line));
+  border-radius: 8px;
+  color: var(--action-color);
+  background: color-mix(in srgb, var(--action-color) 10%, transparent);
+}
+
+.action-plus .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard-section {
+  gap: 8px;
+}
+
+.section-collapse {
+  min-height: 30px;
+  border-radius: 7px;
+  padding: 4px 7px 4px 2px;
+  color: var(--text);
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.section-collapse:hover,
+.section-collapse:focus-visible {
+  background: var(--surface);
+}
+
+.dashboard-section .section-collapse strong {
+  font-size: 14px;
+  font-weight: 820;
+}
+
+.dashboard-section header span,
+.section-count {
+  color: var(--muted);
+  font-weight: 720;
+}
+
+.dashboard-card-grid {
+  gap: 10px;
+}
+
+.dashboard-item-card,
+[data-ui="card"] {
+  border: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), transparent),
+    var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.036);
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.dashboard-item-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
+  background: var(--card-accent, var(--line-strong));
+  opacity: 0.8;
+}
+
+.dashboard-item-card.project-card {
+  --card-accent: var(--brand);
+}
+
+.dashboard-item-card.warning {
+  --card-accent: var(--amber);
+}
+
+.dashboard-item-card.interactive:hover,
+.dashboard-item-card.interactive:focus-within,
+[data-ui="card"][data-interactive="true"]:hover {
+  border-color: color-mix(in srgb, var(--card-accent, var(--brand)) 42%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-accent, var(--brand)) 5%, transparent), transparent),
+    var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-1px);
+}
+
+.dashboard-status-card {
+  min-height: 82px;
+  height: 82px;
+  padding: 12px 38px 10px 13px;
+  border-left: 1px solid var(--line);
+  border-color: var(--line);
+  border-radius: var(--radius-card);
+  background: var(--session-card-bg);
+}
+
+.dashboard-status-card::before {
+  background: var(--session-state-color);
+}
+
+.dashboard-status-card.status-in-progress {
+  --session-state-color: var(--blue);
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+}
+
+.dashboard-status-card.status-input-needed {
+  --session-state-color: var(--amber);
+  --session-card-bg: linear-gradient(90deg, var(--amber-soft), var(--surface) 48%);
+}
+
+.dashboard-status-card.status-unviewed,
+.dashboard-status-card.status-ready-for-review {
+  --session-state-color: var(--purple);
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+}
+
+.dashboard-status-card.status-failed {
+  --session-state-color: var(--danger);
+  --session-card-bg: linear-gradient(90deg, var(--danger-soft), var(--surface) 48%);
+}
+
+.dashboard-status-card.status-dormant {
+  --session-state-color: var(--muted);
+}
+
+.dashboard-status-card.interactive:hover {
+  border-color: color-mix(in srgb, var(--session-state-color) 42%, var(--line));
+  background: var(--session-card-bg);
+}
+
+.dashboard-item-card strong {
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.dashboard-item-card span,
+.dashboard-item-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dashboard-item-card.empty-create {
+  min-height: 74px;
+  padding: 13px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface) 46%, transparent);
+}
+
+.dashboard-item-card.empty-create::before {
+  display: none;
+}
+/* Dashboard and navigation visual-system polish. */

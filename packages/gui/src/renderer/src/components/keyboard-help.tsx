@@ -7,10 +7,16 @@ export function KeyboardHelpModal(props: { open: boolean; commands: PaletteComma
   return (
     <Show when={props.open}>
       <div class="dialog-backdrop keyboard-help-backdrop" onMouseDown={props.close}>
-        <section class="keyboard-help-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <section
+          class="keyboard-help-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="keyboard-help-title"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
           <header>
             <div>
-              <h2>Keyboard Shortcuts</h2>
+              <h2 id="keyboard-help-title">Keyboard Shortcuts</h2>
               <p>Commands and shortcuts available in this GUI.</p>
             </div>
             <button type="button" aria-label="Close keyboard help" onClick={props.close}>{"\u00d7"}</button>

@@ -17,6 +17,7 @@ export type WorkbenchPageProps = {
   setSelectedVariant?: (value: string) => void
   rememberModel?: (value: string) => void
   refresh?: () => Promise<void>
+  hydrateSession?: (sessionID: string, before?: string) => Promise<SessionData>
   replyPermission?: (request: GuiSnapshot["permissions"][number], reply: "once" | "always" | "reject") => void
   replyQuestion?: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion?: (request: QuestionRequest) => void

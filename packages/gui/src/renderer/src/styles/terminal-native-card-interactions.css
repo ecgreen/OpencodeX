@@ -1,0 +1,458 @@
+
+.swarm-role-card:hover,
+.swarm-role-card:focus-within {
+  border-color: color-mix(in srgb, var(--secondary) 30%, var(--border));
+  border-left-color: var(--secondary);
+  background: color-mix(in srgb, var(--bg) 88%, var(--element) 12%);
+  box-shadow: inset 2px 0 0 var(--secondary);
+}
+
+.swarm-role-card:hover :is(span, small),
+.swarm-role-card:focus-within :is(span, small) {
+  color: var(--muted);
+}
+
+.swarm-role-card:hover strong,
+.swarm-role-card:focus-within strong {
+  color: var(--text);
+}
+
+.session-link.status-input-needed > span:first-child,
+.session-link.status-unviewed > span:first-child,
+.session-link.status-ready-for-review > span:first-child,
+.session-link.status-needs-review > span:first-child,
+.session-link.status-review-ready > span:first-child,
+.dashboard-status-card.status-input-needed strong,
+.dashboard-status-card.status-unviewed strong,
+.dashboard-status-card.status-ready-for-review strong,
+.dashboard-status-card.status-needs-review strong,
+.dashboard-status-card.status-review-ready strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background:
+    linear-gradient(
+      100deg,
+      var(--session-state-color) 0%,
+      var(--session-state-color) 42%,
+      color-mix(in srgb, var(--session-state-color) 28%, white) 49%,
+      #ffffff 53%,
+      color-mix(in srgb, var(--session-state-color) 28%, white) 57%,
+      var(--session-state-color) 64%,
+      var(--session-state-color) 100%
+    );
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: sidebar-title-shimmer 3400ms linear infinite;
+  text-shadow: 0 0 16px color-mix(in srgb, var(--session-state-color) 28%, transparent);
+  transition: none;
+}
+
+.session-link.status-input-needed:hover > span:first-child,
+.session-link.status-input-needed:focus-visible > span:first-child,
+.session-link.status-unviewed:hover > span:first-child,
+.session-link.status-unviewed:focus-visible > span:first-child,
+.session-link.status-ready-for-review:hover > span:first-child,
+.session-link.status-ready-for-review:focus-visible > span:first-child,
+.session-link.status-needs-review:hover > span:first-child,
+.session-link.status-needs-review:focus-visible > span:first-child,
+.session-link.status-review-ready:hover > span:first-child,
+.session-link.status-review-ready:focus-visible > span:first-child,
+.dashboard-status-card.status-input-needed.interactive:hover strong,
+.dashboard-status-card.status-input-needed.interactive:focus-within strong,
+.dashboard-status-card.status-unviewed.interactive:hover strong,
+.dashboard-status-card.status-unviewed.interactive:focus-within strong,
+.dashboard-status-card.status-ready-for-review.interactive:hover strong,
+.dashboard-status-card.status-ready-for-review.interactive:focus-within strong,
+.dashboard-status-card.status-needs-review.interactive:hover strong,
+.dashboard-status-card.status-needs-review.interactive:focus-within strong,
+.dashboard-status-card.status-review-ready.interactive:hover strong,
+.dashboard-status-card.status-review-ready.interactive:focus-within strong {
+  color: transparent;
+}
+
+/* Sidebar card hover polish: keep state rails visible, readable, and stationary. */
+.rail-section header,
+.project-heading,
+.session-link,
+.nav button {
+  --sidebar-hover-duration: 170ms;
+  --sidebar-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateY(0);
+  transition:
+    background var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    border-color var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    box-shadow var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    color 130ms ease,
+    opacity 130ms ease;
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.project-heading:hover,
+.project-heading:focus-within,
+.session-link:hover,
+.session-link:focus-visible,
+.nav button:hover,
+.nav button:focus-visible {
+  transform: translateY(0);
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.project-heading:hover,
+.project-heading:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--primary) 11%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 90%, var(--primary) 10%);
+  box-shadow:
+    inset 3px 0 0 var(--primary),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.session-link {
+  transform: translateY(0);
+}
+
+.session-link:hover,
+.session-link:focus-visible {
+  border-color: color-mix(in srgb, var(--session-state-color) 32%, var(--border-subtle));
+  border-left-color: var(--session-state-color);
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--session-state-color) 16%, transparent), transparent 48%),
+    color-mix(in srgb, var(--panel) 92%, var(--session-state-color) 8%);
+  box-shadow:
+    inset 3px 0 0 var(--session-state-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--session-state-color) 14%, transparent);
+}
+
+.session-link.active {
+  border-color: color-mix(in srgb, var(--session-state-color) 42%, var(--border));
+  border-left-color: var(--session-state-color);
+  background: var(--session-active-bg);
+  box-shadow:
+    inset 3px 0 0 var(--session-state-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--session-state-color) 24%, transparent);
+}
+
+.session-link:hover > span:first-child,
+.session-link:focus-visible > span:first-child,
+.session-link:hover small,
+.session-link:focus-visible small {
+  color: color-mix(in srgb, var(--text) 86%, var(--session-state-color));
+}
+
+.session-link.status-input-needed:hover > span:first-child,
+.session-link.status-input-needed:focus-visible > span:first-child,
+.session-link.status-unviewed:hover > span:first-child,
+.session-link.status-unviewed:focus-visible > span:first-child,
+.session-link.status-ready-for-review:hover > span:first-child,
+.session-link.status-ready-for-review:focus-visible > span:first-child,
+.session-link.status-needs-review:hover > span:first-child,
+.session-link.status-needs-review:focus-visible > span:first-child,
+.session-link.status-review-ready:hover > span:first-child,
+.session-link.status-review-ready:focus-visible > span:first-child {
+  color: transparent;
+}
+
+.brand:hover,
+.brand:focus-within {
+  border-color: transparent;
+  background: transparent;
+}
+
+.brand-mark {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-toggle {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  background: transparent;
+  box-shadow: none;
+  transition:
+    color 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rail-toggle .icon {
+  width: 22px;
+  height: 22px;
+  transition:
+    color 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    stroke 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rail .rail-toggle:hover,
+.rail .rail-toggle:focus-visible,
+.rail-toggle:hover,
+.rail-toggle:focus-visible {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.rail-toggle:hover .icon,
+.rail-toggle:focus-visible .icon {
+  transform: none;
+  filter: none;
+}
+
+.rail-collapsed .brand {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.rail-collapsed .brand-copy {
+  display: none;
+}
+
+.rail-collapsed .brand-actions {
+  display: grid;
+  justify-items: center;
+  width: 44px;
+  align-items: center;
+  gap: 6px;
+  margin-left: 0;
+}
+
+.rail-collapsed .new-button,
+.rail-collapsed .rail-toggle {
+  width: 44px;
+  height: 44px;
+}
+
+.rail-collapsed .nav {
+  align-self: center;
+  margin-left: 0;
+}
+
+.nav button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+.nav button.active,
+.nav button:hover,
+.nav button:focus-visible {
+  border-color: transparent;
+  background: transparent;
+}
+
+.nav button.active {
+  color: var(--muted);
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+
+.nav button.active .icon {
+  color: var(--brand);
+}
+
+.nav button:hover,
+.nav button:focus-visible {
+  color: var(--muted);
+  box-shadow: inset 0 -2px 0 #fff;
+}
+
+.nav button:hover .icon,
+.nav button:focus-visible .icon {
+  color: #fff;
+}
+
+/* Recent project rows use the same blue as the dashboard project action. */
+.project-heading {
+  --project-row-color: var(--text);
+  color: var(--project-row-color);
+}
+
+.project-heading.recent {
+  --project-row-color: var(--secondary);
+}
+
+.rail-section header[data-rail-section-id="projects"] {
+  --project-row-color: var(--secondary);
+}
+
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong) {
+  color: var(--project-row-color);
+}
+
+.rail-section header[data-rail-section-id="projects"]:hover,
+.rail-section header[data-rail-section-id="projects"]:focus-within {
+  border-color: color-mix(in srgb, var(--project-row-color) 34%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--project-row-color) 13%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 91%, var(--project-row-color) 9%);
+  box-shadow:
+    inset 3px 0 0 var(--project-row-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--project-row-color) 16%, transparent);
+}
+
+.rail-section header[data-rail-section-id="projects"] > .section-new {
+  color: color-mix(in srgb, var(--project-row-color) 72%, var(--muted));
+  background: transparent;
+}
+
+.rail-section header[data-rail-section-id="projects"]:hover > .section-new,
+.rail-section header[data-rail-section-id="projects"]:focus-within > .section-new {
+  color: color-mix(in srgb, var(--project-row-color) 82%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 7%, transparent);
+}
+
+.rail-section header[data-rail-section-id="projects"] > .section-new:hover,
+.rail-section header[data-rail-section-id="projects"] > .section-new:focus-visible {
+  color: color-mix(in srgb, var(--project-row-color) 88%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 12%, transparent);
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle, .project-title) {
+  color: var(--project-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle, .project-title):hover,
+.project-heading :is(.project-toggle, .project-title):focus-visible,
+.project-heading:hover :is(.project-toggle, .project-title),
+.project-heading:focus-within :is(.project-toggle, .project-title) {
+  color: color-mix(in srgb, var(--project-row-color) 86%, var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:hover,
+.project-heading:focus-within {
+  border-color: color-mix(in srgb, var(--project-row-color) 34%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--project-row-color) 13%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 91%, var(--project-row-color) 9%);
+  box-shadow:
+    inset 3px 0 0 var(--project-row-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--project-row-color) 16%, transparent);
+}
+
+.project-heading .project-new {
+  border-left: 1px solid color-mix(in srgb, var(--project-row-color) 20%, var(--border-subtle));
+  color: color-mix(in srgb, var(--project-row-color) 72%, var(--muted));
+  background: transparent;
+}
+
+.project-heading:hover .project-new,
+.project-heading:focus-within .project-new {
+  border-left-color: color-mix(in srgb, var(--project-row-color) 38%, var(--border));
+  color: color-mix(in srgb, var(--project-row-color) 82%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 7%, transparent);
+}
+
+.project-heading .project-new:hover,
+.project-heading .project-new:focus-visible {
+  border-left-color: color-mix(in srgb, var(--project-row-color) 54%, var(--border));
+  color: color-mix(in srgb, var(--project-row-color) 88%, var(--text));
+  background: color-mix(in srgb, var(--project-row-color) 12%, transparent);
+  box-shadow: none;
+}
+
+.project-heading.dragging,
+.rail-section header.dragging,
+.draggable-row.dragging,
+.rail-section.section-slot-placeholder::before,
+.rail-section.section-slot-placeholder::after,
+.project-drop-placeholder,
+.project-group.dropping,
+.rail-section header.dropping,
+.draggable-row.dropping,
+.rail-section-drag-preview,
+.project-drag-preview,
+.project-drag-preview-sessions span {
+  border-radius: 0;
+}
+
+.project-drag-preview {
+  border-color: color-mix(in srgb, var(--secondary) 34%, var(--border));
+  border-left-color: var(--secondary);
+}
+
+.project-drag-preview-icon {
+  color: var(--secondary);
+}
+
+/* Major sidebar section rows share a neutral slate treatment. */
+.rail-section header {
+  --major-row-color: color-mix(in srgb, var(--text) 92%, #ffffff);
+  --major-row-accent: color-mix(in srgb, var(--text) 58%, var(--border-active));
+  --major-row-muted: color-mix(in srgb, var(--muted) 74%, var(--text));
+  color: var(--major-row-color);
+}
+
+.rail-section header :is(.section-toggle, .section-chevron, strong) {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header .section-count {
+  color: var(--major-row-muted);
+}
+
+.rail-section header:hover,
+.rail-section header:focus-within,
+.rail-section header[data-rail-section-id="projects"]:hover,
+.rail-section header[data-rail-section-id="projects"]:focus-within {
+  border-color: color-mix(in srgb, var(--major-row-accent) 42%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 11%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 88%, var(--text) 12%);
+  box-shadow:
+    inset 3px 0 0 var(--major-row-accent),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.rail-section header :is(.section-toggle, .section-chevron, strong):hover,
+.rail-section header :is(.section-toggle, .section-chevron, strong):focus-visible,
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong):hover,
+.rail-section header[data-rail-section-id="projects"] :is(.section-toggle, .section-chevron, strong):focus-visible {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header > .section-new,
+.rail-section header[data-rail-section-id="projects"] > .section-new {
+  border-left: 1px solid color-mix(in srgb, var(--major-row-accent) 28%, var(--border-subtle));
+  color: var(--major-row-muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header:hover > .section-new,
+.rail-section header:focus-within > .section-new,
+.rail-section header[data-rail-section-id="projects"]:hover > .section-new,
+.rail-section header[data-rail-section-id="projects"]:focus-within > .section-new {
+  border-left-color: color-mix(in srgb, var(--major-row-accent) 42%, var(--border));
+  color: color-mix(in srgb, var(--text) 86%, var(--muted));
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}

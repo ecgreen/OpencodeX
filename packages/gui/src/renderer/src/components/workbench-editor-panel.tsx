@@ -26,6 +26,7 @@ export function WorkbenchEditorPanel(props: {
   diagnosticsLoading: Accessor<boolean>
   diagnosticsMessage: Accessor<string>
   diagnosticsCommand: Accessor<string>
+  runDiagnostics: () => void
   gitStatusByPath: Accessor<Map<string, WorkbenchGitStatus["files"][number]>>
   setActivePath: Setter<string>
   revealFile: (path: string) => void
@@ -112,6 +113,7 @@ export function WorkbenchEditorPanel(props: {
         command={props.diagnosticsCommand()}
         diagnostics={props.activeDiagnostics().length > 0 ? props.activeDiagnostics() : props.diagnostics()}
         total={props.diagnostics().length}
+        onRun={props.runDiagnostics}
         onOpen={props.openDiagnostic}
         onFix={props.fixDiagnostic}
       />

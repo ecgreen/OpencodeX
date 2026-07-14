@@ -1,0 +1,453 @@
+
+.app-loading-pin {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.app-loading-bucket-chevron {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.app-loading-line::after,
+.app-loading-control::after,
+.app-loading-icon-control::after,
+.app-loading-pin::after,
+.app-loading-bucket-chevron::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, #cbd5e1 14%, transparent), transparent);
+  transform: translateX(-115%);
+  animation: app-loading-skeleton-shimmer 1350ms ease-in-out infinite;
+}
+
+@keyframes app-loading-skeleton-shimmer {
+  100% {
+    transform: translateX(115%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading-line::after,
+  .app-loading-control::after,
+  .app-loading-icon-control::after,
+  .app-loading-pin::after,
+  .app-loading-bucket-chevron::after {
+    animation: none;
+    transform: translateX(0);
+    opacity: 0.5;
+  }
+}
+
+.dashboard-card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.dashboard-session-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-session-bucket {
+  display: grid;
+  grid-template-rows: auto minmax(0, auto);
+  min-width: 0;
+  gap: 6px;
+}
+
+.dashboard-session-bucket > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dashboard-bucket-toggle {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  text-align: left;
+  background: transparent;
+}
+
+.dashboard-bucket-toggle:hover,
+.dashboard-bucket-toggle:focus-visible {
+  color: var(--text);
+  background: transparent;
+  outline: none;
+}
+
+.dashboard-bucket-toggle .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.dashboard-bucket-toggle strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-session-bucket > header small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-bucket-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  overflow: hidden;
+  transition: grid-template-rows 180ms cubic-bezier(0.16, 1, 0.3, 1), opacity 140ms ease;
+}
+
+.dashboard-bucket-content.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.dashboard-bucket-content > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dashboard-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 118px;
+  width: 100%;
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+  background: color-mix(in srgb, var(--bg) 86%, var(--panel) 14%);
+}
+
+.dashboard-empty-state > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  background: var(--bg);
+}
+
+.dashboard-empty-state strong {
+  width: min(100%, 28ch);
+  max-width: 28ch;
+  color: color-mix(in srgb, var(--text) 74%, var(--muted));
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.dashboard-empty-state > span + strong + span {
+  width: min(100%, 34ch);
+  min-width: min(100%, 18ch);
+  max-width: 34ch;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.dashboard-empty-action {
+  cursor: pointer;
+}
+
+.dashboard-empty-action > span {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-empty-action > span:first-child {
+  color: var(--primary);
+}
+
+.dashboard-empty-action strong,
+.dashboard-empty-action > span + strong + span {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-empty-action:hover,
+.dashboard-empty-action:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 80%, var(--primary) 8%);
+  outline: none;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-page {
+    height: auto;
+    overflow: auto;
+  }
+
+  .dashboard-sections {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-auto-rows: minmax(360px, 42vh);
+  }
+
+  .dashboard-section {
+    min-height: 0;
+  }
+}
+
+.dashboard-item-card,
+.view-list-card,
+.view-session-card,
+.manager-row,
+.role-editor-card,
+.project-detail-list,
+.dashboard-project-view {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dashboard-item-card {
+  min-height: 46px;
+  padding: 7px 10px;
+}
+
+.dashboard-sections .dashboard-item-card,
+.dashboard-session-groups .dashboard-item-card {
+  background: var(--bg);
+}
+
+.dashboard-item-card::before,
+.dashboard-status-card::before {
+  display: none;
+}
+
+.dashboard-item-card.interactive:hover,
+.dashboard-item-card.interactive:focus-within,
+.dashboard-status-card.interactive:hover,
+[data-ui="card"][data-interactive="true"]:hover {
+  border-color: var(--border-subtle);
+  border-left-color: var(--card-accent, var(--primary));
+  background: var(--element);
+  box-shadow: inset 3px 0 0 var(--card-accent, var(--primary));
+}
+
+.dashboard-status-card {
+  --session-card-bg: transparent;
+  background: transparent;
+}
+
+.dashboard-status-card.status-in-progress,
+.dashboard-status-card.status-input-needed,
+.dashboard-status-card.status-unviewed,
+.dashboard-status-card.status-ready-for-review,
+.dashboard-status-card.status-needs-review,
+.dashboard-status-card.status-review-ready,
+.dashboard-status-card.status-failed,
+.dashboard-status-card.status-dormant {
+  background: transparent;
+}
+
+.dashboard-status-card.status-in-progress {
+  --session-state-color: var(--blue);
+  --card-accent: var(--blue);
+}
+
+.dashboard-status-card.status-input-needed {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber);
+}
+
+.dashboard-status-card.status-unviewed,
+.dashboard-status-card.status-ready-for-review,
+.dashboard-status-card.status-needs-review,
+.dashboard-status-card.status-review-ready {
+  --session-state-color: var(--purple);
+  --card-accent: var(--purple);
+}
+
+.dashboard-status-card.status-failed {
+  --card-accent: var(--error);
+}
+
+.dashboard-item-card.project-card,
+.dashboard-project-view {
+  --card-accent: var(--primary);
+}
+
+.dashboard-item-card.warning,
+.project-detail-row.warning {
+  --card-accent: var(--warning);
+  background: transparent;
+}
+
+.dashboard-card-open,
+.dashboard-project-open {
+  min-height: 0;
+}
+
+.dashboard-project-view {
+  padding: 10px 0 0;
+}
+
+.dashboard-project-view > header {
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dashboard-project-view-grid {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.project-detail-list {
+  border-left: 0;
+}
+
+.project-detail-list > header {
+  background: var(--panel);
+}
+
+.project-detail-row {
+  border-radius: 0;
+}
+
+.swarm-editor-page {
+  align-content: start;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  overflow: auto;
+}
+
+.swarm-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.swarm-editor-sidebar,
+.swarm-editor-team {
+  min-width: 0;
+}
+
+.swarm-editor-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.swarm-editor-panel,
+.swarm-editor-team {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #151515;
+}
+
+.swarm-editor-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.swarm-editor-panel > header,
+.swarm-editor-team > header,
+.swarm-role-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.swarm-editor-panel > header {
+  justify-content: flex-start;
+}
+
+.swarm-editor-panel > header > span,
+.swarm-role-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  color: var(--secondary);
+  background: var(--bg);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.swarm-editor-panel > header > div,
+.swarm-role-card > header > div > div,
+.swarm-editor-team > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.swarm-editor-panel strong,
+.swarm-editor-team strong,
+.swarm-role-card strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.swarm-editor-panel small,
+.swarm-editor-panel dt,
+.swarm-editor-panel dd,
+.swarm-editor-team > header span,
+.swarm-role-card > header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.swarm-editor-fields,
+.swarm-role-fields {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}

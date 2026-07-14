@@ -7,7 +7,7 @@ import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -83,6 +83,7 @@ export const Event = {
 export const CreateSessionInput = Schema.Struct({
   projectID: Schema.String,
   directory: Schema.String,
+  sessionID: Schema.optional(SessionID),
   title: Schema.optional(Schema.String),
   agent: Schema.optional(Schema.String),
   model: Schema.optional(
@@ -146,7 +147,7 @@ export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderErr
 }) {}
 
 export interface Interface {
-  readonly list: () => Effect.Effect<Info[]>
+  readonly list: (input?: { sessions?: Session.GlobalInfo[] }) => Effect.Effect<Info[]>
   readonly get: (projectID: string) => Effect.Effect<Info, Project.NotFoundError>
   readonly validate: (input: ValidateInput) => Effect.Effect<Validation>
   readonly create: (input: CreateInput) => Effect.Effect<Info, InvalidFolderError | Project.NotFoundError>
@@ -260,7 +261,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const list = Effect.fn("OpencodeXProject.list")(function* () {
+    const list = Effect.fn("OpencodeXProject.list")(function* (input?: { sessions?: Session.GlobalInfo[] }) {
       const rows = yield* OpencodeXProjectFolder.listProjects(db)
       if (rows.length === 0) return []
       const [upstream, folders, tracked, globalSessions] = yield* Effect.all(
@@ -270,7 +271,7 @@ export const layer = Layer.effect(
             ...new Set(rows.map((row) => ProjectV2.ID.make(row.project_id))),
           ]),
           OpencodeXProjectFolder.listAllSessionIDs(db),
-          sessions.listGlobal({ roots: true, limit: 5_000 }),
+          input?.sessions ? Effect.succeed(input.sessions) : sessions.listGlobal({ roots: true, limit: 5_000 }),
         ],
         { concurrency: "unbounded" },
       )
@@ -394,6 +395,10 @@ export const layer = Layer.effect(
     const createSession = Effect.fn("OpencodeXProject.createSession")(function* (input: CreateSessionInput) {
       const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
       if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
+      if (input.sessionID) {
+        const existing = yield* sessions.get(input.sessionID).pipe(Effect.option)
+        if (Option.isSome(existing)) return existing.value
+      }
       const directory = OpencodeXProjectFolder.normalizeFolderPath(input.directory)
       if (!(yield* fs.isDir(directory).pipe(Effect.orDie))) {
         return yield* new InvalidFolderError({
@@ -404,6 +409,7 @@ export const layer = Layer.effect(
       const result = yield* store.provide(
         { directory },
         share.create({
+          id: input.sessionID,
           title: input.title,
           agent: input.agent,
           model: input.model,

@@ -6,11 +6,13 @@ import {
 } from "../lib/workbench"
 import { Icon } from "./icon"
 import { IconButton, TextInput } from "./ui"
+import { BrowserHostFallback } from "./browser-host-fallback"
 
 export function WorkbenchBrowserPanel(props: {
   tabs: WorkbenchBrowserTab[]
   activeID: string
   state?: WorkbenchBrowserTabState
+  available: boolean
   url: string
   setActiveID: (id: string) => void
   closeTab: (id: string) => void
@@ -63,27 +65,30 @@ export function WorkbenchBrowserPanel(props: {
         <IconButton class="workbench-browser-new-tab" icon="plus" label="New browser tab" onClick={props.createTab} />
       </div>
       <div class="workbench-browser-bar">
-        <IconButton icon="chevronLeft" label="Back" disabled={!props.state?.canGoBack} onClick={() => props.action("back")} />
-        <IconButton icon="chevronRight" label="Forward" disabled={!props.state?.canGoForward} onClick={() => props.action("forward")} />
+        <IconButton icon="chevronLeft" label="Back" disabled={!props.available || !props.state?.canGoBack} onClick={() => props.action("back")} />
+        <IconButton icon="chevronRight" label="Forward" disabled={!props.available || !props.state?.canGoForward} onClick={() => props.action("forward")} />
         <Show
           when={props.state?.loading}
-          fallback={<IconButton icon="activity" label="Reload" onClick={() => props.action("reload")} />}
+          fallback={<IconButton icon="activity" label="Reload" disabled={!props.available} onClick={() => props.action("reload")} />}
         >
           <IconButton icon="stop" label="Stop loading" onClick={() => props.action("stop")} />
         </Show>
         <TextInput
           value={props.url}
+          disabled={!props.available}
           onInput={(event) => props.setURL(event.currentTarget.value)}
           onKeyDown={(event) => event.key === "Enter" && props.navigate()}
           placeholder="Search or enter address"
         />
-        <IconButton variant="primary" icon="send" label="Go" onClick={props.navigate} />
-        <IconButton icon="panel" label="Capture screenshot" onClick={props.captureScreenshot} />
-        <IconButton icon="save" label="Save page" onClick={props.savePage} />
-        <IconButton icon="send" label="Ask agent about page" onClick={props.askAgent} />
-        <IconButton icon="settings" label="Open DevTools" onClick={props.openDevtools} />
+        <IconButton variant="primary" icon="send" label="Go" disabled={!props.available} onClick={props.navigate} />
+        <IconButton icon="panel" label="Capture screenshot" disabled={!props.available} onClick={props.captureScreenshot} />
+        <IconButton icon="save" label="Save page" disabled={!props.available} onClick={props.savePage} />
+        <IconButton icon="send" label="Ask agent about page" disabled={!props.available} onClick={props.askAgent} />
+        <IconButton icon="settings" label="Open DevTools" disabled={!props.available} onClick={props.openDevtools} />
       </div>
-      <div class="workbench-browser-host" ref={props.setHost} />
+      <div class="workbench-browser-host" ref={props.setHost}>
+        <BrowserHostFallback visible={!props.available} />
+      </div>
     </div>
   )
 }

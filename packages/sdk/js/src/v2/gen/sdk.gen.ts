@@ -163,8 +163,12 @@ import type {
   OpencodexSessionStateUpdateResponses,
   OpencodexSessionSyncErrors,
   OpencodexSessionSyncResponses,
+  OpencodexStateCapabilitiesErrors,
+  OpencodexStateCapabilitiesResponses,
   OpencodexStateEventErrors,
   OpencodexStateEventResponses,
+  OpencodexStateOperationsErrors,
+  OpencodexStateOperationsResponses,
   OpencodexStateSessionErrors,
   OpencodexStateSessionResponses,
   OpencodexStateSnapshotErrors,
@@ -214,6 +218,8 @@ import type {
   OpencodexWorkbenchFileCreateResponses,
   OpencodexWorkbenchFileDeleteErrors,
   OpencodexWorkbenchFileDeleteResponses,
+  OpencodexWorkbenchFileReadErrors,
+  OpencodexWorkbenchFileReadResponses,
   OpencodexWorkbenchFileRenameErrors,
   OpencodexWorkbenchFileRenameResponses,
   OpencodexWorkbenchFileWriteErrors,
@@ -2707,6 +2713,70 @@ export class State extends HeyApiClient {
   }
 
   /**
+   * Get an atomic OpencodeX jobs and swarms snapshot
+   */
+  public operations<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateOperationsResponses,
+      OpencodexStateOperationsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/operations",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get an atomic OpencodeX capabilities snapshot
+   */
+  public capabilities<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateCapabilitiesResponses,
+      OpencodexStateCapabilitiesErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/capabilities",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get an atomic OpencodeX session snapshot
    */
   public session<ThrowOnError extends boolean = false>(
@@ -3238,6 +3308,40 @@ export class Plugin extends HeyApiClient {
 }
 
 export class File2 extends HeyApiClient {
+  /**
+   * Read exact text from the GUI workbench
+   */
+  public read<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchFileReadResponses,
+      OpencodexWorkbenchFileReadErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/read",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * Write a text file from the GUI workbench
    */
@@ -5316,6 +5420,7 @@ export class Session3 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
+      id?: string
       parentID?: string
       title?: string
       agent?: string
@@ -5339,6 +5444,7 @@ export class Session3 extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
             { in: "body", key: "parentID" },
             { in: "body", key: "title" },
             { in: "body", key: "agent" },

@@ -37,10 +37,20 @@ export async function listWorkbenchFiles(gui: GuiClient, path: string, directory
 }
 
 export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string): Promise<FileContent | undefined> {
-  return gui.client.file.read({
+  const file = await gui.client.file.read({
     directory: directory || gui.directory || undefined,
     path,
   }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data)
+  if (!file) return
+  if (file.encoding === "base64") return { ...file, type: "binary" }
+  if (file.type !== "text") return file
+  const exact = await pluginApi<WorkbenchOperationResult>(
+    gui,
+    `/experimental/opencodex/workbench/file/read?path=${encodeURIComponent(path)}`,
+    {},
+    directory,
+  )
+  return exact.ok && exact.content !== undefined ? { ...file, content: exact.content } : file
 }
 
 export async function writeWorkbenchFile(gui: GuiClient, input: { path: string; content: string; previousContent?: string }, directory?: string): Promise<WorkbenchOperationResult> {

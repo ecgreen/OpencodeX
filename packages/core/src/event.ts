@@ -38,6 +38,7 @@ export type Projector<D extends Definition = Definition> = (event: Payload<D>) =
 type AnyProjector = (event: Payload) => Effect.Effect<void>
 export type Listener = (event: Payload) => Effect.Effect<void>
 export type Sync = (event: Payload) => Effect.Effect<void>
+export type SyncFilter = (event: Payload) => boolean
 export type Unsubscribe = Effect.Effect<void>
 
 export type SerializedEvent = {
@@ -115,9 +116,15 @@ export interface Interface {
     data: Data<D>,
     options?: PublishOptions,
   ) => Effect.Effect<Payload<D>>
+  readonly commit: <D extends Definition>(
+    definition: D,
+    data: Data<D>,
+    options?: PublishOptions,
+  ) => Effect.Effect<Payload<D>>
+  readonly broadcast: <D extends Definition>(event: Payload<D>) => Effect.Effect<Payload<D>>
   readonly subscribe: <D extends Definition>(definition: D) => Stream.Stream<Payload<D>>
   readonly all: () => Stream.Stream<Payload>
-  readonly sync: (handler: Sync) => Effect.Effect<Unsubscribe>
+  readonly sync: (handler: Sync, filter?: SyncFilter) => Effect.Effect<Unsubscribe>
   readonly listen: (listener: Listener) => Effect.Effect<Unsubscribe>
   readonly barrier: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
   readonly project: <D extends Definition>(definition: D, projector: Projector<D>) => Effect.Effect<void>
@@ -142,7 +149,7 @@ export const layer = Layer.effect(
     const typed = new Map<string, PubSub.PubSub<Payload>>()
     const projectors = new Map<string, AnyProjector[]>()
     const listeners = new Array<Listener>()
-    const syncHandlers = new Array<Sync>()
+    const syncHandlers = new Array<{ handler: Sync; filter?: SyncFilter }>()
     const applicationBarrier = Semaphore.makeUnsafe(1)
     const InApplicationBarrier = Context.Reference<boolean>("@opencode/Event/InApplicationBarrier", {
       defaultValue: () => false,
@@ -254,43 +261,64 @@ export const layer = Layer.effect(
       })
     }
 
-    function publishEvent<D extends Definition>(event: Payload<D>) {
-      return barrier(
-        Effect.gen(function* () {
-          for (const sync of syncHandlers) {
-            yield* sync(event as Payload)
-          }
-          yield* commitSyncEvent(event as Payload)
-          for (const listener of listeners) {
-            yield* listener(event as Payload)
-          }
-          const pubsub = typed.get(event.type)
-          if (pubsub) yield* PubSub.publish(pubsub, event as Payload)
-          yield* PubSub.publish(all, event as Payload)
-          return event
-        }),
-      )
+    function persistEvent<D extends Definition>(event: Payload<D>) {
+      const handlers = syncHandlers.filter((item) => item.filter?.(event as Payload) ?? true)
+      if (handlers.length === 0 && registry.get(event.type)?.sync === undefined) return Effect.void
+      return db
+        .transaction(
+          () =>
+            Effect.gen(function* () {
+              for (const item of handlers) yield* item.handler(event as Payload)
+              yield* commitSyncEvent(event as Payload)
+            }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.orDie)
     }
 
+    function broadcastEvent<D extends Definition>(event: Payload<D>) {
+      return Effect.gen(function* () {
+        for (const listener of listeners) yield* listener(event as Payload)
+        const pubsub = typed.get(event.type)
+        if (pubsub) yield* PubSub.publish(pubsub, event as Payload)
+        yield* PubSub.publish(all, event as Payload)
+        return event
+      })
+    }
+
+    function publishEvent<D extends Definition>(event: Payload<D>) {
+      return barrier(persistEvent(event).pipe(Effect.andThen(broadcastEvent(event))))
+    }
+
+    const payload = Effect.fn("EventV2.payload")(function* <D extends Definition>(
+      definition: D,
+      data: Data<D>,
+      options?: PublishOptions,
+    ) {
+      const serviceLocation = Option.getOrUndefined(yield* Effect.serviceOption(Location.Service))
+      const location =
+        options?.location ??
+        (serviceLocation ? { directory: serviceLocation.directory, workspaceID: serviceLocation.workspaceID } : undefined)
+      return {
+        id: options?.id ?? ID.create(),
+        ...(options?.metadata ? { metadata: options.metadata } : {}),
+        type: definition.type,
+        ...(definition.sync === undefined ? {} : { version: definition.sync.version }),
+        ...(location ? { location } : {}),
+        data,
+      } as Payload<D>
+    })
+
     function publish<D extends Definition>(definition: D, data: Data<D>, options?: PublishOptions) {
-      return barrier(
-        Effect.gen(function* () {
-          const serviceLocation = Option.getOrUndefined(yield* Effect.serviceOption(Location.Service))
-          const location =
-            options?.location ??
-            (serviceLocation
-              ? { directory: serviceLocation.directory, workspaceID: serviceLocation.workspaceID }
-              : undefined)
-          return yield* publishEvent({
-            id: options?.id ?? ID.create(),
-            ...(options?.metadata ? { metadata: options.metadata } : {}),
-            type: definition.type,
-            ...(definition.sync === undefined ? {} : { version: definition.sync.version }),
-            ...(location ? { location } : {}),
-            data,
-          } as Payload<D>)
-        }),
-      )
+      return payload(definition, data, options).pipe(Effect.flatMap(publishEvent))
+    }
+
+    function commit<D extends Definition>(definition: D, data: Data<D>, options?: PublishOptions) {
+      return barrier(payload(definition, data, options).pipe(Effect.tap(persistEvent)))
+    }
+
+    function broadcast<D extends Definition>(event: Payload<D>) {
+      return barrier(broadcastEvent(event))
     }
 
     function replay(event: SerializedEvent, options?: { readonly publish?: boolean; readonly ownerID?: string }) {
@@ -395,11 +423,12 @@ export const layer = Layer.effect(
         })
       })
 
-    const sync = (handler: Sync): Effect.Effect<Unsubscribe> =>
+    const sync = (handler: Sync, filter?: SyncFilter): Effect.Effect<Unsubscribe> =>
       Effect.sync(() => {
-        syncHandlers.push(handler)
+        const item = { handler, filter }
+        syncHandlers.push(item)
         return Effect.sync(() => {
-          const index = syncHandlers.indexOf(handler)
+          const index = syncHandlers.indexOf(item)
           if (index >= 0) syncHandlers.splice(index, 1)
         })
       })
@@ -413,6 +442,8 @@ export const layer = Layer.effect(
 
     return Service.of({
       publish,
+      commit,
+      broadcast,
       subscribe,
       all: streamAll,
       sync,

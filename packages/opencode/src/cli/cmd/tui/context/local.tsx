@@ -1,34 +1,18 @@
-import { createStore, produce } from "solid-js/store"
+import { createEffect } from "solid-js"
 import { createSimpleContext } from "./helper"
-import { updateClientSessionState } from "@opencode-ai/sdk/v2"
-import { batch, createEffect, createMemo } from "solid-js"
-import { useSync } from "@tui/context/sync"
-import { useTheme } from "@tui/context/theme"
-import { useRoute } from "@tui/context/route"
-import { useEvent } from "@tui/context/event"
-import { markViewedSessionUiState } from "./session-viewed"
-import { uniqueBy } from "remeda"
-import path from "path"
-import { Global } from "@opencode-ai/core/global"
-import { iife } from "@/util/iife"
-import { useToast } from "../ui/toast"
 import { useArgs } from "./args"
+import { useEvent } from "./event"
+import { createLocalAgent } from "./local-agent"
+import { createLocalModel } from "./local-model"
+import { createLocalSession } from "./local-session"
+import { type ModelSelection } from "./local-types"
+import { createLocalView } from "./local-view"
+import { useRoute } from "./route"
 import { useSDK } from "./sdk"
-import { RGBA } from "@opentui/core"
-import { Filesystem } from "@/util/filesystem"
+import { useSync } from "./sync"
+import { useToast } from "../ui/toast"
 
-export function parseModel(model: string) {
-  const [providerID, ...rest] = model.split("/")
-  return {
-    providerID: providerID,
-    modelID: rest.join("/"),
-  }
-}
-
-type ModelSelection = {
-  providerID: string
-  modelID: string
-}
+export { parseModel } from "./local-types"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -37,747 +21,45 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const toast = useToast()
     const route = useRoute()
-
-    function activeSessionID() {
-      return route.data.type === "session" ? route.data.sessionID : undefined
-    }
-
-    function isModelValid(model: ModelSelection) {
-      const provider = sync.data.provider.find((x) => x.id === model.providerID)
-      return !!provider?.models[model.modelID]
-    }
-
-    function getFirstValidModel(...modelFns: (() => ModelSelection | undefined)[]) {
-      const model = modelFns.map((modelFn) => modelFn()).find((model) => model && isModelValid(model))
-      if (model) return model
-    }
-
-    function fromSessionModel(model: { providerID: string; id: string } | undefined) {
-      if (!model) return undefined
-      return {
-        providerID: model.providerID,
-        modelID: model.id,
-      }
-    }
-
-    function sessionSwarmID(session: { metadata?: Record<string, unknown> } | undefined) {
-      const opencodex = session?.metadata?.opencodex
-      if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
-      return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
-    }
-
-    function activeSessionSwarmID() {
+    const activeSessionID = () => (route.data.type === "session" ? route.data.sessionID : undefined)
+    const isModelValid = (model: ModelSelection) =>
+      Boolean(sync.data.provider.find((provider) => provider.id === model.providerID)?.models[model.modelID])
+    const activeSessionSwarmID = () => {
       const sessionID = activeSessionID()
       let session = sessionID ? sync.session.get(sessionID) : undefined
       const seen = new Set<string>()
       while (session && !seen.has(session.id)) {
         seen.add(session.id)
-        const swarmID = sessionSwarmID(session)
-        if (swarmID) return swarmID
+        const opencodex = session.metadata?.opencodex
+        if (opencodex && typeof opencodex === "object" && "swarmID" in opencodex && typeof opencodex.swarmID === "string") {
+          return opencodex.swarmID
+        }
         session = session.parentID ? sync.session.get(session.parentID) : undefined
       }
     }
-
-    function activeSessionHasUserMessage() {
+    const activeSessionHasUserMessage = () => {
       const sessionID = activeSessionID()
-      if (!sessionID) return false
-      return (sync.data.message[sessionID] ?? []).some((message) => message.role === "user")
+      return sessionID ? (sync.data.message[sessionID] ?? []).some((message) => message.role === "user") : false
     }
 
-    function sessionModelPayload(model: ModelSelection, variant: string | undefined) {
-      return {
-        providerID: model.providerID,
-        id: model.modelID,
-        ...(variant && variant !== "default" ? { variant } : {}),
-      }
-    }
-
-    const agent = iife(() => {
-      const agents = createMemo(() => sync.data.agent.filter((x) => x.mode !== "subagent" && !x.hidden))
-      const visibleAgents = createMemo(() => sync.data.agent.filter((x) => !x.hidden))
-      const [agentStore, setAgentStore] = createStore({
-        current: undefined as string | undefined,
-        session: {} as Record<string, string | undefined>,
-      })
-      const { theme } = useTheme()
-      const colors = createMemo(() => [
-        theme.secondary,
-        theme.accent,
-        theme.success,
-        theme.warning,
-        theme.primary,
-        theme.error,
-        theme.info,
-      ])
-      return {
-        list() {
-          return agents()
-        },
-        current() {
-          return agents().find((x) => x.name === agentStore.current) ?? agents().at(0)
-        },
-        currentForSession(sessionID: string | undefined) {
-          if (!sessionID) return undefined
-          return agents().find((x) => x.name === agentStore.session[sessionID])
-        },
-        set(name: string) {
-          if (!agents().some((x) => x.name === name))
-            return toast.show({
-              variant: "warning",
-              message: `Agent not found: ${name}`,
-              duration: 3000,
-            })
-          setAgentStore("current", name)
-        },
-        setSession(sessionID: string, name: string) {
-          if (!agents().some((x) => x.name === name))
-            return toast.show({
-              variant: "warning",
-              message: `Agent not found: ${name}`,
-              duration: 3000,
-            })
-          setAgentStore("session", sessionID, name)
-        },
-        move(direction: 1 | -1) {
-          batch(() => {
-            const current = this.current()
-            if (!current) return
-            let next = agents().findIndex((x) => x.name === current.name) + direction
-            if (next < 0) next = agents().length - 1
-            if (next >= agents().length) next = 0
-            const value = agents()[next]
-            setAgentStore("current", value.name)
-          })
-        },
-        moveSession(sessionID: string, direction: 1 | -1, currentName?: string) {
-          batch(() => {
-            const current =
-              agents().find((x) => x.name === currentName) ?? this.currentForSession(sessionID) ?? this.current()
-            if (!current) return
-            let next = agents().findIndex((x) => x.name === current.name) + direction
-            if (next < 0) next = agents().length - 1
-            if (next >= agents().length) next = 0
-            const value = agents()[next]
-            setAgentStore("session", sessionID, value.name)
-          })
-        },
-        color(name: string) {
-          const index = visibleAgents().findIndex((x) => x.name === name)
-          if (index === -1) return colors()[0]
-          const agent = visibleAgents()[index]
-
-          if (agent?.color) {
-            const color = agent.color
-            if (color.startsWith("#")) return RGBA.fromHex(color)
-            // already validated by config, just satisfying TS here
-            return theme[color as keyof typeof theme] as RGBA
-          }
-          return colors()[index % colors().length]
-        },
-      }
+    const agent = createLocalAgent(sync, toast)
+    const model = createLocalModel({
+      sync,
+      sdk,
+      toast,
+      args: useArgs(),
+      agent,
+      activeSessionID,
+      activeSessionSwarmID,
+      activeSessionHasUserMessage,
+      isModelValid,
     })
-
-    const model = iife(() => {
-      const [modelStore, setModelStore] = createStore<{
-        ready: boolean
-        model: Record<string, ModelSelection>
-        session: Record<string, ModelSelection>
-        recent: ModelSelection[]
-        favorite: ModelSelection[]
-        variant: Record<string, string | undefined>
-        sessionVariant: Record<string, string | undefined>
-      }>({
-        ready: false,
-        model: {},
-        session: {},
-        recent: [],
-        favorite: [],
-        variant: {},
-        sessionVariant: {},
-      })
-
-      const filePath = path.join(Global.Path.state, "model.json")
-      const state = {
-        pending: false,
-      }
-
-      function save() {
-        if (!modelStore.ready) {
-          state.pending = true
-          return
-        }
-        state.pending = false
-        void Filesystem.writeJson(filePath, {
-          recent: modelStore.recent,
-          favorite: modelStore.favorite,
-          variant: modelStore.variant,
-          session: modelStore.session,
-          sessionVariant: modelStore.sessionVariant,
-        })
-      }
-
-      Filesystem.readJson(filePath)
-        .then((x: any) => {
-          if (Array.isArray(x.recent)) setModelStore("recent", x.recent)
-          if (Array.isArray(x.favorite)) setModelStore("favorite", x.favorite)
-          if (typeof x.variant === "object" && x.variant !== null) setModelStore("variant", x.variant)
-          if (typeof x.session === "object" && x.session !== null) setModelStore("session", x.session)
-          if (typeof x.sessionVariant === "object" && x.sessionVariant !== null)
-            setModelStore("sessionVariant", x.sessionVariant)
-        })
-        .catch(() => {})
-        .finally(() => {
-          setModelStore("ready", true)
-          if (state.pending) save()
-        })
-
-      const args = useArgs()
-      function persistSessionModelForSession(sessionID: string, model: ModelSelection, variant: string | undefined) {
-        void sdk
-          .request(`/session/${sessionID}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              model: sessionModelPayload(model, variant),
-            }),
-          })
-          .catch((error: unknown) => {
-            toast.show({
-              message: `Failed to save model for session: ${error instanceof Error ? error.message : String(error)}`,
-              variant: "warning",
-              duration: 3000,
-            })
-          })
-      }
-
-      function persistSessionModel(model: ModelSelection, variant: string | undefined) {
-        const sessionID = activeSessionID()
-        if (!sessionID) return
-        persistSessionModelForSession(sessionID, model, variant)
-      }
-
-      const fallbackModel = createMemo(() => {
-        if (args.model) {
-          const { providerID, modelID } = parseModel(args.model)
-          if (isModelValid({ providerID, modelID })) {
-            return {
-              providerID,
-              modelID,
-            }
-          }
-        }
-
-        if (sync.data.config.model) {
-          const { providerID, modelID } = parseModel(sync.data.config.model)
-          if (isModelValid({ providerID, modelID })) {
-            return {
-              providerID,
-              modelID,
-            }
-          }
-        }
-
-        for (const item of modelStore.recent) {
-          if (isModelValid(item)) {
-            return item
-          }
-        }
-
-        const provider = sync.data.provider[0]
-        if (!provider) return undefined
-        const defaultModel = sync.data.provider_default[provider.id]
-        const firstModel = Object.values(provider.models)[0]
-        const model = defaultModel ?? firstModel?.id
-        if (!model) return undefined
-        return {
-          providerID: provider.id,
-          modelID: model,
-        }
-      })
-
-      const currentModel = createMemo(() => {
-        const a = agent.current()
-        const sessionID = activeSessionID()
-        const session = sessionID ? sync.session.get(sessionID) : undefined
-        return (
-          getFirstValidModel(
-            () => (sessionID ? modelStore.session[sessionID] : undefined),
-            () => fromSessionModel(session?.model),
-            () => a && modelStore.model[a.name],
-            () => a && a.model,
-            fallbackModel,
-          ) ?? undefined
-        )
-      })
-
-      function selectedVariant() {
-        const m = currentModel()
-        if (!m) return undefined
-        const sessionID = activeSessionID()
-        if (sessionID && modelStore.sessionVariant[sessionID] !== undefined)
-          return normalizeVariant(m, modelStore.sessionVariant[sessionID])
-        const session = sessionID ? sync.session.get(sessionID) : undefined
-        if (session?.model?.variant !== undefined) return normalizeVariant(m, session.model.variant)
-        if (sessionID) return undefined
-        const key = `${m.providerID}/${m.modelID}`
-        return normalizeVariant(m, modelStore.variant[key])
-      }
-
-      function normalizeVariant(model: ModelSelection, value: string | undefined) {
-        if (value === "default") return value
-        if (!value) return undefined
-        const provider = sync.data.provider.find((x) => x.id === model.providerID)
-        const variants = provider?.models[model.modelID]?.variants
-        if (!variants || !(value in variants)) return undefined
-        return value
-      }
-
-      function variantListForModel(model: ModelSelection) {
-        const provider = sync.data.provider.find((x) => x.id === model.providerID)
-        const info = provider?.models[model.modelID]
-        if (!info?.variants) return []
-        return Object.keys(info.variants)
-      }
-
-      function sameModel(a: ModelSelection | undefined, b: ModelSelection | undefined) {
-        return a?.providerID === b?.providerID && a?.modelID === b?.modelID
-      }
-
-      function canChangeModel(next?: ModelSelection) {
-        if (!activeSessionSwarmID() || !activeSessionHasUserMessage()) return true
-        if (sameModel(currentModel(), next)) return true
-        toast.show({
-          message: "Started swarm sessions keep their assigned model.",
-          variant: "warning",
-          duration: 3000,
-        })
-        return false
-      }
-
-      return {
-        current: currentModel,
-        get ready() {
-          return modelStore.ready
-        },
-        recent() {
-          return modelStore.recent
-        },
-        favorite() {
-          return modelStore.favorite
-        },
-        parsed: createMemo(() => {
-          const value = currentModel()
-          if (!value) {
-            return {
-              provider: "Connect a provider",
-              model: "No provider selected",
-              reasoning: false,
-            }
-          }
-          const provider = sync.data.provider.find((x) => x.id === value.providerID)
-          const info = provider?.models[value.modelID]
-          return {
-            provider: provider?.name ?? value.providerID,
-            model: info?.name ?? value.modelID,
-            reasoning: info?.capabilities?.reasoning ?? false,
-          }
-        }),
-        cycle(direction: 1 | -1) {
-          const current = currentModel()
-          if (!current) return
-          const recent = modelStore.recent
-          const index = recent.findIndex((x) => x.providerID === current.providerID && x.modelID === current.modelID)
-          if (index === -1) return
-          let next = index + direction
-          if (next < 0) next = recent.length - 1
-          if (next >= recent.length) next = 0
-          const val = recent[next]
-          if (!val) return
-          if (!canChangeModel(val)) return
-          const a = agent.current()
-          if (!a) return
-          const sessionID = activeSessionID()
-          if (sessionID) {
-            setModelStore("session", sessionID, { ...val })
-            save()
-            persistSessionModel(val, undefined)
-            return
-          }
-          setModelStore("model", a.name, { ...val })
-          save()
-        },
-        cycleFavorite(direction: 1 | -1) {
-          const favorites = modelStore.favorite.filter((item) => isModelValid(item))
-          if (!favorites.length) {
-            toast.show({
-              variant: "info",
-              message: "Add a favorite model to use this shortcut",
-              duration: 3000,
-            })
-            return
-          }
-          const current = currentModel()
-          let index = -1
-          if (current) {
-            index = favorites.findIndex((x) => x.providerID === current.providerID && x.modelID === current.modelID)
-          }
-          if (index === -1) {
-            index = direction === 1 ? 0 : favorites.length - 1
-          } else {
-            index += direction
-            if (index < 0) index = favorites.length - 1
-            if (index >= favorites.length) index = 0
-          }
-          const next = favorites[index]
-          if (!next) return
-          if (!canChangeModel(next)) return
-          const a = agent.current()
-          if (!a) return
-          const sessionID = activeSessionID()
-          if (sessionID) setModelStore("session", sessionID, { ...next })
-          if (!sessionID) setModelStore("model", a.name, { ...next })
-          const uniq = uniqueBy([next, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
-          if (uniq.length > 10) uniq.pop()
-          setModelStore(
-            "recent",
-            uniq.map((x) => ({ providerID: x.providerID, modelID: x.modelID })),
-          )
-          if (sessionID) persistSessionModel(next, undefined)
-          save()
-        },
-        set(model: ModelSelection, options?: { recent?: boolean; persist?: boolean; force?: boolean }) {
-          batch(() => {
-            if (!isModelValid(model)) {
-              toast.show({
-                message: `Model ${model.providerID}/${model.modelID} is not valid`,
-                variant: "warning",
-                duration: 3000,
-              })
-              return
-            }
-            if (!options?.force && !canChangeModel(model)) return
-            const a = agent.current()
-            if (!a) return
-            const sessionID = activeSessionID()
-            if (sessionID) setModelStore("session", sessionID, model)
-            if (!sessionID) setModelStore("model", a.name, model)
-            save()
-            if (options?.recent) {
-              const uniq = uniqueBy([model, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
-              if (uniq.length > 10) uniq.pop()
-              setModelStore(
-                "recent",
-                uniq.map((x) => ({ providerID: x.providerID, modelID: x.modelID })),
-              )
-              save()
-            }
-            if (sessionID && options?.persist !== false) persistSessionModel(model, undefined)
-          })
-        },
-        toggleFavorite(model: ModelSelection) {
-          batch(() => {
-            if (!isModelValid(model)) {
-              toast.show({
-                message: `Model ${model.providerID}/${model.modelID} is not valid`,
-                variant: "warning",
-                duration: 3000,
-              })
-              return
-            }
-            const exists = modelStore.favorite.some(
-              (x) => x.providerID === model.providerID && x.modelID === model.modelID,
-            )
-            const next = exists
-              ? modelStore.favorite.filter((x) => x.providerID !== model.providerID || x.modelID !== model.modelID)
-              : [model, ...modelStore.favorite]
-            setModelStore(
-              "favorite",
-              next.map((x) => ({ providerID: x.providerID, modelID: x.modelID })),
-            )
-            save()
-          })
-        },
-        variant: {
-          selected() {
-            return selectedVariant()
-          },
-          selectedForSession(sessionID: string, model: ModelSelection, fallback?: string) {
-            if (modelStore.sessionVariant[sessionID] !== undefined)
-              return normalizeVariant(model, modelStore.sessionVariant[sessionID])
-            if (fallback !== undefined) return normalizeVariant(model, fallback)
-            const session = sync.session.get(sessionID)
-            if (session?.model?.variant !== undefined) return normalizeVariant(model, session.model.variant)
-            return undefined
-          },
-          current() {
-            const v = this.selected()
-            if (!v) return undefined
-            if (!this.list().includes(v)) return undefined
-            return v
-          },
-          currentForSession(sessionID: string, model: ModelSelection, fallback?: string) {
-            const v = this.selectedForSession(sessionID, model, fallback)
-            if (!v) return undefined
-            if (!variantListForModel(model).includes(v)) return undefined
-            return v
-          },
-          list() {
-            const m = currentModel()
-            if (!m) return []
-            return variantListForModel(m)
-          },
-          listForModel(model: ModelSelection) {
-            return variantListForModel(model)
-          },
-          set(value: string | undefined, options?: { persist?: boolean }) {
-            const m = currentModel()
-            if (!m) return
-            const sessionID = activeSessionID()
-            if (sessionID) {
-              this.setForSession(sessionID, m, value, options)
-              return
-            }
-            const key = `${m.providerID}/${m.modelID}`
-            setModelStore("variant", key, value ?? "default")
-            save()
-          },
-          setForSession(
-            sessionID: string,
-            model: ModelSelection,
-            value: string | undefined,
-            options?: { persist?: boolean },
-          ) {
-            setModelStore("sessionVariant", sessionID, value ?? "default")
-            if (options?.persist !== false) persistSessionModelForSession(sessionID, model, value)
-            save()
-          },
-          cycle() {
-            const variants = this.list()
-            if (variants.length === 0) return
-            const current = this.current()
-            if (!current) {
-              this.set(variants[0])
-              return
-            }
-            const index = variants.indexOf(current)
-            if (index === -1 || index === variants.length - 1) {
-              this.set(undefined)
-              return
-            }
-            this.set(variants[index + 1])
-          },
-          cycleForSession(sessionID: string, model: ModelSelection, current?: string) {
-            const variants = variantListForModel(model)
-            if (variants.length === 0) return
-            if (!current) {
-              this.setForSession(sessionID, model, variants[0])
-              return
-            }
-            const index = variants.indexOf(current)
-            if (index === -1 || index === variants.length - 1) {
-              this.setForSession(sessionID, model, undefined)
-              return
-            }
-            this.setForSession(sessionID, model, variants[index + 1])
-          },
-        },
-      }
-    })
-
-    const session = iife(() => {
-      const [sessionStore, setSessionStore] = createStore<{
-        ready: boolean
-        pinned: string[]
-        viewed: Record<string, number>
-      }>({
-        ready: false,
-        pinned: [],
-        viewed: {},
-      })
-
-      const filePath = path.join(Global.Path.state, "session.json")
-      const state = {
-        pending: false,
-      }
-
-      function save() {
-        if (!sessionStore.ready) {
-          state.pending = true
-          return
-        }
-        state.pending = false
-        void Filesystem.writeJson(filePath, {
-          pinned: sessionStore.pinned,
-          viewed: sessionStore.viewed,
-        })
-      }
-
-      Filesystem.readJson(filePath)
-        .then((x: any) => {
-          if (Array.isArray(x.pinned)) setSessionStore("pinned", x.pinned)
-          if (x.viewed && typeof x.viewed === "object") setSessionStore("viewed", x.viewed)
-        })
-        .catch(() => {})
-        .finally(() => {
-          setSessionStore("ready", true)
-          if (state.pending) save()
-        })
-
-      const event = useEvent()
-
-      const slots = createMemo(() => {
-        const existing = new Set(sync.data.session.filter((x) => x.parentID === undefined).map((x) => x.id))
-        return sessionStore.pinned.filter((id) => existing.has(id)).slice(0, 9)
-      })
-
-      function prune(sessionID: string) {
-        batch(() => {
-          if (sessionStore.pinned.includes(sessionID)) {
-            setSessionStore(
-              "pinned",
-              sessionStore.pinned.filter((x) => x !== sessionID),
-            )
-          }
-          if (sessionStore.viewed[sessionID] !== undefined) setSessionStore("viewed", sessionID, 0)
-          save()
-        })
-      }
-
-      event.on("session.deleted", (evt) => {
-        prune(evt.properties.info.id)
-      })
-
-      return {
-        get ready() {
-          return sessionStore.ready
-        },
-        pinned() {
-          return sessionStore.pinned
-        },
-        slots,
-        isPinned(sessionID: string) {
-          return sessionStore.pinned.includes(sessionID)
-        },
-        lastViewed(sessionID: string) {
-          return Math.max(sessionStore.viewed[sessionID] ?? 0, sync.data.session_ui_state[sessionID]?.seenAt ?? 0)
-        },
-        markViewed(sessionID: string, time = Date.now()) {
-          const previous = sessionStore.viewed[sessionID]
-          setSessionStore("viewed", sessionID, time)
-          const session = sync.session.get(sessionID)
-          sync.set(
-            "session_ui_state",
-            sessionID,
-            markViewedSessionUiState(sessionID, sync.data.session_ui_state[sessionID], time, session?.time.updated),
-          )
-          void updateClientSessionState(sdk.client, sessionID, { seenAt: time }).catch(() => {
-            setSessionStore(
-              "viewed",
-              produce((draft) => {
-                if (previous === undefined) delete draft[sessionID]
-                else draft[sessionID] = previous
-              }),
-            )
-            void sync.session.refresh().catch(() => {})
-            save()
-          })
-          save()
-        },
-        togglePin(sessionID: string) {
-          batch(() => {
-            const exists = sessionStore.pinned.includes(sessionID)
-            const next = exists
-              ? sessionStore.pinned.filter((x) => x !== sessionID)
-              : [...sessionStore.pinned, sessionID]
-            setSessionStore("pinned", next)
-            save()
-          })
-        },
-        quickSwitch(slot: number) {
-          const target = slots()[slot - 1]
-          if (!target) return
-          if (route.data.type === "session" && route.data.sessionID === target) return
-          route.navigate({ type: "session", sessionID: target })
-        },
-      }
-    })
-
-    const view = iife(() => {
-      const [viewStore, setViewStore] = createStore<{
-        ready: boolean
-        pinned: string[]
-      }>({
-        ready: false,
-        pinned: [],
-      })
-
-      const filePath = path.join(Global.Path.state, "view.json")
-      const state = {
-        pending: false,
-      }
-
-      function save() {
-        if (!viewStore.ready) {
-          state.pending = true
-          return
-        }
-        state.pending = false
-        void Filesystem.writeJson(filePath, {
-          pinned: viewStore.pinned,
-        })
-      }
-
-      Filesystem.readJson(filePath)
-        .then((x: any) => {
-          if (Array.isArray(x.pinned)) setViewStore("pinned", x.pinned)
-        })
-        .catch(() => {})
-        .finally(() => {
-          setViewStore("ready", true)
-          if (state.pending) save()
-        })
-
-      return {
-        get ready() {
-          return viewStore.ready
-        },
-        pinned() {
-          return viewStore.pinned
-        },
-        isPinned(viewID: string) {
-          return viewStore.pinned.includes(viewID)
-        },
-        togglePin(viewID: string) {
-          batch(() => {
-            const exists = viewStore.pinned.includes(viewID)
-            const next = exists ? viewStore.pinned.filter((x) => x !== viewID) : [...viewStore.pinned, viewID]
-            setViewStore("pinned", next)
-            save()
-          })
-        },
-      }
-    })
-
-    const mcp = {
-      isEnabled(name: string) {
-        const status = sync.data.mcp[name]
-        return status?.status === "connected"
-      },
-      async toggle(name: string) {
-        const status = sync.data.mcp[name]
-        if (status?.status === "connected") {
-          // Disable: disconnect the MCP
-          await sdk.client.mcp.disconnect({ name })
-        } else {
-          // Enable/Retry: connect the MCP (handles disabled, failed, and other states)
-          await sdk.client.mcp.connect({ name })
-        }
-      },
-    }
+    const session = createLocalSession({ sync, sdk, route, event: useEvent() })
+    const view = createLocalView()
 
     createEffect(() => {
       const value = agent.current()
-      if (!value?.model) return
-      if (isModelValid(value.model)) return
+      if (!value?.model || isModelValid(value.model)) return
       toast.show({
         variant: "warning",
         message: `Agent ${value.name}'s configured model ${value.model.providerID}/${value.model.modelID} is not valid`,
@@ -785,13 +67,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       })
     })
 
-    const result = {
+    return {
       model,
       agent,
-      mcp,
       session,
       view,
+      mcp: {
+        isEnabled(name: string) {
+          return sync.data.mcp[name]?.status === "connected"
+        },
+        async toggle(name: string) {
+          if (sync.data.mcp[name]?.status === "connected") {
+            await sdk.client.mcp.disconnect({ name })
+            return
+          }
+          await sdk.client.mcp.connect({ name })
+        },
+      },
     }
-    return result
   },
 })

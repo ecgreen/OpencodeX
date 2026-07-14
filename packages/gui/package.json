@@ -14,6 +14,9 @@
     "build": "vite --configLoader runner build && bun run build:main",
     "test": "bun test test",
     "test:ci": "mkdir -p .artifacts/unit && bun test test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:electron": "bun run build:main && playwright test --config=playwright.electron.config.ts",
     "test:functional": "bun test test/gui-functional.test.ts test/functional",
     "qa:backend-parity": "bun run scripts/qa-backend-parity.ts",
     "qa:issue": "bun run scripts/qa-issue.ts",
@@ -56,6 +59,7 @@
     "vite-plugin-solid": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@types/node": "catalog:",
     "@types/cross-spawn": "catalog:",
     "@typescript/native-preview": "catalog:",

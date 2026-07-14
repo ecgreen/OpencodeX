@@ -16,13 +16,16 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const events = yield* EventV2.Service
 
-    const publish: EventV2.Interface["publish"] = (definition, data, options) =>
+    const withLocation = <A>(
+      run: (options: EventV2.PublishOptions | undefined) => Effect.Effect<A>,
+      options: EventV2.PublishOptions | undefined,
+    ) =>
       Effect.gen(function* () {
-        if (options?.location) return yield* events.publish(definition, data, options)
+        if (options?.location) return yield* run(options)
         const ctx = yield* InstanceRef
-        if (!ctx) return yield* events.publish(definition, data, options)
+        if (!ctx) return yield* run(options)
         const workspaceID = yield* WorkspaceRef
-        return yield* events.publish(definition, data, {
+        return yield* run({
           ...options,
           location: {
             directory: AbsolutePath.make(ctx.directory),
@@ -30,6 +33,10 @@ export const layer = Layer.effect(
           },
         })
       })
+    const publish: EventV2.Interface["publish"] = (definition, data, options) =>
+      withLocation((located) => events.publish(definition, data, located), options)
+    const commit: EventV2.Interface["commit"] = (definition, data, options) =>
+      withLocation((located) => events.commit(definition, data, located), options)
 
     const unsubscribe = yield* events.listen((event) =>
       Effect.gen(function* () {
@@ -45,7 +52,7 @@ export const layer = Layer.effect(
     )
     yield* Effect.addFinalizer(() => unsubscribe)
 
-    return Service.of({ ...events, publish })
+    return Service.of({ ...events, publish, commit })
   }),
 )
 

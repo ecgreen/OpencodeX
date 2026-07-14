@@ -1,0 +1,455 @@
+
+.part.tool.todo-update > summary,
+.part.tool.todo-update > .tool-summary,
+.part.tool.patch-update > summary,
+.part.tool.patch-update > .tool-summary,
+.part.tool:has(.tool-diff) > summary,
+.part.tool:has(.tool-diff) > .tool-summary,
+.thinking-block summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+}
+
+.part.tool.patch-update > summary,
+.part.tool.patch-update > .tool-summary {
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--blue);
+  max-width: 100%;
+  padding-left: 10px;
+  width: 100%;
+  background: var(--panel);
+}
+
+.part.tool.patch-update.no-details > .tool-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.part.tool.todo-update > summary strong,
+.part.tool.todo-update > .tool-summary strong,
+.part.tool.patch-update > summary strong,
+.part.tool.patch-update > .tool-summary strong,
+.part.tool:has(.tool-diff) > summary strong,
+.part.tool:has(.tool-diff) > .tool-summary strong,
+.thinking-block summary span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.thinking-block summary .output-chevron {
+  color: var(--warning);
+}
+
+.thinking-block summary:hover .output-chevron {
+  color: var(--warning);
+}
+
+.thinking-segments {
+  display: grid;
+  gap: 10px;
+  padding: 8px 10px 10px;
+}
+
+.thinking-segment header {
+  margin: 0 0 5px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.thinking-segment [data-component="markdown"] {
+  margin: 0;
+}
+
+.part.tool.todo-update > summary .output-chevron {
+  color: var(--success);
+}
+
+.part.tool.patch-update > summary .output-chevron {
+  color: var(--blue);
+}
+
+.part.tool.patch-update .tool-patch-files {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part.tool.todo-update > summary .tool-status,
+.part.tool.todo-update > .tool-summary .tool-status,
+.part.tool.patch-update > summary .tool-status,
+.part.tool.patch-update > .tool-summary .tool-status,
+.part.tool:has(.tool-diff) > summary .tool-status,
+.part.tool:has(.tool-diff) > .tool-summary .tool-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool.todo-update .tool-details,
+.part.tool.patch-update .tool-details,
+.part.tool:has(.tool-diff) .tool-details {
+  margin: 0;
+  padding: 6px 10px 8px;
+}
+
+.part.tool.patch-update .tool-details {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+}
+
+.part.tool.patch-update .tool-pending-diff {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px 11px;
+  border: 1px solid var(--border-subtle);
+  border-top: 0;
+  border-left: 3px solid var(--blue);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.part.tool.todo-update .tool-output,
+.part.tool:has(.tool-diff) .tool-output,
+.part.tool:has(.tool-diff) .tool-diff {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.part.tool.patch-update .tool-diff {
+  gap: 0;
+  border: 0;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+}
+
+.part.tool.patch-update .tool-file-diff-header {
+  box-sizing: border-box;
+  margin: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-top: 0;
+  border-left: 3px solid var(--blue);
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+}
+
+.part.tool.patch-update .tool-file-diff-collapse {
+  margin: 0;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.part.tool.patch-update summary.tool-file-diff-header {
+  cursor: pointer;
+  list-style: none;
+}
+
+.part.tool.patch-update summary.tool-file-diff-header::-webkit-details-marker {
+  display: none;
+}
+
+.part.tool.patch-update .tool-file-diff-header .output-chevron {
+  color: var(--blue);
+}
+
+.part.tool.patch-update .tool-file-diff-header .tool-file-diff-path {
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 0;
+}
+
+.part.tool.patch-update .tool-file-diff-separator {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  color: var(--muted);
+}
+
+.part.tool.patch-update .tool-file-diff-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.part.tool.patch-update .tool-file-diff-action {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--muted) 84%, var(--text) 16%);
+  background: transparent;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.part.tool.patch-update .tool-file-diff-action .icon {
+  flex: 0 0 auto;
+  max-width: none;
+  color: currentColor;
+}
+
+.part.tool.patch-update .tool-file-diff-action:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--blue) 34%, transparent);
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+}
+
+.part.tool.patch-update .tool-file-diff-action.git:hover {
+  color: color-mix(in srgb, var(--blue) 74%, var(--text) 26%);
+}
+
+.part.tool.patch-update .tool-file-diff-action.file:hover {
+  color: color-mix(in srgb, var(--text) 92%, var(--blue) 8%);
+}
+
+.tool-unified-patch {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  margin: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --background-stronger: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --border-warning-base: rgba(229, 192, 123, 0.58);
+  --diffs-dark: var(--text);
+  --diffs-dark-bg: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --diffs-light: var(--text);
+  --diffs-light-bg: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --diffs-mixer: #ffffff;
+  --diffs-bg-addition-override: rgba(86, 182, 194, 0.12);
+  --diffs-bg-addition-number-override: rgba(86, 182, 194, 0.18);
+  --diffs-bg-deletion-override: rgba(224, 108, 117, 0.12);
+  --diffs-bg-deletion-number-override: rgba(224, 108, 117, 0.18);
+  --diffs-bg-context-override: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --diffs-bg-separator-override: #101010;
+  --solaris-dark-6: #2a2420;
+  --surface-warning-base: rgba(229, 192, 123, 0.55);
+  --surface-warning-strong: rgba(229, 192, 123, 0.8);
+  --syntax-diff-add: #56b6c2;
+  --syntax-diff-delete: #e06c75;
+  --syntax-unknown: var(--muted);
+}
+
+.tool-unified-patch > [data-component="file"] {
+  min-width: 100%;
+  width: max-content;
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+}
+
+.tool-unified-patch [data-diff] {
+  min-width: 100%;
+  width: max-content;
+}
+
+.tool-unified-patch [data-diff][data-diff-type="unified"] [data-line][data-line-type="context"],
+.tool-unified-patch [data-diff][data-diff-type="unified"] [data-line][data-line-type="context-expanded"],
+.tool-unified-patch [data-diff][data-diff-type="unified"] [data-line][data-line-type="separator"] {
+  box-shadow: inset 4px 0 0 rgba(212, 212, 212, 0.28);
+}
+
+.part.tool.todo-update .tool-output pre,
+.part.tool:has(.tool-diff) .tool-output pre,
+.part.tool:has(.tool-diff) pre {
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.composer-footer {
+  border-top: 0;
+}
+
+.send-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.send-button .icon {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  transform: translateX(1px);
+}
+
+/* Card hover polish: dark, readable, and clearly focused without layout shift. */
+.dashboard-action-card {
+  --card-hover-duration: 180ms;
+  --card-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+  transition:
+    background var(--card-hover-duration) var(--card-hover-ease),
+    border-color var(--card-hover-duration) var(--card-hover-ease),
+    box-shadow var(--card-hover-duration) var(--card-hover-ease),
+    color 140ms ease;
+}
+
+.dashboard-action-card :is(span, small, strong) {
+  transition:
+    border-color var(--card-hover-duration) var(--card-hover-ease),
+    color 140ms ease;
+}
+
+.dashboard-action-card:hover,
+.dashboard-action-card:focus-visible {
+  border-color: color-mix(in srgb, var(--action-color) 46%, var(--border));
+  border-left-color: var(--action-color);
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--action-color) 16%, transparent), transparent 48%),
+    color-mix(in srgb, var(--panel) 88%, var(--action-color) 12%);
+  box-shadow:
+    inset 4px 0 0 var(--action-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--action-color) 24%, transparent);
+}
+
+.dashboard-action-card:hover span:not(.action-plus),
+.dashboard-action-card:focus-visible span:not(.action-plus) {
+  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+}
+
+.dashboard-action-card:hover small,
+.dashboard-action-card:focus-visible small {
+  border-left-color: color-mix(in srgb, var(--action-color) 68%, var(--border));
+  color: color-mix(in srgb, var(--action-color) 82%, var(--text));
+}
+
+.dashboard-item-card.interactive,
+.dashboard-status-card.interactive,
+[data-ui="card"][data-interactive="true"],
+.view-list-card,
+.view-session-card,
+.manager-row,
+.role-editor-card,
+button.project-detail-row {
+  --card-hover-duration: 180ms;
+  --card-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  transition:
+    background var(--card-hover-duration) var(--card-hover-ease),
+    border-color var(--card-hover-duration) var(--card-hover-ease),
+    box-shadow var(--card-hover-duration) var(--card-hover-ease),
+    color 140ms ease;
+}
+
+.dashboard-item-card.interactive :is(p, span, small, strong),
+.dashboard-status-card.interactive :is(p, span, small, strong),
+[data-ui="card"][data-interactive="true"] :is(p, span, small, strong),
+.view-list-card :is(p, span, small, strong),
+.view-session-card :is(p, span, small, strong),
+.manager-row :is(p, span, small, strong),
+.role-editor-card :is(p, span, small, strong),
+button.project-detail-row :is(p, span, small, strong) {
+  transition: color 140ms ease;
+}
+
+.dashboard-item-card.interactive:hover,
+.dashboard-item-card.interactive:focus-within,
+.dashboard-status-card.interactive:hover,
+.dashboard-status-card.interactive:focus-within,
+[data-ui="card"][data-interactive="true"]:hover,
+[data-ui="card"][data-interactive="true"]:focus-within,
+.view-list-card:hover,
+.view-list-card:focus-within,
+.view-session-card:hover,
+.view-session-card:focus-within,
+.manager-row:hover,
+.manager-row:focus-within,
+.role-editor-card:hover,
+.role-editor-card:focus-within,
+button.project-detail-row:hover,
+button.project-detail-row:focus-visible {
+  border-color: color-mix(in srgb, var(--card-accent, var(--primary)) 42%, var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--card-accent, var(--primary)) 12%, transparent), transparent 46%),
+    color-mix(in srgb, var(--panel) 90%, var(--card-accent, var(--primary)) 10%);
+  box-shadow:
+    inset 4px 0 0 var(--card-accent, var(--primary)),
+    inset 0 0 0 1px color-mix(in srgb, var(--card-accent, var(--primary)) 20%, transparent);
+}
+
+.dashboard-item-card.interactive:hover :is(p, span, small),
+.dashboard-item-card.interactive:focus-within :is(p, span, small),
+.dashboard-status-card.interactive:hover :is(p, span, small),
+.dashboard-status-card.interactive:focus-within :is(p, span, small),
+[data-ui="card"][data-interactive="true"]:hover :is(p, span, small),
+[data-ui="card"][data-interactive="true"]:focus-within :is(p, span, small),
+.view-list-card:hover :is(p, span, small),
+.view-list-card:focus-within :is(p, span, small),
+.view-session-card:hover :is(p, span, small),
+.view-session-card:focus-within :is(p, span, small),
+.manager-row:hover :is(p, span, small),
+.manager-row:focus-within :is(p, span, small),
+.role-editor-card:hover :is(p, span, small),
+.role-editor-card:focus-within :is(p, span, small),
+button.project-detail-row:hover :is(p, span, small),
+button.project-detail-row:focus-visible :is(p, span, small) {
+  color: color-mix(in srgb, var(--text) 76%, var(--muted));
+}
+
+.dashboard-item-card.interactive:hover strong,
+.dashboard-item-card.interactive:focus-within strong,
+.dashboard-status-card.interactive:hover strong,
+.dashboard-status-card.interactive:focus-within strong,
+[data-ui="card"][data-interactive="true"]:hover strong,
+[data-ui="card"][data-interactive="true"]:focus-within strong,
+.view-list-card:hover strong,
+.view-list-card:focus-within strong,
+.view-session-card:hover strong,
+.view-session-card:focus-within strong,
+.manager-row:hover strong,
+.manager-row:focus-within strong,
+.role-editor-card:hover strong,
+.role-editor-card:focus-within strong,
+button.project-detail-row:hover strong,
+button.project-detail-row:focus-visible strong {
+  color: var(--text);
+}

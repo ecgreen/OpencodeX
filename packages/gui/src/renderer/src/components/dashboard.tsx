@@ -83,9 +83,9 @@ function DashboardProjectsSection(props: {
 
 function DashboardSwarmsSection(props: { snapshot?: GuiSnapshot; createSwarm: () => void }) {
   return (
-    <DashboardSection title="Swarms" count={props.snapshot?.swarms.length ?? 0} action="New" onAction={props.createSwarm}>
+    <DashboardSection title="Swarms - Experimental" count={props.snapshot?.swarms.length ?? 0} action="New" onAction={props.createSwarm}>
       <div class="dashboard-card-grid">
-        <For each={(props.snapshot?.swarms ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create swarm" description="Build an Agent team." onClick={props.createSwarm} />}>
+        <For each={(props.snapshot?.swarms ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create swarm" description="Experimental durable agent-team automation." onClick={props.createSwarm} />}>
           {(swarm) => (
             <article class="dashboard-item-card">
               <div>

@@ -37,6 +37,28 @@ it.live("submits idempotently and runs the legal lifecycle", () =>
   }),
 )
 
+it.live("rolls back terminal job state when transactional settlement fails", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* jobs.create({ kind: "test", idempotencyKey: "job-settlement-rollback" })
+    yield* jobs.claim({ jobID: created.id, owner: "runner-a", leaseMs: 30_000 })
+    yield* jobs.start(created.id, "runner-a")
+
+    const exit = yield* jobs
+      .settle(
+        { jobID: created.id, owner: "runner-a", outcome: { status: "succeeded", result: { ignored: true } } },
+        () => Effect.die("aggregate settlement failed"),
+      )
+      .pipe(Effect.exit)
+
+    expect(exit._tag).toBe("Failure")
+    const running = yield* jobs.get(created.id)
+    expect(running.status).toBe("running")
+    expect(running.leaseOwner).toBe("runner-a")
+    yield* jobs.succeed({ jobID: created.id, owner: "runner-a", result: { recovered: true } })
+  }),
+)
+
 it.live("rejects illegal transitions and a different lease owner", () =>
   Effect.gen(function* () {
     const jobs = yield* OpencodeXJob.Service
@@ -90,5 +112,44 @@ it.live("makes cancellation terminal and idempotent", () =>
     expect(cancelled.status).toBe("cancelled")
     expect(repeated.status).toBe("cancelled")
     expect(repeated.id).toBe(created.id)
+  }),
+)
+
+it.live("keeps active cancellation nonterminal until the lease owner acknowledges termination", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* jobs.create({ kind: "test", idempotencyKey: "job-active-cancel" })
+    yield* jobs.claim({ jobID: created.id, owner: "runner-a", leaseMs: 30_000 })
+    yield* jobs.start(created.id, "runner-a")
+
+    const requested = yield* jobs.cancel(created.id)
+    expect(requested.status).toBe("running")
+    expect(requested.cancelRequestedAt).toBeNumber()
+    expect(requested.leaseOwner).toBe("runner-a")
+    expect(requested.leaseExpiresAt).toBeNumber()
+
+    const completionError = yield* Effect.flip(
+      jobs.succeed({ jobID: created.id, owner: "runner-a", result: { ignored: true } }),
+    )
+    expect(completionError._tag).toBe("OpencodeX.Job.TransitionError")
+
+    const cancelled = yield* jobs.acknowledgeCancel(created.id, "runner-a")
+    expect(cancelled.status).toBe("cancelled")
+    expect(cancelled.leaseOwner).toBeUndefined()
+    expect(cancelled.completedAt).toBeNumber()
+  }),
+)
+
+it.live("acknowledges cancellation while recovering an abandoned lease", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* jobs.create({ kind: "test", idempotencyKey: "job-cancel-recovery" })
+    yield* jobs.claim({ jobID: created.id, owner: "local:999999:old", leaseMs: 1 })
+    yield* jobs.start(created.id, "local:999999:old")
+    yield* jobs.cancel(created.id)
+
+    const recovered = yield* jobs.recover(Date.now() + 10_000)
+    expect(recovered.find((job) => job.id === created.id)?.status).toBe("cancelled")
+    expect((yield* jobs.get(created.id)).statusReason).toBe("Cancellation acknowledged during startup recovery")
   }),
 )

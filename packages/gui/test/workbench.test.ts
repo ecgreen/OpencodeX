@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import type { FileContent } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "../src/renderer/src/lib/client"
 import {
   createWorkbenchFile,
@@ -747,10 +748,23 @@ describe("Workbench helpers", () => {
 describe("Workbench store wrappers", () => {
   test("uses existing file list and read APIs", async () => {
     const calls: string[] = []
+    const exactCalls: Array<{ url: string; method: string; body?: string; auth?: string }> = []
+    globalThis.fetch = fetchRecorder(exactCalls, { ok: true, content: "hello\n" })
     const gui = fakeWorkbenchGui(calls)
 
     expect(await listWorkbenchFiles(gui, "src")).toEqual([{ name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false }])
-    expect(await readWorkbenchFile(gui, "src/app.tsx")).toEqual({ type: "text", content: "hello" })
+    expect(await readWorkbenchFile(gui, "src/app.tsx")).toEqual({ type: "text", content: "hello\n" })
+    expect(await readWorkbenchFile(fakeWorkbenchGui([], {
+      type: "text",
+      content: "abc",
+      encoding: "base64",
+      mimeType: "image/png",
+    }), "screenshot.png")).toEqual({
+      type: "binary",
+      content: "abc",
+      encoding: "base64",
+      mimeType: "image/png",
+    })
     expect(await findFiles(gui, { query: "app", directory: "C:/repo/project", limit: 40 })).toEqual([
       { name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false },
     ])
@@ -758,6 +772,11 @@ describe("Workbench store wrappers", () => {
     expect(calls).toContain("file.list:src:C:/repo")
     expect(calls).toContain("file.read:src/app.tsx:C:/repo")
     expect(calls).toContain("find.files:app:C:/repo/project:40")
+    const exactCall = exactCalls[0]
+    expect(exactCall).toBeDefined()
+    if (!exactCall) throw new Error("Exact Workbench read was not requested.")
+    expect(new URL(exactCall.url).pathname).toBe("/experimental/opencodex/workbench/file/read")
+    expect(new URL(exactCall.url).searchParams.get("path")).toBe("src/app.tsx")
   })
 
   test("routes file mutations through experimental workbench endpoints", async () => {
@@ -884,7 +903,7 @@ describe("Workbench store wrappers", () => {
   })
 })
 
-function fakeWorkbenchGui(calls: string[]) {
+function fakeWorkbenchGui(calls: string[], content: FileContent = { type: "text", content: "hello" }) {
   return {
     directory: "C:/repo",
     url: "http://127.0.0.1:4096",
@@ -897,7 +916,7 @@ function fakeWorkbenchGui(calls: string[]) {
         },
         read: async (input: { directory?: string; path: string }) => {
           calls.push(`file.read:${input.path}:${input.directory}`)
-          return { data: { type: "text", content: "hello" } }
+          return { data: content }
         },
       },
       find: {

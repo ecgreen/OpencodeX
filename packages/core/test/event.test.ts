@@ -267,6 +267,52 @@ describe("EventV2", () => {
     }),
   )
 
+  it.effect("commits durable events without broadcasting until the transaction succeeds", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = EventV2.ID.create()
+      const received = new Array<EventV2.Payload>()
+      yield* events.listen((event) => Effect.sync(() => received.push(event)))
+
+      const event = yield* db
+        .transaction(
+          () => events.commit(SyncMessage, { id: aggregateID, text: "committed" }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.orDie)
+      expect(received).toEqual([])
+      expect(
+        yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, aggregateID)).all().pipe(Effect.orDie),
+      ).toHaveLength(1)
+
+      yield* events.broadcast(event)
+      expect(received).toEqual([event])
+    }),
+  )
+
+  it.effect("rolls committed events back with their enclosing mutation", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = EventV2.ID.create()
+
+      yield* db
+        .transaction(
+          () =>
+            events
+              .commit(SyncMessage, { id: aggregateID, text: "rollback" })
+              .pipe(Effect.andThen(Effect.fail("rollback"))),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.flip)
+
+      expect(
+        yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, aggregateID)).all().pipe(Effect.orDie),
+      ).toEqual([])
+    }),
+  )
+
   it.effect("increments sync event seq per aggregate", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service

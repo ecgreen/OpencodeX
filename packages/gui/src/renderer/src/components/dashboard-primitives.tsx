@@ -18,7 +18,7 @@ export function DashboardSection(props: { title: string; count: number; action?:
     <section class="dashboard-section">
       <header>
         <div>
-          <strong class="dashboard-section-title">{props.title} <span class="section-count">({props.count})</span></strong>
+          <h2 class="dashboard-section-title">{props.title} <span class="section-count">({props.count})</span></h2>
         </div>
         <Show when={props.action && props.onAction}>
           <button class="secondary" onClick={props.onAction}>{props.action}</button>

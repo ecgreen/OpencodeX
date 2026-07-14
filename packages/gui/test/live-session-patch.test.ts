@@ -17,10 +17,10 @@ import {
   globalEventSessionState,
   globalEventSessionStatus,
   isHighFrequencySessionEvent,
+  isCapabilityRefreshEvent,
   isSessionDataEvent,
   markViewSessionsLoaded,
   mergeLiveSessionData,
-  mergeSnapshot,
   mergeSessionCardSnapshot,
   patchBoundedSessionData,
   patchSelectedSessionData,
@@ -65,11 +65,14 @@ describe("GUI live session patching", () => {
     })
     expect(
       globalEventSessionState(
-        event("opencodex.session_state.updated", { sessionID: "ses_state", state: { displayStatus: "needs_review" } }),
+        event("opencodex.session_state.updated", {
+          sessionID: "ses_state",
+          state: { sessionID: "ses_state", reviewedFiles: [], timeUpdated: 2 },
+        }),
       ),
     ).toEqual({
       sessionID: "ses_state",
-      state: { displayStatus: "needs_review" },
+      state: { sessionID: "ses_state", reviewedFiles: [], timeUpdated: 2 },
     })
     expect(
       globalEventAction(event("session.status", { sessionID: "ses_status", status: { type: "busy" } })),
@@ -80,13 +83,20 @@ describe("GUI live session patching", () => {
     })
     expect(
       globalEventAction(
-        event("opencodex.session_state.updated", { sessionID: "ses_state", state: { displayStatus: "needs_review" } }),
+        event("opencodex.session_state.updated", {
+          sessionID: "ses_state",
+          state: { sessionID: "ses_state", reviewedFiles: [], timeUpdated: 2 },
+        }),
       ),
     ).toMatchObject({
       type: "state",
       sessionID: "ses_state",
     })
     expect(globalEventAction(syncEvent("session.next.token.9", {}))).toEqual({ type: "ignore" })
+    expect(isCapabilityRefreshEvent(event("lsp.updated", {}))).toBe(true)
+    expect(globalEventAction(event("file.watcher.updated", { file: "src/app.tsx" }))).toEqual({ type: "ignore" })
+    expect(globalEventAction(event("plugin.added", {}))).toEqual({ type: "refresh", root: false })
+    expect(globalEventAction(event("server.instance.disposed", {}))).toEqual({ type: "refresh", root: true })
   })
 
   test("runs global event actions through injected app handlers", () => {
@@ -112,9 +122,7 @@ describe("GUI live session patching", () => {
       ),
     ).toBeUndefined()
     expect(runGlobalEventAction({ type: "session-data" }, handlers)).toBeUndefined()
-    expect(runGlobalEventAction({ type: "refresh", sessionID: "ses_refresh" }, handlers)).toEqual({
-      sessionID: "ses_refresh",
-    })
+    expect(runGlobalEventAction({ type: "refresh", root: false }, handlers)).toEqual({ root: false })
     expect(calls).toEqual(["status:ses_status", "sync:ses_status", "status:ses_busy", "sync:ses_busy", "data"])
   })
 
@@ -332,38 +340,6 @@ describe("GUI live session patching", () => {
     expect(result).toBe(current)
   })
 
-  test("applies connected-provider-only and MCP-resource-only snapshot changes", () => {
-    const current = snapshot({
-      connectedProviderIDs: ["anthropic"],
-      mcpResources: {},
-    })
-    const connected = mergeSnapshot(
-      current,
-      snapshot({
-        connectedProviderIDs: ["anthropic", "openai"],
-        mcpResources: {},
-      }),
-    )
-    const resources = mergeSnapshot(
-      connected,
-      snapshot({
-        connectedProviderIDs: ["anthropic", "openai"],
-        mcpResources: {
-          "docs://sync": {
-            name: "Synchronization docs",
-            uri: "docs://sync",
-            client: "docs",
-          },
-        },
-      }),
-    )
-
-    expect(connected).not.toBe(current)
-    expect(connected.connectedProviderIDs).toEqual(["anthropic", "openai"])
-    expect(resources).not.toBe(connected)
-    expect(resources.mcpResources?.["docs://sync"]?.name).toBe("Synchronization docs")
-  })
-
   test("routes session data events by explicit and aggregate session IDs", () => {
     expect(
       Array.from(
@@ -548,7 +524,7 @@ function cardSnapshot(current: GuiSnapshot): SessionCardSnapshot {
     sessionUiState: { ...current.sessionUiState },
     permissions: [...current.permissions],
     questions: [...current.questions],
-    sessionSyncRevision: current.sessionSyncRevision,
+    stateRevision: current.stateRevision,
   }
 }
 

@@ -12,6 +12,7 @@ import { useEditorContext } from "@tui/context/editor"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../context/tui-config"
 import { useOxSidebar } from "../component/opencodex-sidebar"
+import { useKV } from "../context/kv"
 
 let once = false
 const placeholder = {
@@ -29,6 +30,7 @@ export function Home() {
   const editor = useEditorContext()
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
+  const kv = useKV()
   const [_, setOxSidebarOpen] = useOxSidebar()
   const promptMaxWidth = createMemo(() => {
     const configured = tuiConfig.prompt?.max_width
@@ -75,7 +77,7 @@ export function Home() {
         <box height={4} minHeight={0} flexShrink={1} />
         <box flexShrink={0}>
           <TuiPluginRuntime.Slot name="home_logo" mode="replace">
-            <Logo idle />
+            <Logo idle animate={kv.get("animations_enabled", true)} />
           </TuiPluginRuntime.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />

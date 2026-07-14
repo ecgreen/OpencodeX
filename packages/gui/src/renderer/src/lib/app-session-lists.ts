@@ -13,7 +13,7 @@ import {
 import type { GuiSnapshot } from "./store"
 import { modelValue } from "./model-selection"
 import { deriveSessionStatus } from "./session-status"
-import { isRenderableSession } from "./store"
+import { isRenderableSession } from "./session-filter"
 
 export type SessionOrderBucket = ClientSessionOrderBucket
 export type SessionOrderState = ClientSessionOrderState

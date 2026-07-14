@@ -1,11 +1,12 @@
 import type { Accessor, Setter } from "solid-js"
-import { For, Match, Show, Switch, createEffect } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo } from "solid-js"
 import type { WorkbenchGitBranches, WorkbenchGitHistoryCommit, WorkbenchGitStash, WorkbenchGitStatus } from "../lib/store"
 import { workbenchDiffForPath, type WorkbenchDiffFile } from "../lib/workbench"
 import { compactPath } from "../lib/format"
 import { Icon } from "./icon"
 import { WorkbenchGitChangeFileButton } from "./workbench-git-change-file-button"
 import { WorkbenchDiffPreview, WorkbenchHistoryPreview } from "./workbench-git-preview"
+import { VirtualList } from "./virtual-list"
 
 export function WorkbenchGitPanel(props: {
   active: boolean
@@ -129,6 +130,21 @@ export function WorkbenchGitPanel(props: {
 }
 
 function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
+  const rows = createMemo<GitChangeRow[]>(() => {
+    const staged = props.stagedFiles()
+    const unstaged = props.unstagedFiles()
+    return [
+      ...(staged.length > 0 ? [
+        { kind: "header" as const, label: "Staged", count: staged.length },
+        ...staged.map((file, index) => ({ kind: "file" as const, file, position: index + 1 })),
+      ] : []),
+      ...(unstaged.length > 0 ? [
+        { kind: "header" as const, label: "Changes", count: unstaged.length },
+        ...unstaged.map((file, index) => ({ kind: "file" as const, file, position: staged.length + index + 1 })),
+      ] : []),
+    ]
+  })
+
   return (
     <>
       <div class="workbench-change-stack">
@@ -136,10 +152,10 @@ function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
           <div class="workbench-git-filter">
             <Icon name="search" />
             <input value={props.filter()} onInput={(event) => props.setFilter(event.currentTarget.value)} placeholder="Filter changed files" />
-            <button type="button" disabled={!props.filter()} onClick={() => props.setFilter("")}><Icon name="x" /></button>
+            <button type="button" aria-label="Clear changed file filter" disabled={!props.filter()} onClick={() => props.setFilter("")}><Icon name="x" /></button>
           </div>
         </div>
-        <div class="workbench-change-list" role="listbox" aria-label="Changed files">
+        <div class="workbench-change-list">
           <Show
             when={props.selectedFiles().length > 0}
             fallback={<div class="workbench-empty-state">{props.loading() ? "Refreshing local changes..." : props.allFileCount() > 0 ? "No changed files match this filter." : props.status()?.message ?? "No local changes."}</div>}
@@ -155,38 +171,33 @@ function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
               />
               <span>{props.selectedFiles().length} file{props.selectedFiles().length === 1 ? "" : "s"} changed</span>
             </label>
-            <Show when={props.stagedFiles().length > 0}>
-              <section class="workbench-change-group">
-                <header><span>Staged</span><small>{props.stagedFiles().length}</small></header>
-                <For each={props.stagedFiles()}>
-                  {(file) => (
+            <VirtualList
+              class="workbench-change-viewport"
+              role="listbox"
+              ariaLabel="Changed files"
+              items={rows()}
+              rowHeight={32}
+              render={(row) => (
+                <Switch>
+                  <Match when={row.kind === "header" && row}>
+                    {(header) => <header class="workbench-change-group-header"><span>{header().label}</span><small>{header().count}</small></header>}
+                  </Match>
+                  <Match when={row.kind === "file" && row}>
+                    {(entry) => (
                     <WorkbenchGitChangeFileButton
-                      file={file}
-                      diff={workbenchDiffForPath(props.diffs(), file.path)}
-                      selected={props.selectedFile()?.path === file.path}
+                      file={entry().file}
+                      diff={workbenchDiffForPath(props.diffs(), entry().file.path)}
+                      selected={props.selectedFile()?.path === entry().file.path}
+                      position={entry().position}
+                      size={props.selectedFiles().length}
                       selectFile={props.selectFile}
                       runGit={props.runGit}
                     />
-                  )}
-                </For>
-              </section>
-            </Show>
-            <Show when={props.unstagedFiles().length > 0}>
-              <section class="workbench-change-group">
-                <header><span>Changes</span><small>{props.unstagedFiles().length}</small></header>
-                <For each={props.unstagedFiles()}>
-                  {(file) => (
-                    <WorkbenchGitChangeFileButton
-                      file={file}
-                      diff={workbenchDiffForPath(props.diffs(), file.path)}
-                      selected={props.selectedFile()?.path === file.path}
-                      selectFile={props.selectFile}
-                      runGit={props.runGit}
-                    />
-                  )}
-                </For>
-              </section>
-            </Show>
+                    )}
+                  </Match>
+                </Switch>
+              )}
+            />
           </Show>
         </div>
       </div>
@@ -198,6 +209,10 @@ function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
     </>
   )
 }
+
+type GitChangeRow =
+  | { kind: "header"; label: string; count: number }
+  | { kind: "file"; file: WorkbenchGitStatus["files"][number]; position: number }
 
 function WorkbenchHistoryPanel(props: {
   history: Accessor<WorkbenchGitHistoryCommit[]>

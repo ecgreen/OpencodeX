@@ -101,7 +101,7 @@ function snapshotWith(input: Partial<GuiSnapshot>): GuiSnapshot {
     sessions: [],
     sessionStatus: {},
     sessionUiState: {},
-    sessionSyncRevision: "test",
+    stateRevision: "test",
     permissions: [],
     questions: [],
     providers: [],

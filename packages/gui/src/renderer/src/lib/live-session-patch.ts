@@ -12,7 +12,6 @@ import type {
 import { trimToLiveTail, type MessageWindow } from "./message-window"
 import { reconcileSessionUiState } from "./session-status"
 import {
-  isRenderableSession,
   type GuiSnapshot,
   type MessageBundle,
   type SessionCardSnapshot,
@@ -25,36 +24,39 @@ import {
   eventKind,
   eventMessageID,
   eventSessionID,
+  globalEventPayload,
   globalEventID,
   globalEventSessionState,
   globalEventSessionStatus,
 } from "./live-session-event"
 import {
-  applyPendingDeltasToPart,
   forgetPendingMessageParts,
   forgetPendingPart,
   mergeLoadedParts,
-  mergePartLists,
   normalizeLivePart,
-  rememberPendingPart,
-  rememberPendingPartDelta,
-  takePendingParts,
-  upsertPartList,
 } from "./live-session-parts"
+import {
+  applyPartDelta,
+  patchSnapshotSession,
+  removePart,
+  sortMessageBundles,
+  stableValue,
+  upsertByID,
+  upsertMessage,
+  upsertPart,
+  type SessionDataPatchOptions,
+} from "./live-session-patch-helpers"
 export {
   eventAggregateID,
   eventData,
   eventKind,
   eventMessageID,
   eventSessionID,
+  globalEventPayload,
   globalEventID,
   globalEventSessionState,
   globalEventSessionStatus,
 } from "./live-session-event"
-
-type SessionDataPatchOptions = {
-  appendMissingMessages?: boolean
-}
 
 export type SessionDataEventRouteContext = {
   currentSessionID?: string
@@ -82,9 +84,9 @@ export type GlobalEventAction =
   | { type: "session-data" }
   | { type: "snapshot" }
   | { type: "ignore" }
-  | { type: "refresh"; sessionID?: string }
+  | { type: "refresh"; root: boolean }
 
-export type GlobalEventRefreshAction = { sessionID?: string }
+export type GlobalEventRefreshAction = { root: boolean }
 
 export function runGlobalEventAction(
   action: GlobalEventAction,
@@ -100,21 +102,22 @@ export function runGlobalEventAction(
     case "status":
       handlers.applyStatus(action.sessionID, action.status)
       if (action.syncVisible) handlers.syncVisible(action.sessionID)
-      return
+      return undefined
     case "state":
       handlers.applyState(action.sessionID, action.state)
-      return
+      return undefined
     case "session-data":
       handlers.applySessionData()
-      return
+      return undefined
     case "snapshot":
       handlers.applySnapshot()
-      return
+      return undefined
     case "ignore":
-      return
+      return undefined
     case "refresh":
-      return { sessionID: action.sessionID }
+      return { root: action.root }
   }
+  return undefined
 }
 
 export function applySessionStatusSnapshot(
@@ -159,47 +162,6 @@ export function applySessionStateSnapshot(
   )
 }
 
-export function mergeSnapshot(snapshot: GuiSnapshot, next: GuiSnapshot): GuiSnapshot {
-  const cardSnapshot = mergeSessionCardSnapshot(snapshot, next)
-  const merged = {
-    ...snapshot,
-    ...cardSnapshot,
-    providers: stableValue(snapshot.providers, next.providers),
-    connectedProviderIDs: stableValue(snapshot.connectedProviderIDs, next.connectedProviderIDs),
-    agents: stableValue(snapshot.agents, next.agents),
-    commands: stableValue(snapshot.commands, next.commands),
-    lsp: stableValue(snapshot.lsp, next.lsp),
-    mcp: stableValue(snapshot.mcp, next.mcp),
-    mcpResources: stableValue(snapshot.mcpResources, next.mcpResources),
-    config: stableValue(snapshot.config, next.config),
-    plugins: stableValue(snapshot.plugins, next.plugins),
-    swarms: stableValue(snapshot.swarms, next.swarms),
-    jobs: stableValue(snapshot.jobs, next.jobs),
-  }
-  return snapshot === merged ||
-    (snapshot.projects === merged.projects &&
-      snapshot.sessions === merged.sessions &&
-      snapshot.views === merged.views &&
-      snapshot.sessionStatus === merged.sessionStatus &&
-      snapshot.sessionUiState === merged.sessionUiState &&
-      snapshot.permissions === merged.permissions &&
-      snapshot.questions === merged.questions &&
-      snapshot.providers === merged.providers &&
-      snapshot.connectedProviderIDs === merged.connectedProviderIDs &&
-      snapshot.agents === merged.agents &&
-      snapshot.commands === merged.commands &&
-      snapshot.lsp === merged.lsp &&
-      snapshot.mcp === merged.mcp &&
-      snapshot.mcpResources === merged.mcpResources &&
-      snapshot.config === merged.config &&
-      snapshot.plugins === merged.plugins &&
-      snapshot.swarms === merged.swarms &&
-      snapshot.jobs === merged.jobs &&
-      snapshot.sessionSyncRevision === merged.sessionSyncRevision)
-    ? snapshot
-    : merged
-}
-
 export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCardSnapshot): GuiSnapshot {
   const merged = {
     ...snapshot,
@@ -210,7 +172,7 @@ export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCar
     sessionUiState: stableValue(snapshot.sessionUiState, next.sessionUiState),
     permissions: stableValue(snapshot.permissions, next.permissions),
     questions: stableValue(snapshot.questions, next.questions),
-    sessionSyncRevision: next.sessionSyncRevision,
+    stateRevision: next.stateRevision,
   }
   return snapshot.projects === merged.projects &&
     snapshot.sessions === merged.sessions &&
@@ -219,7 +181,7 @@ export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCar
     snapshot.sessionUiState === merged.sessionUiState &&
     snapshot.permissions === merged.permissions &&
     snapshot.questions === merged.questions &&
-    snapshot.sessionSyncRevision === merged.sessionSyncRevision
+    snapshot.stateRevision === merged.stateRevision
     ? snapshot
     : merged
 }
@@ -254,6 +216,11 @@ export function isHighFrequencySessionEvent(event: GlobalEvent) {
   return eventKind(event).startsWith("session.next.")
 }
 
+export function isCapabilityRefreshEvent(event: GlobalEvent) {
+  const kind = eventKind(event)
+  return kind === "plugin.added" || kind === "lsp.updated" || kind === "mcp.tools.changed" || kind === "server.instance.disposed"
+}
+
 export function globalEventAction(event: GlobalEvent): GlobalEventAction {
   const statusEvent = globalEventSessionStatus(event)
   if (statusEvent) return { type: "status", ...statusEvent }
@@ -262,7 +229,8 @@ export function globalEventAction(event: GlobalEvent): GlobalEventAction {
   if (isSessionDataEvent(event)) return { type: "session-data" }
   if (isSnapshotPatchEvent(event)) return { type: "snapshot" }
   if (isHighFrequencySessionEvent(event)) return { type: "ignore" }
-  return { type: "refresh", sessionID: eventSessionID(event) }
+  if (isCapabilityRefreshEvent(event)) return { type: "refresh", root: eventKind(event) === "server.instance.disposed" }
+  return { type: "ignore" }
 }
 
 export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, limit: MessageWindow): SessionData {
@@ -509,112 +477,4 @@ export function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSna
     default:
       return snapshot
   }
-}
-
-function stableValue<T>(current: T, next: T): T {
-  return JSON.stringify(current) === JSON.stringify(next) ? current : next
-}
-
-function upsertMessage(messages: MessageBundle[], info: Message, options: SessionDataPatchOptions = {}) {
-  const index = messages.findIndex((bundle) => bundle.info.id === info.id)
-  if (index < 0 && options.appendMissingMessages === false) {
-    forgetPendingMessageParts(info.id)
-    return messages
-  }
-  const pendingParts = takePendingParts(info.id)
-  const next =
-    index >= 0
-      ? messages.map((bundle, i) =>
-          i === index ? { ...bundle, info, parts: mergePartLists(bundle.parts, pendingParts) } : bundle,
-        )
-      : [...messages, { info, parts: pendingParts }]
-  return sortMessageBundles(next)
-}
-
-function upsertPart(messages: MessageBundle[], part: Part, options: SessionDataPatchOptions = {}) {
-  const nextPart = applyPendingDeltasToPart(part)
-  let found = false
-  const next = messages.map((bundle) => {
-    if (bundle.info.id !== nextPart.messageID) return bundle
-    found = true
-    forgetPendingPart(nextPart.messageID, nextPart.id)
-    const parts = upsertPartList(bundle.parts, nextPart)
-    return { ...bundle, parts }
-  })
-  if (found) return next
-  if (options.appendMissingMessages === false) return messages
-  rememberPendingPart(nextPart)
-  return messages
-}
-
-function removePart(messages: MessageBundle[], messageID: string, partID: string) {
-  return messages.map((bundle) =>
-    bundle.info.id === messageID ? { ...bundle, parts: bundle.parts.filter((part) => part.id !== partID) } : bundle,
-  )
-}
-
-function applyPartDelta(
-  messages: MessageBundle[],
-  messageID: string,
-  partID: string,
-  field: string,
-  delta: string,
-  options: SessionDataPatchOptions = {},
-) {
-  if (field !== "text") {
-    if (options.appendMissingMessages !== false) rememberPendingPartDelta(messageID, partID, field, delta)
-    return messages
-  }
-  let found = false
-  const next = messages.map((bundle) => {
-    if (bundle.info.id !== messageID) return bundle
-    return {
-      ...bundle,
-      parts: bundle.parts.map((part) => {
-        if (part.id !== partID || (part.type !== "text" && part.type !== "reasoning")) return part
-        found = true
-        return { ...part, text: part.text + delta } as Part
-      }),
-    }
-  })
-  if (!found && options.appendMissingMessages !== false) rememberPendingPartDelta(messageID, partID, field, delta)
-  return next
-}
-
-function sortMessageBundles(messages: MessageBundle[]) {
-  return messages.toSorted((a, b) => (a.info.time.created ?? 0) - (b.info.time.created ?? 0))
-}
-
-function patchSnapshotSession(snapshot: GuiSnapshot, info: Session): GuiSnapshot {
-  return reconcileSessionUiState(
-    {
-      ...snapshot,
-      sessions: upsertSession(snapshot.sessions, info),
-      projects: snapshot.projects.map((project) =>
-        project.sessions.some((session) => session.id === info.id)
-          ? { ...project, sessions: upsertSession(project.sessions, info) }
-          : project,
-      ),
-      views: snapshot.views.map((view) =>
-        view.sessions.some((session) => session.id === info.id)
-          ? { ...view, sessions: upsertSession(view.sessions, info) }
-          : view,
-      ),
-    },
-    info.id,
-  )
-}
-
-function upsertSession<T extends Session>(sessions: T[], session: Session): T[] {
-  if (!isRenderableSession(session)) return sessions.filter((item) => item.id !== session.id)
-  const index = sessions.findIndex((item) => item.id === session.id)
-  const next =
-    index >= 0 ? sessions.map((item, i) => (i === index ? { ...item, ...session } : item)) : [...sessions, session as T]
-  return next.toSorted((a, b) => b.time.updated - a.time.updated)
-}
-
-function upsertByID<T extends { id: string }>(items: T[], item: T) {
-  return items.some((current) => current.id === item.id)
-    ? items.map((current) => (current.id === item.id ? item : current))
-    : [...items, item]
 }

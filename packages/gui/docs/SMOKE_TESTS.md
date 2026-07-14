@@ -2,6 +2,31 @@
 
 Run these after every P0/P1 GUI change.
 
+## Automated rendered smoke
+
+Install Chromium once, then run the GUI against a real isolated OpencodeX backend:
+
+```bash
+cd packages/gui
+bunx playwright install chromium
+bun run test:e2e
+```
+
+The test renders the dashboard in Chromium, navigates between Dashboard and Swarms, fails on browser errors, captures a screenshot, and proves that an idle client does not periodically request the legacy session snapshot or authoritative root snapshot. Runtime data, traces, videos, screenshots, and the CI JUnit report live under `packages/gui/.artifacts/e2e`.
+
+For interactive debugging, use `bun run test:e2e:headed`. The full TUI is rendered through OpenTUI's test renderer by `packages/opencode/test/cli/tui/app-lifecycle.test.ts`; its smoke contract verifies the dashboard frame and the same idle no-poll invariant.
+
+## Automated Electron acceptance
+
+Run the compiled main/preload boundary, real native views, and an isolated sidecar against a disposable Git workspace:
+
+```bash
+cd packages/gui
+bun run test:e2e:electron
+```
+
+This covers the sandboxed preload bridge, folder/context dialogs, titlebar edit and window controls, exact file save, stage/commit, embedded-browser bounds/screenshot/navigation, a real PTY command, and clean shutdown. Runtime data and traces live under `packages/gui/.artifacts/e2e-electron`. The operating-system dialog result is stubbed in Electron main-process test scope; renderer buttons and all production IPC handlers remain real.
+
 ## Shell
 
 - Launch the GUI from `C:\Work\OpencodeX`.
