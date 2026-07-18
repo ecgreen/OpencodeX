@@ -199,7 +199,7 @@ The release is created as a prerelease/public preview by default.
 Release files are uploaded to:
 
 ```text
-https://github.com/opencodex/opencodex/releases/tag/v0.0.1
+https://github.com/ecgreen/OpencodeX/releases/tag/v0.0.1
 ```
 
 CLI files are produced under `packages/opencode/dist` during CI and uploaded as release assets. Expected assets include platform-specific `opencode-*` archives plus `SHA256SUMS`.

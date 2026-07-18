@@ -1,0 +1,15 @@
+{
+  "$schema": "./lock.schema.json",
+  "repository": "https://github.com/anomalyco/opencode.git",
+  "remote": "upstream",
+  "ref": "v1.15.13",
+  "sha": "385cb694419f98103af0e8fc6187ddcbcbb6eecb",
+  "syncDate": "2026-05-31",
+  "historyMode": "snapshot-import-without-common-ancestor",
+  "latestObserved": {
+    "ref": "v1.18.3",
+    "sha": "127bdb30784d508cc556c71a0f32b508a3061517",
+    "observedAt": "2026-07-18"
+  },
+  "backports": []
+}

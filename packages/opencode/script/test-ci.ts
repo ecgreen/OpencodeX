@@ -59,29 +59,30 @@ if (selectedAreas.size === 0) {
   await serial("test/session/compaction.test.ts", "session-compaction.xml")
   await serial("test/session/prompt.test.ts", "session-prompt.xml")
   await serial("test/server/httpapi-listen.test.ts", "httpapi-listen.xml")
-  await serial("test/cli/tui", "tui.xml")
-  await serialFiles("test/cli/cmd/tui", "tui-sync")
+  await serialFiles("test/cli/tui", "tui", ["--conditions=browser"])
+  await serialFiles("test/cli/cmd/tui", "tui-sync", ["--conditions=browser"])
   await serialFiles("test/cli/run", "run-ui")
   await serialFiles("test/cli/acp", "acp")
   await serialFiles("test/cli/serve", "serve")
   await serialFiles("test/cli/smokes", "smokes")
 }
 
-async function serialFiles(directory: string, report: string) {
+async function serialFiles(directory: string, report: string, options: string[] = []) {
   const root = path.join(import.meta.dir, "..", directory)
   const files = [...new Bun.Glob("**/*.test.*").scanSync({ cwd: root })]
     .filter((file) => file.endsWith(".ts") || file.endsWith(".tsx"))
     .toSorted()
   for (const file of files) {
     const target = path.join(directory, file).replaceAll("\\", "/")
-    await serial(target, `${report}-${file.replace(/[^a-zA-Z0-9.-]/g, "-")}.xml`)
+    await serial(target, `${report}-${file.replace(/[^a-zA-Z0-9.-]/g, "-")}.xml`, options)
   }
 }
 
-function serial(target: string, report: string) {
+function serial(target: string, report: string, options: string[] = []) {
   return run(target, [
     "bun",
     "test",
+    ...options,
     target,
     "--timeout",
     "30000",

@@ -1,15 +1,13 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { fixtureDirectory } from "./fixture-directory"
 
 const backendURL = "http://127.0.0.1:4097"
 const headers = {
   authorization: "Basic b3BlbmNvZGU6b3BlbmNvZGV4LWUyZQ==",
-  "x-opencode-directory": "C:/Work/OpencodeX",
+  "x-opencode-directory": fixtureDirectory,
 }
 
-test("completes project, session, swarm, view, workbench, menu, and keyboard workflows", async ({
-  page,
-  request,
-}) => {
+test("completes project, session, swarm, view, workbench, menu, and keyboard workflows", async ({ page, request }) => {
   const failures: string[] = []
   page.on("console", (message) => {
     if (message.type() === "error") failures.push(message.text())
@@ -87,8 +85,8 @@ async function createProject(request: APIRequestContext) {
     headers,
     data: {
       name: "GUI Acceptance",
-      directory: "C:/Work/OpencodeX",
-      folders: ["C:/Work/OpencodeX"],
+      directory: fixtureDirectory,
+      folders: [fixtureDirectory],
     },
   })
   expect(response.ok(), await response.text()).toBe(true)
@@ -103,7 +101,7 @@ async function createSession(request: APIRequestContext, projectID: string) {
     headers,
     data: {
       projectID,
-      directory: "C:/Work/OpencodeX",
+      directory: fixtureDirectory,
       title: "GUI Acceptance Session",
     },
   })

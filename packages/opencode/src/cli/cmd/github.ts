@@ -1,6 +1,5 @@
 import path from "path"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
-import { exec } from "child_process"
 import { Filesystem } from "@/util/filesystem"
 import * as prompts from "@clack/prompts"
 import { map, pipe, sortBy, values } from "remeda"
@@ -36,6 +35,8 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Process } from "@/util/process"
 import { parseGitHubRemote } from "@/util/repository"
 import { Effect } from "effect"
+import { unlink } from "node:fs/promises"
+import { LEGACY_WORKFLOW_FILE, renderGithubWorkflow, WORKFLOW_FILE } from "./github-workflow"
 
 type GitHubAuthor = {
   login: string
@@ -142,7 +143,6 @@ type IssueQueryResponse = {
 
 const AGENT_USERNAME = "opencode-agent[bot]"
 const AGENT_REACTION = "eyes"
-const WORKFLOW_FILE = ".github/workflows/opencode.yml"
 
 // Event categories for routing
 // USER_EVENTS: triggered by user actions, have actor/issueId, support reactions/comments
@@ -204,7 +204,6 @@ export const GithubInstallCommand = effectCmd({
         UI.empty()
         prompts.intro("Install GitHub agent")
         const app = await getAppInfo()
-        await installGitHubApp()
 
         const providers = await Effect.runPromise(modelsDev.get()).then((p) => {
           // TODO: add guide for copilot, for now just hide it
@@ -241,7 +240,7 @@ export const GithubInstallCommand = effectCmd({
               "",
               "    3. Go to a GitHub issue and comment `/oc summarize` to see the agent in action",
               "",
-              "   Learn more about the GitHub agent - https://opencode.ai/docs/github/#usage-examples",
+              "   Learn more about the GitHub agent - https://github.com/ecgreen/OpencodeX/tree/main/github",
             ].join("\n"),
           )
         }
@@ -316,98 +315,19 @@ export const GithubInstallCommand = effectCmd({
           return model
         }
 
-        async function installGitHubApp() {
-          const s = prompts.spinner()
-          s.start("Installing GitHub app")
-
-          // Get installation
-          const installation = await getInstallation()
-          if (installation) return s.stop("GitHub app already installed")
-
-          // Open browser
-          const url = "https://github.com/apps/opencode-agent"
-          const command =
-            process.platform === "darwin"
-              ? `open "${url}"`
-              : process.platform === "win32"
-                ? `start "" "${url}"`
-                : `xdg-open "${url}"`
-
-          exec(command, (error) => {
-            if (error) {
-              prompts.log.warn(`Could not open browser. Please visit: ${url}`)
-            }
-          })
-
-          // Wait for installation
-          s.message("Waiting for GitHub app to be installed")
-          const MAX_RETRIES = 120
-          let retries = 0
-          do {
-            const installation = await getInstallation()
-            if (installation) break
-
-            if (retries > MAX_RETRIES) {
-              s.stop(
-                `Failed to detect GitHub app installation. Make sure to install the app for the \`${app.owner}/${app.repo}\` repository.`,
-              )
-              throw new UI.CancelledError()
-            }
-
-            retries++
-            await sleep(1000)
-          } while (true) // oxlint-disable-line no-constant-condition
-
-          s.stop("Installed GitHub app")
-
-          async function getInstallation() {
-            return await fetch(
-              `https://api.opencode.ai/get_github_app_installation?owner=${app.owner}&repo=${app.repo}`,
-            )
-              .then((res) => res.json())
-              .then((data) => data.installation)
-          }
-        }
-
         async function addWorkflowFiles() {
-          const envStr =
-            provider === "amazon-bedrock"
-              ? ""
-              : `\n        env:${providers[provider].env.map((e) => `\n          ${e}: \${{ secrets.${e} }}`).join("")}`
-
+          const legacy = path.join(app.root, LEGACY_WORKFLOW_FILE)
+          if (await Filesystem.exists(legacy)) {
+            const migrate = await prompts.confirm({
+              message: `Migrate ${LEGACY_WORKFLOW_FILE} to ${WORKFLOW_FILE}?`,
+              initialValue: true,
+            })
+            if (!migrate || prompts.isCancel(migrate)) throw new UI.CancelledError()
+            await unlink(legacy)
+          }
           await Filesystem.write(
             path.join(app.root, WORKFLOW_FILE),
-            `name: opencode
-
-on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-
-jobs:
-  opencode:
-    if: |
-      contains(github.event.comment.body, ' /oc') ||
-      startsWith(github.event.comment.body, '/oc') ||
-      contains(github.event.comment.body, ' /opencode') ||
-      startsWith(github.event.comment.body, '/opencode')
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: read
-      issues: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Run opencode
-        uses: anomalyco/opencode/github@latest${envStr}
-        with:
-          model: ${provider}/${model}`,
+            renderGithubWorkflow(provider, model, providers[provider].env),
           )
 
           prompts.log.success(`Added workflow file: "${WORKFLOW_FILE}"`)
@@ -1135,9 +1055,9 @@ export const GithubRunCommand = effectCmd({
           .join("")
         if (type === "schedule" || type === "dispatch") {
           const hex = crypto.randomUUID().slice(0, 6)
-          return `opencode/${type}-${hex}-${timestamp}`
+          return `opencodex/${type}-${hex}-${timestamp}`
         }
-        return `opencode/${type}${issueId}-${timestamp}`
+        return `opencodex/${type}${issueId}-${timestamp}`
       }
 
       async function pushToNewBranch(summary: string, branch: string, commit: boolean, isSchedule: boolean) {
@@ -1401,18 +1321,9 @@ export const GithubRunCommand = effectCmd({
         }
       }
 
-      function footer(opts?: { image?: boolean }) {
-        const image = (() => {
-          if (!shareId) return ""
-          if (!opts?.image) return ""
-
-          const titleAlt = encodeURIComponent(session.title.substring(0, 50))
-          const title64 = Buffer.from(session.title.substring(0, 700), "utf8").toString("base64")
-
-          return `<a href="${shareBaseUrl}/s/${shareId}"><img width="200" alt="${titleAlt}" src="https://social-cards.sst.dev/opencode-share/${title64}.png?model=${providerID}/${modelID}&version=${session.version}&id=${shareId}" /></a>\n`
-        })()
-        const shareUrl = shareId ? `[opencode session](${shareBaseUrl}/s/${shareId})&nbsp;&nbsp;|&nbsp;&nbsp;` : ""
-        return `\n\n${image}${shareUrl}[github run](${runUrl})`
+      function footer(_opts?: { image?: boolean }) {
+        const shareUrl = shareId ? `[OpencodeX session](${shareBaseUrl}/s/${shareId})&nbsp;&nbsp;|&nbsp;&nbsp;` : ""
+        return `\n\n${shareUrl}[GitHub run](${runUrl})`
       }
 
       async function fetchRepo() {

@@ -1,9 +1,10 @@
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test"
+import { fixtureDirectory } from "./fixture-directory"
 
 const backendURL = "http://127.0.0.1:4097"
 const headers = {
   authorization: "Basic b3BlbmNvZGU6b3BlbmNvZGV4LWUyZQ==",
-  "x-opencode-directory": "C:/Work/OpencodeX",
+  "x-opencode-directory": fixtureDirectory,
 }
 const viewports = [
   { width: 980, height: 680 },
@@ -15,7 +16,10 @@ let fixture: { projectID: string; sessionTitle: string } | undefined
 for (const viewport of viewports) {
   for (const theme of ["dark", "light"] as const) {
     for (const motion of ["no-preference", "reduce"] as const) {
-      test(`captures precision slice at ${viewport.width}x${viewport.height}, ${theme}, ${motion}`, async ({ page, request }, testInfo) => {
+      test(`captures precision slice at ${viewport.width}x${viewport.height}, ${theme}, ${motion}`, async ({
+        page,
+        request,
+      }, testInfo) => {
         await configurePage(page, viewport, theme, motion)
         await page.goto("/")
         await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
@@ -44,7 +48,10 @@ for (const viewport of viewports) {
   }
 }
 
-test("records navigation, collapse, disclosure, session opening, and composer focus", async ({ browser, request }, testInfo) => {
+test("records navigation, collapse, disclosure, session opening, and composer focus", async ({
+  browser,
+  request,
+}, testInfo) => {
   const context = await browser.newContext({
     viewport: { width: 1440, height: 960 },
     colorScheme: "dark",
@@ -91,7 +98,9 @@ test("keeps warm route interactions inside the precision performance budget", as
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
   await page.evaluate(() => {
     const durations: number[] = []
-    const observer = new PerformanceObserver((list) => durations.push(...list.getEntries().map((entry) => entry.duration)))
+    const observer = new PerformanceObserver((list) =>
+      durations.push(...list.getEntries().map((entry) => entry.duration)),
+    )
     observer.observe({ type: "longtask", buffered: true })
     Object.assign(window, { __precisionLongTasks: durations, __precisionObserver: observer })
   })
@@ -100,7 +109,9 @@ test("keeps warm route interactions inside the precision performance budget", as
     const target = index % 2 === 0 ? /^Projects:/ : /^Dashboard:/
     const started = await page.evaluate(() => performance.now())
     await page.getByRole("button", { name: target }).click()
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    )
     durations.push((await page.evaluate(() => performance.now())) - started)
   }
   const sorted = durations.toSorted((a, b) => a - b)
@@ -129,7 +140,14 @@ async function expectNavigationContract(page: Page) {
   await expect(nav.locator("small")).toHaveCount(0)
   await expect(nav.getByRole("button", { name: /^Status:/ })).toHaveCount(0)
   await expect(nav.getByRole("button", { name: /^Settings:/ })).toHaveCount(0)
-  await expect(nav.locator(".nav-label")).toHaveText(["Dashboard", "Projects", "Swarms", "Views", "Plugins", "Workbench"])
+  await expect(nav.locator(".nav-label")).toHaveText([
+    "Dashboard",
+    "Projects",
+    "Swarms",
+    "Views",
+    "Plugins",
+    "Workbench",
+  ])
 }
 
 async function expectNoDocumentOverflow(page: Page) {
@@ -145,7 +163,7 @@ async function expectNoDocumentOverflow(page: Page) {
 async function createProject(request: APIRequestContext, name: string) {
   const response = await request.post(`${backendURL}/experimental/opencodex/project`, {
     headers,
-    data: { name, directory: "C:/Work/OpencodeX", folders: ["C:/Work/OpencodeX"] },
+    data: { name, directory: fixtureDirectory, folders: [fixtureDirectory] },
   })
   expect(response.ok(), await response.text()).toBe(true)
   const body: unknown = await response.json()
@@ -158,7 +176,7 @@ async function createProject(request: APIRequestContext, name: string) {
 async function createSession(request: APIRequestContext, projectID: string, title: string) {
   const response = await request.post(`${backendURL}/experimental/opencodex/session`, {
     headers,
-    data: { projectID, directory: "C:/Work/OpencodeX", title },
+    data: { projectID, directory: fixtureDirectory, title },
   })
   expect(response.ok(), await response.text()).toBe(true)
 }

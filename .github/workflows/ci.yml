@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      packaged_gui:
+        description: Run the packaged Electron smoke test
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  changes:
+    name: changed surfaces
+    runs-on: ubuntu-latest
+    outputs:
+      gui: ${{ steps.paths.outputs.gui }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - id: paths
+        name: Detect GUI and contract changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "gui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+          if grep -Eq '^(packages/gui/|packages/sdk/js/|packages/opencode/src/(server|session|opencodex)/|packages/core/|packages/ui/|bun.lock$|package.json$)' changed-files.txt; then
+            echo "gui=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gui=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  static:
+    name: static and generated state
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - run: bun run surface:audit
+      - name: Check Core migration state
+        working-directory: packages/core
+        run: bun script/migration.ts --check
+      - name: Check generated JavaScript SDK
+        working-directory: packages/sdk/js
+        run: bun script/build.ts && git diff --exit-code -- .
+      - run: bun run typecheck
+      - run: bun run lint:ci
+      - name: Enforce GUI design boundaries
+        working-directory: packages/gui
+        run: bun run check:design-system && bun run check:source-size
+
+  unit:
+    name: unit (${{ matrix.os }})
+    needs: static
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: windows
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - run: bun run test:ci
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+      - name: Run HttpApi contract gates
+        if: runner.os == 'Linux'
+        working-directory: packages/opencode
+        run: bun run test:httpapi
+      - name: Upload failing unit reports
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unit-${{ matrix.os }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: packages/**/.artifacts/unit/junit.xml
+
+  gui-e2e:
+    name: gui e2e (chromium)
+    needs: [changes, static]
+    if: needs.changes.outputs.gui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - name: Install Playwright Chromium
+        working-directory: packages/gui
+        run: bunx playwright install --with-deps chromium
+      - name: Run rendered GUI smoke
+        working-directory: packages/gui
+        run: bun run test:e2e
+      - name: Upload failing GUI artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gui-e2e-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: packages/gui/.artifacts/e2e
+
+  packaged-gui:
+    name: packaged GUI smoke (Windows)
+    if: github.event_name == 'workflow_dispatch' && inputs.packaged_gui
+    needs: [unit, gui-e2e]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - name: Build sidecar
+        run: bun ./packages/opencode/script/build.ts --target opencode-windows-x64 --skip-embed-web-ui --no-minify
+      - name: Package and smoke GUI
+        working-directory: packages/gui
+        run: bun run package && bun run smoke:packaged

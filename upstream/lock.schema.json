@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["repository", "remote", "ref", "sha", "syncDate", "historyMode", "latestObserved", "backports"],
+  "properties": {
+    "repository": { "const": "https://github.com/anomalyco/opencode.git" },
+    "remote": { "const": "upstream" },
+    "ref": { "type": "string" },
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "syncDate": { "type": "string", "format": "date" },
+    "historyMode": { "enum": ["snapshot-import-without-common-ancestor", "merged"] },
+    "latestObserved": {
+      "type": "object",
+      "required": ["ref", "sha", "observedAt"],
+      "properties": {
+        "ref": { "type": "string" },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "observedAt": { "type": "string", "format": "date" }
+      }
+    },
+    "backports": { "type": "array", "items": { "type": "object", "required": ["sha"] } }
+  }
+}

@@ -12,7 +12,7 @@
     artifacts/, then downloading from GitHub Releases.
 
 .PARAMETER ReleaseRepo
-    GitHub repository that hosts release assets. Defaults to opencodex/opencodex.
+    GitHub repository that hosts release assets. Defaults to ecgreen/OpencodeX.
 
 .PARAMETER Version
     Release version to install. Defaults to latest. Accepts values with or without
@@ -50,7 +50,7 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactPath = "",
-    [string]$ReleaseRepo = "opencodex/opencodex",
+    [string]$ReleaseRepo = "ecgreen/OpencodeX",
     [string]$Version = "latest",
     [string]$InstallDir = "",
     [string]$BinaryName = "opencodex.exe",

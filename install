@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 APP=opencodex
-GITHUB_REPO=${OPENCODEX_GITHUB_REPO:-opencodex/opencodex}
+GITHUB_REPO=${OPENCODEX_GITHUB_REPO:-ecgreen/OpencodeX}
 ARTIFACT_PREFIX=${OPENCODEX_ARTIFACT_PREFIX:-opencodex}
 FALLBACK_ARTIFACT_PREFIX=${OPENCODEX_FALLBACK_ARTIFACT_PREFIX:-opencode}
 
@@ -23,8 +23,8 @@ Options:
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
-    curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
-    curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash -s -- --version 1.0.180
+    curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash
+    curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash -s -- --version 1.0.180
     ./install --binary /path/to/opencodex
 EOF
 }

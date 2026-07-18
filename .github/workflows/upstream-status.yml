@@ -1,0 +1,39 @@
+name: Upstream status
+
+on:
+  schedule:
+    - cron: "17 18 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Update the single tracking issue when the release changes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          release="$(gh api repos/anomalyco/opencode/releases/latest --jq .tag_name)"
+          pinned="$(jq -r .ref upstream/lock.json)"
+          [[ "$release" != "$pinned" ]] || exit 0
+          marker="<!-- upstream-release:${release} -->"
+          issue="$(gh issue list --state all --search 'Upstream opencode status in:title' --json number --jq '.[0].number // empty')"
+          if [[ -n "$issue" ]] && gh issue view "$issue" --json body --jq .body | grep -Fq "$marker"; then
+            exit 0
+          fi
+          body="${marker}
+          OpencodeX is pinned to \`${pinned}\`; upstream now offers \`${release}\`.
+
+          Run \`bun run upstream:status ${release} --markdown\`, then start the manual upstream-sync workflow."
+          if [[ -n "$issue" ]]; then
+            gh issue edit "$issue" --title "Upstream opencode status: ${release}" --body "$body"
+          else
+            gh issue create --title "Upstream opencode status: ${release}" --body "$body"
+          fi

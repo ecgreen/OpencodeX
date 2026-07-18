@@ -140,13 +140,13 @@ OpencodeX ships as a single binary. There is no installer, no daemon, and no sys
 The recommended path is the GitHub Release installer:
 
 ```bash
-curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
+curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash
 ```
 
 Install a specific version with:
 
 ```bash
-curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash -s -- --version 1.15.13
+curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash -s -- --version 1.15.13
 ```
 
 Then verify:
@@ -160,7 +160,7 @@ opencodex --version
 From PowerShell:
 
 ```powershell
-irm https://github.com/opencodex/opencodex/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
+irm https://github.com/ecgreen/OpencodeX/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
 pwsh -File .\install-windows.ps1
 ```
 
@@ -187,7 +187,7 @@ To uninstall later:
 The desktop GUI is published as preview-quality GitHub Release assets alongside the CLI. Download the asset for your platform from:
 
 ```text
-https://github.com/opencodex/opencodex/releases/latest
+https://github.com/ecgreen/OpencodeX/releases/latest
 ```
 
 Public GUI preview builds are expected to be signed on Windows and signed/notarized on macOS. Verify downloaded assets with `SHA256SUMS-GUI` from the same release. If a release is explicitly marked unsigned, macOS, Windows, or Linux may show an operating-system trust prompt before first launch.
@@ -201,7 +201,7 @@ See [Public Preview Notes](docs/PUBLIC_PREVIEW.md) for known limitations, valida
 The recommended path is to build from source with the bundled script.
 
 ```bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bash build.sh --target darwin-arm64   # Apple Silicon
 # or
@@ -218,7 +218,7 @@ opencodex --version
 ### Build from source: Linux
 
 ```bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bash build.sh --target linux-x64
 # or, for older CPUs without AVX2:

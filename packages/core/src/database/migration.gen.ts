@@ -34,5 +34,6 @@ export const migrations = (
     import("./migration/20260709000000_opencodex_state_event"),
     import("./migration/20260709000001_opencodex_state_retention_view_order"),
     import("./migration/20260709000002_opencodex_job_runtime"),
+    import("./migration/20260718215237_fair_ultron"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
