@@ -128,12 +128,24 @@ export type WorkItemProjectionInput = Pick<
 export function clientWorkItems(input: WorkItemProjectionInput, now?: number): WorkItem[] {
   const permissions = groupBySession(input.permissions)
   const questions = groupBySession(input.questions)
-  const jobs = input.jobs.ids.flatMap((id) => input.jobs.records[id] ? [input.jobs.records[id]] : [])
+  const jobs = input.jobs.ids.flatMap((id) => (input.jobs.records[id] ? [input.jobs.records[id]] : []))
   const jobsBySession = groupJobsBySession(jobs)
   return [
     ...input.sessions.ids.flatMap((id) => {
       const session = input.sessions.records[id]
-      return session ? [sessionWorkItem(session, input.sessionStatus[id], input.sessionUiState[id], permissions[id], questions[id], jobsBySession[id], now)] : []
+      return session
+        ? [
+            sessionWorkItem(
+              session,
+              input.sessionStatus[id],
+              input.sessionUiState[id],
+              permissions[id],
+              questions[id],
+              jobsBySession[id],
+              now,
+            ),
+          ]
+        : []
     }),
     ...jobs.map((job) => jobWorkItem(job, now)),
     ...input.swarms.ids.flatMap((id) => {
@@ -155,32 +167,40 @@ export function createClientWorkItemSelector() {
 }
 
 export function clientAttentionItems(items: readonly WorkItem[]): AttentionItem[] {
-  const sessionIDs = new Set(items.flatMap((item) => item.kind === "session" && item.sessionID ? [item.sessionID] : []))
-  return items.flatMap((item): AttentionItem[] => {
-    if (item.kind === "job" && item.sessionID && sessionIDs.has(item.sessionID)) return []
-    const attention = attentionForState(item.state)
-    if (!attention) return []
-    return [{
-      id: `${attention.kind}:${item.id}`,
-      workItemID: item.id,
-      kind: attention.kind,
-      priority: attention.priority,
-      title: item.title,
-      detail: item.blocker ?? item.statusLabel,
-      state: item.state,
-      projectID: item.projectID,
-      sessionID: item.sessionID,
-      swarmID: item.swarmID,
-      updatedAt: item.updatedAt,
-    }]
-  }).sort((left, right) => left.priority - right.priority || right.updatedAt - left.updatedAt)
+  const sessionIDs = new Set(
+    items.flatMap((item) => (item.kind === "session" && item.sessionID ? [item.sessionID] : [])),
+  )
+  return items
+    .flatMap((item): AttentionItem[] => {
+      if (item.kind === "job" && item.sessionID && sessionIDs.has(item.sessionID)) return []
+      const attention = attentionForState(item.state)
+      if (!attention) return []
+      return [
+        {
+          id: `${attention.kind}:${item.id}`,
+          workItemID: item.id,
+          kind: attention.kind,
+          priority: attention.priority,
+          title: item.title,
+          detail: item.blocker ?? item.statusLabel,
+          state: item.state,
+          projectID: item.projectID,
+          sessionID: item.sessionID,
+          swarmID: item.swarmID,
+          updatedAt: item.updatedAt,
+        },
+      ]
+    })
+    .sort((left, right) => left.priority - right.priority || right.updatedAt - left.updatedAt)
 }
 
 export function clientWorkItemBucket(item: WorkItem | undefined) {
   if (!item) return "inactive" as const
   if (item.state === "waiting_input" || item.state === "waiting_permission") return "input_needed" as const
-  if (item.state === "needs_review" || item.state === "partially_completed" || item.state === "completed") return "ready_for_review" as const
-  if (["preparing", "queued", "running", "retrying", "cancelling", "recovered"].includes(item.state)) return "in_progress" as const
+  if (item.state === "needs_review" || item.state === "partially_completed" || item.state === "completed")
+    return "ready_for_review" as const
+  if (["preparing", "queued", "running", "retrying", "cancelling", "recovered"].includes(item.state))
+    return "in_progress" as const
   return "inactive" as const
 }
 
@@ -216,7 +236,8 @@ function sessionWorkItem(
 ): WorkItem {
   const job = jobs ? [...jobs].sort((left, right) => time(right.timeUpdated) - time(left.timeUpdated))[0] : undefined
   const state = sessionState(status, ui, permissions, questions, job, session.time.updated)
-  const blocker = permissions?.[0]?.permission ?? questions?.[0]?.questions[0]?.question ?? job?.failure?.message ?? job?.statusReason
+  const blocker =
+    permissions?.[0]?.permission ?? questions?.[0]?.questions[0]?.question ?? job?.failure?.message ?? job?.statusReason
   return {
     id: `session:${session.id}`,
     kind: "session",
@@ -234,7 +255,7 @@ function sessionWorkItem(
     responsibleUser: metadataString(session.metadata, "responsibleUser"),
     executionTarget: target(session.metadata, session.directory),
     blocker,
-    changedFiles: session.summary?.diffs?.flatMap((diff) => diff.file ? [diff.file] : []) ?? [],
+    changedFiles: session.summary?.diffs?.flatMap((diff) => (diff.file ? [diff.file] : [])) ?? [],
     validation: validation(session.metadata),
     resourceUse: {
       cost: session.cost,
@@ -272,7 +293,11 @@ function jobWorkItem(job: OpencodeXJob, now: number | undefined): WorkItem {
     blocker: job.failure?.message ?? job.statusReason,
     changedFiles: metadataStrings(job.metadata, "changedFiles"),
     validation: validation(job.metadata),
-    progress: { completed: Math.min(job.attempt, job.maxAttempts), failed: job.status === "failed" ? 1 : 0, total: job.maxAttempts },
+    progress: {
+      completed: Math.min(job.attempt, job.maxAttempts),
+      failed: job.status === "failed" ? 1 : 0,
+      total: job.maxAttempts,
+    },
     startedAt: timeOrUndefined(job.startedAt),
     completedAt: timeOrUndefined(job.completedAt),
     updatedAt: time(job.timeUpdated),
@@ -346,7 +371,8 @@ function swarmState(status: OpencodeXSwarmRun["status"]): WorkItemState {
 function attentionForState(state: WorkItemState) {
   if (state === "waiting_permission") return { kind: "permission" as const, priority: 0 as const }
   if (state === "waiting_input") return { kind: "input" as const, priority: 0 as const }
-  if (state === "failed" || state === "interrupted" || state === "partially_completed") return { kind: "failure" as const, priority: 1 as const }
+  if (state === "failed" || state === "interrupted" || state === "partially_completed")
+    return { kind: "failure" as const, priority: 1 as const }
   if (state === "needs_review" || state === "completed") return { kind: "review" as const, priority: 2 as const }
   if (state === "recovered") return { kind: "recovery" as const, priority: 2 as const }
   return undefined
@@ -361,13 +387,15 @@ function groupBySession<T extends { sessionID: string }>(entities: ClientEntityS
 }
 
 function sameWorkItemSources(left: WorkItemProjectionInput, right: WorkItemProjectionInput) {
-  return left.sessions === right.sessions
-    && left.sessionStatus === right.sessionStatus
-    && left.sessionUiState === right.sessionUiState
-    && left.permissions === right.permissions
-    && left.questions === right.questions
-    && left.jobs === right.jobs
-    && left.swarms === right.swarms
+  return (
+    left.sessions === right.sessions &&
+    left.sessionStatus === right.sessionStatus &&
+    left.sessionUiState === right.sessionUiState &&
+    left.permissions === right.permissions &&
+    left.questions === right.questions &&
+    left.jobs === right.jobs &&
+    left.swarms === right.swarms
+  )
 }
 
 function groupJobsBySession(jobs: readonly OpencodeXJob[]) {
@@ -381,7 +409,11 @@ function target(metadata: unknown, directory?: string): ExecutionTarget {
   const runnerID = metadataString(metadata, "runnerID")
   if (runnerID) return { kind: "runner", runnerID, workspace: metadataString(metadata, "runnerWorkspace") }
   if (metadataString(metadata, "executionTarget") === "worktree" || metadataString(metadata, "worktreePath"))
-    return { kind: "worktree", directory: metadataString(metadata, "worktreePath") ?? directory, branch: metadataString(metadata, "branch") }
+    return {
+      kind: "worktree",
+      directory: metadataString(metadata, "worktreePath") ?? directory,
+      branch: metadataString(metadata, "branch"),
+    }
   return { kind: "direct", directory: metadataString(metadata, "directory") ?? directory }
 }
 
