@@ -1,0 +1,235 @@
+:root[data-theme=light] .diff-page {
+  background: var(--theme-overlay-strong);
+}
+
+.diff-actions button.selected {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.diff-actions button:disabled {
+  opacity: .45;
+}
+
+.diff-file-list button.selected {
+  background: var(--element);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.session-side-diff-splitter:hover {
+  border-inline-color: color-mix(in srgb,var(--secondary) 42%,transparent);
+  color: var(--secondary);
+  background: color-mix(in srgb,var(--secondary) 9%,var(--bg));
+}
+
+.session-side-diff-splitter:focus-visible {
+  border-inline-color: color-mix(in srgb,var(--secondary) 42%,transparent);
+  color: var(--secondary);
+  background: color-mix(in srgb,var(--secondary) 9%,var(--bg));
+}
+
+.session-side-diff-patch>[data-component=file] {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+.tool-diff [data-component=code-block] pre {
+  overflow: visible;
+  max-height: none;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 7px;
+  background: var(--theme-canvas);
+  white-space: pre-wrap;
+}
+
+.tool-diff [data-component=code-block] code {
+  background: transparent;
+}
+
+.tool-file-diff [data-component=file] {
+  background: var(--theme-canvas);
+}
+
+.tool-file-diff>[data-component=code-block] pre {
+  border: 0;
+  border-radius: 0;
+}
+
+.workbench-diff-preview [data-component=file] {
+  min-height: 100%;
+}
+
+.diff-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-1px);
+}
+
+.part.tool:not(.todo-update):not(.patch-update):not(:has(.tool-diff)) {
+  margin: 2px 0;
+}
+
+.tool-group:not(.todo-update):not(.patch-update):not(:has(.tool-diff)) {
+  margin: 2px 0;
+}
+
+.part.tool:not(.todo-update):not(.patch-update):not(:has(.tool-diff))>summary {
+  position: relative;
+  padding: 1px 0;
+}
+
+.part.tool:not(.todo-update):not(.patch-update):not(:has(.tool-diff))>summary .output-chevron {
+  position: absolute;
+  left: -19px;
+}
+
+.part.tool:not(.todo-update):not(.patch-update):not(:has(.tool-diff)) .tool-details {
+  margin: 1px 0 0;
+}
+
+.part.tool:has(.tool-diff) {
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--warning);
+  background: var(--panel);
+  border-left-color: var(--primary);
+}
+
+.part.tool:has(.tool-diff)>summary {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+}
+
+.part.tool:has(.tool-diff)>.tool-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+}
+
+.part.tool:has(.tool-diff)>summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.part.tool:has(.tool-diff)>.tool-summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.part.tool:has(.tool-diff)>summary .tool-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool:has(.tool-diff)>.tool-summary .tool-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool:has(.tool-diff) .tool-details {
+  margin: 0;
+  padding: 6px 10px 8px;
+}
+
+.part.tool:has(.tool-diff) .tool-output {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.part.tool:has(.tool-diff) .tool-diff {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.part.tool.patch-update summary.tool-file-diff-header::-webkit-details-marker {
+  display: none;
+}
+
+.part.tool.patch-update .tool-file-diff-action:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb,var(--blue) 34%,transparent);
+  background: color-mix(in srgb,var(--blue) 16%,transparent);
+}
+
+.part.tool.patch-update .tool-file-diff-action.git:hover {
+  color: color-mix(in srgb,var(--blue) 74%,var(--text) 26%);
+}
+
+.part.tool.patch-update .tool-file-diff-action.file:hover {
+  color: color-mix(in srgb,var(--text) 92%,var(--blue) 8%);
+}
+
+.tool-unified-patch [data-diff] {
+  min-width: 100%;
+  width: max-content;
+}
+
+.tool-unified-patch [data-diff][data-diff-type=unified] [data-line][data-line-type=context] {
+  box-shadow: inset 4px 0 var(--theme-overlay-strong);
+}
+
+.tool-unified-patch [data-diff][data-diff-type=unified] [data-line][data-line-type=context-expanded] {
+  box-shadow: inset 4px 0 var(--theme-overlay-strong);
+}
+
+.tool-unified-patch [data-diff][data-diff-type=unified] [data-line][data-line-type=separator] {
+  box-shadow: inset 4px 0 var(--theme-overlay-strong);
+}
+
+.part.tool:has(.tool-diff) .tool-output pre {
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.part.tool:has(.tool-diff) pre {
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.stage-content.full-bleed>:is(.session-page,.views-manager-page,.diff-page,.workbench-page) {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}

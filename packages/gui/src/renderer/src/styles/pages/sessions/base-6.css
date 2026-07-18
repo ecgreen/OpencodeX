@@ -1,0 +1,375 @@
+.part.tool .tool-output button {
+  margin-top: 2px;
+}
+
+.thinking-block {
+  padding: 10px 12px;
+  color: var(--muted);
+  border-radius: 0;
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--warning);
+  background: var(--panel);
+}
+
+.part.tool.todo-update {
+  border-color: color-mix(in srgb,var(--theme-success) 30%,transparent);
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--warning);
+  background: var(--panel);
+  border-left-color: var(--success);
+}
+
+.thinking-block summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+}
+
+.part.tool.todo-update>summary {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+}
+
+.part.tool.todo-update>.tool-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  background: transparent;
+}
+
+.part.tool.patch-update>.tool-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--blue);
+  max-width: 100%;
+  padding: 5px 10px 6px;
+  width: 100%;
+  background: var(--panel);
+}
+
+.part.tool.patch-update.no-details>.tool-summary {
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+}
+
+.part.tool.todo-update>summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.part.tool.todo-update>.tool-summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.part.tool.patch-update>.tool-summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.thinking-block summary span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.thinking-block summary .output-chevron {
+  color: var(--warning);
+}
+
+.thinking-segments {
+  display: grid;
+  gap: 10px;
+  padding: 8px 10px 10px;
+}
+
+.thinking-segment header {
+  margin: 0 0 5px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.part.tool.todo-update>summary .output-chevron {
+  color: var(--success);
+}
+
+.part.tool.patch-update .tool-patch-files {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part.tool.todo-update>summary .tool-status {
+  color: color-mix(in srgb,var(--theme-success) 72%,transparent);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool.todo-update>.tool-summary .tool-status {
+  color: color-mix(in srgb,var(--theme-success) 72%,transparent);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool.patch-update>summary .tool-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool.patch-update>.tool-summary .tool-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.part.tool.todo-update .tool-details {
+  margin: 0;
+  padding: 6px 10px 8px;
+}
+
+.part.tool.patch-update .tool-details {
+  margin: 0;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+}
+
+.part.tool.todo-update .tool-output {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.tool-unified-patch {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  margin: 0;
+  padding: 0;
+  background: color-mix(in srgb,var(--panel) 72%,var(--bg) 28%);
+  --background-stronger: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --border-warning-base: color-mix(in srgb, var(--theme-accent) 58%, transparent);
+  --diffs-dark: var(--text);
+  --diffs-dark-bg: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --diffs-light: var(--text);
+  --diffs-light-bg: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --diffs-mixer: var(--theme-surface);
+  --diffs-bg-addition-override: color-mix(in srgb, var(--theme-info) 12%, transparent);
+  --diffs-bg-addition-number-override: color-mix(in srgb, var(--theme-info) 18%, transparent);
+  --diffs-bg-deletion-override: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  --diffs-bg-deletion-number-override: color-mix(in srgb, var(--theme-danger) 18%, transparent);
+  --diffs-bg-context-override: color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  --diffs-bg-separator-override: var(--theme-surface);
+  --solaris-dark-6: var(--theme-surface-raised);
+  --surface-warning-base: color-mix(in srgb, var(--theme-accent) 55%, transparent);
+  --surface-warning-strong: color-mix(in srgb, var(--theme-accent) 80%, transparent);
+  --syntax-diff-add: var(--theme-info);
+  --syntax-diff-delete: var(--theme-danger);
+  --syntax-unknown: var(--muted) ;
+}
+
+.part.tool.todo-update .tool-output pre {
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  min-height: 34px;
+  border-top: 0;
+}
+
+.stage-content.full-bleed>.session-page {
+  padding: 0 5px 10px 10px;
+}
+
+.session-link {
+  text-align: left;
+  display: grid;
+  --session-state-color: var(--theme-text-muted);
+  position: relative;
+  width: 100%;
+  margin: 0;
+  gap: 2px;
+  padding: 6px 34px 6px 9px;
+  --session-card-bg: var(--surface);
+  --session-active-bg: var(--surface-active);
+  border-left: 2px solid transparent;
+  box-shadow: none;
+  --sidebar-hover-duration: .17s;
+  --sidebar-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  transition: background var(--sidebar-hover-duration) var(--sidebar-hover-ease),border-color var(--sidebar-hover-duration) var(--sidebar-hover-ease),box-shadow var(--sidebar-hover-duration) var(--sidebar-hover-ease),color .13s ease,opacity .13s ease;
+  transform: translateY(0);
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+}
+
+.session-link.status-unviewed {
+  border-left-color: var(--session-state-color);
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--purple) 22%, transparent), var(--surface-active) 48%);
+  --session-state-color: var(--info) ;
+}
+
+.session-link.status-ready-for-review {
+  border-left-color: var(--session-state-color);
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--purple) 22%, transparent), var(--surface-active) 48%);
+  --session-state-color: var(--info) ;
+}
+
+.session-link.status-needs-review {
+  --session-card-bg: linear-gradient(90deg, color-mix(in srgb, var(--theme-special) 16%, transparent), var(--theme-surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--theme-special) 28%, transparent), var(--theme-surface-raised) 48%);
+  border-left-color: var(--session-state-color);
+  --session-state-color: var(--info) ;
+}
+
+.session-collection-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+}
+
+.session-collection-open {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.session-collection-open small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-page {
+  height: 100%;
+  position: relative;
+  grid-template-rows: auto minmax(0,1fr);
+  min-height: 0;
+  gap: 0;
+  background: var(--bg);
+}
+
+.session-page-top {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 8px 10px 0;
+}
+
+.session-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-block: 8px;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  align-self: stretch;
+  margin: 0;
+  min-height: 48px;
+  padding: 7px 8px 7px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}

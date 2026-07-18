@@ -4,7 +4,7 @@ import { isFreeOpencodeModel, modelValue } from "../lib/model-selection"
 import { readCollapsedModelProviders, writeCollapsedModelProviders } from "../lib/session-composer-helpers"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
-import { TextInput } from "./ui"
+import { Button, TextInput } from "./ui"
 
 export function SessionModelPicker(props: {
   query: string
@@ -86,7 +86,7 @@ function ModelPickerSection(props: {
         when={props.toggleExpanded !== undefined}
         fallback={<h3 class="model-picker-section-heading">{props.title}</h3>}
       >
-        <button type="button" class="model-picker-section-toggle" aria-expanded={props.expanded ?? true} onClick={() => props.toggleExpanded?.()}>
+        <Button appearance="ghost" type="button" class="model-picker-section-toggle" aria-expanded={props.expanded ?? true} onClick={() => props.toggleExpanded?.()}>
           <Icon name={(props.expanded ?? true) ? "chevronDown" : "chevronRight"} />
           <span>{props.title}</span>
           <Show when={props.authenticated}>
@@ -95,7 +95,7 @@ function ModelPickerSection(props: {
             </span>
           </Show>
           <small>{props.modelCount ?? props.options.length} models</small>
-        </button>
+        </Button>
       </Show>
       <Show when={props.expanded ?? true}>
         <div>
@@ -104,7 +104,7 @@ function ModelPickerSection(props: {
               const value = modelValue(option.provider.id, option.model.id)
               const favorite = () => props.favorites.includes(value)
               return (
-                <button type="button" class="model-option-card" classList={{ selected: props.selectedModel === value }} onClick={() => props.select(option.provider.id, option.model.id)}>
+                <Button appearance="ghost" type="button" class="model-option-card" classList={{ selected: props.selectedModel === value }} onClick={() => props.select(option.provider.id, option.model.id)}>
                   <span class="model-option-header">
                     <span class="model-option-name">{option.model.name ?? option.model.id}</span>
                     <Show when={isFreeOpencodeModel(option.provider, option.model)}><em>Free</em></Show>
@@ -131,7 +131,7 @@ function ModelPickerSection(props: {
                     <Icon name="star" />
                     {favorite() ? "Favorite" : "Add"}
                   </span>
-                </button>
+                </Button>
               )
             }}
           </For>

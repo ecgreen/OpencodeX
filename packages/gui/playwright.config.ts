@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test"
 
+const hostChrome = process.env.OPENCODEX_GUI_E2E_HOST_CHROME === "1"
+
 export default defineConfig({
   testDir: "e2e",
   outputDir: ".artifacts/e2e/results",
@@ -15,7 +17,16 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4173",
     browserName: "chromium",
+    channel: hostChrome ? "chrome" : undefined,
     colorScheme: "dark",
+    launchOptions: {
+      args: [
+        "--enable-gpu",
+        "--enable-gpu-rasterization",
+        "--enable-zero-copy",
+        ...(hostChrome && process.platform === "win32" ? ["--use-angle=d3d11"] : []),
+      ],
+    },
     reducedMotion: "reduce",
     screenshot: "only-on-failure",
     trace: "retain-on-failure",

@@ -5,27 +5,37 @@ import process from "node:process"
 const gui = path.resolve(import.meta.dirname, "..")
 const root = path.resolve(gui, "../..")
 const bun = process.execPath
+const rendererPort = process.env.OPENCODEX_GUI_RENDERER_PORT ?? "5174"
+const rendererURL = `http://127.0.0.1:${rendererPort}`
 const children: Array<ReturnType<typeof Bun.spawn>> = []
 let stopping = false
 
 try {
   await run("build:main", [bun, "run", "build:main"])
 
-  const vite = spawn("renderer", [bun, "run", "dev"], "pipe")
+  const vite = spawn("renderer", [bun, "run", "dev"], "pipe", {
+    ...process.env,
+    OPENCODEX_GUI_RENDERER_PORT: rendererPort,
+  })
   const viteReady = waitForViteReady(vite)
-  pipe(vite.stdout, process.stdout, (text) => {
+  void pipe(vite.stdout, process.stdout, (text) => {
     if (text.includes("Local:") || text.includes("ready in")) viteReady.resolve()
   })
-  pipe(vite.stderr, process.stderr, (text) => {
-    if (text.includes("Port 5173 is already in use")) {
-      viteReady.reject(new Error("Port 5173 is already in use. Stop the stale dev server, then run dev:electron again."))
+  void pipe(vite.stderr, process.stderr, (text) => {
+    if (text.includes(`Port ${rendererPort} is already in use`)) {
+      viteReady.reject(
+        new Error(`Port ${rendererPort} is already in use. Stop the stale dev server, then run dev:electron again.`),
+      )
     }
   })
 
   await viteReady.promise
   await waitForRenderer()
 
-  const electron = spawn("electron", [electronBinary(), "."], "inherit")
+  const electron = spawn("electron", [electronBinary(), "."], "inherit", {
+    ...process.env,
+    OPENCODEX_GUI_RENDERER_URL: rendererURL,
+  })
   const exitCode = await electron.exited
   stopChildren()
   process.exit(exitCode)
@@ -43,14 +53,14 @@ async function run(name: string, command: string[]) {
   if (code !== 0) throw new Error(`${name} exited with ${code}`)
 }
 
-function spawn(name: string, command: string[], stdio: "inherit" | "pipe") {
+function spawn(name: string, command: string[], stdio: "inherit" | "pipe", env: NodeJS.ProcessEnv = process.env) {
   const child = Bun.spawn({
     cmd: command,
     cwd: gui,
     stdin: "inherit",
     stdout: stdio,
     stderr: stdio,
-    env: process.env,
+    env,
   })
   children.push(child)
   child.exited.then((code) => {
@@ -72,14 +82,14 @@ function waitForViteReady(vite: ReturnType<typeof Bun.spawn>) {
 async function waitForRenderer() {
   for (const _ of Array.from({ length: 50 })) {
     try {
-      const response = await fetch("http://127.0.0.1:5173")
+      const response = await fetch(rendererURL)
       if (response.ok) return
     } catch {
       // Vite announced readiness; give the HTTP listener a moment to accept.
     }
     await Bun.sleep(100)
   }
-  throw new Error("Renderer dev server did not respond on http://127.0.0.1:5173.")
+  throw new Error(`Renderer dev server did not respond on ${rendererURL}.`)
 }
 
 async function pipe(
@@ -104,11 +114,11 @@ async function pipe(
 
 function electronBinary() {
   const name = process.platform === "win32" ? "electron.exe" : "electron"
-  return [
-    path.join(gui, "node_modules", ".bin", name),
-    path.join(root, "node_modules", ".bin", name),
-    "electron",
-  ].find((candidate) => candidate === "electron" || fs.existsSync(candidate)) ?? "electron"
+  return (
+    [path.join(gui, "node_modules", ".bin", name), path.join(root, "node_modules", ".bin", name), "electron"].find(
+      (candidate) => candidate === "electron" || fs.existsSync(candidate),
+    ) ?? "electron"
+  )
 }
 
 function deferred() {

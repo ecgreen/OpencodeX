@@ -6,6 +6,7 @@ export function OpencodeXLogo(props: { active?: boolean } = {}) {
   const [windowFocused, setWindowFocused] = createSignal(document.hasFocus())
   const [reducedMotion, setReducedMotion] = createSignal(window.matchMedia("(prefers-reduced-motion: reduce)").matches)
   const ctx = logoContext()
+  const theme = () => logoTheme(now())
 
   onMount(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -40,9 +41,9 @@ export function OpencodeXLogo(props: { active?: boolean } = {}) {
     <div class="opencodex-logo" aria-label="OpencodeX">
       {LOGO.left.map((line, y) => (
         <div class="opencodex-logo-line" aria-hidden="true">
-          <div class="opencodex-logo-run">{renderTuiLogoLine(line, y, "#808080", 0, now(), ctx)}</div>
+          <div class="opencodex-logo-run">{renderTuiLogoLine(line, y, theme().muted, 0, now(), ctx, theme())}</div>
           <div class="opencodex-logo-gap" />
-          <div class="opencodex-logo-run">{renderTuiLogoLine(LOGO.right[y] ?? "", y, "#eeeeee", ctx.left + 1, now(), ctx)}</div>
+          <div class="opencodex-logo-run">{renderTuiLogoLine(LOGO.right[y] ?? "", y, theme().text, ctx.left + 1, now(), ctx, theme())}</div>
         </div>
       ))}
     </div>
@@ -55,13 +56,6 @@ const LOGO = {
 }
 
 type Rgb = { r: number; g: number; b: number }
-
-const LOGO_THEME = {
-  background: hexToRgb("#000000"),
-  primary: hexToRgb("#fab283"),
-  warning: hexToRgb("#f5a742"),
-  peak: hexToRgb("#ffffff"),
-}
 
 const LOGO_SHIMMER = {
   period: 4600,
@@ -87,27 +81,27 @@ const LOGO_SHIMMER = {
   originY: 13.5,
 }
 
-function renderTuiLogoLine(line: string, y: number, inkHex: string, off: number, t: number, ctx: ReturnType<typeof logoContext>) {
+function renderTuiLogoLine(line: string, y: number, ink: Rgb, off: number, t: number, ctx: ReturnType<typeof logoContext>, theme: ReturnType<typeof logoTheme>) {
   return Array.from(line).map((char, i) => {
     const x = off + i
-    const charInk = x >= 40 ? LOGO_THEME.warning : hexToRgb(inkHex)
-    const shadow = LOGO_THEME.background
+    const charInk = x >= 40 ? theme.warning : ink
+    const shadow = theme.background
     const top = logoIdle(x, y * 2, t, ctx)
     const bot = logoIdle(x, y * 2 + 1, t, ctx)
-    const inkTop = logoPeakTint(charInk, top)
-    const inkBot = logoPeakTint(charInk, bot)
+    const inkTop = logoPeakTint(charInk, top, theme)
+    const inkBot = logoPeakTint(charInk, bot, theme)
     const pulse = { peak: (top.peak + bot.peak) / 2, primary: (top.primary + bot.primary) / 2 }
-    const inkTinted = logoPeakTint(charInk, pulse)
-    const shadowTop = tint(shadow, LOGO_THEME.peak, Math.min(1, top.peak * LOGO_SHIMMER.shadowMix))
-    const shadowBot = tint(shadow, LOGO_THEME.peak, Math.min(1, bot.peak * LOGO_SHIMMER.shadowMix))
-    const shadowTinted = tint(shadow, LOGO_THEME.peak, Math.min(1, pulse.peak * LOGO_SHIMMER.shadowMix))
+    const inkTinted = logoPeakTint(charInk, pulse, theme)
+    const shadowTop = tint(shadow, theme.peak, Math.min(1, top.peak * LOGO_SHIMMER.shadowMix))
+    const shadowBot = tint(shadow, theme.peak, Math.min(1, bot.peak * LOGO_SHIMMER.shadowMix))
+    const shadowTinted = tint(shadow, theme.peak, Math.min(1, pulse.peak * LOGO_SHIMMER.shadowMix))
     const shimmer = logoShimmer(x, y, t, ctx)
 
     if (char === " ") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(charInk) }}>{char}</span>
-    if (char === "_") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkTinted), "background-color": rgbToCss(shade(shadowTinted, ghost(shimmer, 0.06))) }}> </span>
-    if (char === "^") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkTop), "background-color": rgbToCss(shade(shadowBot, ghost(shimmer, 0.05))) }}>{"\u2580"}</span>
-    if (char === "~") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(shade(shadowTop, ghost(shimmer, 0.05))) }}>{"\u2580"}</span>
-    if (char === ",") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(shade(shadowBot, ghost(shimmer, 0.05))) }}>{"\u2584"}</span>
+    if (char === "_") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkTinted), "background-color": rgbToCss(shade(shadowTinted, ghost(shimmer, 0.06), theme)) }}> </span>
+    if (char === "^") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkTop), "background-color": rgbToCss(shade(shadowBot, ghost(shimmer, 0.05), theme)) }}>{"\u2580"}</span>
+    if (char === "~") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(shade(shadowTop, ghost(shimmer, 0.05), theme)) }}>{"\u2580"}</span>
+    if (char === ",") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(shade(shadowBot, ghost(shimmer, 0.05), theme)) }}>{"\u2584"}</span>
     if (char === "\u2588") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkTop), "background-color": rgbToCss(inkBot) }}>{"\u2580"}</span>
     if (char === "\u2580") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkTop) }}>{"\u2580"}</span>
     if (char === "\u2584") return <span class="opencodex-logo-cell" style={{ color: rgbToCss(inkBot) }}>{"\u2584"}</span>
@@ -171,19 +165,19 @@ function logoShimmer(x: number, y: number, t: number, ctx: ReturnType<typeof log
   return Math.exp(-(Math.abs(delta / LOGO_SHIMMER.haloWidth) ** 1.6)) * 0.25
 }
 
-function logoPeakTint(base: Rgb, pulse: { peak: number; primary: number }) {
-  const primary = pulse.primary > 0 ? tint(base, LOGO_THEME.primary, Math.min(1, pulse.primary)) : base
-  return pulse.peak > 0 ? tint(primary, LOGO_THEME.peak, Math.min(1, pulse.peak)) : primary
+function logoPeakTint(base: Rgb, pulse: { peak: number; primary: number }, theme: ReturnType<typeof logoTheme>) {
+  const primary = pulse.primary > 0 ? tint(base, theme.primary, Math.min(1, pulse.primary)) : base
+  return pulse.peak > 0 ? tint(primary, theme.peak, Math.min(1, pulse.peak)) : primary
 }
 
-function shade(base: Rgb, n: number) {
+function shade(base: Rgb, n: number, theme: ReturnType<typeof logoTheme>) {
   if (n >= 0) {
-    const mid = tint(base, LOGO_THEME.primary, 0.84)
-    const top = tint(LOGO_THEME.primary, LOGO_THEME.peak, 0.96)
+    const mid = tint(base, theme.primary, 0.84)
+    const top = tint(theme.primary, theme.peak, 0.96)
     if (n <= 1) return tint(base, mid, Math.min(1, Math.sqrt(Math.max(0, n)) * 1.14))
     return tint(mid, top, Math.min(1, 1 - Math.exp(-2.4 * (n - 1))))
   }
-  return tint(base, LOGO_THEME.background, Math.min(0.82, -n * 0.64))
+  return tint(base, theme.background, Math.min(0.82, -n * 0.64))
 }
 
 function ghost(n: number, scale: number) {
@@ -201,8 +195,24 @@ function logoNoise(x: number, y: number, t: number) {
   return n - Math.floor(n)
 }
 
-function hexToRgb(hex: string) {
-  return { r: Number.parseInt(hex.slice(1, 3), 16), g: Number.parseInt(hex.slice(3, 5), 16), b: Number.parseInt(hex.slice(5, 7), 16) }
+function logoTheme(_tick: number) {
+  const style = getComputedStyle(document.documentElement)
+  const color = (name: string) => cssColorToRgb(style.getPropertyValue(name))
+  return {
+    background: color("--theme-canvas"),
+    primary: color("--theme-accent"),
+    warning: color("--theme-warning"),
+    peak: color("--theme-text"),
+    muted: color("--theme-text-muted"),
+    text: color("--theme-text"),
+  }
+}
+
+function cssColorToRgb(value: string) {
+  const hex = value.trim().replace("#", "")
+  if (hex.length === 3) return { r: Number.parseInt(hex[0] + hex[0], 16), g: Number.parseInt(hex[1] + hex[1], 16), b: Number.parseInt(hex[2] + hex[2], 16) }
+  if (hex.length >= 6) return { r: Number.parseInt(hex.slice(0, 2), 16), g: Number.parseInt(hex.slice(2, 4), 16), b: Number.parseInt(hex.slice(4, 6), 16) }
+  return { r: 0, g: 0, b: 0 }
 }
 
 function rgbToCss(rgb: Rgb) {

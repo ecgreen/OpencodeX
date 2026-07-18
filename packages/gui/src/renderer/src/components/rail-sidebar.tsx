@@ -5,6 +5,7 @@ import { title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/store"
 import { Icon } from "./icon"
+import { Button, IconButton } from "./ui"
 import { RailPinnedSection, RailPriorSessionsSection, RailProjectsSection, RailRecentSessionsSection, RailViewsSection } from "./rail-sidebar-sections"
 import type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
 
@@ -276,26 +277,30 @@ function RailBrand(props: {
         <span>{props.snapshot?.projects[0] ? title(props.snapshot.projects[0].name ?? props.snapshot.projects[0].project.name) : "Command center"}</span>
       </div>
       <div class="brand-actions">
-        <button
+        <IconButton
+          appearance="ghost"
+          icon="panel"
+          label="Toggle sidebar"
           class="rail-toggle"
           title={`${props.railCollapsed ? "Expand" : "Collapse"} sidebar (Ctrl+B)`}
-          aria-label="Toggle sidebar"
           aria-expanded={!props.railCollapsed}
           onClick={(event) => {
             event.stopPropagation()
             props.toggleRail()
           }}
-        ><Icon name="panel" /></button>
+        />
         <Show when={props.railCollapsed}>
-          <button
+          <IconButton
+            appearance="ghost"
+            icon="plus"
+            label="New session"
             class="new-button"
             title="New session (Ctrl+N)"
-            aria-label="New session"
             onClick={(event) => {
               event.stopPropagation()
               props.createSession()
             }}
-          ><Icon name="plus" /></button>
+          />
         </Show>
       </div>
     </div>
@@ -315,7 +320,8 @@ function RailNav(props: {
     >
       <For each={props.items}>
         {(item) => (
-          <button
+          <Button
+            appearance="ghost"
             aria-label={`${item.label}: ${item.description}`}
             title={`${item.label}: ${item.description} (${item.shortcut})`}
             classList={{ active: props.activeRouteName === item.name }}
@@ -323,8 +329,7 @@ function RailNav(props: {
           >
             <Icon name={item.icon} />
             <span class="nav-label">{item.label}</span>
-            <small>{item.shortcut}</small>
-          </button>
+          </Button>
         )}
       </For>
     </nav>

@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test"
 
+const packaged = process.env.OPENCODEX_GUI_E2E_PACKAGED === "1"
+
 export default defineConfig({
   testDir: "e2e-electron",
   outputDir: ".artifacts/e2e-electron/results",
@@ -16,7 +18,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  webServer: {
+  webServer: packaged ? undefined : {
     command: "bun run dev -- --port 4174",
     url: "http://127.0.0.1:4174",
     reuseExistingServer: !process.env.CI,

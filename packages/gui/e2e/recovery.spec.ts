@@ -1,0 +1,126 @@
+import { expect, test, type Locator, type Page } from "@playwright/test"
+
+test("keeps manager pages aligned and shared controls usable", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.goto("/")
+  await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
+  const navigation = page.locator(".nav > button")
+  await expect(navigation).toHaveCount(6)
+  const geometry = await railGeometry(page)
+  await testInfo.attach("rail-geometry", {
+    body: JSON.stringify(geometry, null, 2),
+    contentType: "application/json",
+  })
+  for (const button of await navigation.all()) {
+    expect(await button.isVisible(), JSON.stringify(geometry, null, 2)).toBe(true)
+  }
+
+  const headingTops = {
+    projects: await managerHeadingTop(page, "Projects", "Workspace directory"),
+    views: await managerHeadingTop(page, "Views", "Views"),
+    swarms: await managerHeadingTop(page, "Swarms", "Swarm workspace"),
+    plugins: await managerHeadingTop(page, "Plugins", "Plugin Center"),
+  }
+  const topValues = Object.values(headingTops)
+  expect(
+    Math.max(...topValues) - Math.min(...topValues),
+    JSON.stringify(headingTops),
+  ).toBeLessThanOrEqual(4)
+
+  await openRoute(page, "Views")
+  await expectPaddedCreateCard(page, "Create view")
+  await expectSharedInput(page.locator('input[placeholder="Search views or sessions"]'))
+
+  await openRoute(page, "Swarms")
+  await expectPaddedCreateCard(page, "Create swarm")
+})
+
+test("reserves dashboard navigation geometry by omitting dynamic counters", async ({ page }) => {
+  await page.goto("/")
+  await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
+  const dashboard = page.getByRole("button", { name: /^Dashboard:/ })
+  const before = await dashboard.boundingBox()
+  await page.getByRole("button", { name: /^Projects:/ }).click()
+  await dashboard.click()
+  const after = await dashboard.boundingBox()
+  expect(before).toEqual(after)
+  await expect(page.locator(".nav-attention-count")).toHaveCount(0)
+})
+
+async function managerHeadingTop(page: Page, route: string, heading: string) {
+  await openRoute(page, route)
+  const element = page.getByRole("heading", { name: heading, exact: true })
+  await expect(element).toBeVisible()
+  return element.evaluate((node) => Math.round((node.closest("header") ?? node).getBoundingClientRect().top))
+}
+
+async function openRoute(page: Page, route: string) {
+  await page.getByRole("button", { name: new RegExp(`^${route}:`) }).click()
+}
+
+async function expectPaddedCreateCard(page: Page, name: string) {
+  const card = page.getByRole("button", { name: new RegExp(`^\\+\\s*${name}`, "i") })
+  await expect(card).toBeVisible()
+  const geometry = await card.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      paddingLeft: Number.parseFloat(style.paddingLeft),
+      paddingTop: Number.parseFloat(style.paddingTop),
+      width: element.getBoundingClientRect().width,
+      height: element.getBoundingClientRect().height,
+    }
+  })
+  expect(geometry.paddingLeft).toBeGreaterThanOrEqual(12)
+  expect(geometry.paddingTop).toBeGreaterThanOrEqual(12)
+  expect(geometry.width).toBeGreaterThan(0)
+  expect(geometry.height).toBeGreaterThanOrEqual(72)
+}
+
+async function expectSharedInput(input: Locator) {
+  await expect(input).toBeVisible()
+  const contract = await input.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      height: element.getBoundingClientRect().height,
+      paddingLeft: Number.parseFloat(style.paddingLeft),
+      paddingRight: Number.parseFloat(style.paddingRight),
+    }
+  })
+  expect(contract.height).toBeGreaterThanOrEqual(32)
+  expect(contract.paddingLeft).toBeGreaterThanOrEqual(10)
+  expect(contract.paddingRight).toBeGreaterThanOrEqual(10)
+}
+
+async function railGeometry(page: Page) {
+  return page.locator(".nav").evaluate((navigation) => {
+    const rect = (element: Element) => {
+      const bounds = element.getBoundingClientRect()
+      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+    }
+    const style = (element: Element) => {
+      const computed = getComputedStyle(element)
+      return {
+        display: computed.display,
+        visibility: computed.visibility,
+        opacity: computed.opacity,
+        overflow: computed.overflow,
+        position: computed.position,
+      }
+    }
+    return {
+      appClass: document.querySelector(".app-shell")?.className,
+      rail: navigation.closest(".rail") ? rect(navigation.closest(".rail")!) : undefined,
+      navigation: {
+        rect: rect(navigation),
+        style: style(navigation),
+        columns: getComputedStyle(navigation).gridTemplateColumns,
+      },
+      buttons: [...navigation.children].map((element) => ({
+        label: element.getAttribute("aria-label"),
+        rect: rect(element),
+        style: style(element),
+      })),
+    }
+  })
+}

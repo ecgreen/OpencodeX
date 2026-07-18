@@ -1,0 +1,11 @@
+@media (max-width:860px) {
+  .swarm-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .swarm-role-fields {
+    grid-template-columns: 1fr;
+  }
+}

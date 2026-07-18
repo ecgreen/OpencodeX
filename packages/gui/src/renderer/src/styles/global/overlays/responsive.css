@@ -1,0 +1,61 @@
+@media (max-width:720px) {
+  .session-git-modal-backdrop {
+    padding: 12px;
+  }
+}
+
+@media (max-width:720px) {
+  .session-git-modal {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+}
+
+@media (max-width:720px) {
+  .session-git-modal-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:720px) {
+  .session-git-modal-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width:760px) {
+  .command-palette-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:860px) {
+  .safety-panel {
+    display: grid;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-safety-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:860px) {
+  .model-menu {
+    max-width: 100%;
+  }
+}
+
+@media (max-width:860px) {
+  .titlebar-menu {
+    gap: 2px;
+    padding-left: 6px;
+  }
+}
+
+@media (max-width:860px) {
+  .titlebar-menu-group>summary {
+    padding: 0 7px;
+  }
+}

@@ -1,0 +1,23 @@
+@font-face {
+  font-family: "Geist";
+  src: url("../../assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../../assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ds-motion-hover: 1ms;
+    --ds-motion-control: 1ms;
+    --ds-motion-route: 1ms;
+  }
+}

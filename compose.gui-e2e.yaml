@@ -1,0 +1,34 @@
+name: opencodex-gui-e2e
+
+services:
+  gui-e2e:
+    image: mcr.microsoft.com/playwright:v1.59.1-noble
+    command: ["bash", "/source/packages/gui/scripts/container-e2e.sh"]
+    working_dir: /workspace/packages/gui
+    user: root
+    init: true
+    cpus: 2.0
+    mem_limit: 3g
+    memswap_limit: 3g
+    pids_limit: 256
+    shm_size: 512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 10s
+    environment:
+      CI: "1"
+      HOME: /root
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      XDG_CACHE_HOME: /tmp/opencodex-cache
+    volumes:
+      - type: bind
+        source: .
+        target: /source
+        read_only: true
+      - type: bind
+        source: ./packages/gui/.artifacts
+        target: /workspace/packages/gui/.artifacts
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=768m

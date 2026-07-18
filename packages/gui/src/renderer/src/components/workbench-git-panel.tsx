@@ -1,5 +1,5 @@
 import type { Accessor, Setter } from "solid-js"
-import { For, Match, Show, Switch, createEffect, createMemo } from "solid-js"
+import { For, Match, Show, Switch, createMemo } from "solid-js"
 import type { WorkbenchGitBranches, WorkbenchGitHistoryCommit, WorkbenchGitStash, WorkbenchGitStatus } from "../lib/store"
 import { workbenchDiffForPath, type WorkbenchDiffFile } from "../lib/workbench"
 import { compactPath } from "../lib/format"
@@ -7,6 +7,7 @@ import { Icon } from "./icon"
 import { WorkbenchGitChangeFileButton } from "./workbench-git-change-file-button"
 import { WorkbenchDiffPreview, WorkbenchHistoryPreview } from "./workbench-git-preview"
 import { VirtualList } from "./virtual-list"
+import { Button, Checkbox, Select, TextArea, TextInput } from "./ui"
 
 export function WorkbenchGitPanel(props: {
   active: boolean
@@ -68,28 +69,32 @@ export function WorkbenchGitPanel(props: {
           <strong title={props.status()?.upstream}>{gitTrackingLabel(props.status())}</strong>
         </div>
         <div class="workbench-repository-actions">
-          <select value={props.branchName()} onChange={(event) => {
-            props.setBranchName(event.currentTarget.value)
-            if (event.currentTarget.value && event.currentTarget.value !== (props.status()?.branch ?? props.branches()?.current)) props.checkoutBranch(event.currentTarget.value)
-          }}>
-            <For each={props.branches()?.branches ?? []}>{(branch) => <option value={branch}>{branch}</option>}</For>
-          </select>
-          <button type="button" disabled={!props.active} onClick={() => props.runRemoteGit("fetch")}><Icon name="activity" /> Fetch</button>
-          <button type="button" disabled={!props.active || !props.status()?.upstream} onClick={() => props.runRemoteGit("pull")}><Icon name="chevronDown" /> Pull</button>
+          <Select<string>
+            size="compact"
+            options={props.branches()?.branches ?? []}
+            current={props.branchName()}
+            onSelect={(branch) => {
+              if (!branch) return
+              props.setBranchName(branch)
+              if (branch !== (props.status()?.branch ?? props.branches()?.current)) props.checkoutBranch(branch)
+            }}
+          />
+          <Button appearance="ghost" type="button" disabled={!props.active} onClick={() => props.runRemoteGit("fetch")}><Icon name="activity" /> Fetch</Button>
+          <Button appearance="ghost" type="button" disabled={!props.active || !props.status()?.upstream} onClick={() => props.runRemoteGit("pull")}><Icon name="chevronDown" /> Pull</Button>
           <Show
             when={props.status()?.remoteUrl && props.status()?.branch && !props.status()?.upstream}
-            fallback={<button type="button" disabled={!props.active || !props.status()?.upstream} onClick={() => props.runRemoteGit("push")}><Icon name="send" /> Push</button>}
+            fallback={<Button appearance="ghost" type="button" disabled={!props.active || !props.status()?.upstream} onClick={() => props.runRemoteGit("push")}><Icon name="send" /> Push</Button>}
           >
-            <button type="button" class="primary" disabled={!props.active} onClick={() => props.runRemoteGit("publish")}><Icon name="send" /> Publish branch</button>
+            <Button appearance="solid" tone="accent" type="button" disabled={!props.active} onClick={() => props.runRemoteGit("publish")}><Icon name="send" /> Publish branch</Button>
           </Show>
           <details class="workbench-menu">
             <summary aria-label="More Git actions" title="More Git actions"><Icon name="more" /></summary>
             <div class="workbench-menu-popover">
               <label class="workbench-menu-field">
                 <span>New branch</span>
-                <input value={props.branchName()} onInput={(event) => props.setBranchName(event.currentTarget.value)} placeholder="branch name" />
+                <TextInput value={props.branchName()} onInput={(event) => props.setBranchName(event.currentTarget.value)} placeholder="branch name" />
               </label>
-              <button type="button" disabled={!props.branchName().trim()} onClick={props.createBranch}><Icon name="plus" /> Create branch</button>
+              <Button appearance="ghost" type="button" disabled={!props.branchName().trim()} onClick={props.createBranch}><Icon name="plus" /> Create branch</Button>
             </div>
           </details>
         </div>
@@ -97,8 +102,8 @@ export function WorkbenchGitPanel(props: {
       <div class="workbench-git-main">
         <aside class="workbench-changes-panel">
           <div class="workbench-segmented" role="tablist" aria-label="Git views">
-            <button type="button" classList={{ active: props.view() === "changes" }} role="tab" aria-selected={props.view() === "changes"} onClick={() => props.setView("changes")}>Changes <span>{props.allFileCount()}</span></button>
-            <button type="button" classList={{ active: props.view() === "history" }} role="tab" aria-selected={props.view() === "history"} onClick={() => props.setView("history")}>History</button>
+            <Button appearance="ghost" type="button" classList={{ active: props.view() === "changes" }} role="tab" aria-selected={props.view() === "changes"} onClick={() => props.setView("changes")}>Changes <span>{props.allFileCount()}</span></Button>
+            <Button appearance="ghost" type="button" classList={{ active: props.view() === "history" }} role="tab" aria-selected={props.view() === "history"} onClick={() => props.setView("history")}>History</Button>
           </div>
           <div class="workbench-git-message-slot">
             <Show when={props.message()}><div class="notice error">{props.message()}</div></Show>
@@ -151,8 +156,8 @@ function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
         <div class="workbench-change-controls">
           <div class="workbench-git-filter">
             <Icon name="search" />
-            <input value={props.filter()} onInput={(event) => props.setFilter(event.currentTarget.value)} placeholder="Filter changed files" />
-            <button type="button" aria-label="Clear changed file filter" disabled={!props.filter()} onClick={() => props.setFilter("")}><Icon name="x" /></button>
+            <TextInput value={props.filter()} onInput={(event) => props.setFilter(event.currentTarget.value)} placeholder="Filter changed files" />
+            <Button appearance="ghost" type="button" aria-label="Clear changed file filter" disabled={!props.filter()} onClick={() => props.setFilter("")}><Icon name="x" /></Button>
           </div>
         </div>
         <div class="workbench-change-list">
@@ -160,17 +165,13 @@ function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
             when={props.selectedFiles().length > 0}
             fallback={<div class="workbench-empty-state">{props.loading() ? "Refreshing local changes..." : props.allFileCount() > 0 ? "No changed files match this filter." : props.status()?.message ?? "No local changes."}</div>}
           >
-            <label class="workbench-change-select-all">
-              <input
-                type="checkbox"
-                checked={props.allVisibleStaged()}
-                ref={(element) => createEffect(() => {
-                  element.indeterminate = props.someVisibleStaged()
-                })}
-                onChange={props.toggleVisibleSelection}
-              />
-              <span>{props.selectedFiles().length} file{props.selectedFiles().length === 1 ? "" : "s"} changed</span>
-            </label>
+            <Checkbox
+              class="workbench-change-select-all"
+              checked={props.allVisibleStaged()}
+              indeterminate={props.someVisibleStaged()}
+              onChange={props.toggleVisibleSelection}
+              label={`${props.selectedFiles().length} file${props.selectedFiles().length === 1 ? "" : "s"} changed`}
+            />
             <VirtualList
               class="workbench-change-viewport"
               role="listbox"
@@ -202,9 +203,9 @@ function WorkbenchChangesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
         </div>
       </div>
       <section class="workbench-commit-box">
-        <input value={props.commitMessage()} onInput={(event) => props.setCommitMessage(event.currentTarget.value)} placeholder="Summary" />
-        <textarea value={props.commitBody()} onInput={(event) => props.setCommitBody(event.currentTarget.value)} placeholder="Description" />
-        <button type="button" class="primary" disabled={!props.commitMessage().trim() || props.stagedCount() === 0} onClick={props.commit}><Icon name="check" /> Commit to {props.status()?.branch ?? "branch"}</button>
+        <TextInput value={props.commitMessage()} onInput={(event) => props.setCommitMessage(event.currentTarget.value)} placeholder="Summary" />
+        <TextArea value={props.commitBody()} onInput={(event) => props.setCommitBody(event.currentTarget.value)} placeholder="Description" />
+        <Button appearance="solid" tone="accent" type="button" disabled={!props.commitMessage().trim() || props.stagedCount() === 0} onClick={props.commit}><Icon name="check" /> Commit to {props.status()?.branch ?? "branch"}</Button>
       </section>
     </>
   )
@@ -224,11 +225,11 @@ function WorkbenchHistoryPanel(props: {
     <div class="workbench-history-list" role="listbox" aria-label="Git history">
       <For each={props.history()} fallback={<div class="workbench-empty-state">{props.loading() ? "Refreshing history..." : "No commits found."}</div>}>
         {(commit) => (
-          <button type="button" class="workbench-history-row" classList={{ selected: props.selectedCommit()?.hash === commit.hash }} onClick={() => props.selectCommit(commit.hash)}>
+          <Button appearance="ghost" type="button" class="workbench-history-row" classList={{ selected: props.selectedCommit()?.hash === commit.hash }} onClick={() => props.selectCommit(commit.hash)}>
             <strong>{commit.subject || commit.shortHash}</strong>
             <span>{commit.author} - {formatHistoryDate(commit.date)}</span>
             <small>{commit.shortHash} - {commit.files.length} file{commit.files.length === 1 ? "" : "s"}</small>
-          </button>
+          </Button>
         )}
       </For>
     </div>
@@ -242,8 +243,8 @@ function WorkbenchStashesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
       <section class="workbench-stash-box">
         <header><div><strong>Stashed changes</strong><span>{props.stashes().length} stash{props.stashes().length === 1 ? "" : "es"}</span></div></header>
         <div class="workbench-stash-create">
-          <input value={props.stashMessage()} onInput={(event) => props.setStashMessage(event.currentTarget.value)} placeholder="Stash message" />
-          <button type="button" disabled={props.selectedFiles().length === 0} onClick={props.createStash}><Icon name="panel" /> Stash changes</button>
+          <TextInput value={props.stashMessage()} onInput={(event) => props.setStashMessage(event.currentTarget.value)} placeholder="Stash message" />
+          <Button appearance="ghost" type="button" disabled={props.selectedFiles().length === 0} onClick={props.createStash}><Icon name="panel" /> Stash changes</Button>
         </div>
         <div class="workbench-stash-list">
           <For each={props.stashes()} fallback={<div class="empty">No stashes.</div>}>
@@ -254,9 +255,9 @@ function WorkbenchStashesPanel(props: Parameters<typeof WorkbenchGitPanel>[0]) {
                   <span>{stash.ref}{stash.age ? ` - ${stash.age}` : ""}</span>
                 </div>
                 <div class="row-actions">
-                  <button type="button" onClick={() => props.runStash("apply", stash.ref)}><Icon name="check" /> Apply</button>
-                  <button type="button" onClick={() => props.runStash("pop", stash.ref)}><Icon name="send" /> Pop</button>
-                  <button type="button" class="danger" onClick={() => props.runStash("drop", stash.ref)}><Icon name="trash" /> Drop</button>
+                  <Button appearance="ghost" type="button" onClick={() => props.runStash("apply", stash.ref)}><Icon name="check" /> Apply</Button>
+                  <Button appearance="ghost" type="button" onClick={() => props.runStash("pop", stash.ref)}><Icon name="send" /> Pop</Button>
+                  <Button appearance="ghost" tone="danger" type="button" onClick={() => props.runStash("drop", stash.ref)}><Icon name="trash" /> Drop</Button>
                 </div>
               </article>
             )}

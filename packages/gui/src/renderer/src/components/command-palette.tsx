@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
-import { IconButton } from "./ui"
+import { TextInput, Button, IconButton } from "./ui"
 
 export type PaletteCommand = {
   name: string
@@ -114,7 +114,7 @@ export function CommandPaletteModal(props: { open: boolean; commands: PaletteCom
             </div>
             <IconButton icon="x" label="Close command palette" onClick={props.close} />
           </header>
-          <input
+          <TextInput
             ref={input}
             value={query()}
             onInput={(event) => {
@@ -156,7 +156,7 @@ export function CommandPaletteModal(props: { open: boolean; commands: PaletteCom
                       const detail = () => command.disabled ?? command.description
                       const commandIndex = () => group.start + index()
                       return (
-                        <button
+                        <Button appearance="ghost"
                           type="button"
                           role="option"
                           aria-selected={selected() === commandIndex()}
@@ -169,7 +169,7 @@ export function CommandPaletteModal(props: { open: boolean; commands: PaletteCom
                           <strong>{command.title}</strong>
                           <Show when={detail()}>{(value) => <small>{value()}</small>}</Show>
                           <Show when={shortcut()}>{(value) => <kbd>{value()}</kbd>}</Show>
-                        </button>
+                        </Button>
                       )
                     }}
                   </For>

@@ -8,7 +8,6 @@ import {
   readWorkbenchFile,
   renameWorkbenchFile,
   writeWorkbenchFile,
-  type WorkbenchOperationResult,
 } from "../lib/store"
 import {
   closeWorkbenchBuffer,
@@ -30,14 +29,9 @@ import {
   type WorkbenchFileBuffer,
 } from "../lib/workbench"
 import { errorText } from "./workbench-page-helpers"
-import type { WorkbenchPageProps } from "./workbench-page-types"
+import { askWorkbenchFileText, confirmWorkbenchFileAction, type WorkbenchFileControllerInput } from "./workbench-file-controller-support"
 
-export function createWorkbenchFileController(input: {
-  props: WorkbenchPageProps
-  setNotice: (value: string) => void
-  setBusy: (value: string) => void
-  runOperation: (operation: () => Promise<WorkbenchOperationResult>) => Promise<WorkbenchOperationResult | undefined>
-}) {
+export function createWorkbenchFileController(input: WorkbenchFileControllerInput) {
   const [filesByPath, setFilesByPath] = createSignal<Record<string, FileNode[]>>({})
   const [expandedFolders, setExpandedFolders] = createSignal<Set<string>>(new Set())
   const [selectedProjectID, setSelectedProjectID] = createSignal(input.props.projectID ?? "")
@@ -384,13 +378,8 @@ export function createWorkbenchFileController(input: {
     queueMicrotask(() => document.querySelector<HTMLInputElement>(".workbench-open-file-modal input")?.focus())
   }
 
-  function confirm(value: { title: string; message: string; confirm?: string }) {
-    return input.props.confirm?.(value) ?? Promise.resolve(false)
-  }
-
-  function askText(value: { title: string; message?: string; value?: string; multiline?: boolean }) {
-    return input.props.askText?.(value) ?? Promise.resolve(undefined)
-  }
+  const confirm = (value: { title: string; message: string; confirm?: string }) => confirmWorkbenchFileAction(input.props, value)
+  const askText = (value: { title: string; message?: string; value?: string; multiline?: boolean }) => askWorkbenchFileText(input.props, value)
 
   return {
     activeGui, activeBuffer, fileContent, dirty, openPath, projectOptions, selectedProject, selectedDirectory,

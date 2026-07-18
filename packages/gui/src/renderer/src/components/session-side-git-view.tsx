@@ -4,7 +4,7 @@ import type { GuiClient } from "../lib/client"
 import { buildDiffFileTree, expandedDirectories, flattenDiffFileTree } from "../lib/diff-file-tree"
 import { patchContents } from "../lib/tool-display"
 import { workbenchGitOperation, type DiffFile, type WorkbenchGitBranches, type WorkbenchGitStatus } from "../lib/store"
-import { Button, TextArea, TextInput } from "./ui"
+import { Button, Select, TextArea, TextInput } from "./ui"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
 import { sidePanelDiffForPath } from "./session-side-git-controller"
@@ -66,7 +66,7 @@ export function SessionSideDiffPanel(props: {
           <strong>{props.title}</strong>
           <span>{props.files.length} file{props.files.length === 1 ? "" : "s"} <b class="diff-additions">+{totals().additions}</b> <b class="diff-deletions">-{totals().deletions}</b></span>
         </div>
-        <button type="button" class="session-side-git-action" onClick={props.openCommitModal}><Icon name="send" /> Commit / Push</button>
+        <Button appearance="ghost" type="button" class="session-side-git-action" onClick={props.openCommitModal}><Icon name="send" /> Commit / Push</Button>
       </header>
       <Show when={!props.loading} fallback={<div class="session-side-empty">Loading diff...</div>}>
         <Show when={props.files.length > 0} fallback={<div class="session-side-empty">{props.empty}</div>}>
@@ -74,7 +74,7 @@ export function SessionSideDiffPanel(props: {
             <aside class="session-side-file-list">
               <For each={rows()}>
                 {(row) => (
-                  <button
+                  <Button appearance="ghost"
                     type="button"
                     classList={{ selected: row.file?.file === selected()?.file, directory: row.type === "directory", expanded: row.type === "directory" && expandedTree().has(row.id) }}
                     style={{ "--indent": `${row.depth * 14}px` }}
@@ -100,7 +100,7 @@ export function SessionSideDiffPanel(props: {
                     <Show when={row.file}>
                       {(file) => <small><b class="diff-additions">+{file().additions}</b><b class="diff-deletions">-{file().deletions}</b></small>}
                     </Show>
-                  </button>
+                  </Button>
                 )}
               </For>
             </aside>
@@ -188,10 +188,10 @@ export function SidePanelGitCommitModal(props: {
       description={`${changedPaths().length} file${changedPaths().length === 1 ? "" : "s"} in the working tree`}
       close={props.close}
       footer={<div class="session-git-modal-actions">
-        <Button variant="ghost" onClick={props.close}>Cancel</Button>
+        <Button appearance="ghost" onClick={props.close}>Cancel</Button>
         <Button icon="send" disabled={!canPushOnly() || busy() !== ""} onClick={() => void run("push")}>{busy() === "push" ? "Pushing..." : pushLabel()}</Button>
         <Button icon="check" disabled={!message().trim() || changedPaths().length === 0 || busy() !== ""} onClick={() => void run("commit")}>{busy() === "commit" ? "Committing..." : "Commit"}</Button>
-        <Button variant="primary" icon="send" disabled={!message().trim() || changedPaths().length === 0 || !canPushAfterCommit() || busy() !== ""} onClick={() => void run("commit-push")}>{busy() === "commit-push" ? "Working..." : `Commit + ${pushLabel()}`}</Button>
+        <Button appearance="solid" tone="accent" icon="send" disabled={!message().trim() || changedPaths().length === 0 || !canPushAfterCommit() || busy() !== ""} onClick={() => void run("commit-push")}>{busy() === "commit-push" ? "Working..." : `Commit + ${pushLabel()}`}</Button>
       </div>}
     >
       <div class="session-git-modal-body">
@@ -200,9 +200,7 @@ export function SidePanelGitCommitModal(props: {
           <div><span>Remote</span><strong>{props.status?.upstream ?? (props.status?.remoteUrl ? "Publish required" : "No remote")}</strong></div>
           <div><span>Changes</span><strong>{changedPaths().length} file{changedPaths().length === 1 ? "" : "s"}</strong></div>
         </div>
-        <label><span>Branch</span><select value={branch()} onChange={(event) => setBranch(event.currentTarget.value)}>
-          <For each={props.branches?.branches ?? (currentBranch() ? [currentBranch()] : [])}>{(item) => <option value={item}>{item}</option>}</For>
-        </select></label>
+        <Select<string> label="Branch" options={props.branches?.branches ?? (currentBranch() ? [currentBranch()] : [])} current={branch()} onSelect={(value) => value && setBranch(value)} />
         <label><span>Commit summary</span><TextInput value={message()} onInput={(event) => setMessage(event.currentTarget.value)} placeholder="Describe the change" autofocus /></label>
         <label><span>Description</span><TextArea value={body()} onInput={(event) => setBody(event.currentTarget.value)} placeholder="Optional details" /></label>
         <div class="session-git-modal-status"><span>Push readiness</span><span>{props.status?.upstream ? `${props.status.upstream}${props.status.ahead ? `, ${props.status.ahead} ahead` : ""}` : props.status?.remoteUrl ? "No upstream. Push will publish this branch." : "No remote configured."}</span></div>

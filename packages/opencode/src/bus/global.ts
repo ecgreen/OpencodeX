@@ -20,3 +20,16 @@ class GlobalBusEmitter extends EventEmitter<{
 }
 
 export const GlobalBus = new GlobalBusEmitter()
+
+const subscribers = new Set<{ notify: (event: GlobalEvent) => void }>()
+const publish = (event: GlobalEvent) => subscribers.forEach((subscriber) => subscriber.notify(event))
+
+export function subscribeGlobalBus(subscriber: (event: GlobalEvent) => void) {
+  if (subscribers.size === 0) GlobalBus.on("event", publish)
+  const entry = { notify: subscriber }
+  subscribers.add(entry)
+  return () => {
+    subscribers.delete(entry)
+    if (subscribers.size === 0) GlobalBus.off("event", publish)
+  }
+}

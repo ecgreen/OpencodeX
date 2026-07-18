@@ -1,0 +1,48 @@
+@media (max-width:900px) {
+  .plugin-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-install-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-marketplace-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-share-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-scope-filter {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width:900px) {
+  .plugin-card-state {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}

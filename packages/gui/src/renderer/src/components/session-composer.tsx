@@ -1,3 +1,4 @@
+import { TextArea, Button } from "./ui"
 import type { JSX } from "solid-js"
 import { For, Show, createSignal } from "solid-js"
 import type { PromptPart } from "../lib/store"
@@ -58,7 +59,7 @@ export function SessionComposer(props: {
           <div class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
             <For each={props.visibleSlashCommands} fallback={<p>No matching commands.</p>}>
               {(command, index) => (
-                <button
+                <Button appearance="ghost"
                   type="button"
                   role="option"
                   aria-selected={props.selectedSlashCommand === index()}
@@ -70,7 +71,7 @@ export function SessionComposer(props: {
                 >
                   <strong>/{command.name}</strong>
                   <span>{command.title} - {command.disabled ?? command.detail}</span>
-                </button>
+                </Button>
               )}
             </For>
           </div>
@@ -79,15 +80,15 @@ export function SessionComposer(props: {
           <div class="slash-command-menu mention-menu" role="listbox" aria-label="Mentions" onMouseDown={(event) => event.preventDefault()}>
             <For each={props.mentionOptions}>
               {(option) => (
-                <button type="button" role="option" onClick={() => props.chooseMention(option)}>
+                <Button appearance="ghost" type="button" role="option" onClick={() => props.chooseMention(option)}>
                   <strong>{option.replacement}</strong>
                   <span>{option.category} - {option.detail}</span>
-                </button>
+                </Button>
               )}
             </For>
           </div>
         </Show>
-        <textarea
+        <TextArea
           ref={props.setTextarea}
           disabled={props.blocked}
           value={props.draftPrompt}
@@ -114,13 +115,13 @@ export function SessionComposer(props: {
           <div class="composer-context-preview" aria-label="Attached context">
             <For each={props.draftParts}>
               {(part) => (
-                <button type="button" title={partTitle(part)} onClick={() => removePart(part, props)}>
+                <Button appearance="ghost" type="button" title={partTitle(part)} onClick={() => removePart(part, props)}>
                   <Show when={partPreviewURL(part)} fallback={<Icon name={partIcon(part)} />}>
                     {(src) => <img class="composer-context-preview-image" src={src()} alt="" />}
                   </Show>
                   <span>{partLabel(part)}</span>
                   <Icon name="x" />
-                </button>
+                </Button>
               )}
             </For>
           </div>
@@ -133,7 +134,7 @@ export function SessionComposer(props: {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAddMenuOpen(false)
               }}
             >
-              <button
+              <Button appearance="ghost"
                 class="composer-add-context"
                 type="button"
                 disabled={props.blocked}
@@ -144,20 +145,20 @@ export function SessionComposer(props: {
                 aria-label="Add context or change mode"
               >
                 <Icon name="plus" />
-              </button>
+              </Button>
               <Show when={addMenuOpen()}>
                 <div class="composer-add-menu" role="menu" aria-label="Add context or change mode">
-                  <button type="button" role="menuitem" onClick={() => { props.addPickedContext(); setAddMenuOpen(false) }}>File & Folder context</button>
-                  <button type="button" role="menuitemradio" aria-checked={props.mode === "goal"} classList={{ selected: props.mode === "goal" }} onClick={() => chooseMode("goal")}>Goal mode</button>
-                  <button type="button" role="menuitemradio" aria-checked={props.mode === "build"} classList={{ selected: props.mode === "build" }} onClick={() => chooseMode("build")}>Build mode</button>
-                  <button type="button" role="menuitemradio" aria-checked={props.mode === "plan"} classList={{ selected: props.mode === "plan" }} onClick={() => chooseMode("plan")}>Plan mode</button>
+                  <Button appearance="ghost" type="button" role="menuitem" onClick={() => { props.addPickedContext(); setAddMenuOpen(false) }}>File & Folder context</Button>
+                  <Button appearance="ghost" type="button" role="menuitemradio" aria-checked={props.mode === "goal"} classList={{ selected: props.mode === "goal" }} onClick={() => chooseMode("goal")}>Goal mode</Button>
+                  <Button appearance="ghost" type="button" role="menuitemradio" aria-checked={props.mode === "build"} classList={{ selected: props.mode === "build" }} onClick={() => chooseMode("build")}>Build mode</Button>
+                  <Button appearance="ghost" type="button" role="menuitemradio" aria-checked={props.mode === "plan"} classList={{ selected: props.mode === "plan" }} onClick={() => chooseMode("plan")}>Plan mode</Button>
                 </div>
               </Show>
             </div>
-            <button class={`mode-chip ${props.mode}`} type="button" disabled={props.blocked} onClick={props.toggleMode} title="Cycle mode">
+            <Button appearance="ghost" class={`mode-chip ${props.mode}`} type="button" disabled={props.blocked} onClick={props.toggleMode} title="Cycle mode">
               {props.mode === "plan" ? "Plan" : props.mode === "goal" ? "Goal" : "Build"}
-            </button>
-            <button class="model-menu" type="button" disabled={props.blocked} onClick={() => props.setModelPickerOpen(true)} title="Choose model">{props.modelLabel}</button>
+            </Button>
+            <Button appearance="ghost" class="model-menu" type="button" disabled={props.blocked} onClick={() => props.setModelPickerOpen(true)} title="Choose model">{props.modelLabel}</Button>
             <Show when={props.variants.length > 0}>
               <div
                 class="variant-menu-wrap"
@@ -165,7 +166,7 @@ export function SessionComposer(props: {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) props.setVariantPickerOpen(false)
                 }}
               >
-                <button
+                <Button appearance="ghost"
                   class="variant-trigger"
                   type="button"
                   disabled={props.blocked}
@@ -175,15 +176,15 @@ export function SessionComposer(props: {
                   onClick={() => props.setVariantPickerOpen((open) => !open)}
                 >
                   {props.variantLabel}
-                </button>
+                </Button>
                 <Show when={props.variantPickerOpen}>
                   <div class="variant-menu" role="listbox" aria-label="Choose variant">
-                    <button type="button" role="option" aria-selected={props.selectedVariant === ""} classList={{ selected: props.selectedVariant === "" }} onClick={() => props.selectVariant("")}>Default</button>
+                    <Button appearance="ghost" type="button" role="option" aria-selected={props.selectedVariant === ""} classList={{ selected: props.selectedVariant === "" }} onClick={() => props.selectVariant("")}>Default</Button>
                     <For each={props.variants}>
                       {(variant) => (
-                        <button type="button" role="option" aria-selected={props.selectedVariant === variant} classList={{ selected: props.selectedVariant === variant }} onClick={() => props.selectVariant(variant)}>
+                        <Button appearance="ghost" type="button" role="option" aria-selected={props.selectedVariant === variant} classList={{ selected: props.selectedVariant === variant }} onClick={() => props.selectVariant(variant)}>
                           {variant}
-                        </button>
+                        </Button>
                       )}
                     </For>
                   </div>
@@ -191,9 +192,9 @@ export function SessionComposer(props: {
               </div>
             </Show>
           </div>
-          <button class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={props.blocked || (props.draftText.length === 0 && props.draftParts.length === 0)}>
+          <Button appearance="ghost" class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={props.blocked || (props.draftText.length === 0 && props.draftParts.length === 0)}>
             <Icon name="arrowUp" />
-          </button>
+          </Button>
         </div>
       </div>
       <div class="composer-running" aria-live="polite">

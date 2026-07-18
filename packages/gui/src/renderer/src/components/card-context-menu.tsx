@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import type { JSX } from "solid-js"
 import { For, Show, createSignal, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -62,10 +63,10 @@ export function CardContextMenu(props: {
             >
               <For each={props.actions}>
                 {(action) => (
-                  <button type="button" role="menuitem" classList={{ danger: action.danger === true }} onClick={() => select(action)}>
+                  <Button appearance="ghost" tone={action.danger ? "danger" : "neutral"} type="button" role="menuitem" onClick={() => select(action)}>
                     <Icon name={action.icon} />
                     <span>{action.label}</span>
-                  </button>
+                  </Button>
                 )}
               </For>
             </div>

@@ -1,3 +1,4 @@
+import { TextInput, Button } from "./ui"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import type { PaletteCommand } from "./command-palette"
 
@@ -19,9 +20,9 @@ export function KeyboardHelpModal(props: { open: boolean; commands: PaletteComma
               <h2 id="keyboard-help-title">Keyboard Shortcuts</h2>
               <p>Commands and shortcuts available in this GUI.</p>
             </div>
-            <button type="button" aria-label="Close keyboard help" onClick={props.close}>{"\u00d7"}</button>
+            <Button appearance="ghost" type="button" aria-label="Close keyboard help" onClick={props.close}>{"\u00d7"}</Button>
           </header>
-          <input value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Filter shortcuts" autofocus />
+          <TextInput value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Filter shortcuts" autofocus />
           <div class="keyboard-help-list">
             <For each={groups()} fallback={<p class="command-palette-empty">No matching shortcuts.</p>}>
               {(group) => (

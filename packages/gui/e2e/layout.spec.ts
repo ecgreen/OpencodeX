@@ -19,6 +19,8 @@ for (const viewport of viewports) {
         await expect(page.locator(".stage")).toHaveAttribute("data-layout", "scroll-page")
         await expect(page.locator(".stage-content")).toHaveClass(/scroll-page/)
         expect(await documentScrolls(page)).toBe(false)
+        await expect(page.locator(".nav-attention-count")).toHaveCount(0)
+        await expectDashboardModules(page)
 
         await openWorkbench(page)
         await expect(page.locator(".stage")).toHaveAttribute("data-layout", "full-bleed")
@@ -33,6 +35,33 @@ for (const viewport of viewports) {
       })
     }
   }
+}
+
+async function expectDashboardModules(page: Page) {
+  const modules = page.locator(".dashboard-sections > .dashboard-section")
+  await expect(modules).toHaveCount(4)
+  const geometry = await modules.evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect()
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+      pointerEvents: getComputedStyle(element).pointerEvents,
+    }
+  }))
+  geometry.forEach((item) => {
+    expect(item.width).toBeGreaterThan(0)
+    expect(item.height).toBeGreaterThan(0)
+    expect(item.pointerEvents).not.toBe("none")
+  })
+  geometry.forEach((item, index) => geometry.slice(index + 1).forEach((other) => {
+    const overlapWidth = Math.max(0, Math.min(item.right, other.right) - Math.max(item.left, other.left))
+    const overlapHeight = Math.max(0, Math.min(item.bottom, other.bottom) - Math.max(item.top, other.top))
+    expect(overlapWidth * overlapHeight).toBe(0)
+  }))
 }
 
 async function openWorkbench(page: Page) {

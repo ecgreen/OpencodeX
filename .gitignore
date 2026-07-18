@@ -7,6 +7,12 @@ node_modules
 .idea
 .vscode
 .codex
+!.codex/
+.codex/*
+!.codex/skills/
+.codex/skills/*
+!.codex/skills/design/
+!.codex/skills/design/**
 *~
 playground
 tmp

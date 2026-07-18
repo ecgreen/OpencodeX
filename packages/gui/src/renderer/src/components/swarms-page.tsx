@@ -127,7 +127,7 @@ function SwarmDetail(props: {
         <form class="dashboard-item-card swarm-task-card" onSubmit={submitTask}>
           <strong>New task</strong>
           <TextArea value={taskPrompt()} onInput={(event) => setTaskPrompt(event.currentTarget.value)} placeholder="Describe the next task for this swarm" />
-          <Button type="submit" variant="primary" icon="send">Assign task</Button>
+          <Button type="submit" appearance="solid" tone="accent" icon="send">Assign task</Button>
         </form>
       </section>
       <section class="manager-section">
@@ -161,7 +161,7 @@ function SwarmDetail(props: {
             {(run) => {
               const sessionID = createMemo(() => swarmRunSessionID(run))
               return (
-                <button class="dashboard-item-card interactive" disabled={!sessionID()} onClick={() => sessionID() ? props.openSession(sessionID()!) : undefined}>
+                <Button appearance="ghost" class="dashboard-item-card interactive" disabled={!sessionID()} onClick={() => sessionID() ? props.openSession(sessionID()!) : undefined}>
                   <div>
                     <strong>{title(run.title || run.prompt || "Swarm task")}</strong>
                     <span>{clientSwarmStatusLabel(run.status)}</span>
@@ -169,7 +169,7 @@ function SwarmDetail(props: {
                   <footer>
                     <small>{formatRelative(numericTime(run.timeUpdated))} - {run.agents.length} agents</small>
                   </footer>
-                </button>
+                </Button>
               )
             }}
           </For>
@@ -194,7 +194,7 @@ function SwarmListSection(props: {
       <div class="dashboard-card-grid">
         <For each={props.swarms} fallback={<div class="empty">No {props.title.toLowerCase()}.</div>}>
           {(swarm) => (
-            <button class={`dashboard-item-card dashboard-status-card interactive status-${swarmDisplayStatus(swarm, props.snapshot).replaceAll("_", "-")}`} onClick={() => props.openSwarm(swarm.id)}>
+            <Button appearance="ghost" class={`dashboard-item-card dashboard-status-card interactive status-${swarmDisplayStatus(swarm, props.snapshot).replaceAll("_", "-")}`} onClick={() => props.openSwarm(swarm.id)}>
               <div>
                 <strong>{title(swarm.title)}</strong>
                 <span>{projectLabelByID(props.snapshot?.projects ?? [], swarm.projectID)} - {swarm.roles.length} roles - {swarm.runs.length} runs</span>
@@ -202,7 +202,7 @@ function SwarmListSection(props: {
               <footer>
                 <small>{clientSwarmStatusLabel(swarmDisplayStatus(swarm, props.snapshot))} - {formatRelative(swarmDisplayTimeUpdated(swarm))}</small>
               </footer>
-            </button>
+            </Button>
           )}
         </For>
       </div>
@@ -212,10 +212,10 @@ function SwarmListSection(props: {
 
 function EmptySwarmCard(props: { createSwarm: () => void }) {
   return (
-    <button class="dashboard-item-card empty-create interactive" onClick={props.createSwarm}>
+    <Button appearance="ghost" class="dashboard-item-card empty-create interactive" onClick={props.createSwarm}>
       <strong>+ Create swarm</strong>
       <span>Build a reusable agent team.</span>
       <small>create</small>
-    </button>
+    </Button>
   )
 }

@@ -1,7 +1,7 @@
 import type { WorkbenchDiagnostic } from "../lib/store"
 import { For, Show, createMemo } from "solid-js"
 import { Icon } from "./icon"
-import { IconButton } from "./ui"
+import { Button, IconButton } from "./ui"
 
 export function WorkbenchDiagnosticsBar(props: {
   loading: boolean
@@ -33,11 +33,11 @@ export function WorkbenchDiagnosticsBar(props: {
         <For each={visible()}>
           {(item) => (
             <div class={`workbench-diagnostic-row ${item.severity}`}>
-              <button type="button" disabled={!item.path} onClick={() => item.path ? props.onOpen(item.path) : undefined}>
+              <Button appearance="ghost" type="button" disabled={!item.path} onClick={() => item.path ? props.onOpen(item.path) : undefined}>
                 <span>{item.severity}</span>
                 <strong>{item.path ? `${item.path}${item.line ? `:${item.line}${item.column ? `:${item.column}` : ""}` : ""}` : "Project"}</strong>
                 <em>{item.message}</em>
-              </button>
+              </Button>
               <IconButton
                 class="workbench-diagnostic-fix"
                 icon="arrowUp"

@@ -1,0 +1,375 @@
+.role-editor-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.role-editor-card textarea {
+  min-height: 96px;
+  resize: vertical;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.view-editor-page textarea {
+  min-height: 96px;
+  resize: vertical;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.role-editor-card input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.role-editor-card select {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.role-editor-list {
+  display: grid;
+  gap: 12px;
+}
+
+.role-editor-card>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.view-editor-page {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.view-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.view-editor-header h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.view-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(280px,340px) minmax(0,920px);
+  gap: 16px;
+  align-content: start;
+  min-height: 0;
+  max-width: 1320px;
+  overflow: hidden;
+  padding: 0 18px 18px;
+}
+
+.view-editor-submit-panel {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb,var(--primary) 38%,var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--panel) 86%,var(--primary) 6%);
+  box-shadow: 0 -12px 24px color-mix(in srgb,var(--theme-shadow-medium) 28%,transparent);
+}
+
+.view-editor-page .full-width-field>span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.view-editor-page .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 12px 0 0;
+  background: var(--bg);
+}
+
+.session-side-browser-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.session-side-browser-preview.empty {
+  background: linear-gradient(135deg,color-mix(in srgb,var(--accent) 10%,transparent),transparent 58%),color-mix(in srgb,var(--panel) 92%,var(--theme-canvas));
+  object-fit: initial;
+}
+
+.session-side-git-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb,var(--success) 32%,var(--border-subtle));
+  border-radius: 7px;
+  color: color-mix(in srgb,var(--success) 70%,var(--text));
+  background: color-mix(in srgb,var(--success) 9%,var(--panel));
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.session-side-open .workbench-codemirror {
+  min-width: 0;
+  overflow: auto;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.session-open-file-explorer {
+  display: grid;
+  grid-template-rows: auto auto minmax(0,1fr);
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  background: radial-gradient(circle at 18% 0%,color-mix(in srgb,var(--secondary) 8%,transparent),transparent 32%),color-mix(in srgb,var(--panel) 78%,var(--bg));
+  padding: 10px;
+}
+
+.session-open-file-explorer>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-open-file-explorer>header>div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.session-open-file-explorer>header strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.session-open-file-explorer>header span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-file-explorer>header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--bg);
+}
+
+.session-open-file-explorer .workbench-filter {
+  min-height: 36px;
+  border: 1px solid color-mix(in srgb,var(--border-subtle) 82%,transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb,var(--bg) 72%,var(--panel));
+  padding: 5px 8px;
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 4%,transparent);
+}
+
+.session-open-file-explorer .workbench-filter input {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+.session-open-file-explorer .workbench-search-results {
+  max-height: 142px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb,var(--border-subtle) 80%,transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb,var(--bg) 72%,transparent);
+}
+
+.session-open-file-explorer .workbench-tree {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 2%,transparent),transparent 80px),var(--bg);
+  padding: 6px;
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 4%,transparent);
+}
+
+.session-open-file-explorer .workbench-file-row {
+  position: relative;
+  grid-template-columns: 18px 20px minmax(0,1fr) auto auto;
+  gap: 7px;
+  min-height: 30px;
+  border-radius: 7px;
+  color: color-mix(in srgb,var(--text) 92%,var(--muted));
+  padding: 4px 9px 4px calc(10px + (var(--depth) * 16px));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 620;
+  transition: background .14s ease,color .14s ease,box-shadow .14s ease;
+}
+
+.session-open-file-explorer .workbench-file-row.directory {
+  color: color-mix(in srgb,var(--text) 86%,var(--secondary));
+  font-weight: 740;
+}
+
+.session-open-file-explorer .workbench-file-row>.icon {
+  width: 17px;
+  height: 17px;
+  color: color-mix(in srgb,var(--secondary) 74%,var(--text));
+}
+
+.session-open-file-explorer .workbench-disclosure {
+  width: 18px;
+  color: color-mix(in srgb,var(--muted) 80%,var(--text));
+}
+
+.session-open-file-explorer .workbench-tree-spacer {
+  width: 18px;
+  color: color-mix(in srgb,var(--muted) 80%,var(--text));
+}
+
+.session-open-file-explorer .workbench-search-row {
+  min-height: 31px;
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.session-open-terminal {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  flex: 1;
+  min-height: 0;
+  color: var(--theme-text);
+  background: var(--theme-canvas);
+}
+
+.session-open-terminal>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid color-mix(in srgb,var(--border-subtle) 58%,transparent);
+  color: var(--muted);
+  background: color-mix(in srgb,var(--theme-surface) 88%,var(--panel));
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.session-open-terminal>header span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-terminal>header small {
+  color: color-mix(in srgb,var(--accent) 72%,var(--muted));
+  text-transform: lowercase;
+}
+
+.session-open-terminal-host {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--theme-canvas);
+}
+
+.session-open-terminal-host .xterm {
+  height: 100%;
+}
+
+.session-open-terminal-host .xterm-viewport {
+  background: transparent;
+}
+
+.session-open-terminal-host .xterm-screen {
+  outline: none;
+}
+
+.session-side-browser-host {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  z-index: 0;
+  flex: 1;
+  overflow: hidden;
+  contain: layout paint;
+  background: var(--theme-canvas);
+}
+
+.session-side-browser-artifacts {
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--panel);
+  padding: 6px 8px;
+}
+
+.tool-diagnostics pre {
+  overflow: visible;
+  max-height: none;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--theme-canvas);
+  white-space: pre-wrap;
+}
+
+.tool-diagnostics {
+  display: grid;
+  gap: 7px;
+}

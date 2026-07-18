@@ -1,0 +1,33 @@
+.swarm-role-card:hover {
+  border-color: color-mix(in srgb,var(--secondary) 30%,var(--border));
+  border-left-color: var(--secondary);
+  background: color-mix(in srgb,var(--bg) 88%,var(--element) 12%);
+  box-shadow: inset 2px 0 0 var(--secondary);
+}
+
+.swarm-role-card:focus-within {
+  border-color: color-mix(in srgb,var(--secondary) 30%,var(--border));
+  border-left-color: var(--secondary);
+  background: color-mix(in srgb,var(--bg) 88%,var(--element) 12%);
+  box-shadow: inset 2px 0 0 var(--secondary);
+}
+
+.swarm-role-card:hover :is(span,small) {
+  color: var(--muted);
+}
+
+.swarm-role-card:focus-within :is(span,small) {
+  color: var(--muted);
+}
+
+.swarm-role-card:hover strong {
+  color: var(--text);
+}
+
+.swarm-role-card:focus-within strong {
+  color: var(--text);
+}
+
+.stage-content.scroll-page>:is(.placeholder-page,.swarms-page,.plugins-page) {
+  padding: 8px;
+}

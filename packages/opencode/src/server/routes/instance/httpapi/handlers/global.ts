@@ -1,5 +1,5 @@
 import { Config } from "@/config/config"
-import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
+import { GlobalBus, subscribeGlobalBus, type GlobalEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
@@ -35,11 +35,11 @@ function parseBody(body: string) {
 
 function eventResponse() {
   log.info("global event connected")
-  const events = Stream.callback<GlobalBusEvent>((queue) => {
-    const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
+  const events = Stream.callback<GlobalEvent>((queue) => {
+    const handler = (event: GlobalEvent) => Queue.offerUnsafe(queue, event)
     return Effect.acquireRelease(
-      Effect.sync(() => GlobalBus.on("event", handler)),
-      () => Effect.sync(() => GlobalBus.off("event", handler)),
+      Effect.sync(() => subscribeGlobalBus(handler)),
+      (unsubscribe) => Effect.sync(unsubscribe),
     )
   })
   const heartbeat = Stream.tick("10 seconds").pipe(

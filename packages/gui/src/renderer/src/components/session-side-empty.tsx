@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import { compactPath } from "../lib/format"
 import { Icon } from "./icon"
 
@@ -22,31 +23,31 @@ export function SessionSideEmptyState(props: {
         </div>
       </div>
       <div class="session-open-empty-actions">
-        <button type="button" data-tone="git" onClick={props.openGit}>
+        <Button appearance="ghost" type="button" data-tone="git" onClick={props.openGit}>
           <Icon name="branch" />
           <strong>Git</strong>
           <span>Review working tree changes and prepare a commit.</span>
-        </button>
-        <button type="button" data-tone="file" onClick={props.openFile}>
+        </Button>
+        <Button appearance="ghost" type="button" data-tone="file" onClick={props.openFile}>
           <Icon name="folder-open" />
           <strong>Open file</strong>
           <span>Browse the project and edit source files in place.</span>
-        </button>
-        <button type="button" data-tone="terminal" onClick={props.openTerminal}>
+        </Button>
+        <Button appearance="ghost" type="button" data-tone="terminal" onClick={props.openTerminal}>
           <Icon name="terminal" />
           <strong>Terminal</strong>
           <span>Run commands from {props.directory ? compactPath(props.directory) : "the workspace"}.</span>
-        </button>
-        <button type="button" data-tone="context" onClick={props.openContext}>
+        </Button>
+        <Button appearance="ghost" type="button" data-tone="context" onClick={props.openContext}>
           <Icon name="context" />
           <strong>Context</strong>
           <span>Inspect session state, tools, LSP, and related metadata.</span>
-        </button>
-        <button type="button" data-tone="web" onClick={props.addWebTab}>
+        </Button>
+        <Button appearance="ghost" type="button" data-tone="web" onClick={props.addWebTab}>
           <Icon name="browser" />
           <strong>Webpage</strong>
           <span>Open docs, local apps, or URLs beside the session.</span>
-        </button>
+        </Button>
       </div>
     </div>
   )

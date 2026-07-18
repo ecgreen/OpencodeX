@@ -1,0 +1,367 @@
+.dashboard-empty-action>span {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-empty-action strong {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-empty-action>span+strong+span {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-sections .dashboard-item-card {
+  background: var(--bg);
+}
+
+.dashboard-session-groups .dashboard-item-card {
+  background: var(--bg);
+}
+
+.dashboard-status-card {
+  --session-state-color: var(--theme-text-muted);
+  align-content: space-between;
+  gap: 5px;
+  border-left-color: var(--session-state-color);
+  cursor: pointer;
+  min-height: 82px;
+  height: 82px;
+  padding: 12px 38px 10px 13px;
+  border-left: 1px solid var(--line);
+  border-color: var(--line);
+  border-radius: 0;
+  --session-card-bg: transparent;
+  background: transparent;
+}
+
+.dashboard-status-card.status-dormant {
+  --session-state-color: var(--muted);
+  background: transparent;
+}
+
+.dashboard-status-card.status-in-progress {
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+  background: transparent;
+  --session-state-color: var(--blue);
+  --card-accent: var(--blue) ;
+}
+
+.dashboard-status-card.status-input-needed {
+  --session-card-bg: linear-gradient(90deg, var(--amber-soft), var(--surface) 48%);
+  background: transparent;
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-status-card.status-failed {
+  --session-state-color: var(--danger);
+  --session-card-bg: linear-gradient(90deg, var(--danger-soft), var(--surface) 48%);
+  background: transparent;
+  --card-accent: var(--error) ;
+}
+
+.dashboard-page>.opencodex-logo {
+  justify-self: center;
+  margin: clamp(12px,3vh,32px) 0 clamp(4px,1.4vh,16px);
+  font-size: clamp(8px,1.28vw,15px);
+  opacity: .96;
+}
+
+.dashboard-action-card {
+  display: grid;
+  gap: 3px 12px;
+  color: var(--text);
+  text-align: left;
+  grid-template-columns: 24px minmax(0,1fr) auto;
+  grid-template-rows: auto auto;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--action-color, var(--border-active));
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  transform: none;
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  overflow: hidden;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-item-card.interactive {
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-status-card.interactive {
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-status-card.status-input-needed strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: linear-gradient(100deg,var(--session-state-color) 0%,var(--session-state-color) 42%,color-mix(in srgb,var(--session-state-color) 28%,white) 49%,var(--theme-surface) 53%,color-mix(in srgb,var(--session-state-color) 28%,white) 57%,var(--session-state-color) 64%,var(--session-state-color) 100%);
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: sidebar-title-shimmer 3.4s linear infinite;
+  text-shadow: 0 0 16px color-mix(in srgb,var(--session-state-color) 28%,transparent);
+  transition: none;
+}
+
+.dashboard-status-card.status-cancelling {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-status-card.status-retrying {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-status-card.status-partially-failed {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-page {
+  min-width: 0;
+  overflow-x: hidden;
+  align-content: start;
+  background: var(--bg);
+  grid-template-rows: auto minmax(0,1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  width: min(1480px,100%);
+  margin: 0 auto;
+  gap: 24px;
+  padding: clamp(14px,2vw,28px);
+}
+
+.dashboard-overview {
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dashboard-overview .opencodex-logo {
+  justify-self: start;
+  margin: 0;
+  font-size: clamp(6px,.64vw,9px);
+  filter: none;
+  opacity: .88;
+}
+
+.dashboard-sections {
+  display: grid;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  grid-template-rows: repeat(2,minmax(0,1fr));
+  align-items: stretch;
+  gap: 24px;
+}
+
+.dashboard-section {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  min-height: 0;
+  box-shadow: none;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}
+
+.dashboard-section>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+  min-height: 32px;
+}
+
+.dashboard-section .section-collapse {
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 660;
+}
+
+.dashboard-card-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill,minmax(min(280px,100%),1fr));
+  gap: 8px;
+}
+
+.dashboard-card-grid.compact {
+  grid-template-columns: repeat(auto-fill,minmax(min(260px,100%),1fr));
+}
+
+.dashboard-item-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  position: relative;
+  min-height: 92px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: none;
+  transform: none;
+  transition: border-color var(--motion-hover) ease,background var(--motion-hover) ease;
+}
+
+.dashboard-card-open {
+  display: grid;
+  align-content: space-between;
+  gap: 5px;
+  height: 100%;
+  min-width: 0;
+  width: 100%;
+  min-height: 90px;
+  align-items: stretch;
+  padding: 14px 42px 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+}
+
+.dashboard-item-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -.005em;
+}
+
+.dashboard-status-card strong {
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-unviewed strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-ready-for-review strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-needs-review strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-unviewed {
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+  background: transparent;
+  --card-accent: var(--purple);
+  --session-state-color: var(--info) ;
+}
+
+.dashboard-status-card.status-ready-for-review {
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+  background: transparent;
+  --card-accent: var(--purple);
+  --session-state-color: var(--info) ;
+}
+
+.dashboard-status-card.status-needs-review {
+  background: transparent;
+  --card-accent: var(--purple);
+  --session-state-color: var(--info) ;
+}

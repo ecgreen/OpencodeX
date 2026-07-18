@@ -6,6 +6,7 @@ import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, type Derived
 import { pendingViewSessions } from "../lib/view-items"
 import { CardContextMenu } from "./card-context-menu"
 import { PinButton } from "./pin-button"
+import { Button } from "./ui"
 
 export function SidebarSessionLink(props: {
   session: Session
@@ -19,7 +20,7 @@ export function SidebarSessionLink(props: {
   deleteSession?: () => void
 }) {
   const status = createMemo(() => deriveSessionStatus(props.snapshot, props.session))
-  const subtitle = createMemo(() => [props.session.model?.id?.slice((props.session.model?.id ?? "").lastIndexOf("/") + 1), formatRelative(props.session.time.updated)].filter(Boolean).join(" - "))
+  const subtitle = createMemo(() => [sessionStatusLabel(status()), formatRelative(props.session.time.updated)].join(" · "))
   return (
     <CardContextMenu actions={[
       ...(props.renameSession ? [{ label: "Edit", icon: "pencil", onSelect: props.renameSession }] : []),
@@ -27,7 +28,8 @@ export function SidebarSessionLink(props: {
     ]}>
       {(openMenu) => (
         <div class="session-link-shell" classList={{ nested: props.nested }} onContextMenu={openMenu}>
-          <button
+          <Button
+            appearance="ghost"
             title={`${title(props.session.title)} - ${sessionStatusLabel(status())} - ${formatRelative(props.session.time.updated)}`}
             class={`session-link ${statusClass(status())}`}
             classList={{ active: props.active }}
@@ -39,7 +41,7 @@ export function SidebarSessionLink(props: {
             </small>
             <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
             <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sessionStatusLabel(status())} /></Show>
-          </button>
+          </Button>
           <Show when={props.togglePinned}>
             {(togglePinned) => <PinButton pinned={props.pinned === true} label={title(props.session.title)} onClick={togglePinned()} />}
           </Show>
@@ -67,7 +69,8 @@ export function SidebarViewLink(props: {
     ]}>
       {(openMenu) => (
         <div class="session-link-shell" onContextMenu={openMenu}>
-          <button
+          <Button
+            appearance="ghost"
             title={`${title(props.view.title)} - ${sessionStatusLabel(status())} - ${viewSessionCount(props.view)} sessions`}
             class={`session-link ${statusClass(status())}`}
             classList={{ active: props.active }}
@@ -75,11 +78,11 @@ export function SidebarViewLink(props: {
           >
             <span>{title(props.view.title)}</span>
             <small>
-              <span>{viewSessionCount(props.view)} sessions</span>
+              <span>{sessionStatusLabel(status())} · {viewSessionCount(props.view)} sessions</span>
             </small>
             <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
             <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sessionStatusLabel(status())} /></Show>
-          </button>
+          </Button>
           <Show when={props.togglePinned}>
             {(togglePinned) => <PinButton pinned={props.pinned === true} label={title(props.view.title)} onClick={togglePinned()} />}
           </Show>

@@ -1,7 +1,4 @@
-import {
-  findFiles,
-  type WorkbenchOperationResult,
-} from "../lib/store"
+import { findFiles } from "../lib/store"
 import {
   readWorkbenchState,
   writeWorkbenchState,
@@ -22,8 +19,9 @@ import { WorkbenchBrowserPanel } from "./workbench-browser-panel"
 import { WorkbenchFilesTab } from "./workbench-files-tab"
 import { WorkbenchGitPanel } from "./workbench-git-panel"
 import { WorkbenchTabs } from "./workbench-tabs"
-import { assistantSessionModel, errorText, gitStatusSymbol, newBrowserID } from "./workbench-page-helpers"
+import { assistantSessionModel, gitStatusSymbol, newBrowserID } from "./workbench-page-helpers"
 import type { WorkbenchPageProps } from "./workbench-page-types"
+import { createWorkbenchOperationController } from "./workbench-operation-controller"
 
 export function WorkbenchPage(props: WorkbenchPageProps) {
   const persistedWorkbench = readWorkbenchState()
@@ -35,9 +33,11 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const [notice, setNotice] = createSignal("")
   const [busy, setBusy] = createSignal("")
   const [artifacts, setArtifacts] = createSignal<WorkbenchArtifact[]>(persistedWorkbench.artifacts ?? [])
+  const { confirmWorkbench, runOperation } = createWorkbenchOperationController({ confirm: props.confirm, setBusy, setNotice })
   const layout = createWorkbenchLayoutController(persistedWorkbench)
   const files = createWorkbenchFileController({ props, setNotice, setBusy, runOperation })
   const browser = createWorkbenchBrowserController({
+    active: () => tab() === "browser",
     initialTabs: initialBrowserTabs,
     initialActiveID: persistedWorkbench.activeBrowserID ?? initialBrowserTabs[0]?.id ?? fallbackBrowserID,
     setArtifacts,
@@ -147,8 +147,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       browser.hideTabs()
       return
     }
-    void browser.ensure()
-    browser.updateBounds()
+    void browser.showActive()
   })
 
   createEffect(() => {
@@ -169,23 +168,6 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       artifacts: artifacts(),
     })
   })
-
-  function confirmWorkbench(input: { title: string; message: string; confirm?: string }) {
-    return props.confirm?.(input) ?? Promise.resolve(false)
-  }
-  async function runOperation(operation: () => Promise<WorkbenchOperationResult>) {
-    setBusy("operation")
-    setNotice("")
-    try {
-      const result = await operation()
-      setNotice(result.message ?? (result.ok ? "Done." : "Operation failed."))
-      return result
-    } catch (err) {
-      setNotice(errorText(err, "Operation failed."))
-    } finally {
-      setBusy("")
-    }
-  }
 
   return (
     <section class="page workbench-page">
@@ -212,7 +194,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               startNewFolder: files.startNewFolder,
               projectOptions: files.projectOptions,
               selectedProjectID: files.selectedProjectID,
-              selectProject: (value, element) => void files.selectProject(value, element),
+              selectProject: (value) => void files.selectProject(value),
               filter: files.explorerFilter,
               setFilter: files.setExplorerFilter,
               openFilePalette: files.openFilePalette,
@@ -383,6 +365,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             activeID={browser.activeID()}
             state={browser.state()}
             available={Boolean(window.opencodex?.browser)}
+            lifecycle={browser.lifecycle()}
+            error={browser.error()}
             url={browser.url()}
             setActiveID={browser.setActiveID}
             closeTab={browser.closeTab}

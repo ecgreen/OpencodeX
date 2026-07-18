@@ -1,3 +1,4 @@
+import { TextInput, Button } from "./ui"
 import type { FileNode } from "@opencode-ai/sdk/v2/client"
 import { For, Show } from "solid-js"
 import type { WorkbenchTreeRow } from "../lib/workbench"
@@ -24,13 +25,13 @@ export function SessionSideFileExplorer(props: {
           <strong>Workspace files</strong>
           <span>{props.directory ? compactPath(props.directory) : "No project folder selected"}</span>
         </div>
-        <button type="button" aria-label="Close file explorer" onClick={props.close}><Icon name="x" /></button>
+        <Button appearance="ghost" type="button" aria-label="Close file explorer" onClick={props.close}><Icon name="x" /></Button>
       </header>
       <div class="workbench-filter">
         <Icon name="search" />
-        <input value={props.filter} placeholder="Filter files" onInput={(event) => props.setFilter(event.currentTarget.value)} />
+        <TextInput value={props.filter} placeholder="Filter files" onInput={(event) => props.setFilter(event.currentTarget.value)} />
         <Show when={props.filter}>
-          <button type="button" aria-label="Clear file filter" onClick={() => props.setFilter("")}><Icon name="x" /></button>
+          <Button appearance="ghost" type="button" aria-label="Clear file filter" onClick={() => props.setFilter("")}><Icon name="x" /></Button>
         </Show>
       </div>
       <Show when={props.filter.trim().length >= 2}>
@@ -41,7 +42,7 @@ export function SessionSideFileExplorer(props: {
           </header>
           <For each={props.matches} fallback={<div class="empty">{props.searchState === "loading" ? "Searching project..." : "No project matches."}</div>}>
             {(match) => (
-              <button
+              <Button appearance="ghost"
                 type="button"
                 class="workbench-search-row"
                 classList={{ selected: props.openPath === match.path, directory: match.type === "directory" }}
@@ -49,7 +50,7 @@ export function SessionSideFileExplorer(props: {
               >
                 <Icon name={match.type === "directory" ? "folder" : "file"} />
                 <span>{match.path}</span>
-              </button>
+              </Button>
             )}
           </For>
         </div>
@@ -57,7 +58,7 @@ export function SessionSideFileExplorer(props: {
       <div class="workbench-tree" role="tree">
         <For each={props.rows} fallback={<div class="empty">{props.loading ? "Loading files..." : "No files found."}</div>}>
           {(row) => (
-            <button
+            <Button appearance="ghost"
               type="button"
               class="workbench-file-row"
               classList={{ selected: props.openPath === row.node.path, directory: row.node.type === "directory", expanded: row.expanded, root: row.depth === 0 }}
@@ -74,7 +75,7 @@ export function SessionSideFileExplorer(props: {
               <Show when={row.node.type === "directory" && row.expanded && !row.loaded}>
                 <span class="workbench-loading">...</span>
               </Show>
-            </button>
+            </Button>
           )}
         </For>
       </div>

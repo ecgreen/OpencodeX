@@ -99,7 +99,7 @@ function ActiveViewHeader(props: {
           )}
         </Show>
         <IconButton icon="pencil" label="Edit view" onClick={props.edit} />
-        <IconButton variant="danger" icon="trash" label="Delete view" onClick={props.delete} />
+        <IconButton appearance="ghost" tone="danger" icon="trash" label="Delete view" onClick={props.delete} />
       </div>
     </header>
   )

@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import { For, type Accessor, type Setter } from "solid-js"
 import type { WorkbenchTab } from "../lib/workbench"
 import { Icon } from "./icon"
@@ -17,9 +18,9 @@ export function WorkbenchTabs(props: {
     <nav class="workbench-tabs" aria-label="Workbench tabs">
       <For each={WORKBENCH_TABS}>
         {(item) => (
-          <button type="button" classList={{ active: props.tab() === item.id }} onClick={() => props.setTab(item.id)}>
+          <Button appearance="ghost" type="button" classList={{ active: props.tab() === item.id }} onClick={() => props.setTab(item.id)}>
             <Icon name={item.icon} /> {item.label}
-          </button>
+          </Button>
         )}
       </For>
     </nav>

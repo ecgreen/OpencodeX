@@ -1,0 +1,239 @@
+.quick-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.row-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.mode-chip:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.variant-trigger:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.section-collapse:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.section-collapse:focus-visible {
+  background: var(--surface);
+}
+
+.status.failed {
+  border-color: color-mix(in srgb,var(--danger) 36%,var(--line));
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+:root[data-theme=light] body {
+  background: var(--bg);
+}
+
+.error-card {
+  padding: 18px;
+  border-color: var(--error);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app-loading-title[data-short=true] {
+  width: min(58%,280px);
+}
+
+.app-loading-line:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-control:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-icon-control:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-pin:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-bucket-chevron:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.part.text [data-component=markdown] pre {
+  margin: 0 0 12px;
+  padding: 12px;
+  overflow: visible;
+  max-height: none;
+  white-space: pre-wrap;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--element);
+}
+
+.part.text [data-component=markdown] code {
+  padding: 2px 4px;
+  border-radius: 0;
+  background: var(--element);
+}
+
+.variant-trigger:before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--muted) 72%,transparent);
+}
+
+.mode-chip:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.variant-trigger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.mode-chip:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.variant-trigger:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.send-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb,var(--brand) 82%,white 10%);
+  color: var(--brand-contrast);
+  background: color-mix(in srgb,var(--primary) 88%,white 12%);
+  box-shadow: none;
+}
+
+.option-list button.selected {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.option-list button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.choice-list button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.manager-row :is(p,span,small,strong) {
+  transition: color .14s ease;
+}
+
+.manager-row:hover {
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 12%,transparent),transparent 46%),color-mix(in srgb,var(--panel) 90%,var(--card-accent, var(--primary)) 10%);
+  box-shadow: inset 4px 0 0 var(--card-accent, var(--primary)),inset 0 0 0 1px color-mix(in srgb,var(--card-accent, var(--primary)) 20%,transparent);
+}
+
+.manager-row:focus-within {
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 12%,transparent),transparent 46%),color-mix(in srgb,var(--panel) 90%,var(--card-accent, var(--primary)) 10%);
+  box-shadow: inset 4px 0 0 var(--card-accent, var(--primary)),inset 0 0 0 1px color-mix(in srgb,var(--card-accent, var(--primary)) 20%,transparent);
+}
+
+.manager-row:hover :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.manager-row:focus-within :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.manager-row:hover strong {
+  color: var(--text);
+}
+
+.manager-row:focus-within strong {
+  color: var(--text);
+}
+
+.nav button:hover .icon {
+  color: var(--theme-text);
+}
+
+.nav button:focus-visible .icon {
+  color: var(--theme-text);
+}
+
+.draggable-row.dropping {
+  box-shadow: inset 0 2px 0 var(--primary);
+  border-radius: 0;
+}
+
+.draggable-row.dragging {
+  cursor: grabbing;
+  border-radius: 0;
+}

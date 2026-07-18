@@ -226,9 +226,7 @@ function createBrowserView(id: string, owner: WebContents, windowID: number, ope
 function destroyBrowserView(id: string, ownerID?: number) {
   const entry = browserViews.get(id)
   if (!entry || (ownerID !== undefined && entry.ownerID !== ownerID)) return false
-  const window = BrowserWindow.fromId(entry.windowID)
   hideBrowserView(id, entry.view)
-  if (visibleBrowserViews.has(id)) window?.contentView.removeChildView(entry.view)
   entry.view.webContents.close()
   browserViews.delete(id)
   visibleBrowserViews.delete(id)
@@ -246,4 +244,7 @@ function showBrowserView(id: string, window: BrowserWindow, view: WebContentsVie
 function hideBrowserView(id: string, view: WebContentsView) {
   if (!visibleBrowserViews.has(id)) return
   view.setVisible(false)
+  const entry = browserViews.get(id)
+  if (entry?.view === view) BrowserWindow.fromId(entry.windowID)?.contentView.removeChildView(view)
+  visibleBrowserViews.delete(id)
 }

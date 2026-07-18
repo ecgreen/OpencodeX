@@ -16,7 +16,7 @@ export function SwarmPageHeader(props: {
       </div>
       <div class="row-actions">
         <For each={props.actions}>
-          {(action) => <Button variant={action.danger ? "danger" : "secondary"} icon={action.icon} onClick={action.onClick}>{action.label}</Button>}
+          {(action) => <Button appearance="outline" tone={action.danger ? "danger" : "neutral"} icon={action.icon} onClick={action.onClick}>{action.label}</Button>}
         </For>
       </div>
     </header>

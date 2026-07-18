@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import type { JSX } from "solid-js"
 import { Show, createSignal, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -67,7 +68,7 @@ export function RailSection(props: {
         onDrop={(event) => props.drag?.drop(props.drag.target.id, dropPlacement(event))}
         onDragEnd={() => props.drag?.clear()}
       >
-        <button
+        <Button appearance="ghost"
           class="section-toggle"
           aria-expanded={!props.collapsed}
           onClick={props.toggle}
@@ -79,8 +80,8 @@ export function RailSection(props: {
         >
           <span class="section-chevron"><Icon name={props.collapsed ? "chevronRight" : "chevronDown"} /></span>
           <strong>{props.title} <span class="section-count">({props.count})</span></strong>
-        </button>
-        {props.action && <button class="section-new" title={`Create ${props.title}`} aria-label={`Create ${props.title}`} onClick={props.action}>+ New</button>}
+        </Button>
+        {props.action && <Button appearance="ghost" class="section-new" title={`Create ${props.title}`} aria-label={`Create ${props.title}`} onClick={props.action}>+ New</Button>}
       </header>
       <div class="rail-section-content" classList={{ collapsed: props.collapsed }}>
         <div>{props.children}</div>

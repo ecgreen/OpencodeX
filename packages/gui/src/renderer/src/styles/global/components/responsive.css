@@ -1,0 +1,112 @@
+@media (max-width:860px) {
+  .manager-page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width:860px) {
+  .manager-section>header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width:860px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:1180px) {
+  .metric-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:1180px) {
+  .content-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:860px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:860px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:860px) {
+  .opencodex-logo {
+    justify-self: start;
+    font-size: clamp(7px,2.5vw,12px);
+  }
+}
+
+@media (max-width:860px) {
+  .hero {
+    display: grid;
+  }
+}
+
+@media (max-width:860px) {
+  .placeholder-page {
+    display: grid;
+  }
+}
+
+@media (max-width:860px) {
+  .nav {
+    grid-template-columns: repeat(6,minmax(0,1fr));
+  }
+}
+
+@media (max-width:860px) {
+  .variant-trigger {
+    max-width: 100%;
+  }
+}
+
+@media (max-width:860px) {
+  body {
+    min-width: 360px;
+  }
+}
+
+@media (max-width:720px) {
+  .sync-status-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width:720px) {
+  .settings-page {
+    padding: 24px 16px 48px;
+  }
+}
+
+@media (max-width:720px) {
+  .theme-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:720px) {
+  .settings-section>header {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width:720px) {
+  .settings-connection-card {
+    align-items: flex-start;
+  }
+}

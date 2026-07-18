@@ -3,11 +3,13 @@ import {
   selectClientCapabilitiesSnapshot,
   selectClientSessionMessages,
   selectClientStateSyncSnapshot,
+  clientAttentionItems,
+  clientWorkItems,
   type ClientStateSyncState,
 } from "@opencode-ai/sdk/v2"
 import path from "node:path"
 
-export function projectTuiClientState(state: ClientStateSyncState, options: { directory?: string } = {}) {
+export function projectTuiClientState(state: ClientStateSyncState, options: { directory?: string; workItems?: ReturnType<typeof clientWorkItems> } = {}) {
   const catalog = selectClientStateSyncSnapshot(state)
   if (!catalog) return undefined
   const operations = selectClientOperationsSnapshot(state)
@@ -17,6 +19,7 @@ export function projectTuiClientState(state: ClientStateSyncState, options: { di
     ? catalog.sessions.filter((session) => path.resolve(session.directory) === path.resolve(directory))
     : catalog.sessions
   const sessionIDs = new Set(sessions.map((session) => session.id))
+  const workItems = (options.workItems ?? clientWorkItems(state)).filter((item) => !item.sessionID || sessionIDs.has(item.sessionID))
   return {
     revision: state.digest,
     projects: catalog.projects,
@@ -28,6 +31,8 @@ export function projectTuiClientState(state: ClientStateSyncState, options: { di
     sessionUiState: Object.fromEntries(Object.entries(catalog.sessionUiState).filter(([sessionID]) => sessionIDs.has(sessionID))),
     permissions: groupRequestsBySession(catalog.permissions.filter((request) => sessionIDs.has(request.sessionID))),
     questions: groupRequestsBySession(catalog.questions.filter((request) => sessionIDs.has(request.sessionID))),
+    workItems,
+    attentionItems: clientAttentionItems(workItems),
     capabilities: capabilities
       ? {
           providers: capabilities.providers,

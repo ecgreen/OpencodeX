@@ -1,3 +1,4 @@
+import { TextInput, Button } from "./ui"
 import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { File as FileDiffView } from "@opencode-ai/ui/file"
@@ -68,10 +69,10 @@ export function PermissionPanel(props: { request: PermissionRequest; tool?: Tool
         </Show>
       </div>
       <div class="safety-actions">
-        <button class="secondary" onClick={() => setExpanded((value) => !value)}><Icon name={expanded() ? "chevronRight" : "chevronDown"} /> {expanded() ? "Collapse" : "Expand"}</button>
-        <button class="secondary danger" onClick={() => choose("reject")}><Icon name="x" /> Reject</button>
-        <button class="secondary" onClick={() => choose("once")}><Icon name="check" /> Allow Once</button>
-        <button class="primary" onClick={() => choose("always")}><Icon name="check" /> Always Allow</button>
+        <Button appearance="outline" onClick={() => setExpanded((value) => !value)}><Icon name={expanded() ? "chevronRight" : "chevronDown"} /> {expanded() ? "Collapse" : "Expand"}</Button>
+        <Button appearance="outline" tone="danger" onClick={() => choose("reject")}><Icon name="x" /> Reject</Button>
+        <Button appearance="outline" onClick={() => choose("once")}><Icon name="check" /> Allow Once</Button>
+        <Button appearance="solid" tone="accent" onClick={() => choose("always")}><Icon name="check" /> Always Allow</Button>
       </div>
     </section>
   )
@@ -137,19 +138,19 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
               <div class="option-list">
                 <For each={question.options}>
                   {(option, optionIndex) => (
-                    <button
+                    <Button appearance="ghost"
                       class="question-option"
                       classList={{ selected: answers()[index()].includes(option.label) }}
                       onClick={() => choose(index(), option.label, question.multiple)}
                     >
                       <strong><span>{optionIndex() + 1}</span>{option.label}</strong>
                       <span>{option.description}</span>
-                    </button>
+                    </Button>
                   )}
                 </For>
               </div>
               <Show when={question.custom !== false}>
-                <input
+                <TextInput
                   class="custom-answer"
                   value={custom()[index()] ?? ""}
                   onInput={(event) => updateCustom(index(), event.currentTarget.value)}
@@ -161,8 +162,8 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
         </For>
       </div>
       <div class="safety-actions">
-        <button class="secondary danger" onClick={() => props.reject(props.request)}><Icon name="x" /> Reject</button>
-        <button class="primary" disabled={!valid()} onClick={() => props.reply(props.request, finalAnswers())}><Icon name="send" /> Reply</button>
+        <Button appearance="outline" tone="danger" onClick={() => props.reject(props.request)}><Icon name="x" /> Reject</Button>
+        <Button appearance="solid" tone="accent" disabled={!valid()} onClick={() => props.reply(props.request, finalAnswers())}><Icon name="send" /> Reply</Button>
       </div>
     </section>
   )

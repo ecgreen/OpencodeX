@@ -24,7 +24,7 @@ export function WorkbenchArtifactsPanel(props: {
         </div>
         <div class="row-actions">
           <Button icon="browser" onClick={() => props.setTab("browser")}>Browser</Button>
-          <Button variant="danger" icon="trash" disabled={props.artifacts.length === 0} onClick={props.clear}>Clear all</Button>
+          <Button appearance="outline" tone="danger" icon="trash" disabled={props.artifacts.length === 0} onClick={props.clear}>Clear all</Button>
         </div>
       </header>
       <For
@@ -49,7 +49,7 @@ export function WorkbenchArtifactsPanel(props: {
                 <Show when={workbenchArtifactOpenURL(artifact)}>
                   {(url) => <IconButton icon="browser" label={`Open ${artifact.title}`} onClick={() => props.openURL(url(), artifact.title)} />}
                 </Show>
-                <IconButton variant="danger" icon="trash" label={`Delete ${artifact.title}`} onClick={() => props.deleteArtifact(artifact.id)} />
+                <IconButton appearance="ghost" tone="danger" icon="trash" label={`Delete ${artifact.title}`} onClick={() => props.deleteArtifact(artifact.id)} />
               </div>
             </header>
             <Show when={artifact.kind === "screenshot" ? artifact.url : undefined}>

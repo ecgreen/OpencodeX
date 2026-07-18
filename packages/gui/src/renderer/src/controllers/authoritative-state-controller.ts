@@ -1,6 +1,7 @@
 import type { GlobalEvent, Session } from "@opencode-ai/sdk/v2/client"
 import { createClientStateSync, type ClientStateSyncState } from "@opencode-ai/sdk/v2/client-sync"
-import { createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
+import { clientAttentionItems, createClientWorkItemSelector } from "@opencode-ai/sdk/v2/work-item"
+import { createMemo, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
 import { connectGuiClient, type GuiClient } from "../lib/client"
 import { mergeRecentModels, recentModelsFromSessions } from "../lib/app-session-lists"
 import { writeRecentModels } from "../lib/app-preferences"
@@ -49,7 +50,7 @@ export function createAuthoritativeStateController(input: {
 }) {
   const [client, setClient] = createSignal<GuiClient>()
   const [snapshot, setSnapshot] = createSignal<GuiSnapshot>()
-  const [sessionData, setSessionData] = createSignal<SessionData>(EMPTY_SESSION_DATA)
+  const [sessionData, setSessionData] = createSignal(EMPTY_SESSION_DATA)
   const [selectedSessionDataCache, setSelectedSessionDataCache] = createSignal<
     Record<string, { data: SessionData; loadedTime: number }>
   >({})
@@ -68,6 +69,9 @@ export function createAuthoritativeStateController(input: {
   let sessionSyncRequestID = 0
   let sessionDataLoadedTime = 0
   let stateSync: ReturnType<typeof createClientStateSync> | undefined
+  const selectWorkItems = createClientWorkItemSelector()
+  const workItems = createMemo(() => state() ? selectWorkItems(state()!) : [])
+  const attentionItems = createMemo(() => clientAttentionItems(workItems()))
 
   async function refresh() {
     if (!stateSync) throw new Error("GUI authoritative state sync is not connected")
@@ -365,6 +369,8 @@ export function createAuthoritativeStateController(input: {
     loading,
     error,
     state,
+    workItems,
+    attentionItems,
     loadingSessionID,
     setLoadingSessionID,
     refresh,

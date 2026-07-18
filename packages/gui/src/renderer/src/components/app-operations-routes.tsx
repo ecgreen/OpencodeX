@@ -13,7 +13,7 @@ const ViewEditorPage = lazy(() =>
   import("./views-manager-page").then((module) => ({ default: module.ViewEditorPage })),
 )
 const ViewsManagerPage = lazy(() =>
-  import("./views-manager-page").then((module) => ({ default: module.ViewsManagerPage })),
+  import("./views-manager-page-entry").then((module) => ({ default: module.ViewsManagerPageEntry })),
 )
 
 export function SwarmsRoute(props: { model: GuiAppModel }) {

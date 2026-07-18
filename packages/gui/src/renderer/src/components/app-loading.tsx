@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import { OpencodeXLogo } from "./chrome"
 import { DashboardSection } from "./dashboard-primitives"
 
@@ -22,10 +23,10 @@ function SessionsPanel() {
         {["Needs Feedback", "Ready For Review", "In Progress", "Inactive Sessions"].map((title, index) => (
           <section class="dashboard-session-bucket">
             <header>
-              <button class="dashboard-bucket-toggle" aria-expanded={index !== 3} tabindex={-1}>
+              <Button appearance="ghost" class="dashboard-bucket-toggle" aria-expanded={index !== 3} tabindex={-1}>
                 <span class="app-loading-bucket-chevron" />
                 <strong>{title}</strong>
-              </button>
+              </Button>
               <small>0</small>
             </header>
             <div class="dashboard-bucket-content" classList={{ collapsed: index === 3 }}>

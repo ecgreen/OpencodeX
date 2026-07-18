@@ -57,24 +57,28 @@ jobs:
             sidecar_target: opencode-linux-x64
             builder_args: --linux AppImage deb --x64
             smoke: xvfb-run -a bun --cwd packages/gui run smoke:packaged
+            electron_acceptance: xvfb-run -a bun --cwd packages/gui run test:e2e:electron:packaged
           - name: windows-x64
             host: windows-latest
             cli_target: win32-x64
             sidecar_target: opencode-windows-x64
             builder_args: --win nsis zip --x64
             smoke: bun --cwd packages/gui run smoke:packaged
+            electron_acceptance: bun --cwd packages/gui run test:e2e:electron:packaged
           - name: macos-x64
             host: macos-13
             cli_target: darwin-x64
             sidecar_target: opencode-darwin-x64
             builder_args: --mac dmg zip --x64
             smoke: bun --cwd packages/gui run smoke:packaged
+            electron_acceptance: bun --cwd packages/gui run test:e2e:electron:packaged
           - name: macos-arm64
             host: macos-14
             cli_target: darwin-arm64
             sidecar_target: opencode-darwin-arm64
             builder_args: --mac dmg zip --arm64
             smoke: bun --cwd packages/gui run smoke:packaged
+            electron_acceptance: bun --cwd packages/gui run test:e2e:electron:packaged
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -166,6 +170,21 @@ jobs:
 
       - name: Smoke packaged GUI
         run: ${{ matrix.smoke }}
+
+      - name: Exercise packaged Electron and native views
+        env:
+          OPENCODEX_GUI_E2E_PACKAGED: 1
+        run: ${{ matrix.electron_acceptance }}
+
+      - name: Upload packaged Electron artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gui-electron-${{ matrix.name }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: packages/gui/.artifacts/e2e-electron
 
       - name: Build distributable GUI assets
         env:

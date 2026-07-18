@@ -7,6 +7,7 @@ import { patchContents } from "../lib/tool-display"
 import { title } from "../lib/format"
 import { buildDiffFileTree, expandedDirectories, flattenDiffFileTree, moveDiffSelection, nextDiffFile } from "../lib/diff-file-tree"
 import { Icon } from "./icon"
+import { Button, Select } from "./ui"
 
 export type { DiffMode } from "../lib/routes"
 export type DiffView = "split" | "unified"
@@ -171,29 +172,26 @@ export function DiffPage(props: {
           <h1>{props.mode === "last-turn" ? "Last Turn" : "Working Tree"}</h1>
         </div>
         <div class="diff-actions">
-          <button type="button" classList={{ selected: props.mode === "git" }} onClick={() => props.setMode("git")}><Icon name="folder" /> Working tree</button>
-          <button type="button" classList={{ selected: props.mode === "last-turn" }} disabled={!props.session} onClick={() => props.setMode("last-turn")}><Icon name="session" /> Last turn</button>
-          <button type="button" classList={{ selected: showTree() }} onClick={() => setPersistentTree(!showTree())}><Icon name="panel" /> File tree</button>
-          <button type="button" classList={{ selected: singlePatch() }} onClick={() => setPersistentSinglePatch(!singlePatch())}><Icon name="pencil" /> Single patch</button>
-          <button type="button" onClick={() => setPersistentView(view() === "split" ? "unified" : "split")}><Icon name="views" /> {view() === "split" ? "Unified" : "Split"}</button>
-          <button type="button" onClick={() => void refetch()}><Icon name="activity" /> Refresh</button>
-          <button type="button" onClick={props.close}><Icon name="x" /> Close</button>
+          <Button appearance="ghost" type="button" classList={{ selected: props.mode === "git" }} onClick={() => props.setMode("git")}><Icon name="folder" /> Working tree</Button>
+          <Button appearance="ghost" type="button" classList={{ selected: props.mode === "last-turn" }} disabled={!props.session} onClick={() => props.setMode("last-turn")}><Icon name="session" /> Last turn</Button>
+          <Button appearance="ghost" type="button" classList={{ selected: showTree() }} onClick={() => setPersistentTree(!showTree())}><Icon name="panel" /> File tree</Button>
+          <Button appearance="ghost" type="button" classList={{ selected: singlePatch() }} onClick={() => setPersistentSinglePatch(!singlePatch())}><Icon name="pencil" /> Single patch</Button>
+          <Button appearance="ghost" type="button" onClick={() => setPersistentView(view() === "split" ? "unified" : "split")}><Icon name="views" /> {view() === "split" ? "Unified" : "Split"}</Button>
+          <Button appearance="ghost" type="button" onClick={() => void refetch()}><Icon name="activity" /> Refresh</Button>
+          <Button appearance="ghost" type="button" onClick={props.close}><Icon name="x" /> Close</Button>
         </div>
       </header>
 
       <div class="diff-subbar">
-        <label>
-          <span>Session</span>
-          <select
-            value={props.session?.id ?? ""}
-            onChange={(event) => props.selectSession(event.currentTarget.value)}
-          >
-            <option value="">No session</option>
-            <For each={props.sessions}>
-              {(session) => <option value={session.id}>{title(session.title)}</option>}
-            </For>
-          </select>
-        </label>
+        <Select<Session>
+          label="Session"
+          placeholder="No session"
+          options={props.sessions}
+          current={props.session}
+          optionValue={(session) => session.id}
+          optionLabel={(session) => title(session.title)}
+          onSelect={(session) => props.selectSession(session?.id ?? "")}
+        />
         <span>{files().length} {files().length === 1 ? "file" : "files"}</span>
         <span class="diff-additions">+{totals().additions}</span>
         <span class="diff-deletions">-{totals().deletions}</span>
@@ -206,15 +204,15 @@ export function DiffPage(props: {
               <Show when={showTree()}>
                 <aside class="diff-file-list">
                   <div class="diff-file-tree-toolbar">
-                    <button type="button" onClick={() => setExpandedTree(expandedDirectories(fileTree()))}><Icon name="chevronDown" /> Expand all</button>
-                    <button type="button" onClick={() => setExpandedTree(new Set())}><Icon name="chevronRight" /> Collapse all</button>
+                    <Button appearance="ghost" type="button" onClick={() => setExpandedTree(expandedDirectories(fileTree()))}><Icon name="chevronDown" /> Expand all</Button>
+                    <Button appearance="ghost" type="button" onClick={() => setExpandedTree(new Set())}><Icon name="chevronRight" /> Collapse all</Button>
                   </div>
                   <For each={fileRows()}>
                     {(row) => {
                       const file = () => row.file
                       const reviewed = () => file()?.file ? reviewedFiles().has(file()!.file!) : false
                       return (
-                        <button
+                        <Button appearance="ghost"
                           type="button"
                           classList={{ selected: selectedTreeRow() === row.id || selected()?.file === file()?.file, reviewed: reviewed(), directory: row.type === "directory" }}
                           style={{ "--indent": `${row.depth * 14}px` }}
@@ -234,7 +232,7 @@ export function DiffPage(props: {
                               </small>
                             )}
                           </Show>
-                        </button>
+                        </Button>
                       )
                     }}
                   </For>
@@ -250,9 +248,9 @@ export function DiffPage(props: {
                           <span>{file.status}</span>
                         </div>
                         <Show when={props.mode === "last-turn" && props.session}>
-                          <button type="button" onClick={() => void toggleReviewed(file.file)}>
+                          <Button appearance="ghost" type="button" onClick={() => void toggleReviewed(file.file)}>
                             <Icon name="check" /> {reviewedFiles().has(file.file) ? "Reviewed" : "Mark reviewed"}
-                          </button>
+                          </Button>
                         </Show>
                       </header>
                       <Show when={file.patch} fallback={<div class="diff-empty">No patch available for this file.</div>}>

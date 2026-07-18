@@ -1,16 +1,20 @@
 import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
+import { clientWorkItemBucket, type AttentionItem, type WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { compactPath, formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
-import { projectAttentionItems, projectSwarms, projectViewSessionCount, projectViews } from "../lib/project-summary"
-import { sessionStatusLabel } from "../lib/session-status"
+import { projectSwarms, projectViewSessionCount, projectViews } from "../lib/project-summary"
 import type { GuiSnapshot } from "../lib/store"
 import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard } from "./session-card-list"
 import { Button } from "./ui"
 import { projectLabel } from "./project-directory"
+import { CardActionMenu } from "./card-action-menu"
+import { AttentionQueue } from "./attention-queue"
 
 export function ProjectCommandCenter(props: {
   project: GuiSnapshot["projects"][number]
   snapshot?: GuiSnapshot
+  workItems: WorkItem[]
+  attentionItems: AttentionItem[]
   sessionOrderState?: SessionOrderState
   back: () => void
   openSession: (sessionID: string) => void
@@ -25,50 +29,51 @@ export function ProjectCommandCenter(props: {
 }) {
   const [sessionBucketsCollapsed, setSessionBucketsCollapsed] = createSignal<Record<string, boolean>>({ prior: true })
   const sessions = createMemo(() => projectSessions(props.project, props.snapshot, props.sessionOrderState))
-  const attention = createMemo(() => projectAttentionItems(props.project, props.snapshot, props.sessionOrderState))
-  const attentionSessionIDs = createMemo(() => new Set(attention().map((item) => item.sessionID)))
-  const recentSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && (sessionOrderBucket(props.snapshot, session) !== "inactive" || isRecentSessionUpdate(session.time.updated))))
-  const priorSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && sessionOrderBucket(props.snapshot, session) === "inactive" && !isRecentSessionUpdate(session.time.updated)))
+  const workBySessionID = createMemo(() => new Map(props.workItems.filter((item) => item.kind === "session" && item.sessionID).map((item) => [item.sessionID!, item])))
+  const attention = createMemo(() => props.attentionItems.filter((item) => item.projectID === props.project.id))
+  const attentionSessionIDs = createMemo(() => new Set(attention().flatMap((item) => item.sessionID ? [item.sessionID] : [])))
+  const bucket = (session: ReturnType<typeof sessions>[number]) => {
+    const item = workBySessionID().get(session.id)
+    return item ? clientWorkItemBucket(item) : sessionOrderBucket(props.snapshot, session)
+  }
+  const recentSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && (bucket(session) !== "inactive" || isRecentSessionUpdate(session.time.updated))))
+  const priorSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && bucket(session) === "inactive" && !isRecentSessionUpdate(session.time.updated)))
   const swarms = createMemo(() => projectSwarms(props.project, props.snapshot))
   const views = createMemo(() => projectViews(props.project, props.snapshot))
   const primaryFolder = createMemo(() => props.project.folders[0]?.path)
+  const projectName = () => projectLabel(props.project)
+  const projectActions = () => [
+    { label: "Create swarm", icon: "swarm" as const, onSelect: () => props.createSwarm(props.project.id) },
+    { label: "Edit project", icon: "pencil" as const, onSelect: () => props.editProject(props.project.id, projectName(), props.project.folders.map((folder) => folder.path)) },
+    { label: "Delete project", icon: "trash" as const, danger: true, onSelect: () => props.deleteProject(props.project.id, projectName()) },
+  ]
   const toggleSessionBucket = (bucket: string) => setSessionBucketsCollapsed((value) => ({ ...value, [bucket]: !value[bucket] }))
 
   return (
     <div class="page project-command-page">
       <header class="project-home-header">
         <div>
-          <Button size="sm" variant="ghost" icon="chevronLeft" onClick={props.back}>Projects</Button>
+          <Button size="compact" appearance="ghost" icon="chevronLeft" onClick={props.back}>Projects</Button>
           <p class="eyebrow">Project home</p>
-          <h1>{projectLabel(props.project)}</h1>
+          <h1>{projectName()}</h1>
           <div class="project-home-folder-strip">
             <For each={props.project.folders} fallback={<span>No folders selected</span>}>
               {(folder) => <span title={folder.path}>{compactPath(folder.path)}</span>}
             </For>
-            <button type="button" onClick={() => props.editProject(props.project.id, projectLabel(props.project), props.project.folders.map((folder) => folder.path))}>Edit project</button>
           </div>
         </div>
         <div class="project-home-actions">
-          <Button variant="primary" icon="session" onClick={() => props.createSession(props.project.id, primaryFolder())}>New session</Button>
-          <Button icon="swarm" onClick={() => props.createSwarm(props.project.id)}>Swarm</Button>
+          <Button appearance="solid" tone="accent" icon="session" onClick={() => props.createSession(props.project.id, primaryFolder())}>New session</Button>
+          <CardActionMenu label={projectName()} actions={projectActions()} />
         </div>
       </header>
 
       <section class="project-home-layout project-home-layout-single">
         <div class="project-home-main">
-          <ProjectHomePanel title="Attention" count={attention().length} empty="No sessions need your attention.">
-            <For each={attention()}>
-              {(item) => (
-                <button class={`project-home-row ${projectAttentionRowClass(item)}`} onClick={() => props.openSession(item.sessionID)}>
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </button>
-              )}
-            </For>
-          </ProjectHomePanel>
+          <AttentionQueue items={attention()} openSession={props.openSession} openSwarm={props.openSwarm} empty="No work needs your attention." />
 
           <div class="dashboard-session-groups">
-            <SessionCardBucket title="Recent Sessions" count={recentSessions().length} empty="No recent sessions." collapsed={!!sessionBucketsCollapsed().recent} onToggle={() => toggleSessionBucket("recent")}>
+            <SessionCardBucket title="Recent Sessions" count={recentSessions().length} empty="No recent sessions." collapsed={sessionBucketsCollapsed().recent} onToggle={() => toggleSessionBucket("recent")}>
               <For each={recentSessions()}>
                 {(session) => (
                   <SessionStatusCard
@@ -82,7 +87,7 @@ export function ProjectCommandCenter(props: {
               </For>
             </SessionCardBucket>
 
-            <SessionCardBucket title="Prior Sessions" count={priorSessions().length} empty="No prior sessions." collapsed={!!sessionBucketsCollapsed().prior} onToggle={() => toggleSessionBucket("prior")}>
+            <SessionCardBucket title="Prior Sessions" count={priorSessions().length} empty="No prior sessions." collapsed={sessionBucketsCollapsed().prior} onToggle={() => toggleSessionBucket("prior")}>
               <For each={priorSessions()}>
                 {(session) => (
                   <SessionStatusCard
@@ -102,10 +107,10 @@ export function ProjectCommandCenter(props: {
             <ProjectHomePanel title="Views" count={views().length} empty="No views include this project.">
               <For each={views().slice(0, 8)}>
                 {(view) => (
-                  <button class="project-home-row" onClick={() => props.openView(view.id)}>
+                  <Button appearance="ghost" class="project-home-row" onClick={() => props.openView(view.id)}>
                     <strong>{title(view.title)}</strong>
                     <span>{projectViewSessionCount(view)} sessions - {formatRelative(view.timeUpdated)}</span>
-                  </button>
+                  </Button>
                 )}
               </For>
             </ProjectHomePanel>
@@ -113,10 +118,10 @@ export function ProjectCommandCenter(props: {
             <ProjectHomePanel title="Swarms" count={swarms().length} empty="No swarms for this project.">
               <For each={swarms().slice(0, 8)}>
                 {(swarm) => (
-                  <button class="project-home-row" onClick={() => props.openSwarm(swarm.id)}>
+                  <Button appearance="ghost" class="project-home-row" onClick={() => props.openSwarm(swarm.id)}>
                     <strong>{title(swarm.title)}</strong>
                     <span>{swarm.roles.length} roles - {swarm.runs.length} runs</span>
-                  </button>
+                  </Button>
                 )}
               </For>
             </ProjectHomePanel>
@@ -125,6 +130,7 @@ export function ProjectCommandCenter(props: {
       </section>
     </div>
   )
+
 }
 
 function ProjectHomePanel(props: { title: string; count: number; empty: string; children: JSX.Element }) {
@@ -141,13 +147,4 @@ function ProjectHomePanel(props: { title: string; count: number; empty: string; 
       </div>
     </section>
   )
-}
-
-
-function projectAttentionRowClass(item: ReturnType<typeof projectAttentionItems>[number]) {
-  if (item.detail === sessionStatusLabel("ready_for_review")) return "ready-for-review"
-  if (item.detail === sessionStatusLabel("input_needed")) return "input-needed"
-  if (item.tone === "danger") return "failed"
-  if (item.tone === "info") return "in-progress"
-  return "input-needed"
 }

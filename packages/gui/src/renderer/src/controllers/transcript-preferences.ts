@@ -30,6 +30,15 @@ export function createTranscriptPreferences(notify: (message: string) => void) {
     readBoolPreference(preferences.genericToolOutput.key, preferences.genericToolOutput.fallback),
   )
 
+  function setPreference(
+    write: (value: boolean) => void,
+    preference: (typeof preferences)[keyof typeof preferences],
+    value: boolean,
+  ) {
+    write(value)
+    writeBoolPreference(preference.key, value)
+  }
+
   function toggle(
     read: () => boolean,
     write: (value: boolean) => void,
@@ -38,8 +47,7 @@ export function createTranscriptPreferences(notify: (message: string) => void) {
     disabled: string,
   ) {
     const next = !read()
-    write(next)
-    writeBoolPreference(preference.key, next)
+    setPreference(write, preference, next)
     notify(next ? enabled : disabled)
   }
 
@@ -50,6 +58,18 @@ export function createTranscriptPreferences(notify: (message: string) => void) {
     showTranscriptToolDetails,
     showTranscriptScrollbar,
     showTranscriptGenericToolOutput,
+    setConcealTranscriptCodeBlocks: (value: boolean) =>
+      setPreference(setConcealTranscriptCodeBlocks, preferences.concealCode, value),
+    setShowTranscriptTimestamps: (value: boolean) =>
+      setPreference(setShowTranscriptTimestamps, preferences.timestamps, value),
+    setShowTranscriptThinking: (value: boolean) =>
+      setPreference(setShowTranscriptThinking, preferences.thinking, value),
+    setShowTranscriptToolDetails: (value: boolean) =>
+      setPreference(setShowTranscriptToolDetails, preferences.toolDetails, value),
+    setShowTranscriptScrollbar: (value: boolean) =>
+      setPreference(setShowTranscriptScrollbar, preferences.scrollbar, value),
+    setShowTranscriptGenericToolOutput: (value: boolean) =>
+      setPreference(setShowTranscriptGenericToolOutput, preferences.genericToolOutput, value),
     handleToggleCodeConcealSlash: () =>
       toggle(
         concealTranscriptCodeBlocks,

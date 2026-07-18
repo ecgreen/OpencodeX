@@ -9,9 +9,9 @@ import {
   type WorkbenchFileBuffer,
 } from "../lib/workbench"
 import { compactPath } from "../lib/format"
-import { CodeEditor } from "./code-editor"
+import { LazyCodeEditor } from "./lazy-code-editor"
 import { Icon } from "./icon"
-import { IconButton } from "./ui"
+import { Button, IconButton } from "./ui"
 import { WorkbenchDiagnosticsBar } from "./workbench-diagnostics"
 
 export function WorkbenchEditorPanel(props: {
@@ -55,7 +55,7 @@ export function WorkbenchEditorPanel(props: {
           <For each={props.buffers()}>
             {(buffer) => (
               <div class="workbench-editor-tab" classList={{ active: props.activePath() === buffer.path, modified: workbenchBufferDirty(buffer) }}>
-                <button
+                <Button appearance="ghost"
                   type="button"
                   role="tab"
                   aria-selected={props.activePath() === buffer.path}
@@ -70,7 +70,7 @@ export function WorkbenchEditorPanel(props: {
                     {(file) => <span class={`workbench-tab-status ${file().status}`} title={file().staged ? "Staged" : file().untracked ? "New file" : "Modified"}>{props.gitStatusSymbol(file())}</span>}
                   </Show>
                   <Show when={workbenchBufferDirty(buffer)}><span class="workbench-tab-dot" /></Show>
-                </button>
+                </Button>
                 <IconButton class="workbench-tab-close" icon="x" label={`Close ${buffer.path}`} onClick={() => props.closeBuffer(buffer)} />
               </div>
             )}
@@ -83,28 +83,28 @@ export function WorkbenchEditorPanel(props: {
           <Show when={props.dirty()}><span>modified</span></Show>
         </div>
         <div class="row-actions">
-          <button type="button" aria-label="Revert file" title="Revert file" disabled={!props.activeBuffer() || !props.dirty()} onClick={props.revertFile}><Icon name="undo" /></button>
-          <button type="button" aria-label="Save file" title="Save file" disabled={!props.openPath() || !props.dirty()} onClick={props.saveFile}><Icon name="save" /></button>
+          <Button appearance="ghost" type="button" aria-label="Revert file" title="Revert file" disabled={!props.activeBuffer() || !props.dirty()} onClick={props.revertFile}><Icon name="undo" /></Button>
+          <Button appearance="ghost" type="button" aria-label="Save file" title="Save file" disabled={!props.openPath() || !props.dirty()} onClick={props.saveFile}><Icon name="save" /></Button>
           <details class="workbench-menu">
             <summary aria-label="More file actions"><Icon name="more" /></summary>
             <div class="workbench-menu-popover">
-              <button type="button" disabled={!props.openPath()} onClick={() => props.sendContext("file")}><Icon name="send" /> Send file</button>
-              <button type="button" disabled={!props.openPath()} onClick={() => props.sendContext("selection")}><Icon name="send" /> Send selection</button>
-              <button type="button" disabled={!props.openPath() || !props.dirty()} onClick={props.askAboutEdits}><Icon name="send" /> Ask about edits</button>
-              <button type="button" disabled={!props.openPath()} onClick={() => props.saveArtifact("file")}><Icon name="panel" /> Save file artifact</button>
-              <button type="button" disabled={!props.openPath()} onClick={() => props.saveArtifact("selection")}><Icon name="panel" /> Save selection</button>
-              <button type="button" disabled={!props.openPath() || !props.dirty()} onClick={props.saveEditsArtifact}><Icon name="panel" /> Save edit artifact</button>
-              <button type="button" disabled={!props.openPath()} onClick={props.renameFile}><Icon name="pencil" /> Rename</button>
-              <button type="button" class="danger" disabled={!props.openPath()} onClick={props.deleteFile}><Icon name="trash" /> Delete</button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath()} onClick={() => props.sendContext("file")}><Icon name="send" /> Send file</Button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath()} onClick={() => props.sendContext("selection")}><Icon name="send" /> Send selection</Button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath() || !props.dirty()} onClick={props.askAboutEdits}><Icon name="send" /> Ask about edits</Button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath()} onClick={() => props.saveArtifact("file")}><Icon name="panel" /> Save file artifact</Button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath()} onClick={() => props.saveArtifact("selection")}><Icon name="panel" /> Save selection</Button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath() || !props.dirty()} onClick={props.saveEditsArtifact}><Icon name="panel" /> Save edit artifact</Button>
+              <Button appearance="ghost" type="button" disabled={!props.openPath()} onClick={props.renameFile}><Icon name="pencil" /> Rename</Button>
+              <Button appearance="ghost" tone="danger" type="button" disabled={!props.openPath()} onClick={props.deleteFile}><Icon name="trash" /> Delete</Button>
             </div>
           </details>
-          <button
+          <Button appearance="ghost"
             type="button"
             aria-label={props.assistantOpen() ? "Close assistant" : "Open assistant"}
             title={props.assistantOpen() ? "Close assistant" : "Open assistant"}
             aria-pressed={props.assistantOpen()}
             onClick={() => props.setAssistantOpen((open) => !open)}
-          ><Icon name="session" /></button>
+          ><Icon name="session" /></Button>
         </div>
       </header>
       <WorkbenchDiagnosticsBar
@@ -132,7 +132,7 @@ export function WorkbenchEditorPanel(props: {
         </Match>
         <Match when={props.activeBuffer()?.fileContent?.type === "text" ? props.activeBuffer() : undefined}>
           {(buffer) => (
-            <CodeEditor
+            <LazyCodeEditor
               path={buffer().path}
               value={buffer().content}
               original={buffer().original}

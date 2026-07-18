@@ -5,6 +5,7 @@ import type { WorkbenchGitStatus } from "../lib/store"
 import type { WorkbenchProjectScope, WorkbenchTreeRow } from "../lib/workbench"
 import { workbenchPathKey } from "../lib/workbench"
 import { Icon } from "./icon"
+import { TextInput, Button, Select } from "./ui"
 
 export function WorkbenchFileExplorerPanel(props: {
   collapsed: Accessor<boolean>
@@ -15,7 +16,7 @@ export function WorkbenchFileExplorerPanel(props: {
   startNewFolder: () => void
   projectOptions: Accessor<WorkbenchProjectScope[]>
   selectedProjectID: Accessor<string>
-  selectProject: (value: string, element: HTMLSelectElement) => void
+  selectProject: (value: string) => void
   filter: Accessor<string>
   setFilter: Setter<string>
   openFilePalette: () => void
@@ -39,7 +40,7 @@ export function WorkbenchFileExplorerPanel(props: {
   return (
     <>
       <Show when={props.collapsed()}>
-        <button
+        <Button appearance="ghost"
           type="button"
           class="workbench-sidebar-restore"
           aria-label="Show file explorer"
@@ -48,41 +49,42 @@ export function WorkbenchFileExplorerPanel(props: {
         >
           <Icon name="folder" />
           <span>Files</span>
-        </button>
+        </Button>
       </Show>
       <Show when={!props.collapsed()}>
         <aside class="workbench-sidebar">
           <header class="workbench-explorer-header">
             <div><span>Workspace</span></div>
             <div class="workbench-icon-actions">
-              <button type="button" disabled={!props.canUseWorkspace()} aria-label="New file" title="New file" onClick={props.startNewFile}><Icon name="file" /></button>
-              <button type="button" disabled={!props.canUseWorkspace()} aria-label="New folder" title="New folder" onClick={props.startNewFolder}><Icon name="folder" /></button>
-              <button type="button" aria-label="Hide explorer" title="Hide explorer" onClick={() => props.setCollapsed(true)}><Icon name="panel" /></button>
+              <Button appearance="ghost" type="button" disabled={!props.canUseWorkspace()} aria-label="New file" title="New file" onClick={props.startNewFile}><Icon name="file" /></Button>
+              <Button appearance="ghost" type="button" disabled={!props.canUseWorkspace()} aria-label="New folder" title="New folder" onClick={props.startNewFolder}><Icon name="folder" /></Button>
+              <Button appearance="ghost" type="button" aria-label="Hide explorer" title="Hide explorer" onClick={() => props.setCollapsed(true)}><Icon name="panel" /></Button>
             </div>
           </header>
-          <div class="workbench-project-picker">
-            <label for="workbench-project">Project</label>
-            <select id="workbench-project" value={props.selectedProjectID()} onChange={(event) => props.selectProject(event.currentTarget.value, event.currentTarget)}>
-              <For each={props.projectOptions()}>
-                {(project) => <option value={project.id}>{project.label}</option>}
-              </For>
-            </select>
-          </div>
+          <Select<WorkbenchProjectScope>
+            class="workbench-project-picker"
+            label="Project"
+            options={props.projectOptions()}
+            current={props.projectOptions().find((project) => project.id === props.selectedProjectID())}
+            optionValue={(project) => project.id}
+            optionLabel={(project) => project.label}
+            onSelect={(project) => project && props.selectProject(project.id)}
+          />
           <div class="workbench-filter-row">
             <div class="workbench-filter">
               <Icon name="search" />
-              <input value={props.filter()} placeholder="Filter tree" onInput={(event) => props.setFilter(event.currentTarget.value)} />
+              <TextInput value={props.filter()} placeholder="Filter tree" onInput={(event) => props.setFilter(event.currentTarget.value)} />
               <Show when={props.filter()}>
-                <button type="button" aria-label="Clear file filter" onClick={() => props.setFilter("")}><Icon name="x" /></button>
+                <Button appearance="ghost" type="button" aria-label="Clear file filter" onClick={() => props.setFilter("")}><Icon name="x" /></Button>
               </Show>
             </div>
-            <button type="button" class="workbench-open-file-trigger" aria-label="Open file by name" title="Open file by name" onClick={props.openFilePalette}>
+            <Button appearance="ghost" type="button" class="workbench-open-file-trigger" aria-label="Open file by name" title="Open file by name" onClick={props.openFilePalette}>
               <Icon name="file" />
-            </button>
+            </Button>
           </div>
           <Show when={props.newFilePath()}>
             <div class="workbench-new-file">
-              <input
+              <TextInput
                 ref={props.setNewFileInput}
                 value={props.newFilePath()}
                 placeholder={newItemPlaceholder(props.filePath(), props.newItemKind())}
@@ -93,8 +95,8 @@ export function WorkbenchFileExplorerPanel(props: {
                   props.createExplorerItem()
                 }}
               />
-              <button type="button" disabled={!props.canUseWorkspace() || !props.newFilePath().trim()} onClick={props.createExplorerItem}><Icon name="plus" /> {props.newItemKind() === "folder" ? "Folder" : "File"}</button>
-              <button type="button" aria-label="Cancel create" onClick={() => props.setNewFilePath("")}><Icon name="x" /></button>
+              <Button appearance="ghost" type="button" disabled={!props.canUseWorkspace() || !props.newFilePath().trim()} onClick={props.createExplorerItem}><Icon name="plus" /> {props.newItemKind() === "folder" ? "Folder" : "File"}</Button>
+              <Button appearance="ghost" type="button" aria-label="Cancel create" onClick={() => props.setNewFilePath("")}><Icon name="x" /></Button>
             </div>
           </Show>
           <Show when={props.filter().trim().length >= 2}>
@@ -116,7 +118,7 @@ function WorkbenchSearchResults(props: Parameters<typeof WorkbenchFileExplorerPa
       </header>
       <For each={props.matches()} fallback={<div class="empty">{props.searchState() === "loading" ? "Searching project..." : "No project matches."}</div>}>
         {(match) => (
-          <button
+          <Button appearance="ghost"
             type="button"
             class="workbench-search-row"
             classList={{ selected: props.openPath() === match.path, directory: match.type === "directory" }}
@@ -125,7 +127,7 @@ function WorkbenchSearchResults(props: Parameters<typeof WorkbenchFileExplorerPa
             <Icon name={match.type === "directory" ? "folder" : "file"} />
             <span>{match.path}</span>
             <WorkbenchFileBadges path={match.path} isFile={match.type === "file"} {...props} />
-          </button>
+          </Button>
         )}
       </For>
     </div>
@@ -137,7 +139,7 @@ function WorkbenchFileTree(props: Parameters<typeof WorkbenchFileExplorerPanel>[
     <div class="workbench-tree" role="tree">
       <For each={props.rows()} fallback={<div class="empty">{props.busy() === "files" ? "Loading files..." : "No files found."}</div>}>
         {(row) => (
-          <button
+          <Button appearance="ghost"
             type="button"
             class="workbench-file-row"
             classList={{ selected: props.openPath() === row.node.path, directory: row.node.type === "directory", expanded: row.expanded }}
@@ -155,7 +157,7 @@ function WorkbenchFileTree(props: Parameters<typeof WorkbenchFileExplorerPanel>[
             <Show when={row.node.type === "directory" && row.expanded && !row.loaded}>
               <span class="workbench-loading">...</span>
             </Show>
-          </button>
+          </Button>
         )}
       </For>
     </div>

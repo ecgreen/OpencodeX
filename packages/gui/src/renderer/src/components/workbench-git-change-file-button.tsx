@@ -1,3 +1,4 @@
+import { Checkbox } from "./ui"
 import type { WorkbenchGitStatus } from "../lib/store"
 import type { WorkbenchDiffFile } from "../lib/workbench"
 import { workbenchGitFileStats } from "../lib/workbench"
@@ -15,21 +16,26 @@ export function WorkbenchGitChangeFileButton(props: {
 }) {
   const stats = () => workbenchGitFileStats(props.file, props.diff)
   return (
-    <button
-      type="button"
+    <div
       role="option"
+      tabIndex={0}
       aria-selected={props.selected}
       aria-posinset={props.position}
       aria-setsize={props.size}
       class="workbench-change-file"
       classList={{ selected: props.selected, staged: props.file.staged }}
       onClick={() => props.selectFile(props.file.path)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        props.selectFile(props.file.path)
+      }}
     >
-      <input
-        type="checkbox"
+      <Checkbox
         checked={props.file.staged}
-        aria-label={props.file.staged ? `Unstage ${props.file.path}` : `Stage ${props.file.path}`}
-        onClick={(event) => event.stopPropagation()}
+        hideLabel
+        label={props.file.staged ? `Unstage ${props.file.path}` : `Stage ${props.file.path}`}
+        onClick={(event: MouseEvent) => event.stopPropagation()}
         onChange={() => props.runGit(props.file.staged ? "unstage" : "stage", props.file.path)}
       />
       <span class={`workbench-file-status ${props.file.status}`}>{gitStatusSymbol(props.file)}</span>
@@ -41,6 +47,6 @@ export function WorkbenchGitChangeFileButton(props: {
           <span class="deleted">-{stats().deletions}</span>
         </span>
       </Show>
-    </button>
+    </div>
   )
 }

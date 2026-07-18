@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import { For, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
@@ -125,8 +126,8 @@ export function RailProjectsSection(props: {
               classList={{ recent: hasRecentProjectSession(props.projectSessions(row.project), props.snapshot) }}
               onPointerDown={(event) => startProjectPointerDrag(event, row.project.id)}
             >
-              <button class="project-toggle" title={`${props.projectExpanded(row.project.id) ? "Collapse" : "Expand"} project`} aria-expanded={props.projectExpanded(row.project.id)} onClick={() => props.toggleProject(row.project.id)}><Icon name={props.projectExpanded(row.project.id) ? "folder-open" : "folder"} /></button>
-              <button
+              <Button appearance="ghost" class="project-toggle" title={`${props.projectExpanded(row.project.id) ? "Collapse" : "Expand"} project`} aria-expanded={props.projectExpanded(row.project.id)} onClick={() => props.toggleProject(row.project.id)}><Icon name={props.projectExpanded(row.project.id) ? "folder-open" : "folder"} /></Button>
+              <Button appearance="ghost"
                 class="project-title"
                 title={`${props.projectExpanded(row.project.id) ? "Collapse" : "Expand"} project. Alt+Up/Down moves it.`}
                 aria-expanded={props.projectExpanded(row.project.id)}
@@ -136,15 +137,15 @@ export function RailProjectsSection(props: {
                   event.preventDefault()
                   props.moveProject(row.project.id, event.key === "ArrowUp" ? -1 : 1)
                 }}
-              >{title(row.project.name ?? row.project.project.name)}</button>
-              <button class="project-new" title="New session in project" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>+ New</button>
+              >{title(row.project.name ?? row.project.project.name)}</Button>
+              <Button appearance="ghost" class="project-new" title="New session in project" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>+ New</Button>
             </div>
             <div class="project-sessions" classList={{ collapsed: !props.projectExpanded(row.project.id) }}>
               <div>
                 <For each={recentProjectSessions(props.projectSessions(row.project), props.snapshot)} fallback={(
                   <div class="project-empty">
                     <span>No sessions in this project yet.</span>
-                    <button onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</button>
+                    <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</Button>
                   </div>
                 )}>
                   {(session) => (

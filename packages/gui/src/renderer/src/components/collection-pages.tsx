@@ -1,11 +1,13 @@
+import { Button } from "./ui"
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { AttentionItem, WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, title } from "../lib/format"
 import { projectSessions, type SessionOrderState } from "../lib/app-session-lists"
-import { projectAttentionItems, projectSwarms, projectViews } from "../lib/project-summary"
+import { projectSwarms, projectViews } from "../lib/project-summary"
 import { type GuiSnapshot } from "../lib/store"
 import { StatusPill } from "./status-pill"
-import { Button, IconButton } from "./ui"
+import { CardActionMenu } from "./card-action-menu"
 import { ProjectCommandCenter } from "./project-command-center"
 import { ProjectsOverview, projectLabel } from "./project-directory"
 
@@ -28,28 +30,59 @@ export function SessionCollectionPage(props: {
       <p>Open, monitor, and resume existing TUI-compatible sessions from the shared backend data model.</p>
       <For each={props.sessions} fallback={<Empty text="No sessions" />}>
         {(session) => (
-          <article class="card-row">
-            <div>
-              <strong>{title(session.title)}</strong>
-              <span>{[projectBySessionID().get(session.id), compactPath(session.directory)].filter(Boolean).join(" - ")}</span>
-            </div>
-            <div class="row-actions">
-              <StatusPill status={props.sessionStatus[session.id]?.type ?? "idle"} />
-              <Button size="sm" icon="session" onClick={() => props.openSession(session.id)}>Open</Button>
-              <IconButton icon="pin" label={`${props.sessionPinned(session.id) ? "Unpin" : "Pin"} ${title(session.title)}`} pressed={props.sessionPinned(session.id)} onClick={() => props.toggleSessionPinned(session.id)} />
-              <IconButton icon="pencil" label={`Rename ${title(session.title)}`} onClick={() => props.renameSession(session)} />
-              <IconButton icon="folder" label={`Move ${title(session.title)} to project`} onClick={() => props.moveSession(session)} />
-              <IconButton variant="danger" icon="trash" label={`Delete ${title(session.title)}`} onClick={() => props.deleteSession(session)} />
-            </div>
-          </article>
+          <SessionCollectionRow
+            session={session}
+            project={projectBySessionID().get(session.id)}
+            status={props.sessionStatus[session.id]?.type ?? "idle"}
+            pinned={props.sessionPinned(session.id)}
+            open={() => props.openSession(session.id)}
+            togglePinned={() => props.toggleSessionPinned(session.id)}
+            rename={() => props.renameSession(session)}
+            move={() => props.moveSession(session)}
+            remove={() => props.deleteSession(session)}
+          />
         )}
       </For>
     </div>
   )
 }
 
+function SessionCollectionRow(props: {
+  session: Session
+  project?: string
+  status: string
+  pinned: boolean
+  open: () => void
+  togglePinned: () => void
+  rename: () => void
+  move: () => void
+  remove: () => void
+}) {
+  const name = () => title(props.session.title)
+  const actions = () => [
+    { label: props.pinned ? "Unpin session" : "Pin session", icon: "pin" as const, onSelect: props.togglePinned },
+    { label: "Rename session", icon: "pencil" as const, onSelect: props.rename },
+    { label: "Move to project", icon: "folder" as const, onSelect: props.move },
+    { label: "Delete session", icon: "trash" as const, danger: true, onSelect: props.remove },
+  ]
+  return (
+    <article class="card-row session-collection-row">
+      <Button appearance="ghost" type="button" class="session-collection-open" onClick={props.open}>
+        <span>
+          <strong>{name()}</strong>
+          <small>{[props.project, compactPath(props.session.directory)].filter(Boolean).join(" - ")}</small>
+        </span>
+        <StatusPill status={props.status} />
+      </Button>
+      <CardActionMenu label={name()} actions={actions()} />
+    </article>
+  )
+}
+
 export function ProjectCollectionPage(props: {
   snapshot?: GuiSnapshot
+  workItems: WorkItem[]
+  attentionItems: AttentionItem[]
   sessionOrderState?: SessionOrderState
   projectID?: string
   openProject: (projectID: string) => void
@@ -80,7 +113,7 @@ export function ProjectCollectionPage(props: {
     )
   })
   const overview = createMemo(() => {
-    const attention = projects().reduce((count, project) => count + projectAttentionItems(project, props.snapshot, props.sessionOrderState).length, 0)
+    const attention = props.attentionItems.filter((item) => item.projectID && projects().some((project) => project.id === item.projectID)).length
     const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length, 0)
     const swarms = projects().reduce((count, project) => count + projectSwarms(project, props.snapshot).length, 0)
     const views = projects().reduce((count, project) => count + projectViews(project, props.snapshot, props.sessionOrderState).length, 0)
@@ -110,6 +143,8 @@ export function ProjectCollectionPage(props: {
         <ProjectCommandCenter
           project={project()}
           snapshot={props.snapshot}
+          workItems={props.workItems}
+          attentionItems={props.attentionItems}
           sessionOrderState={props.sessionOrderState}
           back={() => props.openProject("")}
           openSession={props.openSession}

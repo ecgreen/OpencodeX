@@ -16,6 +16,7 @@ import { createSessionComposerController } from "./controllers/session-composer-
 import { createSessionSelectionController } from "./controllers/session-selection-controller"
 import { createSessionSlashController } from "./controllers/session-slash-controller"
 import { createSessionState } from "./controllers/session-state"
+import { createSettingsController } from "./controllers/settings-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
 import { createViewController } from "./controllers/view-controller"
 import { AppShell } from "./components/app-shell"
@@ -38,6 +39,7 @@ export function App() {
     recentModels: sessionState.recentModels,
     setRecentModels: sessionState.setRecentModels,
   })
+  const settings = createSettingsController({ appearance, authoritative, transcript: transcriptPreferences })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
   const rail = createRailController({
@@ -190,6 +192,7 @@ export function App() {
     sessionSelection,
     sessionSlash,
     sessionState,
+    settings,
     transcriptPreferences,
     view,
   }

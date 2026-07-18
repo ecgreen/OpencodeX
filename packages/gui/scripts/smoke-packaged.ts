@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process"
-import fs from "node:fs"
 import path from "node:path"
+import { packagedExecutable } from "./packaged-executable"
 
 const root = path.resolve(import.meta.dirname, "..")
-const executable = process.env.OPENCODEX_GUI_SMOKE_EXECUTABLE ?? findPackagedExecutable()
+const executable = process.env.OPENCODEX_GUI_SMOKE_EXECUTABLE ?? packagedExecutable(root)
 
 if (!executable) {
   throw new Error("No packaged OpencodeX GUI executable found. Run electron-builder with --dir first.")
@@ -42,25 +42,3 @@ child.on("error", (error) => {
   console.error(error)
   process.exit(1)
 })
-
-function findPackagedExecutable() {
-  return candidateExecutables().find((candidate) => fs.existsSync(candidate))
-}
-
-function candidateExecutables() {
-  if (process.platform === "win32") {
-    return [
-      path.join(root, "release", "win-unpacked", "opencodex-gui.exe"),
-      path.join(root, "release", "win-unpacked", "OpencodeX.exe"),
-    ]
-  }
-  if (process.platform === "darwin") {
-    return [
-      path.join(root, "release", "mac", "OpencodeX.app", "Contents", "MacOS", "opencodex-gui"),
-      path.join(root, "release", "mac-arm64", "OpencodeX.app", "Contents", "MacOS", "opencodex-gui"),
-    ]
-  }
-  return [
-    path.join(root, "release", "linux-unpacked", "opencodex-gui"),
-  ]
-}

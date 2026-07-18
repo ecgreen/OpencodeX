@@ -7,12 +7,15 @@ import {
 import { Icon } from "./icon"
 import { IconButton, TextInput } from "./ui"
 import { BrowserHostFallback } from "./browser-host-fallback"
+import type { NativeBrowserLifecycle } from "./native-browser-controller"
 
 export function WorkbenchBrowserPanel(props: {
   tabs: WorkbenchBrowserTab[]
   activeID: string
   state?: WorkbenchBrowserTabState
   available: boolean
+  lifecycle: NativeBrowserLifecycle
+  error: string
   url: string
   setActiveID: (id: string) => void
   closeTab: (id: string) => void
@@ -80,14 +83,19 @@ export function WorkbenchBrowserPanel(props: {
           onKeyDown={(event) => event.key === "Enter" && props.navigate()}
           placeholder="Search or enter address"
         />
-        <IconButton variant="primary" icon="send" label="Go" disabled={!props.available} onClick={props.navigate} />
+        <IconButton appearance="solid" tone="accent" icon="send" label="Go" disabled={!props.available} onClick={props.navigate} />
         <IconButton icon="panel" label="Capture screenshot" disabled={!props.available} onClick={props.captureScreenshot} />
         <IconButton icon="save" label="Save page" disabled={!props.available} onClick={props.savePage} />
         <IconButton icon="send" label="Ask agent about page" disabled={!props.available} onClick={props.askAgent} />
         <IconButton icon="settings" label="Open DevTools" disabled={!props.available} onClick={props.openDevtools} />
       </div>
       <div class="workbench-browser-host" ref={props.setHost}>
-        <BrowserHostFallback visible={!props.available} />
+        <BrowserHostFallback
+          visible={!props.available || props.lifecycle === "error" || props.lifecycle === "creating" || !props.url}
+          busy={props.lifecycle === "creating"}
+          title={!props.available ? "Desktop browser unavailable" : props.lifecycle === "error" ? "Page unavailable" : props.lifecycle === "creating" ? "Starting browser" : "Open a webpage"}
+          message={!props.available ? undefined : props.lifecycle === "error" ? props.error : props.lifecycle === "creating" ? "Creating an isolated browser surface…" : "Enter an address above to inspect a webpage inside the active workspace."}
+        />
       </div>
     </div>
   )

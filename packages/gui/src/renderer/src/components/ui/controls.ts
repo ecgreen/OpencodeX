@@ -1,0 +1,6 @@
+export { CheckboxV2 as Checkbox } from "@opencode-ai/ui/v2/components/checkbox-v2"
+export { Switch } from "@opencode-ai/ui/v2/components/switch-v2"
+export { TabsV2 as Tabs } from "@opencode-ai/ui/v2/components/tabs-v2"
+export { TooltipV2 as Tooltip } from "@opencode-ai/ui/v2/components/tooltip-v2"
+export { Dialog, DialogFooter } from "@opencode-ai/ui/v2/components/dialog-v2"
+export { Popover } from "@opencode-ai/ui/popover"

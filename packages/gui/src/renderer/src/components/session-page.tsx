@@ -1,4 +1,4 @@
-import { For, Show, Suspense, createEffect, createMemo, createResource, createSignal, lazy } from "solid-js"
+import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy } from "solid-js"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptPart } from "../lib/store"
 import { EMPTY_VIEW_PANE_RUNTIME_STATE } from "../lib/view-pane-state"
@@ -7,28 +7,27 @@ import {
   pushPromptStash,
   type GuiPromptStashEntry,
 } from "../lib/prompt-state"
-import { buildPromptMentionOptions, referenceSearch, type PromptMentionOption } from "../lib/prompt-autocomplete"
+import type { PromptMentionOption } from "../lib/prompt-autocomplete"
 import {
   clearComposerDraft,
   filePartFromFile,
   filePartFromPath,
-  formatTokenCount,
-  isAssistantMessage,
   readComposerDraft,
   readComposerStash,
-  textPart,
   writeComposerDraft,
   writeComposerStash,
 } from "../lib/session-composer-helpers"
 import { permissionToolPart } from "../lib/tool-display"
 import { SessionComposer } from "./session-composer"
 import { PermissionPanel, QuestionPanel } from "./session-safety-panels"
+import { PanelLoadingState } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
 import { createSessionSidePanelController } from "./session-side-panel-controller"
 import { SessionToolbar } from "./session-toolbar"
+import { createSessionComposerPresentation } from "./session-composer-presentation"
 
 const SessionSidePanel = lazy(() => import("./session-side-panel").then((module) => ({ default: module.SessionSidePanel })))
 
@@ -89,72 +88,7 @@ export function SessionPage(props: SessionPageProps) {
   })
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
-  const slashQuery = createMemo(() => {
-    const draft = draftPrompt()
-    if (!draft.startsWith("/") || draft.includes(" ") || draft.includes("\n")) return
-    return draft.slice(1).toLowerCase()
-  })
-  const visibleSlashCommands = createMemo(() => {
-    const query = slashQuery()
-    if (query === undefined) return []
-    return props.slashCommands.filter((command) =>
-      [command.name, command.title, command.detail, command.disabled, ...(command.aliases ?? [])]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    )
-  })
-  const slashMenuVisible = createMemo(() => slashMenuOpen() && !blocked() && slashQuery() !== undefined)
-  const mentionQuery = createMemo(() => {
-    const draft = draftPrompt()
-    const match = /(?:^|\s)@([^\s@]*)$/.exec(draft)
-    return match?.[1]
-  })
-  const mentionReferenceQuery = createMemo(() => {
-    const query = mentionQuery()
-    if (query === undefined) return
-    return referenceSearch({ query, config: props.config })
-  })
-  const mentionFileQuery = createMemo(() => {
-    const query = mentionQuery()
-    if (query === undefined || referenceSearch({ query, config: props.config })) return
-    return query
-  })
-  const [mentionFiles] = createResource(mentionFileQuery, async (query) => props.findFiles ? props.findFiles({ query }) : [])
-  const [mentionReferenceFiles] = createResource(mentionReferenceQuery, async (match) => {
-    if (!props.findFiles) return []
-    return (await props.findFiles({ query: match.query, directory: match.root })).map((file) => ({ alias: match.alias, root: match.root, file }))
-  })
-  const mentionOptions = createMemo(() => {
-    const query = mentionQuery()
-    if (query === undefined) return []
-    return buildPromptMentionOptions({
-      query,
-      agents: props.agents,
-      config: props.config,
-      files: mentionFiles() ?? [],
-      referenceFiles: mentionReferenceFiles() ?? [],
-      mcpResources: props.mcpResources,
-      limit: 10,
-    })
-  })
-  const mentionMenuVisible = createMemo(() => mentionOptions().length > 0 && !blocked())
-  const userHistory = createMemo(() =>
-    props.data.messages
-      .filter((bundle) => bundle.info.role === "user")
-      .map((bundle) => bundle.parts.map(textPart).join("").trim())
-      .filter(Boolean),
-  )
-  const usageLabel = createMemo(() => {
-    const last = props.data.messages.findLast((bundle) => isAssistantMessage(bundle.info) && bundle.info.tokens.output > 0)?.info
-    if (!last || !isAssistantMessage(last)) return
-    const tokens = last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    if (tokens <= 0) return
-    const limit = props.providers.find((provider) => provider.id === last.providerID)?.models[last.modelID]?.limit.context
-    const pct = limit ? ` (${Math.round((tokens / limit) * 100)}%)` : ""
-    return `${formatTokenCount(tokens)}${pct}`
-  })
+  const { slashQuery, visibleSlashCommands, slashMenuVisible, mentionQuery, mentionOptions, mentionMenuVisible, userHistory, usageLabel } = createSessionComposerPresentation({ props, draftPrompt, slashMenuOpen, blocked })
   const resizeComposer = () => {
     if (!composerTextarea) return
     composerTextarea.style.height = "auto"
@@ -408,7 +342,7 @@ export function SessionPage(props: SessionPageProps) {
         </div>
         <Show when={sidePanel.mounted() ? sidePanel.session() : undefined}>
           {(selected) => (
-            <Suspense fallback={<aside class="session-side-panel open" aria-busy="true">Loading workspace tools...</aside>}>
+            <Suspense fallback={<aside class="session-side-panel open workspace-panel-loading" aria-busy="true"><PanelLoadingState label="Loading workspace tools" /></aside>}>
               <SessionSidePanel
               open={sidePanel.open()}
               widthRatio={sidePanel.widthRatio()}

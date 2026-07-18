@@ -1,15 +1,16 @@
 import { lazy } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { LOAD_MORE_MESSAGE_MULTIPLIER, SESSION_MESSAGE_PAGE_LIMIT } from "../controllers/authoritative-state-controller"
-import { CollectionPage, StatusPage } from "./collection-pages"
 
 const DiffPage = lazy(() => import("./diff-page").then((module) => ({ default: module.DiffPage })))
-const WorkbenchPage = lazy(() => import("./workbench-page").then((module) => ({ default: module.WorkbenchPage })))
+const SettingsPage = lazy(() => import("./settings-page").then((module) => ({ default: module.SettingsPage })))
+const StatusPage = lazy(() => import("./collection-pages").then((module) => ({ default: module.StatusPage })))
+const WorkbenchPage = lazy(() => import("./workbench-page-entry").then((module) => ({ default: module.WorkbenchPageEntry })))
 
 export function WorkbenchRoute(props: { model: GuiAppModel }) {
   const model = props.model
   const route = model.navigation.route()
-  if (route.name !== "workbench") return
+  if (route.name !== "workbench") return null
   return (
     <WorkbenchPage
       gui={model.authoritative.client()}
@@ -107,11 +108,5 @@ export function StatusRoute(props: { model: GuiAppModel }) {
 }
 
 export function SettingsRoute(props: { model: GuiAppModel }) {
-  return (
-    <CollectionPage
-      title="Settings"
-      count={props.model.authoritative.snapshot()?.agents.length ?? 0}
-      description="Theme, provider, status, docs, debug, and safe GUI preferences are reserved here while settings parity is built out."
-    />
-  )
+  return <SettingsPage controller={props.model.settings} />
 }

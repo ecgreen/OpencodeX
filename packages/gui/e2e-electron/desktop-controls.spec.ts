@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
+import { createServer } from "node:http"
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test"
+import { packagedExecutable } from "../scripts/packaged-executable"
 
 const gui = path.resolve(import.meta.dirname, "..")
 const root = path.resolve(gui, "../..")
@@ -11,6 +13,12 @@ const runtime = path.join(gui, ".artifacts", "e2e-electron", "runtime")
 const workspace = path.join(runtime, "workspace")
 const readme = path.join(workspace, "README.md")
 const run = promisify(execFile)
+const packaged = process.env.OPENCODEX_GUI_E2E_PACKAGED === "1"
+const browserServer = createServer((_request, response) => {
+  response.writeHead(200, { "content-type": "text/html" })
+  response.end("<!doctype html><title>OpencodeX browser acceptance</title><main>Embedded browser ready.</main>")
+})
+let browserFixtureURL = ""
 
 test.beforeAll(async () => {
   await rm(runtime, { recursive: true, force: true })
@@ -25,14 +33,30 @@ test.beforeAll(async () => {
   await git("config", "user.email", "acceptance@opencodex.local")
   await git("add", "README.md")
   await git("commit", "-m", "test: seed disposable workspace")
+  await new Promise<void>((resolve) => browserServer.listen(0, "127.0.0.1", resolve))
+  const address = browserServer.address()
+  if (!address || typeof address === "string") throw new Error("Browser fixture server did not start.")
+  browserFixtureURL = `http://127.0.0.1:${address.port}`
 })
+
+test.afterAll(() => new Promise<void>((resolve, reject) => browserServer.close((error) => error ? reject(error) : resolve())))
 
 test("drives native desktop controls and disposable workspace mutations", async () => {
   let application: ElectronApplication | undefined
   try {
+    const executablePath = packaged ? packagedExecutable(gui) : electronExecutable()
+    if (!executablePath) throw new Error("Packaged OpencodeX executable was not found.")
+    const graphicsArgs = [
+      "--enable-gpu",
+      "--enable-gpu-rasterization",
+      "--enable-zero-copy",
+      ...(process.platform === "win32" ? ["--use-angle=d3d11"] : []),
+    ]
     application = await electron.launch({
-      executablePath: electronExecutable(),
-      args: [".", `--user-data-dir=${path.join(runtime, "user-data")}`],
+      executablePath,
+      args: packaged
+        ? [`--user-data-dir=${path.join(runtime, "user-data")}`, ...graphicsArgs]
+        : [".", `--user-data-dir=${path.join(runtime, "user-data")}`, ...graphicsArgs],
       cwd: gui,
       env: {
         ...process.env,
@@ -46,7 +70,7 @@ test("drives native desktop controls and disposable workspace mutations", async 
         OPENCODE_PURE: "1",
         OPENCODE_TEST_HOME: path.join(runtime, "home"),
         OPENCODEX_GUI_DIRECTORY: workspace,
-        OPENCODEX_GUI_RENDERER_URL: "http://127.0.0.1:4174",
+        ...(packaged ? {} : { OPENCODEX_GUI_RENDERER_URL: "http://127.0.0.1:4174" }),
         XDG_CONFIG_HOME: path.join(runtime, "config"),
         XDG_DATA_HOME: path.join(runtime, "data"),
         XDG_STATE_HOME: path.join(runtime, "state"),
@@ -54,6 +78,7 @@ test("drives native desktop controls and disposable workspace mutations", async 
     })
 
     const page = await application.firstWindow()
+    await expectElectronHardwareAcceleration(application)
     const failures = collectRendererFailures(page)
     await page.emulateMedia({ reducedMotion: "reduce" })
     await expect.poll(() => page.evaluate(() => Boolean(window.opencodex))).toBe(true)
@@ -74,6 +99,11 @@ test("drives native desktop controls and disposable workspace mutations", async 
     await application?.close()
   }
 })
+
+async function expectElectronHardwareAcceleration(application: ElectronApplication) {
+  const status = await application.evaluate(({ app }) => app.getGPUFeatureStatus())
+  expect(status.gpu_compositing, JSON.stringify(status, null, 2)).not.toMatch(/disabled_software/i)
+}
 
 async function createProjectWithNativePicker(page: Page) {
   await openTitlebarMenu(page, "File")
@@ -127,10 +157,13 @@ async function exerciseWorkbench(application: ElectronApplication, page: Page) {
   await expect(page.getByText("Staged", { exact: true })).toBeVisible()
   await page.getByPlaceholder("Summary").fill("test: commit desktop mutation")
   await page.getByRole("button", { name: /Commit to/ }).click()
-  await expect(changedFiles).toContainText("No local changes")
+  await expect(page.getByText("No local changes.", { exact: true })).toBeVisible()
   expect((await git("log", "-1", "--pretty=%s")).stdout.trim()).toBe("test: commit desktop mutation")
 
   await page.getByRole("button", { name: "Browser", exact: true }).click()
+  await expect(page.getByText("Open a webpage", { exact: true })).toBeVisible()
+  await navigateBrowserInOwner(application, browserFixtureURL)
+  await expect.poll(() => activeBrowserURL(application)).toBe(`${browserFixtureURL}/`)
   await expectBrowserViewBounds(application, page)
   await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click()
   await expectBrowserViewBounds(application, page)
@@ -146,8 +179,6 @@ async function exerciseWorkbench(application: ElectronApplication, page: Page) {
   await expectBrowserViewBounds(application, page)
   await clickDom(page, "Capture screenshot")
   await expect.poll(() => page.evaluate(() => document.querySelector(".workbench-page .notice")?.textContent ?? "")).toBe("Captured browser screenshot.")
-  await navigateBrowserInOwner(application, "http://127.0.0.1:4174")
-  await expect.poll(() => activeBrowserURL(application)).toBe("http://127.0.0.1:4174/")
   await page.getByRole("button", { name: "Git", exact: true }).click()
   await expectBrowserViewVisible(application, false)
   await page.getByRole("button", { name: "Browser", exact: true }).click()
@@ -211,8 +242,9 @@ async function expectBrowserViewBounds(application: ElectronApplication, page: P
   const host = await page.locator(".workbench-browser-host").boundingBox()
   if (!host) throw new Error("Embedded browser host did not have bounds.")
   await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
-    const views = BrowserWindow.getAllWindows()[0]?.contentView.children ?? []
-    return views.at(-1)?.getBounds()
+    const window = BrowserWindow.getAllWindows()[0]
+    const view = window?.contentView.children.find((item) => "webContents" in item && item.webContents.id !== window.webContents.id)
+    return view?.getBounds()
   })).toEqual({
     x: Math.round(host.x),
     y: Math.round(host.y),
@@ -224,8 +256,8 @@ async function expectBrowserViewBounds(application: ElectronApplication, page: P
 
 async function expectBrowserViewVisible(application: ElectronApplication, expected: boolean) {
   await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
-    const views = BrowserWindow.getAllWindows()[0]?.contentView.children ?? []
-    return views.at(-1)?.getVisible()
+    const window = BrowserWindow.getAllWindows()[0]
+    return window?.contentView.children.some((item) => "webContents" in item && item.webContents.id !== window.webContents.id && item.getVisible()) ?? false
   })).toBe(expected)
 }
 
@@ -243,7 +275,8 @@ async function resizeWindow(application: ElectronApplication, width: number, hei
 
 async function activeBrowserURL(application: ElectronApplication) {
   return application.evaluate(({ BrowserWindow }) => {
-    const view = BrowserWindow.getAllWindows()[0]?.contentView.children.at(-1)
+    const window = BrowserWindow.getAllWindows()[0]
+    const view = window?.contentView.children.find((item) => "webContents" in item && item.webContents.id !== window.webContents.id)
     return view && "webContents" in view ? view.webContents.getURL() : undefined
   })
 }

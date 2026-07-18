@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import { Show, Suspense } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { NAV_ITEMS } from "../controllers/navigation-controller"
@@ -106,9 +107,9 @@ export function AppShell(props: { model: GuiAppModel }) {
             <span>
               <strong>Connection interrupted.</strong> Showing the last authoritative state while OpencodeX reconnects.
             </span>
-            <button type="button" class="secondary" onClick={() => void model.notices.run(model.authoritative.retry)}>
+            <Button appearance="outline" type="button" onClick={() => void model.notices.run(model.authoritative.retry)}>
               Retry now
-            </button>
+            </Button>
           </div>
         </Show>
         <div class={`stage-content ${model.navigation.layoutMode()}`}>
@@ -119,9 +120,9 @@ export function AppShell(props: { model: GuiAppModel }) {
             <div class="error-card" role="alert">
               <strong>Unable to load authoritative state</strong>
               <span>{model.authoritative.error()}</span>
-              <button type="button" class="primary" onClick={() => void model.notices.run(model.authoritative.retry)}>
+              <Button appearance="solid" tone="accent" type="button" onClick={() => void model.notices.run(model.authoritative.retry)}>
                 Retry now
-              </button>
+              </Button>
             </div>
           </Show>
           <Show when={!model.authoritative.loading() && !model.authoritative.error()}>
@@ -154,9 +155,9 @@ export function AppShell(props: { model: GuiAppModel }) {
             aria-live={notice().tone === "error" ? "assertive" : "polite"}
           >
             <span>{notice().message}</span>
-            <button type="button" aria-label="Dismiss notification" onClick={model.notices.clear}>
+            <Button appearance="ghost" type="button" aria-label="Dismiss notification" onClick={() => model.notices.clear()}>
               ×
-            </button>
+            </Button>
           </div>
         )}
       </Show>

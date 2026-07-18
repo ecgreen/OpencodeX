@@ -6,7 +6,8 @@ import { projectLatestActivity, projectSwarms, projectViews } from "../lib/proje
 import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/store"
 import { Icon } from "./icon"
-import { Button, IconButton, TextInput } from "./ui"
+import { Button, TextInput } from "./ui"
+import { CardActionMenu } from "./card-action-menu"
 
 type ProjectDirectoryRowItem =
   | { type: "project"; project: GuiSnapshot["projects"][number] }
@@ -83,7 +84,7 @@ export function ProjectsOverview(props: {
           <h1>Workspace directory</h1>
           <p>Choose a project, start a focused session, or update the folders that define a workspace.</p>
         </div>
-        <Button variant="primary" icon="plus" onClick={props.createProject}>Create project</Button>
+        <Button appearance="solid" tone="accent" icon="plus" onClick={props.createProject}>Create project</Button>
       </header>
 
       <section class="project-directory-summary" aria-label="Project summary">
@@ -236,6 +237,14 @@ function ProjectDirectoryRow(props: {
   dropping?: "before" | "after"
   startPointerDrag: (event: PointerEvent & { currentTarget: HTMLElement }) => void
 }) {
+  const name = () => projectLabel(props.project)
+  const actions = () => [
+    { label: "New session", icon: "session" as const, onSelect: () => props.createSession(props.project.id, props.project.folders[0]?.path) },
+    { label: "Move up", icon: "arrowUp" as const, disabled: projectIndex(props.projects, props.project.id) <= 0, onSelect: () => props.moveProject(props.project.id, -1) },
+    { label: "Move down", icon: "arrowDown" as const, disabled: projectIndex(props.projects, props.project.id) >= props.projects.length - 1, onSelect: () => props.moveProject(props.project.id, 1) },
+    { label: "Edit project", icon: "pencil" as const, onSelect: () => props.editProject(props.project.id, name(), props.project.folders.map((folder) => folder.path)) },
+    { label: "Delete project", icon: "trash" as const, danger: true, onSelect: () => props.deleteProject(props.project.id, name()) },
+  ].filter((action) => !action.disabled)
   return (
     <article
       class="project-directory-row"
@@ -250,20 +259,16 @@ function ProjectDirectoryRow(props: {
       data-project-row-layout-id={props.project.id}
       onPointerDown={props.startPointerDrag}
     >
-      <button class="project-directory-open" onClick={() => props.openProject(props.project.id)}>
+      <Button appearance="ghost" class="project-directory-open" onClick={() => props.openProject(props.project.id)}>
         <span class="project-directory-icon"><Icon name="folder-open" /></span>
         <span>
-          <strong>{projectLabel(props.project)}</strong>
+          <strong>{name()}</strong>
           <small>{projectFolderPreview(props.project)}</small>
         </span>
-      </button>
+      </Button>
       <ProjectDirectoryMeta project={props.project} snapshot={props.snapshot} sessionOrderState={props.sessionOrderState} />
       <div class="project-directory-actions">
-        <IconButton icon="arrowUp" label={`Move ${projectLabel(props.project)} up`} disabled={projectIndex(props.projects, props.project.id) <= 0} onClick={() => props.moveProject(props.project.id, -1)} />
-        <IconButton icon="arrowDown" label={`Move ${projectLabel(props.project)} down`} disabled={projectIndex(props.projects, props.project.id) >= props.projects.length - 1} onClick={() => props.moveProject(props.project.id, 1)} />
-        <Button size="sm" icon="session" onClick={() => props.createSession(props.project.id, props.project.folders[0]?.path)}>Session</Button>
-        <IconButton icon="pencil" label={`Edit ${projectLabel(props.project)}`} onClick={() => props.editProject(props.project.id, projectLabel(props.project), props.project.folders.map((folder) => folder.path))} />
-        <IconButton variant="danger" icon="trash" label={`Delete ${projectLabel(props.project)}`} onClick={() => props.deleteProject(props.project.id, projectLabel(props.project))} />
+        <CardActionMenu label={name()} actions={actions()} />
       </div>
     </article>
   )
@@ -319,7 +324,7 @@ function ProjectEmptyState(props: { empty: boolean; createProject: () => void })
       <strong>{props.empty ? "Create your first project" : "No projects match this search"}</strong>
       <span>{props.empty ? "Select one or more folders to make a workspace you can start from quickly." : "Try a different project name or folder path."}</span>
       <Show when={props.empty}>
-        <Button variant="primary" icon="plus" onClick={props.createProject}>Create project</Button>
+        <Button appearance="solid" tone="accent" icon="plus" onClick={props.createProject}>Create project</Button>
       </Show>
     </div>
   )

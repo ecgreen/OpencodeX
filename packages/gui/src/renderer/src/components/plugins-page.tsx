@@ -9,9 +9,14 @@ import {
   type InstalledGuiPlugin,
 } from "../lib/gui-plugins"
 import type { GuiPlugin } from "../lib/store"
+import { filterGuiPluginPagePlugins, filterPluginPagePlugins, guiPluginPageStats, pluginPageGroups, pluginPageStats } from "../lib/plugin-page-model"
 import { Icon } from "./icon"
+import { CardActionMenu } from "./card-action-menu"
+import { Button, Checkbox, Select, TextArea, TextInput } from "./ui"
 
 type PluginSurface = "gui" | "discover" | "share" | "runtime" | "safety"
+
+export { filterGuiPluginPagePlugins, filterPluginPagePlugins, guiPluginPageStats, pluginPageGroups, pluginPageStats } from "../lib/plugin-page-model"
 
 export function PluginsPage(props: {
   plugins: GuiPlugin[]
@@ -30,7 +35,7 @@ export function PluginsPage(props: {
   const [error, setError] = createSignal("")
   const [query, setQuery] = createSignal("")
   const [scope, setScope] = createSignal<"all" | GuiPlugin["scope"]>("all")
-  const [manifestText, setManifestText] = createSignal(serializeGuiPluginManifest(sampleGuiPlugins()[0]!))
+  const [manifestText, setManifestText] = createSignal(serializeGuiPluginManifest(sampleGuiPlugins()[0]))
   const [shareText, setShareText] = createSignal("")
   const filtered = createMemo(() => filterPluginPagePlugins(props.plugins, scope(), query()))
   const filteredGuiPlugins = createMemo(() => filterGuiPluginPagePlugins(props.guiPlugins, query()))
@@ -105,7 +110,7 @@ export function PluginsPage(props: {
           <p>Customize the GUI safely with declarative plugins, and manage runtime plugins separately.</p>
         </div>
         <div class="manager-actions">
-          <button type="button" class="secondary" onClick={() => void props.refresh()}><Icon name="activity" /> Refresh runtime</button>
+          <Button appearance="outline" type="button" onClick={() => void props.refresh()}><Icon name="activity" /> Refresh runtime</Button>
         </div>
       </header>
 
@@ -118,9 +123,9 @@ export function PluginsPage(props: {
           { id: "safety", label: "Safety", icon: "check" },
         ] as const}>
           {(item) => (
-            <button type="button" classList={{ active: surface() === item.id }} onClick={() => setSurface(item.id)}>
+            <Button appearance="ghost" type="button" classList={{ active: surface() === item.id }} onClick={() => setSurface(item.id)}>
               <Icon name={item.icon} /> {item.label}
-            </button>
+            </Button>
           )}
         </For>
       </nav>
@@ -141,11 +146,11 @@ export function PluginsPage(props: {
           <div class="plugin-toolbar">
             <label>
               <span>Search</span>
-              <input type="search" value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Filter GUI plugins, commands, snippets, or permissions" />
+              <TextInput type="search" value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Filter GUI plugins, commands, snippets, or permissions" />
             </label>
             <div class="plugin-scope-filter">
-              <button type="button" onClick={() => setSurface("discover")}><Icon name="star" /> Discover</button>
-              <button type="button" onClick={() => setSurface("share")}><Icon name="plus" /> Import</button>
+              <Button appearance="ghost" type="button" onClick={() => setSurface("discover")}><Icon name="star" /> Discover</Button>
+              <Button appearance="ghost" type="button" onClick={() => setSurface("share")}><Icon name="plus" /> Import</Button>
             </div>
           </div>
 
@@ -178,11 +183,13 @@ export function PluginsPage(props: {
                       </div>
                     </Show>
                     <div class="plugin-card-state">
-                      <button type="button" class="secondary" onClick={() => props.toggleGuiPlugin(plugin.manifest.id)}>
+                      <Button appearance="outline" type="button" onClick={() => props.toggleGuiPlugin(plugin.manifest.id)}>
                         <Icon name={plugin.enabled ? "stop" : "check"} /> {plugin.enabled ? "Disable" : "Enable"}
-                      </button>
-                      <button type="button" class="secondary" onClick={() => exportGuiPlugin(plugin)}><Icon name="send" /> Export</button>
-                      <button type="button" class="secondary danger" onClick={() => props.removeGuiPlugin(plugin.manifest.id)}><Icon name="trash" /> Remove</button>
+                      </Button>
+                      <CardActionMenu label={plugin.manifest.name} actions={[
+                        { label: "Export manifest", icon: "send", onSelect: () => exportGuiPlugin(plugin) },
+                        { label: "Remove plugin", icon: "trash", danger: true, onSelect: () => props.removeGuiPlugin(plugin.manifest.id) },
+                      ]} />
                     </div>
                   </article>
                 )
@@ -214,11 +221,11 @@ export function PluginsPage(props: {
                         <For each={manifest.permissions}>{(permission) => <span>{permission}</span>}</For>
                       </div>
                       <div class="plugin-card-state">
-                        <button type="button" class="primary" onClick={() => props.installGuiPlugin(manifest, "sample")}><Icon name="plus" /> Install</button>
-                        <button type="button" class="secondary" onClick={() => {
+                        <Button appearance="solid" tone="accent" type="button" onClick={() => props.installGuiPlugin(manifest, "sample")}><Icon name="plus" /> Install</Button>
+                        <Button appearance="outline" type="button" onClick={() => {
                           setManifestText(serializeGuiPluginManifest(manifest))
                           setSurface("share")
-                        }}><Icon name="file" /> View manifest</button>
+                        }}><Icon name="file" /> View manifest</Button>
                       </div>
                     </article>
                   )
@@ -237,9 +244,9 @@ export function PluginsPage(props: {
                   <span>Paste JSON or upload a manifest file.</span>
                 </div>
               </header>
-              <textarea value={manifestText()} onInput={(event) => setManifestText(event.currentTarget.value)} spellcheck={false} />
+              <TextArea value={manifestText()} onInput={(event) => setManifestText(event.currentTarget.value)} spellcheck={false} />
               <div class="plugin-card-state">
-                <button type="button" class="primary" onClick={() => installGuiManifest(manifestText(), "imported")}><Icon name="plus" /> Install manifest</button>
+                <Button appearance="solid" tone="accent" type="button" onClick={() => installGuiManifest(manifestText(), "imported")}><Icon name="plus" /> Install manifest</Button>
                 <label class="plugin-file-upload">
                   <Icon name="file" /> Upload JSON
                   <input type="file" accept="application/json,.json" onChange={(event) => void uploadGuiPlugin(event.currentTarget.files?.[0])} />
@@ -253,14 +260,14 @@ export function PluginsPage(props: {
                   <span>Export an installed GUI plugin as portable JSON.</span>
                 </div>
               </header>
-              <select onChange={(event) => {
-                const plugin = props.guiPlugins.find((item) => item.manifest.id === event.currentTarget.value)
-                setShareText(plugin ? serializeGuiPluginManifest(plugin.manifest) : "")
-              }}>
-                <option value="">Choose installed plugin</option>
-                <For each={props.guiPlugins}>{(plugin) => <option value={plugin.manifest.id}>{plugin.manifest.name}</option>}</For>
-              </select>
-              <textarea value={shareText()} readonly spellcheck={false} placeholder="Exported plugin JSON appears here." />
+              <Select<InstalledGuiPlugin>
+                placeholder="Choose installed plugin"
+                options={props.guiPlugins}
+                optionValue={(plugin) => plugin.manifest.id}
+                optionLabel={(plugin) => plugin.manifest.name}
+                onSelect={(plugin) => setShareText(plugin ? serializeGuiPluginManifest(plugin.manifest) : "")}
+              />
+              <TextArea value={shareText()} readonly spellcheck={false} placeholder="Exported plugin JSON appears here." />
             </section>
           </div>
         </Match>
@@ -277,19 +284,16 @@ export function PluginsPage(props: {
             <form class="plugin-install-form" onSubmit={installRuntimePlugin}>
               <label>
                 <span>Package</span>
-                <input type="text" value={spec()} onInput={(event) => setSpec(event.currentTarget.value)} placeholder="npm package name or local path" />
+                <TextInput type="text" value={spec()} onInput={(event) => setSpec(event.currentTarget.value)} placeholder="npm package name or local path" />
               </label>
-              <label class="inline-checkbox">
-                <input type="checkbox" checked={installGlobal()} onChange={(event) => setInstallGlobal(event.currentTarget.checked)} />
-                <span>Install globally</span>
-              </label>
-              <button type="submit" class="primary" disabled={busy() === "install" || !spec().trim()}><Icon name="plus" /> {busy() === "install" ? "Installing..." : "Install runtime plugin"}</button>
+              <Checkbox class="inline-checkbox" label="Install globally" checked={installGlobal()} onChange={setInstallGlobal} />
+              <Button appearance="solid" tone="accent" type="submit" disabled={busy() === "install" || !spec().trim()}><Icon name="plus" /> {busy() === "install" ? "Installing..." : "Install runtime plugin"}</Button>
             </form>
 
             <div class="plugin-toolbar">
               <label>
                 <span>Search runtime plugins</span>
-                <input type="search" value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Filter by package, id, source, or note" />
+                <TextInput type="search" value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Filter by package, id, source, or note" />
               </label>
               <div class="plugin-scope-filter" role="group" aria-label="Plugin scope">
                 <For each={[
@@ -299,9 +303,9 @@ export function PluginsPage(props: {
                   { value: "global", label: "Global" },
                 ] as const}>
                   {(item) => (
-                    <button type="button" class={scope() === item.value ? "active" : undefined} onClick={() => setScope(item.value)}>
+                    <Button appearance="ghost" type="button" class={scope() === item.value ? "active" : undefined} onClick={() => setScope(item.value)}>
                       {item.label}
-                    </button>
+                    </Button>
                   )}
                 </For>
               </div>
@@ -331,15 +335,16 @@ export function PluginsPage(props: {
                           <div class="plugin-card-state">
                             <span class={`plugin-state ${plugin.enabled ? "enabled" : "disabled"}`}>{plugin.enabled ? "enabled" : "disabled"}</span>
                             <span class={`plugin-state ${plugin.active ? "active" : "inactive"}`}>{plugin.active ? "active" : "inactive"}</span>
-                            <button
+                            <Button
                               type="button"
-                              class={plugin.enabled ? "secondary danger" : "secondary"}
+                              appearance="outline"
+                              tone={plugin.enabled ? "danger" : "neutral"}
                               disabled={!plugin.canToggle || busy() === plugin.id}
                               title={plugin.canToggle ? undefined : "This plugin kind cannot be toggled from the GUI yet."}
                               onClick={() => void toggleRuntimePlugin(plugin)}
                             >
                               <Icon name={plugin.enabled ? "stop" : "check"} /> {plugin.enabled ? "Disable" : "Enable"}
-                            </button>
+                            </Button>
                           </div>
                         </article>
                       )}
@@ -370,55 +375,4 @@ export function PluginsPage(props: {
       </Switch>
     </section>
   )
-}
-
-export function pluginPageStats(plugins: GuiPlugin[]) {
-  return {
-    total: plugins.length,
-    active: plugins.filter((plugin) => plugin.active).length,
-    disabled: plugins.filter((plugin) => !plugin.enabled).length,
-    internal: plugins.filter((plugin) => plugin.scope === "internal").length,
-  }
-}
-
-export function guiPluginPageStats(plugins: InstalledGuiPlugin[]) {
-  return {
-    total: plugins.length,
-    enabled: plugins.filter((plugin) => plugin.enabled).length,
-    commands: plugins.flatMap((plugin) => plugin.manifest.contributes?.commands ?? []).length,
-    themes: plugins.filter((plugin) => plugin.manifest.contributes?.theme).length,
-  }
-}
-
-export function filterGuiPluginPagePlugins(plugins: InstalledGuiPlugin[], query: string) {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return plugins
-  return plugins.filter((plugin) => [
-    plugin.manifest.id,
-    plugin.manifest.name,
-    plugin.manifest.description,
-    plugin.manifest.author,
-    plugin.source,
-    ...plugin.manifest.permissions,
-    ...(plugin.manifest.contributes?.commands?.flatMap((command) => [command.id, command.title, command.description]) ?? []),
-    ...(plugin.manifest.contributes?.snippets?.flatMap((snippet) => [snippet.id, snippet.title, snippet.description]) ?? []),
-  ].some((item) => item?.toLowerCase().includes(needle)))
-}
-
-export function filterPluginPagePlugins(plugins: GuiPlugin[], scope: "all" | GuiPlugin["scope"], query: string) {
-  const needle = query.trim().toLowerCase()
-  return plugins.filter((plugin) => {
-    const matchesScope = scope === "all" || plugin.scope === scope
-    if (!matchesScope) return false
-    if (!needle) return true
-    return [plugin.spec, plugin.pluginID, plugin.source, plugin.target, plugin.note]
-      .some((item) => item?.toLowerCase().includes(needle))
-  })
-}
-
-export function pluginPageGroups(plugins: GuiPlugin[]) {
-  return [
-    { title: "TUI Plugins", items: plugins.filter((plugin) => plugin.kind === "tui") },
-    { title: "Server Plugins", items: plugins.filter((plugin) => plugin.kind === "server") },
-  ]
 }

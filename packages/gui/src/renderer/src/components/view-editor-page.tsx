@@ -14,7 +14,7 @@ import {
   type ViewSelection,
 } from "../lib/view-actions"
 import { Icon } from "./icon"
-import { Button, IconButton, TextInput } from "./ui"
+import { Button, Checkbox, IconButton, TextInput } from "./ui"
 
 export function ViewEditorPage(props: {
   view?: OpencodeXView
@@ -135,7 +135,8 @@ export function ViewEditorPage(props: {
                     <small>{pane.item.kind === "existing" ? compactPath(pane.session?.directory) : pane.item.slot.projectLabel ?? "No project"}</small>
                   </div>
                   <IconButton
-                    variant="danger"
+                    appearance="ghost"
+                    tone="danger"
                     icon="trash"
                     label="Remove pane"
                     onClick={() => pane.item.kind === "existing" ? removeExisting(pane.item.sessionID) : removePending(pane.item.slot.id)}
@@ -147,9 +148,9 @@ export function ViewEditorPage(props: {
           <section class="pending-pane-actions">
             <header><strong>{atPaneLimit() ? "Eight-pane limit reached" : "Add a new session pane"}</strong></header>
             <div class="row-actions">
-              <Button size="sm" icon="plus" disabled={atPaneLimit()} onClick={() => addPending()}><span class="pending-pane-button-label">No project</span></Button>
+              <Button size="compact" icon="plus" disabled={atPaneLimit()} onClick={() => addPending()}><span class="pending-pane-button-label">No project</span></Button>
               <For each={props.projects.slice(0, 3)}>
-                {(project) => <Button size="sm" icon="plus" disabled={atPaneLimit()} onClick={() => addPending(project.id)}><span class="pending-pane-button-label">{title(project.name ?? project.project.name)}</span></Button>}
+                {(project) => <Button size="compact" icon="plus" disabled={atPaneLimit()} onClick={() => addPending(project.id)}><span class="pending-pane-button-label">{title(project.name ?? project.project.name)}</span></Button>}
               </For>
             </div>
           </section>
@@ -157,7 +158,7 @@ export function ViewEditorPage(props: {
             <Show when={error()}>
               <div class="notice error">{error()}</div>
             </Show>
-            <Button type="submit" variant="primary" icon="check" disabled={saving()}>
+            <Button type="submit" appearance="solid" tone="accent" icon="check" disabled={saving()}>
               {saving() ? "Saving..." : editing() ? "Save view" : "Create view"}
             </Button>
           </section>
@@ -236,13 +237,13 @@ function ViewSessionGroup(props: {
 }) {
   return (
     <section class="view-session-group">
-      <button type="button" class="view-session-group-header" aria-expanded={!props.collapsed} onClick={() => props.toggle(props.id)}>
+      <Button appearance="ghost" type="button" class="view-session-group-header" aria-expanded={!props.collapsed} onClick={() => props.toggle(props.id)}>
         <span>
           <Icon name={props.collapsed ? "chevronRight" : "chevronDown"} />
           <strong>{props.title}</strong>
         </span>
         <small>{props.count} {props.count === 1 ? "session" : "sessions"}</small>
-      </button>
+      </Button>
       <div class="view-session-group-content" classList={{ collapsed: !!props.collapsed }}>
         <div>{props.children}</div>
       </div>
@@ -262,16 +263,19 @@ function ViewSessionGrid(props: {
         {(session) => {
           const selected = () => props.selectedIDs.has(session.id)
           return (
-            <label class="view-session-card view-session-row">
-              <input type="checkbox" checked={selected()} disabled={props.limitReached && !selected()} onChange={() => props.toggleSession(session.id)} />
-              <span class="view-session-card-copy">
-                <strong>{title(session.title)}</strong>
-                <small>{compactPath(session.directory)} - {formatRelative(session.time.updated)}</small>
-              </span>
-              <Show when={selected()}>
-                <small class="view-session-selected">selected</small>
-              </Show>
-            </label>
+            <Checkbox
+              class="view-session-card view-session-row"
+              checked={selected()}
+              disabled={props.limitReached && !selected()}
+              onChange={() => props.toggleSession(session.id)}
+              label={<>
+                <span class="view-session-card-copy">
+                  <strong>{title(session.title)}</strong>
+                  <small>{compactPath(session.directory)} - {formatRelative(session.time.updated)}</small>
+                </span>
+                <Show when={selected()}><small class="view-session-selected">selected</small></Show>
+              </>}
+            />
           )
         }}
       </For>

@@ -71,6 +71,10 @@ jobs:
       - name: Enforce lint baseline
         run: bun run lint:ci
 
+      - name: Enforce GUI design system
+        working-directory: packages/gui
+        run: bun run check:design-system && bun run check:source-size
+
       - name: Run HttpApi exerciser gates
         if: runner.os == 'Linux'
         working-directory: packages/opencode

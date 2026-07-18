@@ -10,3 +10,5 @@ node_modules
 **/.turbo
 **/.vite
 **/coverage
+**/.artifacts
+**/release

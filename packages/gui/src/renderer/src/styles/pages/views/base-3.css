@@ -1,0 +1,52 @@
+.rail-view-row {
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+}
+
+.session-link.status-review-ready {
+  --session-card-bg: linear-gradient(90deg, color-mix(in srgb, var(--theme-special) 16%, transparent), var(--theme-surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--theme-special) 28%, transparent), var(--theme-surface-raised) 48%);
+  border-left-color: var(--session-state-color);
+  --session-state-color: var(--info) ;
+}
+
+.dashboard-overview-brand {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.dashboard-overview-brand>p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.dashboard-status-card.status-review-ready strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-review-ready {
+  background: transparent;
+  --card-accent: var(--purple);
+  --session-state-color: var(--info) ;
+}

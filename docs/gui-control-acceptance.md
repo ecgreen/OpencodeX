@@ -13,11 +13,11 @@ This matrix distinguishes controls proven in Chromium, controls proven through t
 | Swarms | Create editor, add role, bounded provider/model choices, save, open detail, and service handlers for assign/cancel/delete are covered. | Chromium acceptance and functional/unit/HTTP tests | Restart/race automation gate; keep experimental |
 | Workbench Files | Workspace tree loads; Electron edits and saves exact text, including trailing newlines, through an optimistic-concurrency-safe Workbench read/write contract. Diagnostics run only when requested. | Chromium, Electron, and unit tests | Create/rename/delete rendered workflow |
 | Workbench Git | Status, stage, commit, branches, changed-file list, diff selection, history/stash/remote handlers, and accessible filter controls are covered. The mutation test uses a disposable repository. | Chromium, Electron, and unit tests | Bound very large change lists |
-| Workbench Browser and Terminal | The browser starts blank, native view bounds are checked, screenshot/navigation cross the owner-scoped IPC boundary, and a real PTY echoes a command. | Electron acceptance and focused controller/security tests | Replay against packaged release artifacts |
+| Workbench Browser and Terminal | The browser starts blank, native view bounds are checked after sidebar and window transitions, route changes hide the view, screenshot/navigation cross the owner-scoped IPC boundary, and a real PTY echoes a command. | Development Electron acceptance, focused controller/security tests, and packaged release acceptance on Windows, Linux, and macOS | Retain release artifacts and diagnose platform-specific failures |
 | Plugins | Plugin Center opens from the command palette; filtering, safe declarative install/export/remove, and runtime list/install/toggle endpoints are covered. | Chromium acceptance and functional tests | Packaged import/export picker and hostile manifest smoke |
 | Diff | Working-tree/last-turn selection, tree navigation, review state, split/unified view, and refresh handlers are covered. | Functional/unit tests | Rendered workflow and visual snapshots |
 | Titlebar, menus, and shortcuts | History, route menus, command palette, keyboard help, sidebar/view-panel toggles, notifications, Cut/Copy/Paste, minimize, maximize/restore, and close are covered through desktop IPC. | Chromium, Electron, and unit tests | Replay against packaged release artifacts |
-| Settings | The internal route is a placeholder and is not exposed as a completed navigation feature. | Source audit | Build a real settings controller or remove the route before release |
+| Settings | The palette-only route controls appearance and transcript behavior through their owning controllers and exposes authoritative connection recovery. It is not duplicated in permanent navigation. | Unit tests, typecheck, and source audit | Add its approved captures to the visual matrix |
 
 ## Performance invariants now enforced
 
@@ -32,7 +32,7 @@ This matrix distinguishes controls proven in Chromium, controls proven through t
 
 ## Release-critical work still open
 
-1. Replay the real Electron acceptance workflow against packaged Windows, Linux, and macOS release artifacts and retain its artifacts in CI.
+1. Keep the packaged Electron acceptance workflow green on Windows, Linux, and macOS and retain failure artifacts in CI.
 2. Add rendered Diff, session safety, and delete-confirmation workflows without performing irreversible actions against a developer workspace.
 3. Add large-catalog, large-transcript, and large-Git-change fixtures with CPU, event-to-paint, memory, and DOM-node budgets.
 4. Keep Jobs and Swarms marked experimental until restart, lease, cancellation, and partial-failure gates pass.

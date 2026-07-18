@@ -15,7 +15,9 @@ import {
 import type { GuiSnapshot } from "../lib/store"
 import { Icon } from "./icon"
 import { SwarmPageHeader } from "./swarm-page-header"
-import { Button, IconButton, TextArea, TextInput } from "./ui"
+import { Button, IconButton, Select, TextArea, TextInput } from "./ui"
+
+type EditorChoice = { id: string; label: string }
 
 export function SwarmEditorPage(props: {
   projects: GuiSnapshot["projects"]
@@ -131,6 +133,22 @@ export function SwarmEditorPage(props: {
     return modelPickerOptions(modelProviders().filter((provider) => provider.id === providerID))
   }
 
+  function skillChoices(skill?: string): EditorChoice[] {
+    const choices = SWARM_ROLE_PRESET_OPTIONS.map((preset) => ({ id: preset.skill, label: preset.name }))
+    if (!skill || choices.some((choice) => choice.id === skill)) return choices
+    return [{ id: skill, label: skill }, ...choices]
+  }
+
+  function providerChoices(): EditorChoice[] {
+    return modelProviders().map((provider) => ({ id: provider.id, label: provider.name }))
+  }
+
+  function modelChoices(providerID?: string, modelID?: string): EditorChoice[] {
+    const choices = roleModels(providerID).map((option) => ({ id: option.model.id, label: option.model.name ?? option.model.id }))
+    if (!modelID || choices.some((choice) => choice.id === modelID)) return choices
+    return [{ id: modelID, label: `${modelID} (unavailable)` }, ...choices]
+  }
+
   return (
     <form class="page swarm-editor-page" onSubmit={save}>
       <SwarmPageHeader
@@ -151,14 +169,15 @@ export function SwarmEditorPage(props: {
                 </div>
               </header>
               <div class="swarm-editor-fields">
-                <label>
-                  <span>Project</span>
-                  <select value={projectID()} disabled={editing()} onChange={(event) => setProjectID(event.currentTarget.value)}>
-                    <For each={props.projects}>
-                      {(project) => <option value={project.id}>{projectLabel(project)}</option>}
-                    </For>
-                  </select>
-                </label>
+                <Select<(typeof props.projects)[number]>
+                  label="Project"
+                  options={props.projects}
+                  current={props.projects.find((project) => project.id === projectID())}
+                  optionValue={(project) => project.id}
+                  optionLabel={projectLabel}
+                  disabled={editing()}
+                  onSelect={(project) => project && setProjectID(project.id)}
+                />
                 <label>
                   <span>Title</span>
                   <TextInput value={swarmTitle()} onInput={(event) => setSwarmTitle(event.currentTarget.value)} placeholder="Optional; first task can name the swarm later" />
@@ -195,7 +214,7 @@ export function SwarmEditorPage(props: {
                 <strong>Team setup</strong>
                 <span>{roles().length} roles</span>
               </div>
-              <Button size="sm" icon="plus" onClick={addRole}>Add role</Button>
+              <Button size="compact" icon="plus" onClick={addRole}>Add role</Button>
             </header>
             <div class="role-editor-list">
               <For each={roles()}>
@@ -210,7 +229,7 @@ export function SwarmEditorPage(props: {
                         </div>
                       </div>
                       <Show when={index() > 0}>
-                        <IconButton variant="danger" icon="trash" label={`Remove role ${index()}`} onClick={() => removeRole(index())} />
+                        <IconButton appearance="ghost" tone="danger" icon="trash" label={`Remove role ${index()}`} onClick={() => removeRole(index())} />
                       </Show>
                     </header>
                     <div class="swarm-role-fields">
@@ -218,44 +237,33 @@ export function SwarmEditorPage(props: {
                         <span>Name</span>
                         <TextInput value={role.name} onInput={(event) => updateRole(index(), (current) => ({ ...current, name: event.currentTarget.value }))} />
                       </label>
-                      <label>
-                        <span>Skill</span>
-                        <select value={role.skill ?? ""} onChange={(event) => updateRoleSkill(index(), event.currentTarget.value)}>
-                          <Show when={role.skill && !swarmRolePresetBySkill(role.skill)}>
-                            <option value={role.skill}>{role.skill}</option>
-                          </Show>
-                          <For each={SWARM_ROLE_PRESET_OPTIONS}>
-                            {(preset) => <option value={preset.skill}>{preset.name}</option>}
-                          </For>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Provider</span>
-                        <select value={role.providerID ?? ""} onChange={(event) => {
-                          const providerID = event.currentTarget.value || undefined
-                          updateRole(index(), (current) => ({ ...current, providerID, modelID: undefined }))
-                        }}>
-                          <option value="">Select provider</option>
-                          <For each={modelProviders()}>
-                            {(provider) => <option value={provider.id}>{provider.name}</option>}
-                          </For>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Model</span>
-                        <select disabled={!role.providerID} value={role.modelID ?? ""} onChange={(event) => {
-                          const modelID = event.currentTarget.value || undefined
-                          updateRole(index(), (current) => ({ ...current, modelID }))
-                        }}>
-                          <option value="">Select model</option>
-                          <Show when={role.providerID && role.modelID && !roleModels(role.providerID).some((option) => option.model.id === role.modelID)}>
-                            <option value={role.modelID}>{role.modelID} (unavailable)</option>
-                          </Show>
-                          <For each={roleModels(role.providerID)}>
-                            {(option) => <option value={option.model.id}>{option.model.name ?? option.model.id}</option>}
-                          </For>
-                        </select>
-                      </label>
+                      <Select<EditorChoice>
+                        label="Skill"
+                        options={skillChoices(role.skill)}
+                        current={skillChoices(role.skill).find((choice) => choice.id === role.skill)}
+                        optionValue={(choice) => choice.id}
+                        optionLabel={(choice) => choice.label}
+                        onSelect={(choice) => choice && updateRoleSkill(index(), choice.id)}
+                      />
+                      <Select<EditorChoice>
+                        label="Provider"
+                        placeholder="Select provider"
+                        options={providerChoices()}
+                        current={providerChoices().find((choice) => choice.id === role.providerID)}
+                        optionValue={(choice) => choice.id}
+                        optionLabel={(choice) => choice.label}
+                        onSelect={(choice) => updateRole(index(), (current) => ({ ...current, providerID: choice?.id, modelID: undefined }))}
+                      />
+                      <Select<EditorChoice>
+                        label="Model"
+                        placeholder="Select model"
+                        disabled={!role.providerID}
+                        options={modelChoices(role.providerID, role.modelID)}
+                        current={modelChoices(role.providerID, role.modelID).find((choice) => choice.id === role.modelID)}
+                        optionValue={(choice) => choice.id}
+                        optionLabel={(choice) => choice.label}
+                        onSelect={(choice) => updateRole(index(), (current) => ({ ...current, modelID: choice?.id }))}
+                      />
                       <label class="swarm-role-instructions">
                         <span>Instructions</span>
                         <TextArea value={role.instructions ?? ""} onInput={(event) => updateRole(index(), (current) => ({ ...current, instructions: event.currentTarget.value }))} />
@@ -272,7 +280,7 @@ export function SwarmEditorPage(props: {
         </Show>
         <div class="form-actions swarm-editor-actions">
           <Button icon="x" onClick={props.cancel}>Cancel</Button>
-          <Button type="submit" variant="primary" icon="check" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</Button>
+          <Button type="submit" appearance="solid" tone="accent" icon="check" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</Button>
         </div>
       </Show>
     </form>

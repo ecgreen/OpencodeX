@@ -234,14 +234,14 @@ function ViewsIndexHeader(props: { createView: () => void; query: string; setQue
       </div>
       <div class="views-index-controls">
         <TextInput value={props.query} onInput={(event) => props.setQuery(event.currentTarget.value)} placeholder="Search views or sessions" />
-        <Button class="manager-create-button" variant="primary" icon="plus" onClick={props.createView}>Create view</Button>
+        <Button class="manager-create-button" appearance="solid" tone="accent" icon="plus" onClick={props.createView}>Create view</Button>
       </div>
     </header>
   )
 }
 
 function EmptyViewCreate(props: { onClick: () => void }) {
-  return <button class="dashboard-item-card empty-create interactive" onClick={props.onClick}><strong>+ Create view</strong><span>Choose sessions once, then reopen them together.</span><small>create</small></button>
+  return <Button appearance="ghost" class="dashboard-item-card empty-create interactive" onClick={props.onClick}><strong>+ Create view</strong><span>Choose sessions once, then reopen them together.</span><small>create</small></Button>
 }
 
 function ViewSummaryRow(props: {
@@ -274,20 +274,20 @@ function ViewSummaryRow(props: {
       data-view-summary-layout-id={props.summary.view.id}
       onPointerDown={props.startPointerDrag}
     >
-      <button class="view-summary-main" onClick={() => props.openView(props.summary.view.id)}>
+      <Button appearance="ghost" class="view-summary-main" onClick={() => props.openView(props.summary.view.id)}>
         <span class="view-status-dot" aria-label={sessionStatusLabel(props.summary.status)} />
         <span>
           <strong>{title(props.summary.view.title)}</strong>
           <small>{props.summary.paneCount} panes - {viewProjectMeta(props.summary)} - {formatRelative(props.summary.lastUpdated)}</small>
         </span>
         <span class="view-summary-signal">{viewStatusMeta(props.summary)}</span>
-      </button>
+      </Button>
       <div class="view-summary-actions">
         <PinButton pinned={props.pinned} label={title(props.summary.view.title)} onClick={props.togglePinned} />
         <IconButton icon="pencil" label="Edit view" onClick={() => props.editView(props.summary.view.id)} />
         <IconButton icon="arrowUp" label="Move view up" disabled={props.index === 0} onClick={() => props.moveView(props.summary.view.id, -1)} />
         <IconButton icon="arrowDown" label="Move view down" disabled={props.index === props.total - 1} onClick={() => props.moveView(props.summary.view.id, 1)} />
-        <IconButton variant="danger" icon="trash" label="Delete view" onClick={() => props.deleteView(props.summary.view.id, props.summary.view.title)} />
+        <IconButton appearance="ghost" tone="danger" icon="trash" label="Delete view" onClick={() => props.deleteView(props.summary.view.id, props.summary.view.title)} />
       </div>
       <Show when={props.summary.sessionRows.length > 0 || props.summary.pendingCount > 0}>
         <p class="view-summary-session-line">{viewSessionPreview(props.summary)}</p>

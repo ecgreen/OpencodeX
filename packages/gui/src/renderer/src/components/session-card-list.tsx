@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import type { JSX } from "solid-js"
@@ -5,19 +6,19 @@ import { Show, createMemo } from "solid-js"
 import { formatRelative, title } from "../lib/format"
 import { deriveSessionStatus, sessionStatusLabel } from "../lib/session-status"
 import { type GuiSnapshot } from "../lib/store"
+import { CardActionMenu } from "./card-action-menu"
 import { CardContextMenu } from "./card-context-menu"
 import { Empty } from "./dashboard-primitives"
 import { Icon } from "./icon"
-import { PinButton } from "./pin-button"
 
 export function SessionCardBucket(props: { title: string; count: number; empty: string; collapsed: boolean; onToggle: () => void; children: JSX.Element }) {
   return (
     <section class="dashboard-session-bucket">
       <header>
-        <button class="dashboard-bucket-toggle" aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.title}`} aria-expanded={!props.collapsed} onClick={props.onToggle}>
+        <Button appearance="ghost" class="dashboard-bucket-toggle" aria-label={`${props.collapsed ? "Expand" : "Collapse"} ${props.title}`} aria-expanded={!props.collapsed} onClick={props.onToggle}>
           <Icon name={props.collapsed ? "chevronRight" : "chevronDown"} />
           <strong>{props.title}</strong>
-        </button>
+        </Button>
         <small>{props.count}</small>
       </header>
       <div class="dashboard-bucket-content" classList={{ collapsed: props.collapsed }}>
@@ -43,27 +44,32 @@ export function SessionStatusCard(props: {
   meta?: string
 }) {
   const status = createMemo(() => deriveSessionStatus(props.snapshot, props.session))
+  const actions = () => [
+    ...(props.togglePinned
+      ? [{ label: props.pinned ? "Unpin" : "Pin", icon: "pin", onSelect: props.togglePinned }]
+      : []),
+    ...(props.renameSession ? [{ label: "Edit", icon: "pencil", onSelect: props.renameSession }] : []),
+    ...(props.deleteSession ? [{ label: "Delete", icon: "trash", danger: true, onSelect: props.deleteSession }] : []),
+  ]
   return (
-    <CardContextMenu actions={[
-      ...(props.renameSession ? [{ label: "Edit", icon: "pencil", onSelect: props.renameSession }] : []),
-      ...(props.deleteSession ? [{ label: "Delete", icon: "trash", danger: true, onSelect: props.deleteSession }] : []),
-    ]}>
+    <CardContextMenu actions={actions()}>
       {(openMenu) => (
         <article
           class="dashboard-item-card dashboard-status-card interactive"
           classList={{ compact: props.compact === true, [`status-${status().replaceAll("_", "-")}`]: true }}
           onContextMenu={openMenu}
         >
-          <button class="dashboard-card-open" onClick={() => props.openSession(props.session.id)}>
+          <Button appearance="ghost" class="dashboard-card-open" onClick={() => props.openSession(props.session.id)}>
             <div>
               <strong>{title(props.session.title)}</strong>
             </div>
             <footer>
+              <span class="card-status-label">{sessionStatusLabel(status())}</span>
               <small>{props.meta ?? sessionCardMeta(props.session, props.snapshot)}</small>
             </footer>
-          </button>
-          <Show when={props.togglePinned}>
-            {(togglePinned) => <PinButton pinned={props.pinned === true} label={title(props.session.title)} onClick={togglePinned()} />}
+          </Button>
+          <Show when={actions().length > 0}>
+            <CardActionMenu label={title(props.session.title)} actions={actions()} />
           </Show>
           <Show when={status() === "in_progress"}><span class="mini-spinner" aria-label="running" /></Show>
           <Show when={status() === "input_needed" || status() === "ready_for_review"}><span class="status-glyph" aria-label={sessionStatusLabel(status())} /></Show>
@@ -88,6 +94,6 @@ export function isAttentionSession(snapshot: GuiSnapshot | undefined, session: S
 
 function sessionProjectName(session: Session, snapshot?: GuiSnapshot) {
   const project = (snapshot?.projects ?? []).find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
-  if (!project) return
+  if (!project) return undefined
   return title(project.name ?? project.project.name)
 }

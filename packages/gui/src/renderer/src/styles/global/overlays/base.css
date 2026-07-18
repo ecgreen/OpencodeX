@@ -1,0 +1,380 @@
+.view-editor-submit-panel .notice {
+  margin: 0;
+}
+
+.safety-panel.expanded {
+  position: fixed;
+  z-index: 80;
+  inset: 44px 24px 24px;
+  overflow: auto;
+}
+
+.safety-panel h2 {
+  margin-bottom: 8px;
+}
+
+.safety-panel p {
+  color: var(--text);
+}
+
+.safety-panel pre {
+  overflow: auto;
+  max-height: 220px;
+  padding: 12px;
+  border-radius: 6px;
+  color: var(--primary);
+  background: var(--bg);
+}
+
+.permission-context summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.question-block p {
+  margin: 0;
+}
+
+.question-block h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.question-block>p {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.question-option strong {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 760;
+}
+
+.question-option strong>span {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid color-mix(in srgb,var(--text) 22%,transparent);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.session-git-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: radial-gradient(circle at 50% 18%,color-mix(in srgb,var(--secondary) 14%,transparent),transparent 34%),var(--theme-backdrop);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.session-git-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto;
+  gap: 0;
+  width: min(760px,calc(100vw - 44px));
+  max-height: min(760px,calc(100vh - 44px));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb,var(--border) 74%,var(--secondary) 16%);
+  border-radius: 8px;
+  color: var(--text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--panel) 96%,white 2%),var(--panel)),var(--panel);
+  box-shadow: 0 30px 90px var(--theme-backdrop),0 0 0 1px var(--theme-overlay-subtle) inset;
+}
+
+.session-git-modal>header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: start;
+  gap: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--element) 70%,transparent),transparent),var(--panel);
+  padding: 18px 20px 16px;
+}
+
+.session-git-modal>header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.session-git-modal>header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: normal;
+}
+
+.session-git-modal>header .ui-icon-button {
+  margin-top: -4px;
+}
+
+.session-git-modal-body {
+  display: grid;
+  gap: 15px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+
+.session-git-modal-summary {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 10px;
+}
+
+.session-git-modal-summary>div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: linear-gradient(180deg,var(--theme-overlay-subtle),transparent),var(--element);
+  padding: 11px 12px;
+}
+
+.session-git-modal-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.session-git-modal-body label>span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.session-git-modal-summary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-git-modal-body label {
+  display: grid;
+  gap: 7px;
+}
+
+.session-git-modal-body select {
+  width: 100%;
+  border: 1px solid color-mix(in srgb,var(--border) 76%,transparent);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+  min-height: 38px;
+  padding: 0 11px;
+}
+
+.session-git-modal-body input {
+  width: 100%;
+  border: 1px solid color-mix(in srgb,var(--border) 76%,transparent);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+  min-height: 38px;
+}
+
+.session-git-modal-body textarea {
+  width: 100%;
+  border: 1px solid color-mix(in srgb,var(--border) 76%,transparent);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+  min-height: 130px;
+  resize: vertical;
+}
+
+.session-git-modal-status {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  padding: 11px 12px;
+  border-color: color-mix(in srgb,var(--secondary) 24%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--secondary) 10%,transparent),transparent 58%),var(--element);
+}
+
+.session-git-modal-notice {
+  margin: 0;
+  border: 1px solid color-mix(in srgb,var(--warning) 36%,var(--border-subtle));
+  border-radius: 7px;
+  color: color-mix(in srgb,var(--warning) 80%,var(--text));
+  background: color-mix(in srgb,var(--warning) 9%,var(--element));
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.session-git-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  border-top: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg,transparent,color-mix(in srgb,var(--element) 50%,transparent)),var(--panel);
+  padding: 14px 20px;
+}
+
+.session-open-new-tab-menu {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.session-open-overflow-tab-menu {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.session-open-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border: 1px solid color-mix(in srgb,var(--border-subtle) 72%,transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 3%,transparent),transparent),color-mix(in srgb,var(--panel) 66%,transparent);
+  cursor: pointer;
+  list-style: none;
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 3%,transparent);
+  transition: border-color .12s ease,background .12s ease,color .12s ease,box-shadow .12s ease;
+}
+
+.session-open-menu-trigger[aria-expanded=true] {
+  border-color: color-mix(in srgb,var(--accent) 50%,var(--border));
+  color: var(--text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent),color-mix(in srgb,var(--panel) 90%,var(--bg));
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 5%,transparent),0 0 0 2px color-mix(in srgb,var(--accent) 8%,transparent);
+}
+
+.session-open-popup-menu {
+  position: fixed;
+  z-index: 10000;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  min-width: 224px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb,var(--panel) 94%,var(--theme-canvas) 6%);
+  padding: 6px;
+  overflow-y: auto;
+  box-shadow: 0 18px 42px color-mix(in srgb,var(--theme-shadow-medium) 38%,transparent),inset 0 1px color-mix(in srgb,var(--text) 6%,transparent);
+}
+
+.session-open-popup-menu button {
+  display: grid;
+  grid-template-columns: 20px minmax(0,1fr);
+  align-items: center;
+  column-gap: 9px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text);
+  background: transparent;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.session-open-popup-menu button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-popup-menu button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-menu strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  grid-column: 1;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.slash-command-menu span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  grid-column: 2;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slash-command-menu p {
+  margin: 0;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-add-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.composer-add-menu button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+}
+
+.variant-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.variant-menu button {
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  padding: 8px 9px;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+}

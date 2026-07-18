@@ -28,6 +28,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import {
   createClientStateSync,
+  createClientWorkItemSelector,
 } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
@@ -145,6 +146,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     let stateSyncStart: Promise<void> | undefined
     let unsubscribeStateSync: (() => void) | undefined
     let stateSyncScope = ""
+    const selectWorkItems = createClientWorkItemSelector()
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
@@ -159,6 +161,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     function applyStateSync(state: ClientStateSyncState) {
       const projection = projectTuiClientState(state, {
         directory: kv.get("session_directory_filter_enabled", true) ? project.instance.directory() : undefined,
+        workItems: selectWorkItems(state),
       })
       batch(() => {
         setStore("state_sync", reconcile(state.lifecycle))

@@ -2,7 +2,7 @@ import type { FileNode } from "@opencode-ai/sdk/v2/client"
 import { For, Show } from "solid-js"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
-import { TextInput } from "./ui"
+import { Button, TextInput } from "./ui"
 
 export function WorkbenchOpenFileModal(props: {
   projectLabel: string
@@ -41,11 +41,11 @@ export function WorkbenchOpenFileModal(props: {
         <div class="workbench-open-file-results" role="listbox" aria-label="Matching files">
           <For each={props.options} fallback={<div class="empty">{props.searchState === "loading" ? "Searching..." : "No matching files."}</div>}>
             {(file) => (
-              <button type="button" role="option" onClick={() => props.openFile(file.path)}>
+              <Button appearance="ghost" type="button" role="option" onClick={() => props.openFile(file.path)}>
                 <Icon name={file.type === "directory" ? "folder" : "file"} />
                 <span>{file.name}</span>
                 <small>{file.path}</small>
-            </button>
+            </Button>
           )}
         </For>
         </div>

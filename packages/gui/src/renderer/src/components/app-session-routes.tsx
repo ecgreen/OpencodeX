@@ -1,19 +1,25 @@
 import { lazy } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { OpencodeXLogo } from "./chrome"
-import { ProjectCollectionPage, SessionCollectionPage } from "./collection-pages"
 import { Dashboard } from "./dashboard"
 import { findFiles } from "../lib/store"
 
-const SessionPage = lazy(() => import("./session-page").then((module) => ({ default: module.SessionPage })))
+const ProjectCollectionPage = lazy(() =>
+  import("./collection-pages").then((module) => ({ default: module.ProjectCollectionPage })),
+)
+const SessionCollectionPage = lazy(() =>
+  import("./collection-pages").then((module) => ({ default: module.SessionCollectionPage })),
+)
+const SessionPage = lazy(() => import("./session-page-entry").then((module) => ({ default: module.SessionPageEntry })))
 
 export function DashboardRoute(props: { model: GuiAppModel }) {
   const model = props.model
   return (
     <Dashboard
       snapshot={model.authoritative.snapshot()}
+      workItems={model.authoritative.workItems()}
       sessionOrderState={model.sessionSelection.orderState()}
-      logo={<OpencodeXLogo />}
+      logo={<OpencodeXLogo active={false} />}
       openProject={(projectID) => model.navigation.setRoute({ name: "projects", projectID })}
       openSession={(sessionID) => model.navigation.setRoute({ name: "session", sessionID })}
       openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
@@ -140,6 +146,8 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
   return (
     <ProjectCollectionPage
       snapshot={model.authoritative.snapshot()}
+      workItems={model.authoritative.workItems()}
+      attentionItems={model.authoritative.attentionItems()}
       sessionOrderState={model.sessionSelection.orderState()}
       projectID={model.sessionSelection.activeProject()?.id}
       openProject={(projectID) =>

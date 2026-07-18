@@ -13,6 +13,7 @@ import {
   type ClientStateSyncTransport,
 } from "@opencode-ai/sdk/v2/client-sync"
 import { projectTuiClientState } from "../../opencode/src/cli/cmd/tui/context/sync-state"
+import { clientWorkItems } from "@opencode-ai/sdk/v2/work-item"
 import { emptyGuiSnapshot, reconcileGuiAuthoritativeState } from "../src/renderer/src/lib/gui-state"
 import { sessionDataFromClientState } from "../src/renderer/src/lib/store"
 
@@ -70,6 +71,7 @@ test("GUI and TUI adapters project the same shared root, capabilities, interacti
   expect(gui?.config).toEqual(tui?.capabilities?.config)
   expect(guiSession?.messages).toEqual(tui?.details["session-1"]?.messages)
   expect(guiSession?.messages[0]?.parts[0]).toMatchObject({ text: "hello world" })
+  expect(tui?.workItems).toEqual(clientWorkItems(state))
   expect(controller.getMetrics().liveEventDuplicates).toBe(1)
   controller.stop()
 })

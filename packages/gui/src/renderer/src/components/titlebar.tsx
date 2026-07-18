@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import type { JSX } from "solid-js"
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -50,8 +51,8 @@ export function Titlebar(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div class="titlebar-history" aria-label="Navigation history">
-          <button class="titlebar-history-button" title="Back" aria-label="Back" disabled={!props.canGoBack} onClick={props.goBack}><Icon name="chevronLeft" /></button>
-          <button class="titlebar-history-button" title="Forward" aria-label="Forward" disabled={!props.canGoForward} onClick={props.goForward}><Icon name="chevronRight" /></button>
+          <Button appearance="ghost" class="titlebar-history-button" title="Back" aria-label="Back" disabled={!props.canGoBack} onClick={props.goBack}><Icon name="chevronLeft" /></Button>
+          <Button appearance="ghost" class="titlebar-history-button" title="Forward" aria-label="Forward" disabled={!props.canGoForward} onClick={props.goForward}><Icon name="chevronRight" /></Button>
         </div>
         <TitlebarMenu label="File" open={openMenu() === "File"} toggle={() => setOpenMenu(openMenu() === "File" ? "" : "File")}>
           <TitlebarMenuButton label="New Session" shortcut="Ctrl+N" action={props.newSession} close={() => setOpenMenu("")} />
@@ -82,9 +83,9 @@ export function Titlebar(props: {
       </div>
       <div class="titlebar-drag" />
       <div class="window-controls">
-        <button aria-label="Minimize" onClick={() => void window.opencodex?.window("minimize")}>-</button>
-        <button aria-label="Maximize" onClick={() => void window.opencodex?.window("maximize")}>{"\u25a1"}</button>
-        <button aria-label="Close" class="close" onClick={() => void window.opencodex?.window("close")}>{"\u00d7"}</button>
+        <Button appearance="ghost" aria-label="Minimize" onClick={() => void window.opencodex?.window("minimize")}>-</Button>
+        <Button appearance="ghost" aria-label="Maximize" onClick={() => void window.opencodex?.window("maximize")}>{"\u25a1"}</Button>
+        <Button appearance="ghost" aria-label="Close" class="close" onClick={() => void window.opencodex?.window("close")}>{"\u00d7"}</Button>
       </div>
     </header>
   )
@@ -143,7 +144,7 @@ function TitlebarMenu(props: { label: string; open: boolean; toggle: () => void;
 
 function TitlebarMenuButton(props: { label: string; shortcut?: string; disabled?: boolean; action: () => void; close: () => void }) {
   return (
-    <button
+    <Button appearance="ghost"
       class="titlebar-menu-item"
       disabled={props.disabled}
       onMouseDown={(event) => event.preventDefault()}
@@ -155,7 +156,7 @@ function TitlebarMenuButton(props: { label: string; shortcut?: string; disabled?
     >
       <span>{props.label}</span>
       <Show when={props.shortcut}><kbd>{props.shortcut}</kbd></Show>
-    </button>
+    </Button>
   )
 }
 

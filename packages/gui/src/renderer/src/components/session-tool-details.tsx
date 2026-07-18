@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import { CodeBlock } from "@opencode-ai/ui/code-block"
 import { File as FileDiffView } from "@opencode-ai/ui/file"
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js"
@@ -135,7 +136,7 @@ function ToolOutput(props: { output: string; maxLines?: number; compact?: boolea
           </For>
         </pre>
         <Show when={collapsed().overflow}>
-          <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Click to collapse" : "Click to expand"}</button>
+          <Button appearance="ghost" type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Click to collapse" : "Click to expand"}</Button>
         </Show>
       </div>
     </Show>
@@ -264,7 +265,7 @@ function ToolDiffHeaderContent(props: { title: string; filePath?: string; disclo
         <span class="tool-file-diff-path">{path()}</span>
       </Show>
       <div class="tool-file-diff-actions" aria-label={`Open ${filename()}`}>
-        <button
+        <Button appearance="ghost"
           type="button"
           class="tool-file-diff-action git"
           title={`Open ${filename()} in Git`}
@@ -273,8 +274,8 @@ function ToolDiffHeaderContent(props: { title: string; filePath?: string; disclo
           onClick={(event) => event.preventDefault()}
         >
           <Icon name="branch" />
-        </button>
-        <button
+        </Button>
+        <Button appearance="ghost"
           type="button"
           class="tool-file-diff-action file"
           title={`Open ${filename()} as file`}
@@ -283,7 +284,7 @@ function ToolDiffHeaderContent(props: { title: string; filePath?: string; disclo
           onClick={(event) => event.preventDefault()}
         >
           <Icon name="file" />
-        </button>
+        </Button>
       </div>
     </>
   )

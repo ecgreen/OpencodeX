@@ -1,23 +1,4 @@
-import { css } from "@codemirror/lang-css"
-import { html } from "@codemirror/lang-html"
-import { javascript } from "@codemirror/lang-javascript"
-import { json } from "@codemirror/lang-json"
-import { markdown } from "@codemirror/lang-markdown"
-import { python } from "@codemirror/lang-python"
-import { rust } from "@codemirror/lang-rust"
-import { yaml } from "@codemirror/lang-yaml"
-import { HighlightStyle, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language"
-import { c, cpp, csharp, dart, java, kotlin, scala } from "@codemirror/legacy-modes/mode/clike"
-import { diff } from "@codemirror/legacy-modes/mode/diff"
-import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile"
-import { go } from "@codemirror/legacy-modes/mode/go"
-import { lua } from "@codemirror/legacy-modes/mode/lua"
-import { powerShell } from "@codemirror/legacy-modes/mode/powershell"
-import { properties } from "@codemirror/legacy-modes/mode/properties"
-import { ruby } from "@codemirror/legacy-modes/mode/ruby"
-import { shell } from "@codemirror/legacy-modes/mode/shell"
-import { standardSQL } from "@codemirror/legacy-modes/mode/sql"
-import { toml } from "@codemirror/legacy-modes/mode/toml"
+import { HighlightStyle, syntaxHighlighting, syntaxTree } from "@codemirror/language"
 import { Compartment, EditorState, type Extension } from "@codemirror/state"
 import { Decoration, EditorView, keymap } from "@codemirror/view"
 import { lintGutter, linter, type Diagnostic } from "@codemirror/lint"
@@ -26,8 +7,9 @@ import { basicSetup } from "codemirror"
 import { createEffect, onCleanup, onMount } from "solid-js"
 import type { WorkbenchDiagnostic } from "../lib/store"
 import { workbenchChangedLineNumbers, workbenchLanguageID } from "../lib/workbench"
+import { loadCodeEditorLanguage } from "./code-editor-language"
 
-export function CodeEditor(props: {
+export type CodeEditorProps = {
   path: string
   value: string
   original: string
@@ -35,9 +17,13 @@ export function CodeEditor(props: {
   onSave: () => void
   onSelectionChange?: (value: string) => void
   diagnostics?: readonly WorkbenchDiagnostic[]
-}) {
+}
+
+export function CodeEditor(props: CodeEditorProps) {
   let host: HTMLDivElement | undefined
   let view: EditorView | undefined
+  let languageLoad = 0
+  let requestedLanguagePath = ""
   const language = new Compartment()
   const modified = new Compartment()
   const diagnostics = new Compartment()
@@ -50,7 +36,7 @@ export function CodeEditor(props: {
         doc: props.value,
         extensions: [
           basicSetup,
-          language.of(languageForPath(props.path)),
+          language.of([]),
           modified.of(modifiedLineDecorations(props.original)),
           diagnostics.of(diagnosticLineDecorations(props.diagnostics ?? [])),
           lintGutter(),
@@ -101,8 +87,8 @@ export function CodeEditor(props: {
               borderLeftColor: "#d4d4d4",
             },
             ".cm-selectionLayer .cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection, .cm-line::selection, .cm-line *::selection": {
-              backgroundColor: "#264f78 !important",
-              color: "inherit !important",
+              backgroundColor: "#264f78",
+              color: "inherit",
             },
             ".cm-dropCursor": {
               borderLeftColor: "#007acc",
@@ -160,6 +146,7 @@ export function CodeEditor(props: {
         ],
       }),
     })
+    void configureLanguage(props.path)
   })
 
   createEffect(() => {
@@ -172,16 +159,32 @@ export function CodeEditor(props: {
   })
 
   createEffect(() => {
+    void configureLanguage(props.path)
+  })
+
+  createEffect(() => {
     view?.dispatch({
       effects: [
-        language.reconfigure(languageForPath(props.path)),
         modified.reconfigure(modifiedLineDecorations(props.original)),
         diagnostics.reconfigure(diagnosticLineDecorations(props.diagnostics ?? [])),
       ],
     })
   })
 
-  onCleanup(() => view?.destroy())
+  onCleanup(() => {
+    languageLoad += 1
+    view?.destroy()
+  })
+
+  async function configureLanguage(path: string) {
+    if (!view) return
+    if (path === requestedLanguagePath) return
+    requestedLanguagePath = path
+    const request = ++languageLoad
+    const extension = await loadCodeEditorLanguage(path)
+    if (!view || request !== languageLoad) return
+    view.dispatch({ effects: language.reconfigure(extension) })
+  }
 
   return <div class="workbench-codemirror" ref={(element) => { host = element }} />
 }
@@ -267,35 +270,4 @@ function lineCommentPrefixes(language: string) {
 
 function blockCommentLanguages() {
   return new Set(["javascript", "css", "rust", "go", "c", "cpp", "java", "csharp", "kotlin", "scala", "dart", "sql"])
-}
-
-function languageForPath(file: string): Extension {
-  const language = workbenchLanguageID(file)
-  const extension = file.toLowerCase().split(".").at(-1) ?? ""
-  if (language === "javascript") return javascript({ jsx: ["jsx", "tsx"].includes(extension), typescript: ["ts", "tsx"].includes(extension) })
-  if (language === "css") return css()
-  if (language === "html") return html()
-  if (language === "json") return json()
-  if (language === "markdown") return markdown()
-  if (language === "python") return python()
-  if (language === "shell") return StreamLanguage.define(shell)
-  if (language === "powershell") return StreamLanguage.define(powerShell)
-  if (language === "rust") return rust()
-  if (language === "yaml") return yaml()
-  if (language === "toml") return StreamLanguage.define(toml)
-  if (language === "sql") return StreamLanguage.define(standardSQL)
-  if (language === "go") return StreamLanguage.define(go)
-  if (language === "ruby") return StreamLanguage.define(ruby)
-  if (language === "lua") return StreamLanguage.define(lua)
-  if (language === "c") return StreamLanguage.define(c)
-  if (language === "cpp") return StreamLanguage.define(cpp)
-  if (language === "java") return StreamLanguage.define(java)
-  if (language === "csharp") return StreamLanguage.define(csharp)
-  if (language === "kotlin") return StreamLanguage.define(kotlin)
-  if (language === "scala") return StreamLanguage.define(scala)
-  if (language === "dart") return StreamLanguage.define(dart)
-  if (language === "dockerfile") return StreamLanguage.define(dockerFile)
-  if (language === "diff") return StreamLanguage.define(diff)
-  if (language === "properties") return StreamLanguage.define(properties)
-  return []
 }

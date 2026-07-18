@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import type { LspStatus, McpStatus, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
 import type { SessionData } from "../lib/store"
@@ -41,9 +42,9 @@ export function SessionInspector(props: {
     <Show
       when={open()}
       fallback={
-        <button type="button" class="session-inspector-restore" title="Show context" aria-label="Show session context" onClick={() => setPanelOpen(true)}>
+        <Button appearance="ghost" type="button" class="session-inspector-restore" title="Show context" aria-label="Show session context" onClick={() => setPanelOpen(true)}>
           Context
-        </button>
+        </Button>
       }
     >
       <aside class="session-inspector" aria-label="Session context">
@@ -75,7 +76,7 @@ export function SessionContextPanel(props: {
       <div class="session-inspector-header">
         <strong>Context</strong>
         <Show when={props.close}>
-          {(close) => <button type="button" title="Hide context" aria-label="Hide session context" onClick={close()}>-</button>}
+          {(close) => <Button appearance="ghost" type="button" title="Hide context" aria-label="Hide session context" onClick={close()}>-</Button>}
         </Show>
       </div>
       <InspectorSection id="context" title="Usage" collapsed={props.collapsed.context} toggle={props.toggle}>
@@ -133,10 +134,10 @@ export function SessionContextPanel(props: {
 function InspectorSection(props: { id: string; title: string; collapsed?: boolean; toggle: (id: string) => void; children: JSX.Element }) {
   return (
     <section class="session-inspector-section">
-      <button type="button" aria-expanded={!props.collapsed} onClick={() => props.toggle(props.id)}>
+      <Button appearance="ghost" type="button" aria-expanded={!props.collapsed} onClick={() => props.toggle(props.id)}>
         <strong>{props.title}</strong>
         <span>{props.collapsed ? "+" : "-"}</span>
-      </button>
+      </Button>
       <Show when={!props.collapsed}>
         <div>{props.children}</div>
       </Show>

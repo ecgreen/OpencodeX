@@ -1,0 +1,141 @@
+.question-panel .question-option.selected strong>span {
+  border-color: color-mix(in srgb,var(--primary) 70%,var(--border-active));
+  color: var(--primary);
+  background: color-mix(in srgb,var(--primary) 12%,transparent);
+}
+
+.question-panel .question-option:hover strong>span {
+  border-color: color-mix(in srgb,var(--primary) 70%,var(--border-active));
+  color: var(--primary);
+  background: color-mix(in srgb,var(--primary) 12%,transparent);
+}
+
+.question-panel .custom-answer:focus {
+  border-color: color-mix(in srgb,var(--primary) 58%,var(--border-active));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--primary) 12%,transparent);
+}
+
+.text-dialog-card>input:focus {
+  border-color: color-mix(in srgb,var(--primary) 68%,var(--border-active));
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--primary) 18%,transparent);
+}
+
+.text-dialog-card>textarea:focus {
+  border-color: color-mix(in srgb,var(--primary) 68%,var(--border-active));
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--primary) 18%,transparent);
+}
+
+.session-toolbar .overflow-menu summary:hover {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  color: var(--text);
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  outline: none;
+}
+
+.session-toolbar .overflow-menu summary:focus-visible {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  color: var(--text);
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  outline: none;
+}
+
+.session-toolbar .session-actions-menu button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 22%,transparent);
+  background: color-mix(in srgb,var(--surface-hover) 78%,transparent);
+  box-shadow: none;
+  transform: none;
+}
+
+.session-toolbar .session-actions-menu button:focus-visible {
+  border-color: color-mix(in srgb,var(--brand) 22%,transparent);
+  background: color-mix(in srgb,var(--surface-hover) 78%,transparent);
+  box-shadow: none;
+  transform: none;
+}
+
+.session-toolbar .session-actions-menu button>span:not(.session-actions-menu-indicator) {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-toolbar .session-actions-menu-indicator[data-active=true] {
+  border-color: color-mix(in srgb,var(--brand) 48%,var(--line));
+  color: var(--brand);
+  background: color-mix(in srgb,var(--brand) 16%,transparent);
+}
+
+.card-context-menu button:hover {
+  border-color: color-mix(in srgb,var(--brand) 22%,transparent);
+  background: color-mix(in srgb,var(--surface-hover) 78%,transparent);
+  outline: none;
+}
+
+.card-context-menu button:focus-visible {
+  border-color: color-mix(in srgb,var(--brand) 22%,transparent);
+  background: color-mix(in srgb,var(--surface-hover) 78%,transparent);
+  outline: none;
+}
+
+.titlebar-menu-group>summary:hover {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-menu-group>summary:focus-visible {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-menu-group>summary::-webkit-details-marker {
+  display: none;
+}
+
+.titlebar-menu-item:hover:not(:disabled) {
+  background: color-mix(in srgb,var(--element) 88%,transparent);
+}
+
+.titlebar-menu-item:focus-visible {
+  background: color-mix(in srgb,var(--element) 88%,transparent);
+}
+
+.app-notice.error {
+  border-color: color-mix(in srgb,var(--danger) 68%,var(--border));
+}
+
+.dashboard-item-card:hover .card-action-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dashboard-item-card:focus-within .card-action-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.card-action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.card-action-menu summary:hover {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.card-action-menu summary:focus-visible {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.card-action-menu button:hover {
+  background: var(--element-2);
+}
+
+.card-action-menu button:focus-visible {
+  background: var(--element-2);
+}

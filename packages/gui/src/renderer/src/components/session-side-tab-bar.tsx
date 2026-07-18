@@ -1,3 +1,4 @@
+import { Button } from "./ui"
 import { For, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { Icon } from "./icon"
@@ -20,7 +21,7 @@ export function SessionSideTabBar(props: {
         {(row) => row.type === "placeholder" ? (
           <div class="session-open-tab-placeholder" data-open-tab-row-id="placeholder" style={{ width: `${row.width}px` }} />
         ) : (
-          <button
+          <Button appearance="ghost"
             type="button"
             class="session-open-tab-button"
             role="tab"
@@ -60,12 +61,12 @@ export function SessionSideTabBar(props: {
             >
               <Icon name="x" />
             </span>
-          </button>
+          </Button>
         )}
       </For>
       <Show when={controller.overflowTabs().length > 0}>
         <div class="session-open-overflow-tab-menu">
-          <button
+          <Button appearance="ghost"
             type="button"
             class="session-open-menu-trigger session-open-overflow-trigger"
             ref={controller.setOverflowMenuAnchor}
@@ -76,7 +77,7 @@ export function SessionSideTabBar(props: {
           >
             <Icon name="more" />
             <span>{controller.overflowTabs().length} tabs</span>
-          </button>
+          </Button>
         </div>
         <Show when={controller.overflowMenuOpen()}>
           <Portal>
@@ -88,10 +89,10 @@ export function SessionSideTabBar(props: {
             >
               <For each={controller.overflowTabs()}>
                 {(tab) => (
-                  <button type="button" classList={{ active: controller.activeID() === tab.id }} onClick={() => controller.selectOverflow(tab.id)}>
+                  <Button appearance="ghost" type="button" classList={{ active: controller.activeID() === tab.id }} onClick={() => controller.selectOverflow(tab.id)}>
                     <Icon name={openTabIcon(tab)} />
                     <span>{controller.label(tab)}</span>
-                  </button>
+                  </Button>
                 )}
               </For>
             </div>
@@ -99,7 +100,7 @@ export function SessionSideTabBar(props: {
         </Show>
       </Show>
       <div class="session-open-new-tab-menu">
-        <button
+        <Button appearance="ghost"
           type="button"
           class="session-open-menu-trigger"
           ref={controller.setNewMenuAnchor}
@@ -109,16 +110,16 @@ export function SessionSideTabBar(props: {
           onClick={controller.toggleNewMenu}
         >
           <Icon name="plus" />
-        </button>
+        </Button>
       </div>
       <Show when={controller.newMenuOpen()}>
         <Portal>
           <div class="session-open-popup-menu session-open-new-tab-panel" ref={controller.setNewMenuPanel} style={controller.newMenuStyle()}>
-            <button type="button" onClick={props.addGit}><Icon name="branch" /><span>Git</span></button>
-            <button type="button" onClick={props.addFile}><Icon name="file" /><span>New file</span></button>
-            <button type="button" onClick={props.addTerminal}><Icon name="terminal" /><span>New Terminal</span></button>
-            <button type="button" onClick={props.addContext}><Icon name="context" /><span>Context</span></button>
-            <button type="button" onClick={props.addWeb}><Icon name="browser" /><span>New Webpage</span></button>
+            <Button appearance="ghost" type="button" onClick={props.addGit}><Icon name="branch" /><span>Git</span></Button>
+            <Button appearance="ghost" type="button" onClick={props.addFile}><Icon name="file" /><span>New file</span></Button>
+            <Button appearance="ghost" type="button" onClick={props.addTerminal}><Icon name="terminal" /><span>New Terminal</span></Button>
+            <Button appearance="ghost" type="button" onClick={props.addContext}><Icon name="context" /><span>Context</span></Button>
+            <Button appearance="ghost" type="button" onClick={props.addWeb}><Icon name="browser" /><span>New Webpage</span></Button>
           </div>
         </Portal>
       </Show>
@@ -126,15 +127,15 @@ export function SessionSideTabBar(props: {
       <div class="session-open-tab-measure" ref={controller.setMeasure} aria-hidden="true">
         <For each={controller.tabs()}>
           {(tab) => (
-            <button type="button" class="session-open-tab-button" data-open-tab-measure-id={tab.id} tabIndex={-1}>
+            <Button appearance="ghost" type="button" class="session-open-tab-button" data-open-tab-measure-id={tab.id} tabIndex={-1}>
               <Icon name={openTabIcon(tab)} /><span>{controller.label(tab)}</span><span class="session-open-tab-close"><Icon name="x" /></span>
-            </button>
+            </Button>
           )}
         </For>
         <For each={controller.tabs().map((_, index) => index + 1)}>
-          {(count) => <button type="button" class="session-open-menu-trigger session-open-overflow-trigger" data-open-tab-measure-overflow-count={count} tabIndex={-1}><Icon name="more" /><span>{count} tabs</span></button>}
+          {(count) => <Button appearance="ghost" type="button" class="session-open-menu-trigger session-open-overflow-trigger" data-open-tab-measure-overflow-count={count} tabIndex={-1}><Icon name="more" /><span>{count} tabs</span></Button>}
         </For>
-        <button type="button" class="session-open-menu-trigger" data-open-tab-measure-control="new" tabIndex={-1}><Icon name="plus" /></button>
+        <Button appearance="ghost" type="button" class="session-open-menu-trigger" data-open-tab-measure-control="new" tabIndex={-1}><Icon name="plus" /></Button>
       </div>
     </div>
   )

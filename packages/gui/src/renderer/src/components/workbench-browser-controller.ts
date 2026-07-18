@@ -1,4 +1,5 @@
-import { createMemo, createSignal, onCleanup, type Setter } from "solid-js"
+import type { Accessor, Setter } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import {
   activeWorkbenchBrowserTab,
   addWorkbenchArtifact,
@@ -13,9 +14,11 @@ import {
   type WorkbenchBrowserTab,
   type WorkbenchTab,
 } from "../lib/workbench"
+import { createNativeBrowserController } from "./native-browser-controller"
 import { newBrowserID } from "./workbench-page-helpers"
 
 export function createWorkbenchBrowserController(input: {
+  active: Accessor<boolean>
   initialTabs: WorkbenchBrowserTab[]
   initialActiveID: string
   setArtifacts: Setter<WorkbenchArtifact[]>
@@ -28,77 +31,23 @@ export function createWorkbenchBrowserController(input: {
   const id = createMemo(() => activeTab()?.id ?? activeID())
   const url = createMemo(() => activeTab()?.url ?? "")
   const state = createMemo(() => activeTab()?.state)
-  const createdIDs = new Set<string>()
-  let host: HTMLDivElement | undefined
-  let resizeObserver: ResizeObserver | undefined
-  let boundsFrame = 0
-
-  const scheduleBounds = () => {
-    cancelAnimationFrame(boundsFrame)
-    boundsFrame = requestAnimationFrame(updateBounds)
-  }
-
-  window.addEventListener("resize", scheduleBounds)
-  window.addEventListener("focus", scheduleBounds)
-  window.visualViewport?.addEventListener("resize", scheduleBounds)
-  document.addEventListener("visibilitychange", scheduleBounds)
-
-  onCleanup(() => {
-    cancelAnimationFrame(boundsFrame)
-    resizeObserver?.disconnect()
-    window.removeEventListener("resize", scheduleBounds)
-    window.removeEventListener("focus", scheduleBounds)
-    window.visualViewport?.removeEventListener("resize", scheduleBounds)
-    document.removeEventListener("visibilitychange", scheduleBounds)
-    tabs().forEach((item) => void window.opencodex?.browser?.destroy(item.id))
+  const native = createNativeBrowserController({
+    active: input.active,
+    activeID: id,
+    ids: () => tabs().map((tab) => tab.id),
+    url: (browserID) => tabs().find((tab) => tab.id === browserID)?.url,
+    applyState: (_browserID, next) => setTabs((items) => updateWorkbenchBrowserTabState(items, next)),
+    applyError: (_browserID, message) => input.setNotice(message),
   })
 
-  async function ensure() {
-    const browser = window.opencodex?.browser
-    const current = activeTab()
-    if (!browser || !current) return
-    const next = await browser.create({ id: current.id, url: createdIDs.has(current.id) ? undefined : current.url })
-    createdIDs.add(current.id)
-    if (next) setTabs((items) => updateWorkbenchBrowserTabState(items, next))
-  }
-
-  function updateBounds() {
-    if (!host || !window.opencodex?.browser) return
-    const rect = host.getBoundingClientRect()
-    void window.opencodex.browser.bounds({
-      id: id(),
-      x: Math.round(rect.x),
-      y: Math.round(rect.y),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    }).then((next) => {
-      if (next) setTabs((items) => updateWorkbenchBrowserTabState(items, next))
-    })
-    hideTabs(id())
-    if (resizeObserver) return
-    resizeObserver = new ResizeObserver(scheduleBounds)
-    resizeObserver.observe(host)
-  }
-
-  function hideTabs(exceptID = "") {
-    tabs().filter((item) => item.id !== exceptID).forEach((item) => {
-      void window.opencodex?.browser?.hide(item.id)
-    })
-  }
-
   async function navigate() {
-    const browser = window.opencodex?.browser
-    if (!browser) return
     const nextURL = workbenchNormalizeBrowserURL(url())
     setTabs((items) => updateWorkbenchBrowserTabURL(items, id(), nextURL))
-    const next = await browser.navigate({ id: id(), url: nextURL })
-    createdIDs.add(id())
-    if (next) setTabs((items) => updateWorkbenchBrowserTabState(items, next))
+    await native.navigate(id(), nextURL)
   }
 
-  async function action(action: "back" | "forward" | "reload" | "stop") {
-    const next = await window.opencodex?.browser?.action({ id: id(), action })
-    if (next) setTabs((items) => updateWorkbenchBrowserTabState(items, next))
+  async function action(value: "back" | "forward" | "reload" | "stop") {
+    await native.action(id(), value)
   }
 
   async function captureScreenshot() {
@@ -129,9 +78,9 @@ export function createWorkbenchBrowserController(input: {
     setTabs((items) => updateWorkbenchBrowserTabURL(items, id(), value))
   }
 
-  function createTab(url = "", title = "New tab") {
+  function createTab(nextURL = "", title = "New tab") {
     const nextID = newBrowserID()
-    setTabs((items) => addWorkbenchBrowserTab(items, { id: nextID, url: workbenchNormalizeBrowserURL(url), title }))
+    setTabs((items) => addWorkbenchBrowserTab(items, { id: nextID, url: workbenchNormalizeBrowserURL(nextURL), title }))
     setActiveID(nextID)
   }
 
@@ -141,13 +90,12 @@ export function createWorkbenchBrowserController(input: {
     input.setTab("browser")
   }
 
-  function closeTab(id: string) {
-    const next = closeWorkbenchBrowserTab(tabs(), activeID(), id)
+  function closeTab(browserID: string) {
+    const next = closeWorkbenchBrowserTab(tabs(), activeID(), browserID)
     const fallback = next.tabs.length === 0 ? { id: newBrowserID(), url: "", title: "New tab" } : undefined
     setTabs(fallback ? [fallback] : next.tabs)
     setActiveID(fallback?.id ?? next.activeID)
-    createdIDs.delete(id)
-    void window.opencodex?.browser?.destroy(id)
+    native.destroy(browserID)
   }
 
   return {
@@ -158,9 +106,10 @@ export function createWorkbenchBrowserController(input: {
     id,
     url,
     state,
-    ensure,
-    updateBounds,
-    hideTabs,
+    lifecycle: native.lifecycle,
+    error: native.error,
+    showActive: native.showActive,
+    hideTabs: native.hideAll,
     navigate,
     action,
     captureScreenshot,
@@ -169,6 +118,6 @@ export function createWorkbenchBrowserController(input: {
     createTab,
     openURL,
     closeTab,
-    setHost: (element: HTMLDivElement) => { host = element },
+    setHost: native.setHost,
   }
 }

@@ -1,0 +1,358 @@
+.slash-command-menu::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.command-palette-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.slash-command-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.command-palette-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.slash-command-menu::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.command-palette-list::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.slash-command-menu::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.command-palette-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.slash-command-menu::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.command-palette-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.safety-panel:focus {
+  outline: 1px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.question-block.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.question-option.selected strong>span {
+  border-color: color-mix(in srgb,var(--text) 48%,transparent);
+  color: var(--text);
+  background: color-mix(in srgb,var(--text) 10%,transparent);
+}
+
+.question-option:hover strong>span {
+  border-color: color-mix(in srgb,var(--text) 48%,transparent);
+  color: var(--text);
+  background: color-mix(in srgb,var(--text) 10%,transparent);
+}
+
+.session-git-modal-status span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.session-git-modal-status span:last-child {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-git-modal-body select:focus {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-git-modal-body input:focus {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-git-modal-body textarea:focus {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-open-menu-trigger:hover {
+  border-color: color-mix(in srgb,var(--accent) 50%,var(--border));
+  color: var(--text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent),color-mix(in srgb,var(--panel) 90%,var(--bg));
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 5%,transparent),0 0 0 2px color-mix(in srgb,var(--accent) 8%,transparent);
+}
+
+.session-open-menu-trigger:focus-visible {
+  border-color: color-mix(in srgb,var(--accent) 50%,var(--border));
+  color: var(--text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent),color-mix(in srgb,var(--panel) 90%,var(--bg));
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 5%,transparent),0 0 0 2px color-mix(in srgb,var(--accent) 8%,transparent);
+}
+
+.session-open-popup-menu button:hover {
+  background: var(--element);
+}
+
+.session-open-popup-menu button:focus-visible {
+  background: var(--element);
+}
+
+.slash-command-menu button:hover:not(:disabled) {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+.slash-command-menu button.selected:not(:disabled) {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+.slash-command-menu button:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.composer-add-menu button:hover {
+  border-color: var(--border-subtle);
+  background: var(--theme-overlay-soft);
+}
+
+.composer-add-menu button.selected {
+  border-color: var(--border-subtle);
+  background: var(--theme-overlay-soft);
+}
+
+.composer-add-menu button:nth-child(2).selected {
+  color: var(--theme-special);
+}
+
+.composer-add-menu button:nth-child(2):hover {
+  color: var(--theme-special);
+}
+
+.variant-menu button:hover {
+  color: var(--warning);
+  background: color-mix(in srgb,var(--theme-accent) 11%,transparent);
+}
+
+.variant-menu button.selected {
+  color: var(--warning);
+  background: color-mix(in srgb,var(--theme-accent) 11%,transparent);
+}
+
+.command-palette-list button.suggested:not(:disabled) {
+  border-color: var(--theme-border);
+}
+
+.command-palette-list button:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.overflow-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.routing-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.overflow-menu button:hover {
+  background: var(--theme-surface-raised);
+}
+
+.tool-questions>div:last-child {
+  border-bottom: 0;
+}
+
+.workbench-menu>summary:hover {
+  background: var(--workbench-row-hover);
+  color: var(--workbench-text);
+}
+
+.workbench-menu>summary::-webkit-details-marker {
+  display: none;
+}
+
+.workbench-menu-popover button:hover {
+  background: var(--workbench-row-hover);
+}
+
+.dialog-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-1px);
+}
+
+.overflow-menu button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-1px);
+}
+
+.dialog-actions button:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--surface-active);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+}
+
+.model-menu:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--surface-active);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+}
+
+.dialog-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.model-menu:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.overflow-menu summary:hover {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.command-palette-modal header button:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.model-picker-modal header button:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.dialog-card input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.dialog-card textarea:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.command-palette-modal>input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.model-picker-modal input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.keyboard-help-modal>input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.model-menu:before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--muted) 72%,transparent);
+}
+
+.model-menu:hover:not(:disabled) {
+  color: var(--primary);
+  transform: translateY(-1px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.model-menu:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.command-palette-list button:hover:not(:disabled) {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.command-palette-list button.selected:not(:disabled) {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.slash-command-menu button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.slash-command-menu button.selected {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.question-panel .question-block.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.question-panel .option-list button:hover {
+  border-color: color-mix(in srgb,var(--primary) 52%,var(--border-active));
+  background: color-mix(in srgb,var(--element) 72%,var(--primary) 14%);
+  transform: translateY(-1px);
+}
+
+.question-panel .option-list button.selected {
+  border-color: color-mix(in srgb,var(--primary) 52%,var(--border-active));
+  background: color-mix(in srgb,var(--element) 72%,var(--primary) 14%);
+  transform: translateY(-1px);
+}

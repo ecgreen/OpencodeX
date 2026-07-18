@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import type { GuiTranscriptExportOptions } from "../lib/transcript-export"
 import { ModalFrame } from "./modal-frame"
-import { Button, CommandRow, IconButton, TextArea, TextInput } from "./ui"
+import { Button, Checkbox, CommandRow, IconButton, TextArea, TextInput } from "./ui"
 
 export type ChoiceOption = { value: string; title: string; description?: string; meta?: string }
 export type ProjectDialogValue = { name: string; folders: string[] }
@@ -117,7 +117,7 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
           footer={(
             <div class="dialog-actions">
               <Button onClick={cancel}>Cancel</Button>
-              <Button type="submit" variant="primary" disabled={current().type === "project" && !projectValue()}>{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</Button>
+              <Button type="submit" appearance="solid" tone="accent" disabled={current().type === "project" && !projectValue()}>{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</Button>
             </div>
           )}
         >
@@ -147,22 +147,10 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
                   <span>Filename</span>
                   <TextInput value={value()} onInput={(event) => setValue(event.currentTarget.value)} placeholder="session.md" autofocus />
                 </label>
-                <label class="checkbox-row">
-                  <input type="checkbox" checked={thinking()} onChange={(event) => setThinking(event.currentTarget.checked)} />
-                  <span>Include thinking</span>
-                </label>
-                <label class="checkbox-row">
-                  <input type="checkbox" checked={toolDetails()} onChange={(event) => setToolDetails(event.currentTarget.checked)} />
-                  <span>Include tool details</span>
-                </label>
-                <label class="checkbox-row">
-                  <input type="checkbox" checked={assistantMetadata()} onChange={(event) => setAssistantMetadata(event.currentTarget.checked)} />
-                  <span>Include assistant metadata</span>
-                </label>
-                <label class="checkbox-row">
-                  <input type="checkbox" checked={openWithoutSaving()} onChange={(event) => setOpenWithoutSaving(event.currentTarget.checked)} />
-                  <span>Open without saving</span>
-                </label>
+                <Checkbox class="checkbox-row" label="Include thinking" checked={thinking()} onChange={setThinking} />
+                <Checkbox class="checkbox-row" label="Include tool details" checked={toolDetails()} onChange={setToolDetails} />
+                <Checkbox class="checkbox-row" label="Include assistant metadata" checked={assistantMetadata()} onChange={setAssistantMetadata} />
+                <Checkbox class="checkbox-row" label="Open without saving" checked={openWithoutSaving()} onChange={setOpenWithoutSaving} />
               </div>
             </Show>
             <Show when={current().type === "project"}>
