@@ -1,14 +1,20 @@
 import type { OpencodeXProject, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
-import { pendingViewSessions, type PendingViewSession } from "./view-items"
+import { metadataWithPendingSessions, metadataWithViewPaneOrder, pendingViewSessions, viewPaneOrder, type PendingViewSession, type ViewPaneOrderItem } from "./view-items"
+
+export { metadataWithPendingSessions } from "./view-items"
 
 export type ViewSelection = { kind: "existing"; sessionID: string } | { kind: "pending"; slot: PendingViewSession }
 export type ViewSessionProjectGroup = { project: OpencodeXProject; sessions: Session[] }
 
 export function initialViewSelection(view?: OpencodeXView): ViewSelection[] {
-  return [
+  const selection = [
     ...(view?.sessionIDs ?? []).map((sessionID): ViewSelection => ({ kind: "existing", sessionID })),
     ...pendingViewSessions(view).map((slot): ViewSelection => ({ kind: "pending", slot })),
-  ].slice(0, 8)
+  ]
+  const byKey = new Map(selection.map((item) => [selectionKey(item), item]))
+  const ordered = viewPaneOrder(view).flatMap((item) => byKey.get(`${item.kind}:${item.id}`) ?? [])
+  const included = new Set(ordered.map(selectionKey))
+  return [...ordered, ...selection.filter((item) => !included.has(selectionKey(item)))].slice(0, 8)
 }
 
 export function selectedViewSessionIDs(selection: ViewSelection[]) {
@@ -23,18 +29,11 @@ export function selectedPendingViewSessions(selection: ViewSelection[]) {
     .map((item) => item.slot)
 }
 
-export function metadataWithPendingSessions(metadata: Record<string, unknown> | undefined, pending: PendingViewSession[]) {
-  const next = { ...(metadata ?? {}) }
-  const opencodex = isRecord(next.opencodex) ? { ...next.opencodex } : {}
-  if (pending.length > 0) {
-    opencodex.pendingSessions = pending
-    next.opencodex = opencodex
-    return next
-  }
-  delete opencodex.pendingSessions
-  if (Object.keys(opencodex).length > 0) next.opencodex = opencodex
-  else delete next.opencodex
-  return next
+export function metadataWithViewSelection(metadata: Record<string, unknown> | undefined, selection: ViewSelection[]) {
+  return metadataWithViewPaneOrder(
+    metadataWithPendingSessions(metadata, selectedPendingViewSessions(selection)),
+    selection.map((item): ViewPaneOrderItem => item.kind === "existing" ? { kind: "session", id: item.sessionID } : { kind: "pending", id: item.slot.id }),
+  )
 }
 
 export function viewTitle(input: { title: string; selection: ViewSelection[]; sessions: Session[] }) {
@@ -90,6 +89,6 @@ export function groupViewSessionsByProject(input: { sessions: Session[]; project
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+function selectionKey(item: ViewSelection) {
+  return item.kind === "existing" ? `session:${item.sessionID}` : `pending:${item.slot.id}`
 }

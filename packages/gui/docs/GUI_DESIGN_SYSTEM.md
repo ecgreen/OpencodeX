@@ -78,8 +78,8 @@ intentional scroll owner. Full-bleed descendants use `height: 100%`, `min-width:
 the complete sizing chain. Feature CSS Modules may control placement and dimensions but cannot target primitive
 internals.
 
-The six permanent destinations remain Dashboard, Projects, Sessions, Views, Swarms, and Workbench. Status and
-Settings remain internal or palette destinations. Counters may not change navigation geometry. A clickable card
+The four permanent rail destinations are Dashboard, Projects, Swarms, and Views. Plugin management remains an
+internal or palette destination, while workbench tools surface in session context. Counters may not change navigation geometry. A clickable card
 is its primary action; nearby utilities are progressively disclosed on hover and `:focus-within` and remain
 keyboard accessible.
 

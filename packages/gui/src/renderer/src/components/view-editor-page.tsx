@@ -7,14 +7,13 @@ import {
   addPendingViewSessions,
   groupViewSessionsByProject,
   initialViewSelection,
-  metadataWithPendingSessions,
-  selectedPendingViewSessions,
+  metadataWithViewSelection,
   selectedViewSessionIDs,
   viewTitle,
   type ViewSelection,
 } from "../lib/view-actions"
 import { Icon } from "./icon"
-import { Button, Checkbox, IconButton, TextInput } from "./ui"
+import { Button, Checkbox, IconButton, InlineNotice, SearchField, TextField } from "./ui"
 
 export function ViewEditorPage(props: {
   view?: OpencodeXView
@@ -29,7 +28,6 @@ export function ViewEditorPage(props: {
   const [saving, setSaving] = createSignal(false)
   const [sessionQuery, setSessionQuery] = createSignal("")
   const selectedIDs = createMemo(() => new Set(selectedViewSessionIDs(selection())))
-  const pending = createMemo(() => selectedPendingViewSessions(selection()))
   const atPaneLimit = createMemo(() => selection().length >= 8)
   const editing = createMemo(() => props.view !== undefined)
   const [collapsedSessionGroups, setCollapsedSessionGroups] = createSignal<Record<string, boolean>>({})
@@ -78,6 +76,12 @@ export function ViewEditorPage(props: {
     setSelection((current) => current.filter((item) => item.kind !== "existing" || item.sessionID !== sessionID))
   }
 
+  function movePane(index: number, offset: number) {
+    const target = index + offset
+    if (target < 0 || target >= selection().length) return
+    setSelection((current) => current.map((item, itemIndex) => itemIndex === index ? current[target] : itemIndex === target ? current[index] : item))
+  }
+
   function toggleSessionGroup(groupID: string) {
     setCollapsedSessionGroups((current) => ({ ...current, [groupID]: !current[groupID] }))
   }
@@ -95,7 +99,7 @@ export function ViewEditorPage(props: {
         viewID: props.view?.id,
         title: viewTitle({ title: viewName(), selection: selection(), sessions: props.sessions }),
         sessionIDs: selectedViewSessionIDs(selection()),
-        metadata: metadataWithPendingSessions(props.view?.metadata, pending()),
+        metadata: metadataWithViewSelection(props.view?.metadata, selection()),
       })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -117,10 +121,7 @@ export function ViewEditorPage(props: {
       </header>
       <div class="view-editor-layout">
         <aside class="view-builder-panel">
-          <label class="full-width-field">
-            <span>Title</span>
-            <TextInput value={viewName()} onInput={(event) => setViewName(event.currentTarget.value)} placeholder="Generated from selected sessions" />
-          </label>
+          <TextField fieldClass="full-width-field" label="Title" value={viewName()} onInput={(event) => setViewName(event.currentTarget.value)} placeholder="Generated from selected sessions" />
           <section class="selected-pane-list">
             <header>
               <strong>Selected panes</strong>
@@ -134,13 +135,18 @@ export function ViewEditorPage(props: {
                     <strong>{pane.item.kind === "existing" ? title(pane.session?.title) : "New session"}</strong>
                     <small>{pane.item.kind === "existing" ? compactPath(pane.session?.directory) : pane.item.slot.projectLabel ?? "No project"}</small>
                   </div>
-                  <IconButton
-                    appearance="ghost"
-                    tone="danger"
-                    icon="trash"
-                    label="Remove pane"
-                    onClick={() => pane.item.kind === "existing" ? removeExisting(pane.item.sessionID) : removePending(pane.item.slot.id)}
-                  />
+                  <div class="selected-pane-actions">
+                    <IconButton appearance="ghost" size="compact" icon="arrowUp" label={`Move pane ${index() + 1} up`} disabled={index() === 0} onClick={() => movePane(index(), -1)} />
+                    <IconButton appearance="ghost" size="compact" icon="arrowDown" label={`Move pane ${index() + 1} down`} disabled={index() === selection().length - 1} onClick={() => movePane(index(), 1)} />
+                    <IconButton
+                      appearance="ghost"
+                      size="compact"
+                      tone="danger"
+                      icon="trash"
+                      label={`Remove pane ${index() + 1}`}
+                      onClick={() => pane.item.kind === "existing" ? removeExisting(pane.item.sessionID) : removePending(pane.item.slot.id)}
+                    />
+                  </div>
                 </article>
               )}
             </For>
@@ -156,9 +162,9 @@ export function ViewEditorPage(props: {
           </section>
           <section class="view-editor-submit-panel">
             <Show when={error()}>
-              <div class="notice error">{error()}</div>
+              <InlineNotice tone="danger">{error()}</InlineNotice>
             </Show>
-            <Button type="submit" appearance="solid" tone="accent" icon="check" disabled={saving()}>
+            <Button type="submit" appearance="solid" tone="accent" icon="check" loading={saving()}>
               {saving() ? "Saving..." : editing() ? "Save view" : "Create view"}
             </Button>
           </section>
@@ -169,7 +175,7 @@ export function ViewEditorPage(props: {
               <strong>Available sessions</strong>
               <span>{selectedIDs().size} selected</span>
             </div>
-            <TextInput value={sessionQuery()} onInput={(event) => setSessionQuery(event.currentTarget.value)} placeholder="Search sessions" />
+            <SearchField aria-label="Search available sessions" value={sessionQuery()} onInput={(event) => setSessionQuery(event.currentTarget.value)} placeholder="Search sessions" clearable={sessionQuery().length > 0} onClear={() => setSessionQuery("")} />
           </header>
           <Show when={hasAvailableSessions()} fallback={<div class="empty">No sessions available.</div>}>
             <div class="view-session-groups">

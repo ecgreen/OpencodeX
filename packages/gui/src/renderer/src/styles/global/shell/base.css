@@ -44,7 +44,7 @@
   grid-template-rows: 1fr;
   opacity: 1;
   transform: translateY(0);
-  transition: grid-template-rows .46s cubic-bezier(.22,1,.36,1),opacity .34s ease,transform .46s cubic-bezier(.22,1,.36,1);
+  transition: grid-template-rows var(--ds-motion-route) cubic-bezier(.22,1,.36,1),opacity var(--ds-motion-control) ease,transform var(--ds-motion-route) cubic-bezier(.22,1,.36,1);
 }
 
 .rail-section-content>div {
@@ -83,7 +83,7 @@
   min-width: 0;
   opacity: 1;
   transform: translate(0);
-  transition: opacity .26s ease,transform .42s cubic-bezier(.16,1,.3,1);
+  transition: opacity var(--ds-motion-control) ease,transform var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
 }
 
 .brand-mark svg {
@@ -111,7 +111,7 @@
   display: flex;
   gap: 6px;
   margin-left: auto;
-  transition: gap .42s cubic-bezier(.16,1,.3,1),margin .42s cubic-bezier(.16,1,.3,1);
+  transition: gap var(--ds-motion-route) cubic-bezier(.16,1,.3,1),margin var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
 }
 
 .rail-collapsed .brand-mark {
@@ -122,18 +122,6 @@
   position: relative;
   z-index: 20;
   overflow: visible;
-}
-
-.rail-collapsed .nav button {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  padding: 8px;
-  flex: 0 0 34px;
-  width: 34px;
-  opacity: 1;
-  pointer-events: auto;
-  transform: translate(0);
-  transition: color .14s ease,background .14s ease;
 }
 
 .rail-section.section-slot-placeholder>header {
@@ -179,22 +167,26 @@
 
 .app-shell {
   display: grid;
-  grid-template-rows: 42px 1fr;
+  grid-template-rows: 36px 1fr;
   width: 100vw;
   max-width: 100vw;
   height: 100vh;
   min-width: 0;
   overflow: hidden;
-  grid-template-columns: 300px minmax(0,1fr);
-  transition: grid-template-columns .42s cubic-bezier(.16,1,.3,1);
+  grid-template-columns: var(--rail-width,300px) minmax(0,1fr);
+  transition: grid-template-columns var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
   background: var(--bg);
 }
 
+.app-shell.rail-resizing {
+  transition: none;
+}
+
 .rail-section {
-  margin-top: 8px;
+  margin-top: 12px;
   position: relative;
   transition: transform .18s cubic-bezier(.16,1,.3,1);
-  background: var(--bg);
+  background: transparent;
   box-shadow: none;
 }
 
@@ -235,7 +227,7 @@
   position: relative;
   width: 22px;
   height: 22px;
-  transition: color .42s cubic-bezier(.16,1,.3,1),stroke .42s cubic-bezier(.16,1,.3,1),transform .42s cubic-bezier(.16,1,.3,1),filter .42s cubic-bezier(.16,1,.3,1);
+  transition: color var(--ds-motion-route) cubic-bezier(.16,1,.3,1),stroke var(--ds-motion-route) cubic-bezier(.16,1,.3,1),transform var(--ds-motion-route) cubic-bezier(.16,1,.3,1),filter var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
 }
 
 .rail-collapsed .brand {
@@ -282,19 +274,6 @@
   box-shadow: none;
   width: 44px;
   height: 44px;
-}
-
-.rail-collapsed .nav {
-  position: relative;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  grid-template-columns: none;
-  width: 44px;
-  overflow: hidden;
-  transition: border-color .18s ease,background .18s ease,box-shadow .18s ease;
-  align-self: center;
-  margin-left: 0;
 }
 
 .rail-section-drag-preview {

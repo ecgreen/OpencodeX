@@ -6,7 +6,7 @@ test("keeps manager pages aligned and shared controls usable", async ({ page }, 
   await page.goto("/")
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
   const navigation = page.locator(".nav > button")
-  await expect(navigation).toHaveCount(6)
+  await expect(navigation).toHaveCount(4)
   const geometry = await railGeometry(page)
   await testInfo.attach("rail-geometry", {
     body: JSON.stringify(geometry, null, 2),
@@ -20,7 +20,6 @@ test("keeps manager pages aligned and shared controls usable", async ({ page }, 
     projects: await managerHeadingTop(page, "Projects", "Workspace directory"),
     views: await managerHeadingTop(page, "Views", "Views"),
     swarms: await managerHeadingTop(page, "Swarms", "Swarm workspace"),
-    plugins: await managerHeadingTop(page, "Plugins", "Plugin Center"),
   }
   const topValues = Object.values(headingTops)
   expect(
@@ -46,6 +45,29 @@ test("reserves dashboard navigation geometry by omitting dynamic counters", asyn
   const after = await dashboard.boundingBox()
   expect(before).toEqual(after)
   await expect(page.locator(".nav-attention-count")).toHaveCount(0)
+})
+
+test("stacks collapsed rail destinations vertically", async ({ page }) => {
+  await page.goto("/")
+  await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
+  const navigation = page.locator(".nav")
+  await expect(navigation.locator(":scope > button")).toHaveCount(4)
+  await page.getByRole("button", { name: "Toggle sidebar" }).click()
+  await expect(page.locator(".app-shell")).toHaveClass(/rail-collapsed/)
+
+  const geometry = await navigation.evaluate((element) => ({
+    display: getComputedStyle(element).display,
+    direction: getComputedStyle(element).flexDirection,
+    buttons: [...element.children].map((button) => {
+      const rect = button.getBoundingClientRect()
+      return { x: Math.round(rect.x), y: Math.round(rect.y), right: Math.round(rect.right) }
+    }),
+  }))
+  expect(geometry.display).toBe("flex")
+  expect(geometry.direction).toBe("column")
+  expect(new Set(geometry.buttons.map((button) => button.x)).size).toBe(1)
+  expect(new Set(geometry.buttons.map((button) => button.right)).size).toBe(1)
+  expect(geometry.buttons.every((button, index) => index === 0 || button.y > geometry.buttons[index - 1]!.y)).toBe(true)
 })
 
 async function managerHeadingTop(page: Page, route: string, heading: string) {

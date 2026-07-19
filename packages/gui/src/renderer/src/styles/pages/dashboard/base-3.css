@@ -1,3 +1,66 @@
+.dashboard-overview-brand {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.dashboard-overview-brand>p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.dashboard-overview-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.dashboard-overview-metrics>div {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 112px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--session-state-color, var(--border-active));
+  background: var(--theme-overlay-subtle);
+}
+
+.dashboard-overview-metrics .status-input-needed {
+  --session-state-color: var(--warning);
+}
+
+.dashboard-overview-metrics .status-in-progress {
+  --session-state-color: var(--info);
+}
+
+.dashboard-overview-metrics .status-ready-for-review {
+  --session-state-color: var(--theme-special);
+}
+
+.dashboard-overview-metrics dt {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-overview-metrics dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
 .dashboard-item-card span {
   display: block;
   overflow: hidden;

@@ -1,7 +1,7 @@
-import type { LspStatus, Provider, Session } from "@opencode-ai/sdk/v2/client"
-import { For, Match, Show, Switch, createEffect, createMemo, createResource, createSignal, onCleanup, untrack } from "solid-js"
+import type { LspStatus } from "@opencode-ai/sdk/v2/client"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import type { DiffFile, GuiSnapshot, SessionData } from "../lib/store"
+import type { DiffFile } from "../lib/store"
 import { isWorkbenchImageContent, workbenchBufferDirty, workbenchNormalizeBrowserURL } from "../lib/workbench"
 import { compactPath } from "../lib/format"
 import { newBrowserID } from "./workbench-page-helpers"
@@ -9,20 +9,9 @@ import { LazyCodeEditor } from "./lazy-code-editor"
 import { Icon } from "./icon"
 import { IconButton, Select, TextInput } from "./ui"
 import { SessionContextPanel, sessionInspectorModel } from "./session-inspector"
-import {
-  SIDE_PANEL_GIT_VISIBLE_RECHECK_MS,
-  loadCachedSidePanelGit,
-  normalizeSidePanelDiffs,
-  refreshSidePanelGitIfStale,
-  resourceGitCacheKey,
-  sidePanelGitCacheKey,
-  sidePanelGitCacheVersions,
-  type SidePanelGitResult,
-} from "./session-side-git-controller"
-import { SessionSideDiffPanel, SidePanelGitCommitModal } from "./session-side-git-view"
+import { SessionSideDiffPanel } from "./session-side-git-view"
 import { createSessionSideBrowserController } from "./session-side-browser-controller"
 import { SessionSideBrowserHost } from "./session-side-browser-host"
-import { readSessionSideContextCollapseState, writeSessionSideContextCollapseState } from "./session-side-context-state"
 import { SessionSideEmptyState } from "./session-side-empty"
 import { createSessionSideFileController } from "./session-side-file-controller"
 import { SessionSideFileExplorer } from "./session-side-file-explorer"
@@ -54,6 +43,7 @@ export function SessionSideOpenPanel(props: {
   gitMessage: string
   gitLoading: boolean
   openCommitModal: () => void
+  gitActiveChange?: (state: { sessionID: string; active: boolean }) => void
 }) {
   const restoredState = restoreOpenPanelState(props.sessionID)
   const [tabs, setTabs] = createSignal<OpenTab[]>(restoredState.tabs)
@@ -114,6 +104,8 @@ export function SessionSideOpenPanel(props: {
     setActiveID(next.activeID)
     tabBar.clearDrag()
   })
+
+  createEffect(() => props.gitActiveChange?.({ sessionID: props.sessionID, active: props.active && props.sessionID === loadedSessionID && activeTab()?.kind === "git" }))
 
   createEffect(() => {
     saveOpenPanelState(loadedSessionID, tabs(), activeID())

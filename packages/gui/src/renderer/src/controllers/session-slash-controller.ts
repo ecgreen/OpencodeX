@@ -7,7 +7,9 @@ import type { createManagementActionsController } from "./management-actions-con
 import type { createNavigationController } from "./navigation-controller"
 import type { createSessionActionsController } from "./session-actions-controller"
 import type { createTranscriptPreferences } from "./transcript-preferences"
+import { messagePromptForEdit, messagePromptForFork, messageTextForCopy, precedingUserMessage, type SessionMessageActionContext, type SessionMessageActionKind } from "../lib/message-actions"
 import { parseModelValue, selectedModelVariants } from "../lib/model-selection"
+import { writeComposerDraft } from "../lib/session-composer-helpers"
 import {
   buildSessionSlashCommands,
   type SessionSlashCommand,
@@ -204,6 +206,32 @@ export function createSessionSlashController(input: {
     input.alert("Session transcript copied.")
   }
 
+  async function messageAction(action: SessionMessageActionKind, context: SessionMessageActionContext) {
+    if (action === "copy") {
+      await navigator.clipboard.writeText(messageTextForCopy(context.bundle))
+      input.alert("Message copied.")
+      return
+    }
+    const client = input.authoritative.client()
+    if (!client) return
+    if (action === "fork") {
+      const next = (await forkSession(client, { sessionID: context.session.id, messageID: context.bundle.info.id })).data
+      if (!next) return input.alert("No forked session returned.")
+      const prompt = messagePromptForFork(context.bundle)
+      if (prompt) writeComposerDraft(next.id, prompt)
+      await input.authoritative.refresh()
+      input.navigation.setRoute({ name: "session", sessionID: next.id })
+      return
+    }
+    const target = action === "edit" ? context.bundle : precedingUserMessage(context.data.messages, context.bundle.info.id)
+    if (!target) return input.alert("No earlier user message to retry from.")
+    const status = input.authoritative.snapshot()?.sessionStatus[context.session.id]?.type
+    if (status && status !== "idle") await abortSession(client, context.session.id, context.session.directory).catch(() => undefined)
+    await revertSession(client, { sessionID: context.session.id, messageID: target.info.id })
+    context.restorePrompt(messagePromptForEdit(target))
+    await reloadSession(context.session)
+  }
+
   async function exportTranscript(session?: Session) {
     if (!session) return
     const options = await input.dialogs.askExportOptions({
@@ -326,7 +354,7 @@ export function createSessionSlashController(input: {
     return [...local, ...server]
   }
 
-  return { manageWorkspaces, commands, copyTranscript }
+  return { manageWorkspaces, commands, copyTranscript, messageAction }
 
   async function reloadSession(session: Session) {
     await input.authoritative.refresh()

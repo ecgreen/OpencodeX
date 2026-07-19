@@ -5,6 +5,8 @@ import type { GuiClient } from "../lib/client"
 import { droppedReorderIDs, mergeOrderedIDs, moveByOffset } from "../lib/reorder"
 import {
   DEFAULT_RAIL_SECTION_ORDER,
+  RAIL_WIDTH_MAX,
+  RAIL_WIDTH_MIN,
   dropPlacement,
   readSidebarPreferences,
   writeSidebarPreferences,
@@ -19,6 +21,8 @@ export function createRailController(input: {
 }) {
   const preferences = readSidebarPreferences()
   const [collapsed, setCollapsed] = createSignal(preferences.railCollapsed)
+  const [width, setWidthSignal] = createSignal(preferences.railWidth)
+  const [resizing, setResizing] = createSignal(false)
   const [sectionOrder, setSectionOrder] = createSignal<RailSectionName[]>(preferences.railSectionOrder)
   const [sections, setSections] = createSignal<Record<RailSectionName, boolean>>(preferences.railSections)
   const [expandedProjectIDs, setExpandedProjectIDs] = createSignal(preferences.expandedProjectIDs)
@@ -46,6 +50,7 @@ export function createRailController(input: {
   createEffect(() => {
     writeSidebarPreferences({
       railCollapsed: collapsed(),
+      railWidth: width(),
       railSectionOrder: sectionOrder(),
       railSections: sections(),
       expandedProjectIDs: expandedProjectIDs(),
@@ -74,6 +79,10 @@ export function createRailController(input: {
 
   function toggleSection(name: RailSectionName) {
     setSections((current) => ({ ...current, [name]: !current[name] }))
+  }
+
+  function setWidth(value: number) {
+    setWidthSignal(Math.round(Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, value))))
   }
 
   function toggleSessionPinned(sessionID: string) {
@@ -228,6 +237,10 @@ export function createRailController(input: {
   return {
     collapsed,
     setCollapsed,
+    width,
+    setWidth,
+    resizing,
+    setResizing,
     sectionOrder,
     sections,
     dragTarget,

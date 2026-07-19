@@ -56,6 +56,27 @@ This covers the sandboxed preload bridge, folder/context dialogs, titlebar edit 
 - Click `New Swarm` with at least one project loaded and confirm the swarm count changes.
 - Click `New View` with at least one session loaded and confirm the view count changes.
 
+## Keyboard Navigation
+
+- Press `Ctrl+K`, search for a session, project, and view, and confirm each result opens directly.
+- Press and hold `Ctrl+Tab`, cycle through recent sessions, and confirm releasing `Ctrl` opens the highlighted session.
+- Press `Alt+1` through `Alt+9` and confirm each available shortcut opens the corresponding recent session.
+- Open keyboard help with `Ctrl+?` and confirm its filter, close button, and shortcut labels are keyboard accessible.
+
+## Session Workspace
+
+- Open the session side panel and confirm Git data loads only while its Git tab is active.
+- Open a terminal tab, switch between light and dark themes, and confirm the terminal palette updates with the app.
+- Add enough side-panel tabs to overflow, resize the panel, and confirm tabs remain selectable without duplicate hidden controls in the accessibility tree.
+- Scroll more than 200px above the transcript bottom, receive new content, and confirm the viewport does not jump; then return near the bottom and confirm following resumes.
+- Trigger a running session, press `Escape` twice within the confirmation window, and confirm the first press warns while the second aborts.
+
+## Views
+
+- Search views by view, project, session, and status text; clear the search and confirm the original order returns.
+- Reorder selected panes with the up/down controls, save, reopen the view, and confirm pane order is preserved.
+- Resize an active multi-pane view from desktop width to a narrow window and confirm each pane retains one intentional scroll owner.
+
 ## Safety Regression
 
 - Trigger a permission or question from TUI/backend and confirm GUI shows a blocking panel before the composer can send more prompts.

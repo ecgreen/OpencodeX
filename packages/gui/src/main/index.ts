@@ -111,7 +111,9 @@ function validEditorInput(value: unknown) {
 }
 
 async function createWindow() {
+  const background = process.env.OPENCODEX_GUI_E2E_BACKGROUND === "1"
   const window = new BrowserWindow({
+    ...(background ? { x: -10000, y: -10000 } : {}),
     width: 1440,
     height: 960,
     minWidth: 980,
@@ -120,6 +122,8 @@ async function createWindow() {
     icon: appIconPath(),
     backgroundColor: "#090a0f",
     frame: false,
+    show: !background,
+    skipTaskbar: background,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -127,6 +131,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: !background,
     },
   })
 
@@ -142,11 +147,13 @@ async function createWindow() {
 
   if (isDev) {
     await window.loadURL(rendererURL!)
+    if (background) window.showInactive()
     if (process.env.OPENCODEX_GUI_DEVTOOLS === "1") window.webContents.openDevTools({ mode: "detach" })
     return
   }
 
   await window.loadFile(path.join(app.getAppPath(), "dist", "renderer", "index.html"))
+  if (background) window.showInactive()
   if (process.env.OPENCODEX_GUI_SMOKE === "1") {
     try {
       await runSmokeCheck(window)

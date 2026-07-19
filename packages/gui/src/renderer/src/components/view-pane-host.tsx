@@ -1,5 +1,6 @@
 import type { Agent, FileNode, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiPromptInfo } from "../lib/prompt-state"
+import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { GuiSnapshot, SessionData } from "../lib/store"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
@@ -13,6 +14,7 @@ export function ViewPaneHost(props: {
   data: SessionData
   loading: boolean
   status: string
+  abortConfirmArmed?: boolean
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   composerState: ViewPaneRuntimeState
@@ -57,6 +59,7 @@ export function ViewPaneHost(props: {
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
   loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
+  onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
 }) {
   const session = () => viewItemSession(props.item)
   const id = () => viewItemID(props.item)
@@ -70,6 +73,7 @@ export function ViewPaneHost(props: {
       data={props.data}
       loading={props.loading}
       status={props.status}
+      abortConfirmArmed={props.abortConfirmArmed}
       composerState={props.composerState}
       updateComposerState={props.updateComposerState}
       providers={props.providers}
@@ -99,17 +103,20 @@ export function ViewPaneHost(props: {
       moveSession={props.moveSession}
       deleteSession={props.deleteSession}
       slashCommands={props.slashCommands}
+      concealCodeBlocks={props.concealCodeBlocks}
       showTimestamps={props.showTimestamps}
       showThinking={props.showThinking}
       showToolDetails={props.showToolDetails}
       showScrollbar={props.showScrollbar}
       showGenericToolOutput={props.showGenericToolOutput}
+      toggleCodeConceal={props.toggleCodeConceal}
       toggleTimestamps={props.toggleTimestamps}
       toggleThinking={props.toggleThinking}
       toggleToolDetails={props.toggleToolDetails}
       toggleScrollbar={props.toggleScrollbar}
       toggleGenericToolOutput={props.toggleGenericToolOutput}
       loadOlderMessages={(cursor) => props.loadOlderMessages(id(), cursor)}
+      onMessageAction={props.onMessageAction}
     />
   )
 }

@@ -23,6 +23,7 @@ const views = new Map<string, TerminalView>()
 const openIDs = new Set<string>()
 const restartTimers = new Map<string, number>()
 let detachedDock: HTMLDivElement | undefined
+let themeObserver: MutationObserver | undefined
 
 export function SessionOpenTerminal(props: { tab: TerminalTab; write: (id: string, data: string) => void }) {
   let host: HTMLDivElement | undefined
@@ -197,6 +198,7 @@ function exitShouldRestart(event: { exitCode?: number; signal?: number | string 
 function ensure(id: string, write: (id: string, data: string) => void) {
   const existing = views.get(id)
   if (existing) return existing
+  ensureThemeSync()
   const terminal = new Terminal({
     cursorBlink: true,
     customGlyphs: true,
@@ -205,13 +207,7 @@ function ensure(id: string, write: (id: string, data: string) => void) {
     fontFamily: '"Cascadia Mono", "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace',
     fontSize: 13,
     lineHeight: 1,
-    theme: {
-      background: "#05070a", foreground: "#d6deeb", cursor: "#67e8f9", selectionBackground: "#264f78",
-      black: "#1f2937", red: "#f87171", green: "#34d399", yellow: "#fbbf24", blue: "#60a5fa",
-      magenta: "#c084fc", cyan: "#22d3ee", white: "#e5e7eb", brightBlack: "#6b7280", brightRed: "#fb7185",
-      brightGreen: "#4ade80", brightYellow: "#fde047", brightBlue: "#93c5fd", brightMagenta: "#d8b4fe",
-      brightCyan: "#67e8f9", brightWhite: "#f8fafc",
-    },
+    theme: terminalTheme(),
   })
   const fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
@@ -229,6 +225,29 @@ function ensure(id: string, write: (id: string, data: string) => void) {
   }
   views.set(id, view)
   return view
+}
+
+function ensureThemeSync() {
+  if (themeObserver) return
+  themeObserver = new MutationObserver(() => {
+    const theme = terminalTheme()
+    views.forEach((view) => { view.terminal.options.theme = theme })
+  })
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
+}
+
+function terminalTheme() {
+  const style = getComputedStyle(document.documentElement)
+  const color = (name: string) => style.getPropertyValue(name).trim()
+  const dark = style.colorScheme.includes("dark")
+  return {
+    background: color("--theme-canvas"), foreground: color("--theme-text"), cursor: color("--theme-accent"), cursorAccent: color("--theme-canvas"),
+    selectionBackground: color("--theme-accent-soft"), selectionForeground: color("--theme-text"), selectionInactiveBackground: color("--theme-overlay-medium"),
+    black: color(dark ? "--theme-text-muted" : "--theme-text"), red: color("--theme-danger"), green: color("--theme-success"), yellow: color("--theme-warning"),
+    blue: color("--theme-info"), magenta: color("--theme-special"), cyan: color("--theme-syntax-type"), white: color(dark ? "--theme-text" : "--theme-text-muted"),
+    brightBlack: color("--theme-text-subtle"), brightRed: color("--theme-danger"), brightGreen: color("--theme-success"), brightYellow: color("--theme-warning"),
+    brightBlue: color("--theme-info"), brightMagenta: color("--theme-special"), brightCyan: color("--theme-syntax-type"), brightWhite: color("--theme-text"),
+  }
 }
 
 function attach(id: string, host: HTMLElement, write: (id: string, data: string) => void) {

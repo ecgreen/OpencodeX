@@ -223,14 +223,14 @@
 
 .rail-section header[data-rail-section-id]:hover {
   border-color: color-mix(in srgb,var(--text) 20%,var(--border-subtle));
-  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 5%,transparent),transparent 54%),color-mix(in srgb,var(--bg) 68%,var(--element) 32%);
-  box-shadow: inset 3px 0 0 var(--major-row-accent),inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 6%,transparent),transparent 54%),var(--element-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
 }
 
 .rail-section header[data-rail-section-id]:focus-within {
   border-color: color-mix(in srgb,var(--text) 20%,var(--border-subtle));
-  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 5%,transparent),transparent 54%),color-mix(in srgb,var(--bg) 68%,var(--element) 32%);
-  box-shadow: inset 3px 0 0 var(--major-row-accent),inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 6%,transparent),transparent 54%),var(--element-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
 }
 
 .rail-section header>.section-new:hover {
@@ -257,6 +257,26 @@
   color: var(--text);
   border-color: var(--border-subtle);
   background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-breadcrumb-context:hover {
+  color: var(--ds-text);
+  background: var(--ds-surface-hover);
+}
+
+.titlebar-breadcrumb-context:focus-visible {
+  color: var(--ds-text);
+  background: var(--ds-surface-hover);
+  outline: 2px solid var(--ds-focus);
+  outline-offset: -2px;
+}
+
+.rail-resize-handle:hover:after {
+  background: var(--ds-focus);
+}
+
+.rail-resize-handle:focus-visible:after {
+  background: var(--ds-focus);
 }
 
 .stage[data-layout] {

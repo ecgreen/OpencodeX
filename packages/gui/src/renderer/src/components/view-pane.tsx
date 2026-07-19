@@ -1,5 +1,6 @@
 import type { Agent, Config, FileNode, LspStatus, McpStatus, McpResource, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiPromptInfo } from "../lib/prompt-state"
+import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/store"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
@@ -15,6 +16,7 @@ export function ViewPane(props: {
   data: SessionData
   loading: boolean
   status: string
+  abortConfirmArmed?: boolean
   composerState: ViewPaneRuntimeState
   updateComposerState: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   providers: Provider[]
@@ -44,6 +46,7 @@ export function ViewPane(props: {
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
   slashCommands: SessionSlashCommand[]
+  concealCodeBlocks?: boolean
   showTimestamps: boolean
   showThinking: boolean
   showToolDetails: boolean
@@ -54,7 +57,9 @@ export function ViewPane(props: {
   toggleToolDetails: () => void
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
+  toggleCodeConceal?: () => void
   loadOlderMessages: (cursor: string) => Promise<void>
+  onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
 }) {
   const handlePointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return
@@ -94,6 +99,7 @@ export function ViewPane(props: {
         moveSession={props.moveSession}
         deleteSession={props.deleteSession}
         slashCommands={props.slashCommands}
+        concealCodeBlocks={props.concealCodeBlocks}
         showTimestamps={props.showTimestamps}
         showThinking={props.showThinking}
         showToolDetails={props.showToolDetails}
@@ -104,7 +110,9 @@ export function ViewPane(props: {
         toggleToolDetails={props.toggleToolDetails}
         toggleScrollbar={props.toggleScrollbar}
         toggleGenericToolOutput={props.toggleGenericToolOutput}
+        toggleCodeConceal={props.toggleCodeConceal}
         status={props.status}
+        abortConfirmArmed={props.abortConfirmArmed}
         pending={props.pending}
         composerState={props.composerState}
         updateComposerState={props.updateComposerState}
@@ -112,6 +120,7 @@ export function ViewPane(props: {
         sidePanelEnabled={false}
         openSidePanelTarget={props.openSidePanelTarget}
         loadOlderMessages={props.loadOlderMessages}
+        onMessageAction={props.onMessageAction}
       />
     </article>
   )

@@ -6,6 +6,7 @@ import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/store"
 import { Icon } from "./icon"
 import { Button, IconButton } from "./ui"
+import { RailResizeHandle } from "./rail-resize-handle"
 import { RailPinnedSection, RailPriorSessionsSection, RailProjectsSection, RailRecentSessionsSection, RailViewsSection } from "./rail-sidebar-sections"
 import type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
 
@@ -17,10 +18,14 @@ export function RailSidebar(props: {
   pinnedSessions: Session[]
   pinnedViews: GuiSnapshot["views"]
   navItems: readonly RailNavItem[]
+  navBadges: Record<string, number>
   activeRouteName: string
   activeSessionID: string
   activeViewID?: string
   railCollapsed: boolean
+  railWidth: number
+  resizeRail: (width: number) => void
+  setRailResizing: (resizing: boolean) => void
   railSectionOrder: readonly RailSectionName[]
   railSections: Record<RailSectionName, boolean>
   dragTarget?: RailDragTarget
@@ -37,6 +42,7 @@ export function RailSidebar(props: {
   openRoute: (name: RailRouteName) => void
   openSession: (sessionID: string) => void
   openView: (viewID: string) => void
+  openAllViews: () => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
   createPinnedSession: () => void
@@ -89,7 +95,7 @@ export function RailSidebar(props: {
         toggleRail={props.toggleRail}
         createSession={() => props.createSession()}
       />
-      <RailNav items={props.navItems} activeRouteName={props.activeRouteName} collapsed={props.railCollapsed} openRoute={props.openRoute} />
+      <RailNav items={props.navItems} badges={props.navBadges} activeRouteName={props.activeRouteName} collapsed={props.railCollapsed} openRoute={props.openRoute} />
       <div class="rail-scroll">
         <For each={sectionOrder()}>
           {(section) => (
@@ -215,6 +221,7 @@ export function RailSidebar(props: {
                   toggle={() => props.toggleRailSection("views")}
                   createView={props.createView}
                   openView={props.openView}
+                  openAllViews={props.openAllViews}
                   toggleViewPinned={props.toggleViewPinned}
                   editView={props.editView}
                   deleteView={props.deleteView}
@@ -233,6 +240,9 @@ export function RailSidebar(props: {
           )}
         </For>
       </div>
+      <Show when={!props.railCollapsed}>
+        <RailResizeHandle width={() => props.railWidth} resize={props.resizeRail} setResizing={props.setRailResizing} />
+      </Show>
     </aside>
   )
 }
@@ -309,6 +319,7 @@ function RailBrand(props: {
 
 function RailNav(props: {
   items: readonly RailNavItem[]
+  badges: Record<string, number>
   activeRouteName: string
   collapsed: boolean
   openRoute: (name: RailRouteName) => void
@@ -319,18 +330,24 @@ function RailNav(props: {
       classList={{ "nav-collapsed": props.collapsed }}
     >
       <For each={props.items}>
-        {(item) => (
-          <Button
-            appearance="ghost"
-            aria-label={`${item.label}: ${item.description}`}
-            title={`${item.label}: ${item.description} (${item.shortcut})`}
-            classList={{ active: props.activeRouteName === item.name }}
-            onClick={() => props.openRoute(item.name)}
-          >
-            <Icon name={item.icon} />
-            <span class="nav-label">{item.label}</span>
-          </Button>
-        )}
+        {(item) => {
+          const badge = () => props.badges[item.name] ?? 0
+          return (
+            <Button
+              appearance="ghost"
+              aria-label={`${item.label}: ${item.description}${badge() > 0 ? `, ${badge()} need attention` : ""}`}
+              title={`${item.label}: ${item.description} (${item.shortcut})`}
+              classList={{ active: props.activeRouteName === item.name }}
+              onClick={() => props.openRoute(item.name)}
+            >
+              <Icon name={item.icon} />
+              <span class="nav-label">{item.label}</span>
+              <Show when={badge() > 0}>
+                <span class="nav-badge" aria-hidden="true">{badge()}</span>
+              </Show>
+            </Button>
+          )
+        }}
       </For>
     </nav>
   )

@@ -94,6 +94,10 @@ export function resourceGitCacheKey(value: string) {
   return index >= 0 ? value.slice(index + 1) : value
 }
 
+export function sidePanelGitResultForKey<T>(key: string, loaded?: { key: string; result: T }) {
+  return loaded?.key === key ? loaded.result : undefined
+}
+
 export function normalizeSidePanelDiffs(files: DiffFile[]) {
   return files.flatMap((file) => file.file
     ? [{ file: file.file, patch: file.patch, additions: file.additions, deletions: file.deletions, status: file.status ?? "modified" }]

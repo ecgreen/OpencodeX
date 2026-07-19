@@ -14,7 +14,7 @@ import type { GuiPromptInfo } from "../lib/prompt-state"
 import { activeViewForRoute, focusedViewItemID } from "../lib/route-selection"
 import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus } from "../lib/store"
 import {
-  pendingViewSessions,
+  orderedViewItems,
   viewItemID,
   viewItemsMembershipKey,
   viewSessionsSyncKey,
@@ -49,12 +49,7 @@ export function createViewController(input: {
     return input.authoritative.snapshot()?.views.find((view) => view.id === route.viewID)
   })
   const sessions = createMemo(() => viewSessionsInOrder(activeView()).slice(0, 8))
-  const items = createMemo<ViewItem[]>(() =>
-    [
-      ...sessions().map((session): ViewItem => ({ kind: "session", session })),
-      ...pendingViewSessions(activeView()).map((slot): ViewItem => ({ kind: "pending", slot })),
-    ].slice(0, 8),
-  )
+  const items = createMemo<ViewItem[]>(() => orderedViewItems(activeView(), sessions()))
   const loadKey = createMemo(() => viewSessionsSyncKey(activeView()?.id, sessions()))
   const membershipKey = createMemo(() => viewItemsMembershipKey(activeView()?.id, items()))
   const focusedSession = createMemo(() =>
@@ -98,7 +93,7 @@ export function createViewController(input: {
     const route = input.navigation.route()
     const view = activeView()
     if (route.name !== "views" || !view) return
-    if (route.viewID !== view.id) input.navigation.setRoute({ name: "views", viewID: view.id })
+    if (route.viewID !== view.id) input.navigation.setRoute({ name: "views", viewID: view.id }, { replace: true })
   })
 
   createEffect(() => {

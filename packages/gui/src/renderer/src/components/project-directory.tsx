@@ -103,7 +103,7 @@ export function ProjectsOverview(props: {
           </div>
           <div class="project-directory-search">
             <Icon name="search" />
-            <TextInput value={props.query} placeholder="Search projects or folders" onInput={(event) => props.setQuery(event.currentTarget.value)} />
+            <TextInput type="search" aria-label="Search projects or folders" value={props.query} placeholder="Search projects or folders" onInput={(event) => props.setQuery(event.currentTarget.value)} />
           </div>
         </header>
         <div class="project-directory-list">

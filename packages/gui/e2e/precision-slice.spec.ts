@@ -136,7 +136,7 @@ async function configurePage(
 
 async function expectNavigationContract(page: Page) {
   const nav = page.locator(".nav")
-  await expect(nav.locator(":scope > button")).toHaveCount(6)
+  await expect(nav.locator(":scope > button")).toHaveCount(4)
   await expect(nav.locator("small")).toHaveCount(0)
   await expect(nav.getByRole("button", { name: /^Status:/ })).toHaveCount(0)
   await expect(nav.getByRole("button", { name: /^Settings:/ })).toHaveCount(0)

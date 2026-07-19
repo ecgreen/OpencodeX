@@ -1,7 +1,6 @@
 import type { ModelPickerOption } from "../lib/model-selection"
 import { For, Show, createSignal } from "solid-js"
 import { isFreeOpencodeModel, modelValue } from "../lib/model-selection"
-import { readCollapsedModelProviders, writeCollapsedModelProviders } from "../lib/session-composer-helpers"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
 import { Button, TextInput } from "./ui"
@@ -19,19 +18,17 @@ export function SessionModelPicker(props: {
   select: (providerID: string, modelID: string) => void
   toggleFavorite: (value: string) => void
 }) {
-  const [collapsedProviderIDs, setCollapsedProviderIDs] = createSignal(readCollapsedModelProviders())
-  const providerExpanded = (providerID: string) => !collapsedProviderIDs().includes(providerID)
-  const toggleProvider = (providerID: string) => setCollapsedProviderIDs((current) => {
-    const next = current.includes(providerID) ? current.filter((value) => value !== providerID) : [...current, providerID]
-    writeCollapsedModelProviders(next)
-    return next
-  })
+  const [expandedProviderIDs, setExpandedProviderIDs] = createSignal<string[]>([])
+  const providerExpanded = (providerID: string) => Boolean(props.query.trim()) || expandedProviderIDs().includes(providerID)
+  const toggleProvider = (providerID: string) => setExpandedProviderIDs((current) =>
+    current.includes(providerID) ? current.filter((value) => value !== providerID) : [...current, providerID])
 
   return (
     <ModalFrame
       title="Select model"
-      description="Recent routes are listed first, matching the TUI picker."
+      description="Search models or expand a provider. Recent routes are listed first."
       close={props.close}
+      closeSize="prominent"
       class="model-picker-modal"
     >
       <>
@@ -104,34 +101,19 @@ function ModelPickerSection(props: {
               const value = modelValue(option.provider.id, option.model.id)
               const favorite = () => props.favorites.includes(value)
               return (
-                <Button appearance="ghost" type="button" class="model-option-card" classList={{ selected: props.selectedModel === value }} onClick={() => props.select(option.provider.id, option.model.id)}>
-                  <span class="model-option-header">
-                    <span class="model-option-name">{option.model.name ?? option.model.id}</span>
-                    <Show when={isFreeOpencodeModel(option.provider, option.model)}><em>Free</em></Show>
-                  </span>
-                  <small>{option.provider.name}</small>
-                  <span
-                    class="model-favorite-toggle"
-                    classList={{ active: favorite() }}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={favorite() ? "Remove favorite" : "Add favorite"}
-                    title={favorite() ? "Remove favorite" : "Add favorite"}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      props.toggleFavorite(value)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return
-                      event.preventDefault()
-                      event.stopPropagation()
-                      props.toggleFavorite(value)
-                    }}
-                  >
+                <div class="model-option-card" classList={{ selected: props.selectedModel === value }}>
+                  <Button appearance="ghost" type="button" class="model-option-select" onClick={() => props.select(option.provider.id, option.model.id)}>
+                    <span class="model-option-header">
+                      <span class="model-option-name">{option.model.name ?? option.model.id}</span>
+                      <Show when={isFreeOpencodeModel(option.provider, option.model)}><em>Free</em></Show>
+                    </span>
+                    <small>{option.provider.name}</small>
+                  </Button>
+                  <Button appearance="ghost" type="button" class="model-favorite-toggle" classList={{ active: favorite() }} aria-label={favorite() ? "Remove favorite" : "Add favorite"} title={favorite() ? "Remove favorite" : "Add favorite"} onClick={() => props.toggleFavorite(value)}>
                     <Icon name="star" />
                     {favorite() ? "Favorite" : "Add"}
-                  </span>
-                </Button>
+                  </Button>
+                </div>
               )
             }}
           </For>

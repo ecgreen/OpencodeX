@@ -1,4 +1,4 @@
-import { Button } from "./ui"
+import { Button, IconButton } from "./ui"
 import { For, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { Icon } from "./icon"
@@ -21,28 +21,30 @@ export function SessionSideTabBar(props: {
         {(row) => row.type === "placeholder" ? (
           <div class="session-open-tab-placeholder" data-open-tab-row-id="placeholder" style={{ width: `${row.width}px` }} />
         ) : (
-          <Button appearance="ghost"
-            type="button"
-            class="session-open-tab-button"
-            role="tab"
-            data-open-tab-id={row.tab.id}
-            data-open-tab-row-id={row.tab.id}
-            aria-selected={controller.activeID() === row.tab.id}
-            classList={{ active: controller.activeID() === row.tab.id, dragging: controller.dragID() === row.tab.id }}
-            onPointerDown={(event) => {
-              if (row.tab.id !== controller.activeID()) controller.hideWebTabs()
-              controller.startDrag(event, row.tab)
-            }}
-            onClick={() => controller.select(row.tab.id)}
-          >
-            <Icon name={openTabIcon(row.tab)} />
-            <span>{controller.label(row.tab)}</span>
-            <span
+          <div class="session-open-tab-shell" data-open-tab-row-id={row.tab.id}>
+            <Button appearance="ghost"
+              type="button"
+              class="session-open-tab-button"
+              role="tab"
+              data-open-tab-id={row.tab.id}
+              aria-selected={controller.activeID() === row.tab.id}
+              classList={{ active: controller.activeID() === row.tab.id, dragging: controller.dragID() === row.tab.id }}
+              onPointerDown={(event) => {
+                if (row.tab.id !== controller.activeID()) controller.hideWebTabs()
+                controller.startDrag(event, row.tab)
+              }}
+              onClick={() => controller.select(row.tab.id)}
+            >
+              <Icon name={openTabIcon(row.tab)} />
+              <span>{controller.label(row.tab)}</span>
+            </Button>
+            <IconButton
+              appearance="ghost"
+              size="compact"
+              icon="x"
               class="session-open-tab-close"
-              role="button"
-              tabIndex={0}
-              aria-label={`Close ${controller.label(row.tab)}`}
-              onMouseDown={(event) => {
+              label={`Close ${controller.label(row.tab)}`}
+              onPointerDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
                 if (row.tab.kind === "web") controller.hideWebTabs()
@@ -52,16 +54,8 @@ export function SessionSideTabBar(props: {
                 event.stopPropagation()
                 controller.closeTab(row.tab.id)
               }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return
-                event.preventDefault()
-                event.stopPropagation()
-                controller.closeTab(row.tab.id)
-              }}
-            >
-              <Icon name="x" />
-            </span>
-          </Button>
+            />
+          </div>
         )}
       </For>
       <Show when={controller.overflowTabs().length > 0}>
@@ -124,19 +118,6 @@ export function SessionSideTabBar(props: {
         </Portal>
       </Show>
       <OpenTabDragPreviewView preview={controller.dragPreview()} tab={controller.previewTab()} label={controller.previewLabel()} />
-      <div class="session-open-tab-measure" ref={controller.setMeasure} aria-hidden="true">
-        <For each={controller.tabs()}>
-          {(tab) => (
-            <Button appearance="ghost" type="button" class="session-open-tab-button" data-open-tab-measure-id={tab.id} tabIndex={-1}>
-              <Icon name={openTabIcon(tab)} /><span>{controller.label(tab)}</span><span class="session-open-tab-close"><Icon name="x" /></span>
-            </Button>
-          )}
-        </For>
-        <For each={controller.tabs().map((_, index) => index + 1)}>
-          {(count) => <Button appearance="ghost" type="button" class="session-open-menu-trigger session-open-overflow-trigger" data-open-tab-measure-overflow-count={count} tabIndex={-1}><Icon name="more" /><span>{count} tabs</span></Button>}
-        </For>
-        <Button appearance="ghost" type="button" class="session-open-menu-trigger" data-open-tab-measure-control="new" tabIndex={-1}><Icon name="plus" /></Button>
-      </div>
     </div>
   )
 }

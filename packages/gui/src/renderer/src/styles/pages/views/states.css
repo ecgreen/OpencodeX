@@ -97,6 +97,12 @@
   box-shadow: inset 4px 0 0 var(--view-row-accent),0 8px 24px var(--theme-shadow-soft);
 }
 
+.view-summary-row:hover .view-summary-actions,
+.view-summary-row:focus-within .view-summary-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .view-summary-row.dragging {
   opacity: .26;
   background: color-mix(in srgb,var(--panel) 78%,var(--theme-canvas) 22%);
@@ -160,13 +166,19 @@
 
 .selected-pane-row {
   display: grid;
-  grid-template-columns: 24px minmax(0,1fr) 28px;
+  grid-template-columns: 24px minmax(0,1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 54px;
   padding: 6px 0;
   border-bottom: 1px solid var(--border-subtle);
   overflow: hidden;
+}
+
+.selected-pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .selected-pane-row>span {

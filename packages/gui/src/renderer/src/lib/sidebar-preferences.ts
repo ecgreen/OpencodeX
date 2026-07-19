@@ -4,8 +4,13 @@ import { mergeOrderedIDs } from "./reorder"
 export const DEFAULT_RAIL_SECTION_ORDER: RailSectionName[] = ["pinned", "projects", "recent", "prior", "views"]
 export const DEFAULT_RAIL_SECTIONS: Record<RailSectionName, boolean> = { pinned: false, projects: false, recent: false, prior: true, views: true }
 
+export const DEFAULT_RAIL_WIDTH = 300
+export const RAIL_WIDTH_MIN = 260
+export const RAIL_WIDTH_MAX = 400
+
 export type SidebarPreferences = {
   railCollapsed: boolean
+  railWidth: number
   railSectionOrder: RailSectionName[]
   railSections: Record<RailSectionName, boolean>
   expandedProjectIDs: Record<string, boolean>
@@ -23,6 +28,7 @@ export function readSidebarPreferences(): SidebarPreferences {
     const input = parsed as Record<string, unknown>
     return {
       railCollapsed: typeof input.railCollapsed === "boolean" ? input.railCollapsed : false,
+      railWidth: readRailWidth(input.railWidth),
       railSectionOrder: mergeOrderedIDs(DEFAULT_RAIL_SECTION_ORDER, Array.isArray(input.railSectionOrder) ? input.railSectionOrder.filter((value): value is string => typeof value === "string") : []),
       railSections: readRailSections(input.railSections),
       expandedProjectIDs: readBooleanMap(input.expandedProjectIDs),
@@ -52,12 +58,18 @@ export function dropPlacement(event: DragEvent): "before" | "after" {
 function defaultSidebarPreferences(): SidebarPreferences {
   return {
     railCollapsed: false,
+    railWidth: DEFAULT_RAIL_WIDTH,
     railSectionOrder: DEFAULT_RAIL_SECTION_ORDER,
     railSections: DEFAULT_RAIL_SECTIONS,
     expandedProjectIDs: {},
     pinnedSessionIDs: [],
     pinnedViewIDs: [],
   }
+}
+
+function readRailWidth(value: unknown) {
+  if (typeof value !== "number" || Number.isNaN(value)) return DEFAULT_RAIL_WIDTH
+  return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, Math.round(value)))
 }
 
 function readRailSections(value: unknown): Record<RailSectionName, boolean> {

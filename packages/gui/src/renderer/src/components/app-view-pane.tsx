@@ -16,6 +16,11 @@ export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem
     return props.model.view.projectNameForSession(session())
   })
   const paneState = createMemo(() => props.model.authoritative.viewPaneState(paneID()))
+  const data = createMemo(() =>
+    props.item().kind === "session"
+      ? (props.model.authoritative.viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA)
+      : EMPTY_SESSION_DATA,
+  )
   const updatePane = props.model.authoritative.updateViewPaneState
   const run = props.model.notices.run
 
@@ -23,17 +28,14 @@ export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem
     <ViewPaneHost
       item={props.item()}
       projectName={projectName()}
-      data={
-        props.item().kind === "session"
-          ? (props.model.authoritative.viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA)
-          : EMPTY_SESSION_DATA
-      }
+      data={data()}
       loading={paneState().loading}
       status={
         props.item().kind === "session"
           ? (props.model.authoritative.snapshot()?.sessionStatus[paneID()]?.type ?? "idle")
           : "idle"
       }
+      abortConfirmArmed={props.model.commands.abortConfirmSessionID() === paneID()}
       permissions={
         props.item().kind === "session"
           ? (props.model.authoritative.snapshot()?.permissions.filter((request) => request.sessionID === paneID()) ?? [])
@@ -92,7 +94,7 @@ export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem
       moveSession={(session) => void run(() => props.model.sessionActions.move(session))}
       deleteSession={(session) => void run(() => props.model.sessionActions.remove(session))}
       slashCommands={props.model.sessionSlash.commands(session(), {
-        data: props.model.authoritative.viewSessionData()[paneID()] ?? EMPTY_SESSION_DATA,
+        data: data(),
         selectedAgent: props.model.view.agentValue(paneID(), session()),
         selectedModel: props.model.view.modelValue(paneID(), session()),
         selectedVariant: props.model.view.variantValue(paneID(), session()),
@@ -137,6 +139,7 @@ export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem
       loadOlderMessages={(sessionID, cursor) =>
         run(() => props.model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
       }
+      onMessageAction={(action, context) => run(() => props.model.sessionSlash.messageAction(action, context))}
     />
   )
 }

@@ -3,7 +3,7 @@ import type { Command, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client
 import type { GuiClient } from "../src/renderer/src/lib/client"
 import { textPrompt, type GuiPromptInfo } from "../src/renderer/src/lib/prompt-state"
 import { prepareViewPromptSendTarget, prepareViewPromptSubmission, prepareViewPromptTarget, runViewPromptAction } from "../src/renderer/src/lib/view-prompt"
-import type { ViewItem } from "../src/renderer/src/lib/view-items"
+import { replacePendingViewPane, type ViewItem } from "../src/renderer/src/lib/view-items"
 
 describe("GUI view prompt decisions", () => {
   test("prepares submissions only when a client and text are available", () => {
@@ -29,6 +29,22 @@ describe("GUI view prompt decisions", () => {
     const item: ViewItem = { kind: "pending", slot: { id: "pending-1", directory: "C:/Work/OpencodeX" } }
 
     expect(prepareViewPromptSubmission({ gui: gui(), item, prompt: textPrompt("start") })?.draftID).toBe("pending-1")
+  })
+
+  test("replaces pending pane IDs without changing pane order", () => {
+    const current = {
+      id: "view-1",
+      sessionIDs: ["session-1"],
+      metadata: { opencodex: {
+        pendingSessions: [{ id: "pending-1" }],
+        paneOrder: [{ kind: "pending", id: "pending-1" }, { kind: "session", id: "session-1" }],
+      } },
+    } as unknown as OpencodeXView
+
+    expect(replacePendingViewPane(current, "pending-1", "session-2", [])).toEqual({
+      sessionIDs: ["session-2", "session-1"],
+      metadata: { opencodex: { paneOrder: [{ kind: "session", id: "session-2" }, { kind: "session", id: "session-1" }] } },
+    })
   })
 
   test("prepares existing session targets without creating a session", async () => {

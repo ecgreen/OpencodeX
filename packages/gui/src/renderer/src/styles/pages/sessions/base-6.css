@@ -268,21 +268,21 @@
   position: relative;
   width: 100%;
   margin: 0;
-  gap: 2px;
-  padding: 6px 34px 6px 9px;
+  gap: 1px;
+  padding: 5px 32px 5px 8px;
   --session-card-bg: var(--surface);
   --session-active-bg: var(--surface-active);
-  border-left: 2px solid transparent;
   box-shadow: none;
   --sidebar-hover-duration: .17s;
   --sidebar-hover-ease: cubic-bezier(.22, 1, .36, 1);
   transition: background var(--sidebar-hover-duration) var(--sidebar-hover-ease),border-color var(--sidebar-hover-duration) var(--sidebar-hover-ease),box-shadow var(--sidebar-hover-duration) var(--sidebar-hover-ease),color .13s ease,opacity .13s ease;
   transform: translateY(0);
-  min-height: 30px;
-  border: 0;
-  border-radius: var(--radius-control);
+  min-height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
   color: var(--muted);
-  background: transparent;
+  background: color-mix(in srgb,var(--element) 34%,var(--panel));
 }
 
 .session-link.status-unviewed {

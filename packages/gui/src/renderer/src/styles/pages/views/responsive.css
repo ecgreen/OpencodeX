@@ -17,7 +17,7 @@
 }
 
 @media (max-width:1050px) {
-  .views-index-controls input {
+  .views-index-controls [data-ui=field] {
     width: 100%;
   }
 }
@@ -42,8 +42,15 @@
 }
 
 @media (max-width:980px) {
-  .view-session-picker>header input {
+  .view-session-picker>header [data-ui=field] {
     width: 100%;
+  }
+}
+
+@media (hover:none) {
+  .view-summary-actions {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 

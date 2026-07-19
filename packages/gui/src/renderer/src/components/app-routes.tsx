@@ -1,4 +1,4 @@
-import { Match, Switch } from "solid-js"
+import { Match, Switch, onCleanup, onMount } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import {
   DashboardRoute,
@@ -16,6 +16,22 @@ import {
 import { DiffRoute, SettingsRoute, StatusRoute, WorkbenchRoute } from "./app-tool-routes"
 
 export function AppRoutes(props: { model: GuiAppModel }) {
+  onMount(() => {
+    const prefetch = () => {
+      void Promise.allSettled([
+        import("./session-page-entry"),
+        import("./views-manager-page-entry"),
+        import("./workbench-page-entry"),
+      ])
+    }
+    if (typeof window.requestIdleCallback === "function") {
+      const idle = window.requestIdleCallback(prefetch, { timeout: 1_200 })
+      onCleanup(() => window.cancelIdleCallback(idle))
+      return
+    }
+    const timer = window.setTimeout(prefetch, 400)
+    onCleanup(() => window.clearTimeout(timer))
+  })
   return (
     <Switch>
       <Match when={props.model.navigation.route().name === "dashboard"}>

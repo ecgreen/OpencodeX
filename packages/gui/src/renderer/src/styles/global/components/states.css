@@ -246,6 +246,21 @@ details>summary:hover .output-chevron {
   display: none;
 }
 
+.part.file:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
+.part.file:hover .part-file-chevron {
+  color: var(--brand);
+  transform: translateX(2px);
+}
+
+.part.file:focus-visible {
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
 .part.tool.error {
   border-color: color-mix(in srgb,var(--theme-danger) 48%,transparent);
 }

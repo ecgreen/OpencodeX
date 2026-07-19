@@ -1,7 +1,7 @@
 import type { Accessor, JSX } from "solid-js"
 import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo } from "solid-js"
-import { viewItemID, type ViewItem } from "../lib/view-items"
+import { viewItemID, viewItemsMembershipKey, type ViewItem } from "../lib/view-items"
 
 export type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
 
@@ -10,9 +10,10 @@ export function ViewsPage(props: {
   items: ViewItem[]
   renderItem: (item: Accessor<ViewItem>) => JSX.Element
 }) {
-  const itemIDs = createMemo(() => props.items.map((item) => viewItemID(item)))
+  const membershipKey = createMemo(() => viewItemsMembershipKey(props.view?.id, props.items))
+  const itemIDs = createMemo(() => membershipKey().split("\n").slice(1))
   const itemsByID = createMemo(() => new Map(props.items.map((item) => [viewItemID(item), item])))
-  const layout = createMemo(() => viewLayout(props.items.length))
+  const layout = createMemo(() => viewLayout(itemIDs().length))
   const layoutSize = createMemo(() => viewLayoutDimensions(layout()))
   return (
     <div

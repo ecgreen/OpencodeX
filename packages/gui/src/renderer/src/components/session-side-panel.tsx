@@ -12,6 +12,7 @@ import {
   resourceGitCacheKey,
   sidePanelGitCacheKey,
   sidePanelGitCacheVersions,
+  sidePanelGitResultForKey,
   type SidePanelGitResult,
 } from "./session-side-git-controller"
 import { SidePanelGitCommitModal } from "./session-side-git-view"
@@ -41,14 +42,19 @@ export function SessionSidePanel(props: {
 }) {
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>(readSessionSideContextCollapseState())
   const [commitModalOpen, setCommitModalOpen] = createSignal(false)
+  const [gitActiveSessionID, setGitActiveSessionID] = createSignal("")
+  const gitTabActive = () => gitActiveSessionID() === props.session.id
   const gitDirectory = createMemo(() => props.directory ?? props.session.directory)
   const gitCacheKey = createMemo(() => sidePanelGitCacheKey(props.gui, gitDirectory()))
-  const gitResourceKey = createMemo(() => `${sidePanelGitCacheVersions()[gitCacheKey()] ?? 0}\u0000${gitCacheKey()}`)
-  const [gitResult, { refetch: refetchGit }] = createResource<SidePanelGitResult, string, "force">(gitResourceKey, (key, info) =>
-    loadCachedSidePanelGit({ key: resourceGitCacheKey(key), gui: props.gui, directory: gitDirectory() }, info.refetching === "force"),
-  )
+  const gitResourceKey = createMemo(() => props.open && gitTabActive() ? `${sidePanelGitCacheVersions()[gitCacheKey()] ?? 0}\u0000${gitCacheKey()}` : undefined)
+  const [gitResource, { refetch: refetchGit }] = createResource<{ key: string; result: SidePanelGitResult }, string, "force">(gitResourceKey, async (value, info) => {
+    const key = resourceGitCacheKey(value)
+    return { key, result: await loadCachedSidePanelGit({ key, gui: props.gui, directory: gitDirectory() }, info.refetching === "force") }
+  })
+  const gitResult = createMemo(() => sidePanelGitResultForKey(gitCacheKey(), gitResource()))
   const gitFiles = createMemo(() => normalizeSidePanelDiffs(gitResult()?.diff.data ?? []))
   const gitMessage = createMemo(() => gitResult()?.diff.message ?? (gitResult()?.diff.ok === false ? "Unable to load Git diff." : ""))
+  const gitLoading = createMemo(() => gitTabActive() && (!gitResult() || gitResource.loading))
   const contextModel = createMemo(() => sessionInspectorModel({
     session: props.session,
     data: props.data,
@@ -59,7 +65,7 @@ export function SessionSidePanel(props: {
   }))
 
   createEffect(() => {
-    if (!props.open) return
+    if (!props.open || !gitTabActive()) return
     const gui = props.gui
     if (!gui) return
     const key = gitCacheKey()
@@ -77,6 +83,11 @@ export function SessionSidePanel(props: {
       window.removeEventListener("focus", refresh)
       document.removeEventListener("visibilitychange", refreshWhenVisible)
     })
+  })
+
+  createEffect(() => {
+    gitCacheKey()
+    setCommitModalOpen(false)
   })
 
   const toggleContext = (section: string) => {
@@ -125,11 +136,12 @@ export function SessionSidePanel(props: {
           diffs={props.data.diffs}
           gitFiles={gitFiles()}
           gitMessage={gitMessage() || "No project changes."}
-          gitLoading={gitResult.loading}
-          openCommitModal={() => setCommitModalOpen(true)}
+          gitLoading={gitLoading()}
+          openCommitModal={() => { if (gitResult()) setCommitModalOpen(true) }}
+          gitActiveChange={(state) => setGitActiveSessionID(state.active ? state.sessionID : "")}
         />
       </aside>
-      <Show when={commitModalOpen()}>
+      <Show when={commitModalOpen() && gitResult()}>
         <SidePanelGitCommitModal
           gui={props.gui}
           directory={gitDirectory()}

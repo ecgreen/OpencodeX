@@ -30,20 +30,6 @@ export const NAV_ITEMS = [
     shortcut: "Ctrl+3",
     description: "Create and manage multi-session views",
   },
-  {
-    name: "plugins",
-    label: "Plugins",
-    icon: "settings",
-    shortcut: "Ctrl+4",
-    description: "Install and manage plugins",
-  },
-  {
-    name: "workbench",
-    label: "Workbench",
-    icon: "browser",
-    shortcut: "Ctrl+5",
-    description: "Files, GitHub, Git, browser, and artifacts",
-  },
 ] as const
 
 export function createNavigationController(initialRoute: Route = { name: "dashboard" }) {
@@ -51,8 +37,13 @@ export function createNavigationController(initialRoute: Route = { name: "dashbo
   const [route, setRouteValue] = createSignal(initialRoute)
   const [historyIndex, setHistoryIndex] = createSignal(0)
 
-  function setRoute(next: Route) {
+  function setRoute(next: Route, options?: { replace?: boolean }) {
     if (JSON.stringify(route()) === JSON.stringify(next)) return
+    if (options?.replace) {
+      history[historyIndex()] = next
+      setRouteValue(next)
+      return
+    }
     history.splice(historyIndex() + 1)
     history.push(next)
     setHistoryIndex(history.length - 1)

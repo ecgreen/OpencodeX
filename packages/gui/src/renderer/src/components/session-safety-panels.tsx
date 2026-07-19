@@ -14,6 +14,7 @@ import {
 } from "../lib/tool-display"
 import { Icon } from "./icon"
 import type { ToolPart } from "./session-transcript"
+import { isKeyboardEditingTarget } from "../lib/keyboard-shortcuts"
 
 export function PermissionPanel(props: { request: PermissionRequest; tool?: ToolPart; reply: (request: PermissionRequest, reply: "once" | "always" | "reject") => void }) {
   const input = () => toolInput(props.request, props.tool)
@@ -23,8 +24,9 @@ export function PermissionPanel(props: { request: PermissionRequest; tool?: Tool
     <section
       class="safety-panel permission-panel"
       classList={{ expanded: expanded() }}
-      tabindex="0"
+      tabIndex={0}
       onKeyDown={(event) => {
+        if (isKeyboardEditingTarget(event.target)) return
         if (event.key === "1") choose("once")
         if (event.key === "2") choose("always")
         if (event.key === "3" || event.key === "Escape") choose("reject")
@@ -68,6 +70,9 @@ export function PermissionPanel(props: { request: PermissionRequest; tool?: Tool
           </details>
         </Show>
       </div>
+      <p class="safety-hints" aria-label="Permission keyboard shortcuts">
+        <span><kbd>1</kbd> once</span><span><kbd>2</kbd> always</span><span><kbd>3</kbd> reject</span><span><kbd>F</kbd> details</span>
+      </p>
       <div class="safety-actions">
         <Button appearance="outline" onClick={() => setExpanded((value) => !value)}><Icon name={expanded() ? "chevronRight" : "chevronDown"} /> {expanded() ? "Collapse" : "Expand"}</Button>
         <Button appearance="outline" tone="danger" onClick={() => choose("reject")}><Icon name="x" /> Reject</Button>
@@ -110,8 +115,9 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
   return (
     <section
       class="safety-panel question-panel"
-      tabindex="0"
+      tabIndex={0}
       onKeyDown={(event) => {
+        if (isKeyboardEditingTarget(event.target)) return
         if (event.key === "Escape") props.reject(props.request)
         if (event.key === "Tab") {
           event.preventDefault()
@@ -161,6 +167,9 @@ export function QuestionPanel(props: { request: QuestionRequest; reply: (request
           )}
         </For>
       </div>
+      <p class="safety-hints" aria-label="Question keyboard shortcuts">
+        <span><kbd>1-9</kbd> choose</span><span><kbd>Tab</kbd> next</span><span><kbd>Esc</kbd> reject</span>
+      </p>
       <div class="safety-actions">
         <Button appearance="outline" tone="danger" onClick={() => props.reject(props.request)}><Icon name="x" /> Reject</Button>
         <Button appearance="solid" tone="accent" disabled={!valid()} onClick={() => props.reply(props.request, finalAnswers())}><Icon name="send" /> Reply</Button>

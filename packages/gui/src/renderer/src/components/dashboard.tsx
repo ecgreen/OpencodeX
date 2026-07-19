@@ -37,6 +37,12 @@ export function Dashboard(props: {
   deleteProject: (projectID: string, name: string) => void
 }) {
   const sessions = createMemo(() => tuiSidebarSessions(props.snapshot, props.sessionOrderState))
+  const workBySessionID = createMemo(() => new Map(props.workItems.filter((item) => item.kind === "session" && item.sessionID).map((item) => [item.sessionID!, item])))
+  const sessionBuckets = createMemo(() => new Map(sessions().map((session) => {
+    const workItem = workBySessionID().get(session.id)
+    return [session.id, workItem ? clientWorkItemBucket(workItem) : sessionOrderBucket(props.snapshot, session)] as const
+  })))
+  const bucketCount = (bucket: string) => Array.from(sessionBuckets().values()).filter((value) => value === bucket).length
   return (
     <div class="page dashboard-page">
       <header class="dashboard-overview">
@@ -44,12 +50,17 @@ export function Dashboard(props: {
           <p>Workspace</p>
           {props.logo}
         </div>
+        <dl class="dashboard-overview-metrics" aria-label="Session workload">
+          <div class="status-input-needed"><dt>Needs input</dt><dd>{bucketCount("input_needed")}</dd></div>
+          <div class="status-in-progress"><dt>Running</dt><dd>{bucketCount("in_progress")}</dd></div>
+          <div class="status-ready-for-review"><dt>Ready to review</dt><dd>{bucketCount("ready_for_review")}</dd></div>
+        </dl>
         <Button appearance="solid" tone="accent" icon="plus" onClick={() => props.createSession()}>
           New session
         </Button>
       </header>
       <section class="dashboard-sections">
-        <DashboardSessionsSection sessions={sessions()} snapshot={props.snapshot} workItems={props.workItems} openSession={props.openSession} createSession={() => props.createSession()} sessionPinned={props.sessionPinned} toggleSessionPinned={props.toggleSessionPinned} renameSession={props.renameSession} deleteSession={props.deleteSession} />
+        <DashboardSessionsSection sessions={sessions()} snapshot={props.snapshot} sessionBuckets={sessionBuckets()} openSession={props.openSession} createSession={() => props.createSession()} sessionPinned={props.sessionPinned} toggleSessionPinned={props.toggleSessionPinned} renameSession={props.renameSession} deleteSession={props.deleteSession} />
         <DashboardProjectsSection snapshot={props.snapshot} sessionOrderState={props.sessionOrderState} openProject={props.openProject} createProject={props.createProject} createSession={props.createSession} editProject={props.editProject} deleteProject={props.deleteProject} />
         <DashboardSwarmsSection snapshot={props.snapshot} createSwarm={props.createSwarm} />
         <DashboardViewsSection snapshot={props.snapshot} openView={props.openView} createView={props.createView} viewPinned={props.viewPinned} toggleViewPinned={props.toggleViewPinned} editView={props.editView} deleteView={props.deleteView} />
@@ -156,7 +167,7 @@ function DashboardSwarmsSection(props: { snapshot?: GuiSnapshot; createSwarm: ()
 function DashboardSessionsSection(props: {
   sessions: Session[]
   snapshot?: GuiSnapshot
-  workItems: WorkItem[]
+  sessionBuckets: Map<string, ReturnType<typeof clientWorkItemBucket> | ReturnType<typeof sessionOrderBucket>>
   openSession: (sessionID: string) => void
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
@@ -165,12 +176,7 @@ function DashboardSessionsSection(props: {
   createSession: () => void
 }) {
   const [bucketCollapsed, setBucketCollapsed] = createSignal<Record<string, boolean>>({ inactive: true })
-  const workBySessionID = createMemo(() => new Map(props.workItems.filter((item) => item.kind === "session" && item.sessionID).map((item) => [item.sessionID!, item])))
-  const bucket = (session: Session) => {
-    const workItem = workBySessionID().get(session.id)
-    if (workItem) return clientWorkItemBucket(workItem)
-    return sessionOrderBucket(props.snapshot, session)
-  }
+  const bucket = (session: Session) => props.sessionBuckets.get(session.id) ?? "inactive"
   const feedbackSessions = createMemo(() => props.sessions.filter((session) => bucket(session) === "input_needed"))
   const reviewSessions = createMemo(() => props.sessions.filter((session) => bucket(session) === "ready_for_review"))
   const progressSessions = createMemo(() => props.sessions.filter((session) => bucket(session) === "in_progress"))

@@ -78,28 +78,22 @@
   outline: none;
 }
 
-.titlebar-menu-group>summary:hover {
+.titlebar-menu-trigger:hover {
   color: var(--text);
   border-color: var(--border-subtle);
   background: color-mix(in srgb,var(--element) 84%,transparent);
 }
 
-.titlebar-menu-group>summary:focus-visible {
+.titlebar-menu-trigger:focus-visible {
   color: var(--text);
   border-color: var(--border-subtle);
   background: color-mix(in srgb,var(--element) 84%,transparent);
 }
 
-.titlebar-menu-group>summary::-webkit-details-marker {
-  display: none;
-}
-
-.titlebar-menu-item:hover:not(:disabled) {
-  background: color-mix(in srgb,var(--element) 88%,transparent);
-}
-
-.titlebar-menu-item:focus-visible {
-  background: color-mix(in srgb,var(--element) 88%,transparent);
+.titlebar-menu-trigger[data-expanded] {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
 }
 
 .app-notice.error {

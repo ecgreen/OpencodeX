@@ -214,12 +214,12 @@
   border-color: var(--line-soft);
   background: color-mix(in srgb,var(--surface) 70%,var(--bg));
   display: grid;
-  grid-template-columns: repeat(6,minmax(0,1fr));
+  grid-template-columns: repeat(4,minmax(0,1fr));
   align-self: stretch;
   width: 100%;
   min-width: 0;
   gap: 2px;
-  padding: 4px 8px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border-subtle);
   overflow: visible;
 }
@@ -245,6 +245,23 @@
   color: var(--muted);
   background: transparent;
   transition: color var(--motion-hover) ease,background var(--motion-hover) ease;
+}
+
+.nav-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: var(--ds-control-accent-text);
+  background: var(--theme-warning);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .card-status-label {

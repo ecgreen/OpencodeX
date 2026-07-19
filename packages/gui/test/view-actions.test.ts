@@ -5,6 +5,7 @@ import {
   groupViewSessionsByProject,
   initialViewSelection,
   metadataWithPendingSessions,
+  metadataWithViewSelection,
   selectedPendingViewSessions,
   selectedViewSessionIDs,
   viewTitle,
@@ -19,6 +20,16 @@ describe("GUI view action helpers", () => {
 
     expect(selectedViewSessionIDs(selection)).toEqual(["s1", "s2"])
     expect(selectedPendingViewSessions(selection)).toEqual([{ id: "new:1", projectID: "p1" }])
+  })
+
+  test("preserves mixed existing and pending pane order", () => {
+    const selection = [
+      { kind: "pending" as const, slot: { id: "new:1", projectID: "p1" } },
+      { kind: "existing" as const, sessionID: "s1" },
+    ]
+    const metadata = metadataWithViewSelection(undefined, selection)
+
+    expect(initialViewSelection({ sessionIDs: ["s1"], metadata } as OpencodeXView)).toEqual(selection)
   })
 
   test("writes and clears pending pane metadata", () => {

@@ -1,4 +1,4 @@
-import { Button } from "./ui"
+import { Button, IconButton } from "./ui"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import { For, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
@@ -138,7 +138,15 @@ export function RailProjectsSection(props: {
                   props.moveProject(row.project.id, event.key === "ArrowUp" ? -1 : 1)
                 }}
               >{title(row.project.name ?? row.project.project.name)}</Button>
-              <Button appearance="ghost" class="project-new" title="New session in project" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>+ New</Button>
+              <IconButton
+                appearance="soft"
+                tone="accent"
+                size="compact"
+                icon="plus"
+                class="project-new"
+                label={`New session in ${title(row.project.name ?? row.project.project.name)}`}
+                onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}
+              />
             </div>
             <div class="project-sessions" classList={{ collapsed: !props.projectExpanded(row.project.id) }}>
               <div>

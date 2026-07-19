@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
-import { activeProjectForRoute, activeSessionIDForRoute, activeSessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "../src/renderer/src/lib/route-selection"
+import { abortSessionIDForRoute, activeProjectForRoute, activeSessionIDForRoute, activeSessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "../src/renderer/src/lib/route-selection"
 import { viewItemsMembershipKey, viewSessionsSyncKey, type ViewItem } from "../src/renderer/src/lib/view-items"
 
 describe("GUI route selection helpers", () => {
@@ -20,6 +20,46 @@ describe("GUI route selection helpers", () => {
     expect(activeSessionRouteKey({ name: "session", sessionID: "s1" })).toBe("s1")
     expect(activeSessionRouteKey({ name: "new-session", projectID: "p1", directory: "C:\\project" })).toBe("new:p1:C:\\project")
     expect(activeSessionRouteKey({ name: "dashboard" })).toBe("")
+  })
+
+  test("targets aborts to the session represented by the active route", () => {
+    expect(abortSessionIDForRoute({
+      route: { name: "session", sessionID: "s1" },
+      selectedSessionID: "s1",
+      focusedViewSessionID: "s2",
+      viewSessionIDs: ["s2"],
+    })).toBe("s1")
+    expect(abortSessionIDForRoute({
+      route: { name: "views", viewID: "v1" },
+      selectedSessionID: "unrelated",
+      focusedViewSessionID: "s2",
+      viewSessionIDs: ["s1", "s2"],
+    })).toBe("s2")
+    expect(abortSessionIDForRoute({
+      route: { name: "new-session" },
+      selectedSessionID: "materializing",
+      viewSessionIDs: [],
+    })).toBe("materializing")
+  })
+
+  test("does not target sessions outside the active route or view", () => {
+    expect(abortSessionIDForRoute({
+      route: { name: "session", sessionID: "s1" },
+      selectedSessionID: "unrelated",
+      viewSessionIDs: [],
+    })).toBeUndefined()
+    expect(abortSessionIDForRoute({
+      route: { name: "views", viewID: "v1" },
+      selectedSessionID: "unrelated",
+      focusedViewSessionID: "unrelated",
+      viewSessionIDs: ["s1", "s2"],
+    })).toBeUndefined()
+    expect(abortSessionIDForRoute({
+      route: { name: "dashboard" },
+      selectedSessionID: "s1",
+      focusedViewSessionID: "s2",
+      viewSessionIDs: ["s2"],
+    })).toBeUndefined()
   })
 
   test("selects active views and focused view item IDs", () => {

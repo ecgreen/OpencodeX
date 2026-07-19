@@ -14,8 +14,9 @@ import {
   toolStateInput,
   toolVisibleOutput,
 } from "../lib/tool-display"
-import { DisclosureChevron } from "./icon"
+import { DisclosureChevron, Icon } from "./icon"
 import { ToolCodeBlock, ToolDetails, fileBasename } from "./session-tool-details"
+import { Button } from "./ui"
 
 export type ToolPart = Extract<Part, { type: "tool" }>
 type ReasoningPart = Extract<Part, { type: "reasoning" }>
@@ -120,6 +121,13 @@ function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" 
   const startCollapsed = createMemo(() => props.item.tool === "read" && props.item.parts.length > 10)
   const [expanded, setExpanded] = createSignal(!startCollapsed())
   const statusLabel = createMemo(() => startCollapsed() && !expanded() ? "Click to expand" : status() === "completed" ? "" : status())
+  const errorPreview = createMemo(() => {
+    if (status() !== "error") return ""
+    const failed = props.item.parts.find((part) => part.state.status === "error")
+    if (!failed) return ""
+    const message = (toolError(failed.state) ?? "").replace(/\s+/g, " ").trim()
+    return message.length > 96 ? `${message.slice(0, 96)}…` : message
+  })
   return (
     <details class={`part tool tool-group ${status()}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>
@@ -127,6 +135,9 @@ function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" 
         <strong>{toolGroupTitle(props.item.tool, props.item.parts)}</strong>
         <Show when={statusLabel()}>
           {(label) => <span class="tool-status">{label()}</span>}
+        </Show>
+        <Show when={errorPreview() && !expanded()}>
+          <small class="tool-group-error">{errorPreview()}</small>
         </Show>
       </summary>
       <Show when={expanded()}>
@@ -184,16 +195,20 @@ function PartView(props: { part: MessageBundle["parts"][number]; showThinking: b
         <ToolPartView part={props.part as ToolPart} showDetails={props.showToolDetails} showGenericOutput={props.showGenericToolOutput} />
       </Match>
       <Match when={props.part.type === "file"}>
-        <div class="part file" data-side-panel-file={props.part.type === "file" ? props.part.filename ?? props.part.url : ""}>File: {props.part.type === "file" ? props.part.filename ?? props.part.url : ""}</div>
+        <Button appearance="ghost" class="part file" data-side-panel-file={props.part.type === "file" ? props.part.filename ?? props.part.url : ""} title="Open in side panel">
+          <Icon name="file" />
+          <span>{props.part.type === "file" ? props.part.filename ?? props.part.url : ""}</span>
+          <Icon name="chevronRight" class="part-file-chevron" />
+        </Button>
       </Match>
       <Match when={props.part.type === "agent"}>
-        <div class="part badge">Agent: {props.part.type === "agent" ? props.part.name : ""}</div>
+        <div class="part badge"><Icon name="swarm" /><span>Agent: {props.part.type === "agent" ? props.part.name : ""}</span></div>
       </Match>
       <Match when={props.part.type === "patch"}>
-        <div class="part badge">Patch: {props.part.type === "patch" ? props.part.files.join(", ") : ""}</div>
+        <div class="part badge"><Icon name="pencil" /><span>Patch: {props.part.type === "patch" ? props.part.files.join(", ") : ""}</span></div>
       </Match>
       <Match when={props.part.type === "compaction"}>
-        <div class="part badge">Compaction {props.part.type === "compaction" && props.part.auto ? "auto" : "manual"}</div>
+        <div class="part badge"><Icon name="context" /><span>Compaction {props.part.type === "compaction" && props.part.auto ? "auto" : "manual"}</span></div>
       </Match>
     </Switch>
   )

@@ -1,7 +1,9 @@
 import type { AssistantMessage, Provider } from "@opencode-ai/sdk/v2/client"
-import { For } from "solid-js"
+import { For, Show } from "solid-js"
 import type { MessageBundle } from "../lib/store"
+import { formatTokenCount } from "../lib/session-composer-helpers"
 import { OpencodeXLogo } from "./chrome"
+import { Button } from "./ui"
 
 export function hasActiveAssistantProgress(messages: MessageBundle[]) {
   return activeAssistantProgressParts(messages).length > 0
@@ -54,9 +56,25 @@ export function showTranscriptHeader(messages: MessageBundle[], index: number, s
 
 export function transcriptHeaderLabel(message: MessageBundle["info"], providers: Provider[], showTimestamps: boolean) {
   if (message.role === "user") return showTimestamps ? new Date(message.time.created).toLocaleString() : ""
-  const label = assistantModelLabel(message, providers)
-  if (!showTimestamps) return label
-  return `${label} - ${new Date(message.time.created).toLocaleString()}`
+  const parts = [assistantModelLabel(message, providers)]
+  const meta = assistantMessageMeta(message)
+  if (meta) parts.push(meta)
+  if (showTimestamps) parts.push(new Date(message.time.created).toLocaleString())
+  return parts.filter(Boolean).join(" · ")
+}
+
+function assistantMessageMeta(message: AssistantMessage) {
+  const meta: string[] = []
+  if (message.time.completed) meta.push(formatMessageDuration(message.time.completed - message.time.created))
+  const tokens = message.tokens.total ?? message.tokens.input + message.tokens.output + message.tokens.reasoning
+  if (tokens > 0) meta.push(`${formatTokenCount(tokens)} tok`)
+  return meta.join(" · ")
+}
+
+function formatMessageDuration(ms: number) {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
 function assistantModelLabel(message: AssistantMessage, providers: Provider[]) {
@@ -72,6 +90,33 @@ export function TranscriptLoadingSkeleton(props: { visible: boolean }) {
   </div>
 }
 
-export function SessionEmptyState(props: { visible: boolean; handoff: boolean }) {
-  return <div class="session-empty-state" classList={{ visible: props.visible, handoff: props.handoff }} aria-hidden={!props.visible}><OpencodeXLogo active={props.visible} /><p>What should OpencodeX work on?</p></div>
+const EMPTY_STATE_SUGGESTIONS = ["Explain this codebase", "Find and fix a bug", "Add tests for recent changes"]
+
+export function SessionEmptyState(props: { visible: boolean; handoff: boolean; onSuggestion?: (prompt: string) => void }) {
+  return (
+    <div class="session-empty-state" classList={{ visible: props.visible, handoff: props.handoff }} aria-hidden={!props.visible}>
+      <OpencodeXLogo active={props.visible} />
+      <p>What should OpencodeX work on?</p>
+      <Show when={props.visible && props.onSuggestion}>
+        {(suggest) => (
+          <>
+            <div class="session-empty-state-suggestions">
+              <For each={EMPTY_STATE_SUGGESTIONS}>
+                {(prompt) => (
+                  <Button appearance="outline" size="compact" class="session-empty-state-suggestion" tabIndex={props.visible ? 0 : -1} onClick={() => suggest()(prompt)}>
+                    {prompt}
+                  </Button>
+                )}
+              </For>
+            </div>
+            <div class="session-empty-state-hints" aria-hidden="true">
+              <span><kbd>/</kbd> commands</span>
+              <span><kbd>@</kbd> mention files</span>
+              <span><kbd>Ctrl+Tab</kbd> switch sessions</span>
+            </div>
+          </>
+        )}
+      </Show>
+    </div>
+  )
 }

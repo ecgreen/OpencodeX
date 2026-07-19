@@ -108,6 +108,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       toggleScrollbar={model.transcriptPreferences.handleToggleScrollbarSlash}
       toggleGenericToolOutput={model.transcriptPreferences.handleToggleGenericToolOutputSlash}
       status={session() ? model.authoritative.snapshot()?.sessionStatus[session()!.id]?.type : undefined}
+      abortConfirmArmed={model.commands.abortConfirmSessionID() === session()?.id}
       readyForReview={
         session() ? model.authoritative.snapshot()?.sessionUiState[session()!.id]?.displayStatus === "needs_review" : false
       }
@@ -118,6 +119,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
           ? model.notices.run(() => model.authoritative.loadOlderSessionMessages(session()!.id, cursor))
           : Promise.resolve()
       }
+      onMessageAction={(action, context) => model.notices.run(() => model.sessionSlash.messageAction(action, context))}
       gui={model.authoritative.client()}
       sidePanelDirectory={model.sessionActions.sidePanelDirectory(session())}
     />

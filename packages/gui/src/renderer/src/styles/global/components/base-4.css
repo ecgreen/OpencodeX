@@ -249,22 +249,53 @@ input {
 
 .part.file {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 8px 0;
-  padding: 10px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ds-radius-control);
   color: var(--text);
-  border-radius: 0;
   background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.part.file .icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.part.file>span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part.file .part-file-chevron {
+  transition: color var(--motion-hover) ease,transform var(--motion-hover) ease;
 }
 
 .part.badge {
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 6px 0;
   padding: 6px 9px;
   color: var(--accent);
   border-radius: 0;
   background: transparent;
+}
+
+.part.badge .icon {
+  width: 13px;
+  height: 13px;
 }
 
 .mode-chip {

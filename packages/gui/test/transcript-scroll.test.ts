@@ -9,6 +9,7 @@ import {
   transcriptFollowStateAfterUserInput,
   transcriptLoadingSkeletonDecision,
   transcriptLoadMoreScrollTop,
+  transcriptNewMessageCount,
   shouldSpendTranscriptOpenBottomScroll,
 } from "../src/renderer/src/lib/transcript-scroll"
 
@@ -85,6 +86,12 @@ describe("GUI transcript scroll decisions", () => {
       scrollHeight: 1_000,
       nextScrollHeight: 1_400,
     })).toBe(400)
+  })
+
+  test("new message counts ignore messages prepended by load more", () => {
+    expect(transcriptNewMessageCount(["m1", "m2"], "m2")).toBe(0)
+    expect(transcriptNewMessageCount(["old-1", "old-2", "m1", "m2"], "m2")).toBe(0)
+    expect(transcriptNewMessageCount(["old-1", "m1", "m2", "m3", "m4"], "m2")).toBe(2)
   })
 
   test("opening a session waits for real transcript content before spending its bottom scroll", () => {

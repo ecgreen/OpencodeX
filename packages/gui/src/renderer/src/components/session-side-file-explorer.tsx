@@ -29,7 +29,7 @@ export function SessionSideFileExplorer(props: {
       </header>
       <div class="workbench-filter">
         <Icon name="search" />
-        <TextInput value={props.filter} placeholder="Filter files" onInput={(event) => props.setFilter(event.currentTarget.value)} />
+        <TextInput type="search" aria-label="Filter files" value={props.filter} placeholder="Filter files" onInput={(event) => props.setFilter(event.currentTarget.value)} />
         <Show when={props.filter}>
           <Button appearance="ghost" type="button" aria-label="Clear file filter" onClick={() => props.setFilter("")}><Icon name="x" /></Button>
         </Show>

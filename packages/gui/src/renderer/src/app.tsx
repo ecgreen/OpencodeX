@@ -16,6 +16,7 @@ import { createSessionComposerController } from "./controllers/session-composer-
 import { createSessionSelectionController } from "./controllers/session-selection-controller"
 import { createSessionSlashController } from "./controllers/session-slash-controller"
 import { createSessionState } from "./controllers/session-state"
+import { createSessionSwitcherController } from "./controllers/session-switcher-controller"
 import { createSettingsController } from "./controllers/settings-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
 import { createViewController } from "./controllers/view-controller"
@@ -94,6 +95,11 @@ export function App() {
     pinSession: rail.pinSession,
     rememberModel: sessionActions.rememberModel,
   })
+  const sessionSwitcher = createSessionSwitcherController({
+    authoritative,
+    selection: sessionSelection,
+    sessionActions,
+  })
   const view = createViewController({
     authoritative,
     navigation,
@@ -144,6 +150,8 @@ export function App() {
     transcriptPreferences,
     plugins,
     composer: sessionComposer,
+    switcher: sessionSwitcher,
+    view,
   })
 
   createEffect(() => {
@@ -192,6 +200,7 @@ export function App() {
     sessionSelection,
     sessionSlash,
     sessionState,
+    sessionSwitcher,
     settings,
     transcriptPreferences,
     view,

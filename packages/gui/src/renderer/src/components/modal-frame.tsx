@@ -12,6 +12,7 @@ export function ModalFrame(props: {
   footer?: JSX.Element
   onSubmit?: (event: SubmitEvent) => void
   showClose?: boolean
+  closeSize?: "compact" | "default" | "prominent"
 }) {
   const card = () => (
     <>
@@ -23,7 +24,7 @@ export function ModalFrame(props: {
           </Show>
         </div>
         <Show when={props.showClose ?? true}>
-          <IconButton icon="x" label={`Close ${props.title}`} onClick={props.close} />
+          <IconButton appearance="ghost" icon="x" label={`Close ${props.title}`} size={props.closeSize} onClick={props.close} />
         </Show>
       </header>
       {props.children}

@@ -1,6 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
-import { For, createMemo } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { sessionOrderBucket } from "../lib/app-session-lists"
 import { title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
@@ -8,6 +8,7 @@ import { RailSection } from "./rail-section"
 import { dropPlacement, sectionDrag } from "./rail-sidebar-drag"
 import { SidebarSessionLink, SidebarViewLink } from "./rail-sidebar-links"
 import type { RailDragTarget, RailDropTarget, RailSectionName } from "./rail-sidebar-types"
+import { Button } from "./ui"
 
 export function RailRecentSessionsSection(props: {
   sessions: Session[]
@@ -121,6 +122,7 @@ export function RailViewsSection(props: {
   toggleViewPinned: (viewID: string) => void
   editView: (viewID: string) => void
   deleteView: (viewID: string, name: string) => void
+  openAllViews: () => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
@@ -131,11 +133,12 @@ export function RailViewsSection(props: {
   dropSection: (targetID: string, placement: "before" | "after") => void
   moveSection: (offset: number) => void
 }) {
-  const views = createMemo(() => (props.snapshot?.views ?? []).slice(0, 8))
+  const allViews = createMemo(() => props.snapshot?.views ?? [])
+  const views = createMemo(() => allViews().slice(0, 8))
   return (
     <RailSection
       title="Views"
-      count={views().length}
+      count={allViews().length}
       collapsed={props.collapsed}
       toggle={props.toggle}
       action={props.createView}
@@ -177,6 +180,11 @@ export function RailViewsSection(props: {
           </div>
         )}
       </For>
+      <Show when={allViews().length > views().length}>
+        <Button appearance="ghost" class="rail-show-all" onClick={props.openAllViews}>
+          <span>Show all {allViews().length} views</span>
+        </Button>
+      </Show>
     </RailSection>
   )
 }

@@ -1,6 +1,6 @@
 import { TextArea, Button } from "./ui"
 import type { JSX } from "solid-js"
-import { For, Show, createSignal } from "solid-js"
+import { For, Show, createEffect, createSignal, createUniqueId } from "solid-js"
 import type { PromptPart } from "../lib/store"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
@@ -18,6 +18,8 @@ export function SessionComposer(props: {
   selectedSlashCommand: number
   mentionMenuVisible: boolean
   mentionOptions: PromptMentionOption[]
+  abortConfirmArmed: boolean
+  stashCount: number
   variants: string[]
   variantPickerOpen: boolean
   selectedVariant: string
@@ -38,6 +40,8 @@ export function SessionComposer(props: {
   completeSlashCommand: (command: SessionSlashCommand | undefined) => void
   selectSlashCommand: (offset: number) => void
   chooseMention: (option: PromptMentionOption) => void
+  stashPrompt: () => void
+  popStash: () => void
   pasteFiles: (files: File[]) => void
   addPickedContext: () => void
   dropContext: (event: DragEvent) => void
@@ -48,18 +52,35 @@ export function SessionComposer(props: {
   selectVariant: (variant: string) => void
 }) {
   const [addMenuOpen, setAddMenuOpen] = createSignal(false)
+  const [selectedMention, setSelectedMention] = createSignal(0)
+  const [mentionDismissed, setMentionDismissed] = createSignal(false)
+  const menuID = createUniqueId()
+  const mentionMenuVisible = () => props.mentionMenuVisible && !mentionDismissed()
+  const selectMention = (offset: number) => {
+    const count = props.mentionOptions.length
+    if (count > 0) setSelectedMention((current) => (current + offset + count) % count)
+  }
   const chooseMode = (mode: "build" | "plan" | "goal") => {
     props.setMode(mode)
     setAddMenuOpen(false)
   }
+  createEffect(() => {
+    if (!props.mentionMenuVisible) {
+      setMentionDismissed(false)
+      setSelectedMention(0)
+      return
+    }
+    if (selectedMention() >= props.mentionOptions.length) setSelectedMention(Math.max(0, props.mentionOptions.length - 1))
+  })
   return (
     <form class="composer" onSubmit={props.submit} onDragOver={handleComposerDragOver} onDrop={props.dropContext}>
       <div class={`composer-input ${props.mode}`}>
         <Show when={props.slashMenuVisible}>
-          <div class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
+          <div id={`${menuID}-slash`} class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
             <For each={props.visibleSlashCommands} fallback={<p>No matching commands.</p>}>
               {(command, index) => (
-                <Button appearance="ghost"
+                 <Button appearance="ghost"
+                   id={`${menuID}-slash-${index()}`}
                   type="button"
                   role="option"
                   aria-selected={props.selectedSlashCommand === index()}
@@ -76,11 +97,11 @@ export function SessionComposer(props: {
             </For>
           </div>
         </Show>
-        <Show when={props.mentionMenuVisible}>
-          <div class="slash-command-menu mention-menu" role="listbox" aria-label="Mentions" onMouseDown={(event) => event.preventDefault()}>
+        <Show when={mentionMenuVisible()}>
+          <div id={`${menuID}-mention`} class="slash-command-menu mention-menu" role="listbox" aria-label="Mentions" onMouseDown={(event) => event.preventDefault()}>
             <For each={props.mentionOptions}>
-              {(option) => (
-                <Button appearance="ghost" type="button" role="option" onClick={() => props.chooseMention(option)}>
+              {(option, index) => (
+                <Button appearance="ghost" id={`${menuID}-mention-${index()}`} type="button" role="option" aria-selected={selectedMention() === index()} classList={{ selected: selectedMention() === index() }} onMouseEnter={() => setSelectedMention(index())} onClick={() => props.chooseMention(option)}>
                   <strong>{option.replacement}</strong>
                   <span>{option.category} - {option.detail}</span>
                 </Button>
@@ -101,6 +122,8 @@ export function SessionComposer(props: {
             props.setHistoryDraft("")
             props.setSlashMenuOpen(true)
             props.setSelectedSlashCommand(0)
+            setSelectedMention(0)
+            setMentionDismissed(false)
           }}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData?.files ?? [])
@@ -108,7 +131,9 @@ export function SessionComposer(props: {
             event.preventDefault()
             props.pasteFiles(files)
           }}
-          onKeyDown={(event) => handleComposerKeyDown(event, props)}
+          onKeyDown={(event) => handleComposerKeyDown(event, props, { visible: mentionMenuVisible(), selected: selectedMention(), select: selectMention, dismiss: () => setMentionDismissed(true) })}
+          aria-controls={props.slashMenuVisible ? `${menuID}-slash` : mentionMenuVisible() ? `${menuID}-mention` : undefined}
+          aria-activedescendant={props.slashMenuVisible ? `${menuID}-slash-${props.selectedSlashCommand}` : mentionMenuVisible() ? `${menuID}-mention-${selectedMention()}` : undefined}
           placeholder={props.blocked ? "Reply to the pending permission/question before continuing..." : "Message OpencodeX..."}
         />
         <Show when={props.draftParts.length > 0}>
@@ -149,12 +174,17 @@ export function SessionComposer(props: {
               <Show when={addMenuOpen()}>
                 <div class="composer-add-menu" role="menu" aria-label="Add context or change mode">
                   <Button appearance="ghost" type="button" role="menuitem" onClick={() => { props.addPickedContext(); setAddMenuOpen(false) }}>File & Folder context</Button>
+                  <Button appearance="ghost" type="button" role="menuitem" disabled={!props.draftText && props.draftParts.length === 0} onClick={() => { props.stashPrompt(); setAddMenuOpen(false) }}>Stash draft <kbd>Ctrl+Shift+S</kbd></Button>
+                  <Button appearance="ghost" type="button" role="menuitem" disabled={props.stashCount === 0} onClick={() => { props.popStash(); setAddMenuOpen(false) }}>Restore stashed draft <kbd>Ctrl+Shift+Y</kbd></Button>
                   <Button appearance="ghost" type="button" role="menuitemradio" aria-checked={props.mode === "goal"} classList={{ selected: props.mode === "goal" }} onClick={() => chooseMode("goal")}>Goal mode</Button>
                   <Button appearance="ghost" type="button" role="menuitemradio" aria-checked={props.mode === "build"} classList={{ selected: props.mode === "build" }} onClick={() => chooseMode("build")}>Build mode</Button>
                   <Button appearance="ghost" type="button" role="menuitemradio" aria-checked={props.mode === "plan"} classList={{ selected: props.mode === "plan" }} onClick={() => chooseMode("plan")}>Plan mode</Button>
                 </div>
               </Show>
             </div>
+            <Show when={props.stashCount > 0}>
+              <Button appearance="ghost" class="composer-stash-chip" type="button" title="Restore stashed draft (Ctrl+Shift+Y)" onClick={props.popStash}>Stashed {props.stashCount}</Button>
+            </Show>
             <Button appearance="ghost" class={`mode-chip ${props.mode}`} type="button" disabled={props.blocked} onClick={props.toggleMode} title="Cycle mode">
               {props.mode === "plan" ? "Plan" : props.mode === "goal" ? "Goal" : "Build"}
             </Button>
@@ -201,9 +231,9 @@ export function SessionComposer(props: {
         <span class="composer-running-left">
           <Show when={props.running} fallback={<span class="composer-running-placeholder" aria-hidden="true" />}>
             <span class="composer-spinner" aria-label="running" />
-            <span class="composer-interrupt" aria-label="Press escape to interrupt the model">
+            <span class="composer-interrupt" classList={{ armed: props.abortConfirmArmed }} aria-label={props.abortConfirmArmed ? "Press escape again to interrupt the model" : "Press escape to arm interruption"}>
               <span class="composer-interrupt-key">esc</span>{" "}
-              <span class="composer-interrupt-action">interrupt</span>
+              <span class="composer-interrupt-action">{props.abortConfirmArmed ? "again to interrupt" : "to interrupt"}</span>
             </span>
           </Show>
         </span>
@@ -211,7 +241,7 @@ export function SessionComposer(props: {
           <Show when={props.usageLabel}>
             {(usage) => <span class="composer-token-usage">{usage()}</span>}
           </Show>
-          <span class="composer-command-hint"><span>ctrl+p</span> commands</span>
+          <span class="composer-command-hint"><span>ctrl+k</span> commands</span>
         </span>
       </div>
     </form>
@@ -253,7 +283,6 @@ function partTitle(part: PromptPart) {
   if (part.type !== "file") return partLabel(part)
   return part.source?.type === "file" ? part.source.path : part.source?.type === "resource" ? part.source.uri : part.filename ?? "File"
 }
-
 function partRemovalLabels(part: PromptPart) {
   if (part.type === "agent") return [part.name]
   if (part.type !== "file") return []
@@ -271,10 +300,30 @@ function fileBasename(value: string) {
   return value.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).at(-1) ?? value
 }
 
-function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }, props: Parameters<typeof SessionComposer>[0]) {
+function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }, props: Parameters<typeof SessionComposer>[0], mention: { visible: boolean; selected: number; select: (offset: number) => void; dismiss: () => void }) {
+  if (mention.visible) {
+    if (event.key === "Escape") {
+      event.preventDefault()
+      event.stopPropagation()
+      mention.dismiss()
+      return
+    }
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault()
+      mention.select(event.key === "ArrowUp" ? -1 : 1)
+      return
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault()
+      const option = props.mentionOptions[mention.selected]
+      if (option) props.chooseMention(option)
+      return
+    }
+  }
   if (props.slashMenuVisible) {
     if (event.key === "Escape") {
       event.preventDefault()
+      event.stopPropagation()
       props.setSlashMenuOpen(false)
       return
     }
@@ -302,6 +351,16 @@ function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextA
   if (event.ctrlKey && event.key.toLowerCase() === "t") {
     event.preventDefault()
     if (!props.blocked) props.cycleVariant()
+    return
+  }
+  if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "s") {
+    event.preventDefault()
+    if (props.draftText || props.draftParts.length > 0) props.stashPrompt()
+    return
+  }
+  if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "y") {
+    event.preventDefault()
+    if (props.stashCount > 0) props.popStash()
     return
   }
   if (event.altKey && event.key === "ArrowUp") {

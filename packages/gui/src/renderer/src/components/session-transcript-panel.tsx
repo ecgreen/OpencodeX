@@ -2,16 +2,23 @@ import { Button } from "./ui"
 import type { Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import type { MessageBundle, SessionData } from "../lib/store"
+import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
+import { revealConcealedCode, syncConcealedCodeControls } from "../lib/transcript-code-conceal"
 import {
   transcriptFollowStateAfterScroll,
   transcriptFollowStateAfterUserInput,
   transcriptBottomScrollTop,
   transcriptLoadMoreScrollTop,
+  transcriptNewMessageCount,
   shouldSpendTranscriptOpenBottomScroll,
   transcriptLoadingSkeletonDecision,
+  transcriptBottomDistance,
+  TRANSCRIPT_BOTTOM_FOLLOW_THRESHOLD,
   type TranscriptFollowState,
 } from "../lib/transcript-scroll"
 import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/transcript-visibility"
+import { Icon } from "./icon"
+import { MessageActions } from "./message-actions"
 import { DisplayPartView, groupTranscriptParts } from "./session-transcript"
 import { SessionEmptyState, TranscriptLoadingSkeleton, activeAssistantProgressParts, hasActiveAssistantProgress, isScrollbarPointer, showTranscriptHeader, transcriptHeaderLabel } from "./session-transcript-presentation"
 
@@ -27,10 +34,13 @@ export function TranscriptPanel(props: {
   showToolDetails: boolean
   showScrollbar: boolean
   showGenericToolOutput: boolean
+  concealCodeBlocks: boolean
   running?: boolean
   emptyStateDismissed?: boolean
   emptyStateHandoff?: boolean
   loadOlderMessages?: (cursor: string) => Promise<void>
+  messageAction?: (action: SessionMessageActionKind, bundle: MessageBundle) => void
+  emptyStateSuggestion?: (prompt: string) => void
 }) {
   let transcript: HTMLElement | undefined
   let transcriptContent: HTMLDivElement | undefined
@@ -42,15 +52,20 @@ export function TranscriptPanel(props: {
   let loadMoreAnchor: { element: HTMLElement; top: number; scrollTop: number; scrollHeight: number } | undefined
   let forceBottomScroll = false
   let activeSessionID = ""
+  let lastMessageIDAtRelease = ""
   const [olderMessagesLoading, setOlderMessagesLoading] = createSignal(false)
   const [assistantThinkingVisible, setAssistantThinkingVisible] = createSignal(false)
+  const [scrolledAway, setScrolledAway] = createSignal(false)
   const visibleMessages = createMemo(() => visibleTranscriptMessages(props.data.messages))
+  const visibleMessageMap = createMemo(() => new Map(visibleMessages().map((item) => [item.info.id, item])))
   const visibleMessageIDs = createMemo(() => visibleTranscriptMessageIDs(props.data.messages))
   const activeAssistantHasProgress = createMemo(() => hasActiveAssistantProgress(visibleMessages()))
   const activeAssistantProgressKey = createMemo(() => activeAssistantProgressParts(visibleMessages()).join("|"))
   const emptyStateHandoff = () => props.emptyStateHandoff === true
   const transcriptHasContent = () => visibleMessages().length > 0 || assistantThinkingVisible()
   const [loadingSkeletonVisible, setLoadingSkeletonVisible] = createSignal(props.loading)
+  const pendingSession = () => props.sessionID.startsWith("pending:")
+  const newMessageCount = createMemo(() => scrolledAway() ? transcriptNewMessageCount(visibleMessageIDs(), lastMessageIDAtRelease) : 0)
   const clearAssistantThinkingTimer = () => {
     if (assistantThinkingTimer === undefined) return
     clearTimeout(assistantThinkingTimer)
@@ -104,8 +119,25 @@ export function TranscriptPanel(props: {
     }
     if (decision === "hide") hideLoadingSkeleton()
   }
+  const updateJumpPill = () => {
+    if (!transcript) return
+    const away = transcriptBottomDistance({
+      scrollTop: transcript.scrollTop,
+      scrollHeight: transcript.scrollHeight,
+      clientHeight: transcript.clientHeight,
+    }) > TRANSCRIPT_BOTTOM_FOLLOW_THRESHOLD
+    if (away && !scrolledAway()) lastMessageIDAtRelease = visibleMessageIDs().at(-1) ?? ""
+    setScrolledAway(away)
+  }
+  const jumpToLatest = () => {
+    if (!transcript) return
+    followState = { followBottom: true, releasedUntil: 0 }
+    transcript.scrollTop = transcriptBottomScrollTop(transcript)
+    setScrolledAway(false)
+  }
   const applyScrollUpdate = () => {
     if (!transcript) return
+    syncConcealedCodeControls(transcriptContent, props.concealCodeBlocks)
     if (loadMoreAnchor) {
       restoreLoadMoreAnchor()
       return
@@ -126,6 +158,7 @@ export function TranscriptPanel(props: {
       })
     }
     if (followState.followBottom) transcript.scrollTop = transcriptBottomScrollTop(transcript)
+    updateJumpPill()
   }
   const restoreLoadMoreAnchor = () => {
     if (!transcript || !loadMoreAnchor) return
@@ -167,6 +200,7 @@ export function TranscriptPanel(props: {
       scrollHeight: transcript.scrollHeight,
       clientHeight: transcript.clientHeight,
     })
+    updateJumpPill()
   }
   const handleWheel = (event: WheelEvent) => {
     if (event.deltaY < 0) releaseTranscriptScroll()
@@ -190,6 +224,21 @@ export function TranscriptPanel(props: {
       setOlderMessagesLoading(false)
       finishLoadMoreAnchor()
     })
+  }
+  const handleContentClick = (event: MouseEvent) => {
+    if (!props.concealCodeBlocks) return
+    const target = event.target instanceof Element ? event.target : undefined
+    const wrapper = target?.closest('[data-component="markdown-code"]')
+    if (!wrapper || wrapper.hasAttribute("data-revealed")) return
+    if (target?.closest('[data-slot="markdown-copy-button"]')) return
+    revealConcealedCode(transcriptContent, wrapper, props.concealCodeBlocks)
+  }
+  const handleContentKeyDown = (event: KeyboardEvent) => {
+    if (!props.concealCodeBlocks || (event.key !== "Enter" && event.key !== " ")) return
+    const wrapper = event.target instanceof Element ? event.target.closest('[data-component="markdown-code"]') : undefined
+    if (!wrapper || wrapper.hasAttribute("data-revealed")) return
+    event.preventDefault()
+    revealConcealedCode(transcriptContent, wrapper, props.concealCodeBlocks)
   }
 
   onMount(() => {
@@ -244,6 +293,8 @@ export function TranscriptPanel(props: {
       followState = { followBottom: true, releasedUntil: 0 }
       loadMoreAnchor = undefined
       forceBottomScroll = true
+      lastMessageIDAtRelease = ""
+      setScrolledAway(false)
       scheduleScrollUpdate()
     }
   })
@@ -259,7 +310,7 @@ export function TranscriptPanel(props: {
         onPointerDown={handlePointerDown}
         onTouchStart={handleTouchStart}
       >
-        <div class="transcript-content" ref={transcriptContent}>
+        <div class="transcript-content" ref={transcriptContent} data-conceal-code={props.concealCodeBlocks ? "true" : undefined} onClick={handleContentClick} onKeyDown={handleContentKeyDown}>
           <Show when={props.data.messageCursor}>
             <div class="transcript-load-more-anchor" ref={loadMoreAnchorElement}>
               <Show
@@ -279,7 +330,7 @@ export function TranscriptPanel(props: {
           </Show>
           <For each={visibleMessageIDs()}>
             {(messageID, index) => {
-              const bundle = createMemo(() => visibleMessages().find((item) => item.info.id === messageID))
+              const bundle = createMemo(() => visibleMessageMap().get(messageID))
               return (
                 <Show when={bundle()}>
                   {(current) => (
@@ -297,6 +348,9 @@ export function TranscriptPanel(props: {
                           />
                         )}
                       </For>
+                      <Show when={props.messageAction}>
+                        {(onAction) => <MessageActions bundle={current()} pending={pendingSession()} onAction={onAction()} />}
+                      </Show>
                     </article>
                   )}
                 </Show>
@@ -312,7 +366,16 @@ export function TranscriptPanel(props: {
           </Show>
         </div>
       </section>
-      <SessionEmptyState visible={emptyStateVisible()} handoff={emptyStateHandoff()} />
+      <Show when={props.running === true}>
+        <div class="transcript-streaming-indicator" aria-hidden="true"><span /></div>
+      </Show>
+      <Show when={scrolledAway()}>
+        <Button appearance="outline" type="button" class="transcript-jump-latest" onClick={jumpToLatest}>
+          <Icon name="arrowDown" />
+          <span>{newMessageCount() > 0 ? `${newMessageCount()} new message${newMessageCount() === 1 ? "" : "s"}` : "Jump to latest"}</span>
+        </Button>
+      </Show>
+      <SessionEmptyState visible={emptyStateVisible()} handoff={emptyStateHandoff()} onSuggestion={props.emptyStateSuggestion} />
       <TranscriptLoadingSkeleton visible={loadingSkeletonVisible()} />
     </div>
   )

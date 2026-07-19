@@ -28,6 +28,19 @@ export function activeSessionRouteKey(route: RouteLike) {
   return ""
 }
 
+export function abortSessionIDForRoute(input: {
+  route: RouteLike
+  selectedSessionID?: string
+  focusedViewSessionID?: string
+  viewSessionIDs: readonly string[]
+}) {
+  if (input.route.name === "session")
+    return input.route.sessionID === input.selectedSessionID ? input.selectedSessionID : undefined
+  if (input.route.name === "new-session") return input.selectedSessionID
+  if (input.route.name !== "views" || !input.focusedViewSessionID) return
+  return input.viewSessionIDs.includes(input.focusedViewSessionID) ? input.focusedViewSessionID : undefined
+}
+
 export function activeViewForRoute(route: RouteLike, views: OpencodeXView[]): OpencodeXView | undefined {
   if (route.name !== "views") return
   if (!route.viewID) return

@@ -244,20 +244,6 @@ export function buildPaletteCommands(input: {
       run: input.actions.switchTheme,
     },
     {
-      name: "theme.switch_mode",
-      title: "Switch theme mode",
-      category: "System",
-      disabled: "GUI theme mode switching is not implemented yet.",
-      run: () => {},
-    },
-    {
-      name: "theme.mode.lock",
-      title: "Lock theme mode",
-      category: "System",
-      disabled: "GUI theme mode locking is not implemented yet.",
-      run: () => {},
-    },
-    {
       name: "help.show",
       title: "Help",
       category: "System",

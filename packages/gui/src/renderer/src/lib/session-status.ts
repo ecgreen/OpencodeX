@@ -88,6 +88,14 @@ export function sessionStatusLabel(status: string) {
   return "idle"
 }
 
+export function sessionStatusTone(status: DerivedSessionStatus): "info" | "warning" | "success" | "danger" | "neutral" {
+  if (status === "input_needed") return "warning"
+  if (status === "in_progress") return "info"
+  if (status === "ready_for_review") return "success"
+  if (status === "failed") return "danger"
+  return "neutral"
+}
+
 function isRunningBackendStatus(status: string | undefined) {
   return status === "busy" || status === "retry"
 }

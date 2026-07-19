@@ -66,7 +66,7 @@ export function SessionSideDiffPanel(props: {
           <strong>{props.title}</strong>
           <span>{props.files.length} file{props.files.length === 1 ? "" : "s"} <b class="diff-additions">+{totals().additions}</b> <b class="diff-deletions">-{totals().deletions}</b></span>
         </div>
-        <Button appearance="ghost" type="button" class="session-side-git-action" onClick={props.openCommitModal}><Icon name="send" /> Commit / Push</Button>
+        <Button appearance="ghost" type="button" class="session-side-git-action" disabled={props.loading} onClick={props.openCommitModal}><Icon name="send" /> Commit / Push</Button>
       </header>
       <Show when={!props.loading} fallback={<div class="session-side-empty">Loading diff...</div>}>
         <Show when={props.files.length > 0} fallback={<div class="session-side-empty">{props.empty}</div>}>

@@ -33,6 +33,8 @@
 @import "./styles/global/overlays/responsive.css" layer(features);
 @import "./styles/global/overlays/states.css" layer(features);
 @import "./styles/global/overlays/states-2.css" layer(features);
+@import "./styles/global/overlays/switcher.css" layer(features);
+@import "./styles/global/overlays/hints.css" layer(features);
 @import "./styles/pages/plugins/base.css" layer(features);
 @import "./styles/pages/plugins/base-2.css" layer(features);
 @import "./styles/pages/plugins/responsive.css" layer(features);
@@ -53,8 +55,10 @@
 @import "./styles/pages/sessions/responsive.css" layer(features);
 @import "./styles/pages/sessions/states.css" layer(features);
 @import "./styles/pages/sessions/states-2.css" layer(features);
+@import "./styles/pages/sessions/actions.css" layer(features);
 @import "./styles/global/shell/base.css" layer(layout);
 @import "./styles/global/shell/base-2.css" layer(layout);
+@import "./styles/global/shell/base-3.css" layer(layout);
 @import "./styles/global/shell/responsive.css" layer(layout);
 @import "./styles/global/shell/states.css" layer(layout);
 @import "./styles/pages/swarms/base.css" layer(features);

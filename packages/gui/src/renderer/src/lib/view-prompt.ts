@@ -3,7 +3,7 @@ import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
 import { createSession, deleteSession, updateView, type PromptPart } from "./store"
 import { promptPartsForSubmit, serverCommandMatch, textPrompt, type GuiPromptInfo } from "./prompt-state"
-import { metadataWithPendingSessions, pendingViewSessions, viewItemID, viewItemSession, type ViewItem } from "./view-items"
+import { pendingViewSessions, replacePendingViewPane, viewItemID, viewItemSession, type ViewItem } from "./view-items"
 
 export type PreparedViewPromptTarget =
   | { type: "ready"; draftSession: Session; target: Session; focusSessionID?: string }
@@ -101,10 +101,11 @@ export async function prepareViewPromptTarget(gui: GuiClient, item: ViewItem, vi
   }
 
   const pending = pendingViewSessions(view).filter((slot) => slot.id !== item.slot.id)
+  const next = replacePendingViewPane(view, item.slot.id, createdSession.id, pending)
   await updateView(gui, view.id, {
-    sessionIDs: [...view.sessionIDs.filter((sessionID) => sessionID !== createdSession.id), createdSession.id],
+    sessionIDs: next.sessionIDs,
     focusedSessionID: createdSession.id,
-    metadata: metadataWithPendingSessions(view.metadata, pending),
+    metadata: next.metadata,
   }).catch(async (error: Error) => {
     await deleteSession(gui, createdSession.id).catch(() => undefined)
     throw error

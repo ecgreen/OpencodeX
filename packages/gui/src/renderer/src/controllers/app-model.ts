@@ -14,6 +14,7 @@ import type { createSessionComposerController } from "./session-composer-control
 import type { createSessionSelectionController } from "./session-selection-controller"
 import type { createSessionSlashController } from "./session-slash-controller"
 import type { createSessionState } from "./session-state"
+import type { createSessionSwitcherController } from "./session-switcher-controller"
 import type { createSettingsController } from "./settings-controller"
 import type { createTranscriptPreferences } from "./transcript-preferences"
 import type { createViewController } from "./view-controller"
@@ -35,6 +36,7 @@ export type GuiAppModel = {
   sessionSelection: ReturnType<typeof createSessionSelectionController>
   sessionSlash: ReturnType<typeof createSessionSlashController>
   sessionState: ReturnType<typeof createSessionState>
+  sessionSwitcher: ReturnType<typeof createSessionSwitcherController>
   settings: ReturnType<typeof createSettingsController>
   transcriptPreferences: ReturnType<typeof createTranscriptPreferences>
   view: ReturnType<typeof createViewController>

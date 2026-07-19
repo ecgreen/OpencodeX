@@ -12,7 +12,7 @@ import {
   type ViewSummary,
 } from "../lib/view-summary"
 import { PinButton } from "./pin-button"
-import { Button, IconButton, TextInput } from "./ui"
+import { Button, IconButton, SearchField } from "./ui"
 
 type ViewDragPreviewState = { id: string; x: number; y: number; width: number; height: number }
 type ViewSummaryRowItem =
@@ -39,6 +39,7 @@ export function ViewsMissionControl(props: {
   const [dragPlaceholderHeight, setDragPlaceholderHeight] = createSignal(72)
   const [suppressedOpenViewID, setSuppressedOpenViewID] = createSignal("")
   const summaries = createMemo(() => summarizeViews({ views: props.views, snapshot: props.snapshot }))
+  const summaryIndexes = createMemo(() => new Map(summaries().map((summary, index) => [summary.view.id, index])))
   const filteredSummaries = createMemo(() => filterViewSummaries(summaries(), query()))
   const viewRows = createMemo<ViewSummaryRowItem[]>(() => {
     const items = filteredSummaries()
@@ -124,7 +125,7 @@ export function ViewsMissionControl(props: {
                       dragging={dragViewID() === row.summary.view.id}
                       dropping={dropTarget()?.id === row.summary.view.id ? dropTarget()?.placement : undefined}
                       startPointerDrag={(event) => startViewPointerDrag(event, row.summary.view.id)}
-                      index={summaries().findIndex((item) => item.view.id === row.summary.view.id)}
+                      index={summaryIndexes().get(row.summary.view.id) ?? -1}
                       total={summaries().length}
                     />
                   )}
@@ -233,7 +234,7 @@ function ViewsIndexHeader(props: { createView: () => void; query: string; setQue
         <p>{props.count} saved multi-session {props.count === 1 ? "view" : "views"}</p>
       </div>
       <div class="views-index-controls">
-        <TextInput value={props.query} onInput={(event) => props.setQuery(event.currentTarget.value)} placeholder="Search views or sessions" />
+        <SearchField aria-label="Search views" value={props.query} onInput={(event) => props.setQuery(event.currentTarget.value)} placeholder="Search views or sessions" clearable={props.query.length > 0} onClear={() => props.setQuery("")} />
         <Button class="manager-create-button" appearance="solid" tone="accent" icon="plus" onClick={props.createView}>Create view</Button>
       </div>
     </header>

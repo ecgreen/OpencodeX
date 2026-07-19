@@ -80,7 +80,7 @@
   border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
   background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
   box-shadow: var(--shadow-button-hover);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .session-header p:not(.eyebrow) {
@@ -122,6 +122,11 @@
   border-color: var(--border-active);
   background: var(--element);
   transform: none;
+}
+
+.model-option-card:focus-within {
+  border-color: var(--border-active);
+  background: var(--element);
 }
 
 .session-toolbar .session-side-panel-toggle[aria-pressed=true]:hover:not(:disabled) {
@@ -236,19 +241,19 @@
 }
 
 .session-link.active {
-  border-color: color-mix(in srgb,var(--session-state-color) 42%,var(--border));
-  border-left-color: var(--session-state-color);
+  border-color: var(--border-subtle);
+  border-left-color: var(--brand);
   color: var(--text);
   background: var(--element);
-  box-shadow: inset 2px 0 0 var(--brand);
+  box-shadow: none;
 }
 
 .session-link>span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 760;
   color: var(--text);
   background: none;
   animation: none;

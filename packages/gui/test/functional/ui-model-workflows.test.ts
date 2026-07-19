@@ -49,10 +49,25 @@ describe("GUI functional UI model workflows", () => {
       category: group.category,
       commands: group.commands.map((command) => command.title),
     }))).toEqual([
+      {
+        category: "Navigation",
+        commands: [
+          "Next recent session",
+          "Open dashboard",
+          "Open plugins",
+          "Open projects",
+          "Open recent session 1-9",
+          "Open swarms",
+          "Open views",
+          "Open workbench",
+          "Previous recent session",
+        ],
+      },
       { category: "Session", commands: ["Copy transcript", "New session"] },
       { category: "System", commands: ["Plugins"] },
     ])
     expect(keyboardHelpGroups(commands, "ctrl+n")[0]?.commands.map((command) => command.title)).toEqual(["New session"])
+    expect(keyboardHelpGroups(commands, "ctrl+tab")[0]?.commands.map((command) => command.title)).toEqual(["Next recent session"])
   })
 
   test("derives session inspector context, status sections, todos, and modified files", () => {

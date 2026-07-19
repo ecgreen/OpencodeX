@@ -8,6 +8,8 @@ import {
 } from "./prompt-state"
 import type { MessageBundle, PromptPart } from "./store"
 
+const COMPOSER_STASH_EVENT = "opencodex:composer-stash"
+
 export function readFavoriteModels() {
   if (typeof localStorage === "undefined") return []
   try {
@@ -24,22 +26,6 @@ export function writeFavoriteModels(values: string[]) {
   localStorage.setItem("opencodex.gui.favoriteModels", JSON.stringify(values.slice(0, 20)))
 }
 
-export function readCollapsedModelProviders() {
-  if (typeof localStorage === "undefined") return []
-  try {
-    const parsed = JSON.parse(localStorage.getItem("opencodex.gui.collapsedModelProviders") ?? "[]")
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((value): value is string => typeof value === "string")
-  } catch {
-    return []
-  }
-}
-
-export function writeCollapsedModelProviders(values: string[]) {
-  if (typeof localStorage === "undefined") return
-  localStorage.setItem("opencodex.gui.collapsedModelProviders", JSON.stringify(values))
-}
-
 export function readComposerStash() {
   if (typeof localStorage === "undefined") return []
   return parsePromptStash(localStorage.getItem("opencodex.gui.promptStash") ?? "")
@@ -48,6 +34,14 @@ export function readComposerStash() {
 export function writeComposerStash(entries: GuiPromptStashEntry[]) {
   if (typeof localStorage === "undefined") return
   localStorage.setItem("opencodex.gui.promptStash", entries.map((entry) => JSON.stringify(entry)).join("\n"))
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<GuiPromptStashEntry[]>(COMPOSER_STASH_EVENT, { detail: entries }))
+}
+
+export function subscribeComposerStash(listener: (entries: GuiPromptStashEntry[]) => void) {
+  if (typeof window === "undefined") return () => undefined
+  const update = (event: Event) => listener(event instanceof CustomEvent && Array.isArray(event.detail) ? event.detail : readComposerStash())
+  window.addEventListener(COMPOSER_STASH_EVENT, update)
+  return () => window.removeEventListener(COMPOSER_STASH_EVENT, update)
 }
 
 export function readComposerDraft(sessionID?: string) {

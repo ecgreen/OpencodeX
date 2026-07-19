@@ -83,6 +83,10 @@
   .dashboard-overview {
     min-height: 72px;
   }
+
+  .dashboard-overview-metrics {
+    display: none;
+  }
 }
 
 @media (max-width:1080px) {

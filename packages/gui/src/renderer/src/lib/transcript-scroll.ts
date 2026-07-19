@@ -64,6 +64,12 @@ export function transcriptLoadMoreScrollTop(input: TranscriptLoadMoreAnchorMetri
   return input.scrollTop + input.nextScrollHeight - input.scrollHeight
 }
 
+export function transcriptNewMessageCount(messageIDs: string[], lastSeenMessageID: string) {
+  if (!lastSeenMessageID) return 0
+  const index = messageIDs.indexOf(lastSeenMessageID)
+  return index < 0 ? 0 : messageIDs.length - index - 1
+}
+
 export function shouldSpendTranscriptOpenBottomScroll(input: TranscriptOpenBottomScrollState) {
   return !input.loading && input.hasContent
 }

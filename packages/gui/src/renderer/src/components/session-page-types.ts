@@ -1,4 +1,5 @@
 import type { Agent, Config, FileNode, LspStatus, McpResource, McpStatus, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/store"
@@ -51,6 +52,7 @@ export type SessionPageProps = {
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
   status?: string
+  abortConfirmArmed?: boolean
   readyForReview?: boolean
   markSessionReviewed?: (session: Session) => void
   pending?: boolean
@@ -58,6 +60,7 @@ export type SessionPageProps = {
   updateComposerState?: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   composerFocusToken?: () => number
   loadOlderMessages?: (cursor: string) => Promise<void>
+  onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
   gui?: GuiClient
   sidePanelDirectory?: string
   sidePanelEnabled?: boolean

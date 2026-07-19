@@ -1,8 +1,15 @@
-import { Button } from "./ui"
+import { Button, Menu } from "./ui"
 import type { JSX } from "solid-js"
-import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
-import { Portal } from "solid-js/web"
+import { onCleanup, onMount, Show } from "solid-js"
 import { Icon } from "./icon"
+
+export type TitlebarBreadcrumb = {
+  context?: string
+  current: string
+  status?: string
+  statusTone?: "info" | "warning" | "success" | "danger" | "neutral"
+  openContext?: () => void
+}
 
 export function Titlebar(props: {
   canGoBack: boolean
@@ -23,143 +30,113 @@ export function Titlebar(props: {
   toggleViewSidePanel?: () => void
   openCommandPalette: () => void
   openKeyboardHelp: () => void
+  breadcrumb: TitlebarBreadcrumb
 }) {
-  const [openMenu, setOpenMenu] = createSignal("")
-
-  onMount(() => {
-    const close = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".titlebar-menu, .titlebar-menu-popover")) return
-      setOpenMenu("")
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenMenu("")
-    }
-    document.addEventListener("pointerdown", close)
-    document.addEventListener("keydown", escape)
-    onCleanup(() => {
-      document.removeEventListener("pointerdown", close)
-      document.removeEventListener("keydown", escape)
-    })
-  })
+  let editTarget: HTMLElement | undefined
+  const rememberEditTarget = (event: FocusEvent) => {
+    editTarget = editableTarget(event.target) ?? editTarget
+  }
+  onMount(() => document.addEventListener("focusin", rememberEditTarget))
+  onCleanup(() => document.removeEventListener("focusin", rememberEditTarget))
 
   return (
     <header class="titlebar">
-      <div
-        class="titlebar-menu"
-        aria-label="Application menu"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div class="titlebar-menu" aria-label="Application menu">
         <div class="titlebar-history" aria-label="Navigation history">
           <Button appearance="ghost" class="titlebar-history-button" title="Back" aria-label="Back" disabled={!props.canGoBack} onClick={props.goBack}><Icon name="chevronLeft" /></Button>
           <Button appearance="ghost" class="titlebar-history-button" title="Forward" aria-label="Forward" disabled={!props.canGoForward} onClick={props.goForward}><Icon name="chevronRight" /></Button>
         </div>
-        <TitlebarMenu label="File" open={openMenu() === "File"} toggle={() => setOpenMenu(openMenu() === "File" ? "" : "File")}>
-          <TitlebarMenuButton label="New Session" shortcut="Ctrl+N" action={props.newSession} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="New Project" action={props.newProject} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="New View" action={props.newView} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="New Swarm" action={props.newSwarm} close={() => setOpenMenu("")} />
+        <TitlebarMenu label="File">
+          <Menu.Item shortcut="Ctrl+N" onSelect={props.newSession}>New Session</Menu.Item>
+          <Menu.Item onSelect={props.newProject}>New Project</Menu.Item>
+          <Menu.Item onSelect={props.newView}>New View</Menu.Item>
+          <Menu.Item onSelect={props.newSwarm}>New Swarm</Menu.Item>
         </TitlebarMenu>
-        <TitlebarMenu label="Edit" open={openMenu() === "Edit"} toggle={() => setOpenMenu(openMenu() === "Edit" ? "" : "Edit")}>
-          <TitlebarMenuButton label="Cut" shortcut="Ctrl+X" action={() => runEditAction("cut")} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Copy" shortcut="Ctrl+C" action={() => runEditAction("copy")} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Paste" shortcut="Ctrl+V" action={() => runEditAction("paste")} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Command Palette" shortcut="Ctrl+K" action={props.openCommandPalette} close={() => setOpenMenu("")} />
+        <TitlebarMenu label="Edit">
+          <Menu.Item shortcut="Ctrl+X" onSelect={() => runEditAction("cut", editTarget)}>Cut</Menu.Item>
+          <Menu.Item shortcut="Ctrl+C" onSelect={() => runEditAction("copy", editTarget)}>Copy</Menu.Item>
+          <Menu.Item shortcut="Ctrl+V" onSelect={() => runEditAction("paste", editTarget)}>Paste</Menu.Item>
+          <Menu.Separator />
+          <Menu.Item shortcut="Ctrl+K" onSelect={props.openCommandPalette}>Command Palette</Menu.Item>
         </TitlebarMenu>
-        <TitlebarMenu label="View" open={openMenu() === "View"} toggle={() => setOpenMenu(openMenu() === "View" ? "" : "View")}>
-          <TitlebarMenuButton label="Dashboard" action={props.openDashboard} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Projects" action={props.openProjects} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Sessions" action={props.openSessions} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Swarms" action={props.openSwarms} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Views" action={props.openViews} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Browser / Workbench" action={props.openWorkbench} close={() => setOpenMenu("")} />
-          <TitlebarMenuDivider />
-          <TitlebarMenuButton label="Toggle Left Sidebar" shortcut="Ctrl+B" action={props.toggleLeftSidebar} close={() => setOpenMenu("")} />
-          <TitlebarMenuButton label="Toggle View Side Panel" disabled={!props.toggleViewSidePanel} action={() => props.toggleViewSidePanel?.()} close={() => setOpenMenu("")} />
+        <TitlebarMenu label="View">
+          <Menu.Item onSelect={props.openDashboard}>Dashboard</Menu.Item>
+          <Menu.Item onSelect={props.openProjects}>Projects</Menu.Item>
+          <Menu.Item onSelect={props.openSessions}>Sessions</Menu.Item>
+          <Menu.Item onSelect={props.openSwarms}>Swarms</Menu.Item>
+          <Menu.Item onSelect={props.openViews}>Views</Menu.Item>
+          <Menu.Item onSelect={props.openWorkbench}>Browser / Workbench</Menu.Item>
+          <Menu.Separator />
+          <Menu.Item shortcut="Ctrl+B" onSelect={props.toggleLeftSidebar}>Toggle Left Sidebar</Menu.Item>
+          <Menu.Item disabled={!props.toggleViewSidePanel} onSelect={() => props.toggleViewSidePanel?.()}>Toggle View Side Panel</Menu.Item>
         </TitlebarMenu>
-        <TitlebarMenu label="Help" open={openMenu() === "Help"} toggle={() => setOpenMenu(openMenu() === "Help" ? "" : "Help")}>
-          <TitlebarMenuButton label="Keyboard Shortcuts" action={props.openKeyboardHelp} close={() => setOpenMenu("")} />
+        <TitlebarMenu label="Help">
+          <Menu.Item shortcut="Ctrl+?" onSelect={props.openKeyboardHelp}>Keyboard Shortcuts</Menu.Item>
         </TitlebarMenu>
       </div>
-      <div class="titlebar-drag" />
+      <div class="titlebar-drag">
+        <nav class="titlebar-breadcrumb" aria-label="Current location">
+          <Show when={props.breadcrumb.context}>
+            {(context) => (
+              <>
+                <Show
+                  when={props.breadcrumb.openContext}
+                  fallback={<span class="titlebar-breadcrumb-context">{context()}</span>}
+                >
+                  {(openContext) => (
+                    <Button appearance="ghost" class="titlebar-breadcrumb-context" onClick={openContext()}>
+                      {context()}
+                    </Button>
+                  )}
+                </Show>
+                <Icon name="chevronRight" class="titlebar-breadcrumb-separator" />
+              </>
+            )}
+          </Show>
+          <span class="titlebar-breadcrumb-current">{props.breadcrumb.current}</span>
+          <Show when={props.breadcrumb.status}>
+            {(status) => (
+              <span class="titlebar-breadcrumb-status" data-tone={props.breadcrumb.statusTone ?? "neutral"}>
+                {status()}
+              </span>
+            )}
+          </Show>
+        </nav>
+      </div>
       <div class="window-controls">
-        <Button appearance="ghost" aria-label="Minimize" onClick={() => void window.opencodex?.window("minimize")}>-</Button>
-        <Button appearance="ghost" aria-label="Maximize" onClick={() => void window.opencodex?.window("maximize")}>{"\u25a1"}</Button>
-        <Button appearance="ghost" aria-label="Close" class="close" onClick={() => void window.opencodex?.window("close")}>{"\u00d7"}</Button>
+        <Button appearance="ghost" aria-label="Minimize" onClick={() => void window.opencodex?.window("minimize")}><Icon name="minus" /></Button>
+        <Button appearance="ghost" aria-label="Maximize" onClick={() => void window.opencodex?.window("maximize")}><Icon name="stop" /></Button>
+        <Button appearance="ghost" aria-label="Close" class="close" onClick={() => void window.opencodex?.window("close")}><Icon name="x" /></Button>
       </div>
     </header>
   )
 }
 
-function runEditAction(action: "cut" | "copy" | "paste") {
-  if (window.opencodex?.edit) {
-    void window.opencodex.edit(action)
-    return
-  }
-  document.execCommand(action)
-}
-
-function TitlebarMenu(props: { label: string; open: boolean; toggle: () => void; children: JSX.Element }) {
-  let summary: HTMLElement | undefined
-  const [position, setPosition] = createSignal({ left: 0, top: 0 })
-
-  function updatePosition() {
-    const rect = summary?.getBoundingClientRect()
-    if (!rect) return
-    setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)), top: rect.bottom + 7 })
-  }
-
-  createEffect(() => {
-    if (!props.open) return
-    updatePosition()
+function runEditAction(action: "cut" | "copy" | "paste", target?: HTMLElement) {
+  setTimeout(() => {
+    target?.focus()
+    if (window.opencodex?.edit) {
+      void window.opencodex.edit(action)
+      return
+    }
+    document.execCommand(action)
   })
-
-  return (
-    <details class="titlebar-menu-group" open={props.open}>
-      <summary
-        ref={summary}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          updatePosition()
-          props.toggle()
-        }}
-      >{props.label}</summary>
-      <Show when={props.open}>
-        <Portal>
-          <div
-            class="titlebar-menu-popover"
-            style={{ left: `${position().left}px`, top: `${position().top}px` }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-          >
-            {props.children}
-          </div>
-        </Portal>
-      </Show>
-    </details>
-  )
 }
 
-function TitlebarMenuButton(props: { label: string; shortcut?: string; disabled?: boolean; action: () => void; close: () => void }) {
-  return (
-    <Button appearance="ghost"
-      class="titlebar-menu-item"
-      disabled={props.disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={(event) => {
-        event.stopPropagation()
-        props.action()
-        props.close()
-      }}
-    >
-      <span>{props.label}</span>
-      <Show when={props.shortcut}><kbd>{props.shortcut}</kbd></Show>
-    </Button>
-  )
+function editableTarget(target: EventTarget | null) {
+  if (target instanceof HTMLTextAreaElement) return target
+  if (target instanceof HTMLInputElement && !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(target.type)) return target
+  if (target instanceof HTMLElement && target.isContentEditable) return target
+  return undefined
 }
 
-function TitlebarMenuDivider() {
-  return <div class="titlebar-menu-divider" role="separator" />
+function TitlebarMenu(props: { label: string; children: JSX.Element }) {
+  return (
+    <Menu>
+      <Menu.Trigger class="titlebar-menu-trigger">{props.label}</Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content class="titlebar-menu-content">{props.children}</Menu.Content>
+      </Menu.Portal>
+    </Menu>
+  )
 }

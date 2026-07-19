@@ -1,27 +1,113 @@
 import { Button } from "./ui"
-import { Show, Suspense } from "solid-js"
+import { Show, Suspense, createMemo } from "solid-js"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiAppModel } from "../controllers/app-model"
 import { NAV_ITEMS } from "../controllers/navigation-controller"
 import { guiPluginThemeCss } from "../lib/gui-plugins"
 import { projectSessions } from "../lib/app-session-lists"
+import { title } from "../lib/format"
+import { projectNameForSession } from "../lib/project-name"
+import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
+import type { GuiSnapshot } from "../lib/store"
 import { AppLoadingSkeleton } from "./app-loading"
 import { AppRoutes } from "./app-routes"
 import { Titlebar } from "./chrome"
-import { CommandPaletteModal } from "./command-palette"
+import type { TitlebarBreadcrumb } from "./titlebar"
+import { CommandPaletteModal, type PaletteTarget } from "./command-palette"
 import { DialogModal } from "./dialog-modal"
 import { KeyboardHelpModal } from "./keyboard-help"
 import { RailSidebar } from "./rail-sidebar"
+import { SessionSwitcherOverlay } from "./session-switcher-overlay"
 
 export function AppShell(props: { model: GuiAppModel }) {
   const model = props.model
+  const paletteTargets = createMemo<PaletteTarget[]>(() => {
+    const snapshot = model.authoritative.snapshot()
+    if (!snapshot) return []
+    return [
+      ...model.sessionSelection.visibleSessions().map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open)),
+      ...snapshot.projects.map((project): PaletteTarget => ({
+        kind: "project",
+        id: project.id,
+        title: title(project.name ?? project.project.name),
+        subtitle: `${project.sessions.length} sessions`,
+        run: () => model.navigation.setRoute({ name: "projects", projectID: project.id }),
+      })),
+      ...snapshot.views.map((view): PaletteTarget => ({
+        kind: "view",
+        id: view.id,
+        title: title(view.title),
+        subtitle: `${view.sessionIDs.length} panes`,
+        run: () => model.navigation.setRoute({ name: "views", viewID: view.id }),
+      })),
+    ]
+  })
+  const paletteRecents = createMemo<PaletteTarget[]>(() => {
+    const snapshot = model.authoritative.snapshot()
+    if (!snapshot) return []
+    return model.sessionSwitcher.sessions().map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open))
+  })
+  const navBadges = createMemo((): Record<string, number> => {
+    const snapshot = model.authoritative.snapshot()
+    if (!snapshot) return {}
+    const needsInput = new Set([...snapshot.permissions.map((request) => request.sessionID), ...snapshot.questions.map((request) => request.sessionID)])
+    return {
+      dashboard: needsInput.size,
+      views: snapshot.views.filter((view) => view.sessionIDs.some((sessionID) => needsInput.has(sessionID))).length,
+    }
+  })
+  const breadcrumb = createMemo((): TitlebarBreadcrumb => {
+    const route = model.navigation.route()
+    const snapshot = model.authoritative.snapshot()
+    if (route.name === "session" || route.name === "new-session") {
+      const session = model.sessionSelection.selectedSession()
+      const project = model.sessionSelection.activeSessionProjectName()
+      const status = session ? deriveSessionStatus(snapshot, session) : undefined
+      return {
+        context: project ? title(project) : undefined,
+        openContext: project ? () => model.navigation.setRoute({ name: "projects" }) : undefined,
+        current: session ? title(session.title) : "New session",
+        status: status && status !== "dormant" ? sessionStatusLabel(status) : undefined,
+        statusTone: status ? sessionStatusTone(status) : undefined,
+      }
+    }
+    if (route.name === "projects" && route.projectID) {
+      const project = snapshot?.projects.find((item) => item.id === route.projectID)
+      if (project)
+        return {
+          context: "Projects",
+          openContext: () => model.navigation.setRoute({ name: "projects" }),
+          current: title(project.name ?? project.project.name),
+        }
+    }
+    if (route.name === "views") {
+      const view = model.view.activeView()
+      if (view) {
+        const status = deriveViewStatus(view, snapshot)
+        return {
+          context: "Views",
+          openContext: () => model.navigation.setRoute({ name: "views" }),
+          current: title(view.title),
+          status: status !== "dormant" ? sessionStatusLabel(status) : undefined,
+          statusTone: sessionStatusTone(status),
+        }
+      }
+    }
+    return { current: titlebarPageLabel(route.name) }
+  })
   return (
-    <div class="app-shell" classList={{ "rail-collapsed": model.rail.collapsed() }}>
+    <div
+      class="app-shell"
+      classList={{ "rail-collapsed": model.rail.collapsed(), "rail-resizing": model.rail.resizing() }}
+      style={{ "--rail-width": `${model.rail.width()}px` }}
+    >
       <style>{guiPluginThemeCss(model.plugins.plugins())}</style>
       <Titlebar
         canGoBack={model.navigation.canGoBack()}
         canGoForward={model.navigation.canGoForward()}
         goBack={model.navigation.goBack}
         goForward={model.navigation.goForward}
+        breadcrumb={breadcrumb()}
         newSession={() => void model.notices.run(() => model.management.createSession())}
         newProject={() => void model.notices.run(model.management.createProject)}
         newView={() => void model.notices.run(model.management.createView)}
@@ -43,10 +129,14 @@ export function AppShell(props: { model: GuiAppModel }) {
         pinnedSessions={model.rail.pinnedSessions()}
         pinnedViews={model.rail.pinnedViews()}
         navItems={NAV_ITEMS}
+        navBadges={navBadges()}
         activeRouteName={model.navigation.route().name}
         activeSessionID={model.sessionSelection.activeSessionID()}
         activeViewID={model.view.activeView()?.id}
         railCollapsed={model.rail.collapsed()}
+        railWidth={model.rail.width()}
+        resizeRail={model.rail.setWidth}
+        setRailResizing={model.rail.setResizing}
         railSectionOrder={model.rail.sectionOrder()}
         railSections={model.rail.sections()}
         dragTarget={model.rail.dragTarget()}
@@ -65,6 +155,7 @@ export function AppShell(props: { model: GuiAppModel }) {
         openRoute={(name) => model.navigation.setRoute({ name })}
         openSession={model.sessionActions.open}
         openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
+        openAllViews={() => model.navigation.setRoute({ name: "views" })}
         createProject={() => void model.notices.run(model.management.createProject)}
         createSession={(projectID, directory) =>
           void model.notices.run(() => model.management.createSession(projectID, directory))
@@ -135,16 +226,36 @@ export function AppShell(props: { model: GuiAppModel }) {
       <CommandPaletteModal
         open={model.overlays.commandPaletteOpen()}
         commands={model.commands.commands()}
+        targets={paletteTargets()}
+        recents={paletteRecents()}
         close={() => model.overlays.setCommandPaletteOpen(false)}
-        run={(command) => {
+        run={(selection) => {
           model.overlays.setCommandPaletteOpen(false)
-          void model.notices.run(async () => command.run())
+          if (selection.kind === "target") {
+            selection.target.run()
+            return
+          }
+          void model.notices.run(async () => selection.command.run())
         }}
       />
       <KeyboardHelpModal
         open={model.overlays.keyboardHelpOpen()}
         commands={model.commands.commands()}
         close={() => model.overlays.setKeyboardHelpOpen(false)}
+      />
+      <SessionSwitcherOverlay
+        open={model.sessionSwitcher.open()}
+        cursor={model.sessionSwitcher.cursor()}
+        query={model.sessionSwitcher.query()}
+        sticky={model.sessionSwitcher.sticky()}
+        rows={model.sessionSwitcher.rows()}
+        snapshot={model.authoritative.snapshot()}
+        preview={model.sessionSwitcher.preview}
+        filter={model.sessionSwitcher.filter}
+        move={model.sessionSwitcher.move}
+        select={model.sessionSwitcher.setCursor}
+        commit={model.sessionSwitcher.commit}
+        cancel={model.sessionSwitcher.cancel}
       />
       <Show when={model.notices.notice()}>
         {(notice) => (
@@ -164,4 +275,27 @@ export function AppShell(props: { model: GuiAppModel }) {
       <DialogModal dialog={model.dialogs.dialog()} close={model.dialogs.close} />
     </div>
   )
+}
+
+function sessionPaletteTarget(snapshot: GuiSnapshot, session: Session, open: (sessionID: string) => void): PaletteTarget {
+  const status = deriveSessionStatus(snapshot, session)
+  return {
+    kind: "session",
+    id: session.id,
+    title: title(session.title),
+    subtitle: projectNameForSession(snapshot.projects, session),
+    status: sessionStatusLabel(status),
+    statusTone: sessionStatusTone(status),
+    time: session.time.updated,
+    run: () => open(session.id),
+  }
+}
+
+function titlebarPageLabel(routeName: string) {
+  if (routeName === "new-session") return "New session"
+  if (routeName === "swarm-create") return "New swarm"
+  if (routeName === "view-edit") return "Edit view"
+  if (routeName === "diff") return "Diff"
+  const label = routeName.charAt(0).toUpperCase() + routeName.slice(1)
+  return label
 }

@@ -57,7 +57,6 @@ export function createSessionSideTabBarController(input: {
   const previewTab = createMemo(() => input.tabs().find((tab) => tab.id === dragPreview()?.id))
   const previewLabel = createMemo(() => previewTab() ? label(previewTab()!) : undefined)
   let bar: HTMLDivElement | undefined
-  let measureElement: HTMLDivElement | undefined
   let newMenuAnchor: HTMLButtonElement | undefined
   let newMenuPanel: HTMLDivElement | undefined
   let overflowMenuAnchor: HTMLButtonElement | undefined
@@ -95,12 +94,14 @@ export function createSessionSideTabBarController(input: {
 
   createEffect(() => {
     input.tabs().map((tab) => `${tab.id}:${label(tab)}`).join("\n")
+    input.activeID()
     scheduleMeasure()
   })
 
   createEffect(() => {
     const signature = rows().map((row) => row.type === "tab" ? row.tab.id : "placeholder").join("\n")
     const active = dragID() !== ""
+    scheduleMeasure()
     cancelAnimationFrame(rowFrame)
     rowFrame = requestAnimationFrame(() => {
       rowRects = animateRows(rowRects, active)
@@ -229,14 +230,20 @@ export function createSessionSideTabBarController(input: {
   function measure() {
     setBarWidth(bar?.clientWidth ?? 0)
     updateMenuPlacements()
-    if (!bar || !measureElement) return
-    const style = getComputedStyle(bar)
-    setMeasurements({
-      tabs: Object.fromEntries(Array.from(measureElement.querySelectorAll<HTMLElement>("[data-open-tab-measure-id]")).map((element) => [element.dataset.openTabMeasureId, Math.ceil(element.getBoundingClientRect().width)] as const).filter((entry): entry is readonly [string, number] => entry[0] !== undefined)),
-      overflow: Object.fromEntries(Array.from(measureElement.querySelectorAll<HTMLElement>("[data-open-tab-measure-overflow-count]")).map((element) => [Number(element.dataset.openTabMeasureOverflowCount), Math.ceil(element.getBoundingClientRect().width)] as const).filter((entry): entry is readonly [number, number] => Number.isFinite(entry[0]))),
-      newTab: Math.ceil(measureElement.querySelector<HTMLElement>("[data-open-tab-measure-control='new']")?.getBoundingClientRect().width ?? OPEN_TAB_LAYOUT_FALLBACK_MEASUREMENTS.newTab),
-      padding: cssPixelValue(style.paddingLeft) + cssPixelValue(style.paddingRight),
-      gap: cssPixelValue(style.columnGap) || cssPixelValue(style.gap),
+    if (!bar) return
+    const root = bar
+    const style = getComputedStyle(root)
+    setMeasurements((current) => {
+      const overflowCount = overflowTabs().length
+      const tabs = Object.fromEntries(Array.from(root.querySelectorAll<HTMLElement>("[data-open-tab-id]")).map((element) => [element.dataset.openTabId, Math.ceil(element.closest<HTMLElement>("[data-open-tab-row-id]")?.getBoundingClientRect().width ?? element.getBoundingClientRect().width)] as const).filter((entry): entry is readonly [string, number] => entry[0] !== undefined))
+      const overflowWidth = overflowCount > 0 ? Math.ceil(overflowMenuAnchor?.getBoundingClientRect().width ?? 0) : 0
+      const overflow = overflowWidth > 0 && current.overflow[overflowCount] !== overflowWidth ? { ...current.overflow, [overflowCount]: overflowWidth } : current.overflow
+      const newTab = Math.ceil(newMenuAnchor?.getBoundingClientRect().width ?? current.newTab)
+      const padding = cssPixelValue(style.paddingLeft) + cssPixelValue(style.paddingRight)
+      const gap = cssPixelValue(style.columnGap) || cssPixelValue(style.gap)
+      const tabsChanged = Object.entries(tabs).some(([id, width]) => current.tabs[id] !== width)
+      if (!tabsChanged && overflow === current.overflow && newTab === current.newTab && padding === current.padding && gap === current.gap) return current
+      return { tabs: { ...current.tabs, ...tabs }, overflow, newTab, padding, gap }
     })
   }
 
@@ -250,7 +257,7 @@ export function createSessionSideTabBarController(input: {
     newMenuStyle: () => placementStyle(newMenuPlacement()), overflowMenuStyle: () => placementStyle(overflowMenuPlacement()),
     label, select, selectOverflow, closeTab: input.closeTab, hideWebTabs: input.hideWebTabs, startDrag, clearDrag, toggleNewMenu, toggleOverflowMenu,
     closeNewMenu: () => setNewMenuOpen(false), closeOverflowMenu: () => setOverflowMenuOpen(false),
-    setBar: (element: HTMLDivElement) => { bar = element }, setMeasure: (element: HTMLDivElement) => { measureElement = element },
+    setBar: (element: HTMLDivElement) => { bar = element },
     setNewMenuAnchor: (element: HTMLButtonElement) => { newMenuAnchor = element }, setNewMenuPanel: (element: HTMLDivElement) => { newMenuPanel = element; requestAnimationFrame(updateMenuPlacements) },
     setOverflowMenuAnchor: (element: HTMLButtonElement) => { overflowMenuAnchor = element }, setOverflowMenuPanel: (element: HTMLDivElement) => { overflowMenuPanel = element; requestAnimationFrame(updateMenuPlacements) },
   }

@@ -16,15 +16,6 @@
   background: var(--element-2);
 }
 
-.nav button:before {
-  position: absolute;
-  inset: 7px auto 7px 0;
-  width: 2px;
-  border-radius: 2px;
-  content: "";
-  background: transparent;
-}
-
 .nav button:hover {
   transform: translateY(0);
   border-color: transparent;
@@ -46,10 +37,6 @@
   color: var(--text);
   background: var(--brand-soft);
   box-shadow: none;
-}
-
-.nav button.active:before {
-  background: var(--brand);
 }
 
 .nav button.active .icon {

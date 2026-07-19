@@ -11,7 +11,7 @@
   padding-top: 0;
 }
 
-.view-session-picker>header input {
+.view-session-picker>header [data-ui=field] {
   width: 100%;
   min-width: 0;
 }
