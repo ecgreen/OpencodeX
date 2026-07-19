@@ -166,18 +166,6 @@
   box-shadow: none;
 }
 
-.option-list button.selected {
-  border-color: var(--border-active);
-  background: var(--element);
-  transform: none;
-}
-
-.option-list button:hover {
-  border-color: var(--border-active);
-  background: var(--element);
-  transform: none;
-}
-
 .choice-list button:hover {
   border-color: var(--border-active);
   background: var(--element);

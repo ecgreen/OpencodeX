@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createNativeBrowserController } from "../src/renderer/src/components/native-browser-controller"
+import { createSessionSideBrowserController } from "../src/renderer/src/components/session-side-browser-controller"
+import type { OpenTab } from "../src/renderer/src/components/session-side-open-types"
 
 test("native browser host mounts through create, navigate, bounds, and hide in order", async () => {
   const calls: string[] = []
@@ -113,6 +115,62 @@ test("native browser ignores stale bounds after its host changes", async () => {
   }
 })
 
+test("session browser stays parked while its workspace is resizing", async () => {
+  const calls: string[] = []
+  const state = {
+    id: "browser-1",
+    url: "https://example.test/",
+    title: "Example",
+    canGoBack: false,
+    canGoForward: false,
+    loading: false,
+  }
+  const environment = installBrowserEnvironment({
+    create: async () => state,
+    navigate: async () => state,
+    bounds: async () => {
+      calls.push("bounds")
+      return state
+    },
+    hide: async () => {
+      calls.push("hide")
+      return state
+    },
+    screenshot: async () => undefined,
+    destroy: async () => true,
+  })
+  const [tabs, setTabs] = createSignal<OpenTab[]>([{ id: "browser-1", input: state.url, title: state.title, kind: "web", url: state.url, text: "", original: "" }])
+  let dispose = () => undefined
+  const controller = createRoot((cleanup) => {
+    dispose = cleanup
+    return createSessionSideBrowserController({
+      active: () => true,
+      tabs,
+      activeID: () => "browser-1",
+      activeTab: () => tabs()[0],
+      menuOpen: () => false,
+      updateTab: (id, patch) => setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...patch } : tab)),
+    })
+  })
+
+  try {
+    controller.setHost(browserHost())
+    await waitFor(() => calls.includes("bounds"))
+    window.dispatchEvent(new Event("opencodex:session-side-panel-resize-start"))
+    await waitFor(() => calls.includes("hide"))
+    const boundsCount = calls.filter((call) => call === "bounds").length
+    environment.resize()
+    await Bun.sleep(5)
+    expect(calls.filter((call) => call === "bounds")).toHaveLength(boundsCount)
+
+    window.dispatchEvent(new Event("opencodex:session-side-panel-resize-end"))
+    await waitFor(() => calls.filter((call) => call === "bounds").length > boundsCount)
+  } finally {
+    dispose()
+    environment.restore()
+  }
+})
+
 function browserHost(x = 10) {
   return {
     getBoundingClientRect: () => ({ x, y: 20, width: 800, height: 600 }),
@@ -130,14 +188,18 @@ async function waitFor(predicate: () => boolean) {
 function installBrowserEnvironment(browser: Record<string, unknown>) {
   const names = ["window", "document", "requestAnimationFrame", "cancelAnimationFrame", "ResizeObserver"] as const
   const descriptors = new Map(names.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
+  const events = new EventTarget()
+  const resizeCallbacks = new Set<ResizeObserverCallback>()
   let frame = 0
   Object.defineProperties(globalThis, {
     window: {
       configurable: true,
       value: {
         opencodex: { browser },
-        addEventListener: () => undefined,
-        removeEventListener: () => undefined,
+        addEventListener: events.addEventListener.bind(events),
+        removeEventListener: events.removeEventListener.bind(events),
+        dispatchEvent: events.dispatchEvent.bind(events),
+        setTimeout,
         visualViewport: { addEventListener: () => undefined, removeEventListener: () => undefined },
       },
     },
@@ -161,13 +223,18 @@ function installBrowserEnvironment(browser: Record<string, unknown>) {
     ResizeObserver: {
       configurable: true,
       value: class {
-        constructor(_callback: ResizeObserverCallback) {}
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallbacks.add(callback)
+        }
         observe() {}
         disconnect() {}
       },
     },
   })
   return {
+    resize() {
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver))
+    },
     restore() {
       descriptors.forEach((descriptor, name) => {
         if (descriptor) return Object.defineProperty(globalThis, name, descriptor)

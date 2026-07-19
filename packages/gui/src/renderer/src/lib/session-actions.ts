@@ -2,7 +2,7 @@ import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/s
 import type { GuiSnapshot } from "./store"
 
 export type TextDialogInput = { title: string; message?: string; value?: string; multiline?: boolean }
-export type ConfirmDialogInput = { title: string; message: string; confirm?: string }
+export type ConfirmDialogInput = { title: string; message: string; confirm?: string; scope?: string }
 
 export function sessionDirectoryForRequest(sessions: Session[], request: PermissionRequest | QuestionRequest) {
   return sessions.find((session) => session.id === request.sessionID)?.directory
@@ -44,7 +44,7 @@ export function permissionRejectDialog(reply: "once" | "always" | "reject"): Tex
 
 export function permissionAlwaysConfirmInput(request: PermissionRequest, reply: "once" | "always" | "reject"): ConfirmDialogInput | undefined {
   return reply === "always"
-    ? { title: "Always Allow", message: request.always.join("\n") || request.permission, confirm: "Always Allow" }
+    ? { title: "Always Allow", message: request.always.join("\n") || request.permission, confirm: "Always Allow", scope: request.sessionID }
     : undefined
 }
 

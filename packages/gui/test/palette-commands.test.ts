@@ -23,7 +23,9 @@ describe("GUI palette command catalog", () => {
     expect(command(commands, "session.toggle.actions")?.title).toBe("Toggle tool details")
     expect(command(commands, "session.toggle.scrollbar")?.title).toBe("Toggle session scrollbar")
     expect(command(commands, "session.toggle.generic_tool_output")?.title).toBe("Toggle generic tool output")
-    expect(command(commands, "settings.open")?.description).toBe("Appearance, transcript, and connection preferences")
+    expect(command(commands, "settings.open")?.description).toBe(
+      "Appearance, security, transcript, and connection preferences",
+    )
   })
 
   test("routes commands through injected app actions", async () => {
@@ -46,7 +48,17 @@ describe("GUI palette command catalog", () => {
     await command(commands, "app.exit")?.run()
 
     expect(command(commands, "variant.list")?.disabled).toBeUndefined()
-    expect(calls).toEqual(["route:dashboard", "create-project-session", "toggle-conceal", "toggle-actions", "toggle-scrollbar", "toggle-generic-output", "route:settings", "open-docs", "exit"])
+    expect(calls).toEqual([
+      "route:dashboard",
+      "create-project-session",
+      "toggle-conceal",
+      "toggle-actions",
+      "toggle-scrollbar",
+      "toggle-generic-output",
+      "route:settings",
+      "open-docs",
+      "exit",
+    ])
   })
 })
 

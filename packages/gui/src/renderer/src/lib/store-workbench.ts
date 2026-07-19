@@ -103,7 +103,7 @@ export async function workbenchDiagnostics(gui: GuiClient, directory?: string): 
 
 export async function workbenchGitOperation(gui: GuiClient, action: "checkout" | "create-branch", input: { branch: string }, directory?: string): Promise<WorkbenchOperationResult>
 export async function workbenchGitOperation(gui: GuiClient, action: "stage" | "unstage" | "discard", input: { paths: string[] }, directory?: string): Promise<WorkbenchOperationResult>
-export async function workbenchGitOperation(gui: GuiClient, action: "commit", input: { message: string; body?: string }, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: "commit", input: { message: string; body?: string; paths?: string[] }, directory?: string): Promise<WorkbenchOperationResult>
 export async function workbenchGitOperation(gui: GuiClient, action: "fetch" | "pull" | "push" | "publish", input?: undefined, directory?: string): Promise<WorkbenchOperationResult>
 export async function workbenchGitOperation(gui: GuiClient, action: string, input?: unknown, directory?: string): Promise<WorkbenchOperationResult> {
   return pluginApi<WorkbenchOperationResult>(gui, `/experimental/opencodex/workbench/git/${action}`, {
@@ -144,13 +144,6 @@ export async function workbenchGithubPost<T = unknown>(
     method: "POST",
     body: JSON.stringify(input),
   }, directory)
-}
-
-export async function registerGuiBridge(gui: GuiClient, input: { browserBridge?: { url: string; token: string } }): Promise<WorkbenchOperationResult> {
-  return pluginApi<WorkbenchOperationResult>(gui, "/experimental/opencodex/gui-bridge/register", {
-    method: "POST",
-    body: JSON.stringify(input),
-  })
 }
 
 export async function listPlugins(gui: GuiClient): Promise<GuiPlugin[]> {

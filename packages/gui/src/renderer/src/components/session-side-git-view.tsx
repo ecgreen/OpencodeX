@@ -7,7 +7,7 @@ import { workbenchGitOperation, type DiffFile, type WorkbenchGitBranches, type W
 import { Button, Select, TextArea, TextInput } from "./ui"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
-import { sidePanelDiffForPath } from "./session-side-git-controller"
+import { sidePanelDiffForPath, sidePanelStatusForPath } from "./session-side-git-controller"
 import { clamp } from "./session-side-path"
 
 const SPLIT_MIN = 0.22
@@ -18,15 +18,29 @@ export function SessionSideDiffPanel(props: {
   empty: string
   loading: boolean
   files: DiffFile[]
+  status?: WorkbenchGitStatus
+  branches?: WorkbenchGitBranches
+  gui?: GuiClient
+  directory?: string
   request?: { token: number; value?: string }
-  openCommitModal: () => void
+  openCommitModal: (path?: string) => void
+  openFile: (path: string) => void
+  refresh: () => void
 }) {
   const [selectedFile, setSelectedFile] = createSignal("")
   const [expandedTree, setExpandedTree] = createSignal<ReadonlySet<string>>(new Set())
   const [splitRatio, setSplitRatio] = createSignal(0.32)
+  const [diffStyle, setDiffStyle] = createSignal<"unified" | "split">("unified")
+  const [busyAction, setBusyAction] = createSignal("")
+  const [notice, setNotice] = createSignal("")
+  const [discardArmed, setDiscardArmed] = createSignal(false)
   const fileTree = createMemo(() => buildDiffFileTree(props.files))
   const rows = createMemo(() => flattenDiffFileTree(fileTree(), expandedTree()))
   const selected = createMemo(() => props.files.find((file) => file.file === selectedFile()) ?? props.files[0])
+  const selectedStatus = createMemo(() => {
+    const path = selected()?.file
+    return path ? sidePanelStatusForPath(props.status?.files ?? [], path) : undefined
+  })
   const totals = createMemo(() => props.files.reduce((total, file) => ({
     additions: total.additions + file.additions,
     deletions: total.deletions + file.deletions,
@@ -37,6 +51,33 @@ export function SessionSideDiffPanel(props: {
     if (selectedFile() && props.files.some((file) => file.file === selectedFile())) return
     setSelectedFile(props.files[0]?.file ?? "")
   })
+  createEffect(() => {
+    selectedFile()
+    setDiscardArmed(false)
+    setNotice("")
+  })
+
+  async function runFileAction(action: "stage" | "unstage" | "discard") {
+    const path = selected()?.file
+    if (!props.gui || !path) return
+    if (action === "discard" && !discardArmed()) {
+      setDiscardArmed(true)
+      setNotice("Discard removes this file's unstaged changes. Click Discard again to confirm.")
+      return
+    }
+    setBusyAction(action)
+    setNotice("")
+    try {
+      const result = await workbenchGitOperation(props.gui, action, { paths: [path] }, props.directory)
+      setNotice(result.message ?? (result.ok ? `${action === "stage" ? "Staged" : action === "unstage" ? "Unstaged" : "Discarded"} ${path}.` : `Could not ${action} ${path}.`))
+      if (result.ok) props.refresh()
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : `Could not ${action} ${path}.`)
+    } finally {
+      setBusyAction("")
+      setDiscardArmed(false)
+    }
+  }
   createEffect(() => {
     const request = props.request
     if (!request?.token || !request.value) return
@@ -64,9 +105,12 @@ export function SessionSideDiffPanel(props: {
       <header>
         <div>
           <strong>{props.title}</strong>
-          <span>{props.files.length} file{props.files.length === 1 ? "" : "s"} <b class="diff-additions">+{totals().additions}</b> <b class="diff-deletions">-{totals().deletions}</b></span>
+          <span>{props.status?.branch ?? props.branches?.current ?? "Working tree"} · {props.files.length} file{props.files.length === 1 ? "" : "s"} <b class="diff-additions">+{totals().additions}</b> <b class="diff-deletions">-{totals().deletions}</b>{props.status?.ahead ? ` · ${props.status.ahead} ahead` : ""}{props.status?.behind ? ` · ${props.status.behind} behind` : ""}</span>
         </div>
-        <Button appearance="ghost" type="button" class="session-side-git-action" disabled={props.loading} onClick={props.openCommitModal}><Icon name="send" /> Commit / Push</Button>
+        <div class="session-side-git-header-actions">
+          <Button appearance="ghost" type="button" onClick={() => setDiffStyle((value) => value === "unified" ? "split" : "unified")}>{diffStyle() === "unified" ? "Split diff" : "Unified diff"}</Button>
+          <Button appearance="ghost" type="button" class="session-side-git-action" disabled={props.loading} onClick={() => props.openCommitModal()}><Icon name="send" /> Commit / Push</Button>
+        </div>
       </header>
       <Show when={!props.loading} fallback={<div class="session-side-empty">Loading diff...</div>}>
         <Show when={props.files.length > 0} fallback={<div class="session-side-empty">{props.empty}</div>}>
@@ -104,16 +148,31 @@ export function SessionSideDiffPanel(props: {
                 )}
               </For>
             </aside>
-            <div class="session-side-diff-splitter" role="separator" aria-orientation="vertical" tabIndex={0} onPointerDown={startSplitResize}>
+            <div class="session-side-diff-splitter" role="separator" aria-orientation="vertical" aria-valuemin={Math.round(SPLIT_MIN * 100)} aria-valuemax={Math.round(SPLIT_MAX * 100)} aria-valuenow={Math.round(splitRatio() * 100)} tabIndex={0} onPointerDown={startSplitResize} onKeyDown={(event) => {
+              const next = event.key === "ArrowLeft" ? splitRatio() - 0.03 : event.key === "ArrowRight" ? splitRatio() + 0.03 : event.key === "Home" ? SPLIT_MIN : event.key === "End" ? SPLIT_MAX : undefined
+              if (next === undefined) return
+              event.preventDefault()
+              setSplitRatio(clamp(next, SPLIT_MIN, SPLIT_MAX))
+            }}>
               <Icon name="grip" />
             </div>
             <main class="session-side-patch">
               <Show when={selected()} fallback={<div class="session-side-empty">Select a file.</div>}>
                 {(file) => (
                   <section>
-                    <header data-side-panel-file={file().file ?? ""}><strong>{file().file ?? ""}</strong><span>{file().status}</span></header>
+                    <header data-side-panel-file={file().file ?? ""}>
+                      <div><strong>{file().file ?? ""}</strong><span>{file().status}</span></div>
+                      <div class="session-side-file-git-actions">
+                        <Button appearance="ghost" onClick={() => props.openFile(file().file ?? "")}>Edit</Button>
+                        <Show when={selectedStatus()?.unstaged || selectedStatus()?.untracked}><Button appearance="ghost" disabled={busyAction() !== ""} onClick={() => void runFileAction("stage")}>Stage</Button></Show>
+                        <Show when={selectedStatus()?.staged}><Button appearance="ghost" disabled={busyAction() !== ""} onClick={() => void runFileAction("unstage")}>Unstage</Button></Show>
+                        <Show when={selectedStatus()?.unstaged || selectedStatus()?.untracked}><Button appearance="ghost" tone="danger" disabled={busyAction() !== ""} onClick={() => void runFileAction("discard")}>{discardArmed() ? "Confirm discard" : "Discard"}</Button></Show>
+                        <Button appearance="ghost" disabled={!file().file} onClick={() => props.openCommitModal(file().file)}>Commit file</Button>
+                      </div>
+                    </header>
+                    <Show when={notice()}>{(value) => <div class="session-side-git-notice">{value()}</div>}</Show>
                     <Show when={file().patch} fallback={<div class="session-side-empty">No text patch available.</div>}>
-                      {(patch) => <SideDiffPatch file={file().file ?? ""} patch={patch()} />}
+                      {(patch) => <SideDiffPatch file={file().file ?? ""} patch={patch()} diffStyle={diffStyle()} />}
                     </Show>
                   </section>
                 )}
@@ -132,6 +191,7 @@ export function SidePanelGitCommitModal(props: {
   status?: WorkbenchGitStatus
   branches?: WorkbenchGitBranches
   files: DiffFile[]
+  paths?: string[]
   close: () => void
   refresh: () => void
 }) {
@@ -142,7 +202,7 @@ export function SidePanelGitCommitModal(props: {
   const [notice, setNotice] = createSignal("")
   const [busy, setBusy] = createSignal<"" | "commit" | "commit-push" | "push">("")
   const changedPaths = createMemo(() => {
-    const paths = props.status?.files.map((file) => file.path).filter(Boolean) ?? []
+    const paths = props.paths?.filter(Boolean) ?? props.status?.files.map((file) => file.path).filter(Boolean) ?? []
     return paths.length > 0 ? paths : props.files.map((file) => file.file).filter((file): file is string => !!file)
   })
   const canPushAfterCommit = createMemo(() => !!props.status?.upstream || !!props.status?.remoteUrl)
@@ -210,10 +270,10 @@ export function SidePanelGitCommitModal(props: {
   )
 }
 
-function SideDiffPatch(props: { file: string; patch: string }) {
+function SideDiffPatch(props: { file: string; patch: string; diffStyle: "unified" | "split" }) {
   const contents = createMemo(() => patchContents(props.patch, props.file))
   return <div class="session-side-diff-patch"><Show when={contents()} fallback={<pre>{props.patch}</pre>}>
-    {(value) => <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle="unified" overflow="scroll" virtualize={false} hunkSeparators="simple" />}
+    {(value) => <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle={props.diffStyle} overflow="scroll" virtualize={false} hunkSeparators="simple" />}
   </Show></div>
 }
 
@@ -236,7 +296,7 @@ async function runGitCommitFlow(input: {
     if (input.paths.length === 0) return { ok: false, message: "No working tree changes to commit." }
     const stage = await workbenchGitOperation(input.gui, "stage", { paths: input.paths }, input.directory)
     if (!stage.ok) return { ok: false, message: stage.message ?? "Could not stage files." }
-    const commit = await workbenchGitOperation(input.gui, "commit", { message: input.message.trim(), body: input.body.trim() || undefined }, input.directory)
+    const commit = await workbenchGitOperation(input.gui, "commit", { message: input.message.trim(), body: input.body.trim() || undefined, paths: input.paths }, input.directory)
     if (!commit.ok) return { ok: false, message: commit.message ?? "Could not create commit." }
   }
   if (input.action === "commit") return { ok: true, message: "Committed changes." }

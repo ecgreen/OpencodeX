@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { createServer } from "node:http"
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test"
@@ -15,11 +14,6 @@ const readme = path.join(workspace, "README.md")
 const run = promisify(execFile)
 const packaged = process.env.OPENCODEX_GUI_E2E_PACKAGED === "1"
 const backgrounded = process.env.OPENCODEX_GUI_E2E_BACKGROUND === "1"
-const browserServer = createServer((_request, response) => {
-  response.writeHead(200, { "content-type": "text/html" })
-  response.end("<!doctype html><title>OpencodeX browser acceptance</title><main>Embedded browser ready.</main>")
-})
-let browserFixtureURL = ""
 
 test.beforeAll(async () => {
   await rm(runtime, { recursive: true, force: true })
@@ -34,15 +28,9 @@ test.beforeAll(async () => {
   await git("config", "user.email", "acceptance@opencodex.local")
   await git("add", "README.md")
   await git("commit", "-m", "test: seed disposable workspace")
-  await new Promise<void>((resolve) => browserServer.listen(0, "127.0.0.1", resolve))
-  const address = browserServer.address()
-  if (!address || typeof address === "string") throw new Error("Browser fixture server did not start.")
-  browserFixtureURL = `http://127.0.0.1:${address.port}`
 })
 
-test.afterAll(() => new Promise<void>((resolve, reject) => browserServer.close((error) => error ? reject(error) : resolve())))
-
-test("drives native desktop controls and disposable workspace mutations", async () => {
+test("drives native desktop controls and session workspace tools", async () => {
   let application: ElectronApplication | undefined
   try {
     const executablePath = packaged ? packagedExecutable(gui) : electronExecutable()
@@ -89,7 +77,6 @@ test("drives native desktop controls and disposable workspace mutations", async 
 
     await createProjectWithNativePicker(page)
     if (!backgrounded) await exerciseWindowControls(application, page)
-    await exerciseWorkbench(application, page)
     await exerciseSessionDesktopTools(application, page)
 
     expect(failures).toEqual([])
@@ -122,84 +109,6 @@ async function exerciseWindowControls(application: ElectronApplication, page: Pa
   await page.getByRole("button", { name: "Minimize", exact: true }).click()
   await expect.poll(() => windowState(application, "minimized")).toBe(true)
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.restore())
-}
-
-async function exerciseWorkbench(application: ElectronApplication, page: Page) {
-  await openTitlebarMenu(page, "View")
-  await clickTitlebarMenuItem(page, "Browser / Workbench")
-  await expect(page.getByRole("navigation", { name: "Workbench tabs" })).toBeVisible()
-  await page.getByRole("treeitem", { name: "README.md", exact: true }).click()
-  const editor = page.locator(".cm-content")
-  await expect(editor).toBeVisible()
-  await editor.click()
-  if (backgrounded) {
-    await openTitlebarMenu(page, "Edit")
-    await expect(page.getByRole("menuitem").filter({ hasText: "Cut" })).toBeVisible()
-    await expect(page.getByRole("menuitem").filter({ hasText: "Copy" })).toBeVisible()
-    await expect(page.getByRole("menuitem").filter({ hasText: "Paste" })).toBeVisible()
-    await page.keyboard.press("Escape")
-  }
-  if (!backgrounded) {
-    await page.keyboard.press("Control+A")
-    await runEditMenuAction(page, "Cut")
-    await expect(editor).toHaveText("")
-    await runEditMenuAction(page, "Paste")
-    await expect(editor).toContainText("Baseline.")
-    await page.keyboard.press("Control+A")
-    await runEditMenuAction(page, "Copy")
-    await page.keyboard.insertText("temporary replacement")
-    await page.keyboard.press("Control+A")
-    await runEditMenuAction(page, "Paste")
-    await expect(editor).toContainText("Baseline.")
-  }
-  await editor.click()
-  await editor.press("Control+A")
-  await page.keyboard.insertText("# Electron acceptance\n\nChanged through the desktop GUI.\n")
-  await expect(editor).toContainText("Changed through the desktop GUI.")
-  await page.getByRole("button", { name: "Save file", exact: true }).click()
-  await expect(page.locator(".workbench-page .notice")).toHaveText("Saved.")
-  await expect.poll(() => readFile(readme, "utf8")).toContain("Changed through the desktop GUI")
-
-  await page.getByRole("button", { name: "Git", exact: true }).click()
-  const changedFiles = page.getByRole("listbox", { name: "Changed files" })
-  await expect(changedFiles.getByText("README.md", { exact: true })).toBeVisible()
-  const stageFile = changedFiles.getByRole("checkbox", { name: "Stage README.md", exact: true })
-  await stageFile.locator("..").locator('[data-slot="checkbox-v2-control"]').click()
-  await expect(changedFiles.getByRole("checkbox", { name: "Unstage README.md", exact: true })).toBeChecked()
-  await expect(page.getByText("Staged", { exact: true })).toBeVisible()
-  await page.getByPlaceholder("Summary").fill("test: commit desktop mutation")
-  await page.getByRole("button", { name: /Commit to/ }).click()
-  await expect(page.getByText("No local changes.", { exact: true })).toBeVisible()
-  expect((await git("log", "-1", "--pretty=%s")).stdout.trim()).toBe("test: commit desktop mutation")
-
-  await page.getByRole("button", { name: "Browser", exact: true }).click()
-  await expect(page.getByText("Open a webpage", { exact: true })).toBeVisible()
-  await navigateBrowserInOwner(application, browserFixtureURL)
-  await expect.poll(() => activeBrowserURL(application)).toBe(`${browserFixtureURL}/`)
-  await expectBrowserViewBounds(application, page)
-  await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click()
-  await expectBrowserViewBounds(application, page)
-  await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click()
-  await expectBrowserViewBounds(application, page)
-  await resizeWindow(application, 1180, 800)
-  await expectBrowserViewBounds(application, page)
-  if (!backgrounded) {
-    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.maximize())
-    await expect.poll(() => windowState(application, "maximized")).toBe(true)
-    await expectBrowserViewBounds(application, page)
-    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.unmaximize())
-    await expect.poll(() => windowState(application, "maximized")).toBe(false)
-    await expectBrowserViewBounds(application, page)
-  }
-  await clickDom(page, "Capture screenshot")
-  await expect.poll(() => page.evaluate(() => document.querySelector(".workbench-page .notice")?.textContent ?? "")).toBe("Captured browser screenshot.")
-  await page.getByRole("button", { name: "Git", exact: true }).click()
-  await expectBrowserViewVisible(application, false)
-  await page.getByRole("button", { name: "Browser", exact: true }).click()
-  await expectBrowserViewBounds(application, page)
-  await openTitlebarMenu(page, "View")
-  await clickTitlebarMenuItem(page, "Dashboard")
-  await expectBrowserViewVisible(application, false)
 }
 
 async function exerciseSessionDesktopTools(application: ElectronApplication, page: Page) {
@@ -253,65 +162,6 @@ async function windowState(application: ElectronApplication, state: "maximized" 
   }, state)
 }
 
-async function expectBrowserViewBounds(application: ElectronApplication, page: Page) {
-  const host = await page.locator(".workbench-browser-host").boundingBox()
-  if (!host) throw new Error("Embedded browser host did not have bounds.")
-  await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows()[0]
-    const view = window?.contentView.children.find((item) => "webContents" in item && item.webContents.id !== window.webContents.id)
-    return view?.getBounds()
-  })).toEqual({
-    x: Math.round(host.x),
-    y: Math.round(host.y),
-    width: Math.round(host.width),
-    height: Math.round(host.height),
-  })
-  await expectBrowserViewVisible(application, true)
-}
-
-async function expectBrowserViewVisible(application: ElectronApplication, expected: boolean) {
-  await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows()[0]
-    return window?.contentView.children.some((item) => "webContents" in item && item.webContents.id !== window.webContents.id && item.getVisible()) ?? false
-  })).toBe(expected)
-}
-
-async function resizeWindow(application: ElectronApplication, width: number, height: number) {
-  await application.evaluate(({ BrowserWindow }, bounds) => {
-    BrowserWindow.getAllWindows()[0]?.setSize(bounds.width, bounds.height)
-  }, { width, height })
-  await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows()[0]
-    if (!window) return undefined
-    const [width, height] = window.getSize()
-    return { width, height }
-  })).toEqual({ width, height })
-}
-
-async function activeBrowserURL(application: ElectronApplication) {
-  return application.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows()[0]
-    const view = window?.contentView.children.find((item) => "webContents" in item && item.webContents.id !== window.webContents.id)
-    return view && "webContents" in view ? view.webContents.getURL() : undefined
-  })
-}
-
-async function navigateBrowserInOwner(application: ElectronApplication, url: string) {
-  await application.evaluate(({ BrowserWindow }, value) => {
-    const owner = BrowserWindow.getAllWindows()[0]?.webContents
-    if (!owner) throw new Error("Owning renderer was not available.")
-    return owner.executeJavaScript(`(() => {
-      const input = document.querySelector('.workbench-browser-bar input')
-      if (!input) throw new Error('Browser address input was not available.')
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)})
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      const button = document.querySelector('.workbench-browser-bar button[aria-label="Go"]')
-      if (!button) throw new Error('Browser Go button was not available.')
-      button.click()
-    })()`)
-  }, url)
-}
-
 async function createSessionInOwner(application: ElectronApplication) {
   await application.evaluate(({ BrowserWindow }, directory) => {
     const owner = BrowserWindow.getAllWindows()[0]?.webContents
@@ -344,11 +194,6 @@ async function openSessionInOwner(application: ElectronApplication) {
   })
 }
 
-async function runEditMenuAction(page: Page, action: "Cut" | "Copy" | "Paste") {
-  await openTitlebarMenu(page, "Edit")
-  await clickTitlebarMenuItem(page, action)
-}
-
 async function openTitlebarMenu(page: Page, label: string) {
   const trigger = page.locator(".titlebar-menu-trigger").filter({ hasText: label })
   await trigger.focus()
@@ -360,15 +205,6 @@ async function clickTitlebarMenuItem(page: Page, label: string) {
   const item = page.getByRole("menuitem").filter({ hasText: label })
   await item.focus()
   await item.press("Enter")
-}
-
-async function clickDom(page: Page, label: string) {
-  await page.evaluate((name) => {
-    const button = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
-      .find((item) => item.getAttribute("aria-label") === name)
-    if (!button) throw new Error(`Button not found: ${name}`)
-    button.click()
-  }, label)
 }
 
 function electronExecutable() {

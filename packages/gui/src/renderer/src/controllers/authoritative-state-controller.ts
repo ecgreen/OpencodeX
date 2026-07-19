@@ -6,6 +6,7 @@ import { connectGuiClient, type GuiClient } from "../lib/client"
 import { mergeRecentModels, recentModelsFromSessions } from "../lib/app-session-lists"
 import { writeRecentModels } from "../lib/app-preferences"
 import { emptyGuiSnapshot, reconcileGuiAuthoritativeState } from "../lib/gui-state"
+import { createGlobalEventFanout } from "../lib/global-event-fanout"
 import { globalEventAction, globalEventID, globalEventPayload, mergeLiveSessionData } from "../lib/live-session-patch"
 import { trimToLiveTail, type MessageWindow } from "../lib/message-window"
 import type { Route } from "../lib/routes"
@@ -66,6 +67,7 @@ export function createAuthoritativeStateController(input: {
   const appliedSessionVersions = new Map<string, string>()
   const seenEventIDs = new Set<string>()
   const seenEventIDOrder: string[] = []
+  const globalEvents = createGlobalEventFanout()
   let sessionSyncRequestID = 0
   let sessionDataLoadedTime = 0
   let stateSync: ReturnType<typeof createClientStateSync> | undefined
@@ -323,6 +325,8 @@ export function createAuthoritativeStateController(input: {
   function handleGlobalEvent(event: GlobalEvent) {
     const id = globalEventID(event)
     if (id && !rememberEventID(id)) return
+    globalEvents.publish(event)
+    if (event.payload.type === "opencodex.gui_bridge.request") return
     const payload = globalEventPayload(event)
     if (payload && stateSync?.applyEvent(payload)) return
     const action = globalEventAction(event)
@@ -387,5 +391,6 @@ export function createAuthoritativeStateController(input: {
     loadOlderSessionMessages,
     loadOlderViewSessionMessages,
     setVisibleSessionIDs,
+    subscribeGlobalEvents: globalEvents.subscribe,
   }
 }

@@ -91,6 +91,11 @@
   background: color-mix(in srgb,var(--secondary) 9%,var(--bg));
 }
 
+.session-main.resizing .session-side-panel-resize,
+.session-main.resizing .session-side-panel {
+  transition: none;
+}
+
 .session-side-panel.open {
   flex-basis: var(--session-side-panel-width, 40%);
   width: var(--session-side-panel-width, 40%);
@@ -235,7 +240,7 @@
   padding: 4px;
 }
 
-.session-open-empty-actions button[data-tone=git] {
+.session-open-empty-actions button[data-empty-tone=git] {
   --empty-action-tone: var(--success);
   grid-column: 1 / -1;
   grid-template-columns: 52px minmax(0,1fr);
@@ -243,29 +248,29 @@
   padding: 21px;
 }
 
-.session-open-empty-actions button[data-tone=context] {
+.session-open-empty-actions button[data-empty-tone=context] {
   --empty-action-tone: var(--primary) ;
 }
 
-.session-open-empty-actions button[data-tone=file] {
+.session-open-empty-actions button[data-empty-tone=file] {
   --empty-action-tone: var(--secondary) ;
 }
 
-.session-open-empty-actions button[data-tone=web] {
+.session-open-empty-actions button[data-empty-tone=web] {
   --empty-action-tone: var(--blue) ;
 }
 
-.session-open-empty-actions button[data-tone=git]>.icon {
+.session-open-empty-actions button[data-empty-tone=git]>.icon {
   width: 30px;
   height: 30px;
   padding: 10px;
 }
 
-.session-open-empty-actions button[data-tone=git] strong {
+.session-open-empty-actions button[data-empty-tone=git] strong {
   font-size: 18px;
 }
 
-.session-open-empty-actions button[data-tone=git] span {
+.session-open-empty-actions button[data-empty-tone=git] span {
   max-width: 56ch;
   font-size: 13px;
 }

@@ -11,6 +11,7 @@ import {
   type WorkbenchDataResult,
   type WorkbenchGitBranches,
   type WorkbenchGitStatus,
+  type WorkbenchGitFileStatus,
 } from "../lib/store"
 import { normalizeRoot, sidePanelPathKey } from "./session-side-path"
 
@@ -109,6 +110,15 @@ export function sidePanelDiffForPath(files: DiffFile[], path: string) {
   return files.find((file) => sidePanelPathKey(file.file ?? "") === key)
     ?? files.find((file) => {
       const fileKey = sidePanelPathKey(file.file ?? "")
+      return key.endsWith(`/${fileKey}`) || fileKey.endsWith(`/${key}`)
+    })
+}
+
+export function sidePanelStatusForPath(files: WorkbenchGitFileStatus[], path: string) {
+  const key = sidePanelPathKey(path)
+  return files.find((file) => sidePanelPathKey(file.path) === key)
+    ?? files.find((file) => {
+      const fileKey = sidePanelPathKey(file.path)
       return key.endsWith(`/${fileKey}`) || fileKey.endsWith(`/${key}`)
     })
 }

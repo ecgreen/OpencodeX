@@ -25,32 +25,43 @@ export function AppShell(props: { model: GuiAppModel }) {
     const snapshot = model.authoritative.snapshot()
     if (!snapshot) return []
     return [
-      ...model.sessionSelection.visibleSessions().map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open)),
-      ...snapshot.projects.map((project): PaletteTarget => ({
-        kind: "project",
-        id: project.id,
-        title: title(project.name ?? project.project.name),
-        subtitle: `${project.sessions.length} sessions`,
-        run: () => model.navigation.setRoute({ name: "projects", projectID: project.id }),
-      })),
-      ...snapshot.views.map((view): PaletteTarget => ({
-        kind: "view",
-        id: view.id,
-        title: title(view.title),
-        subtitle: `${view.sessionIDs.length} panes`,
-        run: () => model.navigation.setRoute({ name: "views", viewID: view.id }),
-      })),
+      ...model.sessionSelection
+        .visibleSessions()
+        .map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open)),
+      ...snapshot.projects.map(
+        (project): PaletteTarget => ({
+          kind: "project",
+          id: project.id,
+          title: title(project.name ?? project.project.name),
+          subtitle: `${project.sessions.length} sessions`,
+          run: () => model.navigation.setRoute({ name: "projects", projectID: project.id }),
+        }),
+      ),
+      ...snapshot.views.map(
+        (view): PaletteTarget => ({
+          kind: "view",
+          id: view.id,
+          title: title(view.title),
+          subtitle: `${view.sessionIDs.length} panes`,
+          run: () => model.navigation.setRoute({ name: "views", viewID: view.id }),
+        }),
+      ),
     ]
   })
   const paletteRecents = createMemo<PaletteTarget[]>(() => {
     const snapshot = model.authoritative.snapshot()
     if (!snapshot) return []
-    return model.sessionSwitcher.sessions().map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open))
+    return model.sessionSwitcher
+      .sessions()
+      .map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open))
   })
   const navBadges = createMemo((): Record<string, number> => {
     const snapshot = model.authoritative.snapshot()
     if (!snapshot) return {}
-    const needsInput = new Set([...snapshot.permissions.map((request) => request.sessionID), ...snapshot.questions.map((request) => request.sessionID)])
+    const needsInput = new Set([
+      ...snapshot.permissions.map((request) => request.sessionID),
+      ...snapshot.questions.map((request) => request.sessionID),
+    ])
     return {
       dashboard: needsInput.size,
       views: snapshot.views.filter((view) => view.sessionIDs.some((sessionID) => needsInput.has(sessionID))).length,
@@ -117,7 +128,6 @@ export function AppShell(props: { model: GuiAppModel }) {
         openSessions={() => model.navigation.setRoute({ name: "sessions" })}
         openSwarms={() => model.navigation.setRoute({ name: "swarms" })}
         openViews={() => model.navigation.setRoute({ name: "views" })}
-        openWorkbench={() => model.navigation.setRoute({ name: "workbench" })}
         toggleLeftSidebar={() => model.rail.setCollapsed((collapsed) => !collapsed)}
         toggleViewSidePanel={model.view.sessions().length > 0 ? model.view.toggleSidePanel : undefined}
         openCommandPalette={() => model.overlays.setCommandPaletteOpen(true)}
@@ -152,6 +162,7 @@ export function AppShell(props: { model: GuiAppModel }) {
         toggleRailSection={model.rail.toggleSection}
         toggleProject={model.rail.toggleProject}
         openDashboard={() => model.navigation.setRoute({ name: "dashboard" })}
+        openSettings={() => model.navigation.setRoute({ name: "settings" })}
         openRoute={(name) => model.navigation.setRoute({ name })}
         openSession={model.sessionActions.open}
         openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
@@ -178,9 +189,7 @@ export function AppShell(props: { model: GuiAppModel }) {
           void model.notices.run(() => model.rail.reorderProject(sourceID, targetID, placement))
         }
         dropRailSection={model.rail.dropSection}
-        dropProject={(targetID, placement) =>
-          void model.notices.run(() => model.rail.dropProject(targetID, placement))
-        }
+        dropProject={(targetID, placement) => void model.notices.run(() => model.rail.dropProject(targetID, placement))}
         dropView={(targetID, placement) => void model.notices.run(() => model.rail.dropView(targetID, placement))}
         moveRailSection={model.rail.moveSection}
         moveProject={(projectID, offset) => void model.notices.run(() => model.rail.moveProject(projectID, offset))}
@@ -198,7 +207,11 @@ export function AppShell(props: { model: GuiAppModel }) {
             <span>
               <strong>Connection interrupted.</strong> Showing the last authoritative state while OpencodeX reconnects.
             </span>
-            <Button appearance="outline" type="button" onClick={() => void model.notices.run(model.authoritative.retry)}>
+            <Button
+              appearance="outline"
+              type="button"
+              onClick={() => void model.notices.run(model.authoritative.retry)}
+            >
               Retry now
             </Button>
           </div>
@@ -211,7 +224,12 @@ export function AppShell(props: { model: GuiAppModel }) {
             <div class="error-card" role="alert">
               <strong>Unable to load authoritative state</strong>
               <span>{model.authoritative.error()}</span>
-              <Button appearance="solid" tone="accent" type="button" onClick={() => void model.notices.run(model.authoritative.retry)}>
+              <Button
+                appearance="solid"
+                tone="accent"
+                type="button"
+                onClick={() => void model.notices.run(model.authoritative.retry)}
+              >
                 Retry now
               </Button>
             </div>
@@ -266,7 +284,12 @@ export function AppShell(props: { model: GuiAppModel }) {
             aria-live={notice().tone === "error" ? "assertive" : "polite"}
           >
             <span>{notice().message}</span>
-            <Button appearance="ghost" type="button" aria-label="Dismiss notification" onClick={() => model.notices.clear()}>
+            <Button
+              appearance="ghost"
+              type="button"
+              aria-label="Dismiss notification"
+              onClick={() => model.notices.clear()}
+            >
               ×
             </Button>
           </div>
@@ -277,7 +300,11 @@ export function AppShell(props: { model: GuiAppModel }) {
   )
 }
 
-function sessionPaletteTarget(snapshot: GuiSnapshot, session: Session, open: (sessionID: string) => void): PaletteTarget {
+function sessionPaletteTarget(
+  snapshot: GuiSnapshot,
+  session: Session,
+  open: (sessionID: string) => void,
+): PaletteTarget {
   const status = deriveSessionStatus(snapshot, session)
   return {
     kind: "session",

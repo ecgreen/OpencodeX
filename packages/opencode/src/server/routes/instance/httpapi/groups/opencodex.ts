@@ -15,7 +15,6 @@ export {
   UpdateProjectPayload,
   UpdateSessionStatePayload,
   UpdateViewPayload,
-  WorkbenchBridgeRegisterPayload,
   WorkbenchDataResult,
   WorkbenchDiagnostic,
   WorkbenchDiagnosticsResult,

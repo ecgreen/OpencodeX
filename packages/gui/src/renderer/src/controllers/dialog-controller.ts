@@ -12,7 +12,7 @@ export function createDialogController() {
       new Promise<string | undefined>((resolve) => setDialog({ type: "text", ...input, resolve })),
     askProject: (input: { title: string; message?: string; name: string; folders: string[] }) =>
       new Promise<ProjectDialogValue | undefined>((resolve) => setDialog({ type: "project", ...input, resolve })),
-    confirm: (input: { title: string; message: string; confirm?: string }) =>
+    confirm: (input: { title: string; message: string; confirm?: string; scope?: string }) =>
       new Promise<boolean>((resolve) => setDialog({ type: "confirm", ...input, resolve })),
     askChoice: (input: { title: string; message?: string; options: ChoiceOption[] }) =>
       new Promise<string | undefined>((resolve) => setDialog({ type: "choice", ...input, resolve })),

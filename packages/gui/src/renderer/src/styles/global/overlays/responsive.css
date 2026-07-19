@@ -29,12 +29,6 @@
   }
 }
 
-@media (max-width:860px) {
-  .safety-panel {
-    display: grid;
-  }
-}
-
 @media (max-width:900px) {
   .plugin-safety-grid {
     grid-template-columns: 1fr;

@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from "solid-js"
 import type { createSettingsController } from "../controllers/settings-controller"
-import { Button, StatusBadge, SurfaceCard, Switch } from "./ui"
+import type { PermissionModeOption } from "../lib/permission-mode"
+import { Button, InlineNotice, Select, StatusBadge, SurfaceCard, Switch } from "./ui"
 
 export function SettingsPage(props: { controller: ReturnType<typeof createSettingsController> }) {
   const transcriptSettings = createMemo(() => [
@@ -56,7 +57,7 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
         <div>
           <p class="eyebrow">Preferences</p>
           <h1>Settings</h1>
-          <p>Quiet defaults for the desktop client. Changes apply immediately and stay on this device.</p>
+          <p>Desktop preferences stay on this device. Security mode is stored separately in your OpenCodeX settings.</p>
         </div>
       </header>
 
@@ -71,15 +72,23 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
           <div class="theme-options" role="group" aria-label="Color theme">
             <For each={["dark", "light"] as const}>
               {(theme) => (
-                <Button appearance="ghost"
+                <Button
+                  appearance="ghost"
                   type="button"
                   class="theme-option"
                   classList={{ selected: props.controller.themeMode() === theme }}
                   aria-pressed={props.controller.themeMode() === theme}
                   onClick={() => props.controller.setThemeMode(theme)}
                 >
-                  <span class={`theme-preview ${theme}`} aria-hidden="true"><i /><i /><i /></span>
-                  <span><strong>{theme === "dark" ? "Graphite dark" : "Precision light"}</strong><small>{theme === "dark" ? "Low-glare technical surfaces" : "Clear daylight contrast"}</small></span>
+                  <span class={`theme-preview ${theme}`} aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span>
+                    <strong>{theme === "dark" ? "Graphite dark" : "Precision light"}</strong>
+                    <small>{theme === "dark" ? "Low-glare technical surfaces" : "Clear daylight contrast"}</small>
+                  </span>
                 </Button>
               )}
             </For>
@@ -97,11 +106,51 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
             <For each={transcriptSettings()}>
               {(setting) => (
                 <Switch class="settings-row" checked={setting.checked()} onChange={setting.setChecked}>
-                  <span><strong>{setting.label}</strong><small>{setting.description}</small></span>
+                  <span>
+                    <strong>{setting.label}</strong>
+                    <small>{setting.description}</small>
+                  </span>
                 </Switch>
               )}
             </For>
           </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="settings-security">
+          <header>
+            <div>
+              <h2 id="settings-security">Security mode</h2>
+              <p>Choose how OpenCodeX handles permission checks across projects and sessions.</p>
+            </div>
+          </header>
+          <SurfaceCard class="settings-safety-card">
+            <Select<PermissionModeOption>
+              label="Security mode"
+              description={
+                props.controller.permissionModeOption()?.description ?? "Loading the global permission mode."
+              }
+              options={[...props.controller.permissionModeOptions]}
+              current={props.controller.permissionModeOption()}
+              optionValue={(option) => option.id}
+              optionLabel={(option) => option.label}
+              optionMeta={(option) => option.meta}
+              optionDescription={(option) => option.description}
+              onSelect={(option) => option && void props.controller.changePermissionMode(option.id)}
+              loading={props.controller.savingPermissionMode()}
+            />
+            <Show when={props.controller.permissionMode() === "yolo"}>
+              <InlineNotice tone="danger" title="Unrestricted agent access">
+                YOLO mode bypasses prompts and explicit permission denials. It is not an operating-system sandbox.
+              </InlineNotice>
+            </Show>
+            <Show when={props.controller.permissionModeError()}>
+              {(message) => (
+                <InlineNotice tone="danger" title="Permission mode unavailable">
+                  {message()}
+                </InlineNotice>
+              )}
+            </Show>
+          </SurfaceCard>
         </section>
 
         <section class="settings-section" aria-labelledby="settings-connection">
@@ -115,10 +164,14 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
           <SurfaceCard class="settings-connection-card">
             <div>
               <strong>{lifecycle()?.data === "stale" ? "Last snapshot retained" : "Shared state is current"}</strong>
-              <span>{lifecycle()?.error ?? "No periodic authoritative requests are made while the client is idle."}</span>
+              <span>
+                {lifecycle()?.error ?? "No periodic authoritative requests are made while the client is idle."}
+              </span>
             </div>
             <Show when={lifecycle()?.status === "error" || lifecycle()?.status === "reconnecting"}>
-              <Button appearance="solid" tone="accent" onClick={() => void props.controller.retry()}>Retry now</Button>
+              <Button appearance="solid" tone="accent" onClick={() => void props.controller.retry()}>
+                Retry now
+              </Button>
             </Show>
           </SurfaceCard>
         </section>

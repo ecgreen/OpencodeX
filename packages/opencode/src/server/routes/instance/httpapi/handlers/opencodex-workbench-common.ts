@@ -47,7 +47,18 @@ export function branchNameValid(value: string) {
 }
 
 export function gitPaths(input: readonly string[]) {
-  return input.map((item) => item.trim()).filter((item) => item && !item.startsWith("-"))
+  if (
+    input.length === 0 ||
+    input.some(
+      (item) =>
+        !item ||
+        item.includes("\0") ||
+        path.isAbsolute(item) ||
+        item.split(/[\\/]/).some((part) => !part || part === "." || part === ".."),
+    )
+  )
+    return []
+  return [...new Set(input)]
 }
 
 export async function gitRun(args: string[], cwd: string) {

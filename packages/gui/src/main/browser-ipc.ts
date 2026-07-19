@@ -5,6 +5,7 @@ import {
   type Session,
   type WebContents,
 } from "electron"
+import { shapeBrowserSnapshot, validExternalBrowserURL } from "./browser-capabilities.js"
 import { validString } from "./ipc-validation.js"
 
 type BrowserView = {
@@ -17,6 +18,84 @@ const browserViews = new Map<string, BrowserView>()
 const visibleBrowserViews = new Set<string>()
 const browserViewOwners = new Set<number>()
 const securedSessions = new WeakSet<Session>()
+
+const BROWSER_SNAPSHOT_SCRIPT = String.raw`(() => {
+  const MAX_BODY_TEXT = 24000
+  const MAX_ITEMS = 200
+  const MAX_SCANNED_ITEMS = 2000
+  const MAX_TOTAL_BYTES = 64000
+  const line = (value, limit) =>
+    typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) : ""
+  const bodyText = (value) =>
+    typeof value === "string"
+      ? value.replace(/\r/g, "").replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_BODY_TEXT)
+      : ""
+  const size = (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength
+  const visible = (element) => {
+    if (typeof element.checkVisibility === "function" &&
+        !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false
+    const style = getComputedStyle(element)
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.opacity === "0") return false
+    return Array.from(element.getClientRects()).some((rect) => rect.width > 0 && rect.height > 0)
+  }
+  const labelFor = (element) => {
+    const labels = element.labels
+      ? Array.from(element.labels).map((label) => line(label.innerText || label.textContent, 500)).filter(Boolean).join(" ")
+      : ""
+    const labelledBy = line(element.getAttribute("aria-labelledby"), 500)
+      .split(" ")
+      .filter(Boolean)
+      .map((id) => document.getElementById(id))
+      .filter(Boolean)
+      .map((target) => line(target.innerText || target.textContent, 500))
+      .filter(Boolean)
+      .join(" ")
+    return line(element.getAttribute("aria-label") || labels || labelledBy || element.getAttribute("placeholder"), 500)
+  }
+  const itemFor = (element) => {
+    const tag = element.tagName.toLowerCase()
+    const role = line(element.getAttribute("role"), 100)
+    const label = labelFor(element)
+    const name = line(element.getAttribute("name"), 500)
+    const text = line(element.innerText || element.textContent, 500)
+    const href = tag === "a" ? line(typeof element.href === "string" ? element.href : element.getAttribute("href"), 2048) : ""
+    const type = line(element.getAttribute("type") || ((tag === "input" || tag === "button") ? element.type : ""), 100).toLowerCase()
+    const hasValue = tag === "input" || tag === "select" || tag === "textarea"
+    const value = hasValue ? (type === "password" ? "[REDACTED]" : line(element.value, 1000)) : ""
+    const hasDisabled = "disabled" in element || element.hasAttribute("aria-disabled")
+    const disabled = Boolean(element.disabled) || element.getAttribute("aria-disabled") === "true"
+    const hasChecked = tag === "input" && (type === "checkbox" || type === "radio")
+    return {
+      tag,
+      ...(role ? { role } : {}),
+      ...(label ? { label } : {}),
+      ...(name ? { name } : {}),
+      ...(text ? { text } : {}),
+      ...(href ? { href } : {}),
+      ...(hasValue ? { value } : {}),
+      ...(type ? { type } : {}),
+      ...(hasDisabled ? { disabled } : {}),
+      ...(hasChecked ? { checked: Boolean(element.checked) } : {}),
+    }
+  }
+  const snapshot = {
+    url: line(location.href, 2048),
+    title: line(document.title, 500),
+    bodyText: bodyText(document.body?.innerText),
+    items: [],
+  }
+  while (size(snapshot) > MAX_TOTAL_BYTES && snapshot.bodyText) {
+    snapshot.bodyText = snapshot.bodyText.slice(0, Math.floor(snapshot.bodyText.length * 0.8))
+  }
+  const elements = document.querySelectorAll("a,button,input,select,textarea,[role]")
+  for (let index = 0; index < elements.length && index < MAX_SCANNED_ITEMS && snapshot.items.length < MAX_ITEMS; index += 1) {
+    const element = elements[index]
+    if (!visible(element)) continue
+    snapshot.items.push(itemFor(element))
+    if (size(snapshot) > MAX_TOTAL_BYTES) snapshot.items.pop()
+  }
+  return snapshot
+})()`
 
 export function registerBrowserIpc(openExternalURL: (url: string) => void) {
   ipcMain.handle("opencodex:browser:create", async (event, raw: unknown) => {
@@ -86,6 +165,32 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
     return (await view.webContents.capturePage()).toDataURL()
   })
 
+  ipcMain.handle("opencodex:browser:capture", async (event, raw: unknown) => {
+    const input = validBrowserCapture(raw)
+    if (!input) return undefined
+    const view = activeBrowserView(input.id, event.sender.id)
+    if (!view || view.webContents.getURL() !== input.expectedURL) return undefined
+    const dataURL = (await view.webContents.capturePage()).toDataURL()
+    const url = view.webContents.getURL()
+    return url === input.expectedURL ? { url, dataURL } : undefined
+  })
+
+  ipcMain.handle("opencodex:browser:snapshot", async (event, id: unknown) => {
+    const browserID = validString(id)
+    if (!browserID) return undefined
+    const view = activeBrowserView(browserID, event.sender.id)
+    if (!view) return undefined
+    return shapeBrowserSnapshot(await view.webContents.executeJavaScript(BROWSER_SNAPSHOT_SCRIPT))
+  })
+
+  ipcMain.handle("opencodex:browser:external", (event, raw: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return false
+    const url = validExternalBrowserURL(raw)
+    if (!url) return false
+    openExternalURL(url)
+    return true
+  })
+
   ipcMain.handle("opencodex:browser:devtools", (event, id: unknown) => {
     const browserID = validString(id)
     if (!browserID) return undefined
@@ -143,6 +248,15 @@ function validBrowserAction(value: unknown) {
     return { id, action: input.action }
   }
   return undefined
+}
+
+function validBrowserCapture(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const input = value as { id?: unknown; expectedURL?: unknown }
+  const id = validString(input.id)
+  const expectedURL = validString(input.expectedURL)
+  if (!id || !expectedURL || normalizeBrowserURL(expectedURL) !== expectedURL) return undefined
+  return { id, expectedURL }
 }
 
 function normalizeBrowserURL(input: string) {

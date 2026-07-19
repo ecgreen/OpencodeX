@@ -109,10 +109,6 @@
   line-height: 1;
 }
 
-.workbench-page>.notice {
-  flex: 0 0 auto;
-}
-
 .dialog-card {
   display: grid;
   gap: 12px;

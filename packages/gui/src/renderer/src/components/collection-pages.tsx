@@ -89,7 +89,6 @@ export function ProjectCollectionPage(props: {
   openSession: (sessionID: string) => void
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
-  openWorkbenchProject: (projectID: string, directory?: string) => void
   createSession: (projectID?: string, directory?: string) => void
   createSwarm: (projectID: string) => void
   createProjectView: (projectID: string, sessionIDs: string[]) => void

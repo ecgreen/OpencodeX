@@ -2,8 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { Effect } from "effect"
 import { workbenchDiagnostics } from "../../src/opencodex/workbench-diagnostics"
 import { workbenchGitDiffFiles, workbenchGitHistory } from "../../src/opencodex/workbench-git"
+import { makeOpencodeXWorkbenchGitHandlers } from "../../src/server/routes/instance/httpapi/handlers/opencodex-workbench-git-handlers"
+import { TestInstance } from "../fixture/fixture"
+import { it } from "../lib/effect"
 
 const tmpdirs: string[] = []
 
@@ -118,6 +122,173 @@ describe("OpencodeX Workbench Git", () => {
       message: "TS2322: Type 'string' is not assignable to type 'number'.",
     }])
   })
+
+  it.instance(
+    "discards a tracked worktree change without changing the staged version",
+    () =>
+      Effect.gen(function* () {
+        const cwd = (yield* TestInstance).directory
+        yield* Effect.promise(async () => {
+          await write(cwd, "tracked[1].txt", "old\n")
+          await write(cwd, "tracked1.txt", "old\n")
+          await mustGit(cwd, ["add", "."])
+          await mustGit(cwd, ["commit", "--no-gpg-sign", "-m", "add tracked files"])
+          await write(cwd, "tracked[1].txt", "staged\n")
+          await mustGit(cwd, ["add", "tracked[1].txt"])
+          await write(cwd, "tracked[1].txt", "worktree\n")
+          await write(cwd, "tracked1.txt", "other worktree\n")
+        })
+
+        const result = yield* makeOpencodeXWorkbenchGitHandlers().workbenchGitDiscard({
+          payload: { paths: ["tracked[1].txt"] },
+        })
+
+        expect(result.ok).toBe(true)
+        expect(yield* Effect.promise(() => fs.readFile(path.join(cwd, "tracked[1].txt"), "utf8"))).toBe("staged\n")
+        expect(yield* Effect.promise(() => fs.readFile(path.join(cwd, "tracked1.txt"), "utf8"))).toBe(
+          "other worktree\n",
+        )
+        expect((yield* Effect.promise(() => mustGit(cwd, ["diff", "--cached", "--name-only"]))).text.trim()).toBe(
+          "tracked[1].txt",
+        )
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "discards only the requested untracked path",
+    () =>
+      Effect.gen(function* () {
+        const cwd = (yield* TestInstance).directory
+        yield* Effect.promise(() =>
+          Promise.all([write(cwd, "untracked[1].txt", "remove\n"), write(cwd, "untracked1.txt", "keep\n")]),
+        )
+
+        const result = yield* makeOpencodeXWorkbenchGitHandlers().workbenchGitDiscard({
+          payload: { paths: ["untracked[1].txt"] },
+        })
+
+        expect(result.ok).toBe(true)
+        expect(yield* Effect.promise(() => Bun.file(path.join(cwd, "untracked[1].txt")).exists())).toBe(false)
+        expect(yield* Effect.promise(() => Bun.file(path.join(cwd, "untracked1.txt")).exists())).toBe(true)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "discards mixed tracked and untracked paths",
+    () =>
+      Effect.gen(function* () {
+        const cwd = (yield* TestInstance).directory
+        yield* Effect.promise(async () => {
+          await write(cwd, "tracked.txt", "old\n")
+          await mustGit(cwd, ["add", "tracked.txt"])
+          await mustGit(cwd, ["commit", "--no-gpg-sign", "-m", "add tracked file"])
+          await write(cwd, "tracked.txt", "new\n")
+          await write(cwd, "untracked.txt", "remove\n")
+        })
+
+        const result = yield* makeOpencodeXWorkbenchGitHandlers().workbenchGitDiscard({
+          payload: { paths: ["tracked.txt", "untracked.txt"] },
+        })
+
+        expect(result.ok).toBe(true)
+        expect(yield* Effect.promise(() => fs.readFile(path.join(cwd, "tracked.txt"), "utf8"))).toBe("old\n")
+        expect(yield* Effect.promise(() => Bun.file(path.join(cwd, "untracked.txt")).exists())).toBe(false)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "stages and unstages a path",
+    () =>
+      Effect.gen(function* () {
+        const cwd = (yield* TestInstance).directory
+        const handlers = makeOpencodeXWorkbenchGitHandlers()
+        yield* Effect.promise(() => write(cwd, "stage.txt", "content\n"))
+
+        const stage = yield* handlers.workbenchGitStage({ payload: { paths: ["stage.txt"] } })
+        expect(stage.ok).toBe(true)
+        expect((yield* Effect.promise(() => mustGit(cwd, ["diff", "--cached", "--name-only"]))).text.trim()).toBe(
+          "stage.txt",
+        )
+
+        const unstage = yield* handlers.workbenchGitUnstage({ payload: { paths: ["stage.txt"] } })
+        expect(unstage.ok).toBe(true)
+        expect((yield* Effect.promise(() => mustGit(cwd, ["diff", "--cached", "--name-only"]))).text.trim()).toBe("")
+        expect(yield* Effect.promise(() => Bun.file(path.join(cwd, "stage.txt")).exists())).toBe(true)
+      }),
+    { git: true },
+  )
+
+  it.instance("unstages a path on an unborn branch", () =>
+    Effect.gen(function* () {
+      const cwd = (yield* TestInstance).directory
+      yield* Effect.promise(async () => {
+        await mustGit(cwd, ["init"])
+        await write(cwd, "first.txt", "content\n")
+      })
+      const handlers = makeOpencodeXWorkbenchGitHandlers()
+
+      expect((yield* handlers.workbenchGitStage({ payload: { paths: ["first.txt"] } })).ok).toBe(true)
+      expect((yield* handlers.workbenchGitUnstage({ payload: { paths: ["first.txt"] } })).ok).toBe(true)
+      expect((yield* Effect.promise(() => mustGit(cwd, ["ls-files", "--cached"]))).text.trim()).toBe("")
+      expect(yield* Effect.promise(() => Bun.file(path.join(cwd, "first.txt")).exists())).toBe(true)
+    }),
+  )
+
+  it.instance(
+    "commits only selected paths and preserves another staged file",
+    () =>
+      Effect.gen(function* () {
+        const cwd = (yield* TestInstance).directory
+        yield* Effect.promise(async () => {
+          await write(cwd, "selected[1].txt", "old selected\n")
+          await write(cwd, "other.txt", "old other\n")
+          await mustGit(cwd, ["add", "."])
+          await mustGit(cwd, ["commit", "--no-gpg-sign", "-m", "add files"])
+          await write(cwd, "selected[1].txt", "new selected\n")
+          await write(cwd, "other.txt", "new other\n")
+        })
+        const handlers = makeOpencodeXWorkbenchGitHandlers()
+        expect((yield* handlers.workbenchGitStage({ payload: { paths: ["selected[1].txt", "other.txt"] } })).ok).toBe(
+          true,
+        )
+
+        const commit = yield* handlers.workbenchGitCommit({
+          payload: { message: "selected file", paths: ["selected[1].txt"] },
+        })
+
+        expect(commit.ok).toBe(true)
+        expect(
+          (yield* Effect.promise(() => mustGit(cwd, ["show", "--pretty=", "--name-only", "HEAD"]))).text.trim(),
+        ).toBe("selected[1].txt")
+        expect((yield* Effect.promise(() => mustGit(cwd, ["show", "HEAD:selected[1].txt"]))).text).toBe(
+          "new selected\n",
+        )
+        expect((yield* Effect.promise(() => mustGit(cwd, ["show", "HEAD:other.txt"]))).text).toBe("old other\n")
+        expect((yield* Effect.promise(() => mustGit(cwd, ["diff", "--cached", "--name-only"]))).text.trim()).toBe(
+          "other.txt",
+        )
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "rejects empty and invalid path payloads consistently",
+    () =>
+      Effect.gen(function* () {
+        const handlers = makeOpencodeXWorkbenchGitHandlers()
+        const empty = yield* handlers.workbenchGitStage({ payload: { paths: [] } })
+        const invalid = yield* handlers.workbenchGitDiscard({ payload: { paths: ["valid.txt", "../outside.txt"] } })
+        const commit = yield* handlers.workbenchGitCommit({ payload: { message: "message", paths: [] } })
+
+        expect(empty).toEqual(expect.objectContaining({ ok: false, reason: "empty" }))
+        expect(invalid).toEqual(expect.objectContaining({ ok: false, reason: "empty" }))
+        expect(commit).toEqual(expect.objectContaining({ ok: false, reason: "empty" }))
+      }),
+    { git: true },
+  )
 })
 
 async function tmpdir() {

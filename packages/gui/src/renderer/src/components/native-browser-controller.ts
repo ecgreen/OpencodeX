@@ -50,7 +50,7 @@ export function createNativeBrowserController(input: {
     window.removeEventListener("focus", scheduleBounds)
     window.visualViewport?.removeEventListener("resize", scheduleBounds)
     document.removeEventListener("visibilitychange", handleVisibility)
-    input.ids().forEach(destroy)
+    Array.from(createdIDs).forEach(destroy)
     setLifecycle("destroyed")
   })
 

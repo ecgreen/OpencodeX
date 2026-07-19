@@ -93,7 +93,8 @@ export function ViewsRoute(props: { model: GuiAppModel }) {
               selectedContextID={session().id}
               selectContext={model.view.setSidePanelSessionID}
               startResize={model.view.startSidePanelResize}
-              close={() => model.view.setSidePanelOpen(false)}
+              toggleMaximized={model.view.toggleSidePanelMaximized}
+              resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
             />
           )}
         </Show>

@@ -316,6 +316,15 @@ disable a server inherited from a parent config.
 
 ## Permissions
 
+OpenCodeX permission modes are GUI-only settings stored separately in `opencodex.json`. Do not add
+`permission_mode` to `opencode.json` or `opencode.jsonc`; upstream OpenCode does not recognize that key.
+The OpenCodeX setting is applied after configured agent and permission rules:
+
+- `strict`: turn allowed actions into prompts while preserving explicit denials.
+- `configured`: use the configured rules unchanged.
+- `auto`: approve prompts automatically while preserving explicit denials.
+- `yolo`: allow every action, overriding prompts and explicit denials.
+
 ```json
 "permission": {
   "edit": "deny",

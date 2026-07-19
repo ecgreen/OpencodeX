@@ -146,7 +146,6 @@ async function expectNavigationContract(page: Page) {
     "Swarms",
     "Views",
     "Plugins",
-    "Workbench",
   ])
 }
 

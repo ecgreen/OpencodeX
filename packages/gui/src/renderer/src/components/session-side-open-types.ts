@@ -5,7 +5,7 @@ export type OpenTab = {
   id: string
   input: string
   title: string
-  kind: "context" | "file" | "git" | "picker" | "terminal" | "web"
+  kind: "context" | "file" | "files" | "git" | "picker" | "terminal" | "web"
   path?: string
   directory?: string
   url?: string
@@ -15,6 +15,9 @@ export type OpenTab = {
   original: string
   terminalStatus?: "connecting" | "open" | "closed" | "error"
   message?: string
+  externalText?: string
+  externallyChanged?: boolean
+  agentControlled?: boolean
 }
 
 export type OpenPanelState = {

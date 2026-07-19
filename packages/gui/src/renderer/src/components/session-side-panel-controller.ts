@@ -2,6 +2,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { SessionPageProps } from "./session-page-types"
 import type { SessionSidePanelRequest, SessionSidePanelTarget } from "./session-side-panel"
+import { registerSessionWorkspaceTargetHandler } from "../lib/session-workspace-bridge"
 
 const SIDE_PANEL_WIDTH_KEY = "opencodex.gui.sessionSidePanel.width"
 const sidePanelOpenBySessionID = new Map<string, boolean>()
@@ -19,8 +20,30 @@ export function createSessionSidePanelController(props: SessionPageProps) {
 
   onCleanup(() => resizeCleanups.forEach((cleanup) => cleanup()))
 
+  const toggleFromCommand = () => {
+    if (enabled()) toggle()
+  }
+  const openFromCommand = (event: Event) => {
+    if (!enabled() || !(event instanceof CustomEvent)) return
+    openTarget(event.detail as SessionSidePanelTarget)
+  }
+  window.addEventListener("opencodex:workspace-toggle", toggleFromCommand)
+  window.addEventListener("opencodex:workspace-open", openFromCommand)
+  onCleanup(() => {
+    window.removeEventListener("opencodex:workspace-toggle", toggleFromCommand)
+    window.removeEventListener("opencodex:workspace-open", openFromCommand)
+  })
+
   createEffect(() => {
     if (open()) setMounted(true)
+  })
+
+  createEffect(() => {
+    if (!enabled()) return
+    const sessionID = props.session?.id
+    if (!sessionID) return
+    const unregister = registerSessionWorkspaceTargetHandler(sessionID, openPanel)
+    onCleanup(unregister)
   })
 
   createEffect(() => {
@@ -69,7 +92,9 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
     window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-start"))
-    const containerWidth = event.currentTarget.parentElement?.getBoundingClientRect().width ?? window.innerWidth
+    const container = event.currentTarget.parentElement
+    container?.classList.add("resizing")
+    const containerWidth = container?.getBoundingClientRect().width ?? window.innerWidth
     const startX = event.clientX
     const startRatio = widthRatio()
     const onMove = (moveEvent: PointerEvent) => {
@@ -80,12 +105,33 @@ export function createSessionSidePanelController(props: SessionPageProps) {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", cleanup)
       window.removeEventListener("pointercancel", cleanup)
+      container?.classList.remove("resizing")
       window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-end"))
     }
     resizeCleanups.add(cleanup)
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", cleanup)
     window.addEventListener("pointercancel", cleanup)
+  }
+
+  function toggleMaximized() {
+    setWidthRatio((current) => current >= 0.68 ? 0.4 : 0.7)
+  }
+
+  function resizeByKeyboard(event: KeyboardEvent) {
+    const next = event.key === "ArrowLeft" ? widthRatio() + 0.04
+      : event.key === "ArrowRight" ? widthRatio() - 0.04
+        : event.key === "Home" ? 0.28
+          : event.key === "End" ? 0.7
+            : undefined
+    if (event.key === "Enter") {
+      event.preventDefault()
+      toggleMaximized()
+      return
+    }
+    if (next === undefined) return
+    event.preventDefault()
+    setWidthRatio(clampSidePanelWidthRatio(next))
   }
 
   function openTranscriptTarget(event: MouseEvent) {
@@ -137,6 +183,8 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     toggle,
     requestPendingOpenHandoff,
     startResize,
+    toggleMaximized,
+    resizeByKeyboard,
     openTranscriptTarget,
   }
 }

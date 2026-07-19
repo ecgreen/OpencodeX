@@ -236,6 +236,26 @@ export function createViewController(input: {
     window.addEventListener("pointerup", onUp)
   }
 
+  function toggleSidePanelMaximized() {
+    setSidePanelWidthRatio((current) => current >= 0.68 ? 0.4 : 0.7)
+  }
+
+  function resizeSidePanelByKeyboard(event: KeyboardEvent) {
+    const next = event.key === "ArrowLeft" ? sidePanelWidthRatio() + 0.04
+      : event.key === "ArrowRight" ? sidePanelWidthRatio() - 0.04
+        : event.key === "Home" ? 0.28
+          : event.key === "End" ? 0.7
+            : undefined
+    if (event.key === "Enter") {
+      event.preventDefault()
+      toggleSidePanelMaximized()
+      return
+    }
+    if (next === undefined) return
+    event.preventDefault()
+    setSidePanelWidthRatio(Math.max(0.28, Math.min(0.7, next)))
+  }
+
   function projectNameForProjectID(projectID?: string) {
     return projectNameForID(input.authoritative.snapshot()?.projects ?? [], projectID)
   }
@@ -285,6 +305,8 @@ export function createViewController(input: {
     openSidePanel,
     toggleSidePanel,
     startSidePanelResize,
+    toggleSidePanelMaximized,
+    resizeSidePanelByKeyboard,
     projectNameForID: projectNameForProjectID,
     projectNameForSession: projectNameForViewSession,
   }

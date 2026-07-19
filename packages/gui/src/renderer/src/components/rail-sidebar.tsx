@@ -7,7 +7,13 @@ import type { GuiSnapshot } from "../lib/store"
 import { Icon } from "./icon"
 import { Button, IconButton } from "./ui"
 import { RailResizeHandle } from "./rail-resize-handle"
-import { RailPinnedSection, RailPriorSessionsSection, RailProjectsSection, RailRecentSessionsSection, RailViewsSection } from "./rail-sidebar-sections"
+import {
+  RailPinnedSection,
+  RailPriorSessionsSection,
+  RailProjectsSection,
+  RailRecentSessionsSection,
+  RailViewsSection,
+} from "./rail-sidebar-sections"
 import type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
 
 export type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
@@ -39,6 +45,7 @@ export function RailSidebar(props: {
   toggleRailSection: (name: RailSectionName) => void
   toggleProject: (projectID: string) => void
   openDashboard: () => void
+  openSettings: () => void
   openRoute: (name: RailRouteName) => void
   openSession: (sessionID: string) => void
   openView: (viewID: string) => void
@@ -95,7 +102,13 @@ export function RailSidebar(props: {
         toggleRail={props.toggleRail}
         createSession={() => props.createSession()}
       />
-      <RailNav items={props.navItems} badges={props.navBadges} activeRouteName={props.activeRouteName} collapsed={props.railCollapsed} openRoute={props.openRoute} />
+      <RailNav
+        items={props.navItems}
+        badges={props.navBadges}
+        activeRouteName={props.activeRouteName}
+        collapsed={props.railCollapsed}
+        openRoute={props.openRoute}
+      />
       <div class="rail-scroll">
         <For each={sectionOrder()}>
           {(section) => (
@@ -240,6 +253,17 @@ export function RailSidebar(props: {
           )}
         </For>
       </div>
+      <div class="rail-footer">
+        <IconButton
+          appearance="ghost"
+          icon="settings"
+          label="Open settings"
+          tooltip="Settings"
+          pressed={props.activeRouteName === "settings"}
+          data-testid="rail-settings"
+          onClick={props.openSettings}
+        />
+      </div>
       <Show when={!props.railCollapsed}>
         <RailResizeHandle width={() => props.railWidth} resize={props.resizeRail} setResizing={props.setRailResizing} />
       </Show>
@@ -261,10 +285,7 @@ function animateSectionRows(previous: Map<string, DOMRect>, enabled: boolean) {
     if (!enabled || !before) continue
     const deltaY = before.top - rect.top
     if (Math.abs(deltaY) < 1) continue
-    element.animate([
-      { transform: `translateY(${deltaY}px)` },
-      { transform: "translateY(0)" },
-    ], {
+    element.animate([{ transform: `translateY(${deltaY}px)` }, { transform: "translateY(0)" }], {
       duration: 240,
       easing: "cubic-bezier(0.16, 1, 0.3, 1)",
     })
@@ -281,10 +302,16 @@ function RailBrand(props: {
 }) {
   return (
     <div class="brand" onClick={props.openDashboard}>
-      <span class="brand-mark"><Mark /></span>
+      <span class="brand-mark">
+        <Mark />
+      </span>
       <div class="brand-copy">
         <strong>OpencodeX</strong>
-        <span>{props.snapshot?.projects[0] ? title(props.snapshot.projects[0].name ?? props.snapshot.projects[0].project.name) : "Command center"}</span>
+        <span>
+          {props.snapshot?.projects[0]
+            ? title(props.snapshot.projects[0].name ?? props.snapshot.projects[0].project.name)
+            : "Command center"}
+        </span>
       </div>
       <div class="brand-actions">
         <IconButton
@@ -325,10 +352,7 @@ function RailNav(props: {
   openRoute: (name: RailRouteName) => void
 }) {
   return (
-    <nav
-      class="nav"
-      classList={{ "nav-collapsed": props.collapsed }}
-    >
+    <nav class="nav" classList={{ "nav-collapsed": props.collapsed }}>
       <For each={props.items}>
         {(item) => {
           const badge = () => props.badges[item.name] ?? 0
@@ -343,7 +367,9 @@ function RailNav(props: {
               <Icon name={item.icon} />
               <span class="nav-label">{item.label}</span>
               <Show when={badge() > 0}>
-                <span class="nav-badge" aria-hidden="true">{badge()}</span>
+                <span class="nav-badge" aria-hidden="true">
+                  {badge()}
+                </span>
               </Show>
             </Button>
           )

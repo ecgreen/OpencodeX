@@ -139,6 +139,50 @@ afterEach(async () => {
 })
 
 describe("experimental HttpApi", () => {
+  it.instance("authenticates GUI bridge registration and rejects late responses", () =>
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      const clientID = "gui-http-test"
+      const token = "a".repeat(32)
+      const headers = { "content-type": "application/json" }
+      const register = yield* request("/experimental/opencodex/gui-bridge/register", directory, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ clientID, token, capabilities: ["browser.state"] }),
+      })
+      expect(register.status).toBe(200)
+      expect(yield* json(register)).toEqual({ ok: true })
+
+      const replacement = yield* request("/experimental/opencodex/gui-bridge/register", directory, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ clientID, token: "b".repeat(32), capabilities: ["browser.state"] }),
+      })
+      expect(replacement.status).toBe(403)
+
+      const late = yield* request("/experimental/opencodex/gui-bridge/respond", directory, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          clientID,
+          token,
+          requestID: "gbr_late",
+          operation: "browser.state",
+          result: { status: "ok", output: { url: null } },
+        }),
+      })
+      expect(late.status).toBe(409)
+
+      const unregister = yield* request("/experimental/opencodex/gui-bridge/unregister", directory, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ clientID, token }),
+      })
+      expect(unregister.status).toBe(200)
+      expect(yield* json(unregister)).toEqual({ ok: true })
+    }),
+  )
+
   it.instance(
     "serves read-only experimental endpoints through the default server app",
     () =>

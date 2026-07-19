@@ -1,10 +1,6 @@
 import { InstanceState } from "@/effect/instance-state"
 import { Effect } from "effect"
-import {
-  WorkbenchBridgeRegisterPayload,
-  WorkbenchGithubCreatePullPayload,
-  WorkbenchGithubPullPayload,
-} from "../groups/opencodex"
+import { WorkbenchGithubCreatePullPayload, WorkbenchGithubPullPayload } from "../groups/opencodex"
 import {
   gitBranch,
   gitDefaultBranch,
@@ -18,10 +14,7 @@ import {
   gitRun,
   workbenchCwd,
   workbenchFailure,
-  workbenchSuccess,
 } from "./opencodex-workbench-common"
-
-const guiBridgeState: { browserBridge?: { url: string; token: string } } = {}
 
 export function makeOpencodeXWorkbenchGithubHandlers() {
   const workbenchGithubAuth = Effect.fn("OpencodeXHttpApi.workbenchGithubAuth")(function* () {
@@ -125,13 +118,6 @@ export function makeOpencodeXWorkbenchGithubHandlers() {
     }
   })
 
-  const workbenchBridgeRegister = Effect.fn("OpencodeXHttpApi.workbenchBridgeRegister")(function* (ctx: {
-    payload: typeof WorkbenchBridgeRegisterPayload.Type
-  }) {
-    guiBridgeState.browserBridge = ctx.payload.browserBridge
-    return workbenchSuccess(ctx.payload.browserBridge ? "Browser bridge registered." : "GUI bridge registered.")
-  })
-
   return {
     workbenchGithubAuth,
     workbenchGithubRepo,
@@ -141,7 +127,6 @@ export function makeOpencodeXWorkbenchGithubHandlers() {
     workbenchGithubChecks,
     workbenchGithubCheckoutPull,
     workbenchGithubCreatePull,
-    workbenchBridgeRegister,
   }
 }
 

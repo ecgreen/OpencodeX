@@ -158,7 +158,6 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       openSession={model.sessionActions.open}
       openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
       openSwarm={(swarmID) => model.navigation.setRoute({ name: "swarms", swarmID })}
-      openWorkbenchProject={(projectID) => model.navigation.setRoute({ name: "workbench", projectID })}
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
       }

@@ -28,6 +28,13 @@ export function webLocationValue(value: string) {
   return value.replace(/^https:\/\//i, "")
 }
 
+export function webInputURL(value: string) {
+  const input = value.trim()
+  if (!input) return ""
+  if (isBrowserInput(input)) return workbenchNormalizeBrowserURL(input)
+  return `https://duckduckgo.com/?q=${encodeURIComponent(input)}`
+}
+
 export function filePathFromInput(value: string, directory = "") {
   const decoded = normalizeFilePath(value)
   const root = normalizeRoot(directory)

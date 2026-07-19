@@ -17,6 +17,7 @@ import { testEffect } from "../lib/effect"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-write-session"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",

@@ -50,28 +50,6 @@
   background: transparent;
 }
 
-.safety-panel:focus {
-  outline: 1px solid var(--primary);
-  outline-offset: 2px;
-}
-
-.question-block.active {
-  background: transparent;
-  box-shadow: none;
-}
-
-.question-option.selected strong>span {
-  border-color: color-mix(in srgb,var(--text) 48%,transparent);
-  color: var(--text);
-  background: color-mix(in srgb,var(--text) 10%,transparent);
-}
-
-.question-option:hover strong>span {
-  border-color: color-mix(in srgb,var(--text) 48%,transparent);
-  color: var(--text);
-  background: color-mix(in srgb,var(--text) 10%,transparent);
-}
-
 .session-git-modal-status span:first-child {
   color: var(--muted);
   font-size: 11px;
@@ -332,21 +310,4 @@
   border-color: var(--border-active);
   background: var(--element);
   transform: none;
-}
-
-.question-panel .question-block.active {
-  background: transparent;
-  box-shadow: none;
-}
-
-.question-panel .option-list button:hover {
-  border-color: color-mix(in srgb,var(--primary) 52%,var(--border-active));
-  background: color-mix(in srgb,var(--element) 72%,var(--primary) 14%);
-  transform: translateY(-1px);
-}
-
-.question-panel .option-list button.selected {
-  border-color: color-mix(in srgb,var(--primary) 52%,var(--border-active));
-  background: color-mix(in srgb,var(--element) 72%,var(--primary) 14%);
-  transform: translateY(-1px);
 }

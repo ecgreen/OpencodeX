@@ -47,14 +47,6 @@
   margin-top: 12px;
 }
 
-.session-feedback {
-  display: grid;
-  gap: 8px;
-  overflow: auto;
-  max-height: min(42vh,420px);
-  min-width: 0;
-}
-
 .session-inspector {
   flex: 0 0 min(280px,30vw);
   width: min(280px,30vw);
@@ -242,13 +234,6 @@
   padding: 10px;
 }
 
-.session-side-panel-close {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  z-index: 30;
-}
-
 .tool-output pre a {
   color: var(--primary);
   text-decoration: underline;
@@ -350,8 +335,8 @@
 }
 
 .session-side-patch>section {
-  display: grid;
-  grid-template-rows: auto minmax(0,1fr);
+  display: flex;
+  flex-direction: column;
   height: 100%;
   max-height: 100%;
   min-height: 0;

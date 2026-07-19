@@ -10,6 +10,7 @@ import { Config } from "../../src/config/config"
 import { Env } from "../../src/env"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Plugin } from "../../src/plugin"
+import { OpencodeXSettings } from "../../src/opencodex/settings"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
@@ -44,6 +45,7 @@ const agentLayer = Agent.layer.pipe(
   Layer.provide(provider.layer),
   Layer.provide(pluginLayer),
   Layer.provide(RuntimeFlags.layer({ disableDefaultPlugins: true })),
+  Layer.provide(OpencodeXSettings.memory()),
 )
 
 const it = testEffect(Layer.mergeAll(agentLayer, pluginLayer))

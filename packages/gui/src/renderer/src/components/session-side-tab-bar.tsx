@@ -3,7 +3,8 @@ import { For, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { Icon } from "./icon"
 import { OPEN_PANEL_OVERFLOW_VISIBLE_ROWS, type OpenTab } from "./session-side-open-types"
-import { openTabIcon, openTabLabel } from "./session-side-open-state"
+import { openTabDirty, openTabIcon, openTabLabel } from "./session-side-open-state"
+import { sidePanelPathKey } from "./session-side-path"
 import { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
 
 export function SessionSideTabBar(props: {
@@ -13,6 +14,7 @@ export function SessionSideTabBar(props: {
   addTerminal: () => void
   addContext: () => void
   addWeb: () => void
+  changedFiles?: string[]
 }) {
   const controller = props.controller
   return (
@@ -37,6 +39,10 @@ export function SessionSideTabBar(props: {
             >
               <Icon name={openTabIcon(row.tab)} />
               <span>{controller.label(row.tab)}</span>
+              <Show when={row.tab.kind === "file" && props.changedFiles?.some((path) => sidePanelPathKey(path) === sidePanelPathKey(row.tab.path ?? ""))}>
+                <span class="session-open-tab-marker" data-kind="session" title="Changed in this session" aria-label="Changed in this session" />
+              </Show>
+              <Show when={openTabDirty(row.tab)}><span class="session-open-tab-marker" data-kind="dirty" title="Unsaved changes" aria-label="Unsaved changes" /></Show>
             </Button>
             <IconButton
               appearance="ghost"
@@ -110,7 +116,7 @@ export function SessionSideTabBar(props: {
         <Portal>
           <div class="session-open-popup-menu session-open-new-tab-panel" ref={controller.setNewMenuPanel} style={controller.newMenuStyle()}>
             <Button appearance="ghost" type="button" onClick={props.addGit}><Icon name="branch" /><span>Git</span></Button>
-            <Button appearance="ghost" type="button" onClick={props.addFile}><Icon name="file" /><span>New file</span></Button>
+            <Button appearance="ghost" type="button" onClick={props.addFile}><Icon name="file" /><span>Files</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addTerminal}><Icon name="terminal" /><span>New Terminal</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addContext}><Icon name="context" /><span>Context</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addWeb}><Icon name="browser" /><span>New Webpage</span></Button>

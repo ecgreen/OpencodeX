@@ -7,7 +7,7 @@ const headers = {
   "x-opencode-directory": fixtureDirectory,
 }
 
-test("completes project, session, swarm, view, workbench, menu, and keyboard workflows", async ({ page, request }) => {
+test("completes project, session, swarm, view, menu, and keyboard workflows", async ({ page, request }) => {
   test.setTimeout(90_000)
   const failures: string[] = []
   page.on("console", (message) => {
@@ -61,17 +61,6 @@ test("completes project, session, swarm, view, workbench, menu, and keyboard wor
   await expect(panes.nth(1)).toHaveClass(/focused/)
   await page.waitForTimeout(500)
   expect(await firstTranscript?.evaluate((element) => element.isConnected)).toBe(true)
-
-  await openTitlebarMenu(page, "View")
-  await page.getByRole("menuitem", { name: "Browser / Workbench", exact: true }).click()
-  await expect(page.getByRole("navigation", { name: "Workbench tabs" })).toBeVisible()
-  await expect(page.getByText("Project checks run on demand.", { exact: true })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Run project checks" })).toBeEnabled()
-  await page.getByRole("treeitem", { name: "AGENTS.md", exact: true }).click()
-  await expect(page.getByRole("tab", { name: "AGENTS.md", exact: true })).toHaveAttribute("aria-selected", "true")
-  await page.getByRole("button", { name: "Git", exact: true }).click()
-  await expect(page.getByRole("listbox", { name: "Changed files" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Clear changed file filter" })).toBeDisabled()
 
   await page.keyboard.press("Control+P")
   await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible()

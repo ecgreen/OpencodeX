@@ -27,6 +27,7 @@ import {
   workbenchCwd,
   workbenchFailure,
   workbenchRunCommand,
+  workbenchSuccess,
 } from "./opencodex-workbench-common"
 
 export function makeOpencodeXWorkbenchGitHandlers() {
@@ -110,7 +111,7 @@ export function makeOpencodeXWorkbenchGitHandlers() {
     const paths = gitPaths(ctx.payload.paths)
     if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
     const cwd = workbenchCwd(yield* InstanceState.context)
-    const result = gitResult(yield* Effect.promise(() => gitRun(["add", "--", ...paths], cwd)))
+    const result = gitResult(yield* Effect.promise(() => gitRun(["--literal-pathspecs", "add", "--", ...paths], cwd)))
     return gitOperationResult(result, "Staged files.")
   })
 
@@ -120,8 +121,16 @@ export function makeOpencodeXWorkbenchGitHandlers() {
     const paths = gitPaths(ctx.payload.paths)
     if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
     const cwd = workbenchCwd(yield* InstanceState.context)
+    const head = gitResult(yield* Effect.promise(() => gitRun(["rev-parse", "--verify", "HEAD"], cwd)))
     const result = gitResult(
-      yield* Effect.promise(() => gitRun(["restore", "--staged", "--", ...paths], cwd)),
+      yield* Effect.promise(() =>
+        gitRun(
+          head.exitCode === 0
+            ? ["--literal-pathspecs", "restore", "--staged", "--", ...paths]
+            : ["--literal-pathspecs", "rm", "--cached", "--force", "--ignore-unmatch", "--", ...paths],
+          cwd,
+        ),
+      ),
     )
     return gitOperationResult(result, "Unstaged files.")
   })
@@ -132,9 +141,28 @@ export function makeOpencodeXWorkbenchGitHandlers() {
     const paths = gitPaths(ctx.payload.paths)
     if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
     const cwd = workbenchCwd(yield* InstanceState.context)
-    const restore = gitResult(yield* Effect.promise(() => gitRun(["restore", "--worktree", "--", ...paths], cwd)))
-    if (restore.exitCode !== 0) return gitOperationResult(restore, "Discarded files.")
-    return gitOperationResult(gitResult(yield* Effect.promise(() => gitRun(["clean", "-f", "--", ...paths], cwd))), "Discarded files.")
+    const tracked = gitResult(
+      yield* Effect.promise(() => gitRun(["--literal-pathspecs", "ls-files", "--cached", "-z", "--", ...paths], cwd)),
+    )
+    if (tracked.exitCode !== 0) return gitOperationResult(tracked, "Discarded files.")
+    const indexed = new Set(tracked.text().split("\0").filter(Boolean))
+    const trackedPaths = paths.filter((item) => indexed.has(item))
+    const untrackedPaths = paths.filter((item) => !indexed.has(item))
+    if (trackedPaths.length > 0) {
+      const restore = gitResult(
+        yield* Effect.promise(() =>
+          gitRun(["--literal-pathspecs", "restore", "--worktree", "--", ...trackedPaths], cwd),
+        ),
+      )
+      if (restore.exitCode !== 0) return gitOperationResult(restore, "Discarded files.")
+    }
+    if (untrackedPaths.length === 0) return workbenchSuccess("Discarded files.")
+    return gitOperationResult(
+      gitResult(
+        yield* Effect.promise(() => gitRun(["--literal-pathspecs", "clean", "-f", "--", ...untrackedPaths], cwd)),
+      ),
+      "Discarded files.",
+    )
   })
 
   const workbenchGitCommit = Effect.fn("OpencodeXHttpApi.workbenchGitCommit")(function* (ctx: {
@@ -142,11 +170,25 @@ export function makeOpencodeXWorkbenchGitHandlers() {
   }) {
     const message = ctx.payload.message.trim()
     if (!message) return workbenchFailure("empty", "Commit message is required.")
+    const paths = ctx.payload.paths === undefined ? undefined : gitPaths(ctx.payload.paths)
+    if (ctx.payload.paths !== undefined && paths?.length === 0)
+      return workbenchFailure("empty", "Choose at least one file.")
     const body = ctx.payload.body?.trim()
     const cwd = workbenchCwd(yield* InstanceState.context)
     const result = gitResult(
       yield* Effect.promise(() =>
-        gitRun(["commit", "--no-gpg-sign", "-m", message, ...(body ? ["-m", body] : [])], cwd),
+        gitRun(
+          [
+            ...(paths ? ["--literal-pathspecs"] : []),
+            "commit",
+            "--no-gpg-sign",
+            "-m",
+            message,
+            ...(body ? ["-m", body] : []),
+            ...(paths ? ["--only", "--", ...paths] : []),
+          ],
+          cwd,
+        ),
       ),
     )
     return gitOperationResult(result, "Committed changes.")

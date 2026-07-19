@@ -190,6 +190,8 @@ const createToolContext = Effect.fn("Cli.debug.agent.createToolContext")(functio
 
   return {
     sessionID: session.id,
+    directory: session.directory,
+    workspaceID: session.workspaceID,
     messageID,
     callID: PartID.ascending(),
     agent: agent.name,

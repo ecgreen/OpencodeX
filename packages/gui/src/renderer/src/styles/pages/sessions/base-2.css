@@ -162,7 +162,7 @@
 .session-open-bar {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto auto auto minmax(120px,1fr);
+  grid-template-columns: auto auto auto minmax(120px,1fr) auto auto auto auto;
   align-items: center;
   gap: 6px;
   border-top: 1px solid transparent;
@@ -362,9 +362,12 @@
 
 .session-open-empty-actions button span {
   align-self: start;
+  min-width: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .composer-controls span {

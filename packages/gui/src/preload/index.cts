@@ -14,6 +14,31 @@ export type BrowserState = {
   loading: boolean
 }
 
+export type BrowserSnapshotItem = {
+  tag: string
+  role?: string
+  label?: string
+  name?: string
+  text?: string
+  href?: string
+  value?: string
+  type?: string
+  disabled?: boolean
+  checked?: boolean
+}
+
+export type BrowserSnapshot = {
+  url: string
+  title: string
+  bodyText: string
+  items: BrowserSnapshotItem[]
+}
+
+export type BrowserCapture = {
+  url: string
+  dataURL: string
+}
+
 export type TerminalResult = {
   ok: boolean
   message?: string
@@ -69,6 +94,9 @@ contextBridge.exposeInMainWorld("opencodex", {
     navigate: (input: { id: string; url: string }) => ipcRenderer.invoke("opencodex:browser:navigate", input) as Promise<BrowserState | undefined>,
     action: (input: { id: string; action: "back" | "forward" | "reload" | "stop" }) => ipcRenderer.invoke("opencodex:browser:action", input) as Promise<BrowserState | undefined>,
     screenshot: (id: string) => ipcRenderer.invoke("opencodex:browser:screenshot", id) as Promise<string | undefined>,
+    capture: (input: { id: string; expectedURL: string }) => ipcRenderer.invoke("opencodex:browser:capture", input) as Promise<BrowserCapture | undefined>,
+    snapshot: (id: string) => ipcRenderer.invoke("opencodex:browser:snapshot", id) as Promise<BrowserSnapshot | undefined>,
+    external: (url: string) => ipcRenderer.invoke("opencodex:browser:external", url) as Promise<boolean>,
     devtools: (id: string) => ipcRenderer.invoke("opencodex:browser:devtools", id) as Promise<BrowserState | undefined>,
     destroy: (id: string) => ipcRenderer.invoke("opencodex:browser:destroy", id) as Promise<boolean | undefined>,
   },

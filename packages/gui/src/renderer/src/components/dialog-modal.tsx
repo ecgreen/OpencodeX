@@ -8,7 +8,7 @@ export type ProjectDialogValue = { name: string; folders: string[] }
 
 export type DialogState =
   | { type: "text"; title: string; message?: string; value?: string; multiline?: boolean; resolve: (value: string | undefined) => void }
-  | { type: "confirm"; title: string; message: string; confirm?: string; resolve: (value: boolean) => void }
+  | { type: "confirm"; title: string; message: string; confirm?: string; scope?: string; resolve: (value: boolean) => void }
   | { type: "choice"; title: string; message?: string; options: ChoiceOption[]; resolve: (value: string | undefined) => void }
   | { type: "export"; title: string; message?: string; defaults: GuiTranscriptExportOptions; resolve: (value: GuiTranscriptExportOptions | undefined) => void }
   | { type: "project"; title: string; message?: string; name: string; folders: string[]; resolve: (value: ProjectDialogValue | undefined) => void }
@@ -21,6 +21,11 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
   const [toolDetails, setToolDetails] = createSignal(true)
   const [assistantMetadata, setAssistantMetadata] = createSignal(true)
   const [openWithoutSaving, setOpenWithoutSaving] = createSignal(false)
+  const mount = createMemo(() => {
+    const scope = props.dialog?.type === "confirm" ? props.dialog.scope : undefined
+    if (!scope || typeof document === "undefined") return
+    return Array.from(document.querySelectorAll<HTMLElement>(".session-page")).find((element) => element.dataset.sessionId === scope)
+  })
   const choiceOptions = createMemo(() => {
     const current = props.dialog
     if (current?.type !== "choice") return []
@@ -112,6 +117,8 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
           description={current().message}
           class={current().type === "project" ? "dialog-card project-editor-modal" : current().type === "text" ? `dialog-card text-dialog-card${current().title === "Edit Session" ? " session-edit-modal" : ""}` : "dialog-card"}
           close={cancel}
+          mount={mount()}
+          backdropClass={mount() ? "dialog-backdrop session-dialog-backdrop" : undefined}
           showClose={current().type !== "confirm"}
           onSubmit={submit}
           footer={(

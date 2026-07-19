@@ -5,7 +5,7 @@
 }
 
 @media (max-width:560px) {
-  .session-open-empty-actions button[data-tone=git] {
+  .session-open-empty-actions button[data-empty-tone=git] {
     grid-column: auto;
   }
 }

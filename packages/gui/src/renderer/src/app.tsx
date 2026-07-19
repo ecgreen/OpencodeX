@@ -4,6 +4,7 @@ import { createAppearanceController } from "./controllers/appearance-controller"
 import { createAuthoritativeStateController } from "./controllers/authoritative-state-controller"
 import { createCapabilityActionsController } from "./controllers/capability-actions-controller"
 import { createCommandController } from "./controllers/command-controller"
+import { createGuiBridgeController } from "./controllers/gui-bridge-controller"
 import { createDialogController } from "./controllers/dialog-controller"
 import { createManagementActionsController } from "./controllers/management-actions-controller"
 import { createNavigationController } from "./controllers/navigation-controller"
@@ -40,7 +41,13 @@ export function App() {
     recentModels: sessionState.recentModels,
     setRecentModels: sessionState.setRecentModels,
   })
-  const settings = createSettingsController({ appearance, authoritative, transcript: transcriptPreferences })
+  const settings = createSettingsController({
+    appearance,
+    authoritative,
+    dialogs,
+    transcript: transcriptPreferences,
+    alert: notices.alert,
+  })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
   const rail = createRailController({
@@ -108,6 +115,7 @@ export function App() {
     markSessionViewed: sessionActions.markViewed,
     alert: notices.alert,
   })
+  createGuiBridgeController({ authoritative, navigation, selection: sessionSelection, view })
   const capabilities = createCapabilityActionsController({
     client: authoritative.client,
     snapshot: authoritative.snapshot,

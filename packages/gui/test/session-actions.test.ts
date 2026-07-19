@@ -30,6 +30,7 @@ describe("GUI session action decisions", () => {
       title: "Always Allow",
       message: "edit",
       confirm: "Always Allow",
+      scope: "s1",
     })
     expect(permissionAlwaysConfirmInput({ ...request, always: ["write", "read"] }, "always")?.message).toBe("write\nread")
     expect(permissionAlwaysConfirmInput(request, "reject")).toBeUndefined()

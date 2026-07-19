@@ -5,7 +5,6 @@ const cases = [
   [{ name: "session", sessionID: "session" }, "full-bleed"],
   [{ name: "new-session" }, "full-bleed"],
   [{ name: "views", viewID: "view" }, "full-bleed"],
-  [{ name: "workbench" }, "full-bleed"],
   [{ name: "diff" }, "full-bleed"],
   [{ name: "dashboard" }, "scroll-page"],
   [{ name: "projects" }, "scroll-page"],

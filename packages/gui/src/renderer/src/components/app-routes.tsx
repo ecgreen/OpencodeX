@@ -13,7 +13,7 @@ import {
   ViewEditorRoute,
   ViewsRoute,
 } from "./app-operations-routes"
-import { DiffRoute, SettingsRoute, StatusRoute, WorkbenchRoute } from "./app-tool-routes"
+import { DiffRoute, SettingsRoute, StatusRoute } from "./app-tool-routes"
 
 export function AppRoutes(props: { model: GuiAppModel }) {
   onMount(() => {
@@ -21,7 +21,6 @@ export function AppRoutes(props: { model: GuiAppModel }) {
       void Promise.allSettled([
         import("./session-page-entry"),
         import("./views-manager-page-entry"),
-        import("./workbench-page-entry"),
       ])
     }
     if (typeof window.requestIdleCallback === "function") {
@@ -60,9 +59,6 @@ export function AppRoutes(props: { model: GuiAppModel }) {
       </Match>
       <Match when={props.model.navigation.route().name === "plugins"}>
         <PluginsRoute model={props.model} />
-      </Match>
-      <Match when={props.model.navigation.route().name === "workbench"}>
-        <WorkbenchRoute model={props.model} />
       </Match>
       <Match when={props.model.navigation.route().name === "diff"}>
         <DiffRoute model={props.model} />

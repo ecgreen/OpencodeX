@@ -12,6 +12,7 @@ const it = testEffect(Layer.mergeAll(FetchHttpClient.layer, Truncate.defaultLaye
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_message"),
   callID: "",
   agent: "build",

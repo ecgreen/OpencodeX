@@ -1,12 +1,8 @@
-import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptPart } from "../lib/store"
 import { EMPTY_VIEW_PANE_RUNTIME_STATE } from "../lib/view-pane-state"
-import {
-  nextPromptHistoryState,
-  pushPromptStash,
-  type GuiPromptStashEntry,
-} from "../lib/prompt-state"
+import { nextPromptHistoryState, pushPromptStash, type GuiPromptStashEntry } from "../lib/prompt-state"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
 import {
   clearComposerDraft,
@@ -18,10 +14,9 @@ import {
   writeComposerDraft,
   writeComposerStash,
 } from "../lib/session-composer-helpers"
-import { permissionToolPart } from "../lib/tool-display"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
-import { PermissionPanel, QuestionPanel } from "./session-safety-panels"
+import { SessionSafetyDock } from "./session-safety-dock"
 import { PanelLoadingState } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
@@ -30,12 +25,12 @@ import type { SessionPageProps } from "./session-page-types"
 import { createSessionSidePanelController } from "./session-side-panel-controller"
 import { SessionToolbar } from "./session-toolbar"
 import { createSessionComposerPresentation } from "./session-composer-presentation"
-
+import { subscribeSessionBrowserCaptures } from "../lib/session-browser-capture"
 const SessionSidePanel = lazy(() => import("./session-side-panel").then((module) => ({ default: module.SessionSidePanel })))
-
 export function SessionPage(props: SessionPageProps) {
   const session = () => props.session
   const blocked = () => props.permissions.length > 0 || props.questions.length > 0
+  let composerWasBlocked = blocked()
   let transcriptExpandedSessionID = ""
   let transcriptExpandedSessionKey = ""
   let composerTextarea: HTMLTextAreaElement | undefined
@@ -178,6 +173,7 @@ export function SessionPage(props: SessionPageProps) {
     const parts = await Promise.all(files.map(filePartFromFile))
     setDraftParts((current) => [...current, ...parts])
   }
+  onMount(() => onCleanup(subscribeSessionBrowserCaptures({ sessionID: () => session()?.id, pasteFiles, focus: () => composerTextarea?.focus({ preventScroll: true }) })))
   const addContextPaths = (items: Array<{ path: string; type?: "file" | "directory" }>) => {
     const context = items.map((item) => ({ ...item, path: item.path.trim() })).filter((item) => item.path)
     if (context.length === 0) return
@@ -220,6 +216,11 @@ export function SessionPage(props: SessionPageProps) {
       if (props.composerFocusToken?.() !== token || !composerTextarea || composerTextarea.disabled) return
       composerTextarea.focus({ preventScroll: true })
     })
+  })
+  createEffect(() => {
+    const next = blocked()
+    if (composerWasBlocked && !next) requestAnimationFrame(() => composerTextarea?.focus({ preventScroll: true }))
+    composerWasBlocked = next
   })
   createEffect(() => {
     const id = props.session?.id ?? ""
@@ -297,14 +298,7 @@ export function SessionPage(props: SessionPageProps) {
             emptyStateSuggestion={restoreComposerPrompt}
           />
           <Show when={blocked()}>
-            <div class="session-feedback">
-              <For each={props.permissions}>
-                {(request) => <PermissionPanel request={request} tool={permissionToolPart(request, props.data.messages)} reply={props.replyPermission} />}
-              </For>
-              <For each={props.questions}>
-                {(request) => <QuestionPanel request={request} reply={props.replyQuestion} reject={props.rejectQuestion} />}
-              </For>
-            </div>
+            <SessionSafetyDock permissions={props.permissions} questions={props.questions} messages={props.data.messages} replyPermission={props.replyPermission} replyQuestion={props.replyQuestion} rejectQuestion={props.rejectQuestion} />
           </Show>
           <SessionComposer
             blocked={blocked()}
@@ -356,8 +350,8 @@ export function SessionPage(props: SessionPageProps) {
           {(selected) => (
             <Suspense fallback={<aside class="session-side-panel open workspace-panel-loading" aria-busy="true"><PanelLoadingState label="Loading workspace tools" /></aside>}>
               <SessionSidePanel
-              open={sidePanel.open()}
-              widthRatio={sidePanel.widthRatio()}
+                open={sidePanel.open()}
+                widthRatio={sidePanel.widthRatio()}
                 session={selected()}
                 data={props.data}
                 providers={props.providers}
@@ -366,9 +360,10 @@ export function SessionPage(props: SessionPageProps) {
                 config={props.config}
                 gui={props.gui}
                 directory={props.sidePanelDirectory ?? selected().directory}
-              request={sidePanel.request()}
-              startResize={sidePanel.startResize}
-              close={() => sidePanel.setOpen(false)}
+                request={sidePanel.request()}
+                startResize={sidePanel.startResize}
+                toggleMaximized={sidePanel.toggleMaximized}
+                resizeByKeyboard={sidePanel.resizeByKeyboard}
               />
             </Suspense>
           )}
@@ -392,7 +387,6 @@ export function SessionPage(props: SessionPageProps) {
     </div>
   )
 }
-
 function removeTrailingMentionQuery(input: string) {
   return input.replace(/(^|\s)@[^\s@]*$/, "$1").replace(/[ \t]+$/, "")
 }

@@ -14,6 +14,7 @@ const it = testEffect(CrossSpawnSpawner.defaultLayer)
 
 const baseCtx: Omit<Tool.Context, "ask"> = {
   sessionID: SessionID.make("ses_test"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",

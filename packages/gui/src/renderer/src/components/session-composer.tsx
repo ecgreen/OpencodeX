@@ -134,7 +134,7 @@ export function SessionComposer(props: {
           onKeyDown={(event) => handleComposerKeyDown(event, props, { visible: mentionMenuVisible(), selected: selectedMention(), select: selectMention, dismiss: () => setMentionDismissed(true) })}
           aria-controls={props.slashMenuVisible ? `${menuID}-slash` : mentionMenuVisible() ? `${menuID}-mention` : undefined}
           aria-activedescendant={props.slashMenuVisible ? `${menuID}-slash-${props.selectedSlashCommand}` : mentionMenuVisible() ? `${menuID}-mention-${selectedMention()}` : undefined}
-          placeholder={props.blocked ? "Reply to the pending permission/question before continuing..." : "Message OpencodeX..."}
+          placeholder={props.blocked ? "Reply to the request above to continue..." : "Message OpencodeX..."}
         />
         <Show when={props.draftParts.length > 0}>
           <div class="composer-context-preview" aria-label="Attached context">

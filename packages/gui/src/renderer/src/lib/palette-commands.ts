@@ -11,6 +11,8 @@ export type PaletteCommandActions = {
   createProjectSession: () => void | Promise<void>
   toggleRail: () => void
   focusSidebar: () => void
+  toggleWorkspace: () => void
+  openWorkspace: (target: "context" | "files" | "git" | "terminal" | "web") => void
   createSwarm: () => void | Promise<void>
   createSwarmTask: () => void | Promise<void>
   createView: () => void | Promise<void>
@@ -118,6 +120,20 @@ export function buildPaletteCommands(input: {
       suggested: true,
       run: input.actions.focusSidebar,
     },
+    {
+      name: "opencodex.workspace.toggle",
+      title: "Toggle session workspace",
+      category: "Workspace",
+      shortcut: "Ctrl+J",
+      suggested: true,
+      run: input.actions.toggleWorkspace,
+    },
+    ...(["git", "files", "terminal", "context", "web"] as const).map((target) => ({
+      name: `opencodex.workspace.${target}`,
+      title: `Open workspace ${target === "web" ? "webpage" : target}`,
+      category: "Workspace",
+      run: () => input.actions.openWorkspace(target),
+    })),
     {
       name: "opencodex.swarm.list",
       title: "Show swarms on dashboard",

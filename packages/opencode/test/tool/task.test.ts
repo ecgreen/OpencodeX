@@ -227,6 +227,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: { promptOps },
@@ -263,6 +264,7 @@ describe("tool.task", () => {
           {
             sessionID: chat.id,
             messageID: assistant.id,
+            directory: chat.directory,
             agent: "build",
             abort: new AbortController().signal,
             extra: { promptOps, ...extra },
@@ -322,6 +324,7 @@ describe("tool.task", () => {
           {
             sessionID: chat.id,
             messageID: assistant.id,
+            directory: chat.directory,
             agent: "build",
             abort: abort.signal,
             extra: { promptOps },
@@ -360,6 +363,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: { promptOps },
@@ -398,6 +402,7 @@ describe("tool.task", () => {
           {
             sessionID: chat.id,
             messageID: assistant.id,
+            directory: chat.directory,
             agent: "build",
             abort: new AbortController().signal,
             extra: { promptOps },
@@ -466,6 +471,7 @@ describe("tool.task", () => {
           {
             sessionID: chat.id,
             messageID: assistant.id,
+            directory: chat.directory,
             agent: "build",
             abort: new AbortController().signal,
             extra: { promptOps: stubOps() },
@@ -497,6 +503,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: {
@@ -535,6 +542,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: { promptOps: stubOps({ text: "background done" }) },
@@ -568,6 +576,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: {
@@ -607,6 +616,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: {
@@ -646,6 +656,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: {
@@ -685,6 +696,7 @@ describe("tool.task", () => {
         {
           sessionID: chat.id,
           messageID: assistant.id,
+          directory: chat.directory,
           agent: "build",
           abort: new AbortController().signal,
           extra: {

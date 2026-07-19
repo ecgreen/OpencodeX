@@ -200,7 +200,7 @@ button.project-detail-row {
   color: var(--project-row-color);
 }
 
-.project-heading.recent {
+.project-heading.running {
   --project-row-color: var(--secondary) ;
 }
 

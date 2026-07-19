@@ -37,6 +37,7 @@ export const WorkbenchGitBranchPayload = Schema.Struct({ branch: Schema.String }
 export const WorkbenchGitCommitPayload = Schema.Struct({
   message: Schema.String,
   body: Schema.optional(Schema.String),
+  paths: Schema.optional(Schema.Array(Schema.String)),
 })
 export const WorkbenchGitStashCreatePayload = Schema.Struct({ message: Schema.optional(Schema.String) })
 export const WorkbenchGitStashPayload = Schema.Struct({ ref: Schema.String })
@@ -46,9 +47,6 @@ export const WorkbenchGithubCreatePullPayload = Schema.Struct({
   body: Schema.optional(Schema.String),
   base: Schema.optional(Schema.String),
   head: Schema.optional(Schema.String),
-})
-export const WorkbenchBridgeRegisterPayload = Schema.Struct({
-  browserBridge: Schema.optional(Schema.Struct({ url: Schema.String, token: Schema.String })),
 })
 export const WorkbenchOperationResult = Schema.Struct({
   ok: Schema.Boolean,

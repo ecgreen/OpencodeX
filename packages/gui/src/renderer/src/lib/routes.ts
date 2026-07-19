@@ -11,14 +11,13 @@ export type Route =
   | { name: "views"; viewID?: string }
   | { name: "view-edit"; viewID?: string }
   | { name: "plugins" }
-  | { name: "workbench"; projectID?: string }
   | { name: "diff"; mode?: DiffMode; sessionID?: string }
   | { name: "settings" }
   | { name: "status" }
 
 export type RouteLayoutMode = "scroll-page" | "full-bleed"
 
-const fullBleedRoutes = new Set<Route["name"]>(["new-session", "session", "views", "workbench", "diff"])
+const fullBleedRoutes = new Set<Route["name"]>(["new-session", "session", "views", "diff"])
 
 export function routeLayoutMode(route: Route): RouteLayoutMode {
   return fullBleedRoutes.has(route.name) ? "full-bleed" : "scroll-page"

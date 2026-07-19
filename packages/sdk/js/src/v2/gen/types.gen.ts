@@ -70,6 +70,7 @@ export type Event =
   | EventOpencodexProjectReordered
   | EventOpencodexProjectDeleted
   | EventOpencodexProjectSessionAssigned
+  | EventOpencodexGuiBridgeRequest
   | EventWorkspaceReady
   | EventWorkspaceFailed
   | EventWorkspaceStatus
@@ -1415,6 +1416,30 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.gui_bridge.request"
+        properties: {
+          requestID: string
+          clientID: string
+          sessionID: string
+          operation: "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+          input:
+            | {
+                path: string
+              }
+            | {
+                url: string
+              }
+            | {
+                [key: string]: unknown
+              }
+            | Array<unknown>
+            | {
+                expectedURL: string
+              }
+        }
+      }
+    | {
+        id: string
         type: "workspace.ready"
         properties: {
           name: string
@@ -1719,6 +1744,10 @@ export type PermissionConfig =
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
+      workspace_open?: PermissionRuleConfig
+      browser_navigate?: PermissionRuleConfig
+      browser_screenshot?: PermissionRuleConfig
+      browser_snapshot?: PermissionRuleConfig
       [key: string]: PermissionRuleConfig | PermissionActionConfig | undefined
     }
 
@@ -2455,6 +2484,16 @@ export type McpServerNotFoundError = {
   message: string
 }
 
+export type OpencodeXPermissionMode = "strict" | "configured" | "auto" | "yolo"
+
+export type OpencodeXSettings = {
+  permission_mode?: OpencodeXPermissionMode
+}
+
+export type OpencodeXSettingsUpdateInput = {
+  permission_mode: OpencodeXPermissionMode
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -2928,6 +2967,17 @@ export type OpencodeXPluginInstallResult = {
 export type OpencodeXPluginToggleInput = {
   id: string
   enabled: boolean
+}
+
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
 }
 
 export type OpencodeXJobCreateInput = {
@@ -5276,6 +5326,31 @@ export type EventOpencodexProjectSessionAssigned = {
   }
 }
 
+export type EventOpencodexGuiBridgeRequest = {
+  id: string
+  type: "opencodex.gui_bridge.request"
+  properties: {
+    requestID: string
+    clientID: string
+    sessionID: string
+    operation: "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+    input:
+      | {
+          path: string
+        }
+      | {
+          url: string
+        }
+      | {
+          [key: string]: unknown
+        }
+      | Array<unknown>
+      | {
+          expectedURL: string
+        }
+  }
+}
+
 export type EventWorkspaceReady = {
   id: string
   type: "workspace.ready"
@@ -7015,6 +7090,56 @@ export type McpDisconnectResponses = {
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
 
+export type OpencodexSettingsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/settings"
+}
+
+export type OpencodexSettingsGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSettingsGetError = OpencodexSettingsGetErrors[keyof OpencodexSettingsGetErrors]
+
+export type OpencodexSettingsGetResponses = {
+  /**
+   * OpenCodeX-only settings
+   */
+  200: OpencodeXSettings
+}
+
+export type OpencodexSettingsGetResponse = OpencodexSettingsGetResponses[keyof OpencodexSettingsGetResponses]
+
+export type OpencodexSettingsUpdateData = {
+  body?: OpencodeXSettingsUpdateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/settings"
+}
+
+export type OpencodexSettingsUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSettingsUpdateError = OpencodexSettingsUpdateErrors[keyof OpencodexSettingsUpdateErrors]
+
+export type OpencodexSettingsUpdateResponses = {
+  /**
+   * Updated OpenCodeX-only settings
+   */
+  200: OpencodeXSettings
+}
+
+export type OpencodexSettingsUpdateResponse = OpencodexSettingsUpdateResponses[keyof OpencodexSettingsUpdateResponses]
+
 export type OpencodexProjectListData = {
   body?: never
   path?: never
@@ -8159,6 +8284,7 @@ export type OpencodexWorkbenchGitCommitData = {
   body?: {
     message: string
     body?: string
+    paths?: Array<string>
   }
   path?: never
   query?: never
@@ -8743,39 +8869,217 @@ export type OpencodexWorkbenchGithubCreatePullResponse =
 
 export type OpencodexGuiBridgeRegisterData = {
   body?: {
-    browserBridge?: {
-      url: string
-      token: string
-    }
+    clientID: string
+    token: string
+    capabilities: Array<
+      "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+    >
   }
   path?: never
-  query?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
   url: "/experimental/opencodex/gui-bridge/register"
 }
 
 export type OpencodexGuiBridgeRegisterErrors = {
   /**
-   * BadRequest | InvalidRequestError
+   * InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
 }
 
 export type OpencodexGuiBridgeRegisterError = OpencodexGuiBridgeRegisterErrors[keyof OpencodexGuiBridgeRegisterErrors]
 
 export type OpencodexGuiBridgeRegisterResponses = {
   /**
-   * Register GUI bridge capabilities
+   * GUI bridge registered
    */
   200: {
-    ok: boolean
-    reason?: string
-    message?: string
-    content?: string
+    ok: true
   }
 }
 
 export type OpencodexGuiBridgeRegisterResponse =
   OpencodexGuiBridgeRegisterResponses[keyof OpencodexGuiBridgeRegisterResponses]
+
+export type OpencodexGuiBridgeUnregisterData = {
+  body?: {
+    clientID: string
+    token: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/gui-bridge/unregister"
+}
+
+export type OpencodexGuiBridgeUnregisterErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexGuiBridgeUnregisterError =
+  OpencodexGuiBridgeUnregisterErrors[keyof OpencodexGuiBridgeUnregisterErrors]
+
+export type OpencodexGuiBridgeUnregisterResponses = {
+  /**
+   * GUI bridge unregistered
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type OpencodexGuiBridgeUnregisterResponse =
+  OpencodexGuiBridgeUnregisterResponses[keyof OpencodexGuiBridgeUnregisterResponses]
+
+export type OpencodexGuiBridgeRespondData = {
+  body?:
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "workspace.open"
+        result:
+          | {
+              status: "ok"
+              output: {
+                path: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.navigate"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.state"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.screenshot"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+                dataURL: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.snapshot"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+                text: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/gui-bridge/respond"
+}
+
+export type OpencodexGuiBridgeRespondErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexGuiBridgeRespondError = OpencodexGuiBridgeRespondErrors[keyof OpencodexGuiBridgeRespondErrors]
+
+export type OpencodexGuiBridgeRespondResponses = {
+  /**
+   * GUI bridge response accepted
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type OpencodexGuiBridgeRespondResponse =
+  OpencodexGuiBridgeRespondResponses[keyof OpencodexGuiBridgeRespondResponses]
 
 export type OpencodexJobGetData = {
   body?: never

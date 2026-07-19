@@ -19,6 +19,10 @@ describe("GUI tool display helpers", () => {
     expect(toolDisplayTitle("question", { questions: [{}] }, {})).toBe("Ask 1 question")
     expect(toolDisplayTitle("task", { subagent_type: "review", description: "check changes" }, {})).toBe("review task: check changes")
     expect(toolDisplayTitle("todowrite", {}, {}, "error")).toBe("Todo update failed")
+    expect(toolDisplayTitle("workspace_open", { path: "C:/repo/README.md" }, {})).toBe("Open workspace C:/repo/README.md")
+    expect(toolDisplayTitle("browser_navigate", { url: "https://example.com/" }, {})).toBe("Navigate browser https://example.com/")
+    expect(toolDisplayTitle("browser_screenshot", {}, { url: "https://example.com/" })).toBe("Capture browser https://example.com/")
+    expect(toolDisplayTitle("browser_snapshot", {}, { url: "https://example.com/" })).toBe("Snapshot browser https://example.com/")
   })
 
   test("strips shell control sequences from visible output", () => {
@@ -51,6 +55,10 @@ describe("GUI tool display helpers", () => {
   test("formats permission titles and patch titles", () => {
     expect(permissionTitle(permission("read"), { filePath: "README.md" })).toBe("Read README.md")
     expect(permissionTitle(permission("doom_loop"), {})).toBe("Continue after repeated failures")
+    expect(permissionTitle(permission("workspace_open"), { path: "C:/repo/README.md" })).toBe("Open workspace C:/repo/README.md")
+    expect(permissionTitle(permission("browser_navigate"), { url: "https://example.com/" })).toBe("Navigate browser https://example.com/")
+    expect(permissionTitle(permission("browser_screenshot"), { url: "https://example.com/" })).toBe("Capture browser https://example.com/")
+    expect(permissionTitle(permission("browser_snapshot"), { url: "https://example.com/" })).toBe("Snapshot browser https://example.com/")
     expect(toolPatchTitle("move", "new.ts", { filePath: "old.ts" })).toBe("Moved old.ts -> new.ts")
   })
 

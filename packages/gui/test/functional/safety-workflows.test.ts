@@ -62,6 +62,7 @@ describe("GUI functional safety workflows", () => {
     })
 
     expect(permissionAlwaysConfirmInput(request, "always")?.message).toBe("edit **/*.ts\nread docs")
+    expect(permissionAlwaysConfirmInput(request, "always")?.scope).toBe("session-1")
     expect(calls).toEqual([
       "confirm:Always Allow:edit **/*.ts\nread docs",
       "reply:permission-1:always::C:/Work/OpencodeX",

@@ -13,6 +13,7 @@ const params = Schema.Struct({ input: Schema.String })
 function makeCtx(): Tool.Context {
   return {
     sessionID: SessionID.descending(),
+    directory: process.cwd(),
     messageID: MessageID.ascending(),
     agent: "build",
     abort: new AbortController().signal,

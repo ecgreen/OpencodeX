@@ -1,4 +1,4 @@
-export type RailRouteName = "dashboard" | "projects" | "swarms" | "views" | "plugins" | "workbench"
+export type RailRouteName = "dashboard" | "projects" | "swarms" | "views" | "plugins"
 export type RailSectionName = "pinned" | "projects" | "recent" | "prior" | "views"
 export type RailDragTarget =
   | { type: "section"; id: RailSectionName }

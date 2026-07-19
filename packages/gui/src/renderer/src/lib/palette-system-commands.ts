@@ -26,7 +26,7 @@ export function buildPaletteSystemCommands(actions: PaletteCommandActions): Pale
       name: "settings.open",
       title: "Settings",
       category: "System",
-      description: "Appearance, transcript, and connection preferences",
+      description: "Appearance, security, transcript, and connection preferences",
       run: () => input.actions.openRoute("settings"),
     },
     {

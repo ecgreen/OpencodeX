@@ -16,6 +16,10 @@ const COMMON_TOOL_IDS = new Set([
   "webfetch",
   "websearch",
   "write",
+  "workspace_open",
+  "browser_navigate",
+  "browser_screenshot",
+  "browser_snapshot",
 ])
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
@@ -61,6 +65,10 @@ const TOOL_TITLE_BY_ID: Record<string, ToolTitleBuilder | undefined> = {
   webfetch: (input) => `WebFetch ${stringValue(input.url) ?? ""}`.trim(),
   websearch: (input) => `WebSearch ${quoteValue(input.query)}`,
   skill: (input) => `Skill ${stringValue(input.name) ?? ""}`.trim(),
+  workspace_open: (input) => stringFieldTitle("Open workspace", input.path) ?? "Open workspace",
+  browser_navigate: (input) => stringFieldTitle("Navigate browser", input.url) ?? "Navigate browser",
+  browser_screenshot: (_input, metadata) => stringFieldTitle("Capture browser", metadata.url) ?? "Capture browser",
+  browser_snapshot: (_input, metadata) => stringFieldTitle("Snapshot browser", metadata.url) ?? "Snapshot browser",
 }
 
 const PERMISSION_TITLE_BY_ID: Record<string, PermissionTitleBuilder | undefined> = {
@@ -75,6 +83,10 @@ const PERMISSION_TITLE_BY_ID: Record<string, PermissionTitleBuilder | undefined>
   websearch: (_request, input) => stringFieldTitle("WebSearch", input.query),
   external_directory: () => "Access external directory",
   doom_loop: () => "Continue after repeated failures",
+  workspace_open: (_request, input) => stringFieldTitle("Open workspace", input.path),
+  browser_navigate: (_request, input) => stringFieldTitle("Navigate browser", input.url),
+  browser_screenshot: (_request, input) => stringFieldTitle("Capture browser", input.url),
+  browser_snapshot: (_request, input) => stringFieldTitle("Snapshot browser", input.url),
 }
 
 export function toolStateInput(state: Extract<Part, { type: "tool" }>["state"]) {

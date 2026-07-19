@@ -435,6 +435,8 @@ export const layer = Layer.effect(
           agent: task.agent,
           messageID: assistantMessage.id,
           sessionID,
+          directory: session.directory,
+          workspaceID: session.workspaceID,
           abort: taskAbort.signal,
           callID: part.callID,
           extra: { bypassAgentCheck: true, promptOps },
@@ -762,6 +764,8 @@ export const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
+      const instance = yield* InstanceState.context
+      const workspaceID = yield* InstanceState.workspaceID
       const agentName = input.agent
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
@@ -958,6 +962,8 @@ export const layer = Layer.effect(
                 return read
                   .execute(args, {
                     sessionID: input.sessionID,
+                    directory: instance.directory,
+                    workspaceID,
                     abort: controller.signal,
                     agent: input.agent!,
                     messageID: info.id,

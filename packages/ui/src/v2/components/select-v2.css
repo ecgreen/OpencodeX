@@ -178,6 +178,59 @@
   outline: none;
 }
 
+[data-slot="select-v2-listbox"][data-appearance="detailed"] {
+  gap: 2px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 2px;
+}
+
+[data-component="menu-v2-item"][data-appearance="detailed"] {
+  align-items: flex-start;
+  height: auto;
+  min-height: 64px;
+  padding: 9px 10px;
+}
+
+[data-component="menu-v2-item"][data-appearance="detailed"] [data-slot="menu-v2-item-content"] {
+  align-items: flex-start;
+  line-height: 1.3;
+}
+
+[data-slot="select-v2-option"] {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 5px;
+  min-width: 0;
+}
+
+[data-slot="select-v2-option-heading"] {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+[data-slot="select-v2-option-label"] {
+  color: var(--menu-v2-fg);
+  font-size: 13px;
+  font-weight: 590;
+}
+
+[data-slot="select-v2-option-meta"] {
+  flex: 0 0 auto;
+  color: var(--menu-v2-fg-subtle);
+  font-size: 11px;
+  font-weight: 530;
+  white-space: nowrap;
+}
+
+[data-slot="select-v2-option-description"] {
+  color: var(--menu-v2-fg-muted);
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1.4;
+}
+
 /* Listbox uses data-selected; menu item CSS uses data-checked — mirror accent */
 [data-slot="select-v2-listbox"] [data-component="menu-v2-item"][data-selected] [data-slot="menu-v2-item-content"] {
   font-weight: 530;

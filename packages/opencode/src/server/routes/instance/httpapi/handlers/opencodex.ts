@@ -8,6 +8,8 @@ import { makeOpencodeXStateHandlers } from "./opencodex-state-handlers"
 import { makeOpencodeXWorkbenchFileHandlers } from "./opencodex-workbench-file-handlers"
 import { makeOpencodeXWorkbenchGitHandlers } from "./opencodex-workbench-git-handlers"
 import { makeOpencodeXWorkbenchGithubHandlers } from "./opencodex-workbench-github-handlers"
+import { makeOpencodeXGuiBridgeHandlers } from "./opencodex-gui-bridge-handlers"
+import { makeOpencodeXSettingsHandlers } from "./opencodex-settings-handlers"
 
 export { sessionStatusSnapshot } from "./opencodex-session-handlers"
 
@@ -19,9 +21,13 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
     const files = yield* makeOpencodeXWorkbenchFileHandlers()
     const git = makeOpencodeXWorkbenchGitHandlers()
     const github = makeOpencodeXWorkbenchGithubHandlers()
+    const guiBridge = yield* makeOpencodeXGuiBridgeHandlers()
     const operations = yield* makeOpencodeXOperationsHandlers()
+    const settings = yield* makeOpencodeXSettingsHandlers()
 
     return handlers
+      .handle("getSettings", settings.getSettings)
+      .handle("updateSettings", settings.updateSettings)
       .handle("listProjects", sessions.listProjects)
       .handle("createProject", sessions.createProject)
       .handle("validateProject", sessions.validateProject)
@@ -75,7 +81,9 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("workbenchGithubChecks", github.workbenchGithubChecks)
       .handle("workbenchGithubCheckoutPull", github.workbenchGithubCheckoutPull)
       .handle("workbenchGithubCreatePull", github.workbenchGithubCreatePull)
-      .handle("workbenchBridgeRegister", github.workbenchBridgeRegister)
+      .handle("guiBridgeRegister", guiBridge.guiBridgeRegister)
+      .handle("guiBridgeUnregister", guiBridge.guiBridgeUnregister)
+      .handle("guiBridgeRespond", guiBridge.guiBridgeRespond)
       .handle("createJob", operations.createJob)
       .handle("getJob", operations.getJob)
       .handle("updateJob", operations.updateJob)

@@ -1,9 +1,8 @@
 export type SessionSidePanelTab = "context" | "git" | "open"
 
-export type SessionSidePanelTarget =
-  | { tab: "context" }
-  | { tab: "git"; value?: string }
-  | { tab: "open"; value?: string; title?: string }
+import type { SessionWorkspaceTarget } from "../lib/session-workspace-bridge"
+
+export type SessionSidePanelTarget = SessionWorkspaceTarget
 
 export type SessionSidePanelRequest = SessionSidePanelTarget & { token: number }
 

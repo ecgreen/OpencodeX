@@ -335,14 +335,6 @@
   box-shadow: none;
 }
 
-.safety-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .command-palette-modal h2 {
   margin: 0;
   color: var(--text);

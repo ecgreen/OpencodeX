@@ -26,6 +26,11 @@
   background: var(--surface);
 }
 
+.settings-safety-card {
+  display: grid;
+  gap: 12px;
+}
+
 .settings-row {
   display: flex;
   align-items: center;

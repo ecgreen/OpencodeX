@@ -1,10 +1,11 @@
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
-import { createEffect, onCleanup, type Accessor } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { compactPath } from "../lib/format"
 import { Icon } from "./icon"
 import type { OpenTab } from "./session-side-open-types"
+import { IconButton, TextInput } from "./ui"
 
 type TerminalTab = {
   id: string
@@ -16,6 +17,7 @@ type TerminalView = {
   terminal: Terminal
   fit: FitAddon
   disposeInput: () => void
+  openURL: (url: string) => void
   resizeObserver?: ResizeObserver
 }
 
@@ -25,8 +27,10 @@ const restartTimers = new Map<string, number>()
 let detachedDock: HTMLDivElement | undefined
 let themeObserver: MutationObserver | undefined
 
-export function SessionOpenTerminal(props: { tab: TerminalTab; write: (id: string, data: string) => void }) {
+export function SessionOpenTerminal(props: { tab: TerminalTab & { title?: string }; write: (id: string, data: string) => void; rename: (id: string, title: string) => void }) {
   let host: HTMLDivElement | undefined
+  const [editing, setEditing] = createSignal(false)
+  const [title, setTitle] = createSignal(props.tab.title || "Terminal")
 
   createEffect(() => {
     const id = props.tab.id
@@ -43,12 +47,22 @@ export function SessionOpenTerminal(props: { tab: TerminalTab; write: (id: strin
   return (
     <div class="session-open-terminal">
       <header>
-        <span><Icon name="terminal" /> {props.tab.directory ? compactPath(props.tab.directory) : "Terminal"}</span>
+        <Show when={editing()} fallback={<span><Icon name="terminal" /> {props.tab.title || (props.tab.directory ? compactPath(props.tab.directory) : "Terminal")}</span>}>
+          <TextInput value={title()} aria-label="Terminal name" autofocus onInput={(event) => setTitle(event.currentTarget.value)} onBlur={commitName} onKeyDown={(event) => event.key === "Enter" && commitName()} />
+        </Show>
+        <IconButton icon="pencil" label="Rename terminal" size="compact" onClick={() => setEditing(true)} />
         <small>{props.tab.terminalStatus === "closed" ? "closed" : props.tab.terminalStatus === "connecting" ? "connecting" : "interactive"}</small>
       </header>
       <div class="session-open-terminal-host" ref={(element) => { host = element }} />
     </div>
   )
+
+  function commitName() {
+    const value = title().trim() || "Terminal"
+    setTitle(value)
+    setEditing(false)
+    props.rename(props.tab.id, value)
+  }
 }
 
 export function createSessionSideTerminalController(input: {
@@ -59,6 +73,7 @@ export function createSessionSideTerminalController(input: {
   createTab: (input: Partial<OpenTab>) => string
   updateTab: (id: string, patch: Partial<OpenTab>) => void
   closeMenu: () => void
+  openURL: (url: string) => void
 }) {
   createEffect(() => {
     const terminal = window.opencodex?.terminal
@@ -67,7 +82,7 @@ export function createSessionSideTerminalController(input: {
       const tab = input.tabs().find((tab) => tab.id === event.id)
       if (tab?.kind !== "terminal") return
       sessionTerminal.cancelRestart(event.id)
-      sessionTerminal.ensure(event.id, write).terminal.write(event.data)
+       sessionTerminal.ensure(event.id, write, input.openURL).terminal.write(event.data)
       if (sessionTerminal.isOpen(event.id)) return
       sessionTerminal.markOpen(event.id)
       input.updateTab(event.id, { terminalStatus: "open" })
@@ -78,7 +93,7 @@ export function createSessionSideTerminalController(input: {
       sessionTerminal.markClosed(event.id)
       sessionTerminal.cancelRestart(event.id)
       const shouldRestart = sessionTerminal.exitShouldRestart(event)
-      sessionTerminal.ensure(event.id, write).terminal.writeln(
+       sessionTerminal.ensure(event.id, write, input.openURL).terminal.writeln(
         shouldRestart
           ? `\r\n[terminal process exited${sessionTerminal.exitDescription(event)}; restarting...]`
           : `\r\n[process exited${sessionTerminal.exitDescription(event)}]`,
@@ -107,7 +122,7 @@ export function createSessionSideTerminalController(input: {
       text: "",
     })
     sessionTerminal.markClosed(id)
-    sessionTerminal.ensure(id, write)
+     sessionTerminal.ensure(id, write, input.openURL)
     input.closeMenu()
     void start(id)
   }
@@ -121,7 +136,7 @@ export function createSessionSideTerminalController(input: {
 
   async function start(id: string) {
     if (!window.opencodex?.terminal) {
-      sessionTerminal.ensure(id, write).terminal.writeln("Open terminal needs the latest desktop bridge. Restart OpencodeX and try again.")
+       sessionTerminal.ensure(id, write, input.openURL).terminal.writeln("Open terminal needs the latest desktop bridge. Restart OpencodeX and try again.")
       input.updateTab(id, { terminalStatus: "error" })
       return
     }
@@ -146,7 +161,11 @@ export function createSessionSideTerminalController(input: {
     void window.opencodex?.terminal?.write({ id, data })
   }
 
-  return { create, close, write }
+  function rename(id: string, title: string) {
+    input.updateTab(id, { title })
+  }
+
+  return { create, close, write, rename }
 }
 
 export const sessionTerminal = {
@@ -195,9 +214,12 @@ function exitShouldRestart(event: { exitCode?: number; signal?: number | string 
   return event.exitCode === undefined || event.exitCode !== 0 || event.signal !== undefined
 }
 
-function ensure(id: string, write: (id: string, data: string) => void) {
+function ensure(id: string, write: (id: string, data: string) => void, openURL?: (url: string) => void) {
   const existing = views.get(id)
-  if (existing) return existing
+  if (existing) {
+    if (openURL) existing.openURL = openURL
+    return existing
+  }
   ensureThemeSync()
   const terminal = new Terminal({
     cursorBlink: true,
@@ -215,12 +237,28 @@ function ensure(id: string, write: (id: string, data: string) => void) {
   const resize = terminal.onResize((size) => {
     void window.opencodex?.terminal?.resize({ id, cols: size.cols, rows: size.rows })
   })
+  const links = terminal.registerLinkProvider({
+    provideLinks(lineNumber, callback) {
+      const line = terminal.buffer.active.getLine(lineNumber - 1)?.translateToString(true) ?? ""
+      callback(Array.from(line.matchAll(/https?:\/\/[^\s<>"']+/g)).map((match) => {
+        const text = match[0].replace(/[),.;]+$/, "")
+        const start = (match.index ?? 0) + 1
+        return {
+          range: { start: { x: start, y: lineNumber }, end: { x: start + text.length, y: lineNumber } },
+          text,
+          activate: () => views.get(id)?.openURL(text),
+        }
+      }))
+    },
+  })
   const view: TerminalView = {
     terminal,
     fit: fitAddon,
+    openURL: openURL ?? (() => undefined),
     disposeInput: () => {
       input.dispose()
       resize.dispose()
+      links.dispose()
     },
   }
   views.set(id, view)

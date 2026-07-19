@@ -42,6 +42,7 @@ const scout = testEffect(toolLayer({ experimentalScout: true }))
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",

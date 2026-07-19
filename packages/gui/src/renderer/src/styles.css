@@ -30,11 +30,12 @@
 @import "./styles/global/overlays/base-3.css" layer(features);
 @import "./styles/global/overlays/base-4.css" layer(features);
 @import "./styles/global/overlays/base-5.css" layer(features);
+@import "./styles/global/overlays/safety.css" layer(features);
+@import "./styles/global/overlays/safety-detail.css" layer(features);
 @import "./styles/global/overlays/responsive.css" layer(features);
 @import "./styles/global/overlays/states.css" layer(features);
 @import "./styles/global/overlays/states-2.css" layer(features);
 @import "./styles/global/overlays/switcher.css" layer(features);
-@import "./styles/global/overlays/hints.css" layer(features);
 @import "./styles/pages/plugins/base.css" layer(features);
 @import "./styles/pages/plugins/base-2.css" layer(features);
 @import "./styles/pages/plugins/responsive.css" layer(features);
@@ -56,6 +57,8 @@
 @import "./styles/pages/sessions/states.css" layer(features);
 @import "./styles/pages/sessions/states-2.css" layer(features);
 @import "./styles/pages/sessions/actions.css" layer(features);
+@import "./styles/pages/sessions/workspace.css" layer(features);
+@import "./styles/pages/sessions/bridge.css" layer(features);
 @import "./styles/global/shell/base.css" layer(layout);
 @import "./styles/global/shell/base-2.css" layer(layout);
 @import "./styles/global/shell/base-3.css" layer(layout);
@@ -72,12 +75,9 @@
 @import "./styles/pages/workbench/base.css" layer(features);
 @import "./styles/pages/workbench/base-2.css" layer(features);
 @import "./styles/pages/workbench/base-3.css" layer(features);
-@import "./styles/pages/workbench/base-4.css" layer(features);
-@import "./styles/pages/workbench/base-5.css" layer(features);
 @import "./styles/pages/workbench/base-6.css" layer(features);
 @import "./styles/pages/workbench/base-7.css" layer(features);
 @import "./styles/pages/workbench/base-8.css" layer(features);
-@import "./styles/pages/workbench/base-9.css" layer(features);
 @import "./styles/pages/workbench/responsive.css" layer(features);
 @import "./styles/pages/workbench/states.css" layer(features);
 @import "./styles/pages/workbench/states-2.css" layer(features);

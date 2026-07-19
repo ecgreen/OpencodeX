@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js"
 import { Show } from "solid-js"
+import { Portal } from "solid-js/web"
 import { IconButton } from "./ui"
 
 export function ModalFrame(props: {
@@ -13,6 +14,8 @@ export function ModalFrame(props: {
   onSubmit?: (event: SubmitEvent) => void
   showClose?: boolean
   closeSize?: "compact" | "default" | "prominent"
+  autofocusClose?: boolean
+  mount?: Node
 }) {
   const card = () => (
     <>
@@ -24,7 +27,7 @@ export function ModalFrame(props: {
           </Show>
         </div>
         <Show when={props.showClose ?? true}>
-          <IconButton appearance="ghost" icon="x" label={`Close ${props.title}`} size={props.closeSize} onClick={props.close} />
+          <IconButton appearance="ghost" icon="x" label={`Close ${props.title}`} size={props.closeSize} autofocus={props.autofocusClose} onClick={props.close} />
         </Show>
       </header>
       {props.children}
@@ -34,7 +37,7 @@ export function ModalFrame(props: {
     </>
   )
 
-  return (
+  const frame = () => (
     <div
       class={props.backdropClass ?? "dialog-backdrop"}
       onMouseDown={props.close}
@@ -48,17 +51,23 @@ export function ModalFrame(props: {
       <Show
         when={props.onSubmit}
         fallback={(
-          <section class={props.class ?? "dialog-card"} onMouseDown={(event) => event.stopPropagation()}>
+          <section class={props.class ?? "dialog-card"} role="dialog" aria-modal="true" aria-label={props.title} onMouseDown={(event) => event.stopPropagation()}>
             {card()}
           </section>
         )}
       >
         {(onSubmit) => (
-          <form class={props.class ?? "dialog-card"} onSubmit={onSubmit()} onMouseDown={(event) => event.stopPropagation()}>
+          <form class={props.class ?? "dialog-card"} role="dialog" aria-modal="true" aria-label={props.title} onSubmit={onSubmit()} onMouseDown={(event) => event.stopPropagation()}>
             {card()}
           </form>
         )}
       </Show>
     </div>
+  )
+
+  return (
+    <Show when={props.mount} fallback={frame()}>
+      {(mount) => <Portal mount={mount()}>{frame()}</Portal>}
+    </Show>
   )
 }

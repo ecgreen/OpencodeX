@@ -11,7 +11,7 @@ export function WorkbenchDiagnosticsBar(props: {
   total: number
   onRun: () => void
   onOpen: (path: string) => void
-  onFix: (diagnostic: WorkbenchDiagnostic) => void
+  onFix?: (diagnostic: WorkbenchDiagnostic) => void
 }) {
   const visible = createMemo(() => props.diagnostics.slice(0, 4))
   return (
@@ -38,12 +38,9 @@ export function WorkbenchDiagnosticsBar(props: {
                 <strong>{item.path ? `${item.path}${item.line ? `:${item.line}${item.column ? `:${item.column}` : ""}` : ""}` : "Project"}</strong>
                 <em>{item.message}</em>
               </Button>
-              <IconButton
-                class="workbench-diagnostic-fix"
-                icon="arrowUp"
-                label="Ask model to fix diagnostic"
-                onClick={() => props.onFix(item)}
-              />
+              <Show when={props.onFix}>
+                {(fix) => <IconButton class="workbench-diagnostic-fix" icon="arrowUp" label="Ask model to fix diagnostic" onClick={() => fix()(item)} />}
+              </Show>
             </div>
           )}
         </For>

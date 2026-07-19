@@ -23,6 +23,7 @@ import { guiShortcutAction, isKeyboardEditingTarget, runGuiShortcutAction } from
 import { selectedModelVariants } from "../lib/model-selection"
 import { buildPaletteCommands } from "../lib/palette-commands"
 import { abortSessionIDForRoute } from "../lib/route-selection"
+import { openSessionWorkspace } from "../lib/session-workspace-bridge"
 
 const ABORT_CONFIRM_WINDOW_MS = 1500
 
@@ -65,6 +66,8 @@ export function createCommandController(input: {
           input.rail.setCollapsed(false)
           requestAnimationFrame(() => document.querySelector<HTMLElement>(".rail button")?.focus())
         },
+        toggleWorkspace,
+        openWorkspace,
         createSwarm: () => input.management.createSwarm(),
         createSwarmTask: () =>
           input.capabilityActions.createSwarmTask({
@@ -147,6 +150,43 @@ export function createCommandController(input: {
     input.overlays.setKeyboardHelpOpen(true)
   }
 
+  function toggleWorkspace() {
+    if (input.navigation.route().name === "views") {
+      input.view.toggleSidePanel()
+      return
+    }
+    if (input.navigation.route().name === "session") {
+      window.dispatchEvent(new CustomEvent("opencodex:workspace-toggle"))
+      return
+    }
+    const session = input.selection.selectedSession() ?? input.selection.visibleSessions()[0]
+    if (!session) return
+    input.navigation.setRoute({ name: "session", sessionID: session.id })
+    openSessionWorkspace(session.id, { tab: "open" })
+  }
+
+  function openWorkspace(target: "context" | "files" | "git" | "terminal" | "web") {
+    const panelTarget = target === "git" || target === "context"
+      ? { tab: target } as const
+      : target === "files"
+        ? { tab: "open", value: "opencodex://files" } as const
+        : target === "terminal"
+          ? { tab: "open", value: "opencodex://terminal" } as const
+          : { tab: "open", value: "https://" } as const
+    if (input.navigation.route().name === "views") {
+      input.view.openSidePanel(undefined, panelTarget)
+      return
+    }
+    if (input.navigation.route().name === "session") {
+      window.dispatchEvent(new CustomEvent("opencodex:workspace-open", { detail: panelTarget }))
+      return
+    }
+    const session = input.selection.selectedSession() ?? input.selection.visibleSessions()[0]
+    if (!session) return
+    input.navigation.setRoute({ name: "session", sessionID: session.id })
+    openSessionWorkspace(session.id, panelTarget)
+  }
+
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       const sessionID = abortSessionIDForRoute({
@@ -170,6 +210,7 @@ export function createCommandController(input: {
         clearNotice: input.notices.clear,
         openCommandPalette,
         toggleRail: () => input.rail.setCollapsed((collapsed) => !collapsed),
+        toggleWorkspace,
         focusComposer: () =>
           document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus({ preventScroll: true }),
         createSession: () => void input.notices.run(() => input.management.createSession()),

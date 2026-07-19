@@ -6,6 +6,7 @@ import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
+import type { WorkspaceV2 } from "@opencode-ai/core/workspace"
 
 interface Metadata {
   [key: string]: any
@@ -34,6 +35,8 @@ export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgume
 
 export type Context<M extends Metadata = Metadata> = {
   sessionID: SessionID
+  directory: string
+  workspaceID?: WorkspaceV2.ID
   messageID: MessageID
   agent: string
   abort: AbortSignal

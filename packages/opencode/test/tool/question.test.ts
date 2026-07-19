@@ -11,6 +11,7 @@ import { EventV2Bridge } from "../../src/event-v2-bridge"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-session"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test-message"),
   callID: "test-call",
   agent: "test-agent",

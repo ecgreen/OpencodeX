@@ -206,14 +206,6 @@
   color: transparent;
 }
 
-.session-link.status-ready-for-review:hover>span:first-child {
-  color: transparent;
-}
-
-.session-link.status-ready-for-review:focus-visible>span:first-child {
-  color: transparent;
-}
-
 .session-link.status-needs-review:hover>span:first-child {
   color: transparent;
 }
@@ -227,7 +219,7 @@
   border-color: color-mix(in srgb,var(--session-state-color) 32%,var(--border-subtle));
   border-left-color: var(--session-state-color);
   color: var(--text);
-  background: var(--element);
+  background-color: var(--element);
   box-shadow: none;
 }
 
@@ -236,7 +228,7 @@
   border-color: color-mix(in srgb,var(--session-state-color) 32%,var(--border-subtle));
   border-left-color: var(--session-state-color);
   color: var(--text);
-  background: var(--element);
+  background-color: var(--element);
   box-shadow: none;
 }
 
@@ -244,8 +236,46 @@
   border-color: var(--border-subtle);
   border-left-color: var(--brand);
   color: var(--text);
-  background: var(--element);
+  background-color: var(--element);
   box-shadow: none;
+}
+
+.session-link.status-ready-for-review::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(112deg,transparent 30%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 42%,color-mix(in srgb,var(--session-state-color) 6%,transparent) 50%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 58%,transparent 70%);
+  background-size: 240% 100%;
+  animation: sidebar-review-shine 8s cubic-bezier(.22,1,.36,1) infinite;
+}
+
+@keyframes sidebar-review-shine {
+  0%,8% {
+    opacity: 0;
+    background-position: 130% 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  76% {
+    opacity: 1;
+    background-position: -30% 0;
+  }
+
+  80%,to {
+    opacity: 0;
+    background-position: -30% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-link.status-ready-for-review::before {
+    animation: none;
+  }
 }
 
 .session-link>span:first-child {

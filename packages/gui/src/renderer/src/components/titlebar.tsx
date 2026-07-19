@@ -25,7 +25,6 @@ export function Titlebar(props: {
   openSessions: () => void
   openSwarms: () => void
   openViews: () => void
-  openWorkbench: () => void
   toggleLeftSidebar: () => void
   toggleViewSidePanel?: () => void
   openCommandPalette: () => void
@@ -65,7 +64,6 @@ export function Titlebar(props: {
           <Menu.Item onSelect={props.openSessions}>Sessions</Menu.Item>
           <Menu.Item onSelect={props.openSwarms}>Swarms</Menu.Item>
           <Menu.Item onSelect={props.openViews}>Views</Menu.Item>
-          <Menu.Item onSelect={props.openWorkbench}>Browser / Workbench</Menu.Item>
           <Menu.Separator />
           <Menu.Item shortcut="Ctrl+B" onSelect={props.toggleLeftSidebar}>Toggle Left Sidebar</Menu.Item>
           <Menu.Item disabled={!props.toggleViewSidePanel} onSelect={() => props.toggleViewSidePanel?.()}>Toggle View Side Panel</Menu.Item>

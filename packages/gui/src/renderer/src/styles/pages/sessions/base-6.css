@@ -264,6 +264,7 @@
 .session-link {
   text-align: left;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   --session-state-color: var(--theme-text-muted);
   position: relative;
   width: 100%;
@@ -297,6 +298,7 @@
   --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
   --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--purple) 22%, transparent), var(--surface-active) 48%);
   --session-state-color: var(--info) ;
+  background-image: linear-gradient(112deg,transparent 30%,color-mix(in srgb,var(--session-state-color) 4%,transparent) 42%,color-mix(in srgb,var(--session-state-color) 10%,transparent) 50%,color-mix(in srgb,var(--session-state-color) 4%,transparent) 58%,transparent 70%);
 }
 
 .session-link.status-needs-review {

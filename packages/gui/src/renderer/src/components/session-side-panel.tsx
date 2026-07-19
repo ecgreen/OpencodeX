@@ -38,10 +38,12 @@ export function SessionSidePanel(props: {
   selectedContextID?: string
   selectContext?: (id: string) => void
   startResize: (event: PointerEvent & { currentTarget: HTMLElement }) => void
-  close: () => void
+  toggleMaximized?: () => void
+  resizeByKeyboard?: (event: KeyboardEvent) => void
 }) {
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>(readSessionSideContextCollapseState())
   const [commitModalOpen, setCommitModalOpen] = createSignal(false)
+  const [commitPaths, setCommitPaths] = createSignal<string[]>()
   const [gitActiveSessionID, setGitActiveSessionID] = createSignal("")
   const gitTabActive = () => gitActiveSessionID() === props.session.id
   const gitDirectory = createMemo(() => props.directory ?? props.session.directory)
@@ -88,6 +90,7 @@ export function SessionSidePanel(props: {
   createEffect(() => {
     gitCacheKey()
     setCommitModalOpen(false)
+    setCommitPaths(undefined)
   })
 
   const toggleContext = (section: string) => {
@@ -107,6 +110,12 @@ export function SessionSidePanel(props: {
         aria-orientation="vertical"
         tabIndex={props.open ? 0 : -1}
         onPointerDown={props.startResize}
+        onDblClick={props.toggleMaximized}
+        onKeyDown={props.resizeByKeyboard}
+        aria-valuemin={28}
+        aria-valuemax={70}
+        aria-valuenow={Math.round(props.widthRatio * 100)}
+        title="Drag to resize. Double-click to maximize or restore."
       >
         <Icon name="panel" />
       </div>
@@ -124,7 +133,6 @@ export function SessionSidePanel(props: {
           gui={props.gui}
           directory={props.directory ?? props.session.directory}
           request={props.request}
-          closePanel={props.close}
           contextModel={contextModel()}
           contextOptions={props.contextOptions}
           selectedContextID={props.selectedContextID}
@@ -137,7 +145,14 @@ export function SessionSidePanel(props: {
           gitFiles={gitFiles()}
           gitMessage={gitMessage() || "No project changes."}
           gitLoading={gitLoading()}
-          openCommitModal={() => { if (gitResult()) setCommitModalOpen(true) }}
+          gitStatus={gitResult()?.status}
+          gitBranches={gitResult()?.branches}
+          refreshGit={() => void refetchGit("force")}
+          openCommitModal={(path) => {
+            if (!gitResult()) return
+            setCommitPaths(path ? [path] : undefined)
+            setCommitModalOpen(true)
+          }}
           gitActiveChange={(state) => setGitActiveSessionID(state.active ? state.sessionID : "")}
         />
       </aside>
@@ -148,6 +163,7 @@ export function SessionSidePanel(props: {
           status={gitResult()?.status}
           branches={gitResult()?.branches}
           files={gitFiles()}
+          paths={commitPaths()}
           close={() => setCommitModalOpen(false)}
           refresh={() => void refetchGit("force")}
         />

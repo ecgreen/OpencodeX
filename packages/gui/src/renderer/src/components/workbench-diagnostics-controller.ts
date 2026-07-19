@@ -1,13 +1,14 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import type { GuiClient } from "../lib/client"
 import {
   workbenchDiagnostics,
+  type WorkbenchDiagnostic,
   type WorkbenchDiagnosticsResult,
 } from "../lib/store"
-import { diagnosticMatchesPath, errorText } from "./workbench-page-helpers"
-import type { WorkbenchPageProps } from "./workbench-page-types"
+import { workbenchPathKey } from "../lib/workbench"
 
 export function createWorkbenchDiagnosticsController(input: {
-  gui: Accessor<WorkbenchPageProps["gui"]>
+  gui: Accessor<GuiClient | undefined>
   directory: Accessor<string>
   path: Accessor<string>
 }) {
@@ -31,13 +32,13 @@ export function createWorkbenchDiagnosticsController(input: {
   async function refresh() {
     const gui = input.gui()
     const directory = input.directory()
-    const request = ++token
     if (!gui || !directory || loading()) return
+    const request = ++token
     setLoading(true)
     try {
       const result = await workbenchDiagnostics(gui, directory).catch((err): WorkbenchDiagnosticsResult => ({
         ok: false,
-        message: errorText(err, "Unable to run project checks."),
+        message: err instanceof Error ? err.message : "Unable to run project checks.",
         diagnostics: [],
       }))
       if (request !== token) return
@@ -50,4 +51,11 @@ export function createWorkbenchDiagnosticsController(input: {
   }
 
   return { diagnostics, active, loading, message, command, refresh }
+}
+
+function diagnosticMatchesPath(diagnostic: WorkbenchDiagnostic, path: string) {
+  const left = workbenchPathKey(diagnostic.path)
+  const right = workbenchPathKey(path)
+  if (!left || !right) return false
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
 }

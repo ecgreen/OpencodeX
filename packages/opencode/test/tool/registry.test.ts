@@ -37,6 +37,7 @@ import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { OpencodeXProject } from "@/opencodex/project"
+import { GuiBridge } from "@/opencodex/gui-bridge"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -66,6 +67,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Instruction.defaultLayer),
       Layer.provide(AppFileSystem.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
+      Layer.provide(GuiBridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
@@ -440,6 +442,7 @@ describe("tool.registry", () => {
       const agents = yield* Agent.Service
       const result = yield* loaded.execute({}, {
         sessionID: SessionID.make("ses_test"),
+        directory: process.cwd(),
         messageID: MessageID.make("msg_test"),
         agent: (yield* agents.defaultInfo()).name,
         abort: new AbortController().signal,

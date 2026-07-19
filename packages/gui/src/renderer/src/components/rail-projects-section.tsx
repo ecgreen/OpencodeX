@@ -1,6 +1,5 @@
 import { Button, IconButton } from "./ui"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import { For, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { projectSessionPreviewItems, sessionOrderBucket } from "../lib/app-session-lists"
 import { title } from "../lib/format"
@@ -123,7 +122,7 @@ export function RailProjectsSection(props: {
           >
             <div
               class="project-heading"
-              classList={{ recent: hasRecentProjectSession(props.projectSessions(row.project), props.snapshot) }}
+              classList={{ running: hasRunningProjectSession(props.projectSessions(row.project), props.snapshot) }}
               onPointerDown={(event) => startProjectPointerDrag(event, row.project.id)}
             >
               <Button appearance="ghost" class="project-toggle" title={`${props.projectExpanded(row.project.id) ? "Collapse" : "Expand"} project`} aria-expanded={props.projectExpanded(row.project.id)} onClick={() => props.toggleProject(row.project.id)}><Icon name={props.projectExpanded(row.project.id) ? "folder-open" : "folder"} /></Button>
@@ -265,8 +264,8 @@ function recentProjectSessions(sessions: Session[], snapshot?: GuiSnapshot) {
   return projectSessionPreviewItems(sessions, snapshot)
 }
 
-function hasRecentProjectSession(sessions: Session[], snapshot?: GuiSnapshot) {
-  return sessions.some((session) => sessionOrderBucket(snapshot, session) !== "inactive" || isRecentClientSessionUpdate(session.time.updated))
+function hasRunningProjectSession(sessions: Session[], snapshot?: GuiSnapshot) {
+  return sessions.some((session) => sessionOrderBucket(snapshot, session) === "in_progress")
 }
 
 function projectRowKey(row: ProjectRow) {

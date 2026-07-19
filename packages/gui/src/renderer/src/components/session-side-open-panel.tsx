@@ -1,35 +1,33 @@
 import type { LspStatus } from "@opencode-ai/sdk/v2/client"
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import type { DiffFile } from "../lib/store"
+import type { DiffFile, WorkbenchGitBranches, WorkbenchGitStatus } from "../lib/store"
 import { isWorkbenchImageContent, workbenchBufferDirty, workbenchNormalizeBrowserURL } from "../lib/workbench"
-import { compactPath } from "../lib/format"
-import { newBrowserID } from "./workbench-page-helpers"
+import { newBrowserID } from "../lib/browser-id"
 import { LazyCodeEditor } from "./lazy-code-editor"
-import { Icon } from "./icon"
-import { IconButton, Select, TextInput } from "./ui"
+import { Select } from "./ui"
 import { SessionContextPanel, sessionInspectorModel } from "./session-inspector"
 import { SessionSideDiffPanel } from "./session-side-git-view"
 import { createSessionSideBrowserController } from "./session-side-browser-controller"
+import { createSessionSideAgentController } from "./session-side-agent-controller"
 import { SessionSideBrowserHost } from "./session-side-browser-host"
 import { SessionSideEmptyState } from "./session-side-empty"
 import { createSessionSideFileController } from "./session-side-file-controller"
 import { SessionSideFileExplorer } from "./session-side-file-explorer"
 import { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
-import { SessionSideTabBar } from "./session-side-tab-bar"
-import { openTabDefaults, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
+import { openTabDefaults, openTabDirty, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
 import { OPEN_PANEL_EDIT_LIMIT, type OpenTab } from "./session-side-open-types"
-import { filePathFromInput, inputLabel, isBrowserInput, webLocationValue } from "./session-side-path"
+import { filePathFromInput, inputLabel, isBrowserInput, webInputURL } from "./session-side-path"
 import { SessionOpenTerminal, createSessionSideTerminalController } from "./session-side-terminal"
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
-
+import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-controller"
+import { SessionSideOpenChrome } from "./session-side-open-chrome"
 export function SessionSideOpenPanel(props: {
   sessionID: string
   active: boolean
   gui?: GuiClient
   directory?: string
   request?: SessionSidePanelRequest
-  closePanel: () => void
   contextModel: ReturnType<typeof sessionInspectorModel>
   contextOptions?: SessionSidePanelContextOption[]
   selectedContextID?: string
@@ -42,7 +40,10 @@ export function SessionSideOpenPanel(props: {
   gitFiles: DiffFile[]
   gitMessage: string
   gitLoading: boolean
-  openCommitModal: () => void
+  gitStatus?: WorkbenchGitStatus
+  gitBranches?: WorkbenchGitBranches
+  refreshGit: () => void
+  openCommitModal: (path?: string) => void
   gitActiveChange?: (state: { sessionID: string; active: boolean }) => void
 }) {
   const restoredState = restoreOpenPanelState(props.sessionID)
@@ -79,38 +80,87 @@ export function SessionSideOpenPanel(props: {
     createTab,
     updateTab: updateOpenTab,
     closeMenu: tabBar.closeNewMenu,
+    openURL: (url) => void openInputInNewTab(url),
   })
   const files = createSessionSideFileController({
     active: () => props.active,
     gui: () => props.gui,
     directory: activeDirectory,
+    tabs,
     activeID,
     activeTab,
+    selectTab: tabBar.select,
     createTab,
     updateTab: updateOpenTab,
     closeTab,
     addFileTab,
     hideWebTabs: browser.hideAll,
   })
-
+  const activeFilePath = createMemo(() => activeTab()?.kind === "file" ? activeTab()?.path ?? "" : "")
+  const diagnostics = createWorkbenchDiagnosticsController({
+    gui: () => props.gui,
+    directory: activeDirectory,
+    path: activeFilePath,
+  })
+  const agent = createSessionSideAgentController({
+    sessionID: () => props.sessionID,
+    directory: activeDirectory,
+    tabs,
+    activeTab,
+    selectTab: tabBar.select,
+    createTab,
+    updateTab: updateOpenTab,
+    openFile: files.openFile,
+    navigate: browser.navigate,
+    capture: browser.capture,
+    snapshot: browser.snapshot,
+  })
   createEffect(() => {
     const sessionID = props.sessionID
     if (sessionID === loadedSessionID) return
-    saveOpenPanelState(loadedSessionID, untrack(tabs), untrack(activeID))
+    const previousTabs = untrack(tabs)
+    const previousActiveID = untrack(activeID)
+    saveOpenPanelState(loadedSessionID, previousTabs, previousActiveID)
     browser.hideAll()
-    const next = restoreOpenPanelState(sessionID)
+    const next = loadedSessionID.startsWith("pending:")
+      ? { tabs: previousTabs, activeID: previousActiveID }
+      : restoreOpenPanelState(sessionID)
     loadedSessionID = sessionID
     setTabs(next.tabs)
     setActiveID(next.activeID)
     tabBar.clearDrag()
   })
-
   createEffect(() => props.gitActiveChange?.({ sessionID: props.sessionID, active: props.active && props.sessionID === loadedSessionID && activeTab()?.kind === "git" }))
-
+  createEffect(() => {
+    const path = activeFilePath()
+    if (!props.active || !path) return
+    void diagnostics.refresh()
+  })
+  createEffect(() => {
+    if (!props.active) return
+    const keydown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key === "p" && !event.shiftKey && event.target instanceof Element && event.target.closest(".session-side-panel")) {
+        event.preventDefault()
+        event.stopPropagation()
+        files.openExplorer()
+        return
+      }
+      if (key !== "pageup" && key !== "pagedown") return
+      const items = tabs()
+      if (items.length < 2) return
+      event.preventDefault()
+      event.stopPropagation()
+      const index = Math.max(0, items.findIndex((tab) => tab.id === activeID()))
+      tabBar.select(items[(index + (key === "pageup" ? -1 : 1) + items.length) % items.length].id)
+    }
+    document.addEventListener("keydown", keydown, true)
+    onCleanup(() => document.removeEventListener("keydown", keydown, true))
+  })
   createEffect(() => {
     saveOpenPanelState(loadedSessionID, tabs(), activeID())
   })
-
   createEffect(() => {
     const request = props.request
     if (!request?.token) return
@@ -128,11 +178,9 @@ export function SessionSideOpenPanel(props: {
       if (request.value) void openInputInNewTab(request.value, request.title)
     })
   })
-
   onCleanup(() => {
     saveOpenPanelState(loadedSessionID, tabs(), activeID())
   })
-
   function setActiveInput(value: string) {
     updateOpenTab(activeID(), { input: value })
   }
@@ -145,7 +193,7 @@ export function SessionSideOpenPanel(props: {
     return id
   }
 
-  function selectSingletonTab(kind: "context" | "git", title: string) {
+  function selectSingletonTab(kind: "context" | "files" | "git", title: string) {
     const existing = tabs().find((tab) => tab.kind === kind)
     if (existing) {
       if (activeTab()?.kind === "web" && existing.id !== activeID()) browser.hideAll()
@@ -157,20 +205,15 @@ export function SessionSideOpenPanel(props: {
     tabBar.closeNewMenu()
     return id
   }
-
   function addContextTab() {
     selectSingletonTab("context", "Context")
   }
-
   function addGitTab() {
     selectSingletonTab("git", "Git")
   }
-
   function addFileTab() {
-    createTab({ kind: "picker", title: "Open file" })
-    tabBar.closeNewMenu()
+    selectSingletonTab("files", "Files")
   }
-
   function addWebTab() {
     createTab({ kind: "web", input: "https://", title: "New webpage" })
     tabBar.closeNewMenu()
@@ -182,6 +225,11 @@ export function SessionSideOpenPanel(props: {
     const index = current.findIndex((tab) => tab.id === id)
     const next = current.filter((tab) => tab.id !== id)
     const closing = current.find((tab) => tab.id === id)
+    if (closing && openTabDirty(closing)) {
+      setActiveID(id)
+      updateOpenTab(id, { message: "Save or discard your changes before closing this tab." })
+      return
+    }
     if (closing?.kind === "web") browser.close(closing)
     if (closing?.kind === "terminal") terminals.close(closing)
     setTabs(next)
@@ -191,7 +239,7 @@ export function SessionSideOpenPanel(props: {
   async function openActiveInput() {
     const tab = activeTab()
     if (!tab) return
-    await openInput(tab.id, tab.input)
+    await openInput(tab.id, tab.kind === "web" ? webInputURL(tab.input) : tab.input)
   }
 
   async function openInputInNewTab(value: string, title?: string) {
@@ -202,6 +250,16 @@ export function SessionSideOpenPanel(props: {
   async function openInput(id: string, value: string, title?: string) {
     const trimmed = value.trim()
     if (!trimmed) return
+    if (trimmed === "opencodex://files") {
+      closeTab(id)
+      addFileTab()
+      return
+    }
+    if (trimmed === "opencodex://terminal") {
+      closeTab(id)
+      terminals.create()
+      return
+    }
     if (isBrowserInput(trimmed)) {
       const url = workbenchNormalizeBrowserURL(trimmed)
       updateOpenTab(id, {
@@ -236,47 +294,7 @@ export function SessionSideOpenPanel(props: {
 
   return (
     <section class="session-side-open">
-      <IconButton class="session-side-panel-close" icon="x" label="Close side panel" onClick={props.closePanel} />
-      <Show when={tabs().length > 0}>
-        <div class="session-open-chrome">
-          <SessionSideTabBar
-            controller={tabBar}
-            addGit={addGitTab}
-            addFile={addFileTab}
-            addTerminal={terminals.create}
-            addContext={addContextTab}
-            addWeb={addWebTab}
-          />
-          <Show when={activeTab()?.kind === "web"}>
-            <div class="session-open-bar">
-              <IconButton icon="chevronLeft" label="Back" disabled={!activeTab()?.state?.canGoBack} onClick={() => void browser.action("back")} />
-              <IconButton icon="chevronRight" label="Forward" disabled={!activeTab()?.state?.canGoForward} onClick={() => void browser.action("forward")} />
-              <IconButton icon={activeTab()?.state?.loading ? "stop" : "refresh"} label={activeTab()?.state?.loading ? "Stop loading" : "Refresh"} onClick={() => void browser.action(activeTab()?.state?.loading ? "stop" : "reload")} />
-              <div class="session-open-location">
-                <Icon name="browser" />
-                <TextInput
-                  value={webLocationValue(activeTab()?.input ?? "")}
-                  onInput={(event) => setActiveInput(event.currentTarget.value)}
-                  onKeyDown={(event) => event.key === "Enter" && void openActiveInput()}
-                  placeholder="Search or enter address"
-                />
-              </div>
-            </div>
-          </Show>
-          <Show when={activeTab()?.kind === "file"}>
-            <div class="session-open-file-bar">
-              <span><Icon name="file" /> {activeTab()?.path ? compactPath(activeTab()?.path ?? "") : "File"}</span>
-              <div class="session-open-file-actions">
-                <IconButton icon="folder-open" label="Open another file in this tab" onClick={files.openInActiveTab} />
-                <IconButton icon="save" label="Save file" disabled={!dirty()} onClick={() => void files.saveActiveFile()} />
-              </div>
-            </div>
-          </Show>
-        </div>
-      </Show>
-      <Show when={activeTab()?.message}>
-        {(message) => <div class="session-side-message">{message()}</div>}
-      </Show>
+      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={files.openInActiveTab} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} diagnostics={{ loading: diagnostics.loading(), message: diagnostics.message(), command: diagnostics.command(), active: diagnostics.active(), total: diagnostics.diagnostics().length, refresh: () => void diagnostics.refresh(), open: (path) => void files.openExplorerFile(path) }} />
       <Switch>
         <Match when={activeTab()?.kind === "context"}>
           <div class="session-side-context">
@@ -307,11 +325,17 @@ export function SessionSideOpenPanel(props: {
             empty={props.gitMessage}
             loading={props.gitLoading}
             files={props.gitFiles}
+            status={props.gitStatus}
+            branches={props.gitBranches}
+            gui={props.gui}
+            directory={activeDirectory()}
             request={props.request?.tab === "git" ? props.request : undefined}
             openCommitModal={props.openCommitModal}
+            openFile={(path) => void openInputInNewTab(path)}
+            refresh={props.refreshGit}
           />
         </Match>
-        <Match when={activeTab()?.kind === "picker"}>
+        <Match when={activeTab()?.kind === "files" || activeTab()?.kind === "picker"}>
           <SessionSideFileExplorer
             directory={activeDirectory()}
             filter={files.filter()}
@@ -340,8 +364,9 @@ export function SessionSideOpenPanel(props: {
         <Match when={activeTab()?.kind === "file" && activeTab()?.content?.type === "text"}>
           <LazyCodeEditor
             path={activeTab()?.path ?? ""}
-            value={activeTab()?.text ?? ""}
-            original={activeTab()?.original ?? ""}
+             value={activeTab()?.text ?? ""}
+             original={activeTab()?.original ?? ""}
+             diagnostics={diagnostics.active()}
             onChange={(value) => activeTab() && updateOpenTab(activeTab()!.id, { text: value })}
             onSave={() => void files.saveActiveFile()}
           />
@@ -350,10 +375,19 @@ export function SessionSideOpenPanel(props: {
           <SessionSideBrowserHost preview={browser.activePreview()} parked={browser.parkedID() === activeTab()?.id} available={Boolean(window.opencodex?.browser)} lifecycle={browser.lifecycle()} error={browser.error()} url={activeTab()?.url ?? ""} setHost={browser.setHost} />
         </Match>
         <Match when={activeTab()?.kind === "terminal"}>
-          <SessionOpenTerminal tab={activeTab()!} write={terminals.write} />
+          <SessionOpenTerminal tab={activeTab()!} write={terminals.write} rename={terminals.rename} />
         </Match>
         <Match when={true}>
-          <SessionSideEmptyState directory={props.directory} openContext={addContextTab} openGit={addGitTab} openFile={files.openExplorer} openTerminal={terminals.create} addWebTab={addWebTab} />
+          <SessionSideEmptyState
+            directory={props.directory}
+            diffs={props.diffs}
+            openContext={addContextTab}
+            openGit={addGitTab}
+            openFiles={files.openExplorer}
+            openChangedFile={(path) => void openInputInNewTab(path)}
+            openTerminal={terminals.create}
+            addWebTab={addWebTab}
+          />
         </Match>
       </Switch>
     </section>

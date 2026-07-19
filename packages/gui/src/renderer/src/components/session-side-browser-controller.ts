@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type Accessor } from "solid-js"
 import { workbenchNormalizeBrowserURL } from "../lib/workbench"
 import { createNativeBrowserController } from "./native-browser-controller"
 import type { OpenTab } from "./session-side-open-types"
@@ -15,7 +15,7 @@ export function createSessionSideBrowserController(input: {
   const [parkedID, setParkedID] = createSignal("")
   const previewTokens = new Map<string, number>()
   const native = createNativeBrowserController({
-    active: input.active,
+    active: () => input.active() && !untrack(parkedID),
     activeID: input.activeID,
     ids: () => input.tabs().filter((tab) => tab.kind === "web").map((tab) => tab.id),
     url: (id) => input.tabs().find((tab) => tab.id === id && tab.kind === "web")?.url,
@@ -70,6 +70,7 @@ export function createSessionSideBrowserController(input: {
   async function navigate(id: string, value: string) {
     const next = await native.navigate(id, workbenchNormalizeBrowserURL(value))
     if (next) refreshPreview(id)
+    return next?.url
   }
 
   async function action(value: "back" | "forward" | "reload" | "stop") {
@@ -77,6 +78,30 @@ export function createSessionSideBrowserController(input: {
     if (tab?.kind !== "web") return
     const next = await native.action(tab.id, value)
     if (next) refreshPreview(tab.id)
+  }
+
+  async function devtools() {
+    const tab = input.activeTab()
+    if (tab?.kind !== "web") return
+    await window.opencodex?.browser?.devtools(tab.id)
+  }
+
+  async function openExternal() {
+    const tab = input.activeTab()
+    if (tab?.kind !== "web" || !tab.url) return false
+    return window.opencodex?.browser?.external(tab.url) ?? false
+  }
+
+  async function screenshot(id = input.activeID()) {
+    return window.opencodex?.browser?.screenshot(id)
+  }
+
+  async function capture(id: string, expectedURL: string) {
+    return window.opencodex?.browser?.capture({ id, expectedURL })
+  }
+
+  async function snapshot(id = input.activeID()) {
+    return window.opencodex?.browser?.snapshot(id)
   }
 
   function close(tab: OpenTab) {
@@ -114,6 +139,11 @@ export function createSessionSideBrowserController(input: {
     error: native.error,
     navigate,
     action,
+    devtools,
+    openExternal,
+    screenshot,
+    capture,
+    snapshot,
     close,
     parkActive,
     hideAll: native.hideAll,

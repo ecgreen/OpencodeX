@@ -1,9 +1,11 @@
+import { GuiBridge } from "@/opencodex/gui-bridge"
 import { HttpApiEndpoint, HttpApiError, OpenApi } from "effect/unstable/httpapi"
+import { ConflictError, ForbiddenError, InvalidRequestError } from "../errors"
+import { WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 import { opencodexReadGroup } from "./opencodex-read-group"
 import {
   OPENCODEX_ROOT,
-  WorkbenchBridgeRegisterPayload,
   WorkbenchDataResult,
   WorkbenchGitBranchPayload,
   WorkbenchGitCommitPayload,
@@ -136,9 +138,28 @@ export const opencodexWorkbenchGroup = opencodexReadGroup.add(
   }).annotateMerge(
     OpenApi.annotations({ identifier: "opencodex.workbench.github.create_pull", summary: "Create a GitHub pull request browser handoff" }),
   ),
-  HttpApiEndpoint.post("workbenchBridgeRegister", `${OPENCODEX_ROOT}/gui-bridge/register`, {
-    payload: WorkbenchBridgeRegisterPayload,
-    success: described(WorkbenchOperationResult, "Register GUI bridge capabilities"),
-    error: HttpApiError.BadRequest,
-  }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.gui_bridge.register", summary: "Register GUI bridge capabilities" })),
+  HttpApiEndpoint.post("guiBridgeRegister", `${OPENCODEX_ROOT}/gui-bridge/register`, {
+    query: WorkspaceRoutingQuery,
+    payload: GuiBridge.RegisterPayload,
+    success: described(GuiBridge.MutationResult, "GUI bridge registered"),
+    error: [ForbiddenError, ConflictError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({ identifier: "opencodex.gui_bridge.register", summary: "Register GUI bridge capabilities" }),
+  ),
+  HttpApiEndpoint.post("guiBridgeUnregister", `${OPENCODEX_ROOT}/gui-bridge/unregister`, {
+    query: WorkspaceRoutingQuery,
+    payload: GuiBridge.ClientPayload,
+    success: described(GuiBridge.MutationResult, "GUI bridge unregistered"),
+    error: [ForbiddenError, ConflictError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({ identifier: "opencodex.gui_bridge.unregister", summary: "Unregister a GUI bridge client" }),
+  ),
+  HttpApiEndpoint.post("guiBridgeRespond", `${OPENCODEX_ROOT}/gui-bridge/respond`, {
+    query: WorkspaceRoutingQuery,
+    payload: GuiBridge.RespondPayload,
+    success: described(GuiBridge.MutationResult, "GUI bridge response accepted"),
+    error: [ForbiddenError, ConflictError, InvalidRequestError],
+  }).annotateMerge(
+    OpenApi.annotations({ identifier: "opencodex.gui_bridge.respond", summary: "Respond to a pending GUI bridge request" }),
+  ),
 )

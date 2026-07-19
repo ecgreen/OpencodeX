@@ -10,8 +10,10 @@ export function createSessionSideFileController(input: {
   active: Accessor<boolean>
   gui: Accessor<GuiClient | undefined>
   directory: Accessor<string>
+  tabs: Accessor<OpenTab[]>
   activeID: Accessor<string>
   activeTab: Accessor<OpenTab | undefined>
+  selectTab: (id: string) => void
   createTab: (input: Partial<OpenTab>) => string
   updateTab: (id: string, patch: Partial<OpenTab>) => void
   closeTab: (id: string) => void
@@ -25,6 +27,7 @@ export function createSessionSideFileController(input: {
   const [matches, setMatches] = createSignal<FileNode[]>([])
   const [searchState, setSearchState] = createSignal<"idle" | "loading" | "error">("idle")
   let searchToken = 0
+  let directoryGeneration = 0
 
   const rows = createMemo(() => flattenWorkbenchFileTree({
     root: filesByPath()[""] ?? [],
@@ -32,10 +35,11 @@ export function createSessionSideFileController(input: {
     expanded: expandedFolders(),
     filter: filter(),
   }))
-  const pickerOpen = createMemo(() => input.activeTab()?.kind === "picker")
+  const filesOpen = createMemo(() => input.activeTab()?.kind === "files" || input.activeTab()?.kind === "picker")
 
   createEffect(() => {
     const directory = input.directory()
+    directoryGeneration++
     setFilesByPath({})
     setExpandedFolders(new Set<string>())
     setFilter("")
@@ -45,7 +49,7 @@ export function createSessionSideFileController(input: {
 
   createEffect(() => {
     const directory = input.directory()
-    if (!input.active() || !pickerOpen() || !input.gui() || !directory || filesByPath()[""] !== undefined) return
+    if (!input.active() || !filesOpen() || !input.gui() || !directory || filesByPath()[""] !== undefined) return
     void refresh("")
   })
 
@@ -54,7 +58,7 @@ export function createSessionSideFileController(input: {
     const query = filter().trim()
     const directory = input.directory()
     const token = ++searchToken
-    if (!pickerOpen() || !gui || !directory || query.length < 2) {
+    if (!filesOpen() || !gui || !directory || query.length < 2) {
       setMatches([])
       setSearchState("idle")
       return
@@ -83,27 +87,45 @@ export function createSessionSideFileController(input: {
     onCleanup(() => document.removeEventListener("keydown", save))
   })
 
+  createEffect(() => {
+    const tab = input.activeTab()
+    if (!input.active() || tab?.kind !== "file" || !tab.path || tab.content || tab.message) return
+    void openFile(tab.id, tab.path, tab.title, tab.directory || input.directory())
+  })
+
+  createEffect(() => {
+    const tab = input.activeTab()
+    if (!input.active() || tab?.kind !== "file" || !tab.path || !input.gui()) return
+    const check = () => void checkExternalFile(tab.id)
+    const visible = () => {
+      if (document.visibilityState === "visible") check()
+    }
+    const timer = window.setTimeout(check, 250)
+    window.addEventListener("focus", check)
+    document.addEventListener("visibilitychange", visible)
+    onCleanup(() => {
+      window.clearTimeout(timer)
+      window.removeEventListener("focus", check)
+      document.removeEventListener("visibilitychange", visible)
+    })
+  })
+
   function openExplorer() {
-    if (pickerOpen()) return
+    const existing = input.tabs().find((tab) => tab.kind === "files" || tab.kind === "picker")
+    if (existing) {
+      input.selectTab(existing.id)
+      queueMicrotask(focusFilter)
+      return
+    }
     input.addFileTab()
+    queueMicrotask(focusFilter)
   }
 
   function openInActiveTab() {
-    const tab = input.activeTab()
-    if (!tab) {
-      input.addFileTab()
-      return
-    }
-    input.hideWebTabs()
-    input.updateTab(tab.id, { kind: "picker", input: "", title: "Open file", message: "" })
+    openExplorer()
   }
 
   function closeExplorer() {
-    const tab = input.activeTab()
-    if (tab?.kind === "picker" && tab.path) {
-      input.updateTab(tab.id, { kind: "file", input: tab.path, title: compactPath(tab.path), message: "" })
-      return
-    }
     input.closeTab(input.activeID())
   }
 
@@ -111,12 +133,14 @@ export function createSessionSideFileController(input: {
     const gui = input.gui()
     const directory = input.directory()
     if (!gui || !directory) return
+    const generation = directoryGeneration
     setBusy(true)
     try {
       const files = await listWorkbenchFiles(gui, path, directory)
+      if (generation !== directoryGeneration || directory !== input.directory()) return
       setFilesByPath((current) => ({ ...current, [path]: files }))
     } finally {
-      setBusy(false)
+      if (generation === directoryGeneration) setBusy(false)
     }
   }
 
@@ -133,8 +157,9 @@ export function createSessionSideFileController(input: {
     const target = workbenchPathKey(path)
     if (!target) return
     setFilter("")
-    if (pickerOpen()) {
-      await openFile(input.activeID(), target, undefined, input.directory())
+    const existing = input.tabs().find((tab) => tab.kind === "file" && workbenchPathKey(tab.path ?? "") === target)
+    if (existing) {
+      input.selectTab(existing.id)
       return
     }
     const id = input.createTab({ input: target, title: compactPath(target), directory: input.directory() })
@@ -169,11 +194,67 @@ export function createSessionSideFileController(input: {
         input.updateTab(tab.id, { message: result.message ?? "File was not saved." })
         return
       }
-      input.updateTab(tab.id, { original: tab.text, message: result.message ?? "Saved." })
+      input.updateTab(tab.id, { original: tab.text, externalText: undefined, externallyChanged: false, message: result.message ?? "Saved." })
     } catch (cause) {
       input.updateTab(tab.id, { message: cause instanceof Error ? cause.message : "Failed to save file." })
     }
   }
 
-  return { busy, filter, setFilter, matches, searchState, rows, openExplorer, openInActiveTab, closeExplorer, toggleFolder, openExplorerFile, openFile, saveActiveFile }
+  async function checkExternalFile(id: string) {
+    const gui = input.gui()
+    const started = input.tabs().find((item) => item.id === id)
+    if (!gui || started?.kind !== "file" || !started.path || started.content?.type !== "text" || started.externallyChanged) return
+    const content = await readWorkbenchFile(gui, started.path, started.directory || input.directory()).catch(() => undefined)
+    const tab = input.tabs().find((item) => item.id === id)
+    if (content?.type !== "text" || tab?.kind !== "file" || tab.path !== started.path || content.content === tab.original) return
+    if (tab.text === tab.original) {
+      input.updateTab(id, { content, text: content.content, original: content.content, message: "Reloaded after an external change." })
+      return
+    }
+    input.updateTab(id, {
+      externalText: content.content,
+      externallyChanged: true,
+      message: "This file changed on disk while you have unsaved edits.",
+    })
+  }
+
+  function reloadExternalFile() {
+    const tab = input.activeTab()
+    if (tab?.kind !== "file" || tab.externalText === undefined) return
+    const content = tab.content?.type === "text" ? { ...tab.content, content: tab.externalText } : tab.content
+    input.updateTab(tab.id, {
+      content,
+      text: tab.externalText,
+      original: tab.externalText,
+      externalText: undefined,
+      externallyChanged: false,
+      message: "Reloaded the version on disk.",
+    })
+  }
+
+  function keepLocalChanges() {
+    const tab = input.activeTab()
+    if (tab?.kind !== "file" || tab.externalText === undefined) return
+    input.updateTab(tab.id, {
+      original: tab.externalText,
+      externalText: undefined,
+      externallyChanged: false,
+      message: "Keeping your buffer. Saving will replace the version on disk.",
+    })
+  }
+
+  function discardActiveChanges() {
+    const tab = input.activeTab()
+    if (tab?.kind !== "file") return
+    input.updateTab(tab.id, { text: tab.original, externalText: undefined, externallyChanged: false, message: "Changes discarded." })
+  }
+
+  function focusFilter() {
+    document.querySelector<HTMLInputElement>(".session-open-file-explorer .workbench-filter input")?.focus()
+  }
+
+  return {
+    busy, filter, setFilter, matches, searchState, rows, openExplorer, openInActiveTab, closeExplorer, toggleFolder,
+    openExplorerFile, openFile, saveActiveFile, reloadExternalFile, keepLocalChanges, discardActiveChanges,
+  }
 }

@@ -29,7 +29,9 @@ import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
 import { OpencodeXState } from "@/opencodex/state"
+import { OpencodeXSettings } from "@/opencodex/settings"
 import { OpencodeXView } from "@/opencodex/view"
+import { GuiBridge } from "@/opencodex/gui-bridge"
 import { Installation } from "@/installation"
 import { InstanceLayer } from "@/project/instance-layer"
 import { Plugin } from "@/plugin"
@@ -217,8 +219,10 @@ export function createRoutes(
       OpencodeXProject.defaultLayer,
       OpencodeXSessionState.defaultLayer,
       OpencodeXState.defaultLayer,
+      OpencodeXSettings.defaultLayer,
       OpencodeXSwarm.defaultLayer,
       OpencodeXView.defaultLayer,
+      GuiBridge.defaultLayer,
       Permission.defaultLayer,
       Plugin.defaultLayer,
       Project.defaultLayer,

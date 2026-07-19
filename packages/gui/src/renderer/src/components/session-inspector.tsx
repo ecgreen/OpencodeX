@@ -84,6 +84,8 @@ export function SessionContextPanel(props: {
           <Metric label="Tokens" value={props.model.context.tokens ? props.model.context.tokens.toLocaleString() : "0"} />
           <Metric label="Context" value={props.model.context.percent === undefined ? "unknown" : `${props.model.context.percent}%`} />
           <Metric label="Cost" value={props.model.context.cost} />
+          <Metric label="Agent" value={props.model.runtime.agent} />
+          <Metric label="Model" value={props.model.runtime.model} />
         </div>
       </InspectorSection>
       <Show when={props.model.visibleSections.mcp}>
@@ -171,6 +173,10 @@ export function sessionInspectorModel(input: {
   return {
     activeTodos,
     context: sessionContext(input.session, input.data, input.providers),
+    runtime: {
+      agent: input.session.agent || "default",
+      model: input.session.model ? `${input.session.model.providerID}/${input.session.model.id}` : "session default",
+    },
     mcpRows,
     visibleSections: {
       todo: activeTodos.length > 0,

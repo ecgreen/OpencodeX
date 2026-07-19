@@ -9,7 +9,6 @@ import {
   listWorkbenchFiles,
   readWorkbenchFile,
   renameWorkbenchFile,
-  registerGuiBridge,
   workbenchDiagnostics,
   workbenchGitBranches,
   workbenchGitDiff,
@@ -851,7 +850,6 @@ describe("Workbench store wrappers", () => {
     await workbenchGitStashOperation(gui, "drop", { ref: "stash@{0}" })
     expect(await workbenchGithubData(gui, "pulls")).toEqual({ ok: true, data: [{ number: 1, title: "Preview" }] })
     await workbenchGithubPost(gui, "checkout-pull", { number: 1 })
-    await registerGuiBridge(gui, { browserBridge: { url: "http://127.0.0.1:4321", token: "secret" } })
 
     expect(calls.map((call) => [call.method, new URL(call.url).pathname])).toEqual([
       ["GET", "/experimental/opencodex/workbench/git/status"],
@@ -869,7 +867,6 @@ describe("Workbench store wrappers", () => {
       ["POST", "/experimental/opencodex/workbench/git/stash/drop"],
       ["GET", "/experimental/opencodex/workbench/github/pulls"],
       ["POST", "/experimental/opencodex/workbench/github/checkout-pull"],
-      ["POST", "/experimental/opencodex/gui-bridge/register"],
     ])
     expect(calls[5]?.body).toBe(JSON.stringify({ paths: ["src/app.tsx", "src/store.ts"] }))
     expect(calls[6]?.body).toBe(JSON.stringify({ message: "feat(gui): add workbench", body: "Adds the first Workbench commit flow." }))
@@ -878,7 +875,6 @@ describe("Workbench store wrappers", () => {
     expect(calls[11]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
     expect(calls[12]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
     expect(calls[14]?.body).toBe(JSON.stringify({ number: 1 }))
-    expect(calls[15]?.body).toBe(JSON.stringify({ browserBridge: { url: "http://127.0.0.1:4321", token: "secret" } }))
   })
 
   test("loads workbench diffs from the selected project directory", async () => {

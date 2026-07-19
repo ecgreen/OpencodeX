@@ -1,20 +1,3 @@
-.question-panel .question-option.selected strong>span {
-  border-color: color-mix(in srgb,var(--primary) 70%,var(--border-active));
-  color: var(--primary);
-  background: color-mix(in srgb,var(--primary) 12%,transparent);
-}
-
-.question-panel .question-option:hover strong>span {
-  border-color: color-mix(in srgb,var(--primary) 70%,var(--border-active));
-  color: var(--primary);
-  background: color-mix(in srgb,var(--primary) 12%,transparent);
-}
-
-.question-panel .custom-answer:focus {
-  border-color: color-mix(in srgb,var(--primary) 58%,var(--border-active));
-  box-shadow: 0 0 0 3px color-mix(in srgb,var(--primary) 12%,transparent);
-}
-
 .text-dialog-card>input:focus {
   border-color: color-mix(in srgb,var(--primary) 68%,var(--border-active));
   box-shadow: 0 0 0 2px color-mix(in srgb,var(--primary) 18%,transparent);

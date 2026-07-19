@@ -62,7 +62,6 @@ export {
   listPlugins,
   listWorkbenchFiles,
   readWorkbenchFile,
-  registerGuiBridge,
   renameWorkbenchFile,
   togglePlugin,
   workbenchDiagnostics,

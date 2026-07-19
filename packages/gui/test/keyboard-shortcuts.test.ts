@@ -38,11 +38,12 @@ describe("GUI keyboard shortcuts", () => {
     expect(shortcut("2", { ctrlKey: true })).toEqual({ type: "route", route: "swarms" })
     expect(shortcut("3", { metaKey: true })).toEqual({ type: "route", route: "views" })
     expect(shortcut("4", { metaKey: true })).toEqual({ type: "route", route: "plugins" })
-    expect(shortcut("5", { ctrlKey: true })).toEqual({ type: "route", route: "workbench" })
+    expect(shortcut("5", { ctrlKey: true })).toBeUndefined()
   })
 
   test("returns command actions for non-navigation shortcuts", () => {
     expect(shortcut("b", { ctrlKey: true })).toEqual({ type: "toggle-rail" })
+    expect(shortcut("j", { ctrlKey: true, editing: true })).toEqual({ type: "toggle-workspace" })
     expect(shortcut("/", { ctrlKey: true })).toEqual({ type: "focus-composer" })
     expect(shortcut("n", { ctrlKey: true })).toEqual({ type: "create-session" })
     expect(shortcut("r", { ctrlKey: true })).toEqual({ type: "refresh" })
@@ -87,6 +88,7 @@ describe("GUI keyboard shortcuts", () => {
       clearNotice: () => calls.push("clear-notice"),
       openCommandPalette: () => calls.push("palette"),
       toggleRail: () => calls.push("toggle-rail"),
+      toggleWorkspace: () => calls.push("toggle-workspace"),
       focusComposer: () => calls.push("focus-composer"),
       createSession: () => calls.push("create-session"),
       refresh: () => calls.push("refresh"),
@@ -104,8 +106,9 @@ describe("GUI keyboard shortcuts", () => {
     runGuiShortcutAction({ type: "session-switcher", direction: -1 }, handlers)
     runGuiShortcutAction({ type: "open-mru-session", index: 2 }, handlers)
     runGuiShortcutAction({ type: "refresh" }, handlers)
+    runGuiShortcutAction({ type: "toggle-workspace" }, handlers)
 
-    expect(calls).toEqual(["abort:ses_busy", "route:dashboard", "switcher:-1", "mru:2", "refresh"])
+    expect(calls).toEqual(["abort:ses_busy", "route:dashboard", "switcher:-1", "mru:2", "refresh", "toggle-workspace"])
   })
 })
 

@@ -104,6 +104,10 @@ import type {
   McpStatusResponses,
   OpencodexGuiBridgeRegisterErrors,
   OpencodexGuiBridgeRegisterResponses,
+  OpencodexGuiBridgeRespondErrors,
+  OpencodexGuiBridgeRespondResponses,
+  OpencodexGuiBridgeUnregisterErrors,
+  OpencodexGuiBridgeUnregisterResponses,
   OpencodexJobCancelErrors,
   OpencodexJobCancelResponses,
   OpencodexJobClaimErrors,
@@ -163,6 +167,11 @@ import type {
   OpencodexSessionStateUpdateResponses,
   OpencodexSessionSyncErrors,
   OpencodexSessionSyncResponses,
+  OpencodexSettingsGetErrors,
+  OpencodexSettingsGetResponses,
+  OpencodexSettingsUpdateErrors,
+  OpencodeXSettingsUpdateInput,
+  OpencodexSettingsUpdateResponses,
   OpencodexStateCapabilitiesErrors,
   OpencodexStateCapabilitiesResponses,
   OpencodexStateEventErrors,
@@ -2407,6 +2416,45 @@ export class Mcp extends HeyApiClient {
   }
 }
 
+export class Settings extends HeyApiClient {
+  /**
+   * Get OpenCodeX-only settings
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexSettingsGetResponses,
+      OpencodexSettingsGetErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/settings", ...options })
+  }
+
+  /**
+   * Update OpenCodeX-only settings
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXSettingsUpdateInput?: OpencodeXSettingsUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXSettingsUpdateInput", map: "body" }] }])
+    return (options?.client ?? this.client).patch<
+      OpencodexSettingsUpdateResponses,
+      OpencodexSettingsUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Project extends HeyApiClient {
   /**
    * List OpencodeX projects
@@ -3666,6 +3714,7 @@ export class Git extends HeyApiClient {
     parameters?: {
       message?: string
       body?: string
+      paths?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3676,6 +3725,7 @@ export class Git extends HeyApiClient {
           args: [
             { in: "body", key: "message" },
             { in: "body", key: "body" },
+            { in: "body", key: "paths" },
           ],
         },
       ],
@@ -4055,20 +4105,203 @@ export class GuiBridge extends HeyApiClient {
    */
   public register<ThrowOnError extends boolean = false>(
     parameters?: {
-      browserBridge?: {
-        url: string
-        token: string
-      }
+      directory?: string
+      workspace?: string
+      clientID?: string
+      token?: string
+      capabilities?: Array<
+        "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+      >
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "browserBridge" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "clientID" },
+            { in: "body", key: "token" },
+            { in: "body", key: "capabilities" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).post<
       OpencodexGuiBridgeRegisterResponses,
       OpencodexGuiBridgeRegisterErrors,
       ThrowOnError
     >({
       url: "/experimental/opencodex/gui-bridge/register",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Unregister a GUI bridge client
+   */
+  public unregister<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      clientID?: string
+      token?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "clientID" },
+            { in: "body", key: "token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexGuiBridgeUnregisterResponses,
+      OpencodexGuiBridgeUnregisterErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/gui-bridge/unregister",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Respond to a pending GUI bridge request
+   */
+  public respond<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      body?:
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "workspace.open"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    path: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.navigate"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.state"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.screenshot"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                    dataURL: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.snapshot"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                    text: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "body", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexGuiBridgeRespondResponses,
+      OpencodexGuiBridgeRespondErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/gui-bridge/respond",
       ...options,
       ...params,
       headers: {
@@ -4508,6 +4741,11 @@ export class View extends HeyApiClient {
 }
 
 export class Opencodex extends HeyApiClient {
+  private _settings?: Settings
+  get settings(): Settings {
+    return (this._settings ??= new Settings({ client: this.client }))
+  }
+
   private _project?: Project
   get project(): Project {
     return (this._project ??= new Project({ client: this.client }))

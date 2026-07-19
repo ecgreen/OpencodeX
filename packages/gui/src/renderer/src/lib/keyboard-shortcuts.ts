@@ -1,4 +1,4 @@
-export type GuiShortcutRouteName = "dashboard" | "projects" | "swarms" | "views" | "plugins" | "workbench"
+export type GuiShortcutRouteName = "dashboard" | "projects" | "swarms" | "views" | "plugins"
 
 export type GuiKeyboardHelpEntry = {
   title: string
@@ -13,6 +13,7 @@ export type GuiShortcutAction =
   | { type: "open-command-palette" }
   | { type: "prevent-global-shortcut" }
   | { type: "toggle-rail" }
+  | { type: "toggle-workspace" }
   | { type: "focus-composer" }
   | { type: "create-session" }
   | { type: "refresh" }
@@ -36,6 +37,7 @@ export type GuiShortcutHandlers = {
   clearNotice?: () => void
   openCommandPalette: () => void
   toggleRail: () => void
+  toggleWorkspace: () => void
   focusComposer: () => void
   createSession: () => void
   refresh: () => void
@@ -53,7 +55,6 @@ const ROUTE_SHORTCUTS = [
   { key: "2", route: "swarms", title: "Open swarms", shortcut: "Ctrl+2" },
   { key: "3", route: "views", title: "Open views", shortcut: "Ctrl+3" },
   { key: "4", route: "plugins", title: "Open plugins", shortcut: "Ctrl+4" },
-  { key: "5", route: "workbench", title: "Open workbench", shortcut: "Ctrl+5" },
 ] as const
 
 const ROUTES_BY_KEY = new Map<string, GuiShortcutRouteName>(
@@ -61,6 +62,7 @@ const ROUTES_BY_KEY = new Map<string, GuiShortcutRouteName>(
 )
 
 export const GUI_NAVIGATION_SHORTCUTS: readonly GuiKeyboardHelpEntry[] = [
+  { title: "Toggle session workspace", category: "Navigation", shortcut: "Ctrl+J" },
   { title: "Next recent session", category: "Navigation", shortcut: "Ctrl+Tab" },
   { title: "Previous recent session", category: "Navigation", shortcut: "Ctrl+Shift+Tab" },
   { title: "Open recent session 1-9", category: "Navigation", shortcut: "Alt+1-9" },
@@ -73,6 +75,7 @@ export const GUI_NAVIGATION_SHORTCUTS: readonly GuiKeyboardHelpEntry[] = [
 
 const DIRECT_ACTIONS_BY_KEY: Record<string, GuiShortcutAction | undefined> = {
   b: { type: "toggle-rail" },
+  j: { type: "toggle-workspace" },
   "/": { type: "focus-composer" },
   n: { type: "create-session" },
 }
@@ -113,6 +116,7 @@ export function guiShortcutAction(
   if (event.shiftKey && key === "c") return { type: "copy-last-assistant" }
   if (key === "p" || key === "k") return commandPaletteShortcutAction(context)
   if (key === "r") return context.dialogOpen ? { type: "prevent-global-shortcut" } : { type: "refresh" }
+  if (key === "j") return context.dialogOpen ? { type: "prevent-global-shortcut" } : { type: "toggle-workspace" }
   if (context.dialogOpen || context.editing)
     return GLOBAL_SHORTCUT_KEYS.has(key) ? { type: "prevent-global-shortcut" } : undefined
   const action = DIRECT_ACTIONS_BY_KEY[key]
@@ -127,6 +131,7 @@ export function runGuiShortcutAction(action: GuiShortcutAction, handlers: GuiSho
   if (action.type === "open-command-palette") return handlers.openCommandPalette()
   if (action.type === "prevent-global-shortcut") return
   if (action.type === "toggle-rail") return handlers.toggleRail()
+  if (action.type === "toggle-workspace") return handlers.toggleWorkspace()
   if (action.type === "focus-composer") return handlers.focusComposer()
   if (action.type === "create-session") return handlers.createSession()
   if (action.type === "refresh") return handlers.refresh()

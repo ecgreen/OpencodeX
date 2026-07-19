@@ -63,7 +63,7 @@
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
 }
 
-.session-open-empty-actions button[data-tone=terminal] {
+.session-open-empty-actions button[data-empty-tone=terminal] {
   --empty-action-tone: var(--warning) ;
 }
 

@@ -1,4 +1,13 @@
-import type { BrowserState, ContextPath, GuiConnection, TerminalDataEvent, TerminalExitEvent, TerminalResult } from "../preload/index"
+import type {
+  BrowserSnapshot,
+  BrowserCapture,
+  BrowserState,
+  ContextPath,
+  GuiConnection,
+  TerminalDataEvent,
+  TerminalExitEvent,
+  TerminalResult,
+} from "../preload/index"
 
 declare global {
   interface Window {
@@ -27,6 +36,9 @@ declare global {
         navigate(input: { id: string; url: string }): Promise<BrowserState | undefined>
         action(input: { id: string; action: "back" | "forward" | "reload" | "stop" }): Promise<BrowserState | undefined>
         screenshot(id: string): Promise<string | undefined>
+        capture(input: { id: string; expectedURL: string }): Promise<BrowserCapture | undefined>
+        snapshot(id: string): Promise<BrowserSnapshot | undefined>
+        external(url: string): Promise<boolean>
         devtools(id: string): Promise<BrowserState | undefined>
         destroy(id: string): Promise<boolean | undefined>
       }

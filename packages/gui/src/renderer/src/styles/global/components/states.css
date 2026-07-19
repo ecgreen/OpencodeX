@@ -116,10 +116,6 @@ textarea:disabled {
   border-color: var(--warning);
 }
 
-.custom-answer:focus {
-  border-color: color-mix(in srgb,var(--text) 38%,transparent);
-}
-
 .inspector-status.failed {
   border-color: color-mix(in srgb,var(--error) 45%,var(--border-subtle));
 }
@@ -292,11 +288,6 @@ select:focus-visible {
 }
 
 textarea:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-input:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
