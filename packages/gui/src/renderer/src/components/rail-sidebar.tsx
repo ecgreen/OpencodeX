@@ -21,6 +21,9 @@ export type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSe
 export function RailSidebar(props: {
   snapshot?: GuiSnapshot
   sessions: Session[]
+  hasMoreSessions: boolean
+  loadingMoreSessions: boolean
+  loadMoreSessions: () => void
   pinnedSessions: Session[]
   pinnedViews: GuiSnapshot["views"]
   navItems: readonly RailNavItem[]
@@ -110,9 +113,10 @@ export function RailSidebar(props: {
         openRoute={props.openRoute}
       />
       <div class="rail-scroll">
-        <For each={sectionOrder()}>
-          {(section) => (
-            <Switch>
+        <Show when={!props.railCollapsed}>
+          <For each={sectionOrder()}>
+            {(section) => (
+              <Switch>
               <Match when={section === "pinned"}>
                 <RailPinnedSection
                   snapshot={props.snapshot}
@@ -208,6 +212,9 @@ export function RailSidebar(props: {
                   dragTarget={props.dragTarget}
                   dropTarget={props.dropTarget}
                   sessionPinned={props.sessionPinned}
+                  hasMore={props.hasMoreSessions}
+                  loadingMore={props.loadingMoreSessions}
+                  loadMore={props.loadMoreSessions}
                   toggle={() => props.toggleRailSection("prior")}
                   openSession={props.openSession}
                   toggleSessionPinned={props.toggleSessionPinned}
@@ -249,9 +256,10 @@ export function RailSidebar(props: {
                   moveSection={(offset) => props.moveRailSection("views", offset)}
                 />
               </Match>
-            </Switch>
-          )}
-        </For>
+              </Switch>
+            )}
+          </For>
+        </Show>
       </div>
       <div class="rail-footer">
         <IconButton

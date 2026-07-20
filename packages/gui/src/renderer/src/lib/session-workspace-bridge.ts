@@ -19,8 +19,10 @@ export type SessionWorkspaceResult =
 
 const DEFAULT_MOUNT_TIMEOUT_MS = 15_000
 
+type RequestHandler = (request: SessionWorkspaceRequest, signal: AbortSignal) => Promise<SessionWorkspaceResult>
+
 export function createSessionWorkspaceBridge() {
-  const requestHandlers = new Map<string, (request: SessionWorkspaceRequest) => Promise<SessionWorkspaceResult>>()
+  const requestHandlers = new Map<string, { handler: RequestHandler; controller: AbortController }>()
   const targetHandlers = new Map<string, (target: SessionWorkspaceTarget) => void>()
   const pendingRequests = new Map<string, Array<{
     request: SessionWorkspaceRequest
@@ -55,17 +57,21 @@ export function createSessionWorkspaceBridge() {
 
   function registerRequestHandler(
     sessionID: string,
-    handler: (request: SessionWorkspaceRequest) => Promise<SessionWorkspaceResult>,
+    handler: RequestHandler,
   ) {
-    requestHandlers.set(sessionID, handler)
+    requestHandlers.get(sessionID)?.controller.abort()
+    const registration = { handler, controller: new AbortController() }
+    requestHandlers.set(sessionID, registration)
     const pending = pendingRequests.get(sessionID) ?? []
     pendingRequests.delete(sessionID)
     pending.forEach((entry) => {
       clearTimeout(entry.timer)
-      void invoke(sessionID, handler, entry.request).then(entry.resolve, entry.reject)
+      void invoke(sessionID, registration, entry.request).then(entry.resolve, entry.reject)
     })
     return () => {
-      if (requestHandlers.get(sessionID) === handler) requestHandlers.delete(sessionID)
+      if (requestHandlers.get(sessionID) !== registration) return
+      registration.controller.abort()
+      requestHandlers.delete(sessionID)
     }
   }
 
@@ -101,17 +107,27 @@ export function createSessionWorkspaceBridge() {
 
   function invoke(
     sessionID: string,
-    handler: (request: SessionWorkspaceRequest) => Promise<SessionWorkspaceResult>,
+    registration: { handler: RequestHandler; controller: AbortController },
     request: SessionWorkspaceRequest,
   ) {
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    registration.controller.signal.addEventListener("abort", abort, { once: true })
     const result = withTimeout(
-      (requestTails.get(sessionID) ?? Promise.resolve()).then(() => handler(request)),
+      (requestTails.get(sessionID) ?? Promise.resolve()).then(async () => {
+        if (controller.signal.aborted || requestHandlers.get(sessionID) !== registration) throw new Error(`Session workspace ${sessionID} is no longer mounted.`)
+        const value = await registration.handler(request, controller.signal)
+        if (controller.signal.aborted || requestHandlers.get(sessionID) !== registration) throw new Error(`Session workspace ${sessionID} is no longer mounted.`)
+        return value
+      }),
       DEFAULT_MOUNT_TIMEOUT_MS,
       `Session workspace ${sessionID} did not complete the operation in time.`,
+      abort,
     )
     const settled = result.then(() => undefined, () => undefined)
     requestTails.set(sessionID, settled)
     void settled.then(() => {
+      registration.controller.signal.removeEventListener("abort", abort)
       if (requestTails.get(sessionID) === settled) requestTails.delete(sessionID)
     })
     return result
@@ -120,9 +136,12 @@ export function createSessionWorkspaceBridge() {
   return { request, registerRequestHandler, openTarget, registerTargetHandler }
 }
 
-function withTimeout<T>(promise: Promise<T>, timeout: number, message: string) {
+function withTimeout<T>(promise: Promise<T>, timeout: number, message: string, abort: () => void) {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), timeout)
+    const timer = setTimeout(() => {
+      abort()
+      reject(new Error(message))
+    }, timeout)
     void promise.then(
       (value) => { clearTimeout(timer); resolve(value) },
       (cause) => { clearTimeout(timer); reject(cause) },

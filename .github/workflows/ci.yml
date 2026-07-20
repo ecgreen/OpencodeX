@@ -44,7 +44,7 @@ jobs:
             exit 0
           fi
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
-          if grep -Eq '^(packages/gui/|packages/sdk/js/|packages/opencode/src/(server|session|opencodex)/|packages/core/|packages/ui/|bun.lock$|package.json$)' changed-files.txt; then
+          if grep -Eq '^(packages/gui/|packages/sdk/js/|packages/opencode/src/(server|session|opencodex|file)/|packages/core/|packages/ui/|bun.lock$|package.json$)' changed-files.txt; then
             echo "gui=true" >> "$GITHUB_OUTPUT"
           else
             echo "gui=false" >> "$GITHUB_OUTPUT"
@@ -118,6 +118,21 @@ jobs:
       - name: Run rendered GUI smoke
         working-directory: packages/gui
         run: bun run test:e2e
+      - name: Enforce production renderer bundle budgets
+        working-directory: packages/gui
+        run: bun run build:renderer && bun run check:bundle-size
+      - name: Run production-renderer performance gates
+        working-directory: packages/gui
+        run: bun run test:e2e:performance
+      - name: Upload GUI performance reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gui-performance-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+          path: packages/gui/.artifacts/e2e-performance
       - name: Upload failing GUI artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -137,7 +152,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: ./.github/actions/setup-bun
       - name: Build sidecar
-        run: bun ./packages/opencode/script/build.ts --target opencode-windows-x64 --skip-embed-web-ui --no-minify
+        run: bun ./packages/opencode/script/build.ts --target win32-x64 --gui-coordinator --no-minify --skip-install
       - name: Package and smoke GUI
         working-directory: packages/gui
         run: bun run package && bun run smoke:packaged

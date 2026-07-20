@@ -7,7 +7,7 @@ import { DialogConfirm } from "@tui/ui/dialog-confirm"
 import { DialogFolderPicker } from "@tui/ui/dialog-folder-picker"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { DialogSelect } from "@tui/ui/dialog-select"
-import { createMemo, createResource, createSignal, onMount } from "solid-js"
+import { createMemo, createSignal, onMount } from "solid-js"
 import { refreshOpencodeXSidebar } from "./opencodex-refresh"
 import { projectTitle } from "./opencodex-sidebar-model"
 import type { OpencodeXDialogContext, OpencodeXProjectInfo, OpencodeXProjectValidation } from "./opencodex-sidebar-types"
@@ -51,21 +51,19 @@ function OpencodeXProjectManager() {
   const { theme } = useTheme()
   const [toDelete, setToDelete] = createSignal<string>()
   const [currentProjectID, setCurrentProjectID] = createSignal<string>()
-  const [refresh, setRefresh] = createSignal(0)
-  const [projects, { refetch }] = createResource(refresh, () => sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"))
+  const projects = createMemo(() => sync.data.opencodex_project as OpencodeXProjectInfo[])
   const sessionIDs = createMemo(() => new Set(sync.data.session.filter((session) => !session.parentID).map((session) => session.id)))
   const list = () => {
-    setRefresh((value) => value + 1)
-    void refetch()
+    void sync.session.refresh()
     refreshOpencodeXSidebar()
   }
   const options = createMemo(() => (projects() ?? []).map((project) => {
-    const count = project.sessions.filter((session) => sessionIDs().has(session.id)).length
+    const count = project.sessionIDs.filter((sessionID) => sessionIDs().has(sessionID)).length
     const deleting = toDelete() === project.id
     return {
       title: deleting ? "Press delete again to confirm" : projectTitle(project),
       value: project.id,
-      description: `${project.folders.length} folder${project.folders.length !== 1 ? "s" : ""}, ${count} conversation${count !== 1 ? "s" : ""}${project.sessions.some((session) => deriveStatus(session.id, sync) !== "dormant") ? ", active" : ""}`,
+      description: `${project.folders.length} folder${project.folders.length !== 1 ? "s" : ""}, ${count} conversation${count !== 1 ? "s" : ""}${project.sessionIDs.some((sessionID) => deriveStatus(sessionID, sync) !== "dormant") ? ", active" : ""}`,
       bg: deleting ? theme.error : undefined,
       footer: project.folders[0]?.path ?? "",
     }

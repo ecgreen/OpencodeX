@@ -1,4 +1,3 @@
-import { Button } from "./ui"
 import { OpencodeXLogo } from "./chrome"
 import { DashboardSection } from "./dashboard-primitives"
 
@@ -8,9 +7,9 @@ export function AppLoadingSkeleton() {
       <OpencodeXLogo />
       <section class="dashboard-sections app-loading-sections">
         <SessionsPanel />
-        <CardPanel title="Projects" kind="projects" />
-        <CardPanel title="Swarms" kind="swarms" />
         <CardPanel title="Views" kind="views" />
+        <CardPanel title="Swarms - Experimental" kind="swarms" />
+        <CardPanel title="Projects" kind="projects" />
       </section>
     </div>
   )
@@ -18,24 +17,9 @@ export function AppLoadingSkeleton() {
 
 function SessionsPanel() {
   return (
-    <DashboardSection title="Sessions" count={0} action="New" onAction={() => undefined}>
-      <div class="dashboard-session-groups app-loading-panel" aria-hidden="true">
-        {["Needs Feedback", "Ready For Review", "In Progress", "Inactive Sessions"].map((title, index) => (
-          <section class="dashboard-session-bucket">
-            <header>
-              <Button appearance="ghost" class="dashboard-bucket-toggle" aria-expanded={index !== 3} tabindex={-1}>
-                <span class="app-loading-bucket-chevron" />
-                <strong>{title}</strong>
-              </Button>
-              <small>0</small>
-            </header>
-            <div class="dashboard-bucket-content" classList={{ collapsed: index === 3 }}>
-              <div class="dashboard-card-grid compact">
-                <StatusCard short={index === 1} />
-              </div>
-            </div>
-          </section>
-        ))}
+    <DashboardSection title="Active sessions" count={0} action="New" actionLabel="New session" onAction={() => undefined}>
+      <div class="dashboard-active-sessions app-loading-panel" aria-hidden="true">
+        {[false, true, false].map((short) => <SessionLinkPlaceholder short={short} />)}
       </div>
     </DashboardSection>
   )
@@ -43,7 +27,7 @@ function SessionsPanel() {
 
 function CardPanel(props: { title: string; kind: "projects" | "swarms" | "views" }) {
   return (
-    <DashboardSection title={props.title} count={0} action="New" onAction={() => undefined}>
+    <DashboardSection title={props.title} count={0} action="New" actionLabel={`New ${props.kind === "projects" ? "project" : props.kind === "swarms" ? "swarm" : "view"}`} onAction={() => undefined}>
       <div class="dashboard-card-grid app-loading-panel" aria-hidden="true">
         {[0, 1, 2, 3].map((item) =>
           props.kind === "projects" ? (
@@ -59,18 +43,23 @@ function CardPanel(props: { title: string; kind: "projects" | "swarms" | "views"
   )
 }
 
+function SessionLinkPlaceholder(props: { short?: boolean }) {
+  return (
+    <div class="session-link-shell app-loading-session-link">
+      <div class="session-link status-dormant app-loading-card">
+        <span class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
+        <small><span class="app-loading-line app-loading-meta" /></small>
+      </div>
+    </div>
+  )
+}
+
 function ProjectCard(props: { short?: boolean }) {
   return (
-    <article class="dashboard-item-card project-card app-loading-card">
-      <div class="dashboard-project-open">
+    <article class="dashboard-item-card dashboard-summary-card dashboard-project-card app-loading-card">
+      <div class="dashboard-card-copy">
         <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
-        <span class="app-loading-line app-loading-detail" />
-        <small class="project-folder-label app-loading-line app-loading-meta" />
-      </div>
-      <div class="row-actions">
-        <span class="app-loading-control" />
-        <span class="app-loading-icon-control" />
-        <span class="app-loading-icon-control" />
+        <small><span class="app-loading-line app-loading-meta" /></small>
       </div>
     </article>
   )
@@ -78,30 +67,22 @@ function ProjectCard(props: { short?: boolean }) {
 
 function PlainCard(props: { short?: boolean }) {
   return (
-    <article class="dashboard-item-card app-loading-card">
-      <div>
+    <article class="dashboard-item-card dashboard-summary-card dashboard-swarm-card app-loading-card">
+      <div class="dashboard-card-copy">
         <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
-        <span class="app-loading-line app-loading-detail" />
+        <small><span class="app-loading-line app-loading-meta" /></small>
       </div>
-      <footer>
-        <small class="app-loading-line app-loading-meta" />
-      </footer>
     </article>
   )
 }
 
 function StatusCard(props: { short?: boolean }) {
   return (
-    <article class="dashboard-item-card dashboard-status-card interactive status-dormant app-loading-card">
-      <div class="dashboard-card-open">
-        <div>
-          <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
-        </div>
-        <footer>
-          <small class="app-loading-line app-loading-meta" />
-        </footer>
+    <article class="dashboard-item-card dashboard-summary-card dashboard-view-card interactive status-dormant app-loading-card">
+      <div class="dashboard-card-copy">
+        <strong class="app-loading-line app-loading-title" data-short={props.short ? "true" : undefined} />
+        <small><span class="app-loading-line app-loading-meta" /></small>
       </div>
-      <span class="pin-toggle app-loading-pin" />
     </article>
   )
 }

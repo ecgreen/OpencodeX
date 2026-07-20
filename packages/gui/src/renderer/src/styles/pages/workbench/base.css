@@ -136,26 +136,18 @@
   object-fit: initial;
 }
 
-.session-side-git-action {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  border: 1px solid color-mix(in srgb,var(--success) 32%,var(--border-subtle));
-  border-radius: 7px;
-  color: color-mix(in srgb,var(--success) 70%,var(--text));
-  background: color-mix(in srgb,var(--success) 9%,var(--panel));
-  padding: 0 10px;
-  white-space: nowrap;
-}
-
-.session-side-open .workbench-codemirror {
+.session-side-open .workbench-code-editor {
+  position: relative;
+  display: flex;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
   flex: 1;
   height: 100%;
   min-height: 0;
+}
+
+.session-side-open .workbench-code-editor>.workbench-codemirror {
+  flex: 1;
 }
 
 .session-open-file-explorer {

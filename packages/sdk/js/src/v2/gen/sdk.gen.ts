@@ -76,6 +76,12 @@ import type {
   GlobalDisposeResponses,
   GlobalEventErrors,
   GlobalEventResponses,
+  GlobalGuiBridgeRespondErrors,
+  GlobalGuiBridgeRespondResponses,
+  GlobalGuiBridgeSyncErrors,
+  GlobalGuiBridgeSyncResponses,
+  GlobalGuiBridgeUnregisterErrors,
+  GlobalGuiBridgeUnregisterResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
   GlobalUpgradeErrors,
@@ -102,12 +108,6 @@ import type {
   McpRemoteConfig,
   McpStatusErrors,
   McpStatusResponses,
-  OpencodexGuiBridgeRegisterErrors,
-  OpencodexGuiBridgeRegisterResponses,
-  OpencodexGuiBridgeRespondErrors,
-  OpencodexGuiBridgeRespondResponses,
-  OpencodexGuiBridgeUnregisterErrors,
-  OpencodexGuiBridgeUnregisterResponses,
   OpencodexJobCancelErrors,
   OpencodexJobCancelResponses,
   OpencodexJobClaimErrors,
@@ -178,6 +178,8 @@ import type {
   OpencodexStateEventResponses,
   OpencodexStateOperationsErrors,
   OpencodexStateOperationsResponses,
+  OpencodexStateSessionCardsErrors,
+  OpencodexStateSessionCardsResponses,
   OpencodexStateSessionErrors,
   OpencodexStateSessionResponses,
   OpencodexStateSnapshotErrors,
@@ -221,12 +223,28 @@ import type {
   OpencodexViewReorderResponses,
   OpencodexViewUpdateErrors,
   OpencodexViewUpdateResponses,
+  OpencodexWorkbenchChangesMetricsPageErrors,
+  OpencodexWorkbenchChangesMetricsPageResponses,
+  OpencodexWorkbenchChangesPageErrors,
+  OpencodexWorkbenchChangesPageResponses,
+  OpencodexWorkbenchChangesPatchErrors,
+  OpencodexWorkbenchChangesPatchPageErrors,
+  OpencodexWorkbenchChangesPatchPageResponses,
+  OpencodexWorkbenchChangesPatchResponses,
   OpencodexWorkbenchDiagnosticsErrors,
   OpencodexWorkbenchDiagnosticsResponses,
+  OpencodexWorkbenchFileCompletionErrors,
+  OpencodexWorkbenchFileCompletionResponses,
   OpencodexWorkbenchFileCreateErrors,
   OpencodexWorkbenchFileCreateResponses,
+  OpencodexWorkbenchFileDefinitionErrors,
+  OpencodexWorkbenchFileDefinitionResponses,
   OpencodexWorkbenchFileDeleteErrors,
   OpencodexWorkbenchFileDeleteResponses,
+  OpencodexWorkbenchFileDiagnosticsErrors,
+  OpencodexWorkbenchFileDiagnosticsResponses,
+  OpencodexWorkbenchFileHoverErrors,
+  OpencodexWorkbenchFileHoverResponses,
   OpencodexWorkbenchFileReadErrors,
   OpencodexWorkbenchFileReadResponses,
   OpencodexWorkbenchFileRenameErrors,
@@ -241,8 +259,6 @@ import type {
   OpencodexWorkbenchGitCommitResponses,
   OpencodexWorkbenchGitCreateBranchErrors,
   OpencodexWorkbenchGitCreateBranchResponses,
-  OpencodexWorkbenchGitDiffErrors,
-  OpencodexWorkbenchGitDiffResponses,
   OpencodexWorkbenchGitDiscardErrors,
   OpencodexWorkbenchGitDiscardResponses,
   OpencodexWorkbenchGitFetchErrors,
@@ -283,8 +299,6 @@ import type {
   OpencodexWorkbenchGitStashPopErrors,
   OpencodexWorkbenchGitStashPopResponses,
   OpencodexWorkbenchGitStashResponses,
-  OpencodexWorkbenchGitStatusErrors,
-  OpencodexWorkbenchGitStatusResponses,
   OpencodexWorkbenchGitUnstageErrors,
   OpencodexWorkbenchGitUnstageResponses,
   OutputFormat,
@@ -716,6 +730,204 @@ export class Config extends HeyApiClient {
   }
 }
 
+export class GuiBridge extends HeyApiClient {
+  /**
+   * Synchronize GUI bridge scopes
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters?: {
+      clientID?: string
+      token?: string
+      capabilities?: Array<
+        "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+      >
+      scopes?: Array<{
+        directory: string
+        workspaceID?: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "clientID" },
+            { in: "body", key: "token" },
+            { in: "body", key: "capabilities" },
+            { in: "body", key: "scopes" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GlobalGuiBridgeSyncResponses, GlobalGuiBridgeSyncErrors, ThrowOnError>(
+      {
+        url: "/global/gui-bridge/sync",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Unregister a GUI bridge lease
+   */
+  public unregister<ThrowOnError extends boolean = false>(
+    parameters?: {
+      clientID?: string
+      token?: string
+      generation?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "clientID" },
+            { in: "body", key: "token" },
+            { in: "body", key: "generation" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      GlobalGuiBridgeUnregisterResponses,
+      GlobalGuiBridgeUnregisterErrors,
+      ThrowOnError
+    >({
+      url: "/global/gui-bridge/unregister",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Respond to a pending GUI bridge request
+   */
+  public respond<ThrowOnError extends boolean = false>(
+    parameters?: {
+      body?:
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "workspace.open"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    path: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.navigate"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.state"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.screenshot"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                    dataURL: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.snapshot"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                    text: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      GlobalGuiBridgeRespondResponses,
+      GlobalGuiBridgeRespondErrors,
+      ThrowOnError
+    >({
+      url: "/global/gui-bridge/respond",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Global extends HeyApiClient {
   /**
    * Get health
@@ -780,6 +992,11 @@ export class Global extends HeyApiClient {
   private _config?: Config
   get config(): Config {
     return (this._config ??= new Config({ client: this.client }))
+  }
+
+  private _guiBridge?: GuiBridge
+  get guiBridge(): GuiBridge {
+    return (this._guiBridge ??= new GuiBridge({ client: this.client }))
   }
 }
 
@@ -1758,6 +1975,7 @@ export class File extends HeyApiClient {
       directory?: string
       workspace?: string
       path: string
+      maxBytes?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1769,6 +1987,7 @@ export class File extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "query", key: "path" },
+            { in: "query", key: "maxBytes" },
           ],
         },
       ],
@@ -2825,6 +3044,44 @@ export class State extends HeyApiClient {
   }
 
   /**
+   * Get a session-card page or resolve retained session IDs
+   */
+  public sessionCards<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      cursor?: string
+      limit?: string
+      ids?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "ids" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateSessionCardsResponses,
+      OpencodexStateSessionCardsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/session-card",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get an atomic OpencodeX session snapshot
    */
   public session<ThrowOnError extends boolean = false>(
@@ -3364,6 +3621,8 @@ export class File2 extends HeyApiClient {
       directory?: string
       workspace?: string
       path: string
+      root?: string
+      maxBytes?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3375,6 +3634,8 @@ export class File2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "query", key: "path" },
+            { in: "query", key: "root" },
+            { in: "query", key: "maxBytes" },
           ],
         },
       ],
@@ -3530,20 +3791,197 @@ export class File2 extends HeyApiClient {
       },
     })
   }
+
+  /**
+   * Check one GUI workbench file
+   */
+  public diagnostics<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileDiagnosticsResponses,
+      OpencodexWorkbenchFileDiagnosticsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/diagnostics",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Find a definition from the GUI workbench
+   */
+  public definition<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+      line?: number
+      column?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+            { in: "body", key: "line" },
+            { in: "body", key: "column" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileDefinitionResponses,
+      OpencodexWorkbenchFileDefinitionErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/definition",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Describe a symbol in the GUI workbench
+   */
+  public hover<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+      line?: number
+      column?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+            { in: "body", key: "line" },
+            { in: "body", key: "column" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileHoverResponses,
+      OpencodexWorkbenchFileHoverErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/hover",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Complete a symbol in the GUI workbench
+   */
+  public completion<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+      line?: number
+      column?: number
+      triggerKind?: 1 | 2 | 3
+      triggerCharacter?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+            { in: "body", key: "line" },
+            { in: "body", key: "column" },
+            { in: "body", key: "triggerKind" },
+            { in: "body", key: "triggerCharacter" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileCompletionResponses,
+      OpencodexWorkbenchFileCompletionErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/completion",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
 }
 
 export class Git extends HeyApiClient {
-  /**
-   * Get Git status for the GUI workbench
-   */
-  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      OpencodexWorkbenchGitStatusResponses,
-      OpencodexWorkbenchGitStatusErrors,
-      ThrowOnError
-    >({ url: "/experimental/opencodex/workbench/git/status", ...options })
-  }
-
   /**
    * List Git branches for the GUI workbench
    */
@@ -3553,17 +3991,6 @@ export class Git extends HeyApiClient {
       OpencodexWorkbenchGitBranchesErrors,
       ThrowOnError
     >({ url: "/experimental/opencodex/workbench/git/branches", ...options })
-  }
-
-  /**
-   * Load Git diffs for the GUI workbench
-   */
-  public diff<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      OpencodexWorkbenchGitDiffResponses,
-      OpencodexWorkbenchGitDiffErrors,
-      ThrowOnError
-    >({ url: "/experimental/opencodex/workbench/git/diff", ...options })
   }
 
   /**
@@ -3635,10 +4062,21 @@ export class Git extends HeyApiClient {
   public stage<ThrowOnError extends boolean = false>(
     parameters?: {
       paths?: Array<string>
+      all?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "paths" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "paths" },
+            { in: "body", key: "all" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).post<
       OpencodexWorkbenchGitStageResponses,
       OpencodexWorkbenchGitStageErrors,
@@ -3661,10 +4099,21 @@ export class Git extends HeyApiClient {
   public unstage<ThrowOnError extends boolean = false>(
     parameters?: {
       paths?: Array<string>
+      all?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "paths" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "paths" },
+            { in: "body", key: "all" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).post<
       OpencodexWorkbenchGitUnstageResponses,
       OpencodexWorkbenchGitUnstageErrors,
@@ -3687,10 +4136,21 @@ export class Git extends HeyApiClient {
   public discard<ThrowOnError extends boolean = false>(
     parameters?: {
       paths?: Array<string>
+      all?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "paths" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "paths" },
+            { in: "body", key: "all" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).post<
       OpencodexWorkbenchGitDiscardResponses,
       OpencodexWorkbenchGitDiscardErrors,
@@ -3906,6 +4366,168 @@ export class Git extends HeyApiClient {
   }
 }
 
+export class Changes extends HeyApiClient {
+  /**
+   * List paged GUI workbench changes
+   */
+  public page<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      cursor?: string
+      revision?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesPageResponses,
+      OpencodexWorkbenchChangesPageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/page",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Load one bounded GUI workbench patch
+   */
+  public patch<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+      revision?: string
+      context?: string
+      maxBytes?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "context" },
+            { in: "query", key: "maxBytes" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesPatchResponses,
+      OpencodexWorkbenchChangesPatchErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/patch",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Measure a page of GUI workbench changes
+   */
+  public metricsPage<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      revision: string
+      path?: string
+      cursor?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "path" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesMetricsPageResponses,
+      OpencodexWorkbenchChangesMetricsPageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/metrics/page",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Load a selected GUI workbench patch page
+   */
+  public patchPage<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+      revision: string
+      cursor?: string
+      context?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "context" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesPatchPageResponses,
+      OpencodexWorkbenchChangesPatchPageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/patch/page",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Github extends HeyApiClient {
   /**
    * Get GitHub remote status
@@ -4093,223 +4715,14 @@ export class Workbench extends HeyApiClient {
     return (this._git ??= new Git({ client: this.client }))
   }
 
+  private _changes?: Changes
+  get changes(): Changes {
+    return (this._changes ??= new Changes({ client: this.client }))
+  }
+
   private _github?: Github
   get github(): Github {
     return (this._github ??= new Github({ client: this.client }))
-  }
-}
-
-export class GuiBridge extends HeyApiClient {
-  /**
-   * Register GUI bridge capabilities
-   */
-  public register<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      clientID?: string
-      token?: string
-      capabilities?: Array<
-        "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
-      >
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "clientID" },
-            { in: "body", key: "token" },
-            { in: "body", key: "capabilities" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      OpencodexGuiBridgeRegisterResponses,
-      OpencodexGuiBridgeRegisterErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/opencodex/gui-bridge/register",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Unregister a GUI bridge client
-   */
-  public unregister<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      clientID?: string
-      token?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "clientID" },
-            { in: "body", key: "token" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      OpencodexGuiBridgeUnregisterResponses,
-      OpencodexGuiBridgeUnregisterErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/opencodex/gui-bridge/unregister",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Respond to a pending GUI bridge request
-   */
-  public respond<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      body?:
-        | {
-            clientID: string
-            token: string
-            requestID: string
-            operation: "workspace.open"
-            result:
-              | {
-                  status: "ok"
-                  output: {
-                    path: string
-                  }
-                }
-              | {
-                  status: "error"
-                  message: string
-                }
-          }
-        | {
-            clientID: string
-            token: string
-            requestID: string
-            operation: "browser.navigate"
-            result:
-              | {
-                  status: "ok"
-                  output: {
-                    url: string
-                  }
-                }
-              | {
-                  status: "error"
-                  message: string
-                }
-          }
-        | {
-            clientID: string
-            token: string
-            requestID: string
-            operation: "browser.state"
-            result:
-              | {
-                  status: "ok"
-                  output: {
-                    url: string
-                  }
-                }
-              | {
-                  status: "error"
-                  message: string
-                }
-          }
-        | {
-            clientID: string
-            token: string
-            requestID: string
-            operation: "browser.screenshot"
-            result:
-              | {
-                  status: "ok"
-                  output: {
-                    url: string
-                    dataURL: string
-                  }
-                }
-              | {
-                  status: "error"
-                  message: string
-                }
-          }
-        | {
-            clientID: string
-            token: string
-            requestID: string
-            operation: "browser.snapshot"
-            result:
-              | {
-                  status: "ok"
-                  output: {
-                    url: string
-                    text: string
-                  }
-                }
-              | {
-                  status: "error"
-                  message: string
-                }
-          }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "body", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      OpencodexGuiBridgeRespondResponses,
-      OpencodexGuiBridgeRespondErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/opencodex/gui-bridge/respond",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
   }
 }
 
@@ -4779,11 +5192,6 @@ export class Opencodex extends HeyApiClient {
   private _workbench?: Workbench
   get workbench(): Workbench {
     return (this._workbench ??= new Workbench({ client: this.client }))
-  }
-
-  private _guiBridge?: GuiBridge
-  get guiBridge(): GuiBridge {
-    return (this._guiBridge ??= new GuiBridge({ client: this.client }))
   }
 
   private _swarm?: Swarm

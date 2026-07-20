@@ -26,7 +26,7 @@ export function ViewPane(props: {
   lsp: LspStatus[]
   config?: Config
   agents: Agent[]
-  findFiles?: (input: { query: string; directory?: string }) => Promise<FileNode[]>
+  findFiles?: (input: { query: string; directory?: string; signal?: AbortSignal }) => Promise<FileNode[]>
   recentModels: string[]
   selectedAgent: string
   setSelectedAgent: (value: string) => void

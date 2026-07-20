@@ -36,7 +36,20 @@ describe("DatabaseMigration", () => {
         expect(yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'`)).toEqual({
           name: "session",
         })
-        expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: 33 })
+        expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: 34 })
+        expect(
+          yield* db.get(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'session_time_updated_id_idx'`,
+          ),
+        ).toEqual({ name: "session_time_updated_id_idx" })
+        const plan = yield* db.all<{ detail: unknown }>(sql`
+          EXPLAIN QUERY PLAN
+          SELECT id FROM session
+          WHERE time_updated < 100 OR (time_updated = 100 AND id < 'ses_cursor')
+          ORDER BY time_updated DESC, id DESC
+          LIMIT 201
+        `)
+        expect(plan.some((row) => String(row.detail).includes("session_time_updated_id_idx"))).toBe(true)
       }),
     )
   })

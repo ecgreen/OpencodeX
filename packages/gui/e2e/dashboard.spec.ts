@@ -15,8 +15,21 @@ test("renders through authoritative state and capabilities without legacy or idl
   await page.goto("/")
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
   await expect(page.getByRole("complementary", { name: "OpencodeX navigation" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Active sessions" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Swarms" })).toBeVisible()
+  await expect(page.getByText("Workspace", { exact: true })).toHaveCount(0)
+  await expect(page.locator(".dashboard-overview")).toHaveCount(0)
+  const sectionTitles = await page.locator(".dashboard-sections .dashboard-section-title").allTextContents()
+  expect(sectionTitles.map((value) => value.replace(/\s*\(\d+\)\s*$/, ""))).toEqual([
+    "Active sessions",
+    "Views",
+    "Swarms - Experimental",
+    "Projects",
+  ])
+  const createButtons = page.locator(".dashboard-section>header .ui-button", { hasText: "New" })
+  await expect(createButtons).toHaveCount(4)
+  await expect(createButtons.locator(".icon")).toHaveCount(4)
   await expect(page.locator(".error-card")).toHaveCount(0)
   expect(requests.filter((pathname) => pathname === "/experimental/opencodex/session-sync")).toEqual([])
   expect(requests).toEqual(
@@ -49,6 +62,7 @@ test("renders through authoritative state and capabilities without legacy or idl
   await expect(page.locator(".swarms-page")).toBeVisible()
   await page.getByRole("button", { name: /^Dashboard:/ }).click()
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Active sessions" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Swarms" })).toBeVisible()
 

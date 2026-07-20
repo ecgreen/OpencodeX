@@ -1,7 +1,8 @@
-import { lazy, Show } from "solid-js"
+import { lazy, Show, Suspense } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { EMPTY_SESSION_DATA } from "../controllers/authoritative-state-controller"
 import { AppViewPane } from "./app-view-pane"
+import { SessionSidePanelLoading } from "./panel-loading-state"
 
 const PluginsPage = lazy(() => import("./plugins-page").then((module) => ({ default: module.PluginsPage })))
 const SessionSidePanel = lazy(() =>
@@ -77,25 +78,28 @@ export function ViewsRoute(props: { model: GuiAppModel }) {
       sidePanel={
         <Show when={model.view.sidePanelSession()}>
           {(session) => (
-            <SessionSidePanel
-              open={model.view.sidePanelOpen()}
-              widthRatio={model.view.sidePanelWidthRatio()}
-              session={session()}
-              data={model.authoritative.viewSessionData()[session().id] ?? EMPTY_SESSION_DATA}
-              providers={model.authoritative.snapshot()?.providers ?? []}
-              mcp={model.authoritative.snapshot()?.mcp ?? {}}
-              lsp={model.authoritative.snapshot()?.lsp ?? []}
-              config={model.authoritative.snapshot()?.config}
-              gui={model.authoritative.client()}
-              directory={model.sessionActions.sidePanelDirectory(session())}
-              request={model.view.sidePanelRequest()}
-              contextOptions={model.view.sidePanelContextOptions()}
-              selectedContextID={session().id}
-              selectContext={model.view.setSidePanelSessionID}
-              startResize={model.view.startSidePanelResize}
-              toggleMaximized={model.view.toggleSidePanelMaximized}
-              resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
-            />
+            <Suspense fallback={<SessionSidePanelLoading open={model.view.sidePanelOpen()} widthRatio={model.view.sidePanelWidthRatio()} />}>
+              <SessionSidePanel
+                open={model.view.sidePanelOpen()}
+                widthRatio={model.view.sidePanelWidthRatio()}
+                session={session()}
+                data={model.authoritative.viewSessionData()[session().id] ?? EMPTY_SESSION_DATA}
+                providers={model.authoritative.snapshot()?.providers ?? []}
+                mcp={model.authoritative.snapshot()?.mcp ?? {}}
+                lsp={model.authoritative.snapshot()?.lsp ?? []}
+                config={model.authoritative.snapshot()?.config}
+                gui={model.authoritative.client()}
+                subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}
+                directory={model.sessionActions.sidePanelDirectory(session())}
+                request={model.view.sidePanelRequest()}
+                contextOptions={model.view.sidePanelContextOptions()}
+                selectedContextID={session().id}
+                selectContext={model.view.setSidePanelSessionID}
+                startResize={model.view.startSidePanelResize}
+                toggleMaximized={model.view.toggleSidePanelMaximized}
+                resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
+              />
+            </Suspense>
           )}
         </Show>
       }

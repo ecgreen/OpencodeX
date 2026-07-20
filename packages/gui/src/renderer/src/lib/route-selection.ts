@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiSnapshot } from "./store"
 import { pendingSession, viewItemID, type ViewItem } from "./view-items"
 
@@ -41,7 +42,7 @@ export function abortSessionIDForRoute(input: {
   return input.viewSessionIDs.includes(input.focusedViewSessionID) ? input.focusedViewSessionID : undefined
 }
 
-export function activeViewForRoute(route: RouteLike, views: OpencodeXView[]): OpencodeXView | undefined {
+export function activeViewForRoute(route: RouteLike, views: ClientCatalogView[]): ClientCatalogView | undefined {
   if (route.name !== "views") return
   if (!route.viewID) return
   return views.find((view) => view.id === route.viewID) ?? views[0]

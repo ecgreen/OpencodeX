@@ -5,19 +5,23 @@ import {
   createWorkbenchFile,
   deleteWorkbenchFile,
   findFiles,
-  loadVcsDiff,
   listWorkbenchFiles,
   readWorkbenchFile,
   renameWorkbenchFile,
+  workbenchChangeMetricsPage,
+  workbenchChangePatchPage,
+  workbenchChanges,
   workbenchDiagnostics,
+  workbenchFileDefinition,
+  workbenchFileCompletion,
+  workbenchFileDiagnostics,
+  workbenchFileHover,
   workbenchGitBranches,
-  workbenchGitDiff,
   workbenchGitHistory,
   workbenchGitOperation,
   workbenchGitStashCreate,
   workbenchGitStashes,
   workbenchGitStashOperation,
-  workbenchGitStatus,
   workbenchGithubData,
   workbenchGithubPost,
   writeWorkbenchFile,
@@ -745,37 +749,143 @@ describe("Workbench helpers", () => {
 })
 
 describe("Workbench store wrappers", () => {
+  test("forwards abort signals to file searches", async () => {
+    const controller = new AbortController()
+    let received: AbortSignal | undefined
+    const gui = {
+      directory: "C:/repo",
+      client: {
+        find: {
+          files: async (_input: unknown, options: { signal?: AbortSignal }) => {
+            received = options.signal
+            return { data: [] }
+          },
+        },
+      },
+    } as unknown as GuiClient
+
+    await findFiles(gui, { query: "app", signal: controller.signal })
+    expect(received).toBe(controller.signal)
+  })
+
   test("uses existing file list and read APIs", async () => {
     const calls: string[] = []
     const exactCalls: Array<{ url: string; method: string; body?: string; auth?: string }> = []
-    globalThis.fetch = fetchRecorder(exactCalls, { ok: true, content: "hello\n" })
+    globalThis.fetch = fetchRecorder(exactCalls, { ok: true, content: "hello\n", bytes: 6, truncated: false })
     const gui = fakeWorkbenchGui(calls)
 
     expect(await listWorkbenchFiles(gui, "src")).toEqual([{ name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false }])
-    expect(await readWorkbenchFile(gui, "src/app.tsx")).toEqual({ type: "text", content: "hello\n" })
+    expect(await readWorkbenchFile(gui, "src/app.tsx")).toEqual({
+      content: { type: "text", content: "hello\n", bytes: 6, truncated: false },
+      bytes: 6,
+      mode: "editable",
+    })
     expect(await readWorkbenchFile(fakeWorkbenchGui([], {
       type: "text",
       content: "abc",
       encoding: "base64",
       mimeType: "image/png",
+      bytes: 2,
+      truncated: false,
     }), "screenshot.png")).toEqual({
-      type: "binary",
-      content: "abc",
-      encoding: "base64",
-      mimeType: "image/png",
+      content: {
+        type: "binary",
+        content: "abc",
+        encoding: "base64",
+        mimeType: "image/png",
+        bytes: 2,
+        truncated: false,
+      },
+      bytes: 2,
+      mode: "preview",
     })
     expect(await findFiles(gui, { query: "app", directory: "C:/repo/project", limit: 40 })).toEqual([
       { name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false },
     ])
 
     expect(calls).toContain("file.list:src:C:/repo")
-    expect(calls).toContain("file.read:src/app.tsx:C:/repo")
+    expect(calls).toContain("file.read:src/app.tsx:C:/repo:2097152")
     expect(calls).toContain("find.files:app:C:/repo/project:40")
     const exactCall = exactCalls[0]
     expect(exactCall).toBeDefined()
     if (!exactCall) throw new Error("Exact Workbench read was not requested.")
     expect(new URL(exactCall.url).pathname).toBe("/experimental/opencodex/workbench/file/read")
     expect(new URL(exactCall.url).searchParams.get("path")).toBe("src/app.tsx")
+    expect(new URL(exactCall.url).searchParams.get("maxBytes")).toBe("2097152")
+  })
+
+  test("uses server bytes and skips exact reads for oversized files", async () => {
+    const calls: string[] = []
+    const exactCalls: Array<{ url: string; method: string; body?: string; auth?: string }> = []
+    globalThis.fetch = fetchRecorder(exactCalls, { ok: true, content: "unexpected" })
+
+    expect(await readWorkbenchFile(fakeWorkbenchGui(calls, {
+      type: "text",
+      content: "",
+      bytes: 2 * 1024 * 1024 + 1,
+      truncated: true,
+    }), "large.txt")).toEqual({
+      content: {
+        type: "text",
+        content: "",
+        bytes: 2 * 1024 * 1024 + 1,
+        truncated: true,
+      },
+      bytes: 2 * 1024 * 1024 + 1,
+      mode: "metadata",
+    })
+    expect(calls).toEqual(["file.read:large.txt:C:/repo:2097152"])
+    expect(exactCalls).toEqual([])
+  })
+
+  test("reads dependency files with root while preserving the session directory route", async () => {
+    const calls: Array<{ url: string; method: string }> = []
+    globalThis.fetch = fetchRecorder(calls, { ok: true, content: "export type Value = string\n", bytes: 27, truncated: false })
+
+    expect(await readWorkbenchFile(fakeWorkbenchGui([]), "index.d.ts", "C:/repo", undefined, "C:/cache/pkg")).toMatchObject({
+      content: { type: "text", content: "export type Value = string\n" },
+      mode: "editable",
+    })
+    const url = new URL(calls[0]!.url)
+    expect(url.searchParams.get("directory")).toBe("C:/repo")
+    expect(url.searchParams.get("root")).toBe("C:/cache/pkg")
+    expect(url.searchParams.get("path")).toBe("index.d.ts")
+  })
+
+  test("loads flat manifests, progressive metrics, and selected patch pages through generated clients", async () => {
+    const calls: Array<{ kind: string; input: unknown; signal?: AbortSignal }> = []
+    const controller = new AbortController()
+    const gui = {
+      directory: "C:/repo",
+      url: "http://127.0.0.1:4096",
+      authHeader: "Basic test",
+      client: {
+        opencodex: {
+          workbench: {
+            changes: {
+              page: async (input: unknown, options: { signal?: AbortSignal }) => {
+                calls.push({ kind: "page", input, signal: options.signal })
+                return { data: { ok: true, mode: "directory", revision: "rev-1", path: "", items: [{ type: "file", name: "app.ts", path: "src/app.ts", status: "added", staged: false, unstaged: false, untracked: true, openable: true }], summary: { fileCount: 1, additions: 0, deletions: 0, metricsResolved: 0, metricsTotal: 1, metricsComplete: false }, next: "next" } }
+              },
+              metricsPage: async (input: unknown, options: { signal?: AbortSignal }) => {
+                calls.push({ kind: "metrics", input, signal: options.signal })
+                return { data: { ok: true, stale: false, revision: "rev-1", items: [{ path: "src/app.ts", additions: 1, deletions: 0, binary: false }], summary: { fileCount: 1, additions: 1, deletions: 0, metricsResolved: 1, metricsTotal: 1, metricsComplete: true } } }
+              },
+              patchPage: async (input: unknown, options: { signal?: AbortSignal }) => {
+                calls.push({ kind: "patch-page", input, signal: options.signal })
+                return { data: { ok: true, stale: false, path: "src/app.ts", revision: "rev-1", status: "added", patch: "@@", additions: 1, deletions: 0, binary: false, complete: true } }
+              },
+            },
+          },
+        },
+      },
+    } as unknown as GuiClient
+
+    expect(await workbenchChanges(gui, { path: "", limit: 100, signal: controller.signal })).toMatchObject({ mode: "directory", next: "next" })
+    expect(await workbenchChangeMetricsPage(gui, { revision: "rev-1", limit: 32, signal: controller.signal })).toMatchObject({ summary: { additions: 1 } })
+    expect(await workbenchChangePatchPage(gui, { path: "src/app.ts", revision: "rev-1", context: 8, signal: controller.signal })).toMatchObject({ path: "src/app.ts", patch: "@@" })
+    expect(calls.map((call) => call.kind)).toEqual(["page", "metrics", "patch-page"])
+    expect(calls.every((call) => call.signal === controller.signal)).toBe(true)
   })
 
   test("routes file mutations through experimental workbench endpoints", async () => {
@@ -816,13 +926,9 @@ describe("Workbench store wrappers", () => {
           : (init?.headers as Record<string, string> | undefined)?.authorization,
       })
       const pathname = new URL(url).pathname
-      const data = pathname.endsWith("/git/status")
-        ? { ok: true, branch: "feature/workbench", upstream: "origin/feature/workbench", ahead: 2, behind: 1, clean: true, files: [] }
-        : pathname.endsWith("/git/branches")
+      const data = pathname.endsWith("/git/branches")
           ? { ok: true, branches: ["dev"], current: "dev" }
-          : pathname.endsWith("/git/diff")
-            ? { ok: true, data: [{ file: "src/app.tsx", patch: "@@", additions: 1, deletions: 0, status: "modified" }] }
-            : pathname.endsWith("/git/history")
+          : pathname.endsWith("/git/history")
               ? { ok: true, data: [{ hash: "abc123", shortHash: "abc123", author: "Test", date: "2026-06-13T00:00:00Z", subject: "Initial", files: [{ status: "M", path: "README.md" }] }] }
               : pathname.endsWith("/workbench/diagnostics")
                 ? { ok: false, command: "bun run typecheck", message: "Project checks found issues.", diagnostics: [{ path: "src/app.ts", line: 1, column: 1, severity: "error", message: "TS1005: expected ;" }] }
@@ -835,9 +941,7 @@ describe("Workbench store wrappers", () => {
     }) as typeof fetch
     const gui = fakeWorkbenchGui([])
 
-    expect(await workbenchGitStatus(gui)).toEqual({ ok: true, branch: "feature/workbench", upstream: "origin/feature/workbench", ahead: 2, behind: 1, clean: true, files: [] })
     expect(await workbenchGitBranches(gui)).toEqual({ ok: true, branches: ["dev"], current: "dev" })
-    expect(await workbenchGitDiff(gui)).toEqual({ ok: true, data: [{ file: "src/app.tsx", patch: "@@", additions: 1, deletions: 0, status: "modified" }] })
     expect(await workbenchGitHistory(gui)).toEqual({ ok: true, data: [{ hash: "abc123", shortHash: "abc123", author: "Test", date: "2026-06-13T00:00:00Z", subject: "Initial", files: [{ status: "M", path: "README.md" }] }] })
     expect(await workbenchDiagnostics(gui)).toEqual({ ok: false, command: "bun run typecheck", message: "Project checks found issues.", diagnostics: [{ path: "src/app.ts", line: 1, column: 1, severity: "error", message: "TS1005: expected ;" }] })
     await workbenchGitOperation(gui, "stage", { paths: ["src/app.tsx", "src/store.ts"] })
@@ -852,9 +956,7 @@ describe("Workbench store wrappers", () => {
     await workbenchGithubPost(gui, "checkout-pull", { number: 1 })
 
     expect(calls.map((call) => [call.method, new URL(call.url).pathname])).toEqual([
-      ["GET", "/experimental/opencodex/workbench/git/status"],
       ["GET", "/experimental/opencodex/workbench/git/branches"],
-      ["GET", "/experimental/opencodex/workbench/git/diff"],
       ["GET", "/experimental/opencodex/workbench/git/history"],
       ["GET", "/experimental/opencodex/workbench/diagnostics"],
       ["POST", "/experimental/opencodex/workbench/git/stage"],
@@ -868,35 +970,81 @@ describe("Workbench store wrappers", () => {
       ["GET", "/experimental/opencodex/workbench/github/pulls"],
       ["POST", "/experimental/opencodex/workbench/github/checkout-pull"],
     ])
-    expect(calls[5]?.body).toBe(JSON.stringify({ paths: ["src/app.tsx", "src/store.ts"] }))
-    expect(calls[6]?.body).toBe(JSON.stringify({ message: "feat(gui): add workbench", body: "Adds the first Workbench commit flow." }))
-    expect(calls[9]?.body).toBe(JSON.stringify({ message: "Save before pull" }))
+    expect(calls[3]?.body).toBe(JSON.stringify({ paths: ["src/app.tsx", "src/store.ts"] }))
+    expect(calls[4]?.body).toBe(JSON.stringify({ message: "feat(gui): add workbench", body: "Adds the first Workbench commit flow." }))
+    expect(calls[7]?.body).toBe(JSON.stringify({ message: "Save before pull" }))
+    expect(calls[8]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
+    expect(calls[9]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
     expect(calls[10]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
-    expect(calls[11]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
-    expect(calls[12]?.body).toBe(JSON.stringify({ ref: "stash@{0}" }))
-    expect(calls[14]?.body).toBe(JSON.stringify({ number: 1 }))
+    expect(calls[12]?.body).toBe(JSON.stringify({ number: 1 }))
   })
 
-  test("loads workbench diffs from the selected project directory", async () => {
-    const calls: string[] = []
-    const gui = {
-      directory: "C:/repo",
-      authHeader: "Basic test",
-      client: {
-        vcs: {
-          diff: async (input: { directory?: string; mode: string; context?: number }) => {
-            calls.push(`${input.mode}:${input.directory}:${input.context}`)
-            return { data: [{ file: "src/app.tsx", patch: "@@", additions: 1, deletions: 0 }] }
-          },
-        },
-      },
-    } as unknown as GuiClient
+  test("routes active-file analysis without invoking project diagnostics", async () => {
+    const calls: Array<{ path: string; method: string; body?: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      calls.push({ path: url.pathname, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined })
+      const data = url.pathname.endsWith("/definition")
+        ? [{ path: "src/value.ts", line: 2, column: 7, endLine: 2, endColumn: 12 }]
+        : { ok: true, supported: true, diagnostics: [{ path: "src/app.ts", line: 1, column: 2, endLine: 1, endColumn: 6, severity: "error", message: "Broken" }] }
+      return new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } })
+    }) as typeof fetch
+    const gui = fakeWorkbenchGui([])
 
-    expect(await loadVcsDiff(gui, { mode: "git", context: 8, directory: "C:/repo/project" })).toEqual({
-      data: [{ file: "src/app.tsx", patch: "@@", additions: 1, deletions: 0 }],
+    expect(await workbenchFileDiagnostics(gui, { path: "src/app.ts", content: "const value = missing" }, "C:/repo")).toEqual({
+      ok: true,
+      supported: true,
+      diagnostics: [{ path: "src/app.ts", line: 1, column: 2, endLine: 1, endColumn: 6, severity: "error", message: "Broken" }],
     })
-    expect(calls).toEqual(["git:C:/repo/project:8"])
+    expect(await workbenchFileDefinition(gui, {
+      path: "src/app.ts",
+      content: "const value = missing",
+      line: 1,
+      column: 15,
+    }, "C:/repo")).toEqual([{ path: "src/value.ts", line: 2, column: 7, endLine: 2, endColumn: 12 }])
+    expect(calls).toEqual([
+      {
+        path: "/experimental/opencodex/workbench/file/diagnostics",
+        method: "POST",
+        body: JSON.stringify({ path: "src/app.ts", content: "const value = missing" }),
+      },
+      {
+        path: "/experimental/opencodex/workbench/file/definition",
+        method: "POST",
+        body: JSON.stringify({ path: "src/app.ts", content: "const value = missing", line: 1, column: 15 }),
+      },
+    ])
+    expect(calls.some((call) => call.path.endsWith("/workbench/diagnostics"))).toBe(false)
   })
+
+  test("propagates dependency roots to diagnostics, definition, hover, and completion", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, body: JSON.parse(String(init?.body)) })
+      const path = new URL(url).pathname
+      const data = path.endsWith("/definition")
+        ? []
+        : path.endsWith("/hover")
+          ? { supported: true, contents: [], definitions: [] }
+          : path.endsWith("/completion")
+            ? { supported: true, items: [{ label: "value" }] }
+            : { ok: true, supported: true, diagnostics: [] }
+      return new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } })
+    }) as typeof fetch
+    const gui = fakeWorkbenchGui([])
+    const file = { path: "index.d.ts", root: "C:/cache/pkg", content: "declare const value: string" }
+
+    await workbenchFileDiagnostics(gui, file, "C:/repo")
+    await workbenchFileDefinition(gui, { ...file, line: 1, column: 10 }, "C:/repo")
+    await workbenchFileHover(gui, { ...file, line: 1, column: 10 }, "C:/repo")
+    await workbenchFileCompletion(gui, { ...file, line: 1, column: 10, triggerKind: 2, triggerCharacter: "." }, "C:/repo")
+
+    expect(calls.every((call) => new URL(call.url).searchParams.get("directory") === "C:/repo")).toBe(true)
+    expect(calls.every((call) => call.body.root === "C:/cache/pkg")).toBe(true)
+    expect(calls[3]?.body).toMatchObject({ triggerKind: 2, triggerCharacter: "." })
+  })
+
 })
 
 function fakeWorkbenchGui(calls: string[], content: FileContent = { type: "text", content: "hello" }) {
@@ -910,8 +1058,8 @@ function fakeWorkbenchGui(calls: string[], content: FileContent = { type: "text"
           calls.push(`file.list:${input.path}:${input.directory}`)
           return { data: [{ name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false }] }
         },
-        read: async (input: { directory?: string; path: string }) => {
-          calls.push(`file.read:${input.path}:${input.directory}`)
+        read: async (input: { directory?: string; path: string; maxBytes?: string }) => {
+          calls.push(`file.read:${input.path}:${input.directory}:${input.maxBytes}`)
           return { data: content }
         },
       },
@@ -921,8 +1069,43 @@ function fakeWorkbenchGui(calls: string[], content: FileContent = { type: "text"
           return { data: [{ name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false }] }
         },
       },
+      opencodex: {
+        workbench: {
+          file: {
+            read: (input: Record<string, unknown>, options: { headers?: HeadersInit; signal?: AbortSignal }) => generatedWorkbenchFile("read", input, options),
+            diagnostics: (input: Record<string, unknown>, options: { headers?: HeadersInit; signal?: AbortSignal }) => generatedWorkbenchFile("diagnostics", input, options),
+            definition: (input: Record<string, unknown>, options: { headers?: HeadersInit; signal?: AbortSignal }) => generatedWorkbenchFile("definition", input, options),
+            hover: (input: Record<string, unknown>, options: { headers?: HeadersInit; signal?: AbortSignal }) => generatedWorkbenchFile("hover", input, options),
+            completion: (input: Record<string, unknown>, options: { headers?: HeadersInit; signal?: AbortSignal }) => generatedWorkbenchFile("completion", input, options),
+          },
+        },
+      },
     },
   } as unknown as GuiClient
+}
+
+async function generatedWorkbenchFile(
+  endpoint: "read" | "diagnostics" | "definition" | "hover" | "completion",
+  input: Record<string, unknown>,
+  options: { headers?: HeadersInit; signal?: AbortSignal },
+) {
+  const url = new URL(`/experimental/opencodex/workbench/file/${endpoint}`, "http://127.0.0.1:4096")
+  if (typeof input.directory === "string") url.searchParams.set("directory", input.directory)
+  if (endpoint === "read") {
+    if (typeof input.path === "string") url.searchParams.set("path", input.path)
+    if (typeof input.root === "string") url.searchParams.set("root", input.root)
+    if (typeof input.maxBytes === "string") url.searchParams.set("maxBytes", input.maxBytes)
+  }
+  const response = await fetch(url, endpoint === "read" ? {
+    headers: options.headers,
+    signal: options.signal,
+  } : {
+    method: "POST",
+    headers: options.headers,
+    signal: options.signal,
+    body: JSON.stringify(Object.fromEntries(Object.entries(input).filter(([key]) => key !== "directory"))),
+  })
+  return { data: await response.json() }
 }
 
 function fetchRecorder(calls: Array<{ url: string; method: string; body?: string; auth?: string }>, payload: unknown) {

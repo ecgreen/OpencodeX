@@ -10,6 +10,7 @@ import {
 } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { AppProcess } from "@opencode-ai/core/process"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
@@ -251,6 +252,7 @@ export function createRoutes(
       Workspace.defaultLayer,
       Worktree.appLayer,
       AppFileSystem.defaultLayer,
+      AppProcess.defaultLayer,
       FetchHttpClient.layer,
       HttpServer.layerServices,
     ]),

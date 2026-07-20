@@ -82,7 +82,7 @@
 .dashboard-page>.opencodex-logo {
   justify-self: center;
   margin: clamp(12px,3vh,32px) 0 clamp(4px,1.4vh,16px);
-  font-size: clamp(8px,1.28vw,15px);
+  font-size: clamp(10px,1.35vw,17px);
   opacity: .96;
 }
 
@@ -163,28 +163,10 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  width: min(1480px,100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   gap: 24px;
   padding: clamp(14px,2vw,28px);
-}
-
-.dashboard-overview {
-  display: flex;
-  min-height: 82px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.dashboard-overview .opencodex-logo {
-  justify-self: start;
-  margin: 0;
-  font-size: clamp(6px,.64vw,9px);
-  filter: none;
-  opacity: .88;
 }
 
 .dashboard-sections {

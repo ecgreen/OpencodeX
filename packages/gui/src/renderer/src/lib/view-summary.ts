@@ -1,4 +1,5 @@
-import type { OpencodeXProject, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogProject, ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiSnapshot } from "./store"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, type DerivedSessionStatus } from "./session-status"
 import { pendingViewSessions } from "./view-items"
@@ -22,7 +23,7 @@ export type ViewAttentionCounts = {
 }
 
 export type ViewSummary = {
-  view: OpencodeXView
+  view: ClientCatalogView
   status: DerivedSessionStatus
   group: ViewSummaryGroupID
   paneCount: number
@@ -35,11 +36,11 @@ export type ViewSummary = {
   lastUpdated: number
 }
 
-export function summarizeViews(input: { views: OpencodeXView[]; snapshot?: GuiSnapshot; now?: number }) {
+export function summarizeViews(input: { views: ClientCatalogView[]; snapshot?: GuiSnapshot; now?: number }) {
   return input.views.map((view) => summarizeView({ view, snapshot: input.snapshot, now: input.now }))
 }
 
-export function summarizeView(input: { view: OpencodeXView; snapshot?: GuiSnapshot; now?: number }): ViewSummary {
+export function summarizeView(input: { view: ClientCatalogView; snapshot?: GuiSnapshot; now?: number }): ViewSummary {
   const sessionRows = viewSessionsInOrder({
     sessionIDs: input.view.sessionIDs,
     sessions: input.snapshot?.sessions ?? [],
@@ -120,7 +121,7 @@ function viewSummaryGroup(input: {
 }
 
 function viewAttentionCounts(
-  view: OpencodeXView,
+  view: ClientCatalogView,
   rows: ViewSessionSummary[],
   snapshot?: GuiSnapshot,
 ): ViewAttentionCounts {
@@ -158,7 +159,7 @@ function countLabel(count: number, label: string) {
   return `${count} ${label}${count === 1 ? "" : "s"}`
 }
 
-function sessionProjectLabel(session: Session, projects: OpencodeXProject[]) {
+function sessionProjectLabel(session: Session, projects: ClientCatalogProject[]) {
   const project = projects.find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
   return project?.name ?? project?.project.name
 }

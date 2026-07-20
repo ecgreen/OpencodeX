@@ -9,12 +9,13 @@ import type {
   McpStatus,
   Message,
   OpencodeClient,
+  OpencodeXCatalogProject,
+  OpencodeXCatalogView,
   OpencodeXJob,
   OpencodeXOperationsSnapshot,
   OpencodeXPlugin,
-  OpencodeXProject,
   OpencodeXSessionSnapshot,
-  OpencodeXSessionSyncSnapshot,
+  OpencodeXSessionCardPage,
   OpencodeXSessionUiState,
   OpencodeXStateScope,
   OpencodeXStateSnapshot,
@@ -57,6 +58,50 @@ export type ClientSessionLoadState = {
   error?: string
 }
 
+export type ClientSessionTailOptions = {
+  limit?: number
+  signal?: AbortSignal
+}
+
+export type ClientSessionPageOptions = {
+  limit?: number
+  before?: string
+  signal?: AbortSignal
+}
+
+export type ClientSessionPageResult = OpencodeXSessionSnapshot
+
+export type ClientSessionCardPageState = {
+  next?: string
+  hasMore: boolean
+  pages: number
+  loading: boolean
+  error?: string
+}
+
+export type ClientSessionCardPageOptions = {
+  cursor?: string
+  limit?: number
+  signal?: AbortSignal
+}
+
+export type ClientEnsureSessionCardsOptions = {
+  signal?: AbortSignal
+}
+
+export type ClientCatalogProject = OpencodeXCatalogProject & { sessions: Session[] }
+export type ClientCatalogView = OpencodeXCatalogView & { sessions: Session[] }
+
+export type ClientCatalogSnapshot = {
+  projects: ClientCatalogProject[]
+  sessions: Session[]
+  views: ClientCatalogView[]
+  sessionStatus: Record<string, SessionStatus>
+  permissions: PermissionRequest[]
+  questions: QuestionRequest[]
+  sessionUiState: Record<string, OpencodeXSessionUiState>
+}
+
 export type ClientCapabilitiesSnapshot = {
   revision: string
   providers: Provider[]
@@ -79,9 +124,10 @@ export type ClientStateSyncState = {
   epoch?: string
   cursor?: string
   digest?: string
-  projects: ClientEntityState<OpencodeXProject>
+  projects: ClientEntityState<OpencodeXCatalogProject>
   sessions: ClientEntityState<Session>
-  views: ClientEntityState<OpencodeXSessionSyncSnapshot["views"][number]>
+  views: ClientEntityState<OpencodeXCatalogView>
+  sessionCards: ClientSessionCardPageState
   permissions: ClientEntityState<PermissionRequest>
   questions: ClientEntityState<QuestionRequest>
   jobs: ClientEntityState<OpencodeXJob>
@@ -99,6 +145,8 @@ export type ClientStateSyncState = {
     sessions: Record<string, true>
     messages: Record<string, true>
     parts: Record<string, true>
+    messageSessions: Record<string, string>
+    partSessions: Record<string, string>
   }
   aggregateSequences: Record<string, number>
   pendingMutations: Record<string, { status: "pending" | "failed"; error?: string }>
@@ -108,7 +156,18 @@ export type ClientStateSyncState = {
 export type ClientStateSyncTransport = {
   snapshot: () => Promise<OpencodeXStateSnapshot>
   operations?: () => Promise<OpencodeXOperationsSnapshot>
-  session: (input: { sessionID: string; limit?: number; before?: string }) => Promise<OpencodeXSessionSnapshot>
+  cards?: (input: {
+    cursor?: string
+    limit?: number
+    sessionIDs?: string[]
+    signal: AbortSignal
+  }) => Promise<OpencodeXSessionCardPage>
+  session: (input: {
+    sessionID: string
+    limit?: number
+    before?: string
+    signal: AbortSignal
+  }) => Promise<OpencodeXSessionSnapshot>
   events: (input: { after?: string; signal: AbortSignal }) => Promise<AsyncIterable<unknown>>
   capabilities?: () => Promise<ClientCapabilitiesSnapshot>
 }
@@ -118,6 +177,8 @@ export type ClientStateSyncMetrics = {
   rootSnapshots: number
   operationsSnapshots: number
   sessionSnapshots: number
+  sessionCardPages: number
+  sessionCardResolutions: number
   streamConnections: number
   streamFrames: number
   batches: number
@@ -131,6 +192,14 @@ export type ClientStateSyncMetrics = {
   capabilityRefreshesCoalesced: number
   operationsRefreshesCoalesced: number
   retryActions: number
+  retainedSessionDetails: number
+  retainedSessionLoads: number
+  sessionTailOptions: number
+  activeSessionRequests: number
+  activeCardRequests: number
+  sessionRefreshTimers: number
+  bufferedSessionEvents: number
+  queuedFrames: number
 }
 
 export type ClientStateSyncController = {
@@ -142,8 +211,20 @@ export type ClientStateSyncController = {
   refresh: () => Promise<void>
   refreshOperations: () => Promise<void>
   refreshCapabilities: () => Promise<void>
-  hydrateSession: (sessionID: string, input?: { limit?: number; before?: string }) => Promise<void>
+  loadSessionCards: (input?: ClientSessionCardPageOptions) => Promise<OpencodeXSessionCardPage>
+  ensureSessionCards: (
+    sessionIDs: readonly string[],
+    input?: ClientEnsureSessionCardsOptions,
+  ) => Promise<OpencodeXSessionCardPage | undefined>
+  refreshSessionTail: (sessionID: string, input?: ClientSessionTailOptions) => Promise<OpencodeXSessionSnapshot>
+  loadOlderSessionPage: (
+    sessionID: string,
+    input: ClientSessionPageOptions & { before: string },
+  ) => Promise<ClientSessionPageResult>
+  fetchSessionPage: (sessionID: string, input?: ClientSessionPageOptions) => Promise<ClientSessionPageResult>
+  releaseSession: (sessionID: string) => void
   retry: () => Promise<void>
+  applyEvents: (events: readonly Event[]) => boolean[]
   applyEvent: (event: Event) => boolean
   runMutation: <T>(key: string, mutation: () => Promise<T>) => Promise<T>
 }

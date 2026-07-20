@@ -60,7 +60,19 @@ function rootSnapshot(): OpencodeXStateSnapshot {
     payloads: {
       catalog: {
         projects: [],
-        sessions: [session()],
+        sessionCards: {
+          items: [session()],
+          hasMore: false,
+          missing: [],
+          sessionUiState: {
+            "session-1": {
+              sessionID: "session-1",
+              reviewedFiles: [],
+              displayStatus: "input_needed",
+              updated: true,
+            },
+          },
+        },
         views: [],
         sessionStatus: { "session-1": { type: "busy" } },
         permissions: [
@@ -74,14 +86,7 @@ function rootSnapshot(): OpencodeXStateSnapshot {
           },
         ],
         questions: [],
-        sessionUiState: {
-          "session-1": {
-            sessionID: "session-1",
-            reviewedFiles: [],
-            displayStatus: "input_needed",
-            updated: true,
-          },
-        },
+        sessionUiState: {},
       },
       operations: { jobs: [], swarms: [] },
     },

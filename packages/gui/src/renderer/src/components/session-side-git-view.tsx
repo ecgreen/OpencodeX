@@ -1,55 +1,58 @@
 import { File as FileDiffView } from "@opencode-ai/ui/file"
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { resolveFileDiff } from "@opencode-ai/ui/session-diff"
+import { For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import { buildDiffFileTree, expandedDirectories, flattenDiffFileTree } from "../lib/diff-file-tree"
-import { patchContents } from "../lib/tool-display"
-import { workbenchGitOperation, type DiffFile, type WorkbenchGitBranches, type WorkbenchGitStatus } from "../lib/store"
-import { Button, Select, TextArea, TextInput } from "./ui"
+import { flattenWorkbenchChangeTree, reconcileWorkbenchChangeRows, type WorkbenchChangeTreeRow } from "../lib/diff-file-tree"
+import { shouldVirtualizeDiff } from "../lib/tool-display"
+import { workbenchGitBranches, workbenchGitOperation } from "../lib/store"
+import { Button, LoadingState, Select, TextArea, TextInput } from "./ui"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
-import { sidePanelDiffForPath, sidePanelStatusForPath } from "./session-side-git-controller"
+import { sidePanelChangeForPath, type SessionSideGitController } from "./session-side-git-controller"
 import { clamp } from "./session-side-path"
+import { VirtualList } from "./virtual-list"
 
 const SPLIT_MIN = 0.22
 const SPLIT_MAX = 0.55
 
 export function SessionSideDiffPanel(props: {
   title: string
-  empty: string
-  loading: boolean
-  files: DiffFile[]
-  status?: WorkbenchGitStatus
-  branches?: WorkbenchGitBranches
+  controller: SessionSideGitController
   gui?: GuiClient
   directory?: string
   request?: { token: number; value?: string }
   openCommitModal: (path?: string) => void
   openFile: (path: string) => void
   refresh: () => void
+  allowCommit?: boolean
+  allowEdit?: boolean
 }) {
   const [selectedFile, setSelectedFile] = createSignal("")
-  const [expandedTree, setExpandedTree] = createSignal<ReadonlySet<string>>(new Set())
+  const [collapsedTree, setCollapsedTree] = createSignal<ReadonlySet<string>>(new Set())
   const [splitRatio, setSplitRatio] = createSignal(0.32)
   const [diffStyle, setDiffStyle] = createSignal<"unified" | "split">("unified")
   const [busyAction, setBusyAction] = createSignal("")
   const [notice, setNotice] = createSignal("")
   const [discardArmed, setDiscardArmed] = createSignal(false)
-  const fileTree = createMemo(() => buildDiffFileTree(props.files))
-  const rows = createMemo(() => flattenDiffFileTree(fileTree(), expandedTree()))
-  const selected = createMemo(() => props.files.find((file) => file.file === selectedFile()) ?? props.files[0])
-  const selectedStatus = createMemo(() => {
-    const path = selected()?.file
-    return path ? sidePanelStatusForPath(props.status?.files ?? [], path) : undefined
+  let selectedIndex = 0
+  let previousRows: readonly WorkbenchChangeTreeRow[] = []
+  const rows = createMemo(() => {
+    previousRows = reconcileWorkbenchChangeRows(previousRows, flattenWorkbenchChangeTree(props.controller.files(), collapsedTree()))
+    return previousRows
   })
-  const totals = createMemo(() => props.files.reduce((total, file) => ({
-    additions: total.additions + file.additions,
-    deletions: total.deletions + file.deletions,
-  }), { additions: 0, deletions: 0 }))
+  const selected = createMemo(() => sidePanelChangeForPath(props.controller.files(), selectedFile()))
+  const selectedPatch = createMemo(() => selectedFile() ? props.controller.patch(selectedFile()) : undefined)
 
-  createEffect(() => setExpandedTree(expandedDirectories(fileTree())))
   createEffect(() => {
-    if (selectedFile() && props.files.some((file) => file.file === selectedFile())) return
-    setSelectedFile(props.files[0]?.file ?? "")
+    const path = selectedFile()
+    const files = props.controller.files()
+    if (path && files.some((file) => file.path === path)) return
+    const next = files[Math.min(selectedIndex, Math.max(0, files.length - 1))]
+    setSelectedFile(next?.path ?? "")
+  })
+  createEffect(() => {
+    const path = selectedFile()
+    if (path) void props.controller.loadPatch(path)
   })
   createEffect(() => {
     selectedFile()
@@ -58,7 +61,7 @@ export function SessionSideDiffPanel(props: {
   })
 
   async function runFileAction(action: "stage" | "unstage" | "discard") {
-    const path = selected()?.file
+    const path = selected()?.path
     if (!props.gui || !path) return
     if (action === "discard" && !discardArmed()) {
       setDiscardArmed(true)
@@ -68,7 +71,9 @@ export function SessionSideDiffPanel(props: {
     setBusyAction(action)
     setNotice("")
     try {
-      const result = await workbenchGitOperation(props.gui, action, { paths: [path] }, props.directory)
+      const result = action === "stage"
+        ? await workbenchGitOperation(props.gui, action, { paths: [path] }, props.directory)
+        : await workbenchGitOperation(props.gui, action, { paths: [path] }, props.directory)
       setNotice(result.message ?? (result.ok ? `${action === "stage" ? "Staged" : action === "unstage" ? "Unstaged" : "Discarded"} ${path}.` : `Could not ${action} ${path}.`))
       if (result.ok) props.refresh()
     } catch (cause) {
@@ -81,9 +86,17 @@ export function SessionSideDiffPanel(props: {
   createEffect(() => {
     const request = props.request
     if (!request?.token || !request.value) return
-    const file = sidePanelDiffForPath(props.files, request.value)
-    if (file?.file) setSelectedFile(file.file)
+    const path = request.value
+    void props.controller.reveal(path).then((parents) => {
+      setCollapsedTree((current) => new Set([...current].filter((item) => !parents.includes(item))))
+      selectFile(path)
+    })
   })
+
+  function selectFile(path: string) {
+    selectedIndex = Math.max(0, props.controller.files().findIndex((file) => file.path === path))
+    setSelectedFile(path)
+  }
 
   function startSplitResize(event: PointerEvent & { currentTarget: HTMLElement }) {
     event.preventDefault()
@@ -105,29 +118,57 @@ export function SessionSideDiffPanel(props: {
       <header>
         <div>
           <strong>{props.title}</strong>
-          <span>{props.status?.branch ?? props.branches?.current ?? "Working tree"} · {props.files.length} file{props.files.length === 1 ? "" : "s"} <b class="diff-additions">+{totals().additions}</b> <b class="diff-deletions">-{totals().deletions}</b>{props.status?.ahead ? ` · ${props.status.ahead} ahead` : ""}{props.status?.behind ? ` · ${props.status.behind} behind` : ""}</span>
+          <span>
+            {props.controller.branch() || (props.controller.mode() === "git" ? "Working tree" : "Project files")}
+            {` · ${props.controller.summary().fileCount} file${props.controller.summary().fileCount === 1 ? "" : "s"} `}
+            <b class="diff-additions">+{props.controller.summary().additions}</b>
+            {" "}<b class="diff-deletions">-{props.controller.summary().deletions}</b>
+            <Show when={!props.controller.summary().metricsComplete}>{` · Measuring ${props.controller.summary().metricsResolved}/${props.controller.summary().metricsTotal}`}</Show>
+            <Show when={props.controller.refreshing()}> · Refreshing</Show>
+            <Show when={props.controller.repository().ahead}>{` · ${props.controller.repository().ahead} ahead`}</Show>
+            <Show when={props.controller.repository().behind}>{` · ${props.controller.repository().behind} behind`}</Show>
+          </span>
         </div>
         <div class="session-side-git-header-actions">
-          <Button appearance="ghost" type="button" onClick={() => setDiffStyle((value) => value === "unified" ? "split" : "unified")}>{diffStyle() === "unified" ? "Split diff" : "Unified diff"}</Button>
-          <Button appearance="ghost" type="button" class="session-side-git-action" disabled={props.loading} onClick={() => props.openCommitModal()}><Icon name="send" /> Commit / Push</Button>
+          <Button appearance="outline" size="compact" type="button" onClick={() => setDiffStyle((value) => value === "unified" ? "split" : "unified")}><Icon name="panel" /> {diffStyle() === "unified" ? "Split diff" : "Unified diff"}</Button>
+          <Show when={props.controller.mode() === "git" && props.allowCommit !== false}><Button appearance="soft" tone="success" size="compact" type="button" disabled={props.controller.loading()} onClick={() => props.openCommitModal()}><Icon name="send" /> Commit / Push</Button></Show>
+          <Show when={props.controller.mode() === "directory"}><Button appearance="solid" tone="accent" size="compact" type="button" disabled={props.controller.initializing()} onClick={() => void props.controller.initializeRepository()}><Icon name="branch" /> {props.controller.initializing() ? "Initializing..." : "Initialize Git"}</Button></Show>
         </div>
       </header>
-      <Show when={!props.loading} fallback={<div class="session-side-empty">Loading diff...</div>}>
-        <Show when={props.files.length > 0} fallback={<div class="session-side-empty">{props.empty}</div>}>
+      <Show when={props.controller.ready()} fallback={
+        <Show when={!props.controller.error()} fallback={<div class="session-side-empty"><span>{props.controller.error()}</span><Button appearance="ghost" size="compact" onClick={() => void props.controller.refresh()}>Retry</Button></div>}>
+          <LoadingState class="session-side-diff-loading" title="Loading changes" description="Reading change paths without file contents." />
+        </Show>
+      }>
+        <div class="session-side-diff-body">
+        <Show when={props.controller.refreshError()}>{(value) => <div class="session-side-git-notice"><span>{value()}</span><Button appearance="ghost" size="compact" onClick={() => void props.controller.refresh()}>Retry</Button></div>}</Show>
+        <Show when={props.controller.metricsError()}>{(value) => <div class="session-side-git-notice">{value()} Existing files remain available.</div>}</Show>
+        <Show when={props.controller.initializationError()}>{(value) => <div class="session-side-git-notice">{value()} Try initializing the repository again.</div>}</Show>
+        <Show when={rows().length > 0} fallback={<div class="session-side-empty">{props.controller.message() || "No project changes."}</div>}>
           <div class="session-side-diff-layout" style={{ "--session-side-file-list-width": `${Math.round(splitRatio() * 10000) / 100}%` }}>
-            <aside class="session-side-file-list">
-              <For each={rows()}>
-                {(row) => (
-                  <Button appearance="ghost"
-                    type="button"
-                    classList={{ selected: row.file?.file === selected()?.file, directory: row.type === "directory", expanded: row.type === "directory" && expandedTree().has(row.id) }}
+            <VirtualList
+              items={rows()}
+              rowHeight={30}
+              class="session-side-file-list"
+              role="tree"
+              ariaLabel="Project changes"
+              render={(row) => {
+                const change = () => row.type === "file" ? props.controller.files().find((file) => file.path === row.path) : undefined
+                return (
+                   <Button appearance="ghost"
+                     type="button"
+                     role="treeitem"
+                     aria-expanded={row.type === "directory" ? !collapsedTree().has(row.path) : undefined}
+                     classList={{ selected: row.path === selected()?.path, directory: row.type === "directory", expanded: row.type === "directory" && !collapsedTree().has(row.path), deleted: change()?.status === "deleted" }}
                     style={{ "--indent": `${row.depth * 14}px` }}
                     onClick={() => {
-                      if (!row.file?.file) {
-                        setExpandedTree((current) => current.has(row.id) ? new Set([...current].filter((id) => id !== row.id)) : new Set([...current, row.id]))
+                      if (row.type === "directory") {
+                        setCollapsedTree((current) => current.has(row.path)
+                          ? new Set([...current].filter((path) => path !== row.path))
+                          : new Set([...current, row.path]))
                         return
                       }
-                      setSelectedFile(row.file.file)
+                      selectFile(row.path)
                     }}
                   >
                     <span class="session-side-tree-guides" aria-hidden="true">
@@ -137,17 +178,16 @@ export function SessionSideDiffPanel(props: {
                     </span>
                     <span class="session-side-file-name">
                       <span class="session-side-disclosure" classList={{ placeholder: row.type !== "directory" }}>
-                        <Show when={row.type === "directory"}><Icon name={expandedTree().has(row.id) ? "chevronDown" : "chevronRight"} /></Show>
+                        <Show when={row.type === "directory"}><Icon name={collapsedTree().has(row.path) ? "chevronRight" : "chevronDown"} /></Show>
                       </span>
                       <strong>{row.name}</strong>
                     </span>
-                    <Show when={row.file}>
-                      {(file) => <small><b class="diff-additions">+{file().additions}</b><b class="diff-deletions">-{file().deletions}</b></small>}
+                    <Show when={change()}>
+                      {(file) => <small><Show when={!file().binary} fallback={<span>Binary</span>}><Show when={file().additions !== undefined && file().deletions !== undefined} fallback={<span>Measuring</span>}><b class="diff-additions">+{file().additions}</b><b class="diff-deletions">-{file().deletions}</b></Show></Show></small>}
                     </Show>
                   </Button>
-                )}
-              </For>
-            </aside>
+                )}}
+            />
             <div class="session-side-diff-splitter" role="separator" aria-orientation="vertical" aria-valuemin={Math.round(SPLIT_MIN * 100)} aria-valuemax={Math.round(SPLIT_MAX * 100)} aria-valuenow={Math.round(splitRatio() * 100)} tabIndex={0} onPointerDown={startSplitResize} onKeyDown={(event) => {
               const next = event.key === "ArrowLeft" ? splitRatio() - 0.03 : event.key === "ArrowRight" ? splitRatio() + 0.03 : event.key === "Home" ? SPLIT_MIN : event.key === "End" ? SPLIT_MAX : undefined
               if (next === undefined) return
@@ -160,19 +200,24 @@ export function SessionSideDiffPanel(props: {
               <Show when={selected()} fallback={<div class="session-side-empty">Select a file.</div>}>
                 {(file) => (
                   <section>
-                    <header data-side-panel-file={file().file ?? ""}>
-                      <div><strong>{file().file ?? ""}</strong><span>{file().status}</span></div>
-                      <div class="session-side-file-git-actions">
-                        <Button appearance="ghost" onClick={() => props.openFile(file().file ?? "")}>Edit</Button>
-                        <Show when={selectedStatus()?.unstaged || selectedStatus()?.untracked}><Button appearance="ghost" disabled={busyAction() !== ""} onClick={() => void runFileAction("stage")}>Stage</Button></Show>
-                        <Show when={selectedStatus()?.staged}><Button appearance="ghost" disabled={busyAction() !== ""} onClick={() => void runFileAction("unstage")}>Unstage</Button></Show>
-                        <Show when={selectedStatus()?.unstaged || selectedStatus()?.untracked}><Button appearance="ghost" tone="danger" disabled={busyAction() !== ""} onClick={() => void runFileAction("discard")}>{discardArmed() ? "Confirm discard" : "Discard"}</Button></Show>
-                        <Button appearance="ghost" disabled={!file().file} onClick={() => props.openCommitModal(file().file)}>Commit file</Button>
-                      </div>
+                    <header data-side-panel-file={file().path}>
+                       <div><strong>{file().path}</strong><span>{file().status}</span></div>
+                       <div class="session-side-file-git-actions">
+                         <Show when={props.allowEdit !== false && file().openable}><Button appearance="ghost" onClick={() => props.openFile(file().path)}>Edit</Button></Show>
+                         <Show when={props.controller.mode() === "git" && (file().unstaged || file().untracked)}><Button appearance="ghost" disabled={busyAction() !== ""} onClick={() => void runFileAction("stage")}>Stage</Button></Show>
+                         <Show when={props.controller.mode() === "git" && file().staged}><Button appearance="ghost" disabled={busyAction() !== ""} onClick={() => void runFileAction("unstage")}>Unstage</Button></Show>
+                         <Show when={props.controller.mode() === "git" && (file().unstaged || file().untracked)}><Button appearance="ghost" tone="danger" disabled={busyAction() !== ""} onClick={() => void runFileAction("discard")}>{discardArmed() ? "Confirm discard" : "Discard"}</Button></Show>
+                         <Show when={props.controller.mode() === "git" && props.allowCommit !== false}><Button appearance="ghost" onClick={() => props.openCommitModal(file().path)}>Commit file</Button></Show>
+                       </div>
                     </header>
                     <Show when={notice()}>{(value) => <div class="session-side-git-notice">{value()}</div>}</Show>
-                    <Show when={file().patch} fallback={<div class="session-side-empty">No text patch available.</div>}>
-                      {(patch) => <SideDiffPatch file={file().file ?? ""} patch={patch()} diffStyle={diffStyle()} />}
+                    <Show when={selectedPatch()} fallback={<div class="session-side-empty">Select a file to load its patch.</div>}>
+                      {(patch) => <>
+                        <Show when={patch().pages.length > 0} fallback={<Show when={patch().complete}><div class="session-side-empty">{patch().message ?? (patch().binary ? "Binary patch is not displayed." : "No text patch available.")}</div></Show>}>
+                          <div class="session-side-patch-pages"><For each={patch().pages}>{(text) => <SideDiffPatch file={file().path} patch={text} diffStyle={diffStyle()} />}</For></div>
+                        </Show>
+                        <Show when={props.controller.patchLoading() === file().path}><div class="session-side-patch-progress">Loading more patch…</div></Show>
+                      </>}
                     </Show>
                   </section>
                 )}
@@ -180,6 +225,7 @@ export function SessionSideDiffPanel(props: {
             </main>
           </div>
         </Show>
+        </div>
       </Show>
     </section>
   )
@@ -188,26 +234,24 @@ export function SessionSideDiffPanel(props: {
 export function SidePanelGitCommitModal(props: {
   gui?: GuiClient
   directory?: string
-  status?: WorkbenchGitStatus
-  branches?: WorkbenchGitBranches
-  files: DiffFile[]
+  branch?: string
+  repository?: { upstream?: string; remoteUrl?: string; ahead?: number }
   paths?: string[]
   close: () => void
   refresh: () => void
 }) {
-  const currentBranch = createMemo(() => props.status?.branch ?? props.branches?.current ?? "")
+  const [branches] = createResource(() => props.gui, (gui) => workbenchGitBranches(gui, props.directory))
+  const currentBranch = createMemo(() => props.branch ?? branches()?.current ?? "")
   const [branch, setBranch] = createSignal(currentBranch())
   const [message, setMessage] = createSignal("")
   const [body, setBody] = createSignal("")
   const [notice, setNotice] = createSignal("")
   const [busy, setBusy] = createSignal<"" | "commit" | "commit-push" | "push">("")
-  const changedPaths = createMemo(() => {
-    const paths = props.paths?.filter(Boolean) ?? props.status?.files.map((file) => file.path).filter(Boolean) ?? []
-    return paths.length > 0 ? paths : props.files.map((file) => file.file).filter((file): file is string => !!file)
-  })
-  const canPushAfterCommit = createMemo(() => !!props.status?.upstream || !!props.status?.remoteUrl)
-  const canPushOnly = createMemo(() => !!props.status?.remoteUrl && (!props.status?.upstream || (props.status.ahead ?? 0) > 0))
-  const pushLabel = createMemo(() => props.status?.upstream ? "Push" : "Publish branch")
+  const changedPaths = createMemo(() => props.paths?.filter(Boolean) ?? [])
+  const allChanges = createMemo(() => changedPaths().length === 0)
+  const canPushAfterCommit = createMemo(() => !!props.repository?.upstream || !!props.repository?.remoteUrl)
+  const canPushOnly = createMemo(() => !!props.repository?.remoteUrl && (!props.repository?.upstream || (props.repository.ahead ?? 0) > 0))
+  const pushLabel = createMemo(() => props.repository?.upstream ? "Push" : "Publish branch")
 
   createEffect(() => setBranch(currentBranch()))
 
@@ -226,9 +270,10 @@ export function SidePanelGitCommitModal(props: {
         currentBranch: currentBranch(),
         branch: branch(),
         paths: changedPaths(),
+        all: allChanges(),
         message: message(),
         body: body(),
-        publish: !props.status?.upstream,
+        publish: !props.repository?.upstream,
       })
       setNotice(result.message)
       props.refresh()
@@ -245,25 +290,25 @@ export function SidePanelGitCommitModal(props: {
       class="session-git-modal"
       backdropClass="session-git-modal-backdrop"
       title="Commit / Push"
-      description={`${changedPaths().length} file${changedPaths().length === 1 ? "" : "s"} in the working tree`}
+      description={allChanges() ? "All changes in the working tree" : `${changedPaths().length} file${changedPaths().length === 1 ? "" : "s"} in the working tree`}
       close={props.close}
       footer={<div class="session-git-modal-actions">
         <Button appearance="ghost" onClick={props.close}>Cancel</Button>
         <Button icon="send" disabled={!canPushOnly() || busy() !== ""} onClick={() => void run("push")}>{busy() === "push" ? "Pushing..." : pushLabel()}</Button>
-        <Button icon="check" disabled={!message().trim() || changedPaths().length === 0 || busy() !== ""} onClick={() => void run("commit")}>{busy() === "commit" ? "Committing..." : "Commit"}</Button>
-        <Button appearance="solid" tone="accent" icon="send" disabled={!message().trim() || changedPaths().length === 0 || !canPushAfterCommit() || busy() !== ""} onClick={() => void run("commit-push")}>{busy() === "commit-push" ? "Working..." : `Commit + ${pushLabel()}`}</Button>
+        <Button icon="check" disabled={!message().trim() || busy() !== ""} onClick={() => void run("commit")}>{busy() === "commit" ? "Committing..." : "Commit"}</Button>
+        <Button appearance="solid" tone="accent" icon="send" disabled={!message().trim() || !canPushAfterCommit() || busy() !== ""} onClick={() => void run("commit-push")}>{busy() === "commit-push" ? "Working..." : `Commit + ${pushLabel()}`}</Button>
       </div>}
     >
       <div class="session-git-modal-body">
         <div class="session-git-modal-summary">
-          <div><span>Current branch</span><strong>{props.status?.branch ?? "No branch"}</strong></div>
-          <div><span>Remote</span><strong>{props.status?.upstream ?? (props.status?.remoteUrl ? "Publish required" : "No remote")}</strong></div>
-          <div><span>Changes</span><strong>{changedPaths().length} file{changedPaths().length === 1 ? "" : "s"}</strong></div>
+          <div><span>Current branch</span><strong>{currentBranch() || "No branch"}</strong></div>
+          <div><span>Remote</span><strong>{props.repository?.upstream ?? (props.repository?.remoteUrl ? "Publish required" : "No remote")}</strong></div>
+          <div><span>Changes</span><strong>{allChanges() ? "All files" : `${changedPaths().length} file${changedPaths().length === 1 ? "" : "s"}`}</strong></div>
         </div>
-        <Select<string> label="Branch" options={props.branches?.branches ?? (currentBranch() ? [currentBranch()] : [])} current={branch()} onSelect={(value) => value && setBranch(value)} />
+        <Select<string> label="Branch" options={branches()?.branches ?? (currentBranch() ? [currentBranch()] : [])} current={branch()} onSelect={(value) => value && setBranch(value)} />
         <label><span>Commit summary</span><TextInput value={message()} onInput={(event) => setMessage(event.currentTarget.value)} placeholder="Describe the change" autofocus /></label>
         <label><span>Description</span><TextArea value={body()} onInput={(event) => setBody(event.currentTarget.value)} placeholder="Optional details" /></label>
-        <div class="session-git-modal-status"><span>Push readiness</span><span>{props.status?.upstream ? `${props.status.upstream}${props.status.ahead ? `, ${props.status.ahead} ahead` : ""}` : props.status?.remoteUrl ? "No upstream. Push will publish this branch." : "No remote configured."}</span></div>
+        <div class="session-git-modal-status"><span>Push readiness</span><span>{props.repository?.upstream ? `${props.repository.upstream}${props.repository.ahead ? `, ${props.repository.ahead} ahead` : ""}` : props.repository?.remoteUrl ? "No upstream. Push will publish this branch." : "No remote configured."}</span></div>
         <Show when={notice()}>{(value) => <p class="session-git-modal-notice">{value()}</p>}</Show>
       </div>
     </ModalFrame>
@@ -271,10 +316,8 @@ export function SidePanelGitCommitModal(props: {
 }
 
 function SideDiffPatch(props: { file: string; patch: string; diffStyle: "unified" | "split" }) {
-  const contents = createMemo(() => patchContents(props.patch, props.file))
-  return <div class="session-side-diff-patch"><Show when={contents()} fallback={<pre>{props.patch}</pre>}>
-    {(value) => <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle={props.diffStyle} overflow="scroll" virtualize={false} hunkSeparators="simple" />}
-  </Show></div>
+  const fileDiff = createMemo(() => resolveFileDiff({ file: props.file, patch: props.patch }))
+  return <div class="session-side-diff-patch tool-file-diff"><FileDiffView mode="diff" fileDiff={fileDiff()} diffStyle={props.diffStyle} overflow="scroll" virtualize={shouldVirtualizeDiff(props.patch)} hunkSeparators="simple" /></div>
 }
 
 async function runGitCommitFlow(input: {
@@ -284,6 +327,7 @@ async function runGitCommitFlow(input: {
   currentBranch: string
   branch: string
   paths: string[]
+  all: boolean
   message: string
   body: string
   publish: boolean
@@ -293,10 +337,9 @@ async function runGitCommitFlow(input: {
     if (!checkout.ok) return { ok: false, message: checkout.message ?? "Could not checkout branch." }
   }
   if (input.action !== "push") {
-    if (input.paths.length === 0) return { ok: false, message: "No working tree changes to commit." }
-    const stage = await workbenchGitOperation(input.gui, "stage", { paths: input.paths }, input.directory)
+    const stage = await workbenchGitOperation(input.gui, "stage", input.all ? { all: true } : { paths: input.paths }, input.directory)
     if (!stage.ok) return { ok: false, message: stage.message ?? "Could not stage files." }
-    const commit = await workbenchGitOperation(input.gui, "commit", { message: input.message.trim(), body: input.body.trim() || undefined, paths: input.paths }, input.directory)
+    const commit = await workbenchGitOperation(input.gui, "commit", { message: input.message.trim(), body: input.body.trim() || undefined, paths: input.all ? undefined : input.paths }, input.directory)
     if (!commit.ok) return { ok: false, message: commit.message ?? "Could not create commit." }
   }
   if (input.action === "commit") return { ok: true, message: "Committed changes." }

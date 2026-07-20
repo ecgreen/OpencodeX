@@ -1,10 +1,13 @@
 import { compactPath } from "../lib/format"
-import { workbenchBufferDirty } from "../lib/workbench"
-import type { OpenPanelState, OpenTab } from "./session-side-open-types"
+import { updateWeightedLRUEntries } from "../lib/resource-limits"
+import { workbenchBufferDirty, workbenchPathKey } from "../lib/workbench"
+import { OPEN_PANEL_TAB_LIMIT, type OpenPanelState, type OpenTab } from "./session-side-open-types"
 
 const STORAGE_PREFIX = "opencodex.gui.sessionWorkspace.tabs.v1."
+const WORKSPACE_STATE_LIMIT = 12
+export const WORKSPACE_STATE_CACHE_BYTES = 64 * 1024 * 1024
 const stateBySession = new Map<string, OpenPanelState>()
-const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const persistTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; state: OpenPanelState }>()
 
 export function openTabDefaults(id: string): OpenTab {
   return { id, kind: "picker", input: "", title: "New tab", text: "", original: "" }
@@ -13,7 +16,7 @@ export function openTabDefaults(id: string): OpenTab {
 export function restoreOpenPanelState(sessionID: string) {
   const state = stateBySession.get(sessionID) ?? readStoredState(sessionID)
   if (!state) return { tabs: [], activeID: "" }
-  stateBySession.set(sessionID, state)
+  cacheState(sessionID, state)
   return {
     tabs: state.tabs,
     activeID: state.tabs.some((tab) => tab.id === state.activeID) ? state.activeID : state.tabs[0]?.id ?? "",
@@ -21,22 +24,22 @@ export function restoreOpenPanelState(sessionID: string) {
 }
 
 export function saveOpenPanelState(sessionID: string, tabs: OpenTab[], activeID: string) {
+  if (!sessionID) return
   const state = {
     tabs: tabs.map(persistTab).filter((tab) => tab.kind !== "terminal"),
     activeID: tabs.some((tab) => tab.id === activeID && tab.kind !== "terminal") ? activeID : tabs.find((tab) => tab.kind !== "terminal")?.id ?? "",
   }
-  stateBySession.set(sessionID, { tabs, activeID: tabs.some((tab) => tab.id === activeID) ? activeID : tabs[0]?.id ?? "" })
-  if (typeof localStorage === "undefined" || !sessionID || sessionID.startsWith("pending:")) return
-  const pending = persistTimers.get(sessionID)
-  if (pending) clearTimeout(pending)
-  persistTimers.set(sessionID, setTimeout(() => {
-    persistTimers.delete(sessionID)
-    try {
-      localStorage.setItem(`${STORAGE_PREFIX}${sessionID}`, JSON.stringify(state))
-    } catch {
-      localStorage.removeItem(`${STORAGE_PREFIX}${sessionID}`)
-    }
-  }, 150))
+  if (typeof localStorage !== "undefined" && !sessionID.startsWith("pending:")) {
+    const pending = persistTimers.get(sessionID)
+    if (pending) clearTimeout(pending.timer)
+    const timer = setTimeout(() => {
+      if (persistTimers.get(sessionID)?.state !== state) return
+      persistTimers.delete(sessionID)
+      writeStoredState(sessionID, state)
+    }, 150)
+    persistTimers.set(sessionID, { timer, state })
+  }
+  cacheState(sessionID, state)
 }
 
 export function openTabLabel(tab: OpenTab) {
@@ -58,7 +61,12 @@ export function openTabIcon(tab: OpenTab) {
 }
 
 export function openTabDirty(tab: OpenTab) {
-  return tab.kind === "file" && workbenchBufferDirty({ content: tab.text, original: tab.original })
+  return tab.kind === "file" && !tab.readOnly && workbenchBufferDirty({ content: tab.text, original: tab.original })
+}
+
+export function openTabFileIdentity(tab: Pick<OpenTab, "directory" | "path" | "root">, fallbackDirectory = "") {
+  const directory = workbenchPathKey(tab.directory || fallbackDirectory)
+  return [directory, workbenchPathKey(tab.root ?? directory), workbenchPathKey(tab.path)].join("\0")
 }
 
 function readStoredState(sessionID: string): OpenPanelState | undefined {
@@ -68,15 +76,73 @@ function readStoredState(sessionID: string): OpenPanelState | undefined {
   try {
     const parsed = JSON.parse(value) as unknown
     if (!isRecord(parsed) || !Array.isArray(parsed.tabs)) return
-    const tabs = parsed.tabs.flatMap((value) => isStoredTab(value) ? [normalizeTab(value)] : [])
+    const storedTabs = parsed.tabs.flatMap((value) => isStoredTab(value) ? [normalizeTab(value)] : [])
+    const requestedActiveID = typeof parsed.activeID === "string" ? parsed.activeID : ""
+    const keep = new Set(storedTabs.slice(0, OPEN_PANEL_TAB_LIMIT).map((tab) => tab.id))
+    if (requestedActiveID && storedTabs.some((tab) => tab.id === requestedActiveID)) {
+      if (keep.size >= OPEN_PANEL_TAB_LIMIT) keep.delete(Array.from(keep).at(-1)!)
+      keep.add(requestedActiveID)
+    }
+    const tabs = storedTabs.filter((tab) => keep.has(tab.id))
     const activeID = typeof parsed.activeID === "string" && tabs.some((tab) => tab.id === parsed.activeID)
       ? parsed.activeID
       : tabs[0]?.id ?? ""
     return { tabs, activeID }
   } catch {
-    localStorage.removeItem(`${STORAGE_PREFIX}${sessionID}`)
     return
   }
+}
+
+function cacheState(sessionID: string, state: OpenPanelState) {
+  const next = updateWeightedLRUEntries({
+    entries: Array.from(stateBySession.entries()),
+    key: sessionID,
+    value: state,
+    maxEntries: WORKSPACE_STATE_LIMIT,
+    maxWeight: WORKSPACE_STATE_CACHE_BYTES,
+    weight: openPanelStateBytes,
+  })
+  stateBySession.clear()
+  next.entries.forEach(([id, value]) => stateBySession.set(id, value))
+  next.evicted.forEach(([id]) => flushStoredState(id))
+}
+
+function flushStoredState(sessionID: string) {
+  const pending = persistTimers.get(sessionID)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  persistTimers.delete(sessionID)
+  writeStoredState(sessionID, pending.state)
+}
+
+function writeStoredState(sessionID: string, state: OpenPanelState) {
+  if (typeof localStorage === "undefined") return
+  try {
+    localStorage.setItem(`${STORAGE_PREFIX}${sessionID}`, JSON.stringify(state))
+  } catch {
+    return
+  }
+}
+
+export function openPanelStateBytes(state: OpenPanelState) {
+  return state.tabs.reduce((total, tab) => total + 256 + [
+    tab.id,
+    tab.input,
+    tab.title,
+    tab.path,
+    tab.directory,
+    tab.root,
+    tab.url,
+    tab.text,
+    tab.original,
+    tab.message,
+    tab.externalText,
+    tab.content?.content,
+    tab.content?.mimeType,
+    tab.state?.id,
+    tab.state?.url,
+    tab.state?.title,
+  ].reduce((bytes, value) => bytes + (value?.length ?? 0) * 2, 0), 64)
 }
 
 function normalizeTab(tab: OpenTab): OpenTab {

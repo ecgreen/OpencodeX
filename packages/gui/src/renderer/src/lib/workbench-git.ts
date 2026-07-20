@@ -1,5 +1,14 @@
-import type { DiffFile, WorkbenchGitFileStatus } from "./store"
+import type { DiffFile } from "./store"
 import type { WorkbenchDiffFile, WorkbenchPatchRow } from "./workbench"
+
+type WorkbenchGitFileStatus = {
+  path: string
+  code: string
+  status: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+}
 
 export function normalizeWorkbenchDiffs(files: readonly DiffFile[]) {
   return files.flatMap((file): WorkbenchDiffFile[] => {

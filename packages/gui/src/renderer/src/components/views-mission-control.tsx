@@ -1,4 +1,4 @@
-import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { formatRelative, title } from "../lib/format"
@@ -20,7 +20,7 @@ type ViewSummaryRowItem =
   | { type: "placeholder"; id: string; height: number }
 
 export function ViewsMissionControl(props: {
-  views: OpencodeXView[]
+  views: ClientCatalogView[]
   snapshot?: GuiSnapshot
   openView: (viewID: string) => void
   createView: () => void

@@ -1,4 +1,6 @@
 import { join } from "node:path"
+import { mkdir } from "node:fs/promises"
+import { packageLimits } from "./package-budget"
 
 type ManifestChunk = {
   file: string
@@ -30,6 +32,22 @@ const files = await Array.fromAsync(
     cwd: outputDirectory,
     onlyFiles: true,
   }),
+)
+const inventoryFiles = await Array.fromAsync(
+  new Bun.Glob("**/*").scan({
+    cwd: outputDirectory,
+    onlyFiles: true,
+    dot: true,
+  }),
+)
+const inventory = inventoryFiles
+  .map((file) => ({ file: file.replaceAll("\\", "/"), bytes: Bun.file(join(outputDirectory, file)).size }))
+  .sort((left, right) => left.file.localeCompare(right.file))
+const rendererSize = inventory.reduce((total, file) => total + file.bytes, 0)
+await mkdir(join(import.meta.dir, "..", ".artifacts"), { recursive: true })
+await Bun.write(
+  join(import.meta.dir, "..", ".artifacts", "renderer-inventory.json"),
+  `${JSON.stringify({ version: 1, totalBytes: rendererSize, limitBytes: packageLimits.renderer, files: inventory }, null, 2)}\n`,
 )
 
 const measured = await Promise.all(
@@ -99,6 +117,9 @@ const failures = measured.flatMap((file) => {
   if (!violations.length) return []
   return [`${file.file} (${fileCategory}): ${violations.join(", ")}`]
 })
+if (rendererSize > packageLimits.renderer) {
+  failures.push(`total renderer: ${format(rendererSize)} > ${format(packageLimits.renderer)}`)
+}
 
 const startupLimit = { raw: 550 * kib, gzip: 150 * kib }
 if (startupSize.raw > startupLimit.raw || startupSize.gzip > startupLimit.gzip) {
@@ -109,6 +130,7 @@ if (startupSize.raw > startupLimit.raw || startupSize.gzip > startupLimit.gzip) 
 }
 
 console.log(`Startup JavaScript: ${format(startupSize.raw)} raw / ${format(startupSize.gzip)} gzip`)
+console.log(`Total renderer: ${format(rendererSize)} / ${format(packageLimits.renderer)}`)
 console.table(
   measured
     .sort((left, right) => right.raw - left.raw)

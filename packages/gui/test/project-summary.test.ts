@@ -17,7 +17,7 @@ describe("GUI project summaries", () => {
 
   test("handles empty projects", () => {
     const current = snapshot({ sessions: [], swarms: [], views: [], jobs: [], permissions: [], questions: [] })
-    const project = { ...current.projects[0], sessions: [] }
+    const project = { ...current.projects[0], sessions: [], sessionIDs: [] }
 
     expect(projectSwarms(project, current)).toEqual([])
     expect(projectViews(project, current)).toEqual([])
@@ -47,6 +47,7 @@ function snapshot(input: {
       project: { id: "core", name: "Project", time: { created: 1, updated: 1 } },
       folders: [{ path: "C:/Project" }],
       sessions,
+      sessionIDs: sessions.map((session) => session.id),
     } as GuiSnapshot["projects"][number]],
     sessions,
     sessionStatus: {},

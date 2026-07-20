@@ -1,5 +1,13 @@
-import { createEffect, createMemo, onCleanup } from "solid-js"
-import { guiBridgeErrorMessage, guiBridgeRequestFromEvent, guiBridgeScopes, type GuiBridgeRequest } from "../lib/gui-bridge"
+import { createEffect, createMemo, onCleanup, untrack } from "solid-js"
+import {
+  createGuiBridgeLease,
+  GUI_BRIDGE_CAPABILITIES,
+  guiBridgeDesiredState,
+  guiBridgeErrorMessage,
+  guiBridgeRequestMatchesSession,
+  guiBridgeRequestFromEvent,
+  type GuiBridgeRequest,
+} from "../lib/gui-bridge"
 import { authHeaders } from "../lib/store"
 import { openSessionWorkspace, requestSessionWorkspace, type SessionWorkspaceResult } from "../lib/session-workspace-bridge"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
@@ -7,15 +15,6 @@ import type { createNavigationController } from "./navigation-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
 import type { createViewController } from "./view-controller"
 import type { GuiClient } from "../lib/client"
-
-const CAPABILITIES = [
-  "workspace.open",
-  "browser.navigate",
-  "browser.state",
-  "browser.screenshot",
-  "browser.snapshot",
-] as const
-type BridgeCapability = typeof CAPABILITIES[number]
 
 export function createGuiBridgeController(input: {
   authoritative: ReturnType<typeof createAuthoritativeStateController>
@@ -25,12 +24,43 @@ export function createGuiBridgeController(input: {
 }) {
   const baseClientID = `gui-${crypto.randomUUID()}`
   const token = randomToken()
-  const clientIDByScope = new Map<string, string>()
-  const activeClientIDs = new Set<string>()
   const tails = new Map<string, Promise<void>>()
-  const scopeSignature = createMemo(() => JSON.stringify(guiBridgeScopes(input.authoritative.client()?.directory ?? "", input.authoritative.snapshot()?.sessions ?? [])))
+  const desired = createMemo(() => {
+    const snapshot = input.authoritative.snapshot()
+    const route = input.navigation.route()
+    const prioritySessionIDs = [
+      ...(route.name === "session" && route.sessionID ? [route.sessionID] : []),
+      ...(route.name === "views" ? input.view.sessions().map((session) => session.id) : []),
+      ...(snapshot?.permissions.map((request) => request.sessionID) ?? []),
+      ...(snapshot?.questions.map((request) => request.sessionID) ?? []),
+      ...(snapshot?.sessions.flatMap((session) => {
+        const status = snapshot.sessionUiState[session.id]?.displayStatus
+        return status === "input_needed" || status === "in_progress" ? [session.id] : []
+      }) ?? []),
+      ...(snapshot?.jobs.flatMap((job) =>
+        job.sessionID && (job.status === "queued" || job.status === "claimed" || job.status === "running")
+          ? [job.sessionID]
+          : [],
+      ) ?? []),
+    ].filter((sessionID, index, all) => all.indexOf(sessionID) === index)
+    const sessionsByID = new Map((snapshot?.sessions ?? []).map((session) => [session.id, session]))
+    return guiBridgeDesiredState({
+      clientID: baseClientID,
+      token,
+      capabilities: window.opencodex?.browser ? GUI_BRIDGE_CAPABILITIES : ["workspace.open"],
+      directory: input.authoritative.client()?.directory ?? "",
+      sessions: snapshot?.sessions ?? [],
+      prioritySessions: prioritySessionIDs.flatMap((sessionID) => sessionsByID.get(sessionID) ?? []),
+    })
+  })
+  let active: {
+    authority: string
+    lease: ReturnType<typeof createGuiBridgeLease>
+    renewal: number
+    setGui: (gui: GuiClient) => void
+  } | undefined
   const unsubscribe = input.authoritative.subscribeGlobalEvents((event) => {
-    const request = guiBridgeRequestFromEvent(event, activeClientIDs)
+    const request = guiBridgeRequestFromEvent(event, baseClientID)
     if (!request) return
     const tail = (tails.get(request.sessionID) ?? Promise.resolve()).then(() => handle(request)).catch((cause) => {
       console.error("GUI bridge request failed", cause)
@@ -43,32 +73,56 @@ export function createGuiBridgeController(input: {
 
   createEffect(() => {
     const gui = input.authoritative.client()
-    if (!gui) return
-    const scopes = JSON.parse(scopeSignature()) as ReturnType<typeof guiBridgeScopes>
-    const capabilities: BridgeCapability[] = window.opencodex?.browser ? [...CAPABILITIES] : ["workspace.open"]
-    const registrations = scopes.map((scope) => ({
-      ...scope,
-      clientID: clientIDForScope(scope, baseClientID, clientIDByScope),
-    }))
-    activeClientIDs.clear()
-    registrations.forEach((registration) => activeClientIDs.add(registration.clientID))
-    const register = () => Promise.all(registrations.map((registration) => gui.client.opencodex.guiBridge.register(
-      { directory: registration.directory || undefined, workspace: registration.workspace, clientID: registration.clientID, token, capabilities },
-      { headers: authHeaders(gui), throwOnError: true },
-    )))
-    void register().catch((cause) => console.error("GUI bridge registration failed", cause))
-    const renewal = window.setInterval(() => void register().catch((cause) => console.error("GUI bridge renewal failed", cause)), 20_000)
-    onCleanup(() => {
-      window.clearInterval(renewal)
-      registrations.forEach((registration) => activeClientIDs.delete(registration.clientID))
-      void Promise.all(registrations.map((registration) => gui.client.opencodex.guiBridge.unregister(
-        { directory: registration.directory || undefined, workspace: registration.workspace, clientID: registration.clientID, token },
-        { headers: authHeaders(gui), throwOnError: true },
-      ))).catch((cause) => console.error("GUI bridge cleanup failed", cause))
+    if (!gui) {
+      closeActiveLease()
+      return
+    }
+    if (active?.authority === gui.url) {
+      active.setGui(gui)
+      return
+    }
+    closeActiveLease()
+    const transport = { gui }
+    const lease = createGuiBridgeLease({
+      sync: (payload) => transport.gui.client.global.guiBridge.sync(payload, {
+        headers: authHeaders(transport.gui),
+        throwOnError: true,
+      }).then((response) => response.data),
+      unregister: (payload) => transport.gui.client.global.guiBridge.unregister(payload, {
+        headers: authHeaders(transport.gui),
+        throwOnError: true,
+      }).then(() => undefined),
+      onError: (operation, cause) => console.error(`GUI bridge ${operation} failed`, cause),
     })
+    active = {
+      authority: gui.url,
+      lease,
+      renewal: window.setInterval(() => void lease.renew(), 20_000),
+      setGui: (next) => (transport.gui = next),
+    }
+    void lease.update(untrack(desired))
   })
 
-  onCleanup(unsubscribe)
+  createEffect(() => {
+    const gui = input.authoritative.client()
+    const next = desired()
+    const current = active
+    if (!current || current.authority !== gui?.url) return
+    void current.lease.update(next)
+  })
+
+  onCleanup(() => {
+    closeActiveLease()
+    unsubscribe()
+  })
+
+  function closeActiveLease() {
+    if (!active) return
+    const current = active
+    active = undefined
+    window.clearInterval(current.renewal)
+    void current.lease.dispose()
+  }
 
   async function handle(request: GuiBridgeRequest) {
     const gui = input.authoritative.client()
@@ -77,6 +131,10 @@ export function createGuiBridgeController(input: {
       ?? input.selection.visibleSessions().find((item) => item.id === request.sessionID)
     if (!session) {
       await respondError(gui, request, token, `Session ${request.sessionID} is not available in this GUI.`)
+      return
+    }
+    if (!guiBridgeRequestMatchesSession(request, session)) {
+      await respondError(gui, request, token, `Session ${request.sessionID} does not match the requested workspace scope.`)
       return
     }
 
@@ -104,33 +162,22 @@ export function createGuiBridgeController(input: {
 async function respondSuccess(gui: GuiClient, request: GuiBridgeRequest, token: string, result: SessionWorkspaceResult) {
   const common = { clientID: request.clientID, token, requestID: request.requestID }
   const options = { headers: authHeaders(gui), throwOnError: true } as const
-  const scope = { directory: request.directory, workspace: request.workspace }
-  if (result.operation === "workspace.open") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
-  if (result.operation === "browser.navigate") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
-  if (result.operation === "browser.state") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
-  if (result.operation === "browser.screenshot") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
-  return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
+  if (result.operation === "workspace.open") return gui.client.global.guiBridge.respond({ body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
+  if (result.operation === "browser.navigate") return gui.client.global.guiBridge.respond({ body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
+  if (result.operation === "browser.state") return gui.client.global.guiBridge.respond({ body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
+  if (result.operation === "browser.screenshot") return gui.client.global.guiBridge.respond({ body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
+  return gui.client.global.guiBridge.respond({ body: { ...common, operation: result.operation, result: { status: "ok", output: result.output } } }, options)
 }
 
 async function respondError(gui: GuiClient, request: GuiBridgeRequest, token: string, message: string) {
   const common = { clientID: request.clientID, token, requestID: request.requestID }
   const result = { status: "error" as const, message }
   const options = { headers: authHeaders(gui), throwOnError: true } as const
-  const scope = { directory: request.directory, workspace: request.workspace }
-  if (request.operation === "workspace.open") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: request.operation, result } }, options)
-  if (request.operation === "browser.navigate") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: request.operation, result } }, options)
-  if (request.operation === "browser.state") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: request.operation, result } }, options)
-  if (request.operation === "browser.screenshot") return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: request.operation, result } }, options)
-  return gui.client.opencodex.guiBridge.respond({ ...scope, body: { ...common, operation: request.operation, result } }, options)
-}
-
-function clientIDForScope(scope: ReturnType<typeof guiBridgeScopes>[number], baseClientID: string, ids: Map<string, string>) {
-  const key = `${scope.directory}\n${scope.workspace ?? ""}`
-  const existing = ids.get(key)
-  if (existing) return existing
-  const id = `${baseClientID}-${ids.size + 1}`
-  ids.set(key, id)
-  return id
+  if (request.operation === "workspace.open") return gui.client.global.guiBridge.respond({ body: { ...common, operation: request.operation, result } }, options)
+  if (request.operation === "browser.navigate") return gui.client.global.guiBridge.respond({ body: { ...common, operation: request.operation, result } }, options)
+  if (request.operation === "browser.state") return gui.client.global.guiBridge.respond({ body: { ...common, operation: request.operation, result } }, options)
+  if (request.operation === "browser.screenshot") return gui.client.global.guiBridge.respond({ body: { ...common, operation: request.operation, result } }, options)
+  return gui.client.global.guiBridge.respond({ body: { ...common, operation: request.operation, result } }, options)
 }
 
 function randomToken() {

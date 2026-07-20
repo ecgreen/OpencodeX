@@ -1,5 +1,16 @@
 import type { Part, PermissionRequest } from "@opencode-ai/sdk/v2/client"
+import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import type { MessageBundle } from "./store"
+
+export const NESTED_TRANSCRIPT_DIFF_OPTIONS = {
+  preserveScroll: false,
+  virtualize: false,
+} as const
+
+const DIFF_VIRTUALIZATION_LIMITS = {
+  maxLines: 500,
+  maxBytes: 64 * 1024,
+}
 
 const COMMON_TOOL_IDS = new Set([
   "apply_patch",
@@ -266,11 +277,24 @@ export function permissionDiff(request: PermissionRequest) {
 }
 
 export function collapseOutput(output: string, maxLines = 120, maxChars = 12_000) {
-  const lines = output.split("\n")
-  if (lines.length <= maxLines && Array.from(output).length <= maxChars) return { output, overflow: false }
+  const bounded = previewToolOutput(output)
+  const lines = bounded.text.split("\n")
+  if (!bounded.truncated && lines.length <= maxLines && Array.from(bounded.text).length <= maxChars) return { output, overflow: false }
   const preview = lines.slice(0, maxLines).join("\n")
-  if (Array.from(preview).length > maxChars) return { output: `${Array.from(preview).slice(0, Math.max(0, maxChars - 3)).join("")}...`, overflow: true }
-  return { output: [...lines.slice(0, maxLines), "..."].join("\n"), overflow: true }
+  const collapsed = Array.from(preview).length > maxChars
+    ? `${Array.from(preview).slice(0, Math.max(0, maxChars - 3)).join("")}...`
+    : bounded.truncated && lines.length <= maxLines
+      ? preview
+      : [...lines.slice(0, maxLines), "..."].join("\n")
+  return { output: previewToolOutput(collapsed, TOOL_OUTPUT_PREVIEW_LIMITS.collapsed).text, overflow: true }
+}
+
+export function shouldVirtualizeDiff(diff: string) {
+  return previewToolOutput(diff, DIFF_VIRTUALIZATION_LIMITS).truncated
+}
+
+export function copyFullToolText(text: string, writeText: (value: string) => void | Promise<void> = (value) => navigator.clipboard.writeText(value)) {
+  return writeText(text)
 }
 
 function quoteValue(value: unknown) {

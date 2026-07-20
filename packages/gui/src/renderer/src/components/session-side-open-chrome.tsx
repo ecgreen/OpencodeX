@@ -1,10 +1,8 @@
-import type { WorkbenchDiagnostic } from "../lib/store"
 import type { OpenTab } from "./session-side-open-types"
 import type { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
 import { Icon } from "./icon"
 import { Button, IconButton, TextInput } from "./ui"
 import { SessionSideTabBar } from "./session-side-tab-bar"
-import { WorkbenchDiagnosticsBar } from "./workbench-diagnostics"
 import { Show } from "solid-js"
 import { compactPath } from "../lib/format"
 
@@ -30,18 +28,10 @@ export function SessionSideOpenChrome(props: {
   discardFile: () => void
   saveFile: () => void
   dirty: boolean
+  readOnly: boolean
   agentBrowsing: boolean
   reloadExternal: () => void
   keepLocal: () => void
-  diagnostics: {
-    loading: boolean
-    message: string
-    command: string
-    active: WorkbenchDiagnostic[]
-    total: number
-    refresh: () => void
-    open: (path: string) => void
-  }
 }) {
   const tab = () => props.activeTab
   return <>
@@ -59,17 +49,14 @@ export function SessionSideOpenChrome(props: {
           <IconButton icon="external" label="Open in external browser" disabled={!tab()?.url} onClick={props.browserExternal} />
         </div></Show>
         <Show when={tab()?.kind === "file"}><div class="session-open-file-bar">
-          <span class="session-open-file-breadcrumb"><Icon name="file" /> {tab()?.path ? compactPath(tab()?.path ?? "") : "File"}</span>
-          <div class="session-open-file-actions"><IconButton icon="folder-open" label="Show workspace files" onClick={props.openFiles} /><IconButton icon="undo" label="Discard unsaved changes" disabled={!props.dirty} onClick={props.discardFile} /><IconButton icon="save" label="Save file" disabled={!props.dirty} onClick={props.saveFile} /></div>
+          <span class="session-open-file-breadcrumb"><Icon name="file" /> {tab()?.path ? compactPath(tab()?.path ?? "") : "File"}<Show when={props.readOnly}><small class="session-open-file-readonly">Read-only</small></Show></span>
+          <div class="session-open-file-actions"><IconButton icon="folder-open" label="Show workspace files" onClick={props.openFiles} /><IconButton icon="undo" label="Discard unsaved changes" disabled={props.readOnly || !props.dirty} onClick={props.discardFile} /><IconButton icon="save" label="Save file" disabled={props.readOnly || !props.dirty} onClick={props.saveFile} /></div>
         </div></Show>
       </div>
     </Show>
     <Show when={tab()?.message}>{(message) => <div class="session-side-message">{message()}</div>}</Show>
     <Show when={props.agentBrowsing}><div class="session-open-agent-indicator" role="status"><Icon name="activity" />Agent browsing</div></Show>
     <Show when={tab()?.kind === "file" && tab()?.externallyChanged}><div class="session-side-conflict" role="alert"><span>The file changed on disk while this tab has unsaved edits.</span><Button appearance="ghost" onClick={props.keepLocal}>Keep mine</Button><Button appearance="solid" tone="accent" onClick={props.reloadExternal}>Reload disk version</Button></div></Show>
-    <Show when={tab()?.kind === "file" && (props.diagnostics.loading || props.diagnostics.message || props.diagnostics.active.length > 0)}>
-      <WorkbenchDiagnosticsBar loading={props.diagnostics.loading} message={props.diagnostics.message} command={props.diagnostics.command} diagnostics={props.diagnostics.active} total={props.diagnostics.total} onRun={props.diagnostics.refresh} onOpen={props.diagnostics.open} />
-    </Show>
   </>
 }
 

@@ -31,3 +31,22 @@ export function PanelLoadingState(props: { label: string }) {
     </div>
   )
 }
+
+export function SessionSidePanelLoading(props: { open: boolean; widthRatio: number }) {
+  return (
+    <>
+      <div class="session-side-panel-resize workspace-panel-loading-resize" classList={{ open: props.open }} aria-hidden="true" />
+      <aside
+        class="session-side-panel workspace-panel-loading"
+        classList={{ open: props.open }}
+        style={{ "--session-side-panel-width": `${Math.round(props.widthRatio * 10000) / 100}%` }}
+        aria-label="Side panel"
+        aria-hidden={!props.open}
+        aria-busy="true"
+        inert={!props.open}
+      >
+        <PanelLoadingState label="Loading workspace tools" />
+      </aside>
+    </>
+  )
+}

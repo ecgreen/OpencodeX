@@ -66,7 +66,7 @@ jobs:
             smoke: bun --cwd packages/gui run smoke:packaged
             electron_acceptance: bun --cwd packages/gui run test:e2e:electron:packaged
           - name: macos-x64
-            host: macos-13
+            host: macos-15-intel
             cli_target: darwin-x64
             sidecar_target: opencode-darwin-x64
             builder_args: --mac dmg zip --x64
@@ -153,7 +153,7 @@ jobs:
         env:
           OPENCODE_CHANNEL: latest
           OPENCODE_VERSION: ${{ steps.version.outputs.version }}
-        run: bun ./packages/opencode/script/build.ts --target "${{ matrix.cli_target }}" --skip-embed-web-ui --no-minify
+        run: bun ./packages/opencode/script/build.ts --target "${{ matrix.cli_target }}" --gui-coordinator --no-minify --skip-install
 
       - name: Build renderer and copy sidecar
         env:
@@ -166,7 +166,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           OPENCODEX_ALLOW_UNSIGNED_GUI: 1
-        run: bun --cwd packages/gui exec electron-builder --dir --publish never
+        run: bun --cwd packages/gui run electron-builder --dir --publish never
 
       - name: Smoke packaged GUI
         run: ${{ matrix.smoke }}
@@ -174,6 +174,7 @@ jobs:
       - name: Exercise packaged Electron and native views
         env:
           OPENCODEX_GUI_E2E_PACKAGED: 1
+          OPENCODEX_GUI_E2E_BACKGROUND: 1
         run: ${{ matrix.electron_acceptance }}
 
       - name: Upload packaged Electron artifacts
@@ -184,7 +185,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/gui/.artifacts/e2e-electron
+          path: |
+            packages/gui/.artifacts/e2e-electron
+            packages/gui/.artifacts/package-inventory-*.json
+            packages/gui/.artifacts/renderer-inventory.json
 
       - name: Build distributable GUI assets
         env:
@@ -197,7 +201,7 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ matrix.name == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
           OPENCODEX_ALLOW_UNSIGNED_GUI: ${{ inputs.allow_unsigned_gui && '1' || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.allow_unsigned_gui && 'false' || '' }}
-        run: bun --cwd packages/gui exec electron-builder ${{ matrix.builder_args }} --publish never
+        run: bun --cwd packages/gui run electron-builder ${{ matrix.builder_args }} --publish never
 
       - name: Collect GUI assets
         run: |

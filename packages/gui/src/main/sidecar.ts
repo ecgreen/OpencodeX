@@ -5,10 +5,10 @@ import path from "node:path"
 import {
   COORDINATOR_USERNAME,
   coordinatorClientDir,
+  coordinatorDatabaseIdentity,
   coordinatorHeaders,
   coordinatorKey,
   coordinatorManifestPath,
-  coordinatorMatchesDatabase,
   coordinatorStartupLogPath,
   createSidecarLaunch,
   createStartupLog,
@@ -21,6 +21,8 @@ import {
   type CoordinatorManifest,
   type SidecarLaunch,
 } from "./sidecar-launch.js"
+import { loopbackSidecarURL } from "./sidecar-connection.js"
+import { stopDetachedChild } from "./sidecar-lifecycle.js"
 
 export type SidecarConnection = {
   url: string
@@ -30,56 +32,92 @@ export type SidecarConnection = {
 }
 
 type SidecarState = {
-  child?: ChildProcess
+  child?: { process: ChildProcess; key: string; token: string }
   connection?: SidecarConnection
   startup?: Promise<SidecarConnection>
-  lease?: { dispose: () => void }
+  lease?: { dispose: () => Promise<void> }
+  controller?: AbortController
+  generation: number
 }
 
 const START_TIMEOUT = 15_000
 const CLIENT_HEARTBEAT_INTERVAL = 2_000
-const state: SidecarState = {}
+const state: SidecarState = { generation: 0 }
 
-export function startSidecar() {
+export function startSidecar(signal?: AbortSignal) {
+  if (signal?.aborted) return Promise.reject(startupStoppedError())
   if (state.connection) return Promise.resolve(state.connection)
   if (state.startup) return state.startup
 
-  state.startup = coordinatorConnection(workingDirectory())
-    .then((connection) => {
+  const generation = state.generation
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  signal?.addEventListener("abort", abort, { once: true })
+  const startup = coordinatorConnection(workingDirectory(), controller.signal)
+    .then(async (manifest) => {
+      if (generation !== state.generation || controller.signal.aborted) throw startupStoppedError()
+      const lease = startCoordinatorClientLease(manifest.key)
+      try {
+        await lease.ready
+      } catch (error) {
+        await lease.dispose()
+        throw error
+      }
+      if (generation !== state.generation || controller.signal.aborted) {
+        await lease.dispose()
+        throw startupStoppedError()
+      }
+      if (state.lease) await state.lease.dispose()
+      if (generation !== state.generation || controller.signal.aborted) {
+        await lease.dispose()
+        throw startupStoppedError()
+      }
+      state.lease = lease
+      if (state.child?.process.pid === manifest.pid && process.env.OPENCODEX_GUI_SMOKE !== "1")
+        state.child = undefined
+      const connection = connectionFromManifest(manifest)
       state.connection = connection
       return connection
     })
     .finally(() => {
+      signal?.removeEventListener("abort", abort)
+      if (state.startup !== startup) return
       state.startup = undefined
+      state.controller = undefined
     })
 
-  return state.startup
+  state.controller = controller
+  state.startup = startup
+  return startup
 }
 
-export function stopSidecar() {
-  state.lease?.dispose()
+export async function stopSidecar() {
+  state.generation += 1
+  const startup = state.startup
+  const lease = state.lease
+  const child = state.child
+  state.controller?.abort()
+  state.controller = undefined
   state.lease = undefined
   state.child = undefined
   state.connection = undefined
   state.startup = undefined
+  await Promise.all([
+    lease?.dispose(),
+    child ? stopOwnedCoordinator(child) : undefined,
+    startup?.catch(() => undefined),
+  ])
 }
 
-async function coordinatorConnection(directory: string) {
-  const key = coordinatorKey(directory)
-  const database = sidecarDatabase(directory)
-  const existing = await activeCoordinator(directory)
-  if (existing && (await coordinatorMatchesDatabase(existing, database))) {
-    state.lease?.dispose()
-    state.lease = startCoordinatorClientLease(existing.key)
-    return connectionFromManifest(existing)
-  }
-  if (existing) await fs.promises.rm(coordinatorManifestPath(key), { force: true }).catch(() => undefined)
-  await spawnCoordinator(directory, key, database)
-  const manifest = await activeCoordinator(directory)
-  if (!manifest) throw new Error("OpencodeX coordinator did not publish a usable manifest")
-  state.lease?.dispose()
-  state.lease = startCoordinatorClientLease(manifest.key)
-  return connectionFromManifest(manifest)
+async function coordinatorConnection(directory: string, signal: AbortSignal) {
+  const database = await sidecarDatabase(directory)
+  const key = coordinatorKey(directory, database)
+  throwIfStartupStopped(signal)
+  const existing = await activeCoordinator(directory, key, database)
+  throwIfStartupStopped(signal)
+  if (existing) return existing
+  throwIfStartupStopped(signal)
+  return spawnCoordinator(directory, key, database, signal)
 }
 
 function connectionFromManifest(manifest: CoordinatorManifest) {
@@ -91,15 +129,18 @@ function connectionFromManifest(manifest: CoordinatorManifest) {
   }
 }
 
-async function activeCoordinator(directory: string) {
-  const key = coordinatorKey(directory)
+async function activeCoordinator(directory: string, key: string, database: string) {
   const manifest = await readCoordinatorManifest(key).catch(() => undefined)
   if (!manifest) return undefined
-  if (manifest.key !== key || normalizeDirectory(manifest.directory) !== normalizeDirectory(directory)) {
+  if (
+    manifest.key !== key ||
+    normalizeDirectory(manifest.directory) !== normalizeDirectory(directory) ||
+    coordinatorDatabaseIdentity(manifest.database) !== coordinatorDatabaseIdentity(database)
+  ) {
     await fs.promises.rm(coordinatorManifestPath(key), { force: true }).catch(() => undefined)
     return undefined
   }
-  if (await isCoordinatorHealthy(manifest)) return manifest
+  if (await isSidecarConnectionHealthy(manifest)) return manifest
   await fs.promises.rm(coordinatorManifestPath(key), { force: true }).catch(() => undefined)
   return undefined
 }
@@ -107,11 +148,13 @@ async function activeCoordinator(directory: string) {
 async function readCoordinatorManifest(key: string) {
   const parsed = JSON.parse(await fs.promises.readFile(coordinatorManifestPath(key), "utf8")) as Partial<CoordinatorManifest>
   if (
-    parsed.version !== 1 ||
+    parsed.version !== 2 ||
     typeof parsed.key !== "string" ||
     typeof parsed.directory !== "string" ||
+    typeof parsed.database !== "string" ||
     typeof parsed.pid !== "number" ||
     typeof parsed.url !== "string" ||
+    !loopbackSidecarURL(parsed.url) ||
     typeof parsed.username !== "string" ||
     typeof parsed.password !== "string" ||
     typeof parsed.token !== "string" ||
@@ -122,7 +165,7 @@ async function readCoordinatorManifest(key: string) {
   return parsed as CoordinatorManifest
 }
 
-async function isCoordinatorHealthy(manifest: CoordinatorManifest) {
+export async function isSidecarConnectionHealthy(manifest: Pick<CoordinatorManifest, "url" | "username" | "password">) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 1_500)
   try {
@@ -143,37 +186,42 @@ async function isCoordinatorHealthy(manifest: CoordinatorManifest) {
 function startCoordinatorClientLease(key: string) {
   const dir = coordinatorClientDir(key)
   const file = path.join(dir, `${process.pid}.gui.json`)
-  const write = () =>
-    fs.promises
-      .mkdir(dir, { recursive: true })
-      .then(() =>
-        fs.promises.writeFile(
-          file,
-          JSON.stringify({
-            version: 1,
-            key,
-            pid: process.pid,
-            updatedAt: Date.now(),
-          }),
-          { mode: 0o600 },
-        ),
-      )
-      .catch(() => {})
+  let disposed = false
+  const write = async () => {
+    if (disposed) return
+    await fs.promises.mkdir(dir, { recursive: true })
+    if (disposed) return
+    await fs.promises.writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        key,
+        pid: process.pid,
+        updatedAt: Date.now(),
+      }),
+      { mode: 0o600 },
+    )
+  }
   const timer = setInterval(() => {
-    void write()
+    void write().catch(() => {})
   }, CLIENT_HEARTBEAT_INTERVAL)
   timer.unref?.()
-  void write()
+  const ready = write()
 
   return {
-    dispose() {
+    ready,
+    async dispose() {
+      if (disposed) return
+      disposed = true
       clearInterval(timer)
-      void fs.promises.rm(file, { force: true }).catch(() => {})
+      await ready.catch(() => undefined)
+      await fs.promises.rm(file, { force: true }).catch(() => undefined)
     },
   }
 }
 
-async function spawnCoordinator(directory: string, key: string, database: string | undefined) {
+async function spawnCoordinator(directory: string, key: string, database: string, signal: AbortSignal) {
+  throwIfStartupStopped(signal)
   const password = randomBytes(32).toString("base64url")
   const token = randomBytes(32).toString("base64url")
   const started = { ...createSidecarLaunch(directory, key, database), startupLog: coordinatorStartupLogPath(key) }
@@ -204,17 +252,18 @@ async function spawnCoordinator(directory: string, key: string, database: string
     }
   })()
   child.unref()
-  state.child = child
+  const owned = { process: child, key, token }
+  state.child = owned
   try {
-    await waitForCoordinator(directory, child, started)
+    return await waitForCoordinator(directory, child, started, signal)
   } catch (error) {
-    if (!child.killed) child.kill(process.platform === "win32" ? undefined : "SIGTERM")
-    state.child = undefined
+    await stopOwnedCoordinator(owned)
+    if (state.child === owned) state.child = undefined
     throw error
   }
 }
 
-async function waitForCoordinator(directory: string, child: ChildProcess, started: SidecarLaunch) {
+async function waitForCoordinator(directory: string, child: ChildProcess, started: SidecarLaunch, signal: AbortSignal) {
   const startedAt = Date.now()
   let failure: Error | undefined
   child.once("error", (error) => {
@@ -224,9 +273,47 @@ async function waitForCoordinator(directory: string, child: ChildProcess, starte
     failure = new Error(`OpencodeX coordinator exited before startup (${signal ?? code ?? "unknown"})${startupLogDetails(started)}`)
   })
   while (Date.now() - startedAt < START_TIMEOUT) {
+    throwIfStartupStopped(signal)
+    const manifest = await activeCoordinator(directory, coordinatorKey(directory, started.database), started.database)
+    throwIfStartupStopped(signal)
+    if (manifest) return manifest
     if (failure) throw failure
-    if (await activeCoordinator(directory)) return
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await startupDelay(signal)
   }
   throw new Error(`Timed out waiting for OpencodeX coordinator to start${startupLogDetails(started)}`)
+}
+
+function throwIfStartupStopped(signal: AbortSignal) {
+  if (signal.aborted) throw startupStoppedError()
+}
+
+function startupStoppedError() {
+  const error = new Error("Sidecar startup was stopped")
+  error.name = "AbortError"
+  return error
+}
+
+function startupDelay(signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(done, 150)
+    const abort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", abort)
+      reject(startupStoppedError())
+    }
+    function done() {
+      signal.removeEventListener("abort", abort)
+      resolve()
+    }
+    signal.addEventListener("abort", abort, { once: true })
+    if (signal.aborted) abort()
+  })
+}
+
+async function stopOwnedCoordinator(owned: NonNullable<SidecarState["child"]>) {
+  const child = owned.process
+  await stopDetachedChild(child)
+  const manifest = await readCoordinatorManifest(owned.key).catch(() => undefined)
+  if (!manifest || manifest.pid !== child.pid || manifest.token !== owned.token) return
+  await fs.promises.rm(coordinatorManifestPath(owned.key), { force: true }).catch(() => undefined)
 }

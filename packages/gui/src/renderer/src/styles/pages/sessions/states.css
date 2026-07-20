@@ -116,6 +116,11 @@
   background: var(--element);
 }
 
+.session-side-file-list button.deleted .session-side-file-name strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .session-side-file-list button:hover {
   background: var(--element);
 }

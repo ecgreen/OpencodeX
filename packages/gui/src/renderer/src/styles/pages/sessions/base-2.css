@@ -230,6 +230,18 @@
   margin-left: auto;
 }
 
+.session-open-file-readonly {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
 .session-open-large-file {
   min-width: 0;
   min-height: 0;

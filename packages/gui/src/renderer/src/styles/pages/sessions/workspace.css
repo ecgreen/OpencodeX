@@ -95,19 +95,36 @@
   gap: 5px;
 }
 
+.session-side-diff>header>.session-side-git-header-actions {
+  flex: 0 0 132px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  align-items: stretch;
+  gap: 6px;
+  width: 132px;
+}
+
+.session-side-git-header-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
 .session-side-file-git-actions {
   flex-wrap: wrap;
   margin-top: 5px;
 }
 
-.session-side-file-git-actions button,
-.session-side-git-header-actions button {
+.session-side-file-git-actions button {
   min-height: 26px;
   padding: 3px 7px;
   font-size: 11px;
 }
 
 .session-side-git-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--muted);
   background: var(--element);
@@ -115,6 +132,23 @@
   font-size: 11px;
 }
 
-.session-side-patch .session-side-diff-patch {
+.session-side-patch-pages {
   flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.session-side-patch-pages .session-side-diff-patch {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.session-side-patch-progress {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--muted);
+  background: var(--panel);
+  padding: 6px 10px;
+  font-size: 11px;
 }

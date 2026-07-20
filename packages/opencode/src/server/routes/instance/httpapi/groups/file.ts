@@ -17,6 +17,18 @@ export const FileQuery = Schema.Struct({
   path: Schema.String,
 })
 
+export const FileContentQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  path: Schema.String,
+  maxBytes: Schema.optional(
+    Schema.NumberFromString.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(1),
+      Schema.isLessThanOrEqualTo(File.MAX_CONTENT_BYTES),
+    ),
+  ),
+})
+
 export const FindTextQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   pattern: Schema.String,
@@ -91,7 +103,7 @@ export const FileApi = HttpApi.make("file")
           }),
         ),
         HttpApiEndpoint.get("content", FilePaths.content, {
-          query: FileQuery,
+          query: FileContentQuery,
           success: described(File.Content, "File content"),
         }).annotateMerge(
           OpenApi.annotations({

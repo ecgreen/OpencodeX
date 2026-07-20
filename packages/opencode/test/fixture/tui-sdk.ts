@@ -109,7 +109,7 @@ export function createFetch(override?: FetchHandler) {
             payloads: {
               catalog: {
                 projects: [],
-                sessions: [],
+                sessionCards: { items: [], hasMore: false, missing: [], sessionUiState: {} },
                 views: [],
                 sessionStatus: {},
                 permissions: [],

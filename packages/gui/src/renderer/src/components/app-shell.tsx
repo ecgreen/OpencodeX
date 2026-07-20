@@ -1,11 +1,17 @@
 import { Button } from "./ui"
-import { Show, Suspense, createMemo } from "solid-js"
+import { Show, Suspense, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiAppModel } from "../controllers/app-model"
 import { NAV_ITEMS } from "../controllers/navigation-controller"
 import { guiPluginThemeCss } from "../lib/gui-plugins"
 import { projectSessions } from "../lib/app-session-lists"
 import { title } from "../lib/format"
+import {
+  RENDERER_PERFORMANCE_MARKS,
+  RENDERER_PERFORMANCE_MEASURES,
+  markPerformance,
+  measurePerformance,
+} from "../lib/performance"
 import { projectNameForSession } from "../lib/project-name"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
 import type { GuiSnapshot } from "../lib/store"
@@ -21,6 +27,41 @@ import { SessionSwitcherOverlay } from "./session-switcher-overlay"
 
 export function AppShell(props: { model: GuiAppModel }) {
   const model = props.model
+  let paintFrame: number | undefined
+  let authoritativePainted = false
+  onMount(() => {
+    markPerformance(RENDERER_PERFORMANCE_MARKS.appShellMounted)
+    measurePerformance(
+      RENDERER_PERFORMANCE_MEASURES.bootstrapToAppShellMounted,
+      RENDERER_PERFORMANCE_MARKS.bootstrap,
+      RENDERER_PERFORMANCE_MARKS.appShellMounted,
+    )
+  })
+  createEffect(() => {
+    const ready = !model.authoritative.loading() && !model.authoritative.error()
+    if (!ready) {
+      if (paintFrame !== undefined) cancelAnimationFrame(paintFrame)
+      paintFrame = undefined
+      return
+    }
+    if (authoritativePainted || paintFrame !== undefined) return
+    paintFrame = requestAnimationFrame(() => {
+      paintFrame = requestAnimationFrame(() => {
+        paintFrame = undefined
+        if (model.authoritative.loading() || model.authoritative.error()) return
+        authoritativePainted = true
+        markPerformance(RENDERER_PERFORMANCE_MARKS.authoritativePainted)
+        measurePerformance(
+          RENDERER_PERFORMANCE_MEASURES.bootstrapToAuthoritativePaint,
+          RENDERER_PERFORMANCE_MARKS.bootstrap,
+          RENDERER_PERFORMANCE_MARKS.authoritativePainted,
+        )
+      })
+    })
+  })
+  onCleanup(() => {
+    if (paintFrame !== undefined) cancelAnimationFrame(paintFrame)
+  })
   const paletteTargets = createMemo<PaletteTarget[]>(() => {
     const snapshot = model.authoritative.snapshot()
     if (!snapshot) return []
@@ -33,7 +74,7 @@ export function AppShell(props: { model: GuiAppModel }) {
           kind: "project",
           id: project.id,
           title: title(project.name ?? project.project.name),
-          subtitle: `${project.sessions.length} sessions`,
+          subtitle: `${project.sessionIDs.length} sessions`,
           run: () => model.navigation.setRoute({ name: "projects", projectID: project.id }),
         }),
       ),
@@ -136,6 +177,9 @@ export function AppShell(props: { model: GuiAppModel }) {
       <RailSidebar
         snapshot={model.authoritative.snapshot()}
         sessions={model.sessionSelection.visibleSessions()}
+        hasMoreSessions={model.authoritative.state()?.sessionCards.hasMore ?? false}
+        loadingMoreSessions={model.authoritative.state()?.sessionCards.loading ?? false}
+        loadMoreSessions={() => void model.notices.run(() => model.authoritative.loadMoreSessionCards().then(() => undefined))}
         pinnedSessions={model.rail.pinnedSessions()}
         pinnedViews={model.rail.pinnedViews()}
         navItems={NAV_ITEMS}

@@ -190,6 +190,12 @@ export const TuiThreadCommand = cmd({
         : await (async () => {
             const coordinator = await resolveLocalCoordinator(cwd)
             const lease = startCoordinatorClientLease(coordinator.key)
+            try {
+              await lease.ready
+            } catch (error) {
+              lease.dispose()
+              throw error
+            }
             stop = async () => {
               lease.dispose()
             }

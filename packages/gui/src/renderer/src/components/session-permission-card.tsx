@@ -1,13 +1,15 @@
 import { File as FileDiffView } from "@opencode-ai/ui/file"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
+import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js"
 import { Portal } from "solid-js/web"
-import { collapseOutput, patchContents, toolError, toolInput, toolOutput } from "../lib/tool-display"
+import { NESTED_TRANSCRIPT_DIFF_OPTIONS, collapseOutput, copyFullToolText, patchContents, toolError, toolInput, toolOutput } from "../lib/tool-display"
 import { describePermission } from "../lib/safety-present"
 import { isKeyboardEditingTarget } from "../lib/keyboard-shortcuts"
 import type { ToolPart } from "./session-transcript"
 import { ModalFrame } from "./modal-frame"
 import { SafetyCardHeader, type SafetyQueuePosition } from "./session-safety-card"
+import { ToolPreviewText } from "./session-tool-details"
 import { Button, Menu, SurfaceCard } from "./ui"
 
 type PermissionReply = "once" | "always" | "reject"
@@ -97,16 +99,16 @@ export function SessionPermissionCard(props: {
             <Show when={detailsOpen()}>
               <div class="permission-details-content">
                 <Show when={Object.keys(input()).length > 0}>
-                  <section><h3>Tool input</h3><pre>{JSON.stringify(input(), null, 2)}</pre></section>
+                  <section><h3>Tool input</h3><ToolPreviewText text={JSON.stringify(input(), null, 2)} /></section>
                 </Show>
                 <Show when={input() !== props.request.metadata && Object.keys(props.request.metadata).length > 0}>
-                  <section><h3>Request metadata</h3><pre>{JSON.stringify(props.request.metadata, null, 2)}</pre></section>
+                  <section><h3>Request metadata</h3><ToolPreviewText text={JSON.stringify(props.request.metadata, null, 2)} /></section>
                 </Show>
                 <Show when={props.tool ? toolOutput(props.tool.state) : undefined}>
-                  {(output) => <section><h3>Tool output</h3><pre>{collapseOutput(output()).output}</pre></section>}
+                  {(output) => <PermissionOutput output={output()} />}
                 </Show>
                 <Show when={props.tool ? toolError(props.tool.state) : undefined}>
-                  {(error) => <section><h3>Tool error</h3><pre>{error()}</pre></section>}
+                  {(error) => <section><h3>Tool error</h3><ToolPreviewText text={error()} copyLabel="Copy full error" /></section>}
                 </Show>
               </div>
             </Show>
@@ -149,16 +151,24 @@ export function SessionPermissionCard(props: {
 }
 
 function PermissionDiff(props: { diff: string; filePath?: string; split?: boolean }) {
-  const contents = createMemo(() => patchContents(props.diff, props.filePath ?? "diff"))
+  const limits = () => props.split ? TOOL_OUTPUT_PREVIEW_LIMITS.expanded : TOOL_OUTPUT_PREVIEW_LIMITS.collapsed
+  const preview = createMemo(() => previewToolOutput(props.diff, limits()))
+  const contents = createMemo(() => patchContents(preview().text, props.filePath ?? "diff"))
   return (
-    <Show when={contents()} fallback={<pre>{props.diff}</pre>}>
+    <Show when={contents()} fallback={<ToolPreviewText text={props.diff} limits={limits()} copyLabel="Copy full patch" />}>
       {(value) => (
         <div class="permission-diff">
-          <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle={props.split ? "split" : "unified"} virtualize={false} hunkSeparators="simple" />
+          <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle={props.split ? "split" : "unified"} hunkSeparators="simple" {...NESTED_TRANSCRIPT_DIFF_OPTIONS} />
+          <Show when={props.split && preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.diff)}>Copy full patch</Button></Show>
         </div>
       )}
     </Show>
   )
+}
+
+function PermissionOutput(props: { output: string }) {
+  const preview = createMemo(() => collapseOutput(props.output))
+  return <section><h3>Tool output</h3><pre>{preview().output}</pre><Show when={preview().overflow}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>Copy full output</Button></Show></section>
 }
 
 function hasDetails(request: PermissionRequest, input: Record<string, unknown>, tool?: ToolPart) {

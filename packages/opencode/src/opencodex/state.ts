@@ -1,5 +1,6 @@
 export {
   EPOCH,
+  OpencodeXCatalogSnapshot,
   OpencodeXOperationsSnapshot,
   OpencodeXSessionSnapshot,
   OpencodeXStateCursor,
@@ -11,6 +12,7 @@ export {
 } from "./state-schema"
 export type {
   Interface,
+  OpencodeXCatalogSnapshot as OpencodeXCatalogSnapshotType,
   OpencodeXOperationsSnapshot as OpencodeXOperationsSnapshotType,
   OpencodeXSessionSnapshot as OpencodeXSessionSnapshotType,
   OpencodeXStateCursor as OpencodeXStateCursorType,

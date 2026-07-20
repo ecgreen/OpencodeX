@@ -1,10 +1,13 @@
 import type { Accessor } from "solid-js"
-import { createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
+import { touchBoundedLRU } from "../lib/resource-limits"
 
 type BrowserBridge = NonNullable<NonNullable<Window["opencodex"]>["browser"]>
 type BrowserState = NonNullable<Awaited<ReturnType<BrowserBridge["create"]>>>
 
 export type NativeBrowserLifecycle = "unavailable" | "creating" | "ready" | "loading" | "error" | "hidden" | "destroyed"
+
+const WARM_BROWSER_LIMIT = 4
 
 export function createNativeBrowserController(input: {
   active: Accessor<boolean>
@@ -27,6 +30,7 @@ export function createNativeBrowserController(input: {
   let boundsFrame = 0
   let boundsToken = 0
   let hostVersion = 0
+  let warmOrder: string[] = []
 
   const scheduleBounds = () => {
     cancelAnimationFrame(boundsFrame)
@@ -43,6 +47,11 @@ export function createNativeBrowserController(input: {
   window.visualViewport?.addEventListener("resize", scheduleBounds)
   document.addEventListener("visibilitychange", handleVisibility)
 
+  createEffect(() => {
+    const ids = new Set(input.ids())
+    Array.from(createdIDs).filter((id) => !ids.has(id)).forEach(destroy)
+  })
+
   onCleanup(() => {
     cancelAnimationFrame(boundsFrame)
     resizeObserver?.disconnect()
@@ -50,7 +59,9 @@ export function createNativeBrowserController(input: {
     window.removeEventListener("focus", scheduleBounds)
     window.visualViewport?.removeEventListener("resize", scheduleBounds)
     document.removeEventListener("visibilitychange", handleVisibility)
-    Array.from(createdIDs).forEach(destroy)
+    Array.from(new Set([...createdIDs, ...requestTokens.keys()])).forEach(destroy)
+    loadedURLByID.clear()
+    boundsAttempts.clear()
     setLifecycle("destroyed")
   })
 
@@ -64,10 +75,18 @@ export function createNativeBrowserController(input: {
     setLifecycle("creating")
     setError("")
     const token = nextToken(id)
-    const next = await browser.create({ id }).catch((cause) => fail(id, cause))
+    const next = await browser.create({ id }).catch((cause) => {
+      if (requestTokens.get(id) === token) fail(id, cause)
+      return undefined
+    })
     if (requestTokens.get(id) !== token) return false
+    if (!input.ids().includes(id)) {
+      if (next) void browser.destroy(id).catch(() => undefined)
+      return false
+    }
     if (!next) return fail(id, "The desktop browser view could not be created.")
     createdIDs.add(id)
+    touchWarm(id)
     input.applyState(id, next)
     setLifecycle(next.loading ? "loading" : "ready")
     return true
@@ -80,6 +99,7 @@ export function createNativeBrowserController(input: {
       return
     }
     if (!(await ensure(id))) return
+    touchWarm(id)
     if (!input.active() || input.activeID() !== id) return hide(id)
     const url = input.url(id)?.trim()
     if (!url) {
@@ -98,7 +118,10 @@ export function createNativeBrowserController(input: {
     const token = nextToken(id)
     setLifecycle("loading")
     setError("")
-    const next = await browser.navigate({ id, url }).catch((cause) => fail(id, cause))
+    const next = await browser.navigate({ id, url }).catch((cause) => {
+      if (requestTokens.get(id) === token) fail(id, cause)
+      return undefined
+    })
     if (requestTokens.get(id) !== token) return undefined
     if (!next) return fail(id, "The page could not be loaded.")
     loadedURLByID.set(id, next.url || url)
@@ -111,7 +134,8 @@ export function createNativeBrowserController(input: {
 
   async function action(id: string, value: "back" | "forward" | "reload" | "stop") {
     const next = await window.opencodex?.browser?.action({ id, action: value }).catch((cause) => fail(id, cause))
-    if (!next) return undefined
+    if (!next || !createdIDs.has(id)) return undefined
+    touchWarm(id)
     input.applyState(id, next)
     setLifecycle(next.loading ? "loading" : "ready")
     return next
@@ -178,15 +202,33 @@ export function createNativeBrowserController(input: {
   }
 
   function destroy(id: string) {
-    nextToken(id)
+    const token = nextToken(id)
     createdIDs.delete(id)
+    warmOrder = warmOrder.filter((item) => item !== id)
     loadedURLByID.delete(id)
     boundsAttempts.delete(id)
     if (visibleID === id) {
       visibleID = ""
       lastBoundsKey = ""
     }
-    void window.opencodex?.browser?.destroy(id)
+    const pending = window.opencodex?.browser?.destroy(id)
+    if (!pending) {
+      requestTokens.delete(id)
+      return
+    }
+    void pending.catch(() => undefined).finally(() => {
+      if (requestTokens.get(id) === token && !createdIDs.has(id)) requestTokens.delete(id)
+    })
+  }
+
+  function destroyAll(ids = Array.from(createdIDs)) {
+    ids.forEach(destroy)
+  }
+
+  function touchWarm(id: string) {
+    const next = touchBoundedLRU(warmOrder, id, WARM_BROWSER_LIMIT, new Set([id]))
+    warmOrder = next.order
+    next.evicted.forEach(destroy)
   }
 
   function nextToken(id: string) {
@@ -203,5 +245,5 @@ export function createNativeBrowserController(input: {
     return undefined
   }
 
-  return { lifecycle, error, showActive, navigate, action, setHost, scheduleBounds, hide, hideAll, destroy }
+  return { lifecycle, error, showActive, navigate, action, setHost, scheduleBounds, hide, hideAll, destroy, destroyAll }
 }

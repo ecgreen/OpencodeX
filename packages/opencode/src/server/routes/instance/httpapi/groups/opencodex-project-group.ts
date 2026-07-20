@@ -1,6 +1,7 @@
 import { OpencodeXCapabilities } from "@/opencodex/capabilities"
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
+import { OpencodeXSessionCard } from "@/opencodex/session-card"
 import { OpencodeXSettings } from "@/opencodex/settings"
 import { OpencodeXState } from "@/opencodex/state"
 import { SessionID } from "@/session/schema"
@@ -14,6 +15,7 @@ import {
   SessionSyncQuery,
   StateEventQuery,
   StateQuery,
+  StateSessionCardQuery,
   StateSessionQuery,
   UpdateProjectPayload,
   UpdateSessionStatePayload,
@@ -111,6 +113,16 @@ export const opencodexProjectGroup = HttpApiGroup.make("opencodex").add(
     OpenApi.annotations({
       identifier: "opencodex.state.capabilities",
       summary: "Get an atomic OpencodeX capabilities snapshot",
+    }),
+  ),
+  HttpApiEndpoint.get("stateSessionCards", `${OPENCODEX_ROOT}/state/session-card`, {
+    query: StateSessionCardQuery,
+    success: described(OpencodeXSessionCard.Page, "Bounded page of canonical OpencodeX session cards"),
+    error: HttpApiError.BadRequest,
+  }).annotateMerge(
+    OpenApi.annotations({
+      identifier: "opencodex.state.session_cards",
+      summary: "Get a session-card page or resolve retained session IDs",
     }),
   ),
   HttpApiEndpoint.get("stateSession", `${OPENCODEX_ROOT}/state/session/:sessionID`, {

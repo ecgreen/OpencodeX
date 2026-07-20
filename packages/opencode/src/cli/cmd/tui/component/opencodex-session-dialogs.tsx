@@ -11,7 +11,7 @@ import { useDialog } from "@tui/ui/dialog"
 import { DialogAlert } from "@tui/ui/dialog-alert"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { DialogSelect } from "@tui/ui/dialog-select"
-import { createMemo, createResource, createSignal, onMount, type JSX } from "solid-js"
+import { createMemo, createSignal, onMount, type JSX } from "solid-js"
 import { refreshOpencodeXSidebar } from "./opencodex-refresh"
 import { isSwarmSession } from "./opencodex-sidebar-model"
 import type { OpencodeXDialogContext, OpencodeXProjectInfo, OpencodeXViewInfo, SessionManagerOptionValue } from "./opencodex-sidebar-types"
@@ -21,7 +21,7 @@ import { deriveStatus, statusColor } from "./opencodex-session-status"
 
 export async function createOpencodeXProjectSession(input: OpencodeXDialogContext & { project: OpencodeXProjectInfo }) {
   const directory = input.sdk.directory ?? input.project.project.worktree
-  const existing = input.sync?.data.session.find((session) => !session.parentID && !session.model && session.title.startsWith("New session - ") && input.project.sessions.some((item) => item.id === session.id))
+  const existing = input.sync?.data.session.find((session) => !session.parentID && !session.model && session.title.startsWith("New session - ") && input.project.sessionIDs.includes(session.id))
   if (existing) {
     if (input.route?.data.type !== "session" || input.route.data.sessionID !== existing.id) input.route?.navigate({ type: "session", sessionID: existing.id })
     return
@@ -38,7 +38,7 @@ export async function createOpencodeXProjectSession(input: OpencodeXDialogContex
 }
 
 export async function newOpencodeXSessionInProjectDialog(input: OpencodeXDialogContext) {
-  const projects = await input.sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project").catch((error: Error) => void DialogAlert.show(input.dialog, "New Session in Project", error.message))
+  const projects = input.sync?.data.opencodex_project ?? await input.sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project").then((items) => items.map((project) => ({ ...project, sessionIDs: project.sessions.map((session) => session.id) }))).catch((error: Error) => void DialogAlert.show(input.dialog, "New Session in Project", error.message))
   if (!projects) return
   if (projects.length === 0) return void await DialogAlert.show(input.dialog, "New Session in Project", "Create a project before starting project sessions.")
   const sessionIDs = new Set(input.sync?.data.session.filter((session) => !session.parentID).map((session) => session.id) ?? [])
@@ -46,7 +46,7 @@ export async function newOpencodeXSessionInProjectDialog(input: OpencodeXDialogC
     <DialogSelect
       title="New session in project"
       options={projects.map((project) => {
-        const count = input.sync ? project.sessions.filter((session) => sessionIDs.has(session.id)).length : project.sessions.length
+        const count = input.sync ? project.sessionIDs.filter((sessionID) => sessionIDs.has(sessionID)).length : project.sessionIDs.length
         return { title: project.name ?? project.project.name ?? project.project.worktree, value: project.id, description: `${count} conversation${count !== 1 ? "s" : ""}`, onSelect: (dialog) => { dialog.clear(); void createOpencodeXProjectSession({ ...input, project }) } }
       })}
     />
@@ -65,19 +65,16 @@ function OpencodeXSessionManager() {
   const local = useLocal()
   const { theme } = useTheme()
   const [toDelete, setToDelete] = createSignal<string>()
-  const [refresh, setRefresh] = createSignal(0)
-  const [projects, { refetch }] = createResource(refresh, () => sdk.request<OpencodeXProjectInfo[]>("/experimental/opencodex/project"))
-  const [views, { refetch: refetchViews }] = createResource(refresh, () => sdk.request<OpencodeXViewInfo[]>("/experimental/opencodex/view"))
+  const projects = createMemo(() => sync.data.opencodex_project as OpencodeXProjectInfo[])
+  const views = createMemo(() => sync.data.opencodex_view as OpencodeXViewInfo[])
   const currentSessionID = createMemo(() => route.data.type === "session" ? route.data.sessionID : undefined)
   const currentOption = createMemo<SessionManagerOptionValue | undefined>(() => route.data.type === "session" ? { type: "session", id: route.data.sessionID } : route.data.type === "opencodex-view" ? { type: "view", id: route.data.viewID } : undefined)
   const sessionMap = createMemo(() => new Map(sync.data.session.filter((session) => !session.parentID && !isSwarmSession(session)).map((session) => [session.id, session])))
-  const mappedSessionIDs = createMemo(() => new Set((projects() ?? []).flatMap((project) => project.sessions.map((session) => session.id))))
-  const projectSessions = (project: OpencodeXProjectInfo) => project.sessions.filter((session) => !isSwarmSession(session)).map((session) => sessionMap().get(session.id) ?? session).toSorted((a, b) => b.time.updated - a.time.updated)
+  const mappedSessionIDs = createMemo(() => new Set(projects().flatMap((project) => project.sessionIDs)))
+  const projectSessions = (project: OpencodeXProjectInfo) => project.sessionIDs.flatMap((sessionID) => sessionMap().get(sessionID) ?? []).filter((session) => !isSwarmSession(session)).toSorted((a, b) => b.time.updated - a.time.updated)
   const unassigned = createMemo(() => [...sessionMap().values()].filter((session) => !mappedSessionIDs().has(session.id)).toSorted((a, b) => b.time.updated - a.time.updated))
   const list = () => {
-    setRefresh((value) => value + 1)
-    void refetch()
-    void refetchViews()
+    void sync.session.refresh()
     refreshOpencodeXSidebar()
   }
   const categoryHeader = (section: string | undefined, category: string): JSX.Element => section
@@ -158,7 +155,7 @@ function OpencodeXSessionManager() {
       title: project.name ?? project.project.name ?? project.project.worktree,
       value: project.id,
       description: (() => {
-        const count = project.sessions.filter((session) => sessionMap().has(session.id)).length
+        const count = project.sessionIDs.filter((sessionID) => sessionMap().has(sessionID)).length
         return `${count} conversation${count === 1 ? "" : "s"}`
       })(),
       onSelect: (ctx) => {
@@ -183,6 +180,7 @@ function OpencodeXSessionManager() {
         { command: "opencodex.session.manage", title: "move", disabled: (projects() ?? []).length === 0, onTrigger: (option) => option.value.type === "session" && moveSession(option.value.id) },
         { command: "opencodex.project.move_up", title: "up", disabled: (views() ?? []).length < 2, onTrigger: (option) => option.value.type === "view" && void reorderView(option.value.id, -1) },
         { command: "opencodex.project.move_down", title: "down", disabled: (views() ?? []).length < 2, onTrigger: (option) => option.value.type === "view" && void reorderView(option.value.id, 1) },
+        ...(sync.session.hasMore ? [{ command: "session.list", title: "load more", onTrigger: () => void sync.session.loadMore() }] : []),
       ]}
       footerHints={[{ title: "switch", label: "enter" }]}
     />

@@ -2,6 +2,7 @@ import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { isRenderableSession } from "./session-filter"
 import { reconcileSessionUiState } from "./session-status"
 import type { GuiSnapshot, MessageBundle } from "./store"
+import { sameValue } from "./same-value"
 import {
   applyPendingDeltasToPart,
   forgetPendingMessageParts,
@@ -18,7 +19,7 @@ export type SessionDataPatchOptions = {
 }
 
 export function stableValue<T>(current: T, next: T): T {
-  return JSON.stringify(current) === JSON.stringify(next) ? current : next
+  return sameValue(current, next) ? current : next
 }
 
 export function upsertMessage(messages: MessageBundle[], info: Message, options: SessionDataPatchOptions = {}) {

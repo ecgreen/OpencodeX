@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { moveSessionBlockedMessage, moveSessionConfirmInput, permissionAlwaysConfirmInput, permissionRejectDialog, runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest } from "../src/renderer/src/lib/session-actions"
+import { moveSessionBlockedMessage, moveSessionConfirmInput, permissionAlwaysConfirmInput, permissionRejectDialog, runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest, sidePanelDirectoryForSession } from "../src/renderer/src/lib/session-actions"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
 
 describe("GUI session action decisions", () => {
@@ -9,6 +9,22 @@ describe("GUI session action decisions", () => {
 
     expect(sessionDirectoryForRequest(sessions, permission("s2"))).toBe("C:/Two")
     expect(sessionDirectoryForRequest(sessions, question("missing"))).toBeUndefined()
+  })
+
+  test("roots project sessions in their configured project folders", () => {
+    const selected = session("s1", "c:\\PROJECT\\packages\\app\\src")
+    const projects = [project({
+      folders: ["C:/Project", "C:/Project/packages/app"],
+      sessions: [selected],
+    })]
+
+    expect(sidePanelDirectoryForSession({ session: selected, projects, clientDirectory: "C:/Gui" }))
+      .toBe("C:/Project/packages/app")
+    expect(sidePanelDirectoryForSession({ session: { ...selected, directory: "D:/Unrelated" }, projects, clientDirectory: "C:/Gui" }))
+      .toBe("C:/Project")
+    expect(sidePanelDirectoryForSession({ session: session("other", "D:/Standalone"), projects, clientDirectory: "C:/Gui" }))
+      .toBe("D:/Standalone")
+    expect(sidePanelDirectoryForSession({ projects, clientDirectory: "C:/Gui" })).toBe("C:/Gui")
   })
 
   test("prepares move-session guard and confirmation text", () => {
@@ -135,12 +151,12 @@ function question(sessionID: string): QuestionRequest {
   }
 }
 
-function project(): GuiSnapshot["projects"][number] {
+function project(input: { folders?: string[]; sessions?: Session[] } = {}): GuiSnapshot["projects"][number] {
   return {
     id: "project-1",
     name: "Project",
     project: { id: "project-core", name: "Project", time: { created: 1, updated: 1 } },
-    folders: [],
-    sessions: [],
+    folders: (input.folders ?? []).map((path) => ({ path })),
+    sessions: input.sessions ?? [],
   }
 }

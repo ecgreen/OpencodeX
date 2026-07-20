@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { Show, createMemo } from "solid-js"
 import { formatRelative, title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
@@ -52,7 +53,7 @@ export function SidebarSessionLink(props: {
 }
 
 export function SidebarViewLink(props: {
-  view: OpencodeXView
+  view: ClientCatalogView
   snapshot?: GuiSnapshot
   active: boolean
   pinned?: boolean
@@ -92,7 +93,7 @@ export function SidebarViewLink(props: {
   )
 }
 
-export function viewSessionCount(view: OpencodeXView) {
+export function viewSessionCount(view: ClientCatalogView) {
   return view.sessionIDs.length + pendingViewSessions(view).length
 }
 

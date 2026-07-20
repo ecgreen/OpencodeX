@@ -19,7 +19,7 @@ import {
 import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/transcript-visibility"
 import { Icon } from "./icon"
 import { MessageActions } from "./message-actions"
-import { DisplayPartView, groupTranscriptParts } from "./session-transcript"
+import { DisplayPartView, activeTranscriptStreamingPartID, groupTranscriptParts } from "./session-transcript"
 import { SessionEmptyState, TranscriptLoadingSkeleton, activeAssistantProgressParts, hasActiveAssistantProgress, isScrollbarPointer, showTranscriptHeader, transcriptHeaderLabel } from "./session-transcript-presentation"
 
 const ASSISTANT_THINKING_DELAY_MS = 1_600
@@ -59,6 +59,7 @@ export function TranscriptPanel(props: {
   const visibleMessages = createMemo(() => visibleTranscriptMessages(props.data.messages))
   const visibleMessageMap = createMemo(() => new Map(visibleMessages().map((item) => [item.info.id, item])))
   const visibleMessageIDs = createMemo(() => visibleTranscriptMessageIDs(props.data.messages))
+  const streamingPartID = createMemo(() => activeTranscriptStreamingPartID(visibleMessages(), props.running === true))
   const activeAssistantHasProgress = createMemo(() => hasActiveAssistantProgress(visibleMessages()))
   const activeAssistantProgressKey = createMemo(() => activeAssistantProgressParts(visibleMessages()).join("|"))
   const emptyStateHandoff = () => props.emptyStateHandoff === true
@@ -333,26 +334,26 @@ export function TranscriptPanel(props: {
               const bundle = createMemo(() => visibleMessageMap().get(messageID))
               return (
                 <Show when={bundle()}>
-                  {(current) => (
-                    <article class={`message ${current().info.role}`} data-message-id={messageID}>
+                  {(current) => {
+                    const parts = createMemo(() => groupTranscriptParts(current().parts))
+                    const partMap = createMemo(() => new Map(parts().map((item) => [item.key, item])))
+                    return <article class={`message ${current().info.role}`} data-message-id={messageID}>
                       <Show when={showTranscriptHeader(visibleMessages(), index(), props.showTimestamps)}>
                         <header>{transcriptHeaderLabel(current().info, props.providers, props.showTimestamps)}</header>
                       </Show>
-                      <For each={groupTranscriptParts(current().parts)}>
-                        {(item) => (
-                          <DisplayPartView
-                            item={item}
-                            showThinking={props.showThinking}
-                            showToolDetails={props.showToolDetails}
-                            showGenericToolOutput={props.showGenericToolOutput}
-                          />
-                        )}
+                      <For each={parts().map((item) => item.key)}>
+                        {(key) => {
+                          const item = createMemo(() => partMap().get(key))
+                          return <Show when={item()}>
+                            {(currentItem) => <DisplayPartView item={currentItem()} showThinking={props.showThinking} showToolDetails={props.showToolDetails} showGenericToolOutput={props.showGenericToolOutput} streamingPartID={streamingPartID()} />}
+                          </Show>
+                        }}
                       </For>
                       <Show when={props.messageAction}>
                         {(onAction) => <MessageActions bundle={current()} pending={pendingSession()} onAction={onAction()} />}
                       </Show>
                     </article>
-                  )}
+                  }}
                 </Show>
               )
             }}

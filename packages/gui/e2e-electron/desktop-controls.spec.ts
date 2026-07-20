@@ -78,6 +78,7 @@ test("drives native desktop controls and session workspace tools", async () => {
     await createProjectWithNativePicker(page)
     if (!backgrounded) await exerciseWindowControls(application, page)
     await exerciseSessionDesktopTools(application, page)
+    await exerciseSessionPromptStream(page)
 
     expect(failures).toEqual([])
     const closed = application.waitForEvent("close")
@@ -115,6 +116,8 @@ async function exerciseSessionDesktopTools(application: ElectronApplication, pag
   await openTitlebarMenu(page, "File")
   await clickTitlebarMenuItem(page, "New Session")
   await createSessionInOwner(application)
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(page.locator(".dialog-backdrop")).toBeHidden()
   await openSessionInOwner(application)
   await page.getByRole("button", { name: "Open side panel", exact: true }).click()
   await page.getByRole("button", { name: /^Terminal/ }).click()
@@ -126,6 +129,46 @@ async function exerciseSessionDesktopTools(application: ElectronApplication, pag
   await page.getByRole("button", { name: "Add context or change mode", exact: true }).click()
   await page.getByRole("menuitem", { name: "File & Folder context", exact: true }).click()
   await expect(page.getByText("README.md", { exact: true })).toBeVisible()
+}
+
+async function exerciseSessionPromptStream(page: Page) {
+  await expect(page.locator(".sync-status-banner")).toHaveCount(0)
+  await page.evaluate(() => {
+    Reflect.set(globalThis, "__opencodexPerformanceEnabled", true)
+    Reflect.set(globalThis, "__opencodexReconnectBannerObserved", false)
+    new MutationObserver(() => {
+      if (document.querySelector(".sync-status-banner")) {
+        Reflect.set(globalThis, "__opencodexReconnectBannerObserved", true)
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+  })
+
+  const composer = page.getByRole("textbox", { name: "Message OpencodeX..." })
+  await composer.fill("stream stays connected")
+  await page.getByRole("button", { name: "Send message" }).click()
+  await expect(composer).toHaveValue("")
+  const running = page.getByRole("main").getByLabel("running")
+  await expect(running).toBeVisible()
+  await expect(running).toHaveCount(0, { timeout: 60_000 })
+
+  const outcome = await page.evaluate(() => {
+    const details = Reflect.get(globalThis, "__opencodexPerformanceDetails") as {
+      stateSync?: { reconnects?: number; reconnectAttempts?: number; eventConnections?: number }
+      stateSyncLifecycle?: unknown
+    }
+    return {
+      banner: document.querySelector(".sync-status-banner")?.textContent,
+      bannerObserved: Reflect.get(globalThis, "__opencodexReconnectBannerObserved"),
+      stateSync: details?.stateSync,
+      stateSyncLifecycle: details?.stateSyncLifecycle,
+    }
+  })
+  expect(outcome, JSON.stringify(outcome, null, 2)).toEqual({
+    banner: undefined,
+    bannerObserved: false,
+    stateSync: expect.objectContaining({ reconnects: 0 }),
+    stateSyncLifecycle: expect.objectContaining({ status: "connected" }),
+  })
 }
 
 async function stubNativeDialogs(application: ElectronApplication) {

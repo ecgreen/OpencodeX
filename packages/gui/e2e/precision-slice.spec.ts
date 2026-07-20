@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test"
+import { environmentCeiling, PERFORMANCE_BUDGETS } from "../e2e-performance/performance-budgets"
 import { fixtureDirectory } from "./fixture-directory"
 
 const backendURL = "http://127.0.0.1:4097"
@@ -24,7 +25,7 @@ for (const viewport of viewports) {
         await page.goto("/")
         await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
         const visualFixture = await ensureFixture(request)
-        const sessionCard = page.locator(".dashboard-status-card", { hasText: visualFixture.sessionTitle }).first()
+        const sessionCard = page.locator(".dashboard-active-sessions .session-link-shell", { hasText: visualFixture.sessionTitle }).first()
         await expect(sessionCard).toBeVisible()
         await expectNavigationContract(page)
         await expect(page.getByRole("button", { name: "New session", exact: true }).first()).toBeVisible()
@@ -32,12 +33,10 @@ for (const viewport of viewports) {
         await expectNoDocumentOverflow(page)
         await attachScreenshot(page, testInfo, `dashboard-${viewport.width}-${theme}-${motion}`)
 
-        await sessionCard.locator(".dashboard-card-open").focus()
-        await expect(sessionCard.locator(".card-action-menu")).toHaveCSS("opacity", "1")
-        await sessionCard.locator(".card-action-menu summary").press("Enter")
-        await expect(sessionCard.getByRole("menuitem", { name: "Edit" })).toBeVisible()
-        await sessionCard.locator(".card-action-menu summary").press("Enter")
-        await sessionCard.locator(".dashboard-card-open").click()
+        await sessionCard.click({ button: "right" })
+        await expect(page.getByRole("menuitem", { name: "Edit" })).toBeVisible()
+        await page.keyboard.press("Escape")
+        await sessionCard.locator(".session-link").click()
         await expect(page.locator(".session-page")).toBeVisible()
         await expect(page.locator(".transcript-shell")).toBeVisible()
         await expect(page.locator(".composer-input")).toBeVisible()
@@ -73,14 +72,13 @@ test("records navigation, collapse, disclosure, session opening, and composer fo
     await expect(page.locator(".app-shell")).toHaveClass(/rail-collapsed/)
     await page.getByRole("button", { name: "Toggle sidebar" }).click()
 
-    const card = page.locator(".dashboard-status-card", { hasText: visualFixture.sessionTitle }).first()
+    const card = page.locator(".dashboard-active-sessions .session-link-shell", { hasText: visualFixture.sessionTitle }).first()
     await card.hover()
-    await expect(card.locator(".card-action-menu")).toHaveCSS("opacity", "1")
-    await card.locator(".dashboard-card-open").focus()
-    await card.locator(".card-action-menu summary").press("Enter")
-    await expect(card.getByRole("menuitem", { name: "Pin" })).toBeVisible()
-    await card.locator(".card-action-menu summary").press("Enter")
-    await card.locator(".dashboard-card-open").click()
+    await expect(card.locator(".pin-toggle")).toHaveCount(0)
+    await card.click({ button: "right" })
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await card.locator(".session-link").click()
     await expect(page.locator(".session-page")).toBeVisible()
     await page.getByRole("textbox", { name: "Message OpencodeX..." }).click()
     await expect(page.getByRole("textbox", { name: "Message OpencodeX..." })).toBeFocused()
@@ -96,26 +94,36 @@ test("keeps warm route interactions inside the precision performance budget", as
   await configurePage(page, { width: 1440, height: 960 }, "dark", "reduce")
   await page.goto("/")
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
+  await page.getByRole("button", { name: /^Projects:/ }).click()
+  await expect(page.locator(".project-command-page")).toBeVisible()
+  await page.getByRole("button", { name: /^Dashboard:/ }).click()
+  await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
   await page.evaluate(() => {
     const durations: number[] = []
     const observer = new PerformanceObserver((list) =>
       durations.push(...list.getEntries().map((entry) => entry.duration)),
     )
-    observer.observe({ type: "longtask", buffered: true })
+    observer.observe({ type: "longtask" })
     Object.assign(window, { __precisionLongTasks: durations, __precisionObserver: observer })
   })
   const durations: number[] = []
   for (let index = 0; index < 20; index += 1) {
-    const target = index % 2 === 0 ? /^Projects:/ : /^Dashboard:/
-    const started = await page.evaluate(() => performance.now())
-    await page.getByRole("button", { name: target }).click()
-    await page.evaluate(
-      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-    )
-    durations.push((await page.evaluate(() => performance.now())) - started)
+    const target = index % 2 === 0 ? "Projects:" : "Dashboard:"
+    durations.push(await page.evaluate(async (prefix) => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) =>
+        element.getAttribute("aria-label")?.startsWith(prefix),
+      )
+      if (!button) throw new Error(`Navigation button not found: ${prefix}`)
+      const started = performance.now()
+      button.click()
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      return performance.now() - started
+    }, target))
   }
   const sorted = durations.toSorted((a, b) => a - b)
-  expect(sorted[Math.ceil(sorted.length * 0.95) - 1]).toBeLessThan(150)
+  expect(sorted[Math.ceil(sorted.length * 0.95) - 1]).toBeLessThan(
+    environmentCeiling(PERFORMANCE_BUDGETS.enforced.warmRoutePaintMs),
+  )
   const longTasks = await page.evaluate(() => {
     const value = Reflect.get(window, "__precisionLongTasks")
     return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number") : []
@@ -145,7 +153,6 @@ async function expectNavigationContract(page: Page) {
     "Projects",
     "Swarms",
     "Views",
-    "Plugins",
   ])
 }
 

@@ -96,6 +96,27 @@ describe("GUI prompt state helpers", () => {
 
     const drafts = { keep: textPrompt("safe") }
     expect(mergePromptDraft(drafts, "huge", { input: "x".repeat(PROMPT_DRAFT_MAX_CHARS + 1), parts: [] })).toBe(drafts)
+    expect(mergePromptDraft(drafts, "huge-file", {
+      input: "attachment",
+      parts: [{ type: "file", mime: "image/png", url: `data:image/png;base64,${"a".repeat(PROMPT_DRAFT_MAX_CHARS)}` }],
+    })).toBe(drafts)
+  })
+
+  test("counts attachment URL bytes and refreshes updated drafts in LRU order", () => {
+    expect(normalizePromptInfo({
+      input: "",
+      parts: [{ type: "file", mime: "text/plain", url: `data:text/plain,${"\u00e9".repeat(PROMPT_DRAFT_MAX_CHARS / 2)}` }],
+    })).toBeUndefined()
+
+    const full = Object.fromEntries(
+      Array.from({ length: PROMPT_DRAFT_MAX_ENTRIES }, (_, index) => [`draft-${index}`, textPrompt(String(index))]),
+    )
+    const refreshed = mergePromptDraft(full, "draft-0", textPrompt("refreshed"))
+    const next = mergePromptDraft(refreshed, "new", textPrompt("new"))
+
+    expect(next["draft-0"]?.input).toBe("refreshed")
+    expect(next["draft-1"]).toBeUndefined()
+    expect(Object.keys(next).at(-1)).toBe("new")
   })
 
   test("stashes non-empty prompts with cloned parts and keeps the newest entries", () => {

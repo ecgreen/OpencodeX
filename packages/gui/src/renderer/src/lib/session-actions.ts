@@ -8,6 +8,21 @@ export function sessionDirectoryForRequest(sessions: Session[], request: Permiss
   return sessions.find((session) => session.id === request.sessionID)?.directory
 }
 
+export function sidePanelDirectoryForSession(input: {
+  session?: Session
+  projects: GuiSnapshot["projects"]
+  clientDirectory?: string
+}) {
+  if (!input.session) return input.clientDirectory
+  const project = input.projects.find((item) => item.sessions.some((session) => session.id === input.session?.id))
+  if (!project) return input.session.directory || input.clientDirectory
+  const directory = normalizeDirectoryPath(input.session.directory)
+  return project.folders
+    .filter((folder) => directoryIsWithin(directory, normalizeDirectoryPath(folder.path)))
+    .toSorted((a, b) => normalizeDirectoryPath(b.path).length - normalizeDirectoryPath(a.path).length)[0]?.path
+    ?? project.folders.find((folder) => folder.path)?.path
+}
+
 export function moveSessionBlockedMessage(projects: GuiSnapshot["projects"]) {
   return projects.length === 0 ? "Create or load a project before moving a session." : undefined
 }
@@ -63,4 +78,13 @@ export async function runPermissionAction(input: {
   if (allowDialog && !(await input.confirm(allowDialog))) return
   await input.replyPermission(input.request.id, input.reply, message, sessionDirectoryForRequest(input.sessions, input.request))
   await input.refresh()
+}
+
+function normalizeDirectoryPath(value = "") {
+  return value.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
+}
+
+function directoryIsWithin(directory: string, root: string) {
+  if (!root) return false
+  return directory === root || directory.startsWith(`${root}/`)
 }

@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "node", "vite/client"]
+  },
+  "include": [
+    "src/renderer/global.d.ts",
+    "scripts/**/*.ts",
+    "e2e/**/*.ts",
+    "e2e-performance/**/*.ts",
+    "e2e-electron/**/*.ts",
+    "playwright*.config.ts"
+  ]
+}

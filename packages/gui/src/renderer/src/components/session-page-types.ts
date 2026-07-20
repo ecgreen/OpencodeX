@@ -1,4 +1,4 @@
-import type { Agent, Config, FileNode, LspStatus, McpResource, McpStatus, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
@@ -21,7 +21,7 @@ export type SessionPageProps = {
   lsp: LspStatus[]
   config?: Config
   agents: Agent[]
-  findFiles?: (input: { query: string; directory?: string }) => Promise<FileNode[]>
+  findFiles?: (input: { query: string; directory?: string; signal?: AbortSignal }) => Promise<FileNode[]>
   selectedAgent: string
   setSelectedAgent: (value: string) => void
   selectedModel: string
@@ -62,6 +62,7 @@ export type SessionPageProps = {
   loadOlderMessages?: (cursor: string) => Promise<void>
   onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
   gui?: GuiClient
+  subscribeGlobalEvents?: (listener: (event: GlobalEvent) => void | Promise<void>) => () => void
   sidePanelDirectory?: string
   sidePanelEnabled?: boolean
   openSidePanelTarget?: (target: SessionSidePanelTarget) => void

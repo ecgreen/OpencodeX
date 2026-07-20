@@ -1,9 +1,15 @@
 import { InstanceState } from "@/effect/instance-state"
 import { workbenchDiagnostics } from "@/opencodex/workbench-diagnostics"
-import { workbenchGitDiffFiles, workbenchGitHistory } from "@/opencodex/workbench-git"
+import { loadWorkbenchChangePatch, loadWorkbenchChangePatchPage } from "@/opencodex/workbench-change-patch"
+import { listWorkbenchChanges, loadWorkbenchChangeMetrics } from "@/opencodex/workbench-changes"
+import { workbenchGitHistory } from "@/opencodex/workbench-git"
 import { Effect } from "effect"
 import {
   WorkbenchGitBranchPayload,
+  WorkbenchChangeMetricsQuery,
+  WorkbenchChangePatchPageQuery,
+  WorkbenchChangePatchQuery,
+  WorkbenchChangesQuery,
   WorkbenchGitCommitPayload,
   WorkbenchGitPathsPayload,
   WorkbenchGitStashCreatePayload,
@@ -12,17 +18,12 @@ import {
 import {
   branchNameValid,
   gitBranch,
-  gitDefaultBranch,
-  gitHubWebUrl,
   gitMessage,
   gitOperationResult,
   gitPaths,
-  gitRemoteUrl,
   gitResult,
   gitRun,
-  gitTracking,
   parseGitStashes,
-  parseGitStatus,
   stashRefValid,
   workbenchCwd,
   workbenchFailure,
@@ -31,30 +32,28 @@ import {
 } from "./opencodex-workbench-common"
 
 export function makeOpencodeXWorkbenchGitHandlers() {
-  const workbenchGitStatus = Effect.fn("OpencodeXHttpApi.workbenchGitStatus")(function* () {
-    const cwd = workbenchCwd(yield* InstanceState.context)
-    const status = gitResult(
-      yield* Effect.promise(() => gitRun(["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], cwd)),
-    )
-    if (status.exitCode !== 0) {
-      return { ok: false, message: gitMessage(status) || "Not a Git repository.", clean: true, files: [] }
-    }
-    const branch = yield* Effect.promise(() => gitBranch(cwd))
-    const defaultBranch = yield* Effect.promise(() => gitDefaultBranch(cwd))
-    const remoteUrl = yield* Effect.promise(() => gitRemoteUrl(cwd))
-    const tracking = yield* Effect.promise(() => gitTracking(cwd))
-    const files = parseGitStatus(status.text())
-    return {
-      ok: true,
-      branch,
-      defaultBranch,
-      ...tracking,
-      remote: remoteUrl ? "origin" : undefined,
-      remoteUrl,
-      githubUrl: gitHubWebUrl(remoteUrl),
-      clean: files.length === 0,
-      files,
-    }
+  const workbenchChanges = Effect.fn("OpencodeXHttpApi.workbenchChanges")(function* (ctx: {
+    query: typeof WorkbenchChangesQuery.Type
+  }) {
+    return yield* listWorkbenchChanges(ctx.query)
+  })
+
+  const workbenchChangePatch = Effect.fn("OpencodeXHttpApi.workbenchChangePatch")(function* (ctx: {
+    query: typeof WorkbenchChangePatchQuery.Type
+  }) {
+    return yield* loadWorkbenchChangePatch(ctx.query)
+  })
+
+  const workbenchChangeMetricsPage = Effect.fn("OpencodeXHttpApi.workbenchChangeMetricsPage")(function* (ctx: {
+    query: typeof WorkbenchChangeMetricsQuery.Type
+  }) {
+    return yield* loadWorkbenchChangeMetrics(ctx.query)
+  })
+
+  const workbenchChangePatchPage = Effect.fn("OpencodeXHttpApi.workbenchChangePatchPage")(function* (ctx: {
+    query: typeof WorkbenchChangePatchPageQuery.Type
+  }) {
+    return yield* loadWorkbenchChangePatchPage(ctx.query)
   })
 
   const workbenchGitBranches = Effect.fn("OpencodeXHttpApi.workbenchGitBranches")(function* () {
@@ -66,11 +65,6 @@ export function makeOpencodeXWorkbenchGitHandlers() {
       current: yield* Effect.promise(() => gitBranch(cwd)),
       branches: list.text().split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
     }
-  })
-
-  const workbenchGitDiff = Effect.fn("OpencodeXHttpApi.workbenchGitDiff")(function* () {
-    const cwd = workbenchCwd(yield* InstanceState.context)
-    return yield* Effect.promise(() => workbenchGitDiffFiles(cwd, gitRun))
   })
 
   const workbenchGitHistoryEndpoint = Effect.fn("OpencodeXHttpApi.workbenchGitHistory")(function* () {
@@ -108,9 +102,13 @@ export function makeOpencodeXWorkbenchGitHandlers() {
   const workbenchGitStage = Effect.fn("OpencodeXHttpApi.workbenchGitStage")(function* (ctx: {
     payload: typeof WorkbenchGitPathsPayload.Type
   }) {
-    const paths = gitPaths(ctx.payload.paths)
-    if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
+    const paths = gitPaths(ctx.payload.paths ?? [])
     const cwd = workbenchCwd(yield* InstanceState.context)
+    if (ctx.payload.all) {
+      const result = gitResult(yield* Effect.promise(() => gitRun(["add", "-A", "--", "."], cwd)))
+      return gitOperationResult(result, "Staged all changes.")
+    }
+    if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
     const result = gitResult(yield* Effect.promise(() => gitRun(["--literal-pathspecs", "add", "--", ...paths], cwd)))
     return gitOperationResult(result, "Staged files.")
   })
@@ -118,7 +116,7 @@ export function makeOpencodeXWorkbenchGitHandlers() {
   const workbenchGitUnstage = Effect.fn("OpencodeXHttpApi.workbenchGitUnstage")(function* (ctx: {
     payload: typeof WorkbenchGitPathsPayload.Type
   }) {
-    const paths = gitPaths(ctx.payload.paths)
+    const paths = gitPaths(ctx.payload.paths ?? [])
     if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
     const cwd = workbenchCwd(yield* InstanceState.context)
     const head = gitResult(yield* Effect.promise(() => gitRun(["rev-parse", "--verify", "HEAD"], cwd)))
@@ -138,7 +136,7 @@ export function makeOpencodeXWorkbenchGitHandlers() {
   const workbenchGitDiscard = Effect.fn("OpencodeXHttpApi.workbenchGitDiscard")(function* (ctx: {
     payload: typeof WorkbenchGitPathsPayload.Type
   }) {
-    const paths = gitPaths(ctx.payload.paths)
+    const paths = gitPaths(ctx.payload.paths ?? [])
     if (paths.length === 0) return workbenchFailure("empty", "Choose at least one file.")
     const cwd = workbenchCwd(yield* InstanceState.context)
     const tracked = gitResult(
@@ -233,9 +231,11 @@ export function makeOpencodeXWorkbenchGitHandlers() {
   const workbenchGitStashDrop = stashCommand("workbenchGitStashDrop", "drop", "Dropped")
 
   return {
-    workbenchGitStatus,
+    workbenchChanges,
+    workbenchChangePatch,
+    workbenchChangeMetricsPage,
+    workbenchChangePatchPage,
     workbenchGitBranches,
-    workbenchGitDiff,
     workbenchGitHistoryEndpoint,
     workbenchDiagnosticsEndpoint,
     workbenchGitCheckout,

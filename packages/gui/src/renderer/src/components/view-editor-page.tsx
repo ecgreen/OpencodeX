@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { JSX } from "solid-js"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, formatRelative, title } from "../lib/format"
@@ -16,7 +17,7 @@ import { Icon } from "./icon"
 import { Button, Checkbox, IconButton, InlineNotice, SearchField, TextField } from "./ui"
 
 export function ViewEditorPage(props: {
-  view?: OpencodeXView
+  view?: ClientCatalogView
   sessions: Session[]
   projects: GuiSnapshot["projects"]
   save: (input: { viewID?: string; title: string; sessionIDs: string[]; metadata?: Record<string, unknown> }) => void | Promise<void>
@@ -267,12 +268,13 @@ function ViewSessionGrid(props: {
     <div class="view-session-grid">
       <For each={props.sessions}>
         {(session) => {
-          const selected = () => props.selectedIDs.has(session.id)
+          const selected = createMemo(() => props.selectedIDs.has(session.id))
+          const disabled = createMemo(() => props.limitReached && !selected())
           return (
             <Checkbox
               class="view-session-card view-session-row"
               checked={selected()}
-              disabled={props.limitReached && !selected()}
+              disabled={disabled()}
               onChange={() => props.toggleSession(session.id)}
               label={<>
                 <span class="view-session-card-copy">

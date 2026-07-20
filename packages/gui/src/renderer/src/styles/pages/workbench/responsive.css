@@ -65,20 +65,8 @@
 }
 
 @media (max-width:760px) {
-  .workbench-diagnostic-row>button:first-child {
-    grid-template-columns: 18px minmax(0,1fr);
-  }
-}
-
-@media (max-width:760px) {
   .workbench-open-file-results button {
     grid-template-columns: 18px minmax(0,1fr);
-  }
-}
-
-@media (max-width:760px) {
-  .workbench-diagnostic-row em {
-    grid-column: 2;
   }
 }
 
@@ -136,5 +124,11 @@
 @media (max-width:760px) {
   .project-editor-manual {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width:760px) {
+  .workbench-editor-find {
+    left: 8px;
+    grid-template-columns: minmax(96px,1fr) minmax(58px,auto) repeat(3,24px);
   }
 }

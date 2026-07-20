@@ -1,16 +1,19 @@
 import { Button } from "./ui"
 import { CodeBlock } from "@opencode-ai/ui/code-block"
 import { File as FileDiffView } from "@opencode-ai/ui/file"
+import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput, type ToolOutputPreviewLimits } from "@opencode-ai/ui/tool-output-preview"
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import {
   arrayValue,
   collapseDiffOutput,
   collapseLineOutput,
+  copyFullToolText,
   field,
   formatTodoStatus,
   formatToolValue,
   isRecordValue,
   languageFromPath,
+  NESTED_TRANSCRIPT_DIFF_OPTIONS,
   numberValue,
   patchContents,
   stringValue,
@@ -69,7 +72,7 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
         </Match>
       </Switch>
       <Show when={props.error}>
-        {(error) => <pre class="tool-error">{error()}</pre>}
+        {(error) => <ToolPreviewText text={error()} class="tool-error" copyLabel="Copy full error" />}
       </Show>
     </div>
   )
@@ -112,7 +115,7 @@ function ToolKeyValues(props: { values: Array<{ label: string; value: unknown }>
           {(item) => (
             <div>
               <dt>{item.label}</dt>
-              <dd>{formatToolValue(item.value)}</dd>
+              <dd>{previewToolOutput(formatToolValue(item.value)).text}</dd>
             </div>
           )}
         </For>
@@ -124,8 +127,13 @@ function ToolKeyValues(props: { values: Array<{ label: string; value: unknown }>
 function ToolOutput(props: { output: string; maxLines?: number; compact?: boolean }) {
   const [expanded, setExpanded] = createSignal(false)
   const trimmed = createMemo(() => props.output.trim())
-  const collapsed = createMemo(() => props.maxLines ? collapseLineOutput(trimmed(), props.maxLines) : collapseDiffOutput(trimmed()))
-  const visible = createMemo(() => expanded() || !collapsed().overflow ? trimmed() : collapsed().output)
+  const collapsedPreview = createMemo(() => previewToolOutput(trimmed()))
+  const expandedPreview = createMemo(() => previewToolOutput(trimmed(), TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
+  const collapsed = createMemo(() => {
+    const value = props.maxLines ? collapseLineOutput(collapsedPreview().text, props.maxLines) : collapseDiffOutput(collapsedPreview().text)
+    return { output: value.output, overflow: value.overflow || collapsedPreview().truncated }
+  })
+  const visible = createMemo(() => expanded() || !collapsed().overflow ? expandedPreview().text : collapsed().output)
   const visibleParts = createMemo(() => linkToolOutput(visible()))
   return (
     <Show when={trimmed()}>
@@ -137,6 +145,9 @@ function ToolOutput(props: { output: string; maxLines?: number; compact?: boolea
         </pre>
         <Show when={collapsed().overflow}>
           <Button appearance="ghost" type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Click to collapse" : "Click to expand"}</Button>
+        </Show>
+        <Show when={expandedPreview().truncated}>
+          <Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>Copy full output</Button>
         </Show>
       </div>
     </Show>
@@ -162,7 +173,13 @@ function linkToolOutput(value: string) {
 }
 
 export function ToolCodeBlock(props: { code: string; language?: string; class?: string }) {
-  return <CodeBlock class={props.class} language={props.language || "text"} code={props.code} />
+  const preview = createMemo(() => previewToolOutput(props.code, TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
+  return <><CodeBlock class={props.class} language={props.language || "text"} code={preview().text} /><Show when={preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.code)}>Copy full content</Button></Show></>
+}
+
+export function ToolPreviewText(props: { text: string; class?: string; copyLabel?: string; limits?: ToolOutputPreviewLimits }) {
+  const preview = createMemo(() => previewToolOutput(props.text, props.limits ?? TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
+  return <><pre class={props.class}>{preview().text}</pre><Show when={preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.text)}>{props.copyLabel ?? "Copy full content"}</Button></Show></>
 }
 
 function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<string, unknown>; collapsibleFiles?: boolean }) {
@@ -193,21 +210,25 @@ function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<str
 }
 
 function ToolDiff(props: { title: string; diff: string; filePath?: string; collapsible?: boolean }) {
-  const contents = createMemo(() => patchContents(props.diff, props.filePath ?? props.title))
+  const preview = createMemo(() => previewToolOutput(props.diff, TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
+  const contents = createMemo(() => patchContents(preview().text, props.filePath ?? props.title))
   const [expanded, setExpanded] = createSignal(true)
   const body = () => (
     <div class="tool-unified-patch">
       <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
         {(value) => (
-          <FileDiffView
-            mode="diff"
-            before={value().before}
-            after={value().after}
-            diffStyle="unified"
-            overflow="scroll"
-            virtualize={false}
-            hunkSeparators="simple"
-          />
+          <>
+            <FileDiffView
+              mode="diff"
+              before={value().before}
+              after={value().after}
+              diffStyle="unified"
+              overflow="scroll"
+              hunkSeparators="simple"
+              {...NESTED_TRANSCRIPT_DIFF_OPTIONS}
+            />
+            <Show when={preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.diff)}>Copy full patch</Button></Show>
+          </>
         )}
       </Show>
     </div>
@@ -333,7 +354,7 @@ function ToolQuestions(props: { input: Record<string, unknown>; metadata: Record
     <Show when={questions().length > 0}>
       <div class="tool-questions">
         <For each={questions()}>
-          {(question, index) => <div><strong>{stringValue(question.question) ?? stringValue(question.header) ?? "Question"}</strong><p>{formatToolValue(answers()[index()] ?? "No answer")}</p></div>}
+          {(question, index) => <div><strong>{stringValue(question.question) ?? stringValue(question.header) ?? "Question"}</strong><p>{previewToolOutput(formatToolValue(answers()[index()] ?? "No answer")).text}</p></div>}
         </For>
       </div>
     </Show>

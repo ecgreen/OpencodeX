@@ -15,12 +15,15 @@ import {
   toolVisibleOutput,
 } from "../lib/tool-display"
 import { DisclosureChevron, Icon } from "./icon"
-import { ToolCodeBlock, ToolDetails, fileBasename } from "./session-tool-details"
+import { ToolCodeBlock, ToolDetails, ToolPreviewText, fileBasename } from "./session-tool-details"
 import { Button } from "./ui"
 
 export type ToolPart = Extract<Part, { type: "tool" }>
 type ReasoningPart = Extract<Part, { type: "reasoning" }>
-export type DisplayPart = { type: "part"; part: Part } | { type: "tool-group"; tool: string; parts: ToolPart[] } | { type: "reasoning-group"; parts: ReasoningPart[] }
+export type DisplayPart =
+  | { key: string; type: "part"; part: Part }
+  | { key: string; type: "tool-group"; tool: string; parts: ToolPart[] }
+  | { key: string; type: "reasoning-group"; parts: ReasoningPart[] }
 
 export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
   const result: DisplayPart[] = []
@@ -29,15 +32,15 @@ export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
 
   function flushTools() {
     if (pendingTools.length === 0) return
-    if (pendingTools.length === 1) result.push({ type: "part", part: pendingTools[0] })
-    else result.push({ type: "tool-group", tool: pendingTools[0].tool, parts: pendingTools })
+    if (pendingTools.length === 1) result.push({ key: `part:${pendingTools[0].id}`, type: "part", part: pendingTools[0] })
+    else result.push({ key: `tool-group:${pendingTools[0].tool}:${pendingTools[0].id}`, type: "tool-group", tool: pendingTools[0].tool, parts: pendingTools })
     pendingTools = []
   }
 
   function flushReasoning() {
     if (pendingReasoning.length === 0) return
-    if (pendingReasoning.length === 1) result.push({ type: "part", part: pendingReasoning[0] })
-    else result.push({ type: "reasoning-group", parts: pendingReasoning })
+    if (pendingReasoning.length === 1) result.push({ key: `part:${pendingReasoning[0].id}`, type: "part", part: pendingReasoning[0] })
+    else result.push({ key: `reasoning-group:${pendingReasoning[0].id}`, type: "reasoning-group", parts: pendingReasoning })
     pendingReasoning = []
   }
 
@@ -56,21 +59,32 @@ export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
     }
     flushTools()
     flushReasoning()
-    result.push({ type: "part", part })
+    result.push({ key: `part:${part.id}`, type: "part", part })
   }
   flushTools()
   flushReasoning()
   return result
 }
 
-export function DisplayPartView(props: { item: DisplayPart; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
+export function activeTranscriptStreamingPartID(messages: MessageBundle[], running: boolean) {
+  if (!running) return
+  const message = messages.at(-1)
+  if (!message || message.info.role !== "assistant" || typeof message.info.time.completed === "number") return
+  const part = message.parts.at(-1)
+  if (!part || (part.type !== "text" && part.type !== "reasoning")) return
+  if (!part.text.trim() || typeof part.time?.end === "number") return
+  if (part.type === "text" && (part.synthetic || part.ignored)) return
+  return part.id
+}
+
+export function DisplayPartView(props: { item: DisplayPart; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean; streamingPartID?: string }) {
   return (
     <Switch>
       <Match when={props.item.type === "tool-group"}>
         <ToolGroupView item={props.item as Extract<DisplayPart, { type: "tool-group" }>} />
       </Match>
       <Match when={props.item.type === "reasoning-group"}>
-        <ThinkingGroupView item={props.item as Extract<DisplayPart, { type: "reasoning-group" }>} showThinking={props.showThinking} />
+        <ThinkingGroupView item={props.item as Extract<DisplayPart, { type: "reasoning-group" }>} showThinking={props.showThinking} streamingPartID={props.streamingPartID} />
       </Match>
       <Match when={props.item.type === "part"}>
         <PartView
@@ -78,6 +92,7 @@ export function DisplayPartView(props: { item: DisplayPart; showThinking: boolea
           showThinking={props.showThinking}
           showToolDetails={props.showToolDetails}
           showGenericToolOutput={props.showGenericToolOutput}
+          streaming={props.streamingPartID === (props.item as Extract<DisplayPart, { type: "part" }>).part.id}
         />
       </Match>
     </Switch>
@@ -88,8 +103,9 @@ function isGroupableTool(tool: string) {
   return tool === "read" || tool === "grep" || tool === "glob" || tool === "webfetch" || tool === "websearch" || tool === "skill"
 }
 
-function ThinkingGroupView(props: { item: Extract<DisplayPart, { type: "reasoning-group" }>; showThinking: boolean }) {
+function ThinkingGroupView(props: { item: Extract<DisplayPart, { type: "reasoning-group" }>; showThinking: boolean; streamingPartID?: string }) {
   const visibleParts = createMemo(() => props.item.parts.filter((part) => part.text.trim()))
+  const visiblePartMap = createMemo(() => new Map(visibleParts().map((part) => [part.id, part])))
   return (
     <Show when={visibleParts().length > 0}>
       <div class="part text reasoning">
@@ -100,13 +116,18 @@ function ThinkingGroupView(props: { item: Extract<DisplayPart, { type: "reasonin
           </summary>
           <Show when={props.showThinking}>
             <div class="thinking-segments">
-              <For each={visibleParts()}>
-                {(part, index) => (
-                  <section class="thinking-segment">
-                    <header>Thinking {index() + 1}</header>
-                    <Markdown text={part.text.trim()} cacheKey={part.id} streaming={false} />
-                  </section>
-                )}
+              <For each={visibleParts().map((part) => part.id)}>
+                {(partID, index) => {
+                  const part = createMemo(() => visiblePartMap().get(partID))
+                  return <Show when={part()}>
+                    {(current) => (
+                      <section class="thinking-segment">
+                        <header>Thinking {index() + 1}</header>
+                        <Markdown text={current().text.trim()} cacheKey={partID} streaming={props.streamingPartID === partID} />
+                      </section>
+                    )}
+                  </Show>
+                }}
               </For>
             </div>
           </Show>
@@ -118,6 +139,7 @@ function ThinkingGroupView(props: { item: Extract<DisplayPart, { type: "reasonin
 
 function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" }> }) {
   const status = createMemo(() => toolGroupStatus(props.item.parts))
+  const partMap = createMemo(() => new Map(props.item.parts.map((part) => [part.id, part])))
   const startCollapsed = createMemo(() => props.item.tool === "read" && props.item.parts.length > 10)
   const [expanded, setExpanded] = createSignal(!startCollapsed())
   const statusLabel = createMemo(() => startCollapsed() && !expanded() ? "Click to expand" : status() === "completed" ? "" : status())
@@ -142,18 +164,19 @@ function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" 
       </summary>
       <Show when={expanded()}>
         <div class="tool-group-list">
-          <For each={props.item.parts}>
-            {(part) => {
-              const input = toolStateInput(part.state)
-              const metadata = toolMetadata(part.state) ?? {}
-              return (
-                <div class="tool-group-item">
-                  <span>{toolDisplayTitle(part.tool, input, metadata, part.state.status)}</span>
-                  <Show when={part.state.status !== "completed"}>
-                    <small>{part.state.status}</small>
-                  </Show>
-                </div>
-              )
+          <For each={props.item.parts.map((part) => part.id)}>
+            {(partID) => {
+              const part = createMemo(() => partMap().get(partID))
+              return <Show when={part()}>
+                {(current) => (
+                  <div class="tool-group-item">
+                    <span>{toolDisplayTitle(current().tool, toolStateInput(current().state), toolMetadata(current().state) ?? {}, current().state.status)}</span>
+                    <Show when={current().state.status !== "completed"}>
+                      <small>{current().state.status}</small>
+                    </Show>
+                  </div>
+                )}
+              </Show>
             }}
           </For>
         </div>
@@ -179,9 +202,9 @@ function toolGroupTitle(tool: string, parts: ToolPart[]) {
   return `${tool} x${parts.length}`
 }
 
-function PartView(props: { part: MessageBundle["parts"][number]; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean }) {
+function PartView(props: { part: MessageBundle["parts"][number]; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean; streaming: boolean }) {
   return (
-    <Switch fallback={<pre class="part muted">{JSON.stringify(props.part, null, 2)}</pre>}>
+    <Switch fallback={<ToolPreviewText class="part muted" text={JSON.stringify(props.part, null, 2)} copyLabel="Copy full data" />}>
       <Match when={isStructuralPart(props.part)}>
         <></>
       </Match>
@@ -189,6 +212,7 @@ function PartView(props: { part: MessageBundle["parts"][number]; showThinking: b
         <TextPartView
           part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>}
           showThinking={props.showThinking}
+          streaming={props.streaming}
         />
       </Match>
       <Match when={props.part.type === "tool"}>
@@ -218,7 +242,7 @@ function isStructuralPart(part: MessageBundle["parts"][number]) {
   return part.type === "step-start" || part.type === "step-finish" || part.type === "snapshot" || part.type === "retry" || part.type === "subtask"
 }
 
-function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; showThinking: boolean }) {
+function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; showThinking: boolean; streaming: boolean }) {
   const text = createMemo(() => {
     if ("synthetic" in props.part && props.part.synthetic) return ""
     if ("ignored" in props.part && props.part.ignored) return ""
@@ -227,14 +251,14 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<P
   return (
     <Show when={text()}>
       <div class={`part text ${props.part.type}`}>
-        <Show when={props.part.type === "reasoning"} fallback={<Markdown text={text()} cacheKey={props.part.id} streaming={false} />}>
+        <Show when={props.part.type === "reasoning"} fallback={<Markdown text={text()} cacheKey={props.part.id} streaming={props.streaming} />}>
           <details class="thinking-block" open>
             <summary>
               <DisclosureChevron />
               <span>Thinking</span>
             </summary>
             <Show when={props.showThinking}>
-              <Markdown text={text()} cacheKey={props.part.id} streaming={false} />
+              <Markdown text={text()} cacheKey={props.part.id} streaming={props.streaming} />
             </Show>
           </details>
         </Show>
@@ -258,6 +282,7 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
   const visibleDetails = createMemo(() => props.showDetails && hasDetails())
   const defaultOpen = createMemo(() => visibleDetails() && (props.part.tool === "todowrite" || props.part.tool === "apply_patch" || state().status === "running" || state().status === "error"))
   const [expanded, setExpanded] = createSignal(defaultOpen())
+  const [rawExpanded, setRawExpanded] = createSignal(false)
   createEffect(() => {
     if (defaultOpen()) setExpanded(true)
   })
@@ -286,18 +311,20 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
         <Show when={expanded()}>
           <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} showGenericOutput={props.showGenericOutput} patchPending={patchPending()} />
           <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
-            <details class="tool-raw">
+            <details class="tool-raw" open={rawExpanded()} onToggle={(event) => setRawExpanded(event.currentTarget.open)}>
               <summary>
                 <DisclosureChevron />
                 <span>Raw tool data</span>
               </summary>
-              <Show when={Object.keys(input()).length > 0}>
-                <label>Input</label>
-                <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
-              </Show>
-              <Show when={Object.keys(metadata()).length > 0}>
-                <label>Metadata</label>
-                <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
+              <Show when={rawExpanded()}>
+                <Show when={Object.keys(input()).length > 0}>
+                  <label>Input</label>
+                  <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
+                </Show>
+                <Show when={Object.keys(metadata()).length > 0}>
+                  <label>Metadata</label>
+                  <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
+                </Show>
               </Show>
             </details>
           </Show>

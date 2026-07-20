@@ -22,6 +22,7 @@ const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const noMinify = process.argv.includes("--no-minify")
+const guiCoordinatorFlag = process.argv.includes("--gui-coordinator")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 const targetFlag = (() => {
@@ -53,7 +54,7 @@ const createEmbeddedWebUIBundle = async () => {
   ].join("\n")
 }
 
-const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+const embeddedFileMap = skipEmbedWebUi || guiCoordinatorFlag ? null : await createEmbeddedWebUIBundle()
 
 function bunTarget(name: string) {
   switch (name) {
@@ -209,19 +210,30 @@ for (const item of targets) {
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 
-  const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
-  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
-  const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
+  const parserWorker = guiCoordinatorFlag
+    ? undefined
+    : fs.realpathSync(
+        fs.existsSync(path.resolve(dir, "node_modules/@opentui/core/parser.worker.js"))
+          ? path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
+          : path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js"),
+      )
   const workerPath = "./src/cli/cmd/tui/worker.ts"
 
   // Use platform-specific bunfs root path based on target OS
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
-  const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
+  const workerRelativePath = parserWorker ? path.relative(dir, parserWorker).replaceAll("\\", "/") : undefined
+  const artifact = guiCoordinatorFlag ? "opencode-gui-coordinator" : "opencode"
+  const entrypoints = guiCoordinatorFlag
+    ? ["./src/gui-coordinator.ts"]
+    : parserWorker
+      ? ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])]
+      : []
+  if (entrypoints.length === 0) throw new Error("Missing OpenTUI parser worker")
 
   const result = await Bun.build({
     conditions: ["browser"],
     tsconfig: "./tsconfig.json",
-    plugins: [plugin],
+    plugins: guiCoordinatorFlag ? [] : [plugin],
     external: ["node-gyp"],
     format: "esm",
     minify: !noMinify,
@@ -233,24 +245,28 @@ for (const item of targets) {
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: bunTarget(name),
-      outfile: `dist/${name}/bin/opencode`,
+      outfile: `dist/${name}/bin/${artifact}`,
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    entrypoints,
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MODELS_DEV: generated.modelsData,
-      OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
-      OPENCODE_WORKER_PATH: workerPath,
+      ...(workerRelativePath
+        ? {
+            OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
+            OPENCODE_WORKER_PATH: workerPath,
+          }
+        : {}),
       OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
     },
   })
   if (!result.success) throw new AggregateError(result.logs, `Build failed for ${name}`)
 
-  const binaryPath = path.resolve(`dist/${name}/bin/opencode${item.os === "win32" ? ".exe" : ""}`)
+  const binaryPath = path.resolve(`dist/${name}/bin/${artifact}${item.os === "win32" ? ".exe" : ""}`)
   const binary = Bun.file(binaryPath)
   if (!(await binary.exists()) || binary.size < 1024)
     throw new Error(`Missing or empty binary for ${name}: ${binaryPath}`)
@@ -262,7 +278,7 @@ for (const item of targets) {
   if (!validHeader) throw new Error(`Invalid ${item.os} binary header for ${name}: ${header}`)
 
   // Smoke test: only run if binary is for current platform
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
+  if (!guiCoordinatorFlag && item.os === process.platform && item.arch === process.arch && !item.abi) {
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()

@@ -301,54 +301,6 @@
   animation: workbench-assistant-out .18s cubic-bezier(.7,0,.84,0) both;
 }
 
-.workbench-diagnostics-bar.clean {
-  background: linear-gradient(180deg,var(--theme-overlay-subtle),transparent),color-mix(in srgb,var(--ok-soft) 42%,var(--surface-raised));
-}
-
-.workbench-diagnostic-row {
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--workbench-text);
-  padding: 3px 6px;
-  text-align: left;
-  display: grid;
-  grid-template-columns: minmax(0,1fr) 30px;
-  align-items: stretch;
-  gap: 6px;
-}
-
-.workbench-diagnostic-row>button {
-  min-width: 0;
-}
-
-.workbench-diagnostic-row span {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--danger);
-}
-
-.workbench-diagnostic-row strong {
-  font-size: 12px;
-  font-style: normal;
-  color: var(--theme-info);
-  font-family: Cascadia Code,JetBrains Mono,SFMono-Regular,Consolas,monospace;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workbench-diagnostic-row em {
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--theme-text);
-  font-style: normal;
-}
-
 .workbench-open-file-search input {
   min-width: 0;
   border: 0;

@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack, type Accessor } from "solid-js"
 import type {
   SessionSidePanelContextOption,
@@ -23,8 +24,10 @@ import {
 import { pruneRecordKeys } from "../lib/view-pane-state"
 import { viewSessionsInOrder } from "../lib/view-sync"
 import { runViewPromptAction } from "../lib/view-prompt"
+import { createResizeSession } from "../lib/resize-session"
 
 const SESSION_VIEWED_MARK_DELAY_MS = 2_000
+const VIEW_SIDE_PANEL_WIDTH_KEY = "opencodex.gui.viewSidePanel.width"
 
 export function createViewController(input: {
   authoritative: ReturnType<typeof createAuthoritativeStateController>
@@ -37,7 +40,7 @@ export function createViewController(input: {
   const [focusedSessionID, setFocusedSessionID] = createSignal("")
   const [composerFocusRequest, setComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
   const [sidePanelOpenByViewID, setSidePanelOpenByViewID] = createSignal<Record<string, boolean>>({})
-  const [sidePanelWidthRatio, setSidePanelWidthRatio] = createSignal(0.4)
+  const [sidePanelWidthRatio, setSidePanelWidthRatio] = createSignal(readViewSidePanelWidthRatio())
   const [sidePanelSessionID, setSidePanelSessionID] = createSignal("")
   const [sidePanelRequest, setSidePanelRequest] = createSignal<SessionSidePanelRequest>()
   const activeView = createMemo(() =>
@@ -78,6 +81,7 @@ export function createViewController(input: {
   let lastMembershipKey = ""
   let composerFocusToken = 0
   let focusPersistTimer: ReturnType<typeof setTimeout> | undefined
+  const sidePanelResizeCleanups = new Set<() => void>()
 
   createEffect(
     on(
@@ -94,6 +98,7 @@ export function createViewController(input: {
     const view = activeView()
     if (route.name !== "views" || !view) return
     if (route.viewID !== view.id) input.navigation.setRoute({ name: "views", viewID: view.id }, { replace: true })
+    void input.authoritative.ensureSessionCards(view.sessionIDs).catch((cause) => console.error(cause))
   })
 
   createEffect(() => {
@@ -222,22 +227,40 @@ export function createViewController(input: {
 
   function startSidePanelResize(event: PointerEvent & { currentTarget: HTMLElement }) {
     event.preventDefault()
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-    const width = event.currentTarget.parentElement?.getBoundingClientRect().width ?? window.innerWidth
+    sidePanelResizeCleanups.forEach((cleanup) => cleanup())
+    const handle = event.currentTarget
+    const pointerID = event.pointerId
+    handle.setPointerCapture?.(pointerID)
+    const width = handle.parentElement?.getBoundingClientRect().width ?? window.innerWidth
     const startX = event.clientX
     const startRatio = sidePanelWidthRatio()
-    const onMove = (moveEvent: PointerEvent) =>
-      setSidePanelWidthRatio(Math.max(0.28, Math.min(0.7, startRatio - (moveEvent.clientX - startX) / width)))
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
+    const resize = createResizeSession(startRatio, {
+      preview: setSidePanelWidthRatio,
+      persist: writeViewSidePanelWidthRatio,
+    })
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerID) return
+      resize.update(clampViewSidePanelWidthRatio(startRatio - (moveEvent.clientX - startX) / width))
     }
+    const cleanup = () => {
+      if (!sidePanelResizeCleanups.delete(cleanup)) return
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", finish)
+      window.removeEventListener("pointercancel", finish)
+      if (handle.hasPointerCapture?.(pointerID)) handle.releasePointerCapture?.(pointerID)
+      resize.finish()
+    }
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId === pointerID) cleanup()
+    }
+    sidePanelResizeCleanups.add(cleanup)
     window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
+    window.addEventListener("pointerup", finish)
+    window.addEventListener("pointercancel", finish)
   }
 
   function toggleSidePanelMaximized() {
-    setSidePanelWidthRatio((current) => current >= 0.68 ? 0.4 : 0.7)
+    setPersistedViewSidePanelWidthRatio(sidePanelWidthRatio() >= 0.68 ? 0.4 : 0.7)
   }
 
   function resizeSidePanelByKeyboard(event: KeyboardEvent) {
@@ -253,7 +276,13 @@ export function createViewController(input: {
     }
     if (next === undefined) return
     event.preventDefault()
-    setSidePanelWidthRatio(Math.max(0.28, Math.min(0.7, next)))
+    setPersistedViewSidePanelWidthRatio(next)
+  }
+
+  function setPersistedViewSidePanelWidthRatio(value: number) {
+    const next = clampViewSidePanelWidthRatio(value)
+    setSidePanelWidthRatio(next)
+    writeViewSidePanelWidthRatio(next)
   }
 
   function projectNameForProjectID(projectID?: string) {
@@ -264,7 +293,7 @@ export function createViewController(input: {
     return projectNameForSession(input.authoritative.snapshot()?.projects ?? [], session)
   }
 
-  function scheduleFocusPersistence(view: OpencodeXView, sessionID: string) {
+  function scheduleFocusPersistence(view: ClientCatalogView, sessionID: string) {
     if (!sessions().some((session) => session.id === sessionID)) return
     if (focusPersistTimer) clearTimeout(focusPersistTimer)
     focusPersistTimer = setTimeout(() => {
@@ -280,6 +309,7 @@ export function createViewController(input: {
 
   onCleanup(() => {
     if (focusPersistTimer) clearTimeout(focusPersistTimer)
+    sidePanelResizeCleanups.forEach((cleanup) => cleanup())
   })
 
   return {
@@ -310,4 +340,19 @@ export function createViewController(input: {
     projectNameForID: projectNameForProjectID,
     projectNameForSession: projectNameForViewSession,
   }
+}
+
+function readViewSidePanelWidthRatio() {
+  if (typeof localStorage === "undefined") return 0.4
+  const parsed = Number(localStorage.getItem(VIEW_SIDE_PANEL_WIDTH_KEY))
+  return clampViewSidePanelWidthRatio(Number.isFinite(parsed) ? parsed : 0.4)
+}
+
+function writeViewSidePanelWidthRatio(value: number) {
+  if (typeof localStorage === "undefined") return
+  localStorage.setItem(VIEW_SIDE_PANEL_WIDTH_KEY, String(clampViewSidePanelWidthRatio(value)))
+}
+
+function clampViewSidePanelWidthRatio(value: number) {
+  return Math.max(0.28, Math.min(0.7, value))
 }

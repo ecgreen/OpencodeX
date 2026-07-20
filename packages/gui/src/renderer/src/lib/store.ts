@@ -1,16 +1,19 @@
-import type { GlobalEvent, Part, QuestionAnswer, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type { GlobalEvent, QuestionAnswer, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 import {
-  selectClientSessionMessages,
   updateClientSessionState,
-  type ClientStateSyncController,
-  type ClientStateSyncState,
   type ClientSessionStateUpdate,
 } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { messageCursorBefore } from "./message-window"
-import { displayMessageText } from "./message-text"
+import { normalizeMessageText } from "./session-data-projection"
 import { authHeaders } from "./store-auth"
 export { authHeaders } from "./store-auth"
+export { sessionDataFromClientState, sessionDataFromSnapshot } from "./session-data-projection"
+export {
+  fetchClientStateSessionPage,
+  loadClientStateSessionTranscript,
+  refreshClientStateSessionTail,
+} from "./client-session-loader"
 export * from "./store-opencodex-actions"
 export * from "./store-provider-actions"
 import type {
@@ -24,13 +27,22 @@ import type {
   SessionData,
   SessionLoadOptions,
   WorkbenchDataResult,
+  WorkbenchCompletionItem,
+  WorkbenchCompletionResult,
+  WorkbenchDefinitionLocation,
   WorkbenchDiagnostic,
   WorkbenchDiagnosticsResult,
+  WorkbenchFileDiagnosticsResult,
   WorkbenchGitBranches,
-  WorkbenchGitFileStatus,
+  WorkbenchHoverResult,
+  WorkbenchChangeFile,
+  WorkbenchChangeNode,
+  WorkbenchChangePatch,
+  WorkbenchChangeMetricsPage,
+  WorkbenchChangePatchPage,
+  WorkbenchChangesPage,
   WorkbenchGitHistoryCommit,
   WorkbenchGitStash,
-  WorkbenchGitStatus,
   WorkbenchOperationResult,
 } from "./store-types"
 export type {
@@ -44,37 +56,55 @@ export type {
   SessionData,
   SessionLoadOptions,
   WorkbenchDataResult,
+  WorkbenchCompletionItem,
+  WorkbenchCompletionResult,
+  WorkbenchDefinitionLocation,
   WorkbenchDiagnostic,
   WorkbenchDiagnosticsResult,
+  WorkbenchFileDiagnosticsResult,
+  WorkbenchFileReadResult,
   WorkbenchGitBranches,
-  WorkbenchGitFileStatus,
+  WorkbenchHoverResult,
+  WorkbenchChangeFile,
+  WorkbenchChangeNode,
+  WorkbenchChangePatch,
+  WorkbenchChangeMetricsPage,
+  WorkbenchChangePatchPage,
+  WorkbenchChangesPage,
   WorkbenchGitHistoryCommit,
   WorkbenchGitHistoryFile,
   WorkbenchGitStash,
-  WorkbenchGitStatus,
   WorkbenchOperationResult,
 } from "./store-types"
 export {
   createWorkbenchFile,
   deleteWorkbenchFile,
   findFiles,
+  initializeWorkbenchGit,
   installPlugin,
   listPlugins,
   listWorkbenchFiles,
   readWorkbenchFile,
+  readWorkbenchTextFile,
   renameWorkbenchFile,
   togglePlugin,
   workbenchDiagnostics,
+  workbenchFileDefinition,
+  workbenchFileCompletion,
+  workbenchFileHover,
+  workbenchFileDiagnostics,
   workbenchGithubData,
   workbenchGithubPost,
   workbenchGitBranches,
-  workbenchGitDiff,
+  workbenchChangePatch,
+  workbenchChangeMetricsPage,
+  workbenchChangePatchPage,
+  workbenchChanges,
   workbenchGitHistory,
   workbenchGitOperation,
   workbenchGitStashes,
   workbenchGitStashCreate,
   workbenchGitStashOperation,
-  workbenchGitStatus,
   writeWorkbenchFile,
 } from "./store-workbench"
 
@@ -95,20 +125,6 @@ export async function loadSessionDiff(
     sessionID: input.sessionID,
     directory: input.directory || gui.directory || undefined,
     messageID: input.messageID,
-    },
-    { headers: authHeaders(gui), throwOnError: true },
-  )
-}
-
-export async function loadVcsDiff(
-  gui: GuiClient,
-  input: { mode: "git" | "branch"; context?: number; directory?: string },
-) {
-  return gui.client.vcs.diff(
-    {
-    directory: input.directory || gui.directory || undefined,
-    mode: input.mode,
-    context: input.context,
     },
     { headers: authHeaders(gui), throwOnError: true },
   )
@@ -142,28 +158,6 @@ export async function loadSession(
   }
 }
 
-export async function loadClientStateSession(
-  controller: ClientStateSyncController,
-  sessionID: string,
-  options: { limit?: number; before?: string } = {},
-) {
-  await controller.hydrateSession(sessionID, options)
-  const data = sessionDataFromClientState(controller.getState(), sessionID)
-  if (!data) throw new Error(`Authoritative session snapshot missing for ${sessionID}`)
-  return data
-}
-
-export function sessionDataFromClientState(state: ClientStateSyncState, sessionID: string): SessionData | undefined {
-  const detail = state.sessionDetails[sessionID]
-  if (!detail) return
-  return {
-    messages: normalizeMessageText(selectClientSessionMessages(state, sessionID)),
-    messageCursor: detail.snapshot.messages.boundary.next,
-    todos: detail.snapshot.todos,
-    diffs: detail.snapshot.diff,
-  }
-}
-
 export async function loadSessionMessages(
   gui: GuiClient,
   sessionID: string,
@@ -186,16 +180,6 @@ export async function loadSessionMessages(
         ? messageCursorBefore(visible[0])
         : (response.response?.headers.get("x-next-cursor") ?? undefined),
   }
-}
-
-function normalizeMessageText(messages: MessageBundle[]) {
-  return messages.map((message) => ({
-    ...message,
-    parts: message.parts.map((part) => {
-      if (part.type !== "text" && part.type !== "reasoning") return part
-      return { ...part, text: displayMessageText(part.text) } as Part
-    }),
-  }))
 }
 
 export async function sendPrompt(

@@ -1,26 +1,38 @@
 import type { FileContent, FileNode } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./client"
+import {
+  WORKBENCH_PREVIEW_FILE_BYTES,
+  boundedWorkbenchFile,
+  type WorkbenchFileRead,
+} from "./file-resource-limits"
 import { authHeaders } from "./store-auth"
 import {
-  type DiffFile,
   type GuiPlugin,
   type GuiPluginInstallResult,
   type WorkbenchDataResult,
+  type WorkbenchCompletionResult,
+  type WorkbenchDefinitionLocation,
   type WorkbenchDiagnosticsResult,
+  type WorkbenchFileDiagnosticsResult,
+  type WorkbenchFileReadResult,
   type WorkbenchGitBranches,
+  type WorkbenchHoverResult,
+  type WorkbenchChangePatch,
+  type WorkbenchChangeMetricsPage,
+  type WorkbenchChangePatchPage,
+  type WorkbenchChangesPage,
   type WorkbenchGitHistoryCommit,
   type WorkbenchGitStash,
-  type WorkbenchGitStatus,
   type WorkbenchOperationResult,
 } from "./store"
 
-export async function findFiles(gui: GuiClient, input: { query: string; directory?: string; limit?: number }): Promise<FileNode[]> {
+export async function findFiles(gui: GuiClient, input: { query: string; directory?: string; limit?: number; signal?: AbortSignal }): Promise<FileNode[]> {
   return gui.client.find.files({
     directory: input.directory || gui.directory || undefined,
     query: input.query,
     dirs: "true",
     limit: input.limit ?? 20,
-  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => (x.data ?? []).map((file) => typeof file === "string" ? {
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((x) => (x.data ?? []).map((file) => typeof file === "string" ? {
     name: file.split(/[\\/]/).at(-1) ?? file,
     path: file,
     absolute: file,
@@ -29,28 +41,67 @@ export async function findFiles(gui: GuiClient, input: { query: string; director
   } : file))
 }
 
-export async function listWorkbenchFiles(gui: GuiClient, path: string, directory?: string): Promise<FileNode[]> {
+export async function listWorkbenchFiles(gui: GuiClient, path: string, directory?: string, signal?: AbortSignal): Promise<FileNode[]> {
   return gui.client.file.list({
     directory: directory || gui.directory || undefined,
     path,
-  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data ?? [])
+  }, { headers: authHeaders(gui), throwOnError: true, signal }).then((x) => x.data ?? [])
 }
 
-export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string): Promise<FileContent | undefined> {
-  const file = await gui.client.file.read({
+export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string, signal?: AbortSignal, root?: string): Promise<WorkbenchFileRead | undefined> {
+  if (root) {
+    const exact = await exactWorkbenchFileRead(gui, path, directory, signal, root)
+    if (!exact.ok) return
+    return boundedWorkbenchFile({
+      type: "text",
+      content: exact.content ?? "",
+      bytes: exact.bytes,
+      truncated: exact.truncated,
+    })
+  }
+  const received = await gui.client.file.read({
     directory: directory || gui.directory || undefined,
     path,
-  }, { headers: authHeaders(gui), throwOnError: true }).then((x) => x.data)
-  if (!file) return
-  if (file.encoding === "base64") return { ...file, type: "binary" }
-  if (file.type !== "text") return file
-  const exact = await pluginApi<WorkbenchOperationResult>(
+    maxBytes: String(WORKBENCH_PREVIEW_FILE_BYTES),
+  }, { headers: authHeaders(gui), throwOnError: true, signal }).then((x) => x.data)
+  if (!received) return
+  const file: FileContent = received.encoding === "base64" ? { ...received, type: "binary" } : received
+  const initial = boundedWorkbenchFile(file)
+  if (file.type !== "text" || initial.mode === "metadata") return initial
+  const exact = await exactWorkbenchFileRead(gui, path, directory, signal)
+  if (exact.truncated) {
+    return boundedWorkbenchFile({
+      ...file,
+      content: "",
+      bytes: exact.bytes ?? file.bytes,
+      truncated: true,
+    })
+  }
+  return boundedWorkbenchFile(exact.ok && exact.content !== undefined ? {
+    ...file,
+    content: exact.content,
+    bytes: exact.bytes ?? file.bytes,
+    truncated: false,
+  } : file)
+}
+
+function exactWorkbenchFileRead(gui: GuiClient, path: string, directory?: string, signal?: AbortSignal, root?: string) {
+  return gui.client.opencodex.workbench.file.read({
+    directory: directory || gui.directory || undefined,
+    path,
+    root,
+    maxBytes: String(WORKBENCH_PREVIEW_FILE_BYTES),
+  }, { headers: authHeaders(gui), throwOnError: true, signal })
+    .then((result) => result.data as WorkbenchFileReadResult)
+}
+
+export function readWorkbenchTextFile(gui: GuiClient, path: string, directory: string | undefined, maxBytes: number, signal?: AbortSignal) {
+  return pluginApi<WorkbenchFileReadResult>(
     gui,
-    `/experimental/opencodex/workbench/file/read?path=${encodeURIComponent(path)}`,
-    {},
+    `/experimental/opencodex/workbench/file/read?path=${encodeURIComponent(path)}&maxBytes=${maxBytes}`,
+    { signal },
     directory,
   )
-  return exact.ok && exact.content !== undefined ? { ...file, content: exact.content } : file
 }
 
 export async function writeWorkbenchFile(gui: GuiClient, input: { path: string; content: string; previousContent?: string }, directory?: string): Promise<WorkbenchOperationResult> {
@@ -81,16 +132,66 @@ export async function deleteWorkbenchFile(gui: GuiClient, path: string, director
   }, directory)
 }
 
-export async function workbenchGitStatus(gui: GuiClient, directory?: string): Promise<WorkbenchGitStatus> {
-  return pluginApi<WorkbenchGitStatus>(gui, "/experimental/opencodex/workbench/git/status", {}, directory)
-}
-
 export async function workbenchGitBranches(gui: GuiClient, directory?: string): Promise<WorkbenchGitBranches> {
   return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", {}, directory)
 }
 
-export async function workbenchGitDiff(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<DiffFile[]>> {
-  return pluginApi<WorkbenchDataResult<DiffFile[]>>(gui, "/experimental/opencodex/workbench/git/diff", {}, directory)
+export function initializeWorkbenchGit(gui: GuiClient, directory?: string, signal?: AbortSignal) {
+  return gui.client.project.initGit({
+    directory: directory || gui.directory || undefined,
+  }, { headers: authHeaders(gui), throwOnError: true, signal }).then((result) => result.data)
+}
+
+export function workbenchChanges(
+  gui: GuiClient,
+  input: { directory?: string; path?: string; cursor?: string; revision?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<WorkbenchChangesPage> {
+  return gui.client.opencodex.workbench.changes.page({
+    directory: input.directory || gui.directory || undefined,
+    path: input.path,
+    cursor: input.cursor,
+    revision: input.revision,
+    limit: input.limit === undefined ? undefined : String(input.limit),
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((result) => result.data)
+}
+
+export function workbenchChangePatch(
+  gui: GuiClient,
+  input: { directory?: string; path: string; revision?: string; context?: number; maxBytes?: number; signal?: AbortSignal },
+): Promise<WorkbenchChangePatch> {
+  return gui.client.opencodex.workbench.changes.patch({
+    directory: input.directory || gui.directory || undefined,
+    path: input.path,
+    revision: input.revision,
+    context: input.context === undefined ? undefined : String(input.context),
+    maxBytes: input.maxBytes === undefined ? undefined : String(input.maxBytes),
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((result) => result.data)
+}
+
+export function workbenchChangeMetricsPage(
+  gui: GuiClient,
+  input: { directory?: string; revision: string; path?: string; cursor?: string; limit?: number; signal?: AbortSignal },
+): Promise<WorkbenchChangeMetricsPage> {
+  return gui.client.opencodex.workbench.changes.metricsPage({
+    directory: input.directory || gui.directory || undefined,
+    revision: input.revision,
+    path: input.path,
+    cursor: input.cursor,
+    limit: input.limit === undefined ? undefined : String(input.limit),
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((result) => result.data)
+}
+
+export function workbenchChangePatchPage(
+  gui: GuiClient,
+  input: { directory?: string; path: string; revision: string; cursor?: string; context?: number; signal?: AbortSignal },
+): Promise<WorkbenchChangePatchPage> {
+  return gui.client.opencodex.workbench.changes.patchPage({
+    directory: input.directory || gui.directory || undefined,
+    path: input.path,
+    revision: input.revision,
+    cursor: input.cursor,
+    context: input.context === undefined ? undefined : String(input.context),
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((result) => result.data)
 }
 
 export async function workbenchGitHistory(gui: GuiClient, directory?: string): Promise<WorkbenchDataResult<WorkbenchGitHistoryCommit[]>> {
@@ -101,8 +202,82 @@ export async function workbenchDiagnostics(gui: GuiClient, directory?: string): 
   return pluginApi<WorkbenchDiagnosticsResult>(gui, "/experimental/opencodex/workbench/diagnostics", {}, directory)
 }
 
+export function workbenchFileDiagnostics(
+  gui: GuiClient,
+  input: { path: string; root?: string; content: string; signal?: AbortSignal },
+  directory?: string,
+) {
+  return gui.client.opencodex.workbench.file.diagnostics({
+    directory: directory || gui.directory || undefined,
+    path: input.path,
+    root: input.root,
+    content: input.content,
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal })
+    .then((result) => result.data as WorkbenchFileDiagnosticsResult)
+}
+
+export function workbenchFileDefinition(
+  gui: GuiClient,
+  input: { path: string; root?: string; content: string; line: number; column: number; signal?: AbortSignal },
+  directory?: string,
+) {
+  return gui.client.opencodex.workbench.file.definition({
+    directory: directory || gui.directory || undefined,
+    path: input.path,
+    root: input.root,
+    content: input.content,
+    line: input.line,
+    column: input.column,
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal })
+    .then((result) => result.data as WorkbenchDefinitionLocation[])
+}
+
+export function workbenchFileHover(
+  gui: GuiClient,
+  input: { path: string; root?: string; content: string; line: number; column: number; signal?: AbortSignal },
+  directory?: string,
+) {
+  return gui.client.opencodex.workbench.file.hover({
+    directory: directory || gui.directory || undefined,
+    path: input.path,
+    root: input.root,
+    content: input.content,
+    line: input.line,
+    column: input.column,
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal })
+    .then((result) => result.data as WorkbenchHoverResult)
+}
+
+export function workbenchFileCompletion(
+  gui: GuiClient,
+  input: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+    triggerKind?: 1 | 2 | 3
+    triggerCharacter?: string
+    signal?: AbortSignal
+  },
+  directory?: string,
+) {
+  return gui.client.opencodex.workbench.file.completion({
+    directory: directory || gui.directory || undefined,
+    path: input.path,
+    root: input.root,
+    content: input.content,
+    line: input.line,
+    column: input.column,
+    triggerKind: input.triggerKind,
+    triggerCharacter: input.triggerCharacter,
+  }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal })
+    .then((result) => result.data as WorkbenchCompletionResult)
+}
+
 export async function workbenchGitOperation(gui: GuiClient, action: "checkout" | "create-branch", input: { branch: string }, directory?: string): Promise<WorkbenchOperationResult>
-export async function workbenchGitOperation(gui: GuiClient, action: "stage" | "unstage" | "discard", input: { paths: string[] }, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: "stage", input: { paths?: string[]; all?: boolean }, directory?: string): Promise<WorkbenchOperationResult>
+export async function workbenchGitOperation(gui: GuiClient, action: "unstage" | "discard", input: { paths: string[] }, directory?: string): Promise<WorkbenchOperationResult>
 export async function workbenchGitOperation(gui: GuiClient, action: "commit", input: { message: string; body?: string; paths?: string[] }, directory?: string): Promise<WorkbenchOperationResult>
 export async function workbenchGitOperation(gui: GuiClient, action: "fetch" | "pull" | "push" | "publish", input?: undefined, directory?: string): Promise<WorkbenchOperationResult>
 export async function workbenchGitOperation(gui: GuiClient, action: string, input?: unknown, directory?: string): Promise<WorkbenchOperationResult> {

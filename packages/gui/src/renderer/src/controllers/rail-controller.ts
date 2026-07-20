@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import type { RailDragTarget, RailDropTarget, RailSectionName } from "../components/rail-sidebar"
 import type { GuiClient } from "../lib/client"
@@ -17,6 +18,8 @@ export function createRailController(input: {
   client: Accessor<GuiClient | undefined>
   snapshot: Accessor<GuiSnapshot | undefined>
   visibleSessions: Accessor<Session[]>
+  missingSessionIDs: Accessor<ReadonlySet<string>>
+  ensureSessionCards: (sessionIDs: readonly string[]) => Promise<unknown>
   refresh: () => Promise<void>
 }) {
   const preferences = readSidebarPreferences()
@@ -44,10 +47,11 @@ export function createRailController(input: {
     const views = new Map((input.snapshot()?.views ?? []).map((view) => [view.id, view]))
     return pinnedViewIDs()
       .map((id) => views.get(id))
-      .filter((view): view is OpencodeXView => view !== undefined)
+      .filter((view): view is ClientCatalogView => view !== undefined)
   })
 
   createEffect(() => {
+    if (resizing()) return
     writeSidebarPreferences({
       railCollapsed: collapsed(),
       railWidth: width(),
@@ -62,12 +66,19 @@ export function createRailController(input: {
   createEffect(() => {
     const snapshot = input.snapshot()
     if (!snapshot) return
-    const sessionIDs = new Set(input.visibleSessions().map((session) => session.id))
+    const missingSessionIDs = input.missingSessionIDs()
     const viewIDs = new Set(snapshot.views.map((view) => view.id))
-    const sessions = pinnedSessionIDs().filter((id) => sessionIDs.has(id))
+    const sessions = pinnedSessionIDs().filter((id) => !missingSessionIDs.has(id))
     const views = pinnedViewIDs().filter((id) => viewIDs.has(id))
     if (sessions.join("\n") !== pinnedSessionIDs().join("\n")) setPinnedSessionIDs(sessions)
     if (views.join("\n") !== pinnedViewIDs().join("\n")) setPinnedViewIDs(views)
+  })
+
+  createEffect(() => {
+    const unresolved = (input.snapshot()?.projects ?? []).flatMap((project) =>
+      projectExpanded(project.id) && project.sessions.length === 0 ? project.sessionIDs.slice(0, 3) : [],
+    )
+    if (unresolved.length > 0) void input.ensureSessionCards(unresolved).catch(() => undefined)
   })
 
   createEffect(() => {
@@ -106,6 +117,10 @@ export function createRailController(input: {
   }
 
   function toggleProject(projectID: string) {
+    if (!projectExpanded(projectID)) {
+      const project = input.snapshot()?.projects.find((item) => item.id === projectID)
+      if (project) void input.ensureSessionCards(project.sessionIDs.slice(0, 3)).catch(() => undefined)
+    }
     setExpandedProjectIDs((current) => ({ ...current, [projectID]: !projectExpanded(projectID) }))
   }
 

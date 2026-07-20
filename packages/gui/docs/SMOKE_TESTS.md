@@ -16,6 +16,8 @@ The test renders the dashboard in Chromium, navigates between Dashboard and Swar
 
 For interactive debugging, use `bun run test:e2e:headed`. The full TUI is rendered through OpenTUI's test renderer by `packages/opencode/test/cli/tui/app-lifecycle.test.ts`; its smoke contract verifies the dashboard frame and the same idle no-poll invariant.
 
+The production performance gate runs with `bun run test:e2e:performance`. It always starts fresh servers with no retries, builds production renderer assets, and keeps its database and disposable workspace under `.artifacts/e2e-performance/runtime`. Session-switch budgets use in-page click-to-authoritative-post-paint measurements; Playwright response/report collection happens after each timed interaction.
+
 ## Automated Electron acceptance
 
 Run the compiled main/preload boundary, real native views, and an isolated sidecar against a disposable Git workspace:

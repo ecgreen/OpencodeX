@@ -209,43 +209,6 @@
   background: var(--theme-surface-raised);
 }
 
-.workbench-diagnostics-summary {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-  color: var(--workbench-text);
-  font-size: 12px;
-}
-
-.workbench-diagnostics-summary .icon {
-  width: 14px;
-  height: 14px;
-  color: var(--workbench-yellow);
-}
-
-.workbench-diagnostics-bar.clean .workbench-diagnostics-summary .icon {
-  color: var(--workbench-green);
-}
-
-.workbench-diagnostics-summary span {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workbench-diagnostics-summary small {
-  margin-left: auto;
-  overflow: hidden;
-  max-width: 42%;
-  color: var(--workbench-muted);
-  font-family: Cascadia Code,JetBrains Mono,SFMono-Regular,Consolas,monospace;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .workbench-assistant-panel.session-shell>.session-page {
   min-height: 0;
   border: 0;

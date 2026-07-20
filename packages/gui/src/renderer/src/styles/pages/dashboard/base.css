@@ -263,6 +263,22 @@
   gap: 14px;
 }
 
+.dashboard-active-sessions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill,minmax(min(280px,100%),1fr));
+  align-content: start;
+  gap: 8px;
+}
+
+.dashboard-active-sessions>.session-link-shell {
+  width: 100%;
+  margin: 0;
+}
+
+.dashboard-active-sessions>.dashboard-empty-state {
+  grid-column: 1 / -1;
+}
+
 .dashboard-session-bucket {
   display: grid;
   grid-template-rows: auto minmax(0,auto);

@@ -32,7 +32,7 @@ export function ViewPaneHost(props: {
   lsp?: GuiSnapshot["lsp"]
   config?: GuiSnapshot["config"]
   agents: Agent[]
-  findFiles?: (input: { query: string; directory?: string }) => Promise<FileNode[]>
+  findFiles?: (input: { query: string; directory?: string; signal?: AbortSignal }) => Promise<FileNode[]>
   setSelectedAgent: (sessionID: string, value: string) => void
   setSelectedModel: (sessionID: string, value: string) => void
   setSelectedVariant: (sessionID: string, value: string) => void

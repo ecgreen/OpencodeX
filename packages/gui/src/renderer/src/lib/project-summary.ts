@@ -1,4 +1,4 @@
-import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { projectSessions, type SessionOrderState } from "./app-session-lists"
 import { deriveSessionStatus, sessionStatusLabel } from "./session-status"
 import type { GuiSnapshot } from "./store"
@@ -23,7 +23,7 @@ export function projectViews(
   snapshot?: GuiSnapshot,
   state?: SessionOrderState,
 ) {
-  const sessionIDs = new Set(projectSessions(project, snapshot, state).map((session) => session.id))
+  const sessionIDs = new Set(project.sessionIDs)
   return (snapshot?.views ?? [])
     .filter(
       (view) =>
@@ -38,7 +38,7 @@ export function projectAttentionItems(
   snapshot?: GuiSnapshot,
   state?: SessionOrderState,
 ): ProjectAttentionItem[] {
-  const sessionIDs = new Set(projectSessions(project, snapshot, state).map((session) => session.id))
+  const sessionIDs = new Set(project.sessionIDs)
   const attentionSessionIDs = new Set<string>()
   const sessions = projectSessions(project, snapshot, state)
     .filter((session) => {
@@ -107,7 +107,7 @@ export function projectLatestActivity(
   )
 }
 
-export function projectViewSessionCount(view: OpencodeXView) {
+export function projectViewSessionCount(view: ClientCatalogView) {
   return view.sessionIDs.length + pendingViewSessions(view).length
 }
 

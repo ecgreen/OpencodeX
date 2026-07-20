@@ -24,6 +24,19 @@ describe("message window helpers", () => {
     expect(result.messageCursor).toBe("older")
   })
 
+  test("prepends only page messages while preserving current side data", () => {
+    const todos = [{ content: "current", status: "pending", priority: "medium" }] as SessionData["todos"]
+    const diffs = [{ file: "current.ts", additions: 1, deletions: 0 }] as SessionData["diffs"]
+    const result = prependOlderMessages(
+      { ...sessionData([bundle("m2", 2)]), todos, diffs },
+      { messages: [bundle("m1", 1)], cursor: undefined },
+    )
+
+    expect(messageIDs(result)).toEqual(["m1", "m2"])
+    expect(result.todos).toBe(todos)
+    expect(result.diffs).toBe(diffs)
+  })
+
   test("prepends older pages without detaching from latest", () => {
     const result = prependOlderMessages(
       sessionData([bundle("m3", 3, "x".repeat(1_800)), bundle("m4", 4)]),

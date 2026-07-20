@@ -24,7 +24,7 @@ export default defineConfig({
   plugins: [solid(), tailwindcss()],
   base: "./",
   build: {
-    outDir: "../../dist/renderer",
+    outDir: process.env.OPENCODEX_GUI_RENDERER_OUT_DIR ?? "../../dist/renderer",
     emptyOutDir: true,
     manifest: true,
     chunkSizeWarningLimit: 800,

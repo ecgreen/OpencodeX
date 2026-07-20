@@ -1,13 +1,19 @@
 import path from "node:path"
 import { mkdir, rm } from "node:fs/promises"
+import { seedPerformanceFixture } from "./seed-performance"
 
 const gui = path.resolve(import.meta.dirname, "..")
 const root = path.resolve(gui, "../..")
-const runtime = path.join(gui, ".artifacts", "e2e", "runtime")
+const productionRenderer = process.argv.includes("--production-renderer")
+const runtime = path.join(gui, ".artifacts", productionRenderer ? "e2e-performance" : "e2e", "runtime")
+const workspace = productionRenderer
+  ? path.join(runtime, "workspace")
+  : process.env.OPENCODEX_GUI_E2E_DIRECTORY ?? root
 const backendURL = "http://127.0.0.1:4097"
-const rendererURL = "http://127.0.0.1:4173"
+const rendererPort = productionRenderer ? 4175 : 4173
+const rendererURL = `http://127.0.0.1:${rendererPort}`
 const username = "opencode"
-const password = process.env.OPENCODEX_GUI_E2E_PASSWORD ?? "opencodex-e2e"
+const password = productionRenderer ? "opencodex-e2e" : process.env.OPENCODEX_GUI_E2E_PASSWORD ?? "opencodex-e2e"
 const children: Bun.Subprocess[] = []
 let stopping = false
 
@@ -23,10 +29,16 @@ process.once("exit", stop)
 
 await rm(runtime, { recursive: true, force: true })
 await Promise.all(
-  ["config", "data", "home", "state"].map((directory) =>
+  ["config", "data", "home", "state", ...(productionRenderer ? ["workspace"] : [])].map((directory) =>
     mkdir(path.join(runtime, directory), { recursive: true }),
   ),
 )
+if (productionRenderer) {
+  await Bun.write(path.join(workspace, "README.md"), "# Isolated GUI performance workspace\n")
+  const git = Bun.spawn({ cmd: ["git", "init", "--quiet"], cwd: workspace, stdin: "ignore", stdout: "ignore", stderr: "inherit" })
+  const code = await git.exited
+  if (code !== 0) throw new Error(`Performance workspace git init exited with code ${code}`)
+}
 
 const backend = spawn(
   [
@@ -63,13 +75,41 @@ const backend = spawn(
 )
 
 await waitForBackend(backend)
+await initializeBackend()
 
-const renderer = spawn([process.execPath, "run", "dev", "--", "--port", "4173"], {
-  VITE_OPENCODEX_DIRECTORY: process.env.OPENCODEX_GUI_E2E_DIRECTORY ?? root,
+if (productionRenderer) {
+  const fixture = seedPerformanceFixture({
+    database: path.join(runtime, "state", "opencodex.sqlite"),
+    directory: workspace,
+  })
+  await Bun.write(path.join(runtime, "fixture.json"), JSON.stringify(fixture, null, 2))
+}
+
+const rendererEnvironment = {
+  VITE_OPENCODEX_DIRECTORY: workspace,
   VITE_OPENCODEX_SERVER_PASSWORD: password,
   VITE_OPENCODEX_SERVER_URL: backendURL,
   VITE_OPENCODEX_SERVER_USERNAME: username,
-})
+  ...(productionRenderer
+    ? { OPENCODEX_GUI_RENDERER_OUT_DIR: path.join(gui, ".artifacts", "e2e-performance", "renderer") }
+    : {}),
+}
+
+if (productionRenderer) {
+  const build = spawn([process.execPath, "run", "build:renderer"], rendererEnvironment)
+  const code = await build.exited
+  if (code !== 0) {
+    stop()
+    throw new Error(`GUI production renderer build exited with code ${code}`)
+  }
+}
+
+const renderer = spawn(
+  productionRenderer
+    ? [process.execPath, "run", "preview:renderer", "--", "--port", String(rendererPort)]
+    : [process.execPath, "run", "dev", "--", "--port", String(rendererPort)],
+  rendererEnvironment,
+)
 
 const result = await Promise.race([
   backend.exited.then((code) => ({ name: "backend", code })),
@@ -103,6 +143,27 @@ async function waitForBackend(backend: Bun.Subprocess) {
     await Bun.sleep(250)
   }
   throw new Error(`GUI e2e backend did not become healthy at ${backendURL}`)
+}
+
+async function initializeBackend() {
+  const headers = {
+    authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`,
+    "x-opencode-directory": workspace,
+  }
+  const response = await fetch(new URL("/experimental/opencodex/state", backendURL), {
+    headers,
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok)
+    throw new Error(`GUI e2e backend initialization failed with ${response.status}: ${await response.text()}`)
+  const settings = await fetch(new URL("/experimental/opencodex/settings", backendURL), {
+    method: "PATCH",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({ permission_mode: "configured" }),
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!settings.ok)
+    throw new Error(`GUI e2e settings initialization failed with ${settings.status}: ${await settings.text()}`)
 }
 
 function stop() {

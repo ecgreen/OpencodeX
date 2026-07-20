@@ -20,6 +20,8 @@ export function DiffRoute(props: { model: GuiAppModel }) {
       session={session}
       sessions={model.sessionSelection.visibleSessions()}
       sessionUiState={model.authoritative.snapshot()?.sessionUiState ?? {}}
+      gui={model.authoritative.client()}
+      directory={model.sessionActions.sidePanelDirectory(session)}
       setMode={(mode) => model.navigation.setRoute({ name: "diff", mode, sessionID: session?.id })}
       selectSession={(sessionID) =>
         model.navigation.setRoute({ name: "diff", mode: sessionID ? "last-turn" : "git", sessionID })

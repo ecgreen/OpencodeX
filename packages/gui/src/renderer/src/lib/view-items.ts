@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 
 const PENDING_SESSION_ID = "pending:new-session"
 
@@ -31,7 +32,7 @@ export function viewItemSession(item: ViewItem, fallbackDirectory?: string): Ses
   return pendingSession(item.slot.directory ?? fallbackDirectory ?? "")
 }
 
-export function pendingViewSessions(view?: Pick<OpencodeXView, "metadata">): PendingViewSession[] {
+export function pendingViewSessions(view?: Pick<ClientCatalogView, "metadata">): PendingViewSession[] {
   const opencodex = view?.metadata?.opencodex
   if (!isRecord(opencodex) || !Array.isArray(opencodex.pendingSessions)) return []
   return opencodex.pendingSessions.flatMap((item): PendingViewSession[] => {
@@ -45,7 +46,7 @@ export function pendingViewSessions(view?: Pick<OpencodeXView, "metadata">): Pen
   })
 }
 
-export function viewPaneOrder(view?: Pick<OpencodeXView, "metadata">): ViewPaneOrderItem[] {
+export function viewPaneOrder(view?: Pick<ClientCatalogView, "metadata">): ViewPaneOrderItem[] {
   const opencodex = view?.metadata?.opencodex
   if (!isRecord(opencodex) || !Array.isArray(opencodex.paneOrder)) return []
   return opencodex.paneOrder.flatMap((item): ViewPaneOrderItem[] =>
@@ -81,7 +82,7 @@ export function metadataWithViewPaneOrder(metadata: Record<string, unknown> | un
   return next
 }
 
-export function orderedViewItems(view: OpencodeXView | undefined, sessions: Session[]) {
+export function orderedViewItems(view: ClientCatalogView | undefined, sessions: Session[]) {
   const items: ViewItem[] = [
     ...sessions.map((session): ViewItem => ({ kind: "session", session })),
     ...pendingViewSessions(view).map((slot): ViewItem => ({ kind: "pending", slot })),
@@ -92,7 +93,7 @@ export function orderedViewItems(view: OpencodeXView | undefined, sessions: Sess
   return [...ordered, ...items.filter((item) => !included.has(viewItemID(item)))].slice(0, 8)
 }
 
-export function replacePendingViewPane(view: OpencodeXView, pendingID: string, sessionID: string, pending: PendingViewSession[]) {
+export function replacePendingViewPane(view: ClientCatalogView, pendingID: string, sessionID: string, pending: PendingViewSession[]) {
   const persisted = viewPaneOrder(view)
   const current = persisted.length > 0 ? persisted : [
     ...view.sessionIDs.map((id): ViewPaneOrderItem => ({ kind: "session", id })),

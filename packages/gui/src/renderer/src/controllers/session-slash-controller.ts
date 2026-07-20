@@ -244,7 +244,7 @@ export function createSessionSlashController(input: {
       }),
     })
     if (!options) return
-    const data = await input.authoritative.loadSession(session.id, { messageLimit: 10_000 })
+    const data = await input.authoritative.loadSessionTranscript(session.id)
     const transcript = prepareSessionTranscriptExport({
       session,
       messages: data.messages,
@@ -366,7 +366,7 @@ export function createSessionSlashController(input: {
 
   async function loadTranscript(session?: Session) {
     if (!session) return
-    const data = await input.authoritative.loadSession(session.id, { messageLimit: 10_000 })
+    const data = await input.authoritative.loadSessionTranscript(session.id)
     return formatSessionTranscript({
       session,
       messages: data.messages,

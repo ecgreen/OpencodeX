@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { runSelectedSessionSync, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowSelectedSessionLoading, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-hydration"
+import { runSelectedSessionSync, sessionLoadedTime, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowSelectedSessionLoading, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-hydration"
+import { syncColdLinkedSession } from "../src/renderer/src/controllers/session-selection-controller"
 import type { SessionData } from "../src/renderer/src/lib/store"
 
 describe("GUI session sync decisions", () => {
@@ -104,6 +105,29 @@ describe("GUI session sync decisions", () => {
     expect(applied).toEqual({ data: data(), loadedTime: 10 })
   })
 
+  test("uses the maximum returned canonical update time for session freshness", async () => {
+    let loadedTime = 0
+    await runSelectedSessionSync({
+      sessionID: "s1",
+      session: session("s1", 10),
+      loadedSessionID: "",
+      loadedTime: 12,
+      nextRequestID: () => 1,
+      latestRequestID: () => 1,
+      route: () => ({ name: "session", sessionID: "s1" }),
+      loadingSessionID: () => "s1",
+      setLoadingSessionID: () => undefined,
+      clearLoadingSessionID: () => undefined,
+      loadData: async () => data(),
+      canonicalUpdatedTime: () => 20,
+      applyData: (_data, time) => (loadedTime = time),
+      applyFailure: () => undefined,
+    })
+
+    expect(loadedTime).toBe(20)
+    expect(sessionLoadedTime(30, 10, 20)).toBe(30)
+  })
+
   test("skips selected session sync without starting a request when loaded data is fresh", async () => {
     const events: string[] = []
 
@@ -179,6 +203,47 @@ describe("GUI session sync decisions", () => {
     })
 
     expect(events).toEqual(["loading:s1", "boom", "clear"])
+  })
+
+  test("waits for authoritative readiness before resolving and hydrating a cold deep link", async () => {
+    const events: string[] = []
+    const input = {
+      sessionID: "cold-session",
+      ensureSessionCards: async (sessionIDs: readonly string[]) => {
+        events.push(`ensure:${sessionIDs.join(",")}`)
+        return { missing: [] }
+      },
+      syncSession: async (sessionID: string) => {
+        events.push(`hydrate:${sessionID}`)
+      },
+      isCurrent: () => true,
+    }
+
+    expect(await syncColdLinkedSession({ ...input, ready: false })).toBe(false)
+    expect(events).toEqual([])
+    expect(await syncColdLinkedSession({ ...input, ready: true })).toBe(true)
+    expect(events).toEqual(["ensure:cold-session", "hydrate:cold-session"])
+  })
+
+  test("does not hydrate a cold deep link after navigation changes", async () => {
+    const resolution = Promise.withResolvers<{ missing: readonly string[] }>()
+    const events: string[] = []
+    let current = true
+    const pending = syncColdLinkedSession({
+      ready: true,
+      sessionID: "cold-session",
+      ensureSessionCards: () => resolution.promise,
+      syncSession: async (sessionID) => {
+        events.push(`hydrate:${sessionID}`)
+      },
+      isCurrent: () => current,
+    })
+
+    current = false
+    resolution.resolve({ missing: [] })
+
+    expect(await pending).toBe(false)
+    expect(events).toEqual([])
   })
 })
 

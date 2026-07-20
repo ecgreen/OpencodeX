@@ -33,4 +33,23 @@ describe("session workspace bridge", () => {
     expect(targets).toEqual(["README.md", "git"])
     unregister()
   })
+
+  test("aborts in-flight work and rejects its late result after unmount", async () => {
+    const bridge = createSessionWorkspaceBridge()
+    let release = () => undefined
+    let operationSignal: AbortSignal | undefined
+    const operation = new Promise<void>((resolve) => { release = resolve })
+    const unregister = bridge.registerRequestHandler("ses_1", async (_request, signal) => {
+      operationSignal = signal
+      await operation
+      return { operation: "browser.state", output: { url: "https://late.test" } }
+    })
+    const pending = bridge.request("ses_1", { operation: "browser.state", input: {} })
+    await Promise.resolve()
+
+    unregister()
+    expect(operationSignal?.aborted).toBe(true)
+    release()
+    await expect(pending).rejects.toThrow("no longer mounted")
+  })
 })

@@ -1,4 +1,4 @@
-import { createEffect, on, onCleanup } from "solid-js"
+import { createEffect, on } from "solid-js"
 import type { GuiAppModel } from "./controllers/app-model"
 import { createAppearanceController } from "./controllers/appearance-controller"
 import { createAuthoritativeStateController } from "./controllers/authoritative-state-controller"
@@ -22,8 +22,6 @@ import { createSettingsController } from "./controllers/settings-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
 import { createViewController } from "./controllers/view-controller"
 import { AppShell } from "./components/app-shell"
-
-const SESSION_VIEWED_MARK_DELAY_MS = 2_000
 
 export function App() {
   const navigation = createNavigationController()
@@ -54,6 +52,8 @@ export function App() {
     client: authoritative.client,
     snapshot: authoritative.snapshot,
     visibleSessions: sessionSelection.visibleSessions,
+    missingSessionIDs: () => new Set(Object.keys(authoritative.state()?.tombstones.sessions ?? {})),
+    ensureSessionCards: authoritative.ensureSessionCards,
     refresh: authoritative.refresh,
   })
   const management = createManagementActionsController({
@@ -182,11 +182,7 @@ export function App() {
       () => {
         const session = navigation.route().name === "session" ? sessionSelection.selectedSession() : undefined
         if (!session) return
-        const timer = setTimeout(
-          () => sessionActions.markViewed(session.id, Math.max(Date.now(), session.time.updated)),
-          SESSION_VIEWED_MARK_DELAY_MS,
-        )
-        onCleanup(() => clearTimeout(timer))
+        sessionActions.markViewed(session.id, Math.max(Date.now(), session.time.updated))
       },
     ),
   )

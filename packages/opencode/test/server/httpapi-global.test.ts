@@ -1,11 +1,14 @@
 import { NodeHttpServer } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Deferred, Effect, Fiber, Layer, Option } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
 import { Installation } from "../../src/installation"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
+import { GuiBridge } from "../../src/opencodex/gui-bridge"
+import { SessionID } from "../../src/session/schema"
 import { ServerAuth } from "../../src/server/auth"
 import { RootHttpApi } from "../../src/server/routes/instance/httpapi/api"
 import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
@@ -14,6 +17,8 @@ import { globalHandlers } from "../../src/server/routes/instance/httpapi/handler
 import { authorizationLayer } from "../../src/server/routes/instance/httpapi/middleware/authorization"
 import { schemaErrorLayer } from "../../src/server/routes/instance/httpapi/middleware/schema-error"
 import { testEffect } from "../lib/effect"
+
+const guiBridgeLayer = GuiBridge.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer))
 
 const apiLayer = HttpRouter.serve(
   HttpApiBuilder.layer(RootHttpApi).pipe(
@@ -36,6 +41,7 @@ const apiLayer = HttpRouter.serve(
     }),
   ),
   Layer.provide(ServerAuth.Config.layer({ password: Option.none(), username: "opencode" })),
+  Layer.provideMerge(guiBridgeLayer),
 )
 const it = testEffect(apiLayer)
 
@@ -58,6 +64,52 @@ describe("global HttpApi", () => {
 
       expect(response.status).toBe(400)
       expect(yield* response.json).toEqual({ success: false, error: "Invalid request body" })
+    }),
+  )
+
+  it.live("syncs many GUI bridge scopes and correlates responses without loading an instance", () =>
+    Effect.gen(function* () {
+      const clientID = "gui-global-http-test"
+      const token = "a".repeat(32)
+      const scopes = Array.from({ length: 128 }, (_, index) => ({ directory: `C:/repo-${index}` }))
+      const response = yield* HttpClientRequest.post(GlobalPaths.guiBridgeSync).pipe(
+        HttpClientRequest.bodyJsonUnsafe({ clientID, token, capabilities: ["browser.state"], scopes }),
+        HttpClient.execute,
+      )
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toMatchObject({ added: 128, removed: 0, unchanged: 0 })
+
+      const bridge = yield* GuiBridge.Service
+      expect(yield* bridge.capabilities(scopes[73])).toEqual(["browser.state"])
+      const requestID = yield* Deferred.make<GuiBridge.RequestID>()
+      const events = yield* EventV2Bridge.Service
+      const unsubscribe = yield* events.listen((event) => {
+        if (event.type !== GuiBridge.Event.Request.type) return Effect.void
+        if (!event.data || typeof event.data !== "object" || !("requestID" in event.data)) return Effect.void
+        if (typeof event.data.requestID !== "string") return Effect.void
+        return Deferred.succeed(requestID, GuiBridge.RequestID.make(event.data.requestID)).pipe(Effect.asVoid)
+      })
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const pending = yield* bridge.request({
+        directory: scopes[73].directory,
+        sessionID: SessionID.make("ses_gui_global_http_test"),
+        operation: "browser.state",
+        input: {},
+      }).pipe(Effect.forkScoped)
+      const id = yield* Deferred.await(requestID)
+
+      const responded = yield* HttpClientRequest.post(GlobalPaths.guiBridgeRespond).pipe(
+        HttpClientRequest.bodyJsonUnsafe({
+          clientID,
+          token,
+          requestID: id,
+          operation: "browser.state",
+          result: { status: "ok", output: { url: "https://example.com/" } },
+        }),
+        HttpClient.execute,
+      )
+      expect(responded.status).toBe(200)
+      expect(yield* Fiber.join(pending)).toEqual({ url: "https://example.com/" })
     }),
   )
 })

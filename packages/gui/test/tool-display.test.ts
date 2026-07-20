@@ -3,10 +3,13 @@ import type { Part, PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import type { MessageBundle } from "../src/renderer/src/lib/store"
 import {
   collapseOutput,
+  copyFullToolText,
+  NESTED_TRANSCRIPT_DIFF_OPTIONS,
   patchContents,
   permissionTitle,
   permissionToolPart,
   shouldShowRawToolData,
+  shouldVirtualizeDiff,
   toolDisplayTitle,
   toolHasVisibleDetails,
   toolPatchTitle,
@@ -50,6 +53,24 @@ describe("GUI tool display helpers", () => {
   test("collapses large permission output by line and character budget", () => {
     expect(collapseOutput(["a", "b", "c"].join("\n"), 2).output).toBe("a\nb\n...")
     expect(collapseOutput("abcdef", 120, 5).output).toBe("ab...")
+  })
+
+  test("copies the original tool text instead of its preview", async () => {
+    const output = "😀".repeat(70_000)
+    let copied = ""
+    await copyFullToolText(output, (value) => { copied = value })
+    expect(copied).toBe(output)
+  })
+
+  test("virtualizes only diffs above the conservative line or byte threshold", () => {
+    expect(shouldVirtualizeDiff(Array.from({ length: 500 }, () => "line").join("\n"))).toBe(false)
+    expect(shouldVirtualizeDiff(Array.from({ length: 501 }, () => "line").join("\n"))).toBe(true)
+    expect(shouldVirtualizeDiff("a".repeat(64 * 1024))).toBe(false)
+    expect(shouldVirtualizeDiff(`😀${"a".repeat((64 * 1024) - 3)}`)).toBe(true)
+  })
+
+  test("disables virtualization and scroll preservation for nested transcript diffs", () => {
+    expect(NESTED_TRANSCRIPT_DIFF_OPTIONS).toEqual({ preserveScroll: false, virtualize: false })
   })
 
   test("formats permission titles and patch titles", () => {

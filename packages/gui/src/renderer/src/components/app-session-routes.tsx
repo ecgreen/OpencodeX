@@ -15,15 +15,13 @@ const SessionPage = lazy(() => import("./session-page-entry").then((module) => (
 export function DashboardRoute(props: { model: GuiAppModel }) {
   const model = props.model
   return (
-    <Dashboard
-      snapshot={model.authoritative.snapshot()}
-      workItems={model.authoritative.workItems()}
-      sessionOrderState={model.sessionSelection.orderState()}
+      <Dashboard
+        snapshot={model.authoritative.snapshot()}
+        sessionOrderState={model.sessionSelection.orderState()}
       logo={<OpencodeXLogo active={false} />}
       openProject={(projectID) => model.navigation.setRoute({ name: "projects", projectID })}
-      openSession={(sessionID) => model.navigation.setRoute({ name: "session", sessionID })}
+      openSession={model.sessionActions.open}
       openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
-      sessionPinned={(sessionID) => model.rail.pinnedSessionIDSet().has(sessionID)}
       viewPinned={(viewID) => model.rail.pinnedViewIDSet().has(viewID)}
       createProject={() => void model.notices.run(model.management.createProject)}
       createSession={(projectID, directory) =>
@@ -31,7 +29,6 @@ export function DashboardRoute(props: { model: GuiAppModel }) {
       }
       createSwarm={() => void model.notices.run(() => model.management.createSwarm())}
       createView={() => void model.notices.run(model.management.createView)}
-      toggleSessionPinned={model.rail.toggleSessionPinned}
       toggleViewPinned={model.rail.toggleViewPinned}
       renameSession={(session) => void model.notices.run(() => model.sessionActions.rename(session))}
       deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
@@ -121,6 +118,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       }
       onMessageAction={(action, context) => model.notices.run(() => model.sessionSlash.messageAction(action, context))}
       gui={model.authoritative.client()}
+      subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}
       sidePanelDirectory={model.sessionActions.sidePanelDirectory(session())}
     />
   )

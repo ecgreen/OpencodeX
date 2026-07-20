@@ -1,6 +1,6 @@
 import { Button, IconButton } from "./ui"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { For, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { projectSessionPreviewItems, sessionOrderBucket } from "../lib/app-session-lists"
 import { title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
@@ -149,26 +149,28 @@ export function RailProjectsSection(props: {
             </div>
             <div class="project-sessions" classList={{ collapsed: !props.projectExpanded(row.project.id) }}>
               <div>
-                <For each={recentProjectSessions(props.projectSessions(row.project), props.snapshot)} fallback={(
-                  <div class="project-empty">
-                    <span>No sessions in this project yet.</span>
-                    <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</Button>
-                  </div>
-                )}>
-                  {(session) => (
-                    <SidebarSessionLink
-                      session={session}
-                      snapshot={props.snapshot}
-                      active={props.activeSessionID === session.id}
-                      nested
-                      pinned={props.sessionPinned(session.id)}
-                      onClick={() => props.openSession(session.id)}
-                      togglePinned={() => props.toggleSessionPinned(session.id)}
-                      renameSession={() => props.renameSession(session)}
-                      deleteSession={() => props.deleteSession(session)}
-                    />
-                  )}
-                </For>
+                <Show when={props.projectExpanded(row.project.id)}>
+                  <For each={recentProjectSessions(props.projectSessions(row.project), props.snapshot)} fallback={(
+                    <div class="project-empty">
+                      <span>No sessions in this project yet.</span>
+                      <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</Button>
+                    </div>
+                  )}>
+                    {(session) => (
+                      <SidebarSessionLink
+                        session={session}
+                        snapshot={props.snapshot}
+                        active={props.activeSessionID === session.id}
+                        nested
+                        pinned={props.sessionPinned(session.id)}
+                        onClick={() => props.openSession(session.id)}
+                        togglePinned={() => props.toggleSessionPinned(session.id)}
+                        renameSession={() => props.renameSession(session)}
+                        deleteSession={() => props.deleteSession(session)}
+                      />
+                    )}
+                  </For>
+                </Show>
               </div>
             </div>
           </div>

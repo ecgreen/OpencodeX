@@ -409,7 +409,10 @@ export const layer = Layer.effect(
     })
 
     const initGit = Effect.fn("Project.initGit")(function* (input: { directory: string; project: Info }) {
-      if (input.project.vcs === "git") return input.project
+      if (input.project.vcs === "git") {
+        const current = yield* git(["rev-parse", "--is-inside-work-tree"], { cwd: input.directory })
+        if (current.code === 0 && current.text.trim() === "true") return input.project
+      }
       if (!(yield* Effect.sync(() => which("git")))) throw new Error("Git is not installed")
       const result = yield* git(["init", "--quiet"], { cwd: input.directory })
       if (result.code !== 0) {

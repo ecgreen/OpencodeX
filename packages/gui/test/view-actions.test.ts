@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { OpencodeXProject, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogProject } from "@opencode-ai/sdk/v2/client-sync"
 import {
   addPendingViewSessions,
   groupViewSessionsByProject,
@@ -75,14 +76,16 @@ describe("GUI view action helpers", () => {
         project: { id: "core-1", name: "Alpha" },
         folders: [],
         sessions: [{ id: "s1" }, { id: "s2" }],
+        sessionIDs: ["s1", "s2"],
       },
       {
         id: "p2",
         project: { id: "core-2", name: "Beta" },
         folders: [],
         sessions: [{ id: "s3" }],
+        sessionIDs: ["s3"],
       },
-    ] as OpencodeXProject[]
+    ] as ClientCatalogProject[]
 
     const grouped = groupViewSessionsByProject({ sessions, projects })
 

@@ -1,5 +1,6 @@
-import type { Agent, Command, OpencodeXProject, OpencodeXView, Part, PermissionRequest, Provider, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Command, OpencodeXView, Part, PermissionRequest, Provider, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "../../src/renderer/src/lib/client"
+import type { ClientCatalogProject } from "@opencode-ai/sdk/v2/client-sync"
 import type { MessageBundle, SessionData } from "../../src/renderer/src/lib/store"
 
 export function gui(directory = "C:/Work/OpencodeX"): GuiClient {
@@ -17,15 +18,17 @@ export function session(id: string, input: Partial<Session> = {}): Session {
   } as Session
 }
 
-export function project(input: Partial<OpencodeXProject> = {}): OpencodeXProject {
+export function project(input: Partial<ClientCatalogProject> = {}): ClientCatalogProject {
+  const sessions = input.sessions ?? []
   return {
     id: "project-1",
     name: "Project",
+    project: { id: "core-project-1", worktree: "C:/Work/OpencodeX", time: { created: 1, updated: 1 }, sandboxes: [] },
     folders: [{ path: "C:/Work/OpencodeX" }],
-    sessions: [],
-    time: { created: 1, updated: 1 },
+    sessions,
+    sessionIDs: input.sessionIDs ?? sessions.map((session) => session.id),
     ...input,
-  } as OpencodeXProject
+  } as ClientCatalogProject
 }
 
 export function view(input: Partial<OpencodeXView> = {}): OpencodeXView {

@@ -1,12 +1,12 @@
 import type { Accessor, JSX } from "solid-js"
-import type { OpencodeXView } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { For, Show, createMemo } from "solid-js"
 import { viewItemID, viewItemsMembershipKey, type ViewItem } from "../lib/view-items"
 
 export type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
 
 export function ViewsPage(props: {
-  view?: OpencodeXView
+  view?: ClientCatalogView
   items: ViewItem[]
   renderItem: (item: Accessor<ViewItem>) => JSX.Element
 }) {

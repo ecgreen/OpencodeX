@@ -79,6 +79,7 @@ export function createSessionSelectionController(input: {
       : []
   })
   const visibleSessions = createMemo(() => tuiSidebarSessions(input.authoritative.snapshot(), orderState()))
+  const authoritativeReady = createMemo(() => input.authoritative.state()?.phase === "ready")
 
   createEffect(() => setOrderState((state) => reconcileSessionOrderState(state, input.authoritative.snapshot())))
 
@@ -102,8 +103,20 @@ export function createSessionSelectionController(input: {
 
   createEffect(() => {
     const route = input.navigation.route()
-    if (route.name === "session" && input.authoritative.client())
-      untrack(() => void input.authoritative.syncSession(route.sessionID))
+    const ready = authoritativeReady()
+    if (route.name !== "session" || !input.authoritative.client()) return
+    untrack(() =>
+      void syncColdLinkedSession({
+        ready,
+        sessionID: route.sessionID,
+        ensureSessionCards: input.authoritative.ensureSessionCards,
+        syncSession: input.authoritative.syncSession,
+        isCurrent: () => {
+          const current = input.navigation.route()
+          return current.name === "session" && current.sessionID === route.sessionID
+        },
+      }).catch((cause) => console.error(cause)),
+    )
   })
 
   createEffect(() => {
@@ -160,4 +173,18 @@ function modelAvailable(value: string, providers: GuiSnapshot["providers"]) {
   const selection = parseModelValue(value)
   if (!selection) return false
   return Boolean(providers.find((provider) => provider.id === selection.providerID)?.models[selection.modelID])
+}
+
+export async function syncColdLinkedSession(input: {
+  ready: boolean
+  sessionID: string
+  ensureSessionCards: (sessionIDs: readonly string[]) => Promise<{ missing: readonly string[] } | undefined>
+  syncSession: (sessionID: string) => Promise<void>
+  isCurrent: () => boolean
+}) {
+  if (!input.ready) return false
+  const page = await input.ensureSessionCards([input.sessionID])
+  if (!input.isCurrent() || page?.missing.includes(input.sessionID)) return false
+  await input.syncSession(input.sessionID)
+  return true
 }

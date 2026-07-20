@@ -40,10 +40,10 @@ This package is intentionally frontend-only. It must preserve TUI compatibility 
 
 ## Sidecar Packaging
 
-Packaged builds require `resources/sidecar/opencode` or `resources/sidecar/opencode.exe`. Generate it before `electron-builder` with:
+Packaged builds require `resources/sidecar/opencode-gui-coordinator` or `resources/sidecar/opencode-gui-coordinator.exe`. Generate it before `electron-builder` with:
 
 ```sh
-bun run --cwd packages/opencode build --single --skip-embed-web-ui
+bun run --cwd packages/opencode build --single --gui-coordinator
 bun run --cwd packages/gui prepare:sidecar
 ```
 

@@ -1,18 +1,75 @@
-import type { Event, GlobalSession, OpencodeXSessionSnapshot, Part, Session } from "./client.js"
+import type { Event, OpencodeXSessionSnapshot, Part, Session } from "./client.js"
 import type { ClientEntityState, ClientSessionDetailState, ClientStateSyncState } from "./client-sync-types.js"
+import { releaseClientSessionState } from "./client-sync-state.js"
+import { isClientSessionRenderable } from "./client-sync-cards.js"
 
-export type ClientSessionEventBuffers = {
+type ClientBufferedSessionEvent = Extract<
+  Event,
+  {
+    type:
+      | "message.updated"
+      | "message.removed"
+      | "message.part.updated"
+      | "message.part.delta"
+      | "message.part.removed"
+      | "todo.updated"
+      | "session.diff"
+  }
+>
+
+type ClientSessionEventBuffer = {
+  pendingEvents: ClientBufferedSessionEvent[]
   pendingParts: Map<string, Part[]>
   pendingPartDeltas: Map<string, Map<string, string>>
 }
 
+export type ClientSessionEventBuffers = Map<string, ClientSessionEventBuffer>
+
 export function createClientSessionEventBuffers(): ClientSessionEventBuffers {
-  return { pendingParts: new Map(), pendingPartDeltas: new Map() }
+  return new Map()
 }
 
-export function clearClientSessionEventBuffers(buffers: ClientSessionEventBuffers) {
-  buffers.pendingParts.clear()
-  buffers.pendingPartDeltas.clear()
+export function clearClientSessionEventBuffers(buffers: ClientSessionEventBuffers, sessionID?: string) {
+  if (sessionID !== undefined) {
+    buffers.delete(sessionID)
+    return
+  }
+  buffers.clear()
+}
+
+export function drainClientSessionEventBuffer(
+  current: ClientStateSyncState,
+  sessionID: string,
+  buffers: ClientSessionEventBuffers,
+) {
+  const buffer = buffers.get(sessionID)
+  if (!buffer || !current.sessionDetails[sessionID]) return current
+  const events = buffer.pendingEvents.splice(0)
+  const replayed = events.reduce((state, event) => applyClientSessionEvent(state, event, buffers).state, current)
+  const detail = replayed.sessionDetails[sessionID]
+  if (!detail) return replayed
+  const pendingParts = Array.from(buffer.pendingParts).flatMap(([messageID, parts]) => {
+    if (!detail.messages[messageID]) return []
+    buffer.pendingParts.delete(messageID)
+    return parts.map((part) => applyPendingClientPartDeltas(part, buffer))
+  })
+  const withParts = pendingParts.reduce(upsertClientPart, detail)
+  const parts = Object.fromEntries(
+    Object.entries(withParts.parts).map(([partID, part]) => [partID, applyPendingClientPartDeltas(part, buffer)]),
+  )
+  const changedParts = Object.keys(parts).some((partID) => parts[partID] !== withParts.parts[partID])
+  const next =
+    pendingParts.length === 0 && !changedParts
+      ? replayed
+      : replaceClientSessionDetail(replayed, sessionID, {
+          ...withParts,
+          revision: withParts.revision + 1,
+          parts: changedParts ? parts : withParts.parts,
+        })
+  const cleared = clearClientDetailTombstones(next, sessionID)
+  if (buffer.pendingEvents.length === 0 && buffer.pendingParts.size === 0 && buffer.pendingPartDeltas.size === 0)
+    buffers.delete(sessionID)
+  return cleared
 }
 
 export function applyClientSessionEvent(
@@ -23,8 +80,13 @@ export function applyClientSessionEvent(
   switch (event.type) {
     case "session.created":
     case "session.updated":
+      if (!isClientSessionRenderable(event.properties.info)) {
+        clearClientSessionEventBuffers(buffers, event.properties.info.id)
+        return { state: deleteClientSession(current, event.properties.info.id), handled: true }
+      }
       return { state: patchClientSession(current, event.properties.info), handled: true }
     case "session.deleted":
+      clearClientSessionEventBuffers(buffers, event.properties.info.id)
       return { state: deleteClientSession(current, event.properties.info.id), handled: true }
     case "session.status":
       return {
@@ -115,12 +177,17 @@ export function applyClientSessionEvent(
       }
     case "message.updated": {
       const detail = current.sessionDetails[event.properties.info.sessionID]
-      if (!detail) return { state: current, handled: true }
+      if (!detail) {
+        if (!current.tombstones.sessions[event.properties.info.sessionID])
+          getClientSessionEventBuffer(buffers, event.properties.info.sessionID).pendingEvents.push(event)
+        return { state: current, handled: true }
+      }
+      const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.info.sessionID)
       const messageID = event.properties.info.id
-      const bufferedParts = buffers.pendingParts.get(messageID) ?? []
-      buffers.pendingParts.delete(messageID)
+      const bufferedParts = sessionBuffers.pendingParts.get(messageID) ?? []
+      sessionBuffers.pendingParts.delete(messageID)
       const next = bufferedParts.reduce(
-        (result, part) => upsertClientPart(result, applyPendingClientPartDeltas(part, buffers)),
+        (result, part) => upsertClientPart(result, applyPendingClientPartDeltas(part, sessionBuffers)),
         {
           ...detail,
           revision: detail.revision + 1,
@@ -128,55 +195,97 @@ export function applyClientSessionEvent(
           messages: { ...detail.messages, [messageID]: event.properties.info },
         },
       )
-      return { state: replaceClientSessionDetail(current, event.properties.info.sessionID, next), handled: true }
+      return {
+        state: clearClientMessageTombstone(
+          replaceClientSessionDetail(current, event.properties.info.sessionID, next),
+          messageID,
+        ),
+        handled: true,
+      }
     }
     case "message.removed": {
-      forgetPendingClientMessage(event.properties.messageID, buffers)
+      const sessionBuffers = buffers.get(event.properties.sessionID)
+      if (sessionBuffers) forgetPendingClientMessage(event.properties.messageID, sessionBuffers)
       const detail = current.sessionDetails[event.properties.sessionID]
-      if (!detail?.messages[event.properties.messageID]) return { state: current, handled: true }
+      if (!detail) {
+        if (current.tombstones.sessions[event.properties.sessionID]) return { state: current, handled: true }
+        getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        return {
+          state: markClientMessageTombstone(current, event.properties.sessionID, event.properties.messageID),
+          handled: true,
+        }
+      }
+      if (!detail.messages[event.properties.messageID])
+        return {
+          state: markClientMessageTombstone(current, event.properties.sessionID, event.properties.messageID),
+          handled: true,
+        }
       const messages = { ...detail.messages }
       const partIDs = { ...detail.partIDs }
       const parts = { ...detail.parts }
+      const removedPartIDs = partIDs[event.properties.messageID] ?? []
       delete messages[event.properties.messageID]
-      ;(partIDs[event.properties.messageID] ?? []).forEach((partID) => delete parts[partID])
+      removedPartIDs.forEach((partID) => delete parts[partID])
       delete partIDs[event.properties.messageID]
       return {
-        state: replaceClientSessionDetail(current, event.properties.sessionID, {
-          ...detail,
-          revision: detail.revision + 1,
-          messageIDs: detail.messageIDs.filter((messageID) => messageID !== event.properties.messageID),
-          messages,
-          partIDs,
-          parts,
-        }),
+        state: removedPartIDs.reduce(
+          (state, partID) => markClientPartTombstone(state, event.properties.sessionID, partID),
+          markClientMessageTombstone(
+            replaceClientSessionDetail(current, event.properties.sessionID, {
+              ...detail,
+              revision: detail.revision + 1,
+              messageIDs: detail.messageIDs.filter((messageID) => messageID !== event.properties.messageID),
+              messages,
+              partIDs,
+              parts,
+            }),
+            event.properties.sessionID,
+            event.properties.messageID,
+          ),
+        ),
         handled: true,
       }
     }
     case "message.part.updated": {
-      const part = applyPendingClientPartDeltas(event.properties.part, buffers)
-      const detail = current.sessionDetails[part.sessionID]
-      if (!detail) return { state: current, handled: true }
+      const detail = current.sessionDetails[event.properties.part.sessionID]
+      if (!detail) {
+        if (!current.tombstones.sessions[event.properties.part.sessionID])
+          getClientSessionEventBuffer(buffers, event.properties.part.sessionID).pendingEvents.push(event)
+        return { state: current, handled: true }
+      }
+      const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.part.sessionID)
+      const part = applyPendingClientPartDeltas(event.properties.part, sessionBuffers)
       if (!detail.messages[part.messageID]) {
-        buffers.pendingParts.set(
+        sessionBuffers.pendingParts.set(
           part.messageID,
-          upsertClientPartList(buffers.pendingParts.get(part.messageID) ?? [], part),
+          upsertClientPartList(sessionBuffers.pendingParts.get(part.messageID) ?? [], part),
         )
         return { state: current, handled: true }
       }
       return {
-        state: replaceClientSessionDetail(current, part.sessionID, {
-          ...upsertClientPart(detail, part),
-          revision: detail.revision + 1,
-        }),
+        state: clearClientPartTombstone(
+          replaceClientSessionDetail(current, part.sessionID, {
+            ...upsertClientPart(detail, part),
+            revision: detail.revision + 1,
+          }),
+          part.id,
+        ),
         handled: true,
       }
     }
     case "message.part.delta": {
       const detail = current.sessionDetails[event.properties.sessionID]
-      if (!detail) return { state: current, handled: true }
+      if (!detail) {
+        if (current.tombstones.sessions[event.properties.sessionID]) return { state: current, handled: true }
+        getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        return { state: current, handled: true }
+      }
       const part = detail.parts[event.properties.partID]
       if (!part) {
-        rememberPendingClientPartDelta(event.properties, buffers)
+        rememberPendingClientPartDelta(
+          event.properties,
+          getClientSessionEventBuffer(buffers, event.properties.sessionID),
+        )
         return { state: current, handled: true }
       }
       const next = applyClientPartDelta(part, event.properties.field, event.properties.delta)
@@ -191,27 +300,49 @@ export function applyClientSessionEvent(
       }
     }
     case "message.part.removed": {
-      forgetPendingClientPart(event.properties.messageID, event.properties.partID, buffers)
+      const sessionBuffers = buffers.get(event.properties.sessionID)
+      if (sessionBuffers) forgetPendingClientPart(event.properties.messageID, event.properties.partID, sessionBuffers)
       const detail = current.sessionDetails[event.properties.sessionID]
-      if (!detail?.parts[event.properties.partID]) return { state: current, handled: true }
+      if (!detail) {
+        if (!current.tombstones.sessions[event.properties.sessionID])
+          getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        return {
+          state: markClientPartTombstone(current, event.properties.sessionID, event.properties.partID),
+          handled: true,
+        }
+      }
+      if (!detail.parts[event.properties.partID])
+        return {
+          state: markClientPartTombstone(current, event.properties.sessionID, event.properties.partID),
+          handled: true,
+        }
       const parts = { ...detail.parts }
       delete parts[event.properties.partID]
       return {
-        state: replaceClientSessionDetail(current, event.properties.sessionID, {
-          ...detail,
-          revision: detail.revision + 1,
-          partIDs: {
-            ...detail.partIDs,
-            [event.properties.messageID]: (detail.partIDs[event.properties.messageID] ?? []).filter(
-              (partID) => partID !== event.properties.partID,
-            ),
-          },
-          parts,
-        }),
+        state: markClientPartTombstone(
+          replaceClientSessionDetail(current, event.properties.sessionID, {
+            ...detail,
+            revision: detail.revision + 1,
+            partIDs: {
+              ...detail.partIDs,
+              [event.properties.messageID]: (detail.partIDs[event.properties.messageID] ?? []).filter(
+                (partID) => partID !== event.properties.partID,
+              ),
+            },
+            parts,
+          }),
+          event.properties.sessionID,
+          event.properties.partID,
+        ),
         handled: true,
       }
     }
     case "todo.updated":
+      if (!current.sessionDetails[event.properties.sessionID]) {
+        if (!current.tombstones.sessions[event.properties.sessionID])
+          getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        return { state: current, handled: true }
+      }
       return {
         state: updateClientSessionSnapshot(current, event.properties.sessionID, (snapshot) => ({
           ...snapshot,
@@ -220,6 +351,11 @@ export function applyClientSessionEvent(
         handled: true,
       }
     case "session.diff":
+      if (!current.sessionDetails[event.properties.sessionID]) {
+        if (!current.tombstones.sessions[event.properties.sessionID])
+          getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        return { state: current, handled: true }
+      }
       return {
         state: updateClientSessionSnapshot(current, event.properties.sessionID, (snapshot) => ({
           ...snapshot,
@@ -243,53 +379,47 @@ function patchClientSession(current: ClientStateSyncState, session: Session) {
         },
       }
     : current.sessionDetails
-  const patchEmbedded = (sessions: GlobalSession[]) => {
-    const index = sessions.findIndex((item) => item.id === session.id)
-    if (index === -1) return sessions
-    return sessions.map((item, itemIndex) => (itemIndex === index ? { ...item, ...session } : item))
-  }
   return reconcileClientSessionUiState(
     {
       ...current,
       sessions: upsertClientEntity(current.sessions, session, (item) => item.id),
-      projects: mapClientEntities(current.projects, (project) => {
-        const sessions = patchEmbedded(project.sessions)
-        return sessions === project.sessions ? project : { ...project, sessions }
-      }),
-      views: mapClientEntities(current.views, (view) => {
-        const sessions = patchEmbedded(view.sessions)
-        return sessions === view.sessions ? view : { ...view, sessions }
-      }),
       sessionDetails,
+      tombstones: {
+        ...current.tombstones,
+        sessions: withoutClientRecordKey(current.tombstones.sessions, session.id),
+      },
     },
     session.id,
   )
 }
 
 function deleteClientSession(current: ClientStateSyncState, sessionID: string) {
-  const sessionStatus = { ...current.sessionStatus }
-  const sessionUiState = { ...current.sessionUiState }
-  const sessionDetails = { ...current.sessionDetails }
+  const released = releaseClientSessionState(current, sessionID)
+  const sessionStatus = { ...released.sessionStatus }
+  const sessionUiState = { ...released.sessionUiState }
+  const sessionDetails = { ...released.sessionDetails }
   delete sessionStatus[sessionID]
   delete sessionUiState[sessionID]
   delete sessionDetails[sessionID]
   return {
-    ...current,
-    sessions: removeClientEntity(current.sessions, sessionID),
-    projects: mapClientEntities(current.projects, (project) => ({
+    ...released,
+    sessions: removeClientEntity(released.sessions, sessionID),
+    projects: mapClientEntities(released.projects, (project) => ({
       ...project,
-      sessions: project.sessions.filter((session) => session.id !== sessionID),
+      sessionIDs: project.sessionIDs.filter((id) => id !== sessionID),
     })),
-    views: mapClientEntities(current.views, (view) => ({
+    views: mapClientEntities(released.views, (view) => ({
       ...view,
-      sessions: view.sessions.filter((session) => session.id !== sessionID),
+      sessionIDs: view.sessionIDs.filter((id) => id !== sessionID),
+      focusedSessionID:
+        view.focusedSessionID === sessionID ? view.sessionIDs.find((id) => id !== sessionID) : view.focusedSessionID,
     })),
-    permissions: filterClientEntities(current.permissions, (request) => request.sessionID !== sessionID),
-    questions: filterClientEntities(current.questions, (request) => request.sessionID !== sessionID),
+    permissions: filterClientEntities(released.permissions, (request) => request.sessionID !== sessionID),
+    questions: filterClientEntities(released.questions, (request) => request.sessionID !== sessionID),
     sessionStatus,
     sessionUiState,
     sessionDetails,
-    tombstones: { ...current.tombstones, sessions: { ...current.tombstones.sessions, [sessionID]: true as const } },
+    tombstones: { ...released.tombstones, sessions: { ...released.tombstones.sessions, [sessionID]: true as const } },
   }
 }
 
@@ -433,7 +563,7 @@ function applyClientPartDelta(part: Part, field: string, delta: string): Part {
 
 function rememberPendingClientPartDelta(
   input: { messageID: string; partID: string; field: string; delta: string },
-  buffers: ClientSessionEventBuffers,
+  buffers: ClientSessionEventBuffer,
 ) {
   const pending = buffers.pendingParts.get(input.messageID)
   if (pending?.some((part) => part.id === input.partID)) {
@@ -449,7 +579,7 @@ function rememberPendingClientPartDelta(
   buffers.pendingPartDeltas.set(input.messageID, deltas)
 }
 
-function applyPendingClientPartDeltas(part: Part, buffers: ClientSessionEventBuffers) {
+function applyPendingClientPartDeltas(part: Part, buffers: ClientSessionEventBuffer) {
   const deltas = buffers.pendingPartDeltas.get(part.messageID)
   if (!deltas) return part
   const next = Array.from(deltas).reduce((current, [key, delta]) => {
@@ -462,12 +592,12 @@ function applyPendingClientPartDeltas(part: Part, buffers: ClientSessionEventBuf
   return next
 }
 
-function forgetPendingClientMessage(messageID: string, buffers: ClientSessionEventBuffers) {
+function forgetPendingClientMessage(messageID: string, buffers: ClientSessionEventBuffer) {
   buffers.pendingParts.delete(messageID)
   buffers.pendingPartDeltas.delete(messageID)
 }
 
-function forgetPendingClientPart(messageID: string, partID: string, buffers: ClientSessionEventBuffers) {
+function forgetPendingClientPart(messageID: string, partID: string, buffers: ClientSessionEventBuffer) {
   const parts = buffers.pendingParts.get(messageID)
   if (parts) {
     const next = parts.filter((part) => part.id !== partID)
@@ -480,4 +610,78 @@ function forgetPendingClientPart(messageID: string, partID: string, buffers: Cli
     .filter((key) => key.startsWith(`${partID}\0`))
     .forEach((key) => deltas.delete(key))
   if (deltas.size === 0) buffers.pendingPartDeltas.delete(messageID)
+}
+
+function getClientSessionEventBuffer(buffers: ClientSessionEventBuffers, sessionID: string) {
+  const current = buffers.get(sessionID)
+  if (current) return current
+  const next = {
+    pendingEvents: new Array<ClientBufferedSessionEvent>(),
+    pendingParts: new Map<string, Part[]>(),
+    pendingPartDeltas: new Map<string, Map<string, string>>(),
+  }
+  buffers.set(sessionID, next)
+  return next
+}
+
+function markClientMessageTombstone(current: ClientStateSyncState, sessionID: string, messageID: string) {
+  return {
+    ...current,
+    tombstones: {
+      ...current.tombstones,
+      messages: { ...current.tombstones.messages, [messageID]: true as const },
+      messageSessions: { ...current.tombstones.messageSessions, [messageID]: sessionID },
+    },
+  }
+}
+
+function markClientPartTombstone(current: ClientStateSyncState, sessionID: string, partID: string) {
+  return {
+    ...current,
+    tombstones: {
+      ...current.tombstones,
+      parts: { ...current.tombstones.parts, [partID]: true as const },
+      partSessions: { ...current.tombstones.partSessions, [partID]: sessionID },
+    },
+  }
+}
+
+function clearClientMessageTombstone(current: ClientStateSyncState, messageID: string) {
+  if (!current.tombstones.messages[messageID] && !current.tombstones.messageSessions[messageID]) return current
+  return {
+    ...current,
+    tombstones: {
+      ...current.tombstones,
+      messages: withoutClientRecordKey(current.tombstones.messages, messageID),
+      messageSessions: withoutClientRecordKey(current.tombstones.messageSessions, messageID),
+    },
+  }
+}
+
+function clearClientPartTombstone(current: ClientStateSyncState, partID: string) {
+  if (!current.tombstones.parts[partID] && !current.tombstones.partSessions[partID]) return current
+  return {
+    ...current,
+    tombstones: {
+      ...current.tombstones,
+      parts: withoutClientRecordKey(current.tombstones.parts, partID),
+      partSessions: withoutClientRecordKey(current.tombstones.partSessions, partID),
+    },
+  }
+}
+
+function clearClientDetailTombstones(current: ClientStateSyncState, sessionID: string) {
+  const detail = current.sessionDetails[sessionID]
+  if (!detail) return current
+  return Object.keys(detail.parts).reduce(
+    (state, partID) => clearClientPartTombstone(state, partID),
+    detail.messageIDs.reduce((state, messageID) => clearClientMessageTombstone(state, messageID), current),
+  )
+}
+
+function withoutClientRecordKey<T>(record: Record<string, T>, key: string) {
+  if (!(key in record)) return record
+  const next = { ...record }
+  delete next[key]
+  return next
 }

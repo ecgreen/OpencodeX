@@ -11,12 +11,16 @@ import {
   shell,
   type MessageBoxOptions,
 } from "electron"
-import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
+import { isSidecarConnectionHealthy, type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
 import { editorCommand } from "./editor-command.js"
 import { registerBrowserIpc, secureSession } from "./browser-ipc.js"
 import { registerTerminalIpc } from "./terminal-ipc.js"
 import { validString } from "./ipc-validation.js"
+import { MAIN_PERFORMANCE_MILESTONES, markMainPerformance } from "./performance.js"
+import { loopbackSidecarURL } from "./sidecar-connection.js"
+import { createSidecarLifecycle } from "./sidecar-lifecycle.js"
 
+markMainPerformance(MAIN_PERFORMANCE_MILESTONES.bootstrap)
 const isDev = !app.isPackaged
 const rendererURL = isDev ? developmentRendererURL() : undefined
 const RENDERER_CSP = [
@@ -30,6 +34,15 @@ const RENDERER_CSP = [
   "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* data:",
 ].join("; ")
 let authorizedSidecar: { origin: string; header: string } | undefined
+const sidecarLifecycle = createSidecarLifecycle({
+  start: startSidecar,
+  health: isSidecarConnectionHealthy,
+  install: authorizeSidecar,
+  reset: () => {
+    authorizedSidecar = undefined
+  },
+  stop: stopSidecar,
+})
 
 function appIconPath() {
   if (app.isPackaged) return path.join(process.resourcesPath, "app-icon.png")
@@ -59,10 +72,20 @@ function registerAppIcon() {
 }
 
 function authorizeSidecar(connection: SidecarConnection) {
+  const url = loopbackSidecarURL(connection.url)
+  if (!url) throw new Error("OpencodeX sidecar URL must use HTTP on a loopback host")
   authorizedSidecar = {
-    origin: new URL(connection.url).origin,
+    origin: url.origin,
     header: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
   }
+}
+
+function ensureSidecar() {
+  return sidecarLifecycle.ensure()
+}
+
+function stopOwnedSidecar() {
+  return sidecarLifecycle.stop()
 }
 
 function registerSidecarAuthorization() {
@@ -110,7 +133,13 @@ function validEditorInput(value: unknown) {
   return { value: text, ...(cwd ? { cwd } : {}) }
 }
 
+function openWindow() {
+  void ensureSidecar().catch((error) => console.error("Failed to prewarm OpencodeX sidecar", error))
+  return createWindow()
+}
+
 async function createWindow() {
+  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.windowCreateStarted)
   const background = process.env.OPENCODEX_GUI_E2E_BACKGROUND === "1"
   const window = new BrowserWindow({
     ...(background ? { x: -10000, y: -10000 } : {}),
@@ -134,6 +163,7 @@ async function createWindow() {
       backgroundThrottling: !background,
     },
   })
+  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.windowCreated)
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalURL(url)
@@ -145,29 +175,35 @@ async function createWindow() {
     openExternalURL(url)
   })
 
+  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.rendererLoadStarted)
   if (isDev) {
     await window.loadURL(rendererURL!)
+    markMainPerformance(MAIN_PERFORMANCE_MILESTONES.rendererLoaded)
     if (background) window.showInactive()
     if (process.env.OPENCODEX_GUI_DEVTOOLS === "1") window.webContents.openDevTools({ mode: "detach" })
     return
   }
 
   await window.loadFile(path.join(app.getAppPath(), "dist", "renderer", "index.html"))
+  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.rendererLoaded)
   if (background) window.showInactive()
   if (process.env.OPENCODEX_GUI_SMOKE === "1") {
     try {
       await runSmokeCheck(window)
-      app.exit(0)
+      process.exitCode = 0
+      app.quit()
     } catch (error) {
       console.error(error)
-      app.exit(1)
+      process.exitCode = 1
+      app.quit()
     }
   }
 }
 
 ipcMain.handle("opencodex:connection", async () => {
-  const connection = await startSidecar()
-  authorizeSidecar(connection)
+  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarRequestStarted)
+  const connection = await ensureSidecar()
+  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
   return { url: connection.url, directory: connection.directory }
 })
 
@@ -266,48 +302,47 @@ registerTerminalIpc()
 registerBrowserIpc(openExternalURL)
 
 async function runSmokeCheck(window: BrowserWindow) {
-  const connection = await startSidecar()
-  authorizeSidecar(connection)
+  await ensureSidecar()
   const hasRoot = await window.webContents.executeJavaScript("Boolean(document.querySelector('#root'))")
   if (hasRoot !== true) throw new Error("Packaged GUI smoke failed: renderer root was not mounted")
-  await checkSidecarHealth(connection)
-}
-
-async function checkSidecarHealth(connection: SidecarConnection) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 5_000)
-  try {
-    const response = await fetch(new URL("/global/health", connection.url), {
-      headers: {
-        authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
-      },
-      signal: controller.signal,
-    })
-    if (!response.ok) throw new Error(`sidecar health returned ${response.status}`)
-    const body = await response.json()
-    if (!body || typeof body !== "object" || !("healthy" in body) || body.healthy !== true) {
-      throw new Error("sidecar health response was not healthy")
-    }
-  } finally {
-    clearTimeout(timeout)
-  }
 }
 
 void app
   .whenReady()
   .then(() => {
+    markMainPerformance(MAIN_PERFORMANCE_MILESTONES.appReady)
     registerAppIcon()
     secureSession(session.defaultSession)
     registerContentSecurityPolicy()
     registerSidecarAuthorization()
-    return createWindow()
+    return openWindow()
   })
   .catch((error) => console.error(error))
 app.on("window-all-closed", () => {
-  stopSidecar()
-  if (process.platform !== "darwin") app.quit()
+  if (process.platform !== "darwin") {
+    app.quit()
+    return
+  }
+  void stopOwnedSidecar()
 })
-app.on("before-quit", stopSidecar)
+let quitAfterSidecarStop = false
+let sidecarStopForQuit: Promise<void> | undefined
+app.on("before-quit", (event) => {
+  if (quitAfterSidecarStop) return
+  event.preventDefault()
+  if (sidecarStopForQuit) return
+  sidecarStopForQuit = stopOwnedSidecar()
+  void sidecarStopForQuit.then(
+    () => {
+      quitAfterSidecarStop = true
+      app.quit()
+    },
+    (error) => {
+      sidecarStopForQuit = undefined
+      console.error("Failed to stop OpencodeX sidecar", error)
+    },
+  )
+})
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) void createWindow()
+  if (BrowserWindow.getAllWindows().length === 0) void openWindow()
 })

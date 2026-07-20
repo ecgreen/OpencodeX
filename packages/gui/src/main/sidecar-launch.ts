@@ -2,34 +2,27 @@ import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { DatabaseSync } from "node:sqlite"
 import { app } from "electron"
 
 export type SidecarLaunch = {
   command: string
   args: string[]
   cwd: string
-  database?: string
+  database: string
   startupLog?: string
 }
 
 export type CoordinatorManifest = {
-  version: 1
+  version: 2
   key: string
   directory: string
+  database: string
   pid: number
   url: string
   username: string
   password: string
   token: string
   createdAt: string
-}
-
-type ProjectSummary = {
-  id: string
-  name?: string
-  folders: string[]
-  sessions: number
 }
 
 const DATA_ROOT = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode")
@@ -42,8 +35,16 @@ export function normalizeDirectory(directory: string) {
   return process.platform === "win32" ? resolved.toLowerCase() : resolved
 }
 
-export function coordinatorKey(directory: string) {
-  return createHash("sha1").update(normalizeDirectory(directory)).digest("hex")
+export function coordinatorDatabaseIdentity(database: string) {
+  if (database === ":memory:") return database
+  const resolved = path.isAbsolute(database) ? path.resolve(database) : path.resolve(DATA_ROOT, database)
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+}
+
+export function coordinatorKey(directory: string, database: string) {
+  return createHash("sha1")
+    .update(`${normalizeDirectory(directory)}\0${coordinatorDatabaseIdentity(database)}`)
+    .digest("hex")
 }
 
 export function coordinatorManifestPath(key: string) {
@@ -64,11 +65,11 @@ export function coordinatorHeaders(manifest: Pick<CoordinatorManifest, "username
   }
 }
 
-export function createSidecarLaunch(directory: string, key: string, database?: string): SidecarLaunch {
+export function createSidecarLaunch(directory: string, key: string, database: string): SidecarLaunch {
   if (app.isPackaged) {
     const binary = bundledBinary()
     if (!fs.existsSync(binary)) throw new Error(`Missing packaged OpencodeX sidecar binary: ${binary}`)
-    return { command: binary, args: coordinatorArgs(directory, key), cwd: directory, database: process.env.OPENCODEX_GUI_DB }
+    return { command: binary, args: coordinatorArgs(directory, key), cwd: directory, database }
   }
 
   if (process.env.OPENCODEX_GUI_SIDECAR) {
@@ -87,7 +88,7 @@ export function createSidecarLaunch(directory: string, key: string, database?: s
     args: [
       "run",
       "--conditions=browser",
-      path.join(opencodePackageDirectory(), "src", "index.ts"),
+      path.join(opencodePackageDirectory(), "src", "gui-coordinator.ts"),
       ...coordinatorArgs(directory, key),
     ],
     cwd: opencodePackageDirectory(),
@@ -107,20 +108,21 @@ export function selectedDatabaseEnv(database: string | undefined) {
   return { OPENCODE_DB: database }
 }
 
-export function sidecarDatabase(directory: string) {
-  if (process.env.OPENCODE_DB) return undefined
-  if (process.env.OPENCODEX_GUI_DB) return process.env.OPENCODEX_GUI_DB
-  if (app.isPackaged || process.env.OPENCODEX_GUI_SIDECAR) return undefined
-  return selectDevelopmentDatabase(directory)
-}
-
-export async function coordinatorMatchesDatabase(manifest: CoordinatorManifest, database: string | undefined) {
-  if (!database) return true
-  const expected = projectSummaryFromDatabase(database)
-  if (!expected) return true
-  const actual = await projectSummaryFromCoordinator(manifest)
-  if (!actual) return false
-  return JSON.stringify(normalizeProjectSummary(actual)) === JSON.stringify(normalizeProjectSummary(expected))
+export async function sidecarDatabase(directory: string) {
+  const configured = process.env.OPENCODE_DB ?? process.env.OPENCODEX_GUI_DB
+  if (configured) return coordinatorDatabaseIdentity(configured)
+  if (
+    app.isPackaged ||
+    process.env.OPENCODE_DISABLE_CHANNEL_DB === "1" ||
+    process.env.OPENCODE_DISABLE_CHANNEL_DB === "true"
+  ) {
+    return coordinatorDatabaseIdentity(path.join(DATA_ROOT, "opencode.db"))
+  }
+  if (!process.env.OPENCODEX_GUI_SIDECAR) {
+    const selected = await (await import("./sidecar-development.js")).selectDevelopmentDatabase(directory)
+    if (selected) return coordinatorDatabaseIdentity(selected)
+  }
+  return coordinatorDatabaseIdentity(path.join(DATA_ROOT, "opencode-local.db"))
 }
 
 export function startError(error: unknown, started: SidecarLaunch) {
@@ -138,9 +140,10 @@ export function startupLogDetails(started: SidecarLaunch) {
 }
 
 export function createStartupLog(started: SidecarLaunch) {
+  if (!started.startupLog) throw new Error("Missing coordinator startup log path")
   fs.mkdirSync(COORDINATOR_ROOT, { recursive: true })
   fs.writeFileSync(
-    started.startupLog!,
+    started.startupLog,
     [
       `[${new Date().toISOString()}] starting OpencodeX coordinator`,
       `command: ${started.command}`,
@@ -149,11 +152,11 @@ export function createStartupLog(started: SidecarLaunch) {
       "",
     ].join("\n"),
   )
-  return fs.openSync(started.startupLog!, "a")
+  return fs.openSync(started.startupLog, "a")
 }
 
 function bundledBinary() {
-  const executable = process.platform === "win32" ? "opencode.exe" : "opencode"
+  const executable = process.platform === "win32" ? "opencode-gui-coordinator.exe" : "opencode-gui-coordinator"
   return path.join(process.resourcesPath, "sidecar", executable)
 }
 
@@ -179,7 +182,7 @@ function findExecutable(command: string) {
 }
 
 function coordinatorArgs(directory: string, key: string) {
-  return ["internal-tui-coordinator", directory, "--key", key]
+  return [directory, "--key", key]
 }
 
 function developmentDefaultDirectory() {
@@ -194,127 +197,6 @@ function developmentDefaultDirectory() {
 function isSameOrInside(parent: string, child: string) {
   const relative = path.relative(path.resolve(parent), path.resolve(child))
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
-}
-
-function selectDevelopmentDatabase(directory: string) {
-  if (!fs.existsSync(DATA_ROOT)) return undefined
-  const candidates = fs
-    .readdirSync(DATA_ROOT, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^opencode(?:-.+)?\.db$/.test(entry.name))
-    .map((entry) => databaseCandidate(path.join(DATA_ROOT, entry.name), directory))
-    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
-    .toSorted((a, b) =>
-      b.matchingSessions - a.matchingSessions ||
-      Number(b.name !== "opencode-local.db") - Number(a.name !== "opencode-local.db") ||
-      b.matchingProjects - a.matchingProjects ||
-      b.projects - a.projects ||
-      b.updated - a.updated,
-    )
-  return candidates[0]?.path
-}
-
-function projectSummaryFromDatabase(file: string) {
-  try {
-    const db = new DatabaseSync(file, { readOnly: true, open: true })
-    try {
-      return (
-        db.prepare(`
-          SELECT p.id, p.name, COUNT(DISTINCT s.session_id) AS sessions
-          FROM opencodex_project p
-          LEFT JOIN opencodex_project_session s ON s.opencodex_project_id = p.id
-          GROUP BY p.id, p.name
-          ORDER BY p.id
-        `).all() as Array<{ id: string; name?: string | null; sessions: number }>
-      ).map((project) => ({
-        id: project.id,
-        name: project.name ?? undefined,
-        folders: (
-          db.prepare("SELECT path FROM opencodex_project_folder WHERE opencodex_project_id = ? ORDER BY path").all(
-            project.id,
-          ) as Array<{ path: string }>
-        ).map((folder) => path.resolve(folder.path)),
-        sessions: Number(project.sessions ?? 0),
-      }))
-    } finally {
-      db.close()
-    }
-  } catch {
-    return undefined
-  }
-}
-
-async function projectSummaryFromCoordinator(manifest: CoordinatorManifest) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 1_500)
-  try {
-    const response = await fetch(new URL("/experimental/opencodex/project", manifest.url), {
-      headers: coordinatorHeaders(manifest),
-      signal: controller.signal,
-    })
-    if (!response.ok) return undefined
-    return ((await response.json()) as Array<{
-      id: string
-      name?: string
-      folders?: Array<{ path: string }>
-      sessions?: unknown[]
-    }>).map((project) => ({
-      id: project.id,
-      name: project.name,
-      folders: (project.folders ?? []).map((folder) => path.resolve(folder.path)).toSorted(),
-      sessions: project.sessions?.length ?? 0,
-    })).toSorted((a, b) => a.id.localeCompare(b.id))
-  } catch {
-    return undefined
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-function normalizeProjectSummary(projects: ProjectSummary[]) {
-  return projects
-    .map((project) => ({
-      id: project.id,
-      name: project.name,
-      folders: project.folders.map((folder) => path.resolve(folder)).toSorted(),
-      sessions: project.sessions,
-    }))
-    .toSorted((a, b) => a.id.localeCompare(b.id))
-}
-
-function databaseCandidate(file: string, directory: string) {
-  try {
-    const db = new DatabaseSync(file, { readOnly: true, open: true })
-    try {
-      const folders = db
-        .prepare(`
-          SELECT f.path, COUNT(s.session_id) AS sessions
-          FROM opencodex_project_folder f
-          LEFT JOIN opencodex_project_session s ON s.opencodex_project_id = f.opencodex_project_id
-          GROUP BY f.opencodex_project_id, f.path
-        `)
-        .all() as Array<{ path: string; sessions: number }>
-      const matches = folders.filter((folder) => containsPath(folder.path, directory))
-      if (matches.length === 0) return undefined
-      return {
-        path: file,
-        name: path.basename(file),
-        matchingProjects: matches.length,
-        matchingSessions: matches.reduce((sum, folder) => sum + Number(folder.sessions ?? 0), 0),
-        projects: Number((db.prepare("SELECT COUNT(*) AS count FROM opencodex_project").get() as { count: number }).count ?? 0),
-        updated: fs.statSync(file).mtimeMs,
-      }
-    } finally {
-      db.close()
-    }
-  } catch {
-    return undefined
-  }
-}
-
-function containsPath(parent: string, child: string) {
-  const relative = path.relative(path.resolve(parent), path.resolve(child))
-  if (relative === "") return true
-  return !relative.startsWith("..") && !path.isAbsolute(relative)
 }
 
 function readStartupLogTail(file: string) {

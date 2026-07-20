@@ -1,14 +1,19 @@
 import type {
   OpencodeXOperationsSnapshot,
   OpencodeXSessionSnapshot,
-  OpencodeXSessionSyncSnapshot,
   OpencodeXStateEvent,
   OpencodeXStateScope,
   OpencodeXStateSnapshot,
   Session,
 } from "./client.js"
-import { mergeClientSessions } from "./client-sync-session.js"
-import type { ClientEntityState, ClientSessionLoadState, ClientStateSyncState } from "./client-sync-types.js"
+import type {
+  ClientCatalogSnapshot,
+  ClientEntityState,
+  ClientSessionLoadState,
+  ClientStateSyncState,
+} from "./client-sync-types.js"
+import { applyClientSessionCardPage } from "./client-sync-cards.js"
+export { applyClientSessionCardPage } from "./client-sync-cards.js"
 
 export function applyClientStateSnapshot(
   current: ClientStateSyncState,
@@ -21,7 +26,11 @@ export function applyClientStateSnapshot(
     current.scope &&
     sameClientStateScope(current.scope, snapshot.scope) &&
     !current.dirtyCatalog &&
-    !current.dirtyOperations
+    !current.dirtyOperations &&
+    current.sessionCards.pages === 1 &&
+    !current.sessionCards.loading &&
+    current.sessionCards.next === snapshot.payloads.catalog.sessionCards.next &&
+    current.sessionCards.hasMore === snapshot.payloads.catalog.sessionCards.hasMore
   )
     return current
   const reset =
@@ -30,50 +39,35 @@ export function applyClientStateSnapshot(
   const previous = reset ? emptyClientStateSyncState() : current
   const catalog = snapshot.payloads.catalog
   const projects = reconcileEntities(previous.projects, catalog.projects, (item) => item.id)
-  const sessions = reconcileEntities(previous.sessions, catalog.sessions, (item) => item.id)
   const views = reconcileEntities(previous.views, catalog.views, (item) => item.id)
+  const paged = applyClientSessionCardPage(previous, catalog.sessionCards, {
+    root: true,
+  })
   const permissions = reconcileEntities(previous.permissions, catalog.permissions, (item) => item.id)
   const questions = reconcileEntities(previous.questions, catalog.questions, (item) => item.id)
   const jobs = reconcileEntities(previous.jobs, snapshot.payloads.operations.jobs, (item) => item.id)
   const swarms = reconcileEntities(previous.swarms, snapshot.payloads.operations.swarms, (item) => item.id)
-  const deletedSessionIDs = previous.sessions.ids.filter((id) => !sessions.records[id])
-  const sessionTombstones = deletedSessionIDs.reduce(
-    (result, id) => ({ ...result, [id]: true as const }),
-    withoutRecordKeys(previous.tombstones.sessions, sessions.ids),
-  )
-  const sessionDetails = Object.fromEntries(
-    Object.entries(previous.sessionDetails).filter(([sessionID]) => Boolean(sessions.records[sessionID])),
-  )
-  const sessionLoads = Object.fromEntries(
-    Object.entries(previous.sessionLoads).filter(([sessionID]) => Boolean(sessions.records[sessionID])),
-  )
+  const knownSessionIDs = collectKnownSessionIDs(paged.sessions, projects, views)
   return {
-    ...previous,
+    ...paged,
     phase: "ready",
     scope: snapshot.scope,
     epoch: snapshot.epoch,
     cursor: previous.cursor ?? snapshot.cursor,
     digest: snapshot.digest,
     projects,
-    sessions,
     views,
     permissions,
     questions,
     jobs,
     swarms,
     sessionStatus: reconcileRecord(previous.sessionStatus, catalog.sessionStatus),
-    sessionUiState: reconcileRecord(previous.sessionUiState, catalog.sessionUiState),
-    sessionDetails,
-    sessionLoads,
+    sessionUiState: mergeRecord(paged.sessionUiState, catalog.sessionUiState),
     dirtyCatalog: false,
     dirtyOperations: false,
     dirtySessions: Object.fromEntries(
-      Object.entries(previous.dirtySessions).filter(([sessionID]) => Boolean(sessions.records[sessionID])),
+      Object.entries(previous.dirtySessions).filter(([sessionID]) => knownSessionIDs.has(sessionID)),
     ),
-    tombstones: {
-      ...previous.tombstones,
-      sessions: sessionTombstones,
-    },
     error: undefined,
   }
 }
@@ -108,7 +102,12 @@ export function applyClientSessionSnapshot(
   if (current.epoch && (current.epoch !== snapshot.epoch || !sameClientStateScope(current.scope, snapshot.scope)))
     return current
   const previous = current.sessionDetails[snapshot.session.id]
-  if (previous?.snapshot.digest === snapshot.digest && previous.snapshot.cursor === snapshot.cursor) return current
+  if (
+    previous?.snapshot.digest === snapshot.digest &&
+    previous.snapshot.cursor === snapshot.cursor &&
+    (options.prepend || !current.dirtySessions[snapshot.session.id])
+  )
+    return current
   const incoming = new Map(snapshot.messages.items.map((item) => [item.info.id, item]))
   const preservedIDs = previous
     ? previous.messageIDs.filter((messageID) => options.prepend || previous.messageCoverage[messageID] === "older")
@@ -120,7 +119,9 @@ export function applyClientSessionSnapshot(
     previous?.messages ?? {},
     Object.fromEntries(
       messageIDs.flatMap((messageID) => {
-        const info = incoming.get(messageID)?.info ?? previous?.messages[messageID]
+        const info = options.prepend
+          ? (previous?.messages[messageID] ?? incoming.get(messageID)?.info)
+          : (incoming.get(messageID)?.info ?? previous?.messages[messageID])
         return info ? [[messageID, info]] : []
       }),
     ),
@@ -130,7 +131,9 @@ export function applyClientSessionSnapshot(
     Object.fromEntries(
       messageIDs.map((messageID) => [
         messageID,
-        incoming.get(messageID)?.parts.map((part) => part.id) ?? previous?.partIDs[messageID] ?? [],
+        options.prepend && previous?.messages[messageID]
+          ? (previous.partIDs[messageID] ?? [])
+          : (incoming.get(messageID)?.parts.map((part) => part.id) ?? previous?.partIDs[messageID] ?? []),
       ]),
     ),
   )
@@ -138,6 +141,12 @@ export function applyClientSessionSnapshot(
     previous?.parts ?? {},
     Object.fromEntries(
       messageIDs.flatMap((messageID) => {
+        if (options.prepend && previous?.messages[messageID]) {
+          return (previous.partIDs[messageID] ?? []).flatMap((partID) => {
+            const part = previous.parts[partID]
+            return part ? [[partID, part] as const] : []
+          })
+        }
         const bundle = incoming.get(messageID)
         if (bundle) return bundle.parts.map((part) => [part.id, part] as const)
         return (previous?.partIDs[messageID] ?? []).flatMap((partID) => {
@@ -150,7 +159,7 @@ export function applyClientSessionSnapshot(
   const messageCoverage = Object.fromEntries(
     messageIDs.map((messageID) => [
       messageID,
-      incoming.has(messageID)
+      incoming.has(messageID) && !(options.prepend && previous?.messages[messageID])
         ? options.prepend
           ? "older"
           : "tail"
@@ -173,11 +182,20 @@ export function applyClientSessionSnapshot(
       ]
     : []
   const dirtySessions = { ...current.dirtySessions }
-  delete dirtySessions[snapshot.session.id]
+  if (!options.prepend) delete dirtySessions[snapshot.session.id]
   const liveMessageIDs = Object.keys(messages)
   const livePartIDs = Object.keys(parts)
+  const messageTombstones = deletedMessageIDs.reduce(
+    (result, messageID) => ({ ...result, [messageID]: true as const }),
+    withoutRecordKeys(current.tombstones.messages, liveMessageIDs),
+  )
+  const partTombstones = deletedPartIDs.reduce(
+    (result, partID) => ({ ...result, [partID]: true as const }),
+    withoutRecordKeys(current.tombstones.parts, livePartIDs),
+  )
   return {
     ...current,
+    sessions: mergeSessionRecords(current.sessions, [snapshot.session]),
     sessionDetails: {
       ...current.sessionDetails,
       [snapshot.session.id]: {
@@ -195,13 +213,16 @@ export function applyClientSessionSnapshot(
     dirtySessions,
     tombstones: {
       ...current.tombstones,
-      messages: deletedMessageIDs.reduce(
-        (result, messageID) => ({ ...result, [messageID]: true as const }),
-        withoutRecordKeys(current.tombstones.messages, liveMessageIDs),
+      sessions: withoutRecordKeys(current.tombstones.sessions, [snapshot.session.id]),
+      messages: messageTombstones,
+      parts: partTombstones,
+      messageSessions: deletedMessageIDs.reduce(
+        (result, messageID) => ({ ...result, [messageID]: snapshot.session.id }),
+        withoutRecordKeys(current.tombstones.messageSessions, liveMessageIDs),
       ),
-      parts: deletedPartIDs.reduce(
-        (result, partID) => ({ ...result, [partID]: true as const }),
-        withoutRecordKeys(current.tombstones.parts, livePartIDs),
+      partSessions: deletedPartIDs.reduce(
+        (result, partID) => ({ ...result, [partID]: snapshot.session.id }),
+        withoutRecordKeys(current.tombstones.partSessions, livePartIDs),
       ),
     },
   }
@@ -261,35 +282,50 @@ export function selectClientSessionMessages(state: ClientStateSyncState, session
 }
 
 export function selectClientSessionChildren(state: ClientStateSyncState, sessionID: string) {
-  return state.sessions.ids.flatMap((id) => {
-    const session = state.sessions.records[id]
-    return session?.parentID === sessionID ? [session] : []
-  })
+  return collectClientSessions(state).filter((session) => session.parentID === sessionID)
+}
+
+export function selectClientKnownSessionIDs(state: ClientStateSyncState) {
+  return collectKnownSessionIDs(state.sessions, state.projects, state.views)
 }
 
 export function selectClientStateSyncSnapshot(
   state: ClientStateSyncState,
   filterSession?: (session: Session) => boolean,
-): OpencodeXSessionSyncSnapshot | undefined {
+): ClientCatalogSnapshot | undefined {
   if (state.phase !== "ready") return undefined
+  const sessionByID = state.sessions.records
   const projects = state.projects.ids.flatMap((id) => {
     const project = state.projects.records[id]
     if (!project) return []
     return [
       {
         ...project,
-        sessions: project.sessions.filter((session) => filterSession?.(session) ?? true),
+        sessions: project.sessionIDs
+          .flatMap((sessionID) => sessionByID[sessionID] ?? [])
+          .filter((session) => filterSession?.(session) ?? true),
       },
     ]
   })
+  const views = state.views.ids.flatMap((id) => {
+    const view = state.views.records[id]
+    return view
+      ? [
+          {
+            ...view,
+            sessions: view.sessionIDs
+              .flatMap((sessionID) => sessionByID[sessionID] ?? [])
+              .filter((session) => filterSession?.(session) ?? true),
+          },
+        ]
+      : []
+  })
   return {
     projects,
-    sessions: mergeClientSessions(
-      state.sessions.ids.flatMap((id) => state.sessions.records[id] ?? []),
-      projects,
-      filterSession,
-    ),
-    views: state.views.ids.flatMap((id) => state.views.records[id] ?? []),
+    sessions: state.sessions.ids
+      .flatMap((id) => state.sessions.records[id] ?? [])
+      .filter((session) => filterSession?.(session) ?? true),
+    views,
     permissions: state.permissions.ids.flatMap((id) => state.permissions.records[id] ?? []),
     questions: state.questions.ids.flatMap((id) => state.questions.records[id] ?? []),
     sessionStatus: state.sessionStatus,
@@ -316,6 +352,7 @@ export function emptyClientStateSyncState(): ClientStateSyncState {
     projects: emptyEntities(),
     sessions: emptyEntities(),
     views: emptyEntities(),
+    sessionCards: { hasMore: false, pages: 0, loading: false },
     permissions: emptyEntities(),
     questions: emptyEntities(),
     jobs: emptyEntities(),
@@ -328,7 +365,7 @@ export function emptyClientStateSyncState(): ClientStateSyncState {
     dirtyOperations: false,
     dirtyCapabilities: false,
     dirtySessions: {},
-    tombstones: { sessions: {}, messages: {}, parts: {} },
+    tombstones: { sessions: {}, messages: {}, parts: {}, messageSessions: {}, partSessions: {} },
     aggregateSequences: {},
     pendingMutations: {},
   }
@@ -356,6 +393,59 @@ export function setClientSessionLoadState(
   }
 }
 
+export function releaseClientSessionState(state: ClientStateSyncState, sessionID: string) {
+  const messageIDs = Object.keys(state.tombstones.messageSessions).filter(
+    (messageID) => state.tombstones.messageSessions[messageID] === sessionID,
+  )
+  const partIDs = Object.keys(state.tombstones.partSessions).filter(
+    (partID) => state.tombstones.partSessions[partID] === sessionID,
+  )
+  if (
+    !state.sessionDetails[sessionID] &&
+    !state.sessionLoads[sessionID] &&
+    !state.dirtySessions[sessionID] &&
+    messageIDs.length === 0 &&
+    partIDs.length === 0
+  )
+    return state
+  const sessionDetails = { ...state.sessionDetails }
+  const sessionLoads = { ...state.sessionLoads }
+  const dirtySessions = { ...state.dirtySessions }
+  delete sessionDetails[sessionID]
+  delete sessionLoads[sessionID]
+  delete dirtySessions[sessionID]
+  return {
+    ...state,
+    sessionDetails,
+    sessionLoads,
+    dirtySessions,
+    tombstones: {
+      ...state.tombstones,
+      messages: withoutRecordKeys(state.tombstones.messages, messageIDs),
+      parts: withoutRecordKeys(state.tombstones.parts, partIDs),
+      messageSessions: withoutRecordKeys(state.tombstones.messageSessions, messageIDs),
+      partSessions: withoutRecordKeys(state.tombstones.partSessions, partIDs),
+    },
+  }
+}
+
+export function normalizeClientStateSyncLoading(state: ClientStateSyncState) {
+  const sessionLoads = Object.fromEntries(
+    Object.keys(state.sessionLoads).map((sessionID) => [
+      sessionID,
+      {
+        initial: state.sessionDetails[sessionID] ? ("ready" as const) : ("idle" as const),
+        older: "idle" as const,
+      },
+    ]),
+  )
+  return {
+    ...state,
+    sessionCards: state.sessionCards.loading ? { ...state.sessionCards, loading: false } : state.sessionCards,
+    sessionLoads,
+  }
+}
+
 export function clientStateSyncError(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -372,11 +462,55 @@ function reconcileEntities<T>(current: ClientEntityState<T>, items: readonly T[]
   }
 }
 
+function collectKnownSessionIDs(
+  sessions: ClientStateSyncState["sessions"],
+  projects: ClientStateSyncState["projects"],
+  views: ClientStateSyncState["views"],
+) {
+  return new Set([
+    ...sessions.ids,
+    ...projects.ids.flatMap((id) => projects.records[id]?.sessionIDs ?? []),
+    ...views.ids.flatMap((id) => views.records[id]?.sessionIDs ?? []),
+  ])
+}
+
+function collectClientSessions(state: ClientStateSyncState) {
+  return state.sessions.ids.flatMap((id) => state.sessions.records[id] ?? [])
+}
+
+function mergeSessionRecords(current: ClientEntityState<Session>, items: readonly Session[]) {
+  const records = { ...current.records }
+  items.forEach((item) => {
+    records[item.id] = reconcileValue(records[item.id], item)
+  })
+  const ids = Object.values(records)
+    .sort((left, right) => right.time.updated - left.time.updated || right.id.localeCompare(left.id))
+    .map((session) => session.id)
+  return {
+    ids: equalCanonical(current.ids, ids) ? current.ids : ids,
+    records: sameRecord(current.records, records) ? current.records : records,
+  }
+}
+
+function sameRecord<T>(current: Record<string, T>, next: Record<string, T>) {
+  const keys = Object.keys(next)
+  return keys.length === Object.keys(current).length && keys.every((key) => current[key] === next[key])
+}
+
 function reconcileRecord<T>(current: Record<string, T>, next: Record<string, T>) {
   const entries = Object.entries(next).map(([key, value]) => [key, reconcileValue(current[key], value)] as const)
   if (Object.keys(current).length === entries.length && entries.every(([key, value]) => current[key] === value))
     return current
   return Object.fromEntries(entries)
+}
+
+function mergeRecord<T>(current: Record<string, T>, incoming: Record<string, T>) {
+  if (Object.keys(incoming).length === 0) return current
+  const next = { ...current }
+  Object.entries(incoming).forEach(([key, value]) => {
+    next[key] = reconcileValue(current[key], value)
+  })
+  return sameRecord(current, next) ? current : next
 }
 
 export function reconcileValue<T>(current: T | undefined, next: T): T {

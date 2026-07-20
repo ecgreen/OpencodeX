@@ -43,7 +43,7 @@ export function projectTitle(projects: OpencodeXProject[], projectID?: string) {
 }
 
 export function projectForSession(projects: OpencodeXProject[], sessionID: string) {
-  return projects.find((project) => project.sessions.some((session) => session.id === sessionID))
+  return projects.find((project) => project.sessionIDs.includes(sessionID))
 }
 
 export function statusDot(status: string) {

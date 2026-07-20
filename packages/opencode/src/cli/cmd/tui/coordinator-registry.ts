@@ -1,3 +1,4 @@
+import { Database } from "@opencode-ai/core/database/database"
 import { Global } from "@opencode-ai/core/global"
 import { Flock } from "@opencode-ai/core/util/flock"
 import { Hash } from "@opencode-ai/core/util/hash"
@@ -11,9 +12,10 @@ import fs from "fs/promises"
 import path from "path"
 
 export type TuiCoordinatorManifest = {
-  version: 1
+  version: 2
   key: string
   directory: string
+  database: string
   pid: number
   url: string
   username: string
@@ -35,13 +37,21 @@ const START_TIMEOUT = 15_000
 const CLIENT_HEARTBEAT_INTERVAL = 2_000
 const CLIENT_STALE_MS = 10_000
 
+export const COORDINATOR_STARTUP_LOCK_HELD = "OPENCODE_TUI_COORDINATOR_STARTUP_LOCK_HELD"
+
 function normalizeDirectory(directory: string) {
   const resolved = Filesystem.resolve(directory)
   return process.platform === "win32" ? resolved.toLowerCase() : resolved
 }
 
-export function coordinatorKey(directory: string) {
-  return Hash.fast(normalizeDirectory(directory))
+export function coordinatorDatabaseIdentity(database = Database.path()) {
+  if (database === ":memory:") return database
+  const resolved = path.resolve(database)
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+}
+
+export function coordinatorKey(directory: string, database = coordinatorDatabaseIdentity()) {
+  return Hash.fast(`${normalizeDirectory(directory)}\0${coordinatorDatabaseIdentity(database)}`)
 }
 
 export function coordinatorManifestPath(key: string) {
@@ -60,11 +70,13 @@ async function readManifestPath(file: string) {
   const raw = await fs.readFile(file, "utf8")
   const parsed = JSON.parse(raw) as Partial<TuiCoordinatorManifest>
   if (
-    parsed.version !== 1 ||
+    parsed.version !== 2 ||
     typeof parsed.key !== "string" ||
     typeof parsed.directory !== "string" ||
+    typeof parsed.database !== "string" ||
     typeof parsed.pid !== "number" ||
     typeof parsed.url !== "string" ||
+    !isLoopbackCoordinatorURL(parsed.url) ||
     typeof parsed.username !== "string" ||
     typeof parsed.password !== "string" ||
     typeof parsed.token !== "string" ||
@@ -73,6 +85,15 @@ async function readManifestPath(file: string) {
     throw new Error("Invalid TUI coordinator manifest")
   }
   return parsed as TuiCoordinatorManifest
+}
+
+function isLoopbackCoordinatorURL(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname)
+  } catch {
+    return false
+  }
 }
 
 export async function readCoordinatorManifest(key: string) {
@@ -103,30 +124,30 @@ export async function removeCoordinatorManifest(key: string, token?: string) {
 export function startCoordinatorClientLease(key: string) {
   const dir = coordinatorClientDir(key)
   const file = path.join(dir, `${process.pid}.json`)
-  const write = () =>
-    fs
-      .mkdir(dir, { recursive: true })
-      .then(() =>
-        fs.writeFile(
-          file,
-          JSON.stringify({
-            version: 1,
-            key,
-            pid: process.pid,
-            updatedAt: Date.now(),
-          } satisfies TuiCoordinatorClientLease),
-          { mode: 0o600 },
-        ),
-      )
-      .catch(() => {})
+  let disposed = false
+  const write = async () => {
+    if (disposed) return
+    await fs.mkdir(dir, { recursive: true })
+    if (disposed) return
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        key,
+        pid: process.pid,
+        updatedAt: Date.now(),
+      } satisfies TuiCoordinatorClientLease),
+      { mode: 0o600 },
+    )
+  }
   const timer = setInterval(() => {
-    void write()
+    void write().catch(() => {})
   }, CLIENT_HEARTBEAT_INTERVAL)
   timer.unref?.()
-  void write()
+  const ready = write()
 
-  let disposed = false
   return {
+    ready,
     dispose() {
       if (disposed) return
       disposed = true
@@ -207,17 +228,28 @@ export async function isCoordinatorHealthy(manifest: TuiCoordinatorManifest) {
   }
 }
 
-async function activeManifest(directory: string) {
-  const key = coordinatorKey(directory)
+export async function readActiveCoordinator(directory: string, key = coordinatorKey(directory)) {
   const manifest = await readCoordinatorManifest(key)
   if (!manifest) return undefined
-  if (manifest.key !== key || normalizeDirectory(manifest.directory) !== normalizeDirectory(directory)) {
+  if (
+    manifest.key !== key ||
+    normalizeDirectory(manifest.directory) !== normalizeDirectory(directory) ||
+    coordinatorDatabaseIdentity(manifest.database) !== coordinatorDatabaseIdentity()
+  ) {
     await removeCoordinatorManifest(key).catch(() => undefined)
     return undefined
   }
   if (await isCoordinatorHealthy(manifest)) return manifest
   await removeCoordinatorManifest(key).catch(() => undefined)
   return undefined
+}
+
+export function withCoordinatorStartupLock<T>(key: string, fn: () => Promise<T>) {
+  return Flock.withLock(`tui-coordinator:${key}`, fn, { timeoutMs: START_TIMEOUT, staleMs: 30_000 })
+}
+
+export function coordinatorStartupLock(key: string) {
+  return Flock.effect(`tui-coordinator:${key}`, { timeoutMs: START_TIMEOUT, staleMs: 30_000 })
 }
 
 function cliCommand() {
@@ -242,6 +274,7 @@ function spawnCoordinator(directory: string, key: string) {
       ...process.env,
       [OPENCODE_PROCESS_ROLE]: "coordinator",
       [OPENCODE_RUN_ID]: ensureRunID(),
+      [COORDINATOR_STARTUP_LOCK_HELD]: "1",
       OPENCODE_TUI_COORDINATOR_USERNAME: USERNAME,
       OPENCODE_TUI_COORDINATOR_PASSWORD: password,
       OPENCODE_TUI_COORDINATOR_TOKEN: token,
@@ -256,7 +289,7 @@ async function waitForCoordinator(directory: string) {
   const started = Date.now()
   let lastError = "coordinator did not publish a manifest"
   while (Date.now() - started < START_TIMEOUT) {
-    const manifest = await activeManifest(directory).catch((error) => {
+    const manifest = await readActiveCoordinator(directory).catch((error) => {
       lastError = errorMessage(error)
       return undefined
     })
@@ -268,14 +301,10 @@ async function waitForCoordinator(directory: string) {
 
 export async function resolveLocalCoordinator(directory: string) {
   const key = coordinatorKey(directory)
-  return await Flock.withLock(
-    `tui-coordinator:${key}`,
-    async () => {
-      const existing = await activeManifest(directory)
-      if (existing) return existing
-      spawnCoordinator(directory, key)
-      return await waitForCoordinator(directory)
-    },
-    { timeoutMs: START_TIMEOUT, staleMs: 30_000 },
-  )
+  return await withCoordinatorStartupLock(key, async () => {
+    const existing = await readActiveCoordinator(directory)
+    if (existing) return existing
+    spawnCoordinator(directory, key)
+    return await waitForCoordinator(directory)
+  })
 }

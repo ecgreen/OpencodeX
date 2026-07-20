@@ -20,10 +20,10 @@ import type {
   ClientStateSyncController,
   ClientStateSyncLifecycle,
   ClientStateSyncState,
-  OpencodeXProject,
+  ClientCatalogProject,
   OpencodeXJob,
   OpencodeXSwarm,
-  OpencodeXView,
+  ClientCatalogView,
   OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
 import {
@@ -66,10 +66,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         [sessionID: string]: QuestionRequest[]
       }
       config: Config
-      opencodex_project: OpencodeXProject[]
+      opencodex_project: ClientCatalogProject[]
       opencodex_job: OpencodeXJob[]
       opencodex_swarm: OpencodeXSwarm[]
-      opencodex_view: OpencodeXView[]
+      opencodex_view: ClientCatalogView[]
       session: Session[]
       session_status: {
         [sessionID: string]: SessionStatus
@@ -379,6 +379,21 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           await controller.refresh()
           applyStateSync(controller.getState())
         },
+        get hasMore() {
+          return stateSync?.getState().sessionCards.hasMore ?? false
+        },
+        async loadMore() {
+          const controller = await requireStateSync()
+          if (!controller.getState().sessionCards.hasMore) return false
+          await controller.loadSessionCards()
+          applyStateSync(controller.getState())
+          return true
+        },
+        async ensure(sessionIDs: readonly string[]) {
+          const controller = await requireStateSync()
+          await controller.ensureSessionCards(sessionIDs)
+          applyStateSync(controller.getState())
+        },
         async refreshStatus() {
           const controller = await requireStateSync()
           await controller.refresh()
@@ -397,7 +412,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
           await (await requireStateSync())
-            .hydrateSession(sessionID, { limit: 100 })
+            .refreshSessionTail(sessionID, { limit: 100 })
             .then(() => fullSyncedSessions.add(sessionID))
             .catch((error) => {
               Log.Default.warn("tui session hydration failed", {

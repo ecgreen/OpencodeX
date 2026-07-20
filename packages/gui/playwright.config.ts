@@ -27,7 +27,7 @@ export default defineConfig({
         ...(hostChrome && process.platform === "win32" ? ["--use-angle=d3d11"] : []),
       ],
     },
-    reducedMotion: "reduce",
+    contextOptions: { reducedMotion: "reduce" },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "retain-on-failure",

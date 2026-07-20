@@ -20,13 +20,13 @@ for (const viewport of viewports) {
         await expect(page.locator(".stage-content")).toHaveClass(/scroll-page/)
         expect(await documentScrolls(page)).toBe(false)
         await expect(page.locator(".nav-attention-count")).toHaveCount(0)
-        await expectDashboardModules(page)
+        await expectDashboardModules(page, viewport.width)
       })
     }
   }
 }
 
-async function expectDashboardModules(page: Page) {
+async function expectDashboardModules(page: Page, viewportWidth: number) {
   const modules = page.locator(".dashboard-sections > .dashboard-section")
   await expect(modules).toHaveCount(4)
   const geometry = await modules.evaluateAll((elements) => elements.map((element) => {
@@ -51,6 +51,12 @@ async function expectDashboardModules(page: Page) {
     const overlapHeight = Math.max(0, Math.min(item.bottom, other.bottom) - Math.max(item.top, other.top))
     expect(overlapWidth * overlapHeight).toBe(0)
   }))
+  if (viewportWidth !== 1920) return
+  const widths = await page.locator(".stage-content, .dashboard-page:not(.app-loading-skeleton)").evaluateAll((elements) =>
+    elements.map((element) => element.getBoundingClientRect().width),
+  )
+  expect(widths).toHaveLength(2)
+  expect(Math.abs(widths[0] - widths[1])).toBeLessThanOrEqual(40)
 }
 
 function documentScrolls(page: Page) {

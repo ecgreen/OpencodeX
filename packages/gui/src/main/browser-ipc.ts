@@ -2,11 +2,20 @@ import {
   BrowserWindow,
   WebContentsView,
   ipcMain,
+  type NativeImage,
   type Session,
   type WebContents,
 } from "electron"
+import {
+  BROWSER_CAPTURE_MAX_ENCODED_BYTES,
+  PNG_DATA_URL_PREFIX,
+  browserCaptureEncodedBytes,
+  fitBrowserCaptureDimensions,
+  shrinkBrowserCaptureDimensions,
+} from "./browser-capture-limits.js"
 import { shapeBrowserSnapshot, validExternalBrowserURL } from "./browser-capabilities.js"
 import { validString } from "./ipc-validation.js"
+import { createKeyedSingleFlight, ownerHasResourceCapacity } from "./native-resource-limits.js"
 
 type BrowserView = {
   ownerID: number
@@ -18,6 +27,7 @@ const browserViews = new Map<string, BrowserView>()
 const visibleBrowserViews = new Set<string>()
 const browserViewOwners = new Set<number>()
 const securedSessions = new WeakSet<Session>()
+const browserCaptureRequests = createKeyedSingleFlight<string, { view: WebContentsView; url: string; dataURL: string } | undefined>()
 
 const BROWSER_SNAPSHOT_SCRIPT = String.raw`(() => {
   const MAX_BODY_TEXT = 24000
@@ -108,6 +118,7 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
       const url = normalizeBrowserURL(input.url)
       if (url) await loadBrowserURL(view, url)
     }
+    if (activeBrowserView(input.id, event.sender.id) !== view) return undefined
     return browserState(input.id, view)
   })
 
@@ -141,6 +152,7 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
     const view = createBrowserView(input.id, event.sender, window.id, openExternalURL)
     if (!view) return undefined
     await loadBrowserURL(view, url)
+    if (activeBrowserView(input.id, event.sender.id) !== view) return undefined
     return browserState(input.id, view)
   })
 
@@ -162,7 +174,8 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
     if (!browserID) return undefined
     const view = activeBrowserView(browserID, event.sender.id)
     if (!view) return undefined
-    return (await view.webContents.capturePage()).toDataURL()
+    const capture = await captureBrowserView(browserID, view)
+    return capture?.view === view ? capture.dataURL : undefined
   })
 
   ipcMain.handle("opencodex:browser:capture", async (event, raw: unknown) => {
@@ -170,9 +183,10 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
     if (!input) return undefined
     const view = activeBrowserView(input.id, event.sender.id)
     if (!view || view.webContents.getURL() !== input.expectedURL) return undefined
-    const dataURL = (await view.webContents.capturePage()).toDataURL()
-    const url = view.webContents.getURL()
-    return url === input.expectedURL ? { url, dataURL } : undefined
+    const capture = await captureBrowserView(input.id, view)
+    return capture?.view === view && capture.url === input.expectedURL
+      ? { url: capture.url, dataURL: capture.dataURL }
+      : undefined
   })
 
   ipcMain.handle("opencodex:browser:snapshot", async (event, id: unknown) => {
@@ -180,7 +194,8 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
     if (!browserID) return undefined
     const view = activeBrowserView(browserID, event.sender.id)
     if (!view) return undefined
-    return shapeBrowserSnapshot(await view.webContents.executeJavaScript(BROWSER_SNAPSHOT_SCRIPT))
+    const snapshot = await view.webContents.executeJavaScript(BROWSER_SNAPSHOT_SCRIPT)
+    return activeBrowserView(browserID, event.sender.id) === view ? shapeBrowserSnapshot(snapshot) : undefined
   })
 
   ipcMain.handle("opencodex:browser:external", (event, raw: unknown) => {
@@ -305,12 +320,13 @@ function activeBrowserView(id: string, ownerID: number) {
 function createBrowserView(id: string, owner: WebContents, windowID: number, openExternalURL: (url: string) => void) {
   const existing = browserViews.get(id)
   if (existing) return existing.ownerID === owner.id ? existing.view : undefined
+  if (!ownerHasResourceCapacity(browserViews.values(), owner.id)) return undefined
   const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       partition: "persist:opencodex-workbench-browser",
     },
   })
@@ -361,4 +377,32 @@ function hideBrowserView(id: string, view: WebContentsView) {
   const entry = browserViews.get(id)
   if (entry?.view === view) BrowserWindow.fromId(entry.windowID)?.contentView.removeChildView(view)
   visibleBrowserViews.delete(id)
+}
+
+async function captureBrowserView(id: string, view: WebContentsView) {
+  return browserCaptureRequests.run(id, async () => {
+    if (browserViews.get(id)?.view !== view || view.webContents.isDestroyed()) return undefined
+    const image = await view.webContents.capturePage()
+    if (browserViews.get(id)?.view !== view || view.webContents.isDestroyed()) return undefined
+    const dataURL = boundedBrowserCaptureDataURL(image)
+    if (!dataURL) return undefined
+    return { view, url: view.webContents.getURL(), dataURL }
+  }).catch(() => undefined)
+}
+
+function boundedBrowserCaptureDataURL(image: NativeImage) {
+  const original = image.getSize()
+  const initial = fitBrowserCaptureDimensions(original)
+  let current = initial.width === original.width && initial.height === original.height
+    ? image
+    : image.resize({ ...initial, quality: "good" })
+  for (const _ of Array.from({ length: 16 })) {
+    const png = current.toPNG()
+    const encodedBytes = browserCaptureEncodedBytes(png.byteLength)
+    if (encodedBytes <= BROWSER_CAPTURE_MAX_ENCODED_BYTES) return `${PNG_DATA_URL_PREFIX}${png.toString("base64")}`
+    const size = current.getSize()
+    if (size.width === 1 && size.height === 1) return undefined
+    current = current.resize({ ...shrinkBrowserCaptureDimensions(size, encodedBytes), quality: "good" })
+  }
+  return undefined
 }

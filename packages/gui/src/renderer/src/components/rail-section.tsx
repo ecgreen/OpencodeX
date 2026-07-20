@@ -84,7 +84,9 @@ export function RailSection(props: {
         {props.action && <Button appearance="ghost" class="section-new" title={`Create ${props.title}`} aria-label={`Create ${props.title}`} onClick={props.action}>+ New</Button>}
       </header>
       <div class="rail-section-content" classList={{ collapsed: props.collapsed }}>
-        <div>{props.children}</div>
+        <div>
+          <Show when={!props.collapsed}>{props.children}</Show>
+        </div>
       </div>
       <RailSectionDragPreviewView preview={preview()} />
     </section>

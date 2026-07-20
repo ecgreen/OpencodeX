@@ -23,8 +23,10 @@ export function SessionCardBucket(props: { title: string; count: number; empty: 
       </header>
       <div class="dashboard-bucket-content" classList={{ collapsed: props.collapsed }}>
         <div class="dashboard-card-grid compact">
-          <Show when={props.count > 0} fallback={<Empty text={props.empty} />}>
-            {props.children}
+          <Show when={!props.collapsed}>
+            <Show when={props.count > 0} fallback={<Empty text={props.empty} />}>
+              {props.children}
+            </Show>
           </Show>
         </div>
       </div>

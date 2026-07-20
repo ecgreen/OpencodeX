@@ -1,61 +1,76 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, untrack, type Accessor } from "solid-js"
 import type { GuiClient } from "../lib/client"
 import {
-  workbenchDiagnostics,
-  type WorkbenchDiagnostic,
-  type WorkbenchDiagnosticsResult,
+  workbenchFileDiagnostics,
+  type WorkbenchFileDiagnosticsResult,
 } from "../lib/store"
-import { workbenchPathKey } from "../lib/workbench"
 
 export function createWorkbenchDiagnosticsController(input: {
   gui: Accessor<GuiClient | undefined>
   directory: Accessor<string>
+  root: Accessor<string | undefined>
   path: Accessor<string>
+  content: Accessor<string>
 }) {
-  const [diagnostics, setDiagnostics] = createSignal<WorkbenchDiagnosticsResult["diagnostics"]>([])
+  const [diagnostics, setDiagnostics] = createSignal<WorkbenchFileDiagnosticsResult["diagnostics"]>([])
   const [loading, setLoading] = createSignal(false)
-  const [message, setMessage] = createSignal("")
-  const [command, setCommand] = createSignal("")
+  const [checkerMessage, setCheckerMessage] = createSignal("")
+  const [checkerSupported, setCheckerSupported] = createSignal(true)
+  const [languageMessage, setLanguageMessage] = createSignal("")
+  const supported = createMemo(() => checkerSupported() && !languageMessage())
+  const message = createMemo(() => languageMessage() || checkerMessage())
+  let controller: AbortController | undefined
   let token = 0
 
-  const active = createMemo(() => diagnostics().filter((item) => diagnosticMatchesPath(item, input.path())))
-
   createEffect(() => {
-    input.directory()
+    const directory = input.directory()
+    input.root()
+    const path = input.path()
     token++
+    controller?.abort()
     setDiagnostics([])
-    setMessage("")
-    setCommand("")
+    setCheckerMessage("")
+    setLanguageMessage("")
     setLoading(false)
+    setCheckerSupported(true)
+    if (directory && path) untrack(() => void refresh())
   })
+
+  onCleanup(() => controller?.abort())
 
   async function refresh() {
     const gui = input.gui()
     const directory = input.directory()
-    if (!gui || !directory || loading()) return
+    const path = input.path()
+    if (!gui || !directory || !path) return
     const request = ++token
+    controller?.abort()
+    controller = new AbortController()
     setLoading(true)
     try {
-      const result = await workbenchDiagnostics(gui, directory).catch((err): WorkbenchDiagnosticsResult => ({
+      const result = await workbenchFileDiagnostics(gui, {
+        path,
+        root: input.root(),
+        content: input.content(),
+        signal: controller.signal,
+      }, directory).catch((err): WorkbenchFileDiagnosticsResult => ({
         ok: false,
-        message: err instanceof Error ? err.message : "Unable to run project checks.",
+        supported: true,
+        message: err instanceof Error ? err.message : "Unable to check this file.",
         diagnostics: [],
       }))
       if (request !== token) return
       setDiagnostics(result.diagnostics ?? [])
-      setMessage(result.message ?? (result.ok ? "Project checks passed." : "Project checks found issues."))
-      setCommand(result.command ?? "")
+      setCheckerSupported(result.supported)
+      setCheckerMessage(result.message ?? "")
     } finally {
       if (request === token) setLoading(false)
     }
   }
 
-  return { diagnostics, active, loading, message, command, refresh }
-}
+  function setLanguageStatus(value: boolean, detail?: string) {
+    setLanguageMessage(value ? "" : detail || "Language intelligence is unavailable.")
+  }
 
-function diagnosticMatchesPath(diagnostic: WorkbenchDiagnostic, path: string) {
-  const left = workbenchPathKey(diagnostic.path)
-  const right = workbenchPathKey(path)
-  if (!left || !right) return false
-  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
+  return { diagnostics, active: diagnostics, loading, message, supported, refresh, setLanguageStatus }
 }

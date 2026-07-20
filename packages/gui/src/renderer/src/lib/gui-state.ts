@@ -32,16 +32,30 @@ export function emptyGuiSnapshot(): GuiSnapshot {
 }
 
 export function reconcileGuiAuthoritativeState(current: GuiSnapshot | undefined, state: ClientStateSyncState) {
+  const catalog = reconcileGuiCatalog(current, state)
+  const operations = reconcileGuiOperations(catalog, state)
+  return reconcileGuiCapabilityState(operations, state)
+}
+
+export function reconcileGuiCatalog(current: GuiSnapshot | undefined, state: ClientStateSyncState) {
   const catalog = selectClientStateSyncSnapshot(state, isRenderableSession)
-  const operations = selectClientOperationsSnapshot(state)
-  const capabilities = selectClientCapabilitiesSnapshot(state)
   if (!catalog) return current
+  return mergeSessionCardSnapshot(current ?? emptyGuiSnapshot(), { ...catalog, stateRevision: state.digest })
+}
+
+export function reconcileGuiOperations(current: GuiSnapshot | undefined, state: ClientStateSyncState) {
+  const operations = selectClientOperationsSnapshot(state)
+  if (!operations) return current
   const base = current ?? emptyGuiSnapshot()
-  const merged = mergeSessionCardSnapshot(base, { ...catalog, stateRevision: state.digest })
-  const jobs = operations && !sameItems(merged.jobs, operations.jobs) ? operations.jobs : merged.jobs
-  const swarms = operations && !sameItems(merged.swarms, operations.swarms) ? operations.swarms : merged.swarms
-  const root = merged.jobs === jobs && merged.swarms === swarms ? merged : { ...merged, jobs, swarms }
-  return capabilities ? reconcileGuiCapabilities(root, capabilities) : root
+  const jobs = sameItems(base.jobs, operations.jobs) ? base.jobs : operations.jobs
+  const swarms = sameItems(base.swarms, operations.swarms) ? base.swarms : operations.swarms
+  return base.jobs === jobs && base.swarms === swarms ? base : { ...base, jobs, swarms }
+}
+
+export function reconcileGuiCapabilityState(current: GuiSnapshot | undefined, state: ClientStateSyncState) {
+  const capabilities = selectClientCapabilitiesSnapshot(state)
+  if (!capabilities) return current
+  return reconcileGuiCapabilities(current ?? emptyGuiSnapshot(), capabilities)
 }
 
 function sameItems<T>(current: T[], next: T[]) {

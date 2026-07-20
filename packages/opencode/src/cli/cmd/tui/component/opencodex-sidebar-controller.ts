@@ -42,6 +42,7 @@ export function createOpencodeXSidebarController() {
   const swarms = createMemo(() => sync.data.opencodex_swarm as OpencodeXSwarmInfo[])
   const views = createMemo(() => sync.data.opencodex_view as OpencodeXViewInfo[])
   const projection = createOpencodeXSidebarProjection({ sync, route, local, projects, swarms, views })
+  const ensuredProjectSessions = new Set<string>()
   const refetch = () => void sync.session.refresh()
   let sidebarScroll: ScrollBoxRenderable | undefined
   let refreshRunning = false
@@ -67,8 +68,24 @@ export function createOpencodeXSidebarController() {
   function createView() {
     void createOpencodeXViewDialog({ sdk, dialog, route, sessionIDs: projection.currentSessionID() ? [projection.currentSessionID()!] : undefined })
   }
-  const toggleProject = (projectID: string) => setCollapsed((state) => ({ ...state, [projectID]: !(state[projectID] ?? false) }))
+  const toggleProject = (projectID: string) => {
+    if (collapsed()[projectID]) {
+      const project = projects().find((item) => item.id === projectID)
+      if (project) void sync.session.ensure(project.sessionIDs.slice(0, 3)).catch(() => undefined)
+    }
+    setCollapsed((state) => ({ ...state, [projectID]: !(state[projectID] ?? false) }))
+  }
   const setProjectCollapsed = (projectID: string, value: boolean) => setCollapsed((state) => ({ ...state, [projectID]: value }))
+  createEffect(() => {
+    const sessionIDs = projects().flatMap((project) =>
+      !collapsed()[project.id] && projection.projectSessions(project).length === 0
+        ? project.sessionIDs.slice(0, 3).filter((sessionID) => !ensuredProjectSessions.has(sessionID))
+        : [],
+    )
+    if (sessionIDs.length === 0) return
+    sessionIDs.forEach((sessionID) => ensuredProjectSessions.add(sessionID))
+    void sync.session.ensure(sessionIDs).catch(() => sessionIDs.forEach((sessionID) => ensuredProjectSessions.delete(sessionID)))
+  })
   const sidebarRows = createMemo((): SidebarRow[] => [
     { id: "nav:dashboard", activate: () => route.navigate({ type: "opencodex-dashboard" }) },
     { id: "section:pinned", activate: () => setPinnedCollapsed((value) => !value), collapse: () => setPinnedCollapsed(true), expand: () => setPinnedCollapsed(false), keepFocus: true },

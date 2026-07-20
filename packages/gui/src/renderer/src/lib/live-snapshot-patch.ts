@@ -15,7 +15,11 @@ export function patchSnapshot(snapshot: GuiSnapshot, event: GlobalEvent): GuiSna
       return {
         ...snapshot,
         sessions: snapshot.sessions.filter((session) => session.id !== deletedSessionID),
-        projects: snapshot.projects.map((project) => ({ ...project, sessions: project.sessions.filter((session) => session.id !== deletedSessionID) })),
+        projects: snapshot.projects.map((project) => ({
+          ...project,
+          sessionIDs: project.sessionIDs.filter((sessionID) => sessionID !== deletedSessionID),
+          sessions: project.sessions.filter((session) => session.id !== deletedSessionID),
+        })),
         sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== deletedSessionID)),
         sessionUiState: Object.fromEntries(Object.entries(snapshot.sessionUiState).filter(([id]) => id !== deletedSessionID)),
         permissions: snapshot.permissions.filter((request) => request.sessionID !== deletedSessionID),

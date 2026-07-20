@@ -1,12 +1,12 @@
 # GUI Control Acceptance
 
-Last updated: July 10, 2026
+Last updated: July 19, 2026
 
 This matrix distinguishes controls proven in Chromium, controls proven through the real Electron main/preload boundary, and behavior that still requires replay against a packaged release artifact. “Verified” does not mean every destructive or model-billed action is executed in CI.
 
 | Surface | Verified behavior | Evidence | Remaining gate |
 | --- | --- | --- | --- |
-| Startup and Dashboard | Authoritative state and capabilities load, no legacy synchronization request occurs, navigation works, and an idle client performs no periodic state request. | Chromium acceptance | Large-catalog render/CPU budget |
+| Startup and Dashboard | Authoritative state and capabilities load, no legacy synchronization request occurs, navigation works, an idle client performs no periodic state request, and a 250-card production fixture remains bounded to the first 100 cards. | Chromium acceptance and production-renderer performance gates | Continue calibrating across hosted-runner generations |
 | Projects | Backend-created projects appear through live state events; project detail and new-session routing work. The native multi-folder picker creates a project in an isolated Electron workspace. | Chromium and Electron acceptance | Replay against packaged release artifacts |
 | Sessions | Existing sessions open, lazy new-session composer focus works, and a real Electron session opens its native side panel, PTY, and context picker. Prompt/command/shell payloads, safety actions, and transcript controls share tested handlers. | Chromium, Electron, and functional/unit tests | One non-billed prompt/abort smoke |
 | Views | Create, select membership, save, open, focus, edit/delete handlers, pending panes, and multi-pane state parity are covered. | Chromium acceptance and functional/unit tests | Visual snapshots for one through eight panes |
@@ -21,6 +21,16 @@ This matrix distinguishes controls proven in Chromium, controls proven through t
 
 ## Performance invariants now enforced
 
+- Production fixture isolation: the backend, database, and disposable workspace live only in `.artifacts/e2e-performance/runtime`; the developer database and checkout are never used as runtime data.
+- Catalog bootstrap: 250 fixture sessions produce exactly one root request, zero follow-up card requests, exactly 100 initial cards, and at most 96 KiB of decoded root response data.
+- Initial rendering: collapsed dashboard and rail sections render zero session rows; the settled dashboard stays at or below 800 elements and five rendered session rows.
+- Idle rendering: after settlement, no observed long task may exceed 50 ms.
+- Session switching: each cold sample makes exactly one session-detail request. In-page click-to-authoritative-post-paint timing over five local samples enforces a 700 ms p95 ceiling (1,800 ms on CI); cached A-B-A makes zero additional session requests and enforces 200 ms locally (600 ms on CI) while retaining the 50 ms target in reports.
+- Transcript window: a 640-message fixture initially renders exactly 128 messages. One 384-message Load More page leaves the sentinel present and moves its viewport anchor by at most 1 CSS px.
+- Heavy previews: collapsed tool output remains within 200 lines / 64 KiB, expanded diff source remains product-capped at 2,000 lines / 256 KiB, and the rendered nested diff remains below 15,000 DOM elements.
+- Session retention: deterministic 500-session stress keeps canonical detail state at visible sessions plus 16 inactive sessions and releases per-session loads, requests, correction timers, tail options, and event buffers.
+- View scheduling: the focused pane completes first and eight-pane background hydration never exceeds concurrency two.
+- Reports: every scenario attaches sanitized request/resource counts and bytes, User Timing, state-sync commits, retained card/detail counts, CDP Performance metrics, DOM counters, and renderer heap before/after forced GC when Chromium exposes it.
 - Idle dashboard: no periodic root, operations, capabilities, or legacy snapshot request.
 - Reduced motion: no decorative logo subtree mutation during the idle probe.
 - Swarm editor: fewer than 100 total option nodes after adding a second role in the acceptance fixture.
@@ -34,5 +44,5 @@ This matrix distinguishes controls proven in Chromium, controls proven through t
 
 1. Keep the packaged Electron acceptance workflow green on Windows, Linux, and macOS and retain failure artifacts in CI.
 2. Add rendered Diff, session safety, and delete-confirmation workflows without performing irreversible actions against a developer workspace.
-3. Add large-catalog, large-transcript, and large-Git-change fixtures with CPU, event-to-paint, memory, and DOM-node budgets.
+3. Add a production-renderer large-Git-change fixture; catalog, transcript, event-to-paint, heap, and DOM gates are now enforced by `playwright.performance.config.ts`.
 4. Keep Jobs and Swarms marked experimental until restart, lease, cancellation, and partial-failure gates pass.

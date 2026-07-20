@@ -93,7 +93,7 @@ async function waitForRenderer() {
 }
 
 async function pipe(
-  stream: ReadableStream<Uint8Array> | null,
+  stream: ReadableStream<Uint8Array> | null | undefined,
   output: NodeJS.WriteStream,
   inspect: (text: string) => void,
 ) {

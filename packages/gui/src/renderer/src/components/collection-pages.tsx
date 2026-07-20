@@ -22,7 +22,7 @@ export function SessionCollectionPage(props: {
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
 }) {
-  const projectBySessionID = createMemo(() => new Map(props.projects.flatMap((project) => project.sessions.map((session) => [session.id, title(project.name ?? project.project.name)] as const))))
+  const projectBySessionID = createMemo(() => new Map(props.projects.flatMap((project) => project.sessionIDs.map((sessionID) => [sessionID, title(project.name ?? project.project.name)] as const))))
   return (
     <div class="page placeholder-page list-page">
       <p class="eyebrow">Sessions</p>

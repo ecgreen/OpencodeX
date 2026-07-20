@@ -1,7 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { createProject, createSession, createSwarm, createView, loadSnapshot } from "../src/renderer/src/lib/store"
+import { createClientStateSync } from "@opencode-ai/sdk/v2/client-sync"
+import { emptyGuiSnapshot, reconcileGuiAuthoritativeState } from "../src/renderer/src/lib/gui-state"
+import { createProject, createSession, createSwarm, createView } from "../src/renderer/src/lib/store"
 import type { GuiClient } from "../src/renderer/src/lib/client"
 
 const url = process.env.OPENCODEX_GUI_QA_URL ?? process.env.VITE_OPENCODEX_SERVER_URL
@@ -38,7 +40,7 @@ const result: Record<string, unknown> = {
 }
 
 try {
-  const before = await loadSnapshot(gui)
+  const before = await loadAuthoritativeSnapshot(gui)
   check(result, "snapshot loads", true, {
     projects: before.projects.length,
     sessions: before.sessions.length,
@@ -69,7 +71,7 @@ try {
     }
   }
 
-  const after = await loadSnapshot(gui)
+  const after = await loadAuthoritativeSnapshot(gui)
   check(result, "post-check snapshot loads", true, {
     projects: after.projects.length,
     sessions: after.sessions.length,
@@ -86,4 +88,16 @@ try {
 function check(target: Record<string, unknown>, name: string, pass: boolean, details: Record<string, unknown> = {}) {
   ;(target.checks as unknown[]).push({ name, pass, details })
   console.log(`${pass ? "PASS" : "FAIL"} ${name}`)
+}
+
+async function loadAuthoritativeSnapshot(gui: GuiClient) {
+  const controller = createClientStateSync({ client: gui.client, directory: gui.directory || undefined })
+  try {
+    await Promise.all([controller.start(), controller.refreshCapabilities()])
+    const snapshot = reconcileGuiAuthoritativeState(emptyGuiSnapshot(), controller.getState())
+    if (!snapshot) throw new Error("Authoritative GUI snapshot was unavailable")
+    return snapshot
+  } finally {
+    controller.stop()
+  }
 }

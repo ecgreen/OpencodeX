@@ -7,7 +7,7 @@ import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema, Struct } from "effect"
 import { inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -32,6 +32,12 @@ export const Info = Schema.Struct({
   sessions: Schema.Array(Session.GlobalInfo),
 }).annotate({ identifier: "OpencodeXProject" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+export const CatalogInfo = Schema.Struct({
+  ...Struct.omit(Info.fields, ["sessions"]),
+  sessionIDs: Schema.Array(SessionID),
+}).annotate({ identifier: "OpencodeXCatalogProject" })
+export type CatalogInfo = Schema.Schema.Type<typeof CatalogInfo>
 
 export const CreateInput = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -148,6 +154,7 @@ export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderErr
 
 export interface Interface {
   readonly list: (input?: { sessions?: Session.GlobalInfo[] }) => Effect.Effect<Info[]>
+  readonly listCatalog: () => Effect.Effect<CatalogInfo[]>
   readonly get: (projectID: string) => Effect.Effect<Info, Project.NotFoundError>
   readonly validate: (input: ValidateInput) => Effect.Effect<Validation>
   readonly create: (input: CreateInput) => Effect.Effect<Info, InvalidFolderError | Project.NotFoundError>
@@ -255,26 +262,24 @@ export const layer = Layer.effect(
         name: row.name ?? undefined,
         project: item,
         folders: folders.map((folder) => ({ path: folder.path })),
-        sessions: (yield* sessions.listGlobal({ roots: true, limit: 5_000 })).filter((session) =>
-          trackedIDs.has(session.id),
-        ),
+        sessions: (yield* sessions.listGlobalByIDs([...trackedIDs])).filter((session) => !session.parentID),
       }
     })
 
     const list = Effect.fn("OpencodeXProject.list")(function* (input?: { sessions?: Session.GlobalInfo[] }) {
       const rows = yield* OpencodeXProjectFolder.listProjects(db)
       if (rows.length === 0) return []
-      const [upstream, folders, tracked, globalSessions] = yield* Effect.all(
+      const [upstream, folders, tracked] = yield* Effect.all(
         [
           project.list(),
           OpencodeXProjectFolder.listFoldersForOpencodeProjects(db, [
             ...new Set(rows.map((row) => ProjectV2.ID.make(row.project_id))),
           ]),
           OpencodeXProjectFolder.listAllSessionIDs(db),
-          input?.sessions ? Effect.succeed(input.sessions) : sessions.listGlobal({ roots: true, limit: 5_000 }),
         ],
         { concurrency: "unbounded" },
       )
+      const globalSessions = input?.sessions ?? (yield* sessions.listGlobalByIDs(tracked.map((item) => item.session_id)))
       const upstreamByID = new Map(upstream.map((item) => [item.id, item]))
       const sessionByID = new Map(globalSessions.map((item) => [item.id, item]))
       const existingIDs = new Set(
@@ -314,6 +319,37 @@ export const layer = Layer.effect(
             project: item,
             folders: (foldersByProject.get(row.id) ?? []).map((folder) => ({ path: folder.path })),
             sessions: (sessionsByProject.get(row.id) ?? []).flatMap((entry) => sessionByID.get(entry.session_id) ?? []),
+          },
+        ]
+      })
+    })
+
+    const listCatalog = Effect.fn("OpencodeXProject.listCatalog")(function* () {
+      const rows = yield* OpencodeXProjectFolder.listProjects(db)
+      if (rows.length === 0) return []
+      const [upstream, folders, tracked] = yield* Effect.all(
+        [
+          project.list(),
+          OpencodeXProjectFolder.listFoldersForOpencodeProjects(db, [
+            ...new Set(rows.map((row) => ProjectV2.ID.make(row.project_id))),
+          ]),
+          OpencodeXProjectFolder.listAllSessionIDs(db),
+        ],
+        { concurrency: "unbounded" },
+      )
+      const upstreamByID = new Map(upstream.map((item) => [item.id, item]))
+      const foldersByProject = Map.groupBy(folders, (folder) => folder.opencodex_project_id)
+      const sessionsByProject = Map.groupBy(tracked, (item) => item.opencodex_project_id)
+      return rows.flatMap((row) => {
+        const item = upstreamByID.get(row.project_id)
+        if (!item) return []
+        return [
+          {
+            id: row.id,
+            name: row.name ?? undefined,
+            project: item,
+            folders: (foldersByProject.get(row.id) ?? []).map((folder) => ({ path: folder.path })),
+            sessionIDs: (sessionsByProject.get(row.id) ?? []).map((entry) => entry.session_id),
           },
         ]
       })
@@ -460,6 +496,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       list,
+      listCatalog,
       get,
       validate,
       create,

@@ -14,13 +14,12 @@ import {
   runSwitchVariantAction,
 } from "../lib/model-actions"
 import type { DiffMode } from "../lib/routes"
-import { runMoveSessionAction } from "../lib/session-actions"
-import { markSessionSeenInSnapshot, markSessionViewedInSnapshot } from "../lib/session-status"
+import { runMoveSessionAction, sidePanelDirectoryForSession } from "../lib/session-actions"
+import { markSessionViewedInSnapshot } from "../lib/session-status"
 import {
   abortSession,
   deleteSession,
   loadSessionDiff,
-  loadVcsDiff,
   moveSession,
   renameSession,
   updateSessionUiState,
@@ -61,9 +60,11 @@ export function createSessionActionsController(input: {
 
   function markViewed(sessionID: string, time: number) {
     const client = input.client()
-    input.setSnapshot((current) => (current ? markSessionSeenInSnapshot(current, sessionID, time) : current))
+    input.setSnapshot((current) => (current ? markSessionViewedInSnapshot(current, sessionID, time) : current))
     if (client)
-      void updateSessionUiState(client, sessionID, { seenAt: time }).catch(() => input.refresh().catch(() => undefined))
+      void updateSessionUiState(client, sessionID, { seenAt: time, reviewedAt: time }).catch(() =>
+        input.refresh().catch(() => undefined),
+      )
   }
 
   function markReviewed(session: Session) {
@@ -249,17 +250,17 @@ export function createSessionActionsController(input: {
   async function loadDiff(value: { mode: DiffMode; session?: Session }) {
     const client = input.client()
     if (!client) return []
-    if (value.mode !== "last-turn") return (await loadVcsDiff(client, { mode: "git", context: 12 })).data ?? []
+    if (value.mode !== "last-turn") return []
     if (!value.session) return []
     return (await loadSessionDiff(client, { sessionID: value.session.id, directory: value.session.directory })).data ?? []
   }
 
   function sidePanelDirectory(session?: Session) {
-    if (!session) return input.client()?.directory
-    const project = input.snapshot()?.projects.find((item) =>
-      item.sessions.some((projectSession) => projectSession.id === session.id),
-    )
-    return project?.folders[0]?.path || session.directory || input.client()?.directory
+    return sidePanelDirectoryForSession({
+      session,
+      projects: input.snapshot()?.projects ?? [],
+      clientDirectory: input.client()?.directory,
+    })
   }
 
   async function updateReviewedFiles(session: Session, reviewedFiles: string[]) {

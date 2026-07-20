@@ -26,6 +26,7 @@ const openIDs = new Set<string>()
 const restartTimers = new Map<string, number>()
 let detachedDock: HTMLDivElement | undefined
 let themeObserver: MutationObserver | undefined
+const TERMINAL_VIEW_LIMIT = 8
 
 export function SessionOpenTerminal(props: { tab: TerminalTab & { title?: string }; write: (id: string, data: string) => void; rename: (id: string, title: string) => void }) {
   let host: HTMLDivElement | undefined
@@ -70,11 +71,14 @@ export function createSessionSideTerminalController(input: {
   tabs: Accessor<OpenTab[]>
   activeTab: Accessor<OpenTab | undefined>
   directory: Accessor<string>
-  createTab: (input: Partial<OpenTab>) => string
+  createTab: (input: Partial<OpenTab>) => string | undefined
   updateTab: (id: string, patch: Partial<OpenTab>) => void
+  closeTab: (id: string) => void
   closeMenu: () => void
   openURL: (url: string) => void
 }) {
+  const startTokens = new Map<string, number>()
+
   createEffect(() => {
     const terminal = window.opencodex?.terminal
     if (!terminal) return
@@ -82,7 +86,7 @@ export function createSessionSideTerminalController(input: {
       const tab = input.tabs().find((tab) => tab.id === event.id)
       if (tab?.kind !== "terminal") return
       sessionTerminal.cancelRestart(event.id)
-       sessionTerminal.ensure(event.id, write, input.openURL).terminal.write(event.data)
+      sessionTerminal.ensure(event.id, write, input.openURL).terminal.write(event.data)
       if (sessionTerminal.isOpen(event.id)) return
       sessionTerminal.markOpen(event.id)
       input.updateTab(event.id, { terminalStatus: "open" })
@@ -93,7 +97,7 @@ export function createSessionSideTerminalController(input: {
       sessionTerminal.markClosed(event.id)
       sessionTerminal.cancelRestart(event.id)
       const shouldRestart = sessionTerminal.exitShouldRestart(event)
-       sessionTerminal.ensure(event.id, write, input.openURL).terminal.writeln(
+      sessionTerminal.ensure(event.id, write, input.openURL).terminal.writeln(
         shouldRestart
           ? `\r\n[terminal process exited${sessionTerminal.exitDescription(event)}; restarting...]`
           : `\r\n[process exited${sessionTerminal.exitDescription(event)}]`,
@@ -114,6 +118,10 @@ export function createSessionSideTerminalController(input: {
   })
 
   function create() {
+    const terminalTabs = input.tabs().filter((tab) => tab.kind === "terminal")
+    if (terminalTabs.length >= TERMINAL_VIEW_LIMIT) {
+      input.closeTab(terminalTabs.find((tab) => tab.id !== input.activeTab()?.id)?.id ?? terminalTabs[0].id)
+    }
     const id = input.createTab({
       kind: "terminal",
       title: "Terminal",
@@ -121,27 +129,38 @@ export function createSessionSideTerminalController(input: {
       terminalStatus: "connecting",
       text: "",
     })
+    if (!id) return
     sessionTerminal.markClosed(id)
-     sessionTerminal.ensure(id, write, input.openURL)
+    sessionTerminal.ensure(id, write, input.openURL)
     input.closeMenu()
     void start(id)
   }
 
   function close(tab: OpenTab) {
     if (tab.kind !== "terminal") return
+    nextStartToken(tab.id)
     sessionTerminal.cancelRestart(tab.id)
     sessionTerminal.dispose(tab.id)
-    void window.opencodex?.terminal?.destroy(tab.id)
+    void window.opencodex?.terminal?.destroy(tab.id).catch(() => undefined)
+  }
+
+  function closeAll(tabs: readonly OpenTab[] = input.tabs()) {
+    tabs.forEach(close)
   }
 
   async function start(id: string) {
+    const token = nextStartToken(id)
     if (!window.opencodex?.terminal) {
-       sessionTerminal.ensure(id, write, input.openURL).terminal.writeln("Open terminal needs the latest desktop bridge. Restart OpencodeX and try again.")
+      sessionTerminal.ensure(id, write, input.openURL).terminal.writeln("Open terminal needs the latest desktop bridge. Restart OpencodeX and try again.")
       input.updateTab(id, { terminalStatus: "error" })
       return
     }
     const tab = input.tabs().find((tab) => tab.id === id)
     const result = await window.opencodex.terminal.create({ id, cwd: tab?.directory || input.directory(), cols: 100, rows: 30 })
+    if (startTokens.get(id) !== token || !input.tabs().some((tab) => tab.id === id && tab.kind === "terminal")) {
+      if (result.ok) void window.opencodex.terminal.destroy(id).catch(() => undefined)
+      return
+    }
     if (!result.ok) {
       sessionTerminal.ensure(id, write).terminal.writeln(result.message ?? "Failed to open terminal.")
       input.updateTab(id, { terminalStatus: "error" })
@@ -165,7 +184,18 @@ export function createSessionSideTerminalController(input: {
     input.updateTab(id, { title })
   }
 
-  return { create, close, write, rename }
+  function nextStartToken(id: string) {
+    const token = (startTokens.get(id) ?? 0) + 1
+    startTokens.set(id, token)
+    return token
+  }
+
+  onCleanup(() => {
+    closeAll()
+    startTokens.clear()
+  })
+
+  return { create, close, closeAll, write, rename }
 }
 
 export const sessionTerminal = {
@@ -218,7 +248,16 @@ function ensure(id: string, write: (id: string, data: string) => void, openURL?:
   const existing = views.get(id)
   if (existing) {
     if (openURL) existing.openURL = openURL
+    views.delete(id)
+    views.set(id, existing)
     return existing
+  }
+  if (views.size >= TERMINAL_VIEW_LIMIT) {
+    const oldest = views.keys().next().value
+    if (oldest) {
+      dispose(oldest)
+      void window.opencodex?.terminal?.destroy(oldest).catch(() => undefined)
+    }
   }
   ensureThemeSync()
   const terminal = new Terminal({
@@ -333,4 +372,9 @@ function dispose(id: string) {
   view.disposeInput()
   view.terminal.dispose()
   views.delete(id)
+  if (views.size > 0) return
+  themeObserver?.disconnect()
+  themeObserver = undefined
+  detachedDock?.remove()
+  detachedDock = undefined
 }

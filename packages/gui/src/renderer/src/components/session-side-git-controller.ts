@@ -1,230 +1,388 @@
-import type { FileNode } from "@opencode-ai/sdk/v2/client"
-import { createSignal } from "solid-js"
+import type { GlobalEvent } from "@opencode-ai/sdk/v2/client"
+import { batch, createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
 import type { GuiClient } from "../lib/client"
 import {
-  listWorkbenchFiles,
-  readWorkbenchFile,
-  workbenchGitBranches,
-  workbenchGitDiff,
-  workbenchGitStatus,
-  type DiffFile,
-  type WorkbenchDataResult,
-  type WorkbenchGitBranches,
-  type WorkbenchGitStatus,
-  type WorkbenchGitFileStatus,
+  initializeWorkbenchGit,
+  workbenchChangeMetricsPage,
+  workbenchChangePatchPage,
+  workbenchChanges,
+  type WorkbenchChangeFile,
 } from "../lib/store"
-import { normalizeRoot, sidePanelPathKey } from "./session-side-path"
+import {
+  displayWorkbenchChangeSummary,
+  emptyWorkbenchChangeSummary,
+  emptyWorkbenchPatch,
+  isWorkbenchAbort,
+  mergeWorkbenchFileMetrics,
+  normalizeWorkbenchDirectory,
+  normalizeWorkbenchPath,
+  reconcileWorkbenchFiles,
+  workbenchPatchForPath,
+  workbenchPatchKey,
+  type WorkbenchChangeSummary,
+  type WorkbenchPatchModel,
+} from "./session-side-git-model"
+import { createSelectedWorkbenchMetricsController } from "./session-side-git-selected-metrics"
 
-const STATUS_CHECK_MS = 5_000
-const FULL_REFRESH_MS = 30_000
-const FALLBACK_REFRESH_MS = 120_000
-const MAX_CACHE_ENTRIES = 12
+const MANIFEST_PAGE_SIZE = 200
+const METRIC_PAGE_SIZE = 32
+const REFRESH_MS = 30_000
+const WATCHER_DEBOUNCE_MS = 250
 export const SIDE_PANEL_GIT_VISIBLE_RECHECK_MS = 6_000
 
-export type SidePanelGitResult = {
-  diff: WorkbenchDataResult<DiffFile[]>
-  status?: WorkbenchGitStatus
-  branches?: WorkbenchGitBranches
-  fallback?: "project-files"
-}
+export function createSessionSideGitController(input: {
+  active: Accessor<boolean>
+  gui: Accessor<GuiClient | undefined>
+  directory: Accessor<string>
+  subscribeGlobalEvents?: (listener: (event: GlobalEvent) => void | Promise<void>) => () => void
+}) {
+  const [files, setFiles] = createSignal<readonly WorkbenchChangeFile[]>([])
+  const [summary, setSummary] = createSignal<WorkbenchChangeSummary>(emptyWorkbenchChangeSummary())
+  const [mode, setMode] = createSignal<"git" | "directory">("git")
+  const [revision, setRevision] = createSignal("")
+  const [branch, setBranch] = createSignal("")
+  const [repository, setRepository] = createSignal<{
+    defaultBranch?: string
+    upstream?: string
+    ahead?: number
+    behind?: number
+    remoteUrl?: string
+    githubUrl?: string
+  }>({})
+  const [message, setMessage] = createSignal("")
+  const [error, setError] = createSignal("")
+  const [refreshError, setRefreshError] = createSignal("")
+  const [metricsError, setMetricsError] = createSignal("")
+  const [ready, setReady] = createSignal(false)
+  const [loading, setLoading] = createSignal(false)
+  const [refreshing, setRefreshing] = createSignal(false)
+  const [initializing, setInitializing] = createSignal(false)
+  const [initializationError, setInitializationError] = createSignal("")
+  const [patchEntries, setPatchEntries] = createSignal<readonly (readonly [string, WorkbenchPatchModel])[]>([])
+  const [patchLoading, setPatchLoading] = createSignal("")
+  const patches = createMemo(() => new Map(patchEntries()))
+  const selectedMetrics = createSelectedWorkbenchMetricsController({
+    gui: input.gui, directory: input.directory, revision, files, setFiles, setSummary,
+    setError: setMetricsError, refresh: () => void refresh(),
+  })
+  let manifestRequest: AbortController | undefined
+  let metricsRequest: AbortController | undefined
+  let patchRequest: AbortController | undefined
+  let initializationRequest: AbortController | undefined
+  let watcherTimer: ReturnType<typeof setTimeout> | undefined
+  let workspaceKey = ""
+  let generation = 0
+  let refreshSequence = 0
+  let loadedAt = 0
 
-type CacheEntry = {
-  result: SidePanelGitResult
-  loadedAt: number
-  statusCheckedAt: number
-  statusSignature: string
-}
+  createEffect(() => {
+    const next = `${input.gui()?.url ?? ""}\n${input.directory()}`
+    if (workspaceKey === next) return
+    workspaceKey = next
+    resetWorkspace()
+  })
 
-const cache = new Map<string, CacheEntry>()
-const requests = new Map<string, Promise<SidePanelGitResult>>()
-const statusRequests = new Map<string, Promise<WorkbenchGitStatus | undefined>>()
-export const [sidePanelGitCacheVersions, setSidePanelGitCacheVersions] = createSignal<Record<string, number>>({})
+  createEffect(() => {
+    if (!input.active() || !input.gui() || !input.directory() || ready() || loading()) return
+    void refresh()
+  })
 
-export function loadCachedSidePanelGit(input: { key: string; gui?: GuiClient; directory?: string }, force = false) {
-  if (!force) {
-    const cached = cache.get(input.key)
-    if (cached) {
-      void refreshSidePanelGitIfStale(input)
-      return cached.result
+  createEffect(() => {
+    if (input.active()) return
+    abortRequests()
+  })
+
+  createEffect(() => {
+    if (!input.subscribeGlobalEvents) return
+    const unsubscribe = input.subscribeGlobalEvents((event) => {
+      if (!input.active() || event.payload.type !== "file.watcher.updated") return
+      if (normalizeWorkbenchDirectory(event.directory) !== normalizeWorkbenchDirectory(input.directory())) return
+      if (watcherTimer !== undefined) globalThis.clearTimeout(watcherTimer)
+      watcherTimer = globalThis.setTimeout(() => void refresh(), WATCHER_DEBOUNCE_MS)
+    })
+    onCleanup(unsubscribe)
+  })
+
+  onCleanup(() => {
+    abortRequests()
+    initializationRequest?.abort()
+    if (watcherTimer !== undefined) globalThis.clearTimeout(watcherTimer)
+  })
+
+  async function refresh() {
+    const gui = input.gui()
+    const directory = input.directory()
+    if (!gui || !directory) return
+    const currentGeneration = generation
+    const sequence = ++refreshSequence
+    manifestRequest?.abort()
+    metricsRequest?.abort()
+    const controller = new AbortController()
+    manifestRequest = controller
+    if (ready()) setRefreshing(true)
+    else setLoading(true)
+    setRefreshError("")
+    setMetricsError("")
+    try {
+      const staged: WorkbenchChangeFile[] = []
+      const first = await workbenchChanges(gui, {
+        directory,
+        limit: MANIFEST_PAGE_SIZE,
+        signal: controller.signal,
+      })
+      if (!first.ok) throw new Error(first.message ?? "Unable to load project changes.")
+      staged.push(...first.items)
+      let cursor = first.next
+      while (cursor) {
+        const page = await workbenchChanges(gui, {
+          directory,
+          cursor,
+          revision: first.revision,
+          limit: MANIFEST_PAGE_SIZE,
+          signal: controller.signal,
+        })
+        if (!page.ok || page.revision !== first.revision) throw new Error(page.message ?? "The change snapshot became stale.")
+        staged.push(...page.items)
+        cursor = page.next
+      }
+      if (controller.signal.aborted || sequence !== refreshSequence || currentGeneration !== generation || directory !== input.directory()) return
+      const nextFiles = reconcileWorkbenchFiles(files(), staged)
+      batch(() => {
+        setFiles(nextFiles)
+        setSummary(displayWorkbenchChangeSummary(first.summary, nextFiles))
+        setMode(first.mode)
+        setRevision(first.revision)
+        setBranch(first.branch ?? "")
+        setRepository({
+          defaultBranch: first.defaultBranch,
+          upstream: first.upstream,
+          ahead: first.ahead,
+          behind: first.behind,
+          remoteUrl: first.remoteUrl,
+          githubUrl: first.githubUrl,
+        })
+        setMessage(first.message ?? "")
+        setError("")
+        setRefreshError("")
+        setReady(true)
+      })
+      loadedAt = Date.now()
+      void measure(first.revision, sequence, currentGeneration)
+    } catch (cause) {
+      if (isWorkbenchAbort(cause)) return
+      const value = cause instanceof Error ? cause.message : "Unable to load project changes."
+      if (ready()) setRefreshError(value)
+      else setError(value)
+    } finally {
+      if (manifestRequest === controller) manifestRequest = undefined
+      if (sequence === refreshSequence && currentGeneration === generation) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
-    const pending = requests.get(input.key)
-    if (pending) return pending
   }
-  requests.delete(input.key)
-  const request = loadSidePanelGit(input)
-    .then((result) => {
-      if (requests.get(input.key) === request) writeCache(input.key, result)
-      return result
-    })
-    .finally(() => {
-      if (requests.get(input.key) === request) requests.delete(input.key)
-    })
-  requests.set(input.key, request)
-  return request
-}
 
-export async function refreshSidePanelGitIfStale(input: { key: string; gui?: GuiClient; directory?: string }) {
-  const gui = input.gui
-  if (!gui) return
-  const cached = cache.get(input.key)
-  if (!cached) {
-    await loadCachedSidePanelGit(input)
-    return
+  async function measure(currentRevision: string, sequence: number, currentGeneration: number) {
+    const gui = input.gui()
+    const directory = input.directory()
+    if (!gui || !directory) return
+    metricsRequest?.abort()
+    const controller = new AbortController()
+    metricsRequest = controller
+    try {
+      let cursor: string | undefined
+      do {
+        const page = await workbenchChangeMetricsPage(gui, {
+          directory,
+          revision: currentRevision,
+          cursor,
+          limit: METRIC_PAGE_SIZE,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || sequence !== refreshSequence || currentGeneration !== generation || currentRevision !== revision()) return
+        if (!page.ok) {
+          if (page.stale) void refresh()
+          else setMetricsError(page.message ?? "Line metrics are paused.")
+          return
+        }
+        const nextFiles = mergeWorkbenchFileMetrics(files(), page.items)
+        batch(() => {
+          setFiles(nextFiles)
+          setSummary(displayWorkbenchChangeSummary(page.summary, nextFiles))
+          setMetricsError("")
+        })
+        cursor = page.next
+      } while (cursor)
+    } catch (cause) {
+      if (!isWorkbenchAbort(cause) && currentRevision === revision())
+        setMetricsError(cause instanceof Error ? cause.message : "Line metrics are paused.")
+    } finally {
+      if (metricsRequest === controller) metricsRequest = undefined
+    }
   }
-  const now = Date.now()
-  const fullRefreshMs = cached.result.fallback === "project-files" ? FALLBACK_REFRESH_MS : FULL_REFRESH_MS
-  if (now - cached.loadedAt >= fullRefreshMs) {
-    await loadCachedSidePanelGit(input, true)
-    return
+
+  async function loadPatch(path: string) {
+    const gui = input.gui()
+    const directory = input.directory()
+    const currentRevision = revision()
+    const key = workbenchPatchKey(currentRevision, path)
+    if (!gui || !directory || !currentRevision || patches().get(key)?.complete || patchLoading() === path) return
+    void selectedMetrics.measure(path, currentRevision)
+    patchRequest?.abort()
+    const controller = new AbortController()
+    patchRequest = controller
+    setPatchLoading(path)
+    try {
+      let cursor: string | undefined
+      let model = patches().get(key) ?? emptyWorkbenchPatch(path, currentRevision)
+      do {
+        const page = await workbenchChangePatchPage(gui, {
+          directory,
+          path,
+          revision: currentRevision,
+          cursor,
+          context: 8,
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted || currentRevision !== revision() || directory !== input.directory()) return
+        if (!page.ok) {
+          model = { ...model, ...page, pages: model.pages, complete: true }
+          setPatchEntries([[key, model]])
+          if (page.stale) void refresh()
+          return
+        }
+        model = {
+          ...model,
+          ...page,
+          pages: page.patch ? [...model.pages, page.patch] : model.pages,
+        }
+        setPatchEntries([[key, model]])
+        cursor = page.next
+      } while (cursor)
+      if (model.additions !== undefined && model.deletions !== undefined) {
+        const nextFiles = mergeWorkbenchFileMetrics(files(), [{
+          path, additions: model.additions, deletions: model.deletions, binary: model.binary,
+        }])
+        setFiles(nextFiles)
+        setSummary((current) => displayWorkbenchChangeSummary(current, nextFiles))
+      }
+    } catch (cause) {
+      if (isWorkbenchAbort(cause)) return
+      setPatchEntries([[key, {
+        ...emptyWorkbenchPatch(path, currentRevision),
+        message: cause instanceof Error ? cause.message : "Unable to load file patch.",
+        complete: true,
+      }]])
+    } finally {
+      if (patchRequest === controller) patchRequest = undefined
+      if (patchLoading() === path) setPatchLoading("")
+    }
   }
-  if (cached.result.fallback === "project-files" || now - cached.statusCheckedAt < STATUS_CHECK_MS) return
-  const status = await loadStatus({ key: input.key, gui, directory: input.directory })
-  const latest = cache.get(input.key)
-  if (!latest) return
-  latest.statusCheckedAt = Date.now()
-  if (statusSignature(status) === latest.statusSignature) return
-  await loadCachedSidePanelGit(input, true)
-}
 
-export function sidePanelGitCacheKey(gui: GuiClient | undefined, directory: string | undefined) {
-  return `${gui?.url ?? "no-gui"}\n${normalizeRoot(directory ?? gui?.directory ?? "")}`
-}
-
-export function resourceGitCacheKey(value: string) {
-  const index = value.indexOf("\u0000")
-  return index >= 0 ? value.slice(index + 1) : value
-}
-
-export function sidePanelGitResultForKey<T>(key: string, loaded?: { key: string; result: T }) {
-  return loaded?.key === key ? loaded.result : undefined
-}
-
-export function normalizeSidePanelDiffs(files: DiffFile[]) {
-  return files.flatMap((file) => file.file
-    ? [{ file: file.file, patch: file.patch, additions: file.additions, deletions: file.deletions, status: file.status ?? "modified" }]
-    : [])
-}
-
-export function sidePanelDiffForPath(files: DiffFile[], path: string) {
-  const key = sidePanelPathKey(path)
-  return files.find((file) => sidePanelPathKey(file.file ?? "") === key)
-    ?? files.find((file) => {
-      const fileKey = sidePanelPathKey(file.file ?? "")
-      return key.endsWith(`/${fileKey}`) || fileKey.endsWith(`/${key}`)
-    })
-}
-
-export function sidePanelStatusForPath(files: WorkbenchGitFileStatus[], path: string) {
-  const key = sidePanelPathKey(path)
-  return files.find((file) => sidePanelPathKey(file.path) === key)
-    ?? files.find((file) => {
-      const fileKey = sidePanelPathKey(file.path)
-      return key.endsWith(`/${fileKey}`) || fileKey.endsWith(`/${key}`)
-    })
-}
-
-async function loadSidePanelGit(input: { gui?: GuiClient; directory?: string }): Promise<SidePanelGitResult> {
-  if (!input.gui) return {
-    diff: { ok: false, message: "GUI client is not ready.", data: [] as DiffFile[] },
-    status: undefined,
-    branches: undefined,
+  async function initializeRepository() {
+    const gui = input.gui()
+    const directory = input.directory()
+    if (!gui || !directory || initializing()) return
+    const currentGeneration = generation
+    initializationRequest?.abort()
+    const controller = new AbortController()
+    initializationRequest = controller
+    setInitializing(true)
+    setInitializationError("")
+    try {
+      await initializeWorkbenchGit(gui, directory, controller.signal)
+      if (controller.signal.aborted || currentGeneration !== generation || directory !== input.directory()) return
+      await refresh()
+    } catch (cause) {
+      if (!isWorkbenchAbort(cause) && currentGeneration === generation && directory === input.directory())
+        setInitializationError(cause instanceof Error ? cause.message : "Could not initialize this repository.")
+    } finally {
+      if (initializationRequest === controller) initializationRequest = undefined
+      if (currentGeneration === generation && directory === input.directory()) setInitializing(false)
+    }
   }
-  const [diff, status, branches] = await Promise.all([
-    workbenchGitDiff(input.gui, input.directory),
-    workbenchGitStatus(input.gui, input.directory).catch(() => undefined),
-    workbenchGitBranches(input.gui, input.directory).catch(() => undefined),
-  ])
-  if (diff.ok !== false || !isNonGitMessage(diff.message)) return { diff, status, branches }
+
+  function reveal(path: string) {
+    const parts = normalizeWorkbenchPath(path).split("/").filter(Boolean)
+    return Promise.resolve(parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/")))
+  }
+
+  function patch(path: string) {
+    return workbenchPatchForPath(patchEntries(), revision(), path)
+  }
+
+  function refreshIfStale() {
+    if (!ready() || loading() || refreshing()) return
+    if (Date.now() - loadedAt < REFRESH_MS) return
+    void refresh()
+  }
+
+  function resetWorkspace() {
+    generation++
+    refreshSequence++
+    loadedAt = 0
+    abortRequests()
+    initializationRequest?.abort()
+    initializationRequest = undefined
+    batch(() => {
+      setFiles([])
+      setSummary(emptyWorkbenchChangeSummary())
+      setMode("git")
+      setRevision("")
+      setBranch("")
+      setRepository({})
+      setMessage("")
+      setError("")
+      setRefreshError("")
+      setMetricsError("")
+      setReady(false)
+      setLoading(false)
+      setRefreshing(false)
+      setInitializing(false)
+      setInitializationError("")
+      setPatchEntries([])
+      setPatchLoading("")
+    })
+  }
+
+  function abortRequests() {
+    manifestRequest?.abort()
+    metricsRequest?.abort()
+    selectedMetrics.abort()
+    patchRequest?.abort()
+    manifestRequest = undefined
+    metricsRequest = undefined
+    patchRequest = undefined
+    setPatchLoading("")
+  }
+
   return {
-    diff: {
-      ok: true,
-      message: "No Git repository found. Showing project files as added.",
-      data: await projectFilesAsAddedDiffs(input.gui, input.directory),
-    },
-    status,
-    branches,
-    fallback: "project-files",
+    files,
+    summary,
+    mode,
+    revision,
+    branch,
+    repository,
+    message,
+    error,
+    refreshError,
+    metricsError,
+    ready,
+    loading,
+    refreshing,
+    initializing,
+    initializationError,
+    patchLoading,
+    initializeRepository,
+    loadPatch,
+    reveal,
+    patch,
+    refresh,
+    refreshIfStale,
   }
 }
 
-function writeCache(key: string, result: SidePanelGitResult) {
-  cache.set(key, {
-    result,
-    loadedAt: Date.now(),
-    statusCheckedAt: Date.now(),
-    statusSignature: statusSignature(result.status),
-  })
-  if (cache.size > MAX_CACHE_ENTRIES) {
-    Array.from(cache.entries())
-      .toSorted((left, right) => left[1].loadedAt - right[1].loadedAt)
-      .slice(0, cache.size - MAX_CACHE_ENTRIES)
-      .forEach(([entry]) => cache.delete(entry))
-  }
-  setSidePanelGitCacheVersions((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
-}
+export type SessionSideGitController = ReturnType<typeof createSessionSideGitController>
 
-function loadStatus(input: { key: string; gui: GuiClient; directory?: string }) {
-  const pending = statusRequests.get(input.key)
-  if (pending) return pending
-  const request = workbenchGitStatus(input.gui, input.directory)
-    .catch(() => undefined)
-    .finally(() => {
-      if (statusRequests.get(input.key) === request) statusRequests.delete(input.key)
-    })
-  statusRequests.set(input.key, request)
-  return request
-}
-
-function statusSignature(status: WorkbenchGitStatus | undefined) {
-  if (!status?.ok) return "unavailable"
-  return JSON.stringify({
-    branch: status.branch ?? "",
-    upstream: status.upstream ?? "",
-    ahead: status.ahead ?? 0,
-    behind: status.behind ?? 0,
-    clean: status.clean,
-    files: status.files
-      .map((file) => `${file.path}\u0000${file.code}\u0000${file.status}\u0000${file.staged ? 1 : 0}\u0000${file.unstaged ? 1 : 0}\u0000${file.untracked ? 1 : 0}`)
-      .toSorted(),
-  })
-}
-
-function isNonGitMessage(message: string | undefined) {
-  return message?.toLowerCase().includes("not a git repository") || message?.toLowerCase().includes("not a git repo")
-}
-
-async function projectFilesAsAddedDiffs(gui: GuiClient, directory: string | undefined) {
-  return (await Promise.all((await listProjectFilePaths(gui, directory)).map(async (path): Promise<DiffFile> => {
-    const content = await readWorkbenchFile(gui, path, directory)
-    if (content?.type !== "text") return { file: path, additions: 0, deletions: 0, status: "added" }
-    const lines = content.content.split(/\r?\n/)
-    return {
-      file: path,
-      patch: addedFilePatch(path, lines),
-      additions: content.content.length === 0 ? 0 : lines.length,
-      deletions: 0,
-      status: "added",
-    }
-  }))).toSorted((left, right) => (left.file ?? "").localeCompare(right.file ?? ""))
-}
-
-async function listProjectFilePaths(gui: GuiClient, directory: string | undefined, path = ""): Promise<string[]> {
-  return (await Promise.all((await listWorkbenchFiles(gui, path, directory)).map((entry) => projectFilePathsForEntry(gui, directory, entry)))).flat()
-}
-
-function projectFilePathsForEntry(gui: GuiClient, directory: string | undefined, entry: FileNode) {
-  if (entry.type === "file") return Promise.resolve(entry.path ? [entry.path] : [])
-  if (entry.type === "directory" && entry.path) return listProjectFilePaths(gui, directory, entry.path)
-  return Promise.resolve([])
-}
-
-function addedFilePatch(path: string, lines: string[]) {
-  return [
-    `diff --git a/${path} b/${path}`,
-    "new file mode 100644",
-    "--- /dev/null",
-    `+++ b/${path}`,
-    `@@ -0,0 +1,${lines.length} @@`,
-    ...lines.map((line) => `+${line}`),
-  ].join("\n")
-}
+export { reconcileWorkbenchFiles, sidePanelChangeForPath } from "./session-side-git-model"
+export type { WorkbenchPatchModel } from "./session-side-git-model"

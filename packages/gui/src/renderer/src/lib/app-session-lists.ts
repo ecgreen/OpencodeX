@@ -37,9 +37,9 @@ export function tuiSidebarSessions(snapshot?: GuiSnapshot, state?: SessionOrderS
 
 export function projectSessions(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot, state?: SessionOrderState) {
   const byID = new Map(tuiSidebarSessions(snapshot, state).map((session) => [session.id, session]))
-  return orderSessionItems(project.sessions
-    .filter(isTUISidebarSession)
-    .map((session) => byID.get(session.id) ?? session)
+  const embedded = new Map(project.sessions.map((session) => [session.id, session]))
+  return orderSessionItems(project.sessionIDs
+    .flatMap((sessionID) => byID.get(sessionID) ?? embedded.get(sessionID) ?? [])
     .filter(isTUISidebarSession)
     .map((session) => sessionOrderItem(snapshot, session)), state).map((item) => item.session)
 }

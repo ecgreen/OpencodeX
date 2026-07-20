@@ -470,6 +470,7 @@ export type NotFound = NotFoundError
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
   readonly listGlobal: (input?: GlobalListInput) => Effect.Effect<GlobalInfo[]>
+  readonly listGlobalByIDs: (sessionIDs: readonly SessionID[]) => Effect.Effect<GlobalInfo[]>
   readonly create: (input?: {
     id?: SessionID
     parentID?: SessionID
@@ -687,6 +688,27 @@ export const layer: Layer.Layer<
       })
     })
 
+    const hydrateGlobal = Effect.fn("Session.hydrateGlobal")(function* (rows: SessionRow[]) {
+      const ids = [...new Set(rows.map((row) => row.project_id))]
+      const projects = new Map<string, ProjectInfo>()
+      if (ids.length > 0) {
+        const items = yield* db
+          .select({ id: ProjectTable.id, name: ProjectTable.name, worktree: ProjectTable.worktree })
+          .from(ProjectTable)
+          .where(inArray(ProjectTable.id, ids))
+          .all()
+          .pipe(Effect.orDie)
+        items.forEach((item) =>
+          projects.set(item.id, {
+            id: item.id,
+            name: item.name ?? undefined,
+            worktree: item.worktree,
+          }),
+        )
+      }
+      return rows.map((row) => ({ ...fromRow(row), project: projects.get(row.project_id) ?? null }))
+    })
+
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
       yield* cleanupEmpty()
       const conditions: SQL[] = []
@@ -710,24 +732,21 @@ export const layer: Layer.Layer<
         .limit(input?.limit ?? 100)
         .all()
         .pipe(Effect.orDie)
-      const ids = [...new Set(rows.map((row) => row.project_id))]
-      const projects = new Map<string, ProjectInfo>()
-      if (ids.length > 0) {
-        const items = yield* db
-          .select({ id: ProjectTable.id, name: ProjectTable.name, worktree: ProjectTable.worktree })
-          .from(ProjectTable)
-          .where(inArray(ProjectTable.id, ids))
+      return yield* hydrateGlobal(rows)
+    })
+
+    const listGlobalByIDs = Effect.fn("Session.listGlobalByIDs")(function* (sessionIDs: readonly SessionID[]) {
+      const ids = [...new Set(sessionIDs)]
+      if (ids.length === 0) return []
+      return yield* hydrateGlobal(
+        yield* db
+          .select()
+          .from(SessionTable)
+          .where(inArray(SessionTable.id, ids))
+          .orderBy(desc(SessionTable.time_updated), desc(SessionTable.id))
           .all()
-          .pipe(Effect.orDie)
-        for (const item of items) {
-          projects.set(item.id, {
-            id: item.id,
-            name: item.name ?? undefined,
-            worktree: item.worktree,
-          })
-        }
-      }
-      return rows.map((row) => ({ ...fromRow(row), project: projects.get(row.project_id) ?? null }))
+          .pipe(Effect.orDie),
+      )
     })
 
     const children = Effect.fn("Session.children")(function* (parentID: SessionID) {
@@ -1060,6 +1079,7 @@ export const layer: Layer.Layer<
     return Service.of({
       list,
       listGlobal,
+      listGlobalByIDs,
       create,
       fork,
       touch,

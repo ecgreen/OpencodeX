@@ -1,4 +1,5 @@
 import type { FileContent } from "@opencode-ai/sdk/v2/client"
+import type { WorkbenchFileMode } from "../lib/file-resource-limits"
 import type { WorkbenchBrowserTabState } from "../lib/workbench"
 
 export type OpenTab = {
@@ -8,9 +9,13 @@ export type OpenTab = {
   kind: "context" | "file" | "files" | "git" | "picker" | "terminal" | "web"
   path?: string
   directory?: string
+  root?: string
+  readOnly?: true
   url?: string
   state?: WorkbenchBrowserTabState
   content?: FileContent
+  fileMode?: WorkbenchFileMode
+  fileBytes?: number
   text: string
   original: string
   terminalStatus?: "connecting" | "open" | "closed" | "error"
@@ -18,6 +23,15 @@ export type OpenTab = {
   externalText?: string
   externallyChanged?: boolean
   agentControlled?: boolean
+}
+
+export type OpenFileTarget = {
+  path: string
+  title?: string
+  directory?: string
+  root?: string
+  readOnly?: true
+  signal?: AbortSignal
 }
 
 export type OpenPanelState = {
@@ -44,6 +58,6 @@ export type PopupMenuPlacement = {
   maxHeight: number
 }
 
-export const OPEN_PANEL_EDIT_LIMIT = 750_000
+export const OPEN_PANEL_TAB_LIMIT = 16
 export const OPEN_PANEL_OVERFLOW_VISIBLE_ROWS = 5
 export const OPEN_PANEL_OVERFLOW_FALLBACK_MAX_HEIGHT = 182

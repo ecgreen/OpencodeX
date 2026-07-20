@@ -10,11 +10,14 @@
     "dev": "vite --configLoader runner --host 127.0.0.1",
     "onlook:preview": "vite --configLoader runner --host 127.0.0.1",
     "dev:electron": "bun run scripts/dev-electron.ts",
-    "build:main": "tsgo -p tsconfig.main.json && tsgo -p tsconfig.preload.json",
-    "build": "vite --configLoader runner build && bun run check:bundle-size && bun run build:main",
+    "build:renderer": "vite --configLoader runner build",
+    "preview:renderer": "vite --configLoader runner preview --host 127.0.0.1",
+    "build:main": "bun run scripts/build-electron.ts",
+    "build": "bun run build:renderer && bun run check:bundle-size && bun run build:main",
     "test": "bun test --conditions=browser test",
     "test:ci": "mkdir -p .artifacts/unit && bun test --conditions=browser test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:e2e": "playwright test",
+    "test:e2e:performance": "playwright test --config=playwright.performance.config.ts",
     "test:e2e:container": "bun run scripts/run-e2e-container.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:electron": "bun run build:main && playwright test --config=playwright.electron.config.ts",
@@ -22,12 +25,13 @@
     "test:functional": "bun test --conditions=browser test/gui-functional.test.ts test/functional",
     "check:source-size": "bun run scripts/check-source-size.ts",
     "check:bundle-size": "bun run scripts/check-bundle-size.ts",
+    "check:package": "bun run scripts/package-budget.ts",
     "check:design-system": "bun run scripts/check-design-system.ts",
     "check:design-system:strict": "bun run scripts/check-design-system.ts --strict",
     "qa:backend-parity": "bun run scripts/qa-backend-parity.ts",
     "qa:issue": "bun run scripts/qa-issue.ts",
     "qa": "bun run typecheck && bun run check:source-size && bun run check:design-system && bun run test && bun run qa:backend-parity",
-    "typecheck": "tsgo --noEmit && tsgo -p tsconfig.main.json --noEmit && tsgo -p tsconfig.preload.json --noEmit",
+    "typecheck": "tsgo --noEmit && tsgo -p tsconfig.main.json --noEmit && tsgo -p tsconfig.preload.json --noEmit && tsgo -p tsconfig.scripts.json --noEmit",
     "prepare:sidecar": "bun run scripts/copy-sidecar.ts",
     "smoke:packaged": "bun run scripts/smoke-packaged.ts",
     "package": "bun run build && bun run prepare:sidecar && electron-builder --dir --config.win.signAndEditExecutable=false",
@@ -36,6 +40,10 @@
     "dist": "bun run build && bun run prepare:sidecar && electron-builder"
   },
   "dependencies": {
+    "@lydell/node-pty": "catalog:"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "6.20.3",
     "@codemirror/lang-css": "6.3.1",
     "@codemirror/lang-html": "6.4.11",
     "@codemirror/lang-javascript": "6.2.5",
@@ -47,46 +55,54 @@
     "@codemirror/language": "6.12.3",
     "@codemirror/legacy-modes": "6.5.3",
     "@codemirror/lint": "6.9.7",
+    "@codemirror/search": "6.7.0",
     "@codemirror/state": "6.6.0",
     "@codemirror/view": "6.43.1",
     "@lezer/highlight": "1.2.3",
-    "@lydell/node-pty": "catalog:",
+    "@electron/asar": "3.4.1",
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
-    "@solidjs/router": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "codemirror": "6.0.2",
     "cross-spawn": "catalog:",
-    "geist": "1.7.2",
     "lucide-solid": "1.17.0",
     "solid-js": "catalog:",
     "vite": "catalog:",
-    "vite-plugin-solid": "catalog:"
-  },
-  "devDependencies": {
+    "vite-plugin-solid": "catalog:",
     "@playwright/test": "catalog:",
+    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@types/cross-spawn": "catalog:",
     "@typescript/native-preview": "catalog:",
-    "concurrently": "^9.2.1",
     "electron": "^39.2.4",
     "electron-builder": "^26.0.12",
-    "typescript": "catalog:",
-    "wait-on": "^9.0.3"
+    "typescript": "catalog:"
   },
   "build": {
     "appId": "ai.opencodex.gui",
     "productName": "OpencodeX",
     "executableName": "opencodex-gui",
     "afterSign": "scripts/notarize.cjs",
+    "afterPack": "scripts/after-pack.cjs",
+    "npmRebuild": false,
+    "asar": {
+      "smartUnpack": false
+    },
+    "asarUnpack": [
+      "node_modules/@lydell/node-pty-*/prebuilds/**/*.node",
+      "node_modules/@lydell/node-pty-darwin-*/prebuilds/**/spawn-helper",
+      "node_modules/@lydell/node-pty-win32-*/prebuilds/**/*.{dll,exe}"
+    ],
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**",
-      "package.json"
+      "package.json",
+      "!node_modules/@lydell/node-pty-!(${platform}-${arch}){,/**/*}",
+      "!**/*.pdb"
     ],
     "extraResources": [
       {
@@ -97,7 +113,8 @@
         "from": "resources/sidecar",
         "to": "sidecar",
         "filter": [
-          "**/*"
+          "opencode-gui-coordinator",
+          "opencode-gui-coordinator.exe"
         ]
       }
     ],

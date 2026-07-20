@@ -80,16 +80,6 @@
 }
 
 @media (max-width:1080px) {
-  .dashboard-overview {
-    min-height: 72px;
-  }
-
-  .dashboard-overview-metrics {
-    display: none;
-  }
-}
-
-@media (max-width:1080px) {
   .dashboard-card-grid {
     grid-template-columns: repeat(auto-fill,minmax(min(240px,100%),1fr));
   }

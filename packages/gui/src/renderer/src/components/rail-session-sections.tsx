@@ -68,6 +68,9 @@ export function RailPriorSessionsSection(props: {
   dragTarget?: RailDragTarget
   dropTarget?: RailDropTarget
   sessionPinned: (sessionID: string) => boolean
+  hasMore: boolean
+  loadingMore: boolean
+  loadMore: () => void
   toggle: () => void
   openSession: (sessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void
@@ -104,6 +107,11 @@ export function RailPriorSessionsSection(props: {
           />
         )}
       </For>
+      <Show when={props.hasMore}>
+        <Button appearance="ghost" class="rail-show-all" loading={props.loadingMore} onClick={props.loadMore}>
+          Load more sessions
+        </Button>
+      </Show>
     </RailSection>
   )
 }

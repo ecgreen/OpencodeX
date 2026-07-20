@@ -26,7 +26,11 @@ export function createLocalSession(input: {
     setReady: () => setStore("ready", true),
     hydrate(value) {
       if (!isRecord(value)) return
-      if (Array.isArray(value.pinned)) setStore("pinned", value.pinned.filter((item): item is string => typeof item === "string"))
+      if (Array.isArray(value.pinned)) {
+        const pinned = value.pinned.filter((item): item is string => typeof item === "string")
+        setStore("pinned", pinned)
+        void input.sync.session.ensure(pinned).catch(() => undefined)
+      }
       if (isRecord(value.viewed)) {
         setStore(
           "viewed",

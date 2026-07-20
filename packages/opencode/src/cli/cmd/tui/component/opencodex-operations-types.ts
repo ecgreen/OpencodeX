@@ -12,6 +12,7 @@ export type OpencodeXProject = {
   }
   folders?: { path: string }[]
   sessions: ReturnType<typeof useSync>["data"]["session"]
+  sessionIDs: string[]
 }
 
 export type DashboardSession = ReturnType<typeof useSync>["data"]["session"][number]

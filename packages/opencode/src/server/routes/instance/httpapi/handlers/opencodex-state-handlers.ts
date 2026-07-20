@@ -6,12 +6,14 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { OpencodeXCapabilities } from "@/opencodex/capabilities"
 import { OpencodeXState } from "@/opencodex/state"
+import { OpencodeXSessionCard } from "@/opencodex/session-card"
 import { ProviderCatalog } from "@/provider/catalog"
 import { SessionID } from "@/session/schema"
 import { Effect, Option, Queue, Stream } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
+import { HttpApiError } from "effect/unstable/httpapi"
 import { encode } from "effect/unstable/encoding/Sse"
-import { StateEventQuery, StateSessionQuery } from "../groups/opencodex"
+import { StateEventQuery, StateSessionCardQuery, StateSessionQuery } from "../groups/opencodex"
 import { mapStorageNotFound } from "./session-errors"
 import type { OpencodeXPluginHandlers } from "./opencodex-plugin-handlers"
 
@@ -84,6 +86,28 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
     )
   })
 
+  const stateSessionCards = Effect.fn("OpencodeXHttpApi.stateSessionCards")(function* (ctx: {
+    query: typeof StateSessionCardQuery.Type
+  }) {
+    const sessionIDs = ctx.query.ids
+      ? [...new Set(ctx.query.ids.split(",").map((id) => id.trim()).filter(Boolean))]
+      : undefined
+    if (sessionIDs && sessionIDs.length > OpencodeXSessionCard.MAX_RETAINED_IDS) {
+      return yield* new HttpApiError.BadRequest({})
+    }
+    return yield* state
+      .sessionCards({
+        cursor: ctx.query.cursor,
+        limit: ctx.query.limit,
+        sessionIDs: sessionIDs?.map((sessionID) => SessionID.make(sessionID)),
+      })
+      .pipe(
+        Effect.catchTag("OpencodeX.SessionCard.InvalidCursorError", () =>
+          Effect.fail(new HttpApiError.BadRequest({})),
+        ),
+      )
+  })
+
   const stateEvent = Effect.fn("OpencodeXHttpApi.stateEvent")(function* (ctx: {
     query: typeof StateEventQuery.Type
   }) {
@@ -150,5 +174,5 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
     )
   })
 
-  return { stateSnapshot, stateOperations, stateCapabilities, stateSession, stateEvent }
+  return { stateSnapshot, stateOperations, stateCapabilities, stateSessionCards, stateSession, stateEvent }
 })

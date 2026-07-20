@@ -14,7 +14,7 @@ export function DashboardActionCard(props: { title: string; description: string;
   )
 }
 
-export function DashboardSection(props: { title: string; count: number; action?: string; onAction?: () => void; children: JSX.Element }) {
+export function DashboardSection(props: { title: string; count: number; action?: string; actionLabel?: string; onAction?: () => void; children: JSX.Element }) {
   return (
     <section class="dashboard-section">
       <header>
@@ -22,7 +22,7 @@ export function DashboardSection(props: { title: string; count: number; action?:
           <h2 class="dashboard-section-title">{props.title} <span class="section-count">({props.count})</span></h2>
         </div>
         <Show when={props.action && props.onAction}>
-          <Button appearance="outline" onClick={props.onAction}>{props.action}</Button>
+          <Button appearance="outline" icon="plus" aria-label={props.actionLabel ?? props.action} onClick={props.onAction}>{props.action}</Button>
         </Show>
       </header>
       <div class="dashboard-section-content">

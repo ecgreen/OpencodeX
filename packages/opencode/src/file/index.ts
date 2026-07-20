@@ -4,7 +4,7 @@ import { InstanceState } from "@/effect/instance-state"
 
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Git } from "@/git"
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Layer, Context, Option, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { formatPatch, structuredPatch } from "diff"
 import fuzzysort from "fuzzysort"
@@ -58,8 +58,16 @@ export const Content = Schema.Struct({
   patch: Schema.optional(Patch),
   encoding: Schema.optional(Schema.Literal("base64")),
   mimeType: Schema.optional(Schema.String),
+  bytes: Schema.optional(NonNegativeInt),
+  truncated: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "FileContent" })
 export type Content = DeepMutable<Schema.Schema.Type<typeof Content>>
+
+export const MAX_CONTENT_BYTES = 16 * 1024 * 1024
+
+export interface ReadOptions {
+  readonly maxBytes?: number
+}
 
 export const Event = {
   Edited: EventV2.define({
@@ -315,7 +323,7 @@ interface State {
 export interface Interface {
   readonly init: () => Effect.Effect<void>
   readonly status: () => Effect.Effect<Info[]>
-  readonly read: (file: string) => Effect.Effect<Content>
+  readonly read: (file: string, options?: ReadOptions) => Effect.Effect<Content>
   readonly list: (dir?: string) => Effect.Effect<Node[]>
   readonly search: (input: {
     query: string
@@ -496,7 +504,7 @@ export const layer = Layer.effect(
       })
     })
 
-    const read: Interface["read"] = Effect.fn("File.read")(function* (file: string) {
+    const read: Interface["read"] = Effect.fn("File.read")(function* (file: string, options?: ReadOptions) {
       using _ = log.time("read", { file })
       const ctx = yield* InstanceState.context
       const full = path.join(ctx.directory, file)
@@ -505,48 +513,95 @@ export const layer = Layer.effect(
         throw new Error("Access denied: path escapes project directory")
       }
 
+      const info = yield* appFs.stat(full).pipe(Effect.catch(() => Effect.void))
+      if (!info) return { type: "text" as const, content: "" }
+      const maxBytes = options?.maxBytes === undefined
+        ? undefined
+        : Math.min(Math.max(0, Math.trunc(options.maxBytes)), MAX_CONTENT_BYTES)
+      const bounded = maxBytes === undefined
+        ? undefined
+        : yield* Effect.scoped(
+            Effect.gen(function* () {
+              const handle = yield* appFs.open(full, { flag: "r" })
+              return Option.getOrElse(yield* handle.readAlloc(maxBytes + 1), () => new Uint8Array())
+            }),
+          ).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+      const oversized = bounded !== undefined && bounded.byteLength > maxBytes!
+      const bytes = bounded === undefined
+        ? Number(info.size)
+        : oversized
+          ? Math.max(Number(info.size), bounded.byteLength)
+          : bounded.byteLength
+      const metadata = maxBytes === undefined ? {} : { bytes, truncated: false as const }
+
       if (isImageByExtension(file)) {
-        const exists = yield* appFs.existsSafe(full)
-        if (exists) {
-          const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+        if (oversized) {
           return {
             type: "text" as const,
-            content: Buffer.from(bytes).toString("base64"),
+            content: "",
             mimeType: getImageMimeType(file),
             encoding: "base64" as const,
+            bytes,
+            truncated: true as const,
           }
         }
-        return { type: "text" as const, content: "" }
+        const content = bounded ?? (yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array()))))
+        return {
+          type: "text" as const,
+          content: Buffer.from(content).toString("base64"),
+          mimeType: getImageMimeType(file),
+          encoding: "base64" as const,
+          ...metadata,
+        }
       }
 
       const knownText = isTextByExtension(file) || isTextByName(file)
 
-      if (isBinaryByExtension(file) && !knownText) return { type: "binary" as const, content: "" }
-
-      const exists = yield* appFs.existsSafe(full)
-      if (!exists) return { type: "text" as const, content: "" }
+      if (isBinaryByExtension(file) && !knownText) {
+        return {
+          type: "binary" as const,
+          content: "",
+          ...(oversized ? { bytes, truncated: true as const } : metadata),
+        }
+      }
 
       const mimeType = AppFileSystem.mimeType(full)
       const encode = knownText ? false : shouldEncode(mimeType)
 
-      if (encode && !isImage(mimeType)) return { type: "binary" as const, content: "", mimeType }
-
-      if (encode) {
-        const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+      if (oversized) {
+        if (encode && !isImage(mimeType)) {
+          return { type: "binary" as const, content: "", mimeType, bytes, truncated: true as const }
+        }
         return {
           type: "text" as const,
-          content: Buffer.from(bytes).toString("base64"),
-          mimeType,
-          encoding: "base64" as const,
+          content: "",
+          ...(encode ? { mimeType, encoding: "base64" as const } : {}),
+          bytes,
+          truncated: true as const,
         }
       }
 
-      const content = yield* appFs.readFileString(full).pipe(
-        Effect.map((s) => s.trim()),
-        Effect.catch(() => Effect.succeed("")),
-      )
+      if (encode && !isImage(mimeType)) return { type: "binary" as const, content: "", mimeType, ...metadata }
 
-      if (ctx.project.vcs === "git") {
+      if (encode) {
+        const content = bounded ?? (yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array()))))
+        return {
+          type: "text" as const,
+          content: Buffer.from(content).toString("base64"),
+          mimeType,
+          encoding: "base64" as const,
+          ...metadata,
+        }
+      }
+
+      const content = bounded === undefined
+        ? yield* appFs.readFileString(full).pipe(
+            Effect.map((s) => s.trim()),
+            Effect.catch(() => Effect.succeed("")),
+          )
+        : Buffer.from(bounded).toString("utf8").trim()
+
+      if (ctx.project.vcs === "git" && maxBytes === undefined) {
         let diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--", file])
         if (!diff.trim()) {
           diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--staged", "--", file])
@@ -557,33 +612,41 @@ export const layer = Layer.effect(
             context: Infinity,
             ignoreWhitespace: true,
           })
-          return { type: "text" as const, content, patch, diff: formatPatch(patch) }
+          return { type: "text" as const, content, patch, diff: formatPatch(patch), ...metadata }
         }
-        return { type: "text" as const, content }
+        return { type: "text" as const, content, ...metadata }
       }
 
-      return { type: "text" as const, content }
+      return { type: "text" as const, content, ...metadata }
     })
 
     const list = Effect.fn("File.list")(function* (dir?: string) {
       const ctx = yield* InstanceState.context
       const exclude = [".git", ".DS_Store"]
-      let ignored = (_: string) => false
-      if (ctx.project.vcs === "git") {
-        const ig = ignore()
-        const gitignore = path.join(ctx.worktree, ".gitignore")
-        const gitignoreText = yield* appFs.readFileString(gitignore).pipe(Effect.catch(() => Effect.succeed("")))
-        if (gitignoreText) ig.add(gitignoreText)
-        const ignoreFile = path.join(ctx.worktree, ".ignore")
-        const ignoreText = yield* appFs.readFileString(ignoreFile).pipe(Effect.catch(() => Effect.succeed("")))
-        if (ignoreText) ig.add(ignoreText)
-        ignored = ig.ignores.bind(ig)
-      }
-
       const resolved = dir ? path.join(ctx.directory, dir) : ctx.directory
       if (!containsPath(resolved, ctx)) {
         throw new Error("Access denied: path escapes project directory")
       }
+
+      const bases = path.relative(ctx.directory, resolved).split(path.sep).filter(Boolean)
+        .reduce((items, part) => [...items, path.join(items.at(-1) ?? "", part)], [""])
+      const ignores = yield* Effect.forEach(bases, (base) =>
+        Effect.gen(function* () {
+          const ig = ignore()
+          const directory = path.join(ctx.directory, base)
+          const gitignoreText = yield* appFs.readFileString(path.join(directory, ".gitignore")).pipe(Effect.catch(() => Effect.succeed("")))
+          const ignoreText = yield* appFs.readFileString(path.join(directory, ".ignore")).pipe(Effect.catch(() => Effect.succeed("")))
+          if (gitignoreText) ig.add(gitignoreText)
+          if (ignoreText) ig.add(ignoreText)
+          return { base: base.replaceAll("\\", "/"), ignores: ig.ignores.bind(ig) }
+        }),
+      )
+      const ignored = (file: string) => ignores.some((item) => {
+        const normalized = file.replaceAll("\\", "/")
+        if (item.base && normalized !== item.base && !normalized.startsWith(`${item.base}/`)) return false
+        const relative = item.base ? normalized.slice(item.base.length).replace(/^\//, "") : normalized
+        return !!relative && item.ignores(relative)
+      })
 
       const entries = yield* appFs.readDirectoryEntries(resolved).pipe(Effect.orElseSucceed(() => []))
 

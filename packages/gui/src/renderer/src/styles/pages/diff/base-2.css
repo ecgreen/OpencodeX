@@ -10,6 +10,21 @@
   background: var(--panel);
 }
 
+.diff-working-tree {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.session-side-diff-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .diff-file-header {
   display: flex;
   align-items: center;

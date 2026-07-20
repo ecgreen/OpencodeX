@@ -22,10 +22,11 @@ export function upsertPartList(parts: Part[], part: Part) {
 
 export function mergeLoadedParts(current: Part[], incoming: Part[]) {
   const incomingPartIDs = new Set(incoming.map((part) => part.id))
-  return sortParts([
+  const next = sortParts([
     ...incoming,
     ...current.filter((part) => !incomingPartIDs.has(part.id) && isTextPart(part) && !textPartEnded(part)),
   ])
+  return current.length === next.length && current.every((part, index) => part === next[index]) ? current : next
 }
 
 export function rememberPendingPart(part: Part) {

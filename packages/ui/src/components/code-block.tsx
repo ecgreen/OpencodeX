@@ -5,6 +5,7 @@ import { bundledLanguages } from "shiki"
 import DOMPurify from "dompurify"
 import { createMemo, createResource, splitProps } from "solid-js"
 import "../context/marked"
+import { canHighlightCode, escapedCodeBlock } from "./code-highlight"
 
 const sanitizeConfig = {
   USE_PROFILES: { html: true },
@@ -21,17 +22,8 @@ const aliases: Record<string, string> = {
   text: "text",
 }
 
-function escape(text: string) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
-
 function fallback(code: string) {
-  return `<pre><code>${escape(code)}</code></pre>`
+  return escapedCodeBlock(code)
 }
 
 function sanitize(html: string) {
@@ -46,6 +38,7 @@ function normalizeLanguage(language: string | undefined) {
 }
 
 async function highlight(code: string, language: string) {
+  if (!canHighlightCode(code)) return fallback(code)
   const highlighter = await getSharedHighlighter({
     themes: ["OpenCode"],
     langs: [],

@@ -24,7 +24,6 @@ export function workbenchPath(input: string, instance: InstanceContext) {
 }
 
 export function workbenchCwd(instance: InstanceContext) {
-  if (instance.worktree !== "/") return instance.worktree
   return instance.directory
 }
 
@@ -137,27 +136,6 @@ export function gitMessage(result: { text(): string; stderr: Buffer }) {
 export function gitOperationResult(result: { exitCode: number; text(): string; stderr: Buffer }, success: string) {
   if (result.exitCode === 0) return workbenchSuccess(success)
   return workbenchFailure("git_failed", gitMessage(result) || "Git command failed.")
-}
-
-export function parseGitStatus(text: string) {
-  return text
-    .split("\0")
-    .filter(Boolean)
-    .flatMap((item) => {
-      const code = item.slice(0, 2)
-      const file = item.slice(3)
-      if (!file) return []
-      return [
-        {
-          path: file,
-          code,
-          status: code === "??" ? "added" : code.includes("D") ? "deleted" : code.includes("A") ? "added" : "modified",
-          staged: code !== "??" && code[0] !== " " && code[0] !== "?",
-          unstaged: code === "??" || (code[1] !== " " && code[1] !== "?"),
-          untracked: code === "??",
-        },
-      ]
-    })
 }
 
 export function parseGitStashes(text: string) {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Effect, Layer } from "effect"
 import { HttpClientResponse } from "effect/unstable/http"
+import fs from "fs/promises"
 import path from "path"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
@@ -115,6 +116,40 @@ describe("project.initGit endpoint", () => {
           vcs: "git",
           worktree: tmp.directory,
         })
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "recovers stale git metadata and initializes the repository",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const current = yield* request(tmp.directory, "/project/current")
+        const project = yield* json<{ id: string }>(current)
+        yield* Effect.promise(async () => {
+          await fs.rm(path.join(tmp.directory, ".git"), { recursive: true, force: true })
+          await fs.mkdir(path.join(tmp.directory, ".git"), { recursive: true })
+          await fs.writeFile(path.join(tmp.directory, ".git", "opencode"), project.id)
+          await fs.writeFile(path.join(tmp.directory, "README.md"), "# New project\n")
+        })
+
+        const changes = yield* request(tmp.directory, "/experimental/opencodex/workbench/changes/page")
+        const changesBody = yield* json(changes)
+        expect(changes.status).toBe(200)
+        expect(changesBody).toMatchObject({
+          ok: true,
+          mode: "directory",
+          items: [expect.objectContaining({ path: "README.md", status: "added" })],
+        })
+
+        const init = yield* request(tmp.directory, "/project/git/init", { method: "POST" })
+        expect(init.status).toBe(200)
+        expect(Bun.spawnSync(["git", "-C", tmp.directory, "rev-parse", "--is-inside-work-tree"]).stdout.toString().trim()).toBe("true")
+
+        const initializedChanges = yield* request(tmp.directory, "/experimental/opencodex/workbench/changes/page")
+        expect(initializedChanges.status).toBe(200)
+        expect(yield* json(initializedChanges)).toMatchObject({ ok: true, mode: "git" })
       }),
     { git: true },
   )

@@ -7,6 +7,7 @@ import type {
   Session,
 } from "@opencode-ai/sdk/v2/client"
 import {
+  applyClientStateSnapshot,
   createClientStateSync,
   type ClientCapabilitiesSnapshot,
   type ClientStateSyncState,
@@ -20,7 +21,7 @@ import { sessionDataFromClientState } from "../src/renderer/src/lib/store"
 test("GUI and TUI adapters project the same shared root, capabilities, interactions, and transcript", async () => {
   const controller = createClientStateSync({ transport: transport() })
   await controller.start()
-  await Promise.all([controller.refreshCapabilities(), controller.hydrateSession("session-1")])
+  await Promise.all([controller.refreshCapabilities(), controller.refreshSessionTail("session-1")])
   controller.applyEvent({
     id: "permission-asked",
     type: "permission.asked",
@@ -76,10 +77,75 @@ test("GUI and TUI adapters project the same shared root, capabilities, interacti
   controller.stop()
 })
 
+test("GUI session projection preserves unchanged presentation identities", async () => {
+  const controller = createClientStateSync({ transport: pagedTransport() })
+  await controller.start()
+  await controller.refreshSessionTail("session-1")
+  await controller.loadOlderSessionPage("session-1", { before: "message-1" })
+  const first = sessionDataFromClientState(controller.getState(), "session-1")
+  const second = sessionDataFromClientState(controller.getState(), "session-1", first)
+
+  expect(second).toBe(first)
+  expect(second?.messages[0]).toBe(first?.messages[0])
+  expect(second?.messages[0]?.parts[0]).toBe(first?.messages[0]?.parts[0])
+
+  controller.applyEvent({
+    id: "identity-delta",
+    type: "message.part.delta",
+    properties: {
+      sessionID: "session-1",
+      messageID: "message-1",
+      partID: "part-1",
+      field: "text",
+      delta: " world",
+    },
+  })
+  const updated = sessionDataFromClientState(controller.getState(), "session-1", first)
+  expect(updated).not.toBe(first)
+  expect(updated?.messages[0]).toBe(first?.messages[0])
+  expect(updated?.messages[1]).not.toBe(first?.messages[1])
+  expect(updated?.messages[1]?.parts[0]).toMatchObject({ text: "hello world" })
+  controller.stop()
+})
+
+test("GUI and TUI retain assignment IDs and cards omitted by later root pages", () => {
+  const controller = createClientStateSync({ transport: transport() })
+  const firstSnapshot = rootSnapshot()
+  firstSnapshot.payloads.catalog.projects = [
+    {
+      id: "overlay-1",
+      project: {
+        id: "project-1",
+        worktree: "C:/Work/OpencodeX",
+        time: { created: 1, updated: 1 },
+        sandboxes: [],
+      },
+      folders: [],
+      sessionIDs: ["session-1", "old-associated"],
+    },
+  ]
+  const first = applyClientStateSnapshot(controller.getState(), firstSnapshot)
+  const refresh = rootSnapshot()
+  refresh.cursor = "cursor-2"
+  refresh.digest = "root-2"
+  refresh.domains.catalog = { revision: "catalog-2", digest: "catalog-2" }
+  refresh.payloads.catalog.projects = firstSnapshot.payloads.catalog.projects
+  refresh.payloads.catalog.sessionCards = { items: [], hasMore: false, missing: [], sessionUiState: {} }
+  const second = applyClientStateSnapshot(first, refresh)
+  const gui = reconcileGuiAuthoritativeState(emptyGuiSnapshot(), second)
+  const tui = projectTuiClientState(second)
+
+  expect(second.sessions.records["session-1"]).toBe(first.sessions.records["session-1"])
+  expect(gui?.projects[0]?.sessionIDs).toEqual(["session-1", "old-associated"])
+  expect(tui?.projects[0]?.sessionIDs).toEqual(gui?.projects[0]?.sessionIDs)
+  expect(gui?.projects[0]?.sessions.map((item) => item.id)).toEqual(["session-1"])
+  expect(tui?.projects[0]?.sessions.map((item) => item.id)).toEqual(["session-1"])
+})
+
 test("GUI and TUI adapters retain parity for out-of-order parts and interaction resolution", async () => {
   const controller = createClientStateSync({ transport: transport() })
   await controller.start()
-  await Promise.all([controller.refreshCapabilities(), controller.hydrateSession("session-1")])
+  await Promise.all([controller.refreshCapabilities(), controller.refreshSessionTail("session-1")])
 
   controller.applyEvent({
     id: "part-before-update",
@@ -152,8 +218,8 @@ test("GUI and TUI adapters retain parity for out-of-order parts and interaction 
 test("GUI and TUI adapters retain parity across transcript paging and deletion", async () => {
   const controller = createClientStateSync({ transport: pagedTransport() })
   await controller.start()
-  await Promise.all([controller.refreshCapabilities(), controller.hydrateSession("session-1")])
-  await controller.hydrateSession("session-1", { before: "message-1" })
+  await Promise.all([controller.refreshCapabilities(), controller.refreshSessionTail("session-1")])
+  await controller.loadOlderSessionPage("session-1", { before: "message-1" })
 
   expectClientParity(controller.getState())
   expect(sessionDataFromClientState(controller.getState(), "session-1")?.messages.map((item) => item.info.id)).toEqual([
@@ -233,7 +299,7 @@ test("GUI and TUI adapters retain parity after a retention reset replaces canoni
           ...rootSnapshot().payloads,
           catalog: {
             ...rootSnapshot().payloads.catalog,
-            sessions: [replacement],
+            sessionCards: { items: [replacement], hasMore: false, missing: [], sessionUiState: {} },
             sessionStatus: { "session-2": { type: "idle" } },
           },
         },
@@ -353,7 +419,7 @@ function rootSnapshot(): OpencodeXStateSnapshot {
     payloads: {
       catalog: {
         projects: [],
-        sessions: [session()],
+        sessionCards: { items: [session()], hasMore: false, missing: [], sessionUiState: {} },
         views: [],
         sessionStatus: { "session-1": { type: "busy" } },
         permissions: [],

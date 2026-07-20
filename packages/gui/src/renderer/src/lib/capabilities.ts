@@ -1,4 +1,5 @@
 import type { GuiCapabilitiesSnapshot, GuiSnapshot } from "./store-types"
+import { sameValue } from "./same-value"
 
 export function reconcileGuiCapabilities(current: GuiSnapshot, next: GuiCapabilitiesSnapshot): GuiSnapshot {
   const merged = {
@@ -27,5 +28,5 @@ export function reconcileGuiCapabilities(current: GuiSnapshot, next: GuiCapabili
 }
 
 function stableValue<T>(current: T, next: T) {
-  return JSON.stringify(current) === JSON.stringify(next) ? current : next
+  return sameValue(current, next) ? current : next
 }

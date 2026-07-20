@@ -1,12 +1,13 @@
-import type { OpencodeXProject, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogProject, ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { metadataWithPendingSessions, metadataWithViewPaneOrder, pendingViewSessions, viewPaneOrder, type PendingViewSession, type ViewPaneOrderItem } from "./view-items"
 
 export { metadataWithPendingSessions } from "./view-items"
 
 export type ViewSelection = { kind: "existing"; sessionID: string } | { kind: "pending"; slot: PendingViewSession }
-export type ViewSessionProjectGroup = { project: OpencodeXProject; sessions: Session[] }
+export type ViewSessionProjectGroup = { project: ClientCatalogProject; sessions: Session[] }
 
-export function initialViewSelection(view?: OpencodeXView): ViewSelection[] {
+export function initialViewSelection(view?: ClientCatalogView): ViewSelection[] {
   const selection = [
     ...(view?.sessionIDs ?? []).map((sessionID): ViewSelection => ({ kind: "existing", sessionID })),
     ...pendingViewSessions(view).map((slot): ViewSelection => ({ kind: "pending", slot })),
@@ -70,11 +71,11 @@ export function addPendingViewSessions(input: {
   ]
 }
 
-export function groupViewSessionsByProject(input: { sessions: Session[]; projects: OpencodeXProject[] }) {
+export function groupViewSessionsByProject(input: { sessions: Session[]; projects: ClientCatalogProject[] }) {
   const assigned = new Set<string>()
   const projects = input.projects
     .map((project): ViewSessionProjectGroup => {
-      const projectSessionIDs = new Set(project.sessions.map((session) => session.id))
+      const projectSessionIDs = new Set(project.sessionIDs)
       const sessions = input.sessions.filter((session) => {
         if (!projectSessionIDs.has(session.id) || assigned.has(session.id)) return false
         assigned.add(session.id)

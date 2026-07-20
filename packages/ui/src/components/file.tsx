@@ -65,6 +65,7 @@ type SharedProps<T> = {
   classList?: ComponentProps<"div">["classList"]
   media?: FileMediaOptions
   search?: FileSearchControl
+  preserveScroll?: boolean
 }
 
 export type FileSearchHandle = {
@@ -123,6 +124,7 @@ const sharedKeys = [
   "onLineNumberSelectionEnd",
   "onRendered",
   "preloadedDiff",
+  "preserveScroll",
 ] as const
 
 const textKeys = ["file", ...sharedKeys] as const
@@ -1080,7 +1082,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     const virtualizer = virtuals.get()
     const beforeContents = typeof local.before?.contents === "string" ? local.before.contents : ""
     const afterContents = typeof local.after?.contents === "string" ? local.after.contents : ""
-    const done = preserve(viewer)
+    const done = local.preserveScroll === false ? () => {} : preserve(viewer)
 
     onCleanup(done)
 

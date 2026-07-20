@@ -10,6 +10,7 @@ import type {
 import { trimToLiveTail, type MessageWindow } from "./message-window"
 import { reconcileSessionUiState } from "./session-status"
 import type { GuiSnapshot, MessageBundle, SessionCardSnapshot, SessionData } from "./store"
+export { mergeLiveSessionData } from "./live-session-merge"
 import { setRecordEntry } from "./view-pane-state"
 import {
   eventAggregateID,
@@ -25,13 +26,11 @@ import {
 import {
   forgetPendingMessageParts,
   forgetPendingPart,
-  mergeLoadedParts,
   normalizeLivePart,
 } from "./live-session-parts"
 import {
   applyPartDelta,
   removePart,
-  sortMessageBundles,
   stableValue,
   upsertByID,
   upsertMessage,
@@ -228,38 +227,6 @@ export function globalEventAction(event: GlobalEvent): GlobalEventAction {
 
 export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, limit: MessageWindow): SessionData {
   return trimToLiveTail(patchSessionData(data, event), limit)
-}
-
-export function mergeLiveSessionData(current: SessionData | undefined, incoming: SessionData): SessionData {
-  if (!current) return incoming
-  if (current.messageWindowExpanded) return mergeExpandedSessionData(current, incoming)
-  const currentMessages = new Map(current.messages.map((bundle) => [bundle.info.id, bundle]))
-  return stableValue(current, {
-    ...incoming,
-    messages: incoming.messages.map((bundle) => {
-      const existing = currentMessages.get(bundle.info.id)
-      if (!existing) return bundle
-      return { ...bundle, parts: mergeLoadedParts(existing.parts, bundle.parts) }
-    }),
-  })
-}
-
-function mergeExpandedSessionData(current: SessionData, incoming: SessionData): SessionData {
-  const incomingMessages = new Map(incoming.messages.map((bundle) => [bundle.info.id, bundle]))
-  const currentMessageIDs = new Set(current.messages.map((bundle) => bundle.info.id))
-  return stableValue(current, {
-    ...incoming,
-    messages: sortMessageBundles([
-      ...current.messages.map((bundle) => {
-        const next = incomingMessages.get(bundle.info.id)
-        if (!next) return bundle
-        return { ...next, parts: mergeLoadedParts(bundle.parts, next.parts) }
-      }),
-      ...incoming.messages.filter((bundle) => !currentMessageIDs.has(bundle.info.id)),
-    ]),
-    messageCursor: current.messageCursor,
-    messageWindowExpanded: true,
-  })
 }
 
 export function patchSelectedSessionData(input: {

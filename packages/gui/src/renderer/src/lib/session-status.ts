@@ -1,7 +1,12 @@
-import type { OpencodeXSessionUiState, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXSessionUiState, Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiSnapshot } from "./store"
 
 export type DerivedSessionStatus = "dormant" | "in_progress" | "input_needed" | "ready_for_review" | "failed"
+
+export function isActiveSessionStatus(status: DerivedSessionStatus) {
+  return status === "in_progress" || status === "input_needed" || status === "ready_for_review"
+}
 
 export function deriveSessionStatus(snapshot: GuiSnapshot | undefined, session: Session): DerivedSessionStatus {
   if (sessionNeedsInput(snapshot, session.id)) return "input_needed"
@@ -13,7 +18,7 @@ export function deriveSessionStatus(snapshot: GuiSnapshot | undefined, session: 
   return "dormant"
 }
 
-export function deriveViewStatus(view: OpencodeXView, snapshot: GuiSnapshot | undefined): DerivedSessionStatus {
+export function deriveViewStatus(view: ClientCatalogView, snapshot: GuiSnapshot | undefined): DerivedSessionStatus {
   const sessions = new Map((snapshot?.sessions ?? []).map((session) => [session.id, session]))
   const statuses = view.sessionIDs.map((sessionID) => sessions.get(sessionID)).filter((session): session is Session => Boolean(session)).map((session) => deriveSessionStatus(snapshot, session))
   if (statuses.includes("input_needed")) return "input_needed"
@@ -41,25 +46,6 @@ export function markSessionViewedInSnapshot(snapshot: GuiSnapshot, sessionID: st
         sessionID,
         seenAt: Math.max(time, state?.seenAt ?? 0),
         reviewedAt: Math.max(time, state?.reviewedAt ?? 0),
-        reviewedFiles: state?.reviewedFiles ?? [],
-        displayStatus: state?.displayStatus ?? "idle",
-        updated: state?.updated ?? false,
-      },
-    },
-  }, sessionID)
-}
-
-export function markSessionSeenInSnapshot(snapshot: GuiSnapshot, sessionID: string, time: number): GuiSnapshot {
-  const state = snapshot.sessionUiState[sessionID]
-  if ((state?.seenAt ?? 0) >= time) return snapshot
-  return reconcileSessionUiState({
-    ...snapshot,
-    sessionUiState: {
-      ...snapshot.sessionUiState,
-      [sessionID]: {
-        sessionID,
-        seenAt: Math.max(time, state?.seenAt ?? 0),
-        ...(state?.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
         reviewedFiles: state?.reviewedFiles ?? [],
         displayStatus: state?.displayStatus ?? "idle",
         updated: state?.updated ?? false,

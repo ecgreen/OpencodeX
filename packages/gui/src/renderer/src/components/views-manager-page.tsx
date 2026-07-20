@@ -1,4 +1,5 @@
-import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { Accessor, JSX } from "solid-js"
 import { Show, createMemo } from "solid-js"
 import type { GuiSnapshot } from "../lib/store"
@@ -11,8 +12,8 @@ import { ViewsPage } from "./views"
 export { ViewEditorPage } from "./view-editor-page"
 
 export function ViewsManagerPage(props: {
-  view?: OpencodeXView
-  views: OpencodeXView[]
+  view?: ClientCatalogView
+  views: ClientCatalogView[]
   snapshot?: GuiSnapshot
   sessions: Session[]
   projects: GuiSnapshot["projects"]

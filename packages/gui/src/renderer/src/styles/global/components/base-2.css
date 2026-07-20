@@ -335,6 +335,10 @@
   overflow: hidden;
 }
 
+.workspace-panel-loading-resize {
+  pointer-events: none;
+}
+
 .panel-loading-state {
   display: grid;
   min-width: 0;

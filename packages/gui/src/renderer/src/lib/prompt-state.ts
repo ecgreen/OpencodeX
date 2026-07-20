@@ -39,6 +39,7 @@ export function normalizePromptInfo(value: unknown): GuiPromptInfo | undefined {
   const input = value as GuiPromptInfo
   if (typeof input.input !== "string" || input.input.length > MAX_DRAFT_CHARS) return
   if (!Array.isArray(input.parts) || !input.parts.every(isPromptPart)) return
+  if (promptDraftStorageSize(input) > MAX_DRAFT_CHARS) return
   return {
     input: input.input,
     parts: input.parts,
@@ -60,8 +61,12 @@ export function parsePromptDrafts(text: string): Record<string, GuiPromptInfo> {
 }
 
 export function mergePromptDraft(drafts: Record<string, GuiPromptInfo>, key: string, draft: GuiPromptInfo) {
-  if (draft.input.length > MAX_DRAFT_CHARS) return drafts
-  const next = { ...drafts, [key]: clonePrompt(draft) }
+  const normalized = normalizePromptInfo(draft)
+  if (!normalized) return drafts
+  const next = {
+    ...Object.fromEntries(Object.entries(drafts).filter(([item]) => item !== key)),
+    [key]: clonePrompt(normalized),
+  }
   const keys = Object.keys(next)
   if (keys.length <= MAX_DRAFT_ENTRIES) return next
   return Object.fromEntries(keys.slice(keys.length - MAX_DRAFT_ENTRIES).map((item) => [item, next[item]]))
@@ -136,6 +141,13 @@ function clonePrompt(value: GuiPromptInfo): GuiPromptInfo {
     parts: structuredClone(value.parts),
     ...(value.mode ? { mode: value.mode } : {}),
   }
+}
+
+function promptDraftStorageSize(value: GuiPromptInfo) {
+  return value.input.length + value.parts.reduce(
+    (total, part) => total + (part.type === "file" ? new TextEncoder().encode(part.url).byteLength : 0),
+    0,
+  )
 }
 
 function safeJson(text: string): unknown {

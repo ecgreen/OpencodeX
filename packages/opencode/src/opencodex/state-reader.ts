@@ -10,12 +10,20 @@ import { Todo } from "@/session/todo"
 import { Effect } from "effect"
 import { OpencodeXJob } from "./job"
 import { OpencodeXProject } from "./project"
+import { OpencodeXSessionCard, makeReader as makeSessionCardReader } from "./session-card"
 import { groupBySession, encodeCursor, revision } from "./state-event"
 import { EPOCH } from "./state-schema"
 import type { StateLog } from "./state-log"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
 import { OpencodeXView } from "./view"
+
+type SessionCardPage = {
+  items: OpencodeXSessionCard.Card[]
+  hasMore: boolean
+  next?: OpencodeXSessionCard.Cursor
+  missing: SessionID[]
+}
 
 export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* (
   database: Database.Interface,
@@ -32,56 +40,79 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
   const questions = yield* Question.Service
   const sessionState = yield* OpencodeXSessionState.Service
   const todos = yield* Todo.Service
+  const sessionCards = makeSessionCardReader(database.db)
 
   const readOperations = Effect.fn("OpencodeXState.readOperations")(function* () {
     const [jobList, swarmList] = yield* Effect.all([jobs.list(), swarms.list()], { concurrency: "unbounded" })
     return { jobs: jobList, swarms: swarmList }
   })
 
+  const withUiState = Effect.fn("OpencodeXState.withSessionCardUiState")(function* (
+    cardPage: SessionCardPage,
+    statusList: Map<SessionID, SessionStatus.Info>,
+    permissionList: readonly Permission.Request[],
+    questionList: readonly Question.Request[],
+  ) {
+    const state = yield* sessionState.list(cardPage.items.map((session) => session.id))
+    const permissionsBySession = groupBySession(permissionList)
+    const questionsBySession = groupBySession(questionList)
+    return {
+      ...cardPage,
+      sessionUiState: Object.fromEntries(
+        cardPage.items.map((session) => [
+          session.id,
+          OpencodeXSessionState.deriveUiState({
+            session,
+            status: statusList.get(session.id),
+            permissions: permissionsBySession.get(session.id) ?? [],
+            questions: questionsBySession.get(session.id) ?? [],
+            state: state[session.id],
+          }),
+        ]),
+      ),
+    }
+  })
+
   const snapshot = Effect.fn("OpencodeXState.snapshot")(function* () {
     return yield* events.barrier(
       Effect.gen(function* () {
         const scope = yield* log.scope()
-        const [sessionList, globalSessions, statusList, permissionList, questionList, operations] = yield* Effect.all(
+        const [projectList, viewList, statusList, permissionList, questionList, operations, unseenReviewSessionIDs] = yield* Effect.all(
           [
-            sessions.list({ scope: "project" }),
-            sessions.listGlobal({ limit: 5_000 }),
+            projects.listCatalog(),
+            views.listCatalog(),
             statuses.list(),
             permissions.list(),
             questions.list(),
             readOperations(),
+            sessionCards.unseenReviewIDs(),
           ],
           { concurrency: "unbounded" },
         )
-        const [projectList, viewList] = yield* Effect.all(
-          [
-            projects.list({ sessions: globalSessions.filter((session) => !session.parentID) }),
-            views.list({ sessions: globalSessions }),
-          ],
-          { concurrency: "unbounded" },
-        )
-        const state = yield* sessionState.list(sessionList.map((session) => session.id))
-        const permissionsBySession = groupBySession(permissionList)
-        const questionsBySession = groupBySession(questionList)
+        const cardPage = yield* sessionCards
+          .initial(
+            [
+              ...permissionList.map((item) => item.sessionID),
+              ...questionList.map((item) => item.sessionID),
+              ...statusList.keys(),
+              ...unseenReviewSessionIDs,
+              ...operations.jobs.flatMap((job) =>
+                job.sessionID && (job.status === "queued" || job.status === "claimed" || job.status === "running")
+                  ? [job.sessionID]
+                  : [],
+              ),
+              ...viewList.flatMap((view) => (view.focusedSessionID ? [view.focusedSessionID] : [])),
+            ].filter((sessionID, index, all) => all.indexOf(sessionID) === index),
+          )
+          .pipe(Effect.flatMap((page) => withUiState(page, statusList, permissionList, questionList)))
         const catalog = {
           projects: projectList,
-          sessions: sessionList,
+          sessionCards: cardPage,
           views: viewList,
           sessionStatus: Object.fromEntries(statusList),
           permissions: permissionList,
           questions: questionList,
-          sessionUiState: Object.fromEntries(
-            sessionList.map((session) => [
-              session.id,
-              OpencodeXSessionState.deriveUiState({
-                session,
-                status: statusList.get(session.id),
-                permissions: permissionsBySession.get(session.id) ?? [],
-                questions: questionsBySession.get(session.id) ?? [],
-                state: state[session.id],
-              }),
-            ]),
-          ),
+          sessionUiState: cardPage.sessionUiState,
         }
         const revisions = yield* log.revisionVector(scope)
         const catalogDigest = revision(revisions.catalog)
@@ -117,6 +148,22 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
           digest: operationsRevision,
           payload,
         }
+      }),
+    )
+  })
+
+  const cards = Effect.fn("OpencodeXState.sessionCards")(function* (input?: {
+    cursor?: string
+    limit?: number
+    sessionIDs?: readonly SessionID[]
+  }) {
+    return yield* events.barrier(
+      Effect.gen(function* () {
+        const [cardPage, statusList, permissionList, questionList] = yield* Effect.all(
+          [sessionCards.page(input), statuses.list(), permissions.list(), questions.list()],
+          { concurrency: "unbounded" },
+        )
+        return yield* withUiState(cardPage, statusList, permissionList, questionList)
       }),
     )
   })
@@ -169,5 +216,5 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
     )
   })
 
-  return { snapshot, operations, session }
+  return { snapshot, operations, sessionCards: cards, session }
 })

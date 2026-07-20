@@ -34,6 +34,47 @@
   }
 }
 
+@media (max-width:980px) {
+  .session-open-empty {
+    align-content: start;
+    gap: 16px;
+    overflow-y: auto;
+    padding: 20px 16px;
+  }
+
+  .session-open-empty-intro {
+    grid-template-columns: auto minmax(0,1fr);
+    place-items: center start;
+    gap: 12px;
+    text-align: left;
+  }
+
+  .session-open-empty-mark {
+    width: 64px;
+    height: 52px;
+  }
+
+  .session-open-empty-intro strong {
+    font-size: 18px;
+  }
+
+  .session-open-empty-intro span {
+    margin-top: 4px;
+  }
+
+  .session-open-empty-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .session-open-empty-actions button,
+  .session-open-empty-actions button[data-empty-tone=git] {
+    grid-column: auto;
+    grid-template-columns: 44px minmax(0,1fr);
+    min-height: 88px;
+    padding: 12px;
+  }
+}
+
 @media (max-width:860px) {
   .session-header {
     display: grid;

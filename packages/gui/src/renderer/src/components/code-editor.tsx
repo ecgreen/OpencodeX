@@ -1,13 +1,32 @@
-import { HighlightStyle, syntaxHighlighting, syntaxTree } from "@codemirror/language"
-import { Compartment, EditorState, type Extension } from "@codemirror/state"
-import { Decoration, EditorView, keymap } from "@codemirror/view"
-import { lintGutter, linter, type Diagnostic } from "@codemirror/lint"
-import { tags } from "@lezer/highlight"
+import { syntaxHighlighting } from "@codemirror/language"
+import { startCompletion } from "@codemirror/autocomplete"
+import { Compartment, EditorState, Prec } from "@codemirror/state"
+import { SearchQuery, findNext, findPrevious, search, setSearchQuery } from "@codemirror/search"
+import { EditorView, keymap } from "@codemirror/view"
+import { lintGutter } from "@codemirror/lint"
 import { basicSetup } from "codemirror"
-import { createEffect, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import type { WorkbenchDiagnostic } from "../lib/store"
-import { workbenchChangedLineNumbers, workbenchLanguageID } from "../lib/workbench"
+import { createCodeEditorCompletionExtension, type CodeEditorCompletionLoad } from "./code-editor-completion"
 import { loadCodeEditorLanguage } from "./code-editor-language"
+import { CodeEditorFind } from "./code-editor-find"
+import { createCodeEditorHoverExtension, type CodeEditorHover } from "./code-editor-hover"
+import {
+  codeEditorHighlightStyle,
+  diagnosticExtensions,
+  editorOffset,
+  modifiedLineDecorations,
+  selectedEditorText,
+} from "./code-editor-extensions"
+
+export type CodeEditorNavigation = {
+  path: string
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+  token: number
+}
 
 export type CodeEditorProps = {
   path: string
@@ -16,7 +35,12 @@ export type CodeEditorProps = {
   onChange: (value: string) => void
   onSave: () => void
   onSelectionChange?: (value: string) => void
+  onDefinition?: (position: { line: number; column: number }) => void
+  onHover?: (position: { line: number; column: number }, signal?: AbortSignal) => Promise<CodeEditorHover | undefined>
+  onCompletion?: CodeEditorCompletionLoad
   diagnostics?: readonly WorkbenchDiagnostic[]
+  navigation?: CodeEditorNavigation
+  readOnly?: boolean
 }
 
 export function CodeEditor(props: CodeEditorProps) {
@@ -24,9 +48,18 @@ export function CodeEditor(props: CodeEditorProps) {
   let view: EditorView | undefined
   let languageLoad = 0
   let requestedLanguagePath = ""
+  let findInput: HTMLInputElement | undefined
+  let revealedNavigation = 0
+  const [finderOpen, setFinderOpen] = createSignal(false)
+  const [query, setQuery] = createSignal("")
+  const [matchCount, setMatchCount] = createSignal(0)
   const language = new Compartment()
   const modified = new Compartment()
   const diagnostics = new Compartment()
+  const access = new Compartment()
+  const completion = new Compartment()
+  const hover = createCodeEditorHoverExtension((position, signal) => props.onHover?.(position, signal))
+  const lspCompletion = createCodeEditorCompletionExtension((position, context, signal) => props.onCompletion?.(position, context, signal))
 
   onMount(() => {
     if (!host) return
@@ -38,21 +71,55 @@ export function CodeEditor(props: CodeEditorProps) {
           basicSetup,
           language.of([]),
           modified.of(modifiedLineDecorations(props.original)),
-          diagnostics.of(diagnosticLineDecorations(props.diagnostics ?? [])),
+          diagnostics.of(diagnosticExtensions(props.path, props.diagnostics ?? [])),
+          access.of([EditorState.readOnly.of(props.readOnly === true), EditorView.editable.of(props.readOnly !== true)]),
+          completion.of(props.readOnly ? [] : lspCompletion.extension),
           lintGutter(),
-          linter((view) => syntaxErrorDiagnostics(view, props.path), { delay: 250 }),
-          syntaxHighlighting(vsCodeDarkHighlightStyle),
-          keymap.of([{
+          search(),
+          syntaxHighlighting(codeEditorHighlightStyle),
+          Prec.highest(keymap.of([{
             key: "Mod-s",
             run: () => {
+              if (props.readOnly) return true
               props.onSave()
               return true
             },
-          }]),
+          }, {
+            key: "Ctrl-Space",
+            run: (editor) => props.readOnly ? false : startCompletion(editor),
+          }, {
+            key: "Mod-f",
+            run: openFinder,
+          }, {
+            key: "F3",
+            run: nextMatch,
+          }, {
+            key: "Shift-F3",
+            run: previousMatch,
+          }, {
+            key: "Mod-g",
+            run: nextMatch,
+          }, {
+            key: "Shift-Mod-g",
+            run: previousMatch,
+          }])),
+          EditorView.domEventHandlers({
+            click(event, editor) {
+              if (event.button !== 0 || (!event.ctrlKey && !event.metaKey) || event.altKey || event.shiftKey) return false
+              const offset = editor.posAtCoords({ x: event.clientX, y: event.clientY })
+              if (offset === null) return false
+              const line = editor.state.doc.lineAt(offset)
+              props.onDefinition?.({ line: line.number, column: offset - line.from + 1 })
+              event.preventDefault()
+              return true
+            },
+          }),
+          hover.extension,
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) props.onChange(update.state.doc.toString())
-            if (update.selectionSet || update.docChanged) props.onSelectionChange?.(selectedText(update.state))
+            if (update.docChanged && !props.readOnly) props.onChange(update.state.doc.toString())
+            if (update.selectionSet || update.docChanged) props.onSelectionChange?.(selectedEditorText(update.state))
+            if (update.docChanged && finderOpen()) updateMatchCount()
           }),
           EditorView.theme({
             "&": {
@@ -139,6 +206,39 @@ export function CodeEditor(props: CodeEditorProps) {
             ".cm-tooltip-lint .cm-diagnostic-error": {
               borderLeft: "3px solid #fb7185",
             },
+            ".cm-tooltip.cm-tooltip-hover": {
+              maxWidth: "min(560px, calc(100vw - 32px))",
+              maxHeight: "320px",
+              overflow: "auto",
+              border: "1px solid rgba(255, 255, 255, 0.16)",
+              borderRadius: "7px",
+              backgroundColor: "#121417",
+              color: "#e5e7eb",
+              boxShadow: "0 18px 48px rgba(0, 0, 0, 0.45)",
+            },
+            ".code-editor-hover": {
+              minWidth: "220px",
+              fontFamily: "\"Cascadia Code\", \"JetBrains Mono\", \"SFMono-Regular\", Consolas, monospace",
+              fontSize: "12px",
+              lineHeight: "1.5",
+            },
+            ".code-editor-hover-section": {
+              margin: "0",
+              padding: "8px 10px",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            },
+            ".code-editor-hover-section + .code-editor-hover-section": {
+              borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+            },
+            ".code-editor-hover-code": {
+              backgroundColor: "rgba(255, 255, 255, 0.04)",
+              color: "#dcdcaa",
+            },
+            ".code-editor-hover-definition": {
+              color: "#9cdcfe",
+              fontSize: "11px",
+            },
             "&.cm-focused": {
               outline: "none",
             },
@@ -159,20 +259,46 @@ export function CodeEditor(props: CodeEditorProps) {
   })
 
   createEffect(() => {
-    void configureLanguage(props.path)
+    const path = props.path
+    void configureLanguage(path)
+    closeFinder(false)
   })
 
   createEffect(() => {
     view?.dispatch({
       effects: [
         modified.reconfigure(modifiedLineDecorations(props.original)),
-        diagnostics.reconfigure(diagnosticLineDecorations(props.diagnostics ?? [])),
+        diagnostics.reconfigure(diagnosticExtensions(props.path, props.diagnostics ?? [])),
       ],
     })
   })
 
+  createEffect(() => {
+    view?.dispatch({
+      effects: [
+        access.reconfigure([EditorState.readOnly.of(props.readOnly === true), EditorView.editable.of(props.readOnly !== true)]),
+        completion.reconfigure(props.readOnly ? [] : lspCompletion.extension),
+      ],
+    })
+  })
+
+  createEffect(() => {
+    const navigation = props.navigation
+    if (!view || !navigation || navigation.path !== props.path || navigation.token === revealedNavigation) return
+    revealedNavigation = navigation.token
+    const anchor = editorOffset(view.state, navigation.line, navigation.column)
+    const head = editorOffset(view.state, navigation.endLine, navigation.endColumn)
+    view.dispatch({
+      selection: { anchor, head },
+      effects: EditorView.scrollIntoView(anchor, { y: "center" }),
+    })
+    view.focus()
+  })
+
   onCleanup(() => {
     languageLoad += 1
+    hover.dispose()
+    lspCompletion.dispose()
     view?.destroy()
   })
 
@@ -186,88 +312,67 @@ export function CodeEditor(props: CodeEditorProps) {
     view.dispatch({ effects: language.reconfigure(extension) })
   }
 
-  return <div class="workbench-codemirror" ref={(element) => { host = element }} />
-}
+  function openFinder() {
+    if (!view) return false
+    const selection = selectedEditorText(view.state)
+    if (selection && !selection.includes("\n")) updateQuery(selection)
+    setFinderOpen(true)
+    queueMicrotask(() => {
+      findInput?.focus()
+      findInput?.select()
+    })
+    return true
+  }
 
-const vsCodeDarkHighlightStyle = HighlightStyle.define([
-  { tag: tags.comment, color: "#6a9955" },
-  { tag: [tags.string, tags.special(tags.string)], color: "#ce9178" },
-  { tag: [tags.number, tags.bool, tags.null], color: "#b5cea8" },
-  { tag: [tags.keyword, tags.operatorKeyword], color: "#569cd6" },
-  { tag: [tags.controlKeyword, tags.moduleKeyword], color: "#c586c0" },
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.definition(tags.function(tags.variableName))], color: "#dcdcaa" },
-  { tag: [tags.variableName, tags.propertyName], color: "#9cdcfe" },
-  { tag: [tags.typeName, tags.className, tags.namespace], color: "#4ec9b0" },
-  { tag: [tags.attributeName, tags.labelName], color: "#9cdcfe" },
-  { tag: tags.regexp, color: "#d16969" },
-  { tag: tags.escape, color: "#d7ba7d" },
-  { tag: tags.heading, color: "#569cd6", fontWeight: "600" },
-  { tag: tags.link, color: "#569cd6", textDecoration: "underline" },
-  { tag: tags.invalid, color: "#f44747" },
-])
+  function closeFinder(focus = true) {
+    setFinderOpen(false)
+    setQuery("")
+    setMatchCount(0)
+    view?.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "", literal: true })) })
+    if (focus) view?.focus()
+  }
 
-function selectedText(state: EditorState) {
-  return state.selection.ranges.map((range) => state.sliceDoc(range.from, range.to)).join("\n")
-}
+  function updateQuery(value: string) {
+    setQuery(value)
+    view?.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: value, literal: true })) })
+    updateMatchCount()
+  }
 
-function modifiedLineDecorations(original: string): Extension {
-  return EditorView.decorations.compute(["doc"], (state) => {
-    const changed = workbenchChangedLineNumbers({ original, current: state.doc.toString() })
-    const decorations = Array.from(changed).flatMap((lineNumber) =>
-      lineNumber > state.doc.lines ? [] : [Decoration.line({ class: "cm-lineModified" }).range(state.doc.line(lineNumber).from)],
-    )
-    return Decoration.set(decorations)
-  })
-}
+  function updateMatchCount() {
+    if (!view || !query()) {
+      setMatchCount(0)
+      return
+    }
+    const cursor = new SearchQuery({ search: query(), literal: true }).getCursor(view.state)
+    setMatchCount(Array.from({ [Symbol.iterator]: () => cursor }).length)
+  }
 
-function diagnosticLineDecorations(diagnostics: readonly WorkbenchDiagnostic[]): Extension {
-  return EditorView.decorations.compute(["doc"], (state) =>
-    Decoration.set(diagnostics.flatMap((item) => {
-      if (!item.line || item.line > state.doc.lines) return []
-      return [
-        Decoration.line({
-          class: item.severity === "warning" ? "cm-lineDiagnosticWarning" : "cm-lineDiagnosticError",
-        }).range(state.doc.line(item.line).from),
-      ]
-    })),
+  function nextMatch() {
+    if (!view) return false
+    if (!finderOpen()) return openFinder()
+    return findNext(view)
+  }
+
+  function previousMatch() {
+    if (!view) return false
+    if (!finderOpen()) return openFinder()
+    return findPrevious(view)
+  }
+
+  return (
+    <div class="workbench-code-editor">
+      <div class="workbench-codemirror" ref={(element) => { host = element }} />
+      <Show when={finderOpen()}>
+        <CodeEditorFind
+          query={query()}
+          count={matchCount()}
+          setInput={(element) => { findInput = element }}
+          setQuery={updateQuery}
+          previous={() => { previousMatch() }}
+          next={() => { nextMatch() }}
+          close={closeFinder}
+        />
+      </Show>
+    </div>
   )
-}
-
-function syntaxErrorDiagnostics(view: EditorView, path: string): Diagnostic[] {
-  const diagnostics: Diagnostic[] = []
-  syntaxTree(view.state).iterate({
-    enter(node) {
-      if (!node.type.isError) return
-      if (syntaxErrorInsideComment(view.state, path, node.from)) return
-      diagnostics.push({
-        from: node.from,
-        to: Math.max(node.to, node.from + 1),
-        severity: "error",
-        message: "Syntax error. Check for a missing delimiter, quote, or closing bracket near this line.",
-      })
-    },
-  })
-  return diagnostics.slice(0, 100)
-}
-
-function syntaxErrorInsideComment(state: EditorState, path: string, position: number) {
-  const line = state.doc.lineAt(position)
-  const text = line.text.trimStart()
-  const language = workbenchLanguageID(path)
-  if (lineCommentPrefixes(language).some((prefix) => text.startsWith(prefix))) return true
-  if (!blockCommentLanguages().has(language)) return false
-  const before = state.sliceDoc(0, position)
-  return before.lastIndexOf("/*") > before.lastIndexOf("*/")
-}
-
-function lineCommentPrefixes(language: string) {
-  if (["javascript", "rust", "go", "c", "cpp", "java", "csharp", "kotlin", "scala", "dart"].includes(language)) return ["//"]
-  if (["python", "shell", "powershell", "ruby", "yaml", "toml", "properties"].includes(language)) return ["#"]
-  if (language === "sql") return ["--"]
-  if (language === "html") return ["<!--"]
-  return []
-}
-
-function blockCommentLanguages() {
-  return new Set(["javascript", "css", "rust", "go", "c", "cpp", "java", "csharp", "kotlin", "scala", "dart", "sql"])
 }

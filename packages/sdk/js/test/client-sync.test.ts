@@ -1,19 +1,25 @@
 import { describe, expect, test } from "bun:test"
 import type {
+  Event,
   Message,
   OpencodeXOperationsSnapshot,
+  OpencodeXSessionCardPage,
   OpencodeXSessionSnapshot,
   OpencodeXStateEvent,
   OpencodeXStateSnapshot,
+  OpencodeXStateStreamFrame,
   Part,
   Session,
 } from "../src/v2/client"
 import {
   applyClientSessionSnapshot,
+  applyClientSessionCardPage,
   applyClientStateEvent,
   applyClientStateSnapshot,
   createClientStateSync,
+  selectClientKnownSessionIDs,
   selectClientOperationsSnapshot,
+  selectClientSessionChildren,
   selectClientStateSyncSnapshot,
   selectClientSessionMessages,
   type ClientCapabilitiesSnapshot,
@@ -21,7 +27,7 @@ import {
 } from "../src/v2/client-sync"
 
 describe("client state sync", () => {
-  test("preserves untouched entities and records session tombstones", () => {
+  test("preserves cards omitted by root refresh and prunes only explicit missing IDs", () => {
     const controller = createClientStateSync({ transport: unusedTransport() })
     const first = applyClientStateSnapshot(
       controller.getState(),
@@ -36,7 +42,174 @@ describe("client state sync", () => {
     expect(unchanged).toBe(first)
     expect(changed.sessions.records["session-2"]).not.toBe(first.sessions.records["session-2"])
     expect(changed.sessions.records["session-2"]?.title).toBe("Renamed")
-    expect(changed.tombstones.sessions["session-1"]).toBe(true)
+    expect(changed.sessions.records["session-1"]).toBe(first.sessions.records["session-1"])
+    expect(changed.tombstones.sessions["session-1"]).toBeUndefined()
+
+    const missing = applyClientSessionCardPage(changed, {
+      items: [],
+      hasMore: false,
+      missing: ["session-1"],
+      sessionUiState: {},
+    })
+    expect(missing.sessions.records["session-1"]).toBeUndefined()
+    expect(missing.tombstones.sessions["session-1"]).toBe(true)
+  })
+
+  test("resets root pagination while retaining normalized cards and omitted UI state", () => {
+    const controller = createClientStateSync({ transport: unusedTransport() })
+    const root = snapshot("cursor-1", "digest-1", [session("session-1", "First")])
+    root.payloads.catalog.sessionCards = {
+      items: [session("session-1", "First")],
+      hasMore: true,
+      next: "root-page-2",
+      missing: [],
+      sessionUiState: { "session-1": sessionUiState("session-1", "needs_review") },
+    }
+    const first = applyClientStateSnapshot(controller.getState(), root)
+    const paged = applyClientSessionCardPage(
+      first,
+      {
+        items: [session("session-2", "Second")],
+        hasMore: true,
+        next: "root-page-3",
+        missing: [],
+        sessionUiState: { "session-2": sessionUiState("session-2", "in_progress") },
+      },
+      { pagination: true },
+    )
+    const refresh = snapshot("cursor-2", "digest-2", [session("session-1", "Renamed")])
+    refresh.payloads.catalog.sessionCards = {
+      items: [session("session-1", "Renamed")],
+      hasMore: true,
+      next: "new-root-page-2",
+      missing: [],
+      sessionUiState: { "session-1": sessionUiState("session-1", "idle") },
+    }
+    const refreshed = applyClientStateSnapshot(paged, refresh)
+
+    expect(refreshed.sessionCards).toMatchObject({ pages: 1, hasMore: true, next: "new-root-page-2" })
+    expect(refreshed.sessions.records["session-2"]).toBe(paged.sessions.records["session-2"])
+    expect(refreshed.sessionUiState["session-2"]).toBe(paged.sessionUiState["session-2"])
+    expect(refreshed.sessionUiState["session-1"]?.displayStatus).toBe("idle")
+
+    const removed = applyClientSessionCardPage(refreshed, {
+      items: [],
+      hasMore: false,
+      missing: ["session-2"],
+      sessionUiState: {},
+    })
+    expect(removed.sessionUiState["session-2"]).toBeUndefined()
+  })
+
+  test("loads card pages, resolves retained IDs, and preserves canonical references", async () => {
+    const root = snapshot("cursor-1", "digest-1", [session("session-1", "First")])
+    root.payloads.catalog.sessionCards = {
+      items: [session("session-1", "First")],
+      hasMore: true,
+      next: "page-2",
+      missing: [],
+      sessionUiState: {},
+      sessionUiState: {},
+    }
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => root,
+      cards: async (input) => {
+        if (input.cursor === "blocked")
+          await new Promise<void>((_resolve, reject) =>
+            input.signal.addEventListener("abort", () => reject(input.signal.reason), { once: true }),
+          )
+        if (input.sessionIDs)
+          return {
+            items: input.sessionIDs.includes("old-session") ? [session("old-session", "Old")] : [],
+            hasMore: false,
+            missing: input.sessionIDs.filter((id) => id !== "old-session"),
+            sessionUiState: Object.fromEntries(
+              input.sessionIDs
+                .filter((id) => id === "old-session")
+                .map((id) => [id, sessionUiState(id, "needs_review")]),
+            ),
+          }
+        expect(input.cursor).toBe("page-2")
+        return {
+          items: [session("session-2", "Second")],
+          hasMore: false,
+          missing: [],
+          sessionUiState: { "session-2": sessionUiState("session-2", "in_progress") },
+        }
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "detail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const first = controller.getState().sessions.records["session-1"]
+
+    await controller.loadSessionCards()
+    expect(controller.getState().sessions.records["session-1"]).toBe(first)
+    expect(controller.getState().sessions.ids).toEqual(["session-2", "session-1"])
+    expect(controller.getState().sessionCards).toMatchObject({ hasMore: false, pages: 2, loading: false })
+
+    await controller.ensureSessionCards(["old-session"])
+    expect(controller.getState().sessions.records["old-session"]?.title).toBe("Old")
+    expect(controller.getState().sessionUiState["old-session"]?.displayStatus).toBe("needs_review")
+    await controller.ensureSessionCards(["missing-session"])
+    expect(controller.getState().tombstones.sessions["missing-session"]).toBe(true)
+    const abort = new AbortController()
+    const blocked = controller.loadSessionCards({ cursor: "blocked", signal: abort.signal })
+    abort.abort(new Error("cancel cards"))
+    await expect(blocked).rejects.toThrow("cancel cards")
+    expect(controller.getState().sessionCards.loading).toBe(false)
+    expect(controller.getMetrics()).toMatchObject({ sessionCardPages: 2, sessionCardResolutions: 2 })
+    controller.stop()
+  })
+
+  test("continues paging from a refreshed root boundary", async () => {
+    let rootLoads = 0
+    const cursors: Array<string | undefined> = []
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        rootLoads += 1
+        const root = snapshot(`cursor-${rootLoads}`, "digest-1", [session("session-1", "First")])
+        root.payloads.catalog.sessionCards = {
+          items: [session("session-1", "First")],
+          hasMore: true,
+          next: rootLoads === 1 ? "old-page-2" : "new-page-2",
+          missing: [],
+          sessionUiState: {},
+        }
+        return root
+      },
+      cards: async (input) => {
+        cursors.push(input.cursor)
+        return {
+          items: [session(input.cursor === "old-page-2" ? "session-old" : "session-new", "Paged")],
+          hasMore: false,
+          missing: [],
+          sessionUiState: {},
+        }
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "detail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    await controller.loadSessionCards()
+    await controller.refresh()
+
+    expect(controller.getState().sessionCards).toMatchObject({ pages: 1, next: "new-page-2", hasMore: true })
+    expect(controller.getState().sessions.records["session-old"]).toBeDefined()
+    await controller.loadSessionCards()
+    expect(cursors).toEqual(["old-page-2", "new-page-2"])
+    expect(controller.getState().sessions.records["session-new"]).toBeDefined()
+    controller.stop()
   })
 
   test("detects aggregate gaps and applies duplicate events once", () => {
@@ -400,7 +573,7 @@ describe("client state sync", () => {
     }
     const controller = createClientStateSync({ transport })
     await controller.start()
-    const loading = controller.hydrateSession("session-1")
+    const loading = controller.refreshSessionTail("session-1")
 
     expect(controller.getState().sessionLoads["session-1"]).toEqual({
       initial: "loading",
@@ -415,13 +588,13 @@ describe("client state sync", () => {
       error: undefined,
     })
 
-    await controller.hydrateSession("session-1", { before: "message-2" })
+    await controller.loadOlderSessionPage("session-1", { before: "message-2" })
     expect(controller.getState().sessionLoads["session-1"]).toEqual({
       initial: "ready",
       older: "idle",
       error: undefined,
     })
-    await expect(controller.hydrateSession("session-1", { before: "message-1" })).rejects.toThrow(
+    await expect(controller.loadOlderSessionPage("session-1", { before: "message-1" })).rejects.toThrow(
       "older page failed",
     )
     expect(controller.getState().sessionLoads["session-1"]).toEqual({
@@ -430,6 +603,1197 @@ describe("client state sync", () => {
       error: "older page failed",
     })
     controller.stop()
+  })
+
+  test("runs tail and older-page requests concurrently without crossing lanes", async () => {
+    const requests = new Array<{
+      input: Parameters<ClientStateSyncTransport["session"]>[0]
+      resolve: (snapshot: OpencodeXSessionSnapshot) => void
+    }>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: (input) =>
+        new Promise<OpencodeXSessionSnapshot>((resolve) => {
+          requests.push({ input, resolve })
+        }),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    const tail = controller.refreshSessionTail("session-1", { limit: 100 })
+    const older = controller.loadOlderSessionPage("session-1", { before: "message-2", limit: 50 })
+    expect(requests).toHaveLength(2)
+    expect(requests.map((request) => request.input.signal.aborted)).toEqual([false, false])
+
+    const olderSnapshot = singleMessageSessionSnapshot("session-1", "older", "older", "message-1", "older")
+    requests[1].resolve(olderSnapshot)
+    expect(await older).toBe(olderSnapshot)
+    expect(controller.getState().sessionLoads["session-1"]).toMatchObject({
+      initial: "loading",
+      older: "idle",
+    })
+
+    const tailSnapshot = singleMessageSessionSnapshot("session-1", "tail", "tail", "message-2", "tail")
+    requests[0].resolve(tailSnapshot)
+    expect(await tail).toBe(tailSnapshot)
+    expect(selectClientSessionMessages(controller.getState(), "session-1").map((item) => item.info.id)).toEqual([
+      "message-1",
+      "message-2",
+    ])
+    expect(controller.getState().sessionLoads["session-1"]).toEqual({
+      initial: "ready",
+      older: "idle",
+      error: undefined,
+    })
+    controller.stop()
+  })
+
+  test("aborts matching requests and rejects transport results that arrive late", async () => {
+    const requests = new Array<{
+      input: Parameters<ClientStateSyncTransport["session"]>[0]
+      resolve: (snapshot: OpencodeXSessionSnapshot) => void
+    }>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: (input) =>
+        new Promise<OpencodeXSessionSnapshot>((resolve) => {
+          requests.push({ input, resolve })
+        }),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    const stale = controller.refreshSessionTail("session-1")
+    const staleResult = stale.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    const current = controller.refreshSessionTail("session-1")
+    expect(requests[0].input.signal.aborted).toBe(true)
+
+    requests[1].resolve(singleMessageSessionSnapshot("session-1", "current", "current", "message-2", "current"))
+    await current
+    requests[0].resolve(singleMessageSessionSnapshot("session-1", "stale", "stale", "message-2", "stale"))
+    expect(await staleResult).toMatchObject({ name: "AbortError" })
+
+    expect(selectClientSessionMessages(controller.getState(), "session-1")[0]?.parts[0]).toMatchObject({
+      text: "current",
+    })
+    controller.stop()
+  })
+
+  test("honors caller abort signals without applying late session results", async () => {
+    const pending = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    let requestSignal: AbortSignal | undefined
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: (input) => {
+        requestSignal = input.signal
+        return pending.promise
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const abort = new AbortController()
+    const loading = controller.refreshSessionTail("session-1", { signal: abort.signal }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    abort.abort()
+    expect(requestSignal?.aborted).toBe(true)
+    pending.resolve(singleMessageSessionSnapshot("session-1", "late", "late", "message-2", "late"))
+
+    expect(await loading).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessionDetails["session-1"]).toBeUndefined()
+    expect(controller.getState().sessionLoads["session-1"]).toMatchObject({ initial: "idle", older: "idle" })
+    controller.stop()
+  })
+
+  test("fetches pages without mutating state, notifying, or clearing tail dirtiness", async () => {
+    const releaseEvent = Promise.withResolvers<void>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async (input) =>
+        input.before
+          ? singleMessageSessionSnapshot("session-1", "fetch", "fetch", "message-1", "fetched")
+          : singleMessageSessionSnapshot("session-1", "tail", "tail", "message-2", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await releaseEvent.promise
+          yield { type: "event", event: event("cursor-2", 0) }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport, batchMs: 0, sessionRefreshDelayMs: 10_000 })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+    releaseEvent.resolve()
+    await waitFor(() => Boolean(controller.getState().dirtySessions["session-1"]))
+
+    const before = controller.getState()
+    let notifications = 0
+    const unsubscribe = controller.subscribe(() => (notifications += 1))
+    const page = await controller.fetchSessionPage("session-1", { before: "message-2", limit: 50 })
+
+    expect(page.digest).toBe("fetch")
+    expect(controller.getState()).toBe(before)
+    expect(controller.getState().dirtySessions["session-1"]).toBe(true)
+    expect(notifications).toBe(0)
+    unsubscribe()
+    controller.stop()
+  })
+
+  test("keeps dirty tails through older pages and corrects with the persisted tail options", async () => {
+    const releaseEvent = Promise.withResolvers<void>()
+    const calls = new Array<Parameters<ClientStateSyncTransport["session"]>[0]>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async (input) => {
+        calls.push(input)
+        if (input.before)
+          return singleMessageSessionSnapshot("session-1", "older", "older", "message-1", "older")
+        return singleMessageSessionSnapshot(
+          "session-1",
+          `tail-${calls.length}`,
+          `tail-${calls.length}`,
+          "message-2",
+          `tail-${calls.length}`,
+        )
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await releaseEvent.promise
+          yield { type: "event", event: event("cursor-2", 0) }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport, batchMs: 0, sessionRefreshDelayMs: 20 })
+    await controller.start()
+    await controller.refreshSessionTail("session-1", { limit: 75 })
+    releaseEvent.resolve()
+    await waitFor(() => Boolean(controller.getState().dirtySessions["session-1"]))
+
+    await controller.loadOlderSessionPage("session-1", { before: "message-2", limit: 25 })
+    expect(controller.getState().dirtySessions["session-1"]).toBe(true)
+    await waitFor(() => calls.length === 3 && !controller.getState().dirtySessions["session-1"])
+
+    expect(calls.map((call) => call.before)).toEqual([undefined, "message-2", undefined])
+    expect(calls[2].limit).toBe(75)
+    controller.stop()
+  })
+
+  test("replays message, part, and delta events received before and during initial hydration", async () => {
+    const pending = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async () => pending.promise,
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    controller.applyEvents([
+      {
+        id: "before-message",
+        type: "message.updated",
+        properties: { sessionID: "session-1", info: message("message-3", 3) },
+      },
+      {
+        id: "before-part",
+        type: "message.part.updated",
+        properties: {
+          sessionID: "session-1",
+          time: 3,
+          part: part("message-3", "part-3", "before"),
+        },
+      },
+    ])
+    const hydration = controller.refreshSessionTail("session-1")
+    controller.applyEvents([
+      {
+        id: "during-message",
+        type: "message.updated",
+        properties: { sessionID: "session-1", info: message("message-4", 4) },
+      },
+      {
+        id: "during-delta",
+        type: "message.part.delta",
+        properties: {
+          sessionID: "session-1",
+          messageID: "message-4",
+          partID: "part-4",
+          field: "text",
+          delta: " live",
+        },
+      },
+      {
+        id: "during-part",
+        type: "message.part.updated",
+        properties: {
+          sessionID: "session-1",
+          time: 4,
+          part: part("message-4", "part-4", "during"),
+        },
+      },
+    ])
+    pending.resolve(sessionSnapshot("cursor-tail", "detail-tail", "snapshot"))
+    await hydration
+
+    const messages = selectClientSessionMessages(controller.getState(), "session-1")
+    expect(messages.find((item) => item.info.id === "message-3")?.parts[0]?.text).toBe("before")
+    expect(messages.find((item) => item.info.id === "message-4")?.parts[0]?.text).toBe("during live")
+    expect(controller.getMetrics().bufferedSessionEvents).toBe(0)
+    controller.stop()
+  })
+
+  test("preserves post-request live updates and schedules a trailing tail correction", async () => {
+    const stale = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    const trailing = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    let loads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async () => {
+        loads += 1
+        if (loads === 1) return sessionSnapshot("initial", "initial", "base")
+        if (loads === 2) return stale.promise
+        return trailing.promise
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport, sessionRefreshDelayMs: 0 })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+    const refreshing = controller.refreshSessionTail("session-1")
+    controller.applyEvent({
+      id: "tail-race-live-delta",
+      type: "message.part.delta",
+      properties: {
+        sessionID: "session-1",
+        messageID: "message-2",
+        partID: "part-2",
+        field: "text",
+        delta: " live",
+      },
+    })
+    stale.resolve(sessionSnapshot("stale", "stale", "stale"))
+    await refreshing
+    await waitFor(() => loads === 3)
+
+    expect(selectClientSessionMessages(controller.getState(), "session-1")[1]?.parts[0]?.text).toBe("base live")
+    trailing.resolve(sessionSnapshot("corrected", "corrected", "corrected"))
+    await waitFor(
+      () => selectClientSessionMessages(controller.getState(), "session-1")[1]?.parts[0]?.text === "corrected",
+    )
+    controller.stop()
+  })
+
+  test("coalesces card pagination while exact resolutions retain separate loading ownership", async () => {
+    const root = snapshot("cursor-1", "digest-1", [session("session-1", "First")])
+    root.payloads.catalog.sessionCards = {
+      items: [session("session-1", "First")],
+      hasMore: true,
+      next: "page-2",
+      missing: [],
+      sessionUiState: {},
+    }
+    const requests = new Array<{
+      input: Parameters<NonNullable<ClientStateSyncTransport["cards"]>>[0]
+      resolve: (page: Awaited<ReturnType<NonNullable<ClientStateSyncTransport["cards"]>>>) => void
+    }>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => root,
+      cards: (input) =>
+        new Promise((resolve) => {
+          requests.push({ input, resolve })
+        }),
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const first = controller.loadSessionCards()
+    const second = controller.loadSessionCards()
+    const exact = controller.ensureSessionCards(["session-exact"])
+
+    expect(first).toBe(second)
+    expect(requests).toHaveLength(2)
+    expect(requests[0].input.cursor).toBe("page-2")
+    expect(requests[1].input.sessionIDs).toEqual(["session-exact"])
+    requests[1].resolve({
+      items: [session("session-exact", "Exact")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: { "session-exact": sessionUiState("session-exact", "input_needed") },
+    })
+    await exact
+    expect(controller.getState().sessionCards.loading).toBe(true)
+    expect(controller.getState().sessionCards.next).toBe("page-2")
+
+    requests[0].resolve({
+      items: [session("session-2", "Second")],
+      hasMore: true,
+      next: "page-3",
+      missing: [],
+      sessionUiState: {},
+    })
+    await first
+    expect(controller.getState().sessionCards).toMatchObject({ loading: false, pages: 2, next: "page-3" })
+
+    const stalePage = controller.loadSessionCards()
+    expect(requests[2].input.cursor).toBe("page-3")
+    controller.applyEvent({
+      id: "delete-during-pagination",
+      type: "session.deleted",
+      properties: { sessionID: "session-2", info: session("session-2", "Deleted") },
+    })
+    requests[2].resolve({
+      items: [session("session-2", "Late pagination")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: { "session-2": sessionUiState("session-2", "needs_review") },
+    })
+    await stalePage
+    expect(controller.getState().sessions.records["session-2"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-2"]).toBe(true)
+    controller.stop()
+  })
+
+  test("ignores superseded exact-card items and missing results per session", async () => {
+    const requests = new Array<{
+      resolve: (page: OpencodeXSessionCardPage) => void
+    }>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", []),
+      cards: () =>
+        new Promise((resolve) => {
+          requests.push({ resolve })
+        }),
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const stale = controller.ensureSessionCards(["stale-item", "stale-missing"]).catch((cause) => cause)
+    const latest = controller.ensureSessionCards(["stale-item", "stale-missing"])
+
+    requests[1].resolve({
+      items: [session("stale-item", "Latest item"), session("stale-missing", "Recreated")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: {},
+    })
+    await latest
+    requests[0].resolve({
+      items: [session("stale-item", "Stale item")],
+      hasMore: false,
+      missing: ["stale-missing"],
+      sessionUiState: {},
+    })
+    expect(await stale).toMatchObject({ name: "AbortError" })
+
+    expect(controller.getState().sessions.records["stale-item"]?.title).toBe("Latest item")
+    expect(controller.getState().sessions.records["stale-missing"]?.title).toBe("Recreated")
+    expect(controller.getState().tombstones.sessions["stale-missing"]).toBeUndefined()
+    controller.stop()
+  })
+
+  test("keeps sync connected when a background card correction is superseded", async () => {
+    let snapshots = 0
+    const cards = new Array<ReturnType<typeof Promise.withResolvers<OpencodeXSessionCardPage>>>()
+    const frames = new Array<ReturnType<typeof Promise.withResolvers<OpencodeXStateStreamFrame>>>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () =>
+        snapshot(`cursor-${++snapshots}`, `digest-${snapshots}`, [session("session-1", `Root ${snapshots}`)]),
+      cards: () => {
+        const request = Promise.withResolvers<OpencodeXSessionCardPage>()
+        cards.push(request)
+        return request.promise
+      },
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async () =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          while (true) {
+            const frame = Promise.withResolvers<OpencodeXStateStreamFrame>()
+            frames.push(frame)
+            yield await frame.promise
+          }
+        })(),
+    }
+    const controller = createClientStateSync({ transport, batchMs: 0 })
+    await controller.start()
+
+    await waitFor(() => frames.length === 1)
+    frames[0].resolve({ type: "event", event: catalogEvent("cursor-2", 0, "session-1", "session.updated") })
+    await waitFor(() => cards.length === 1)
+    await waitFor(() => frames.length === 2)
+    frames[1].resolve({ type: "event", event: catalogEvent("cursor-3", 1, "session-1", "session.updated") })
+    await waitFor(() => cards.length === 2)
+
+    cards[0].resolve({
+      items: [session("session-1", "Stale correction")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: {},
+    })
+    await waitFor(() => controller.getMetrics().activeCardRequests === 1)
+    cards[1].resolve({
+      items: [session("session-1", "Latest correction")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: {},
+    })
+    await waitFor(() => controller.getMetrics().activeCardRequests === 0)
+
+    expect(controller.getState().lifecycle).toMatchObject({ status: "connected", data: "current" })
+    expect(controller.getState().error).toBeUndefined()
+    controller.stop()
+  })
+
+  test("does not let stale pagination tombstone a recreated session", async () => {
+    const root = snapshot("cursor-1", "digest-1", [
+      session("stale-item", "Original item"),
+      session("stale-missing", "Original missing"),
+    ])
+    root.payloads.catalog.sessionCards = {
+      items: [session("stale-item", "Original item"), session("stale-missing", "Original missing")],
+      hasMore: true,
+      next: "page-2",
+      missing: [],
+      sessionUiState: {},
+    }
+    const page = Promise.withResolvers<OpencodeXSessionCardPage>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => root,
+      cards: () => page.promise,
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const stale = controller.loadSessionCards()
+    Array.from(["stale-item", "stale-missing"]).forEach((sessionID) => {
+      controller.applyEvent({
+        id: `delete-${sessionID}`,
+        type: "session.deleted",
+        properties: { sessionID, info: session(sessionID, "Deleted") },
+      })
+      controller.applyEvent({
+        id: `recreate-${sessionID}`,
+        type: "session.created",
+        properties: { info: session(sessionID, `Recreated ${sessionID}`) },
+      })
+    })
+    page.resolve({
+      items: [session("stale-item", "Stale item")],
+      hasMore: false,
+      missing: ["stale-missing"],
+      sessionUiState: {},
+    })
+    await stale
+
+    expect(controller.getState().sessions.records["stale-item"]?.title).toBe("Recreated stale-item")
+    expect(controller.getState().sessions.records["stale-missing"]?.title).toBe("Recreated stale-missing")
+    expect(controller.getState().tombstones.sessions["stale-missing"]).toBeUndefined()
+    controller.stop()
+  })
+
+  test("supersedes an exact-card request started between deletion and recreation", async () => {
+    const card = Promise.withResolvers<OpencodeXSessionCardPage>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "Original")]),
+      cards: () => card.promise,
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    controller.applyEvent({
+      id: "delete-before-exact",
+      type: "session.deleted",
+      properties: { sessionID: "session-1", info: session("session-1", "Deleted") },
+    })
+    const stale = controller.ensureSessionCards(["session-1"]).catch((cause) => cause)
+    controller.applyEvent({
+      id: "recreate-after-exact",
+      type: "session.created",
+      properties: { info: session("session-1", "Recreated") },
+    })
+    card.resolve({ items: [], hasMore: false, missing: ["session-1"], sessionUiState: {} })
+
+    expect(await stale).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessions.records["session-1"]?.title).toBe("Recreated")
+    expect(controller.getState().tombstones.sessions["session-1"]).toBeUndefined()
+    controller.stop()
+  })
+
+  test("keeps a newer exact-card result ahead of an older root refresh", async () => {
+    const root = Promise.withResolvers<OpencodeXStateSnapshot>()
+    const card = Promise.withResolvers<OpencodeXSessionCardPage>()
+    let snapshots = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        snapshots += 1
+        if (snapshots === 1) return snapshot("cursor-1", "digest-1", [])
+        return root.promise
+      },
+      cards: () => card.promise,
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const staleRoot = controller.refresh()
+    const latest = controller.ensureSessionCards(["session-1"])
+    card.resolve({
+      items: [session("session-1", "Latest")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: {},
+    })
+    await latest
+    root.resolve(snapshot("cursor-2", "digest-2", [session("session-1", "Stale root")]))
+    await staleRoot
+
+    expect(controller.getState().sessions.records["session-1"]?.title).toBe("Latest")
+    controller.stop()
+  })
+
+  test("keeps a newer root missing result ahead of an older exact-card item", async () => {
+    const root = Promise.withResolvers<OpencodeXStateSnapshot>()
+    const card = Promise.withResolvers<OpencodeXSessionCardPage>()
+    let snapshots = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        snapshots += 1
+        if (snapshots === 1) return snapshot("cursor-1", "digest-1", [])
+        return root.promise
+      },
+      cards: () => card.promise,
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const staleCard = controller.ensureSessionCards(["session-1"]).catch((cause) => cause)
+    const latestRoot = controller.refresh()
+    const missing = snapshot("cursor-2", "digest-2", [])
+    missing.payloads.catalog.sessionCards.missing = ["session-1"]
+    root.resolve(missing)
+    await latestRoot
+    card.resolve({
+      items: [session("session-1", "Stale exact")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: {},
+    })
+
+    expect(await staleCard).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessions.records["session-1"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-1"]).toBe(true)
+    controller.stop()
+  })
+
+  test("keeps unaffected sessions from a partially released exact-card batch", async () => {
+    const request = Promise.withResolvers<OpencodeXSessionCardPage>()
+    let signal: AbortSignal | undefined
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", []),
+      cards: (input) => {
+        signal = input.signal
+        return request.promise
+      },
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const pending = controller.ensureSessionCards(["released", "retained"]).catch((cause) => cause)
+
+    controller.releaseSession("released")
+    expect(signal?.aborted).toBe(false)
+    request.resolve({
+      items: [session("released", "Released"), session("retained", "Retained")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: {},
+    })
+
+    expect(await pending).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessions.records.released).toBeUndefined()
+    expect(controller.getState().sessions.records.retained?.title).toBe("Retained")
+    controller.stop()
+  })
+
+  test("aborts an exact-card batch after every requested session is released", async () => {
+    let signal: AbortSignal | undefined
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", []),
+      cards: (input) => {
+        signal = input.signal
+        return new Promise((_resolve, reject) =>
+          input.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), {
+            once: true,
+          }),
+        )
+      },
+      session: async () => sessionSnapshot("tail", "tail", "tail"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const pending = controller.ensureSessionCards(["released-a", "released-b"]).catch((cause) => cause)
+
+    controller.releaseSession("released-a")
+    expect(signal?.aborted).toBe(false)
+    controller.releaseSession("released-b")
+
+    expect(await pending).toMatchObject({ name: "AbortError" })
+    expect(signal?.aborted).toBe(true)
+    expect(controller.getMetrics().activeCardRequests).toBe(0)
+    controller.stop()
+  })
+
+  test("rejects concurrent canonical older mutations and preserves overlapping live content", async () => {
+    const older = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    let loads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async (input) => {
+        loads += 1
+        if (!input.before) return sessionSnapshot("tail", "tail", "tail")
+        return older.promise
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+    const loading = controller.loadOlderSessionPage("session-1", { before: "message-1" })
+    await expect(controller.loadOlderSessionPage("session-1", { before: "message-0" })).rejects.toThrow(
+      "already active",
+    )
+    controller.applyEvent({
+      id: "older-race-live-delta",
+      type: "message.part.delta",
+      properties: {
+        sessionID: "session-1",
+        messageID: "message-1",
+        partID: "part-1",
+        field: "text",
+        delta: " live",
+      },
+    })
+    const page = sessionSnapshot("older", "older", "stale")
+    page.messages.items = [
+      { info: message("message-0", 0), parts: [part("message-0", "part-0", "older")] },
+      { info: message("message-1", 1), parts: [part("message-1", "part-1", "stale")] },
+    ]
+    page.messages.coverage = { firstMessageID: "message-0", lastMessageID: "message-1" }
+    older.resolve(page)
+    await loading
+
+    expect(loads).toBe(2)
+    expect(selectClientSessionMessages(controller.getState(), "session-1").map((item) => item.info.id)).toEqual([
+      "message-0",
+      "message-1",
+      "message-2",
+    ])
+    expect(selectClientSessionMessages(controller.getState(), "session-1")[1]?.parts[0]?.text).toBe("stable live")
+    controller.stop()
+  })
+
+  test("releases session resources and pending event buffers in isolation", async () => {
+    const pending = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    let pendingSignal: AbortSignal | undefined
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () =>
+        snapshot("cursor-1", "digest-1", [session("session-1", "First"), session("session-2", "Second")]),
+      session: async (input) => {
+        if (input.limit === 999) {
+          pendingSignal = input.signal
+          return pending.promise
+        }
+        return sessionSnapshot("tail", `tail-${input.sessionID}`, "stable", input.sessionID)
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    await Promise.all([controller.refreshSessionTail("session-1"), controller.refreshSessionTail("session-2")])
+    const session2Detail = controller.getState().sessionDetails["session-2"]
+
+    controller.applyEvent({
+      id: "pending-session-1",
+      type: "message.part.delta",
+      properties: {
+        sessionID: "session-1",
+        messageID: "message-2",
+        partID: "pending-part",
+        field: "text",
+        delta: " session-1",
+      },
+    })
+    controller.applyEvent({
+      id: "pending-session-2",
+      type: "message.part.delta",
+      properties: {
+        sessionID: "session-2",
+        messageID: "message-2",
+        partID: "pending-part",
+        field: "text",
+        delta: " session-2",
+      },
+    })
+    controller.applyEvent({
+      id: "removed-session-1",
+      type: "message.removed",
+      properties: { sessionID: "session-1", messageID: "removed-message-1" },
+    })
+    controller.applyEvent({
+      id: "removed-session-2",
+      type: "message.removed",
+      properties: { sessionID: "session-2", messageID: "removed-message-2" },
+    })
+    controller.applyEvent({
+      id: "removed-part-session-1",
+      type: "message.part.removed",
+      properties: { sessionID: "session-1", messageID: "message-2", partID: "removed-part-1" },
+    })
+    controller.applyEvent({
+      id: "removed-part-session-2",
+      type: "message.part.removed",
+      properties: { sessionID: "session-2", messageID: "message-2", partID: "removed-part-2" },
+    })
+
+    const late = controller.refreshSessionTail("session-1", { limit: 999 }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    controller.releaseSession("session-1")
+    expect(pendingSignal?.aborted).toBe(true)
+    expect(controller.getState().sessions.ids).toEqual(["session-2", "session-1"])
+    expect(controller.getState().sessionDetails["session-1"]).toBeUndefined()
+    expect(controller.getState().sessionLoads["session-1"]).toBeUndefined()
+    expect(controller.getState().sessionDetails["session-2"]).toBe(session2Detail)
+    expect(controller.getState().tombstones.messages["removed-message-1"]).toBeUndefined()
+    expect(controller.getState().tombstones.messages["removed-message-2"]).toBe(true)
+    expect(controller.getState().tombstones.messageSessions["removed-message-2"]).toBe("session-2")
+    expect(controller.getState().tombstones.parts["removed-part-1"]).toBeUndefined()
+    expect(controller.getState().tombstones.parts["removed-part-2"]).toBe(true)
+    expect(controller.getState().tombstones.partSessions["removed-part-2"]).toBe("session-2")
+    pending.resolve(sessionSnapshot("late", "late", "late", "session-1"))
+    expect(await late).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessionDetails["session-1"]).toBeUndefined()
+
+    controller.applyEvent({
+      id: "part-session-2",
+      type: "message.part.updated",
+      properties: {
+        sessionID: "session-2",
+        time: 2,
+        part: part("message-2", "pending-part", "base", "session-2"),
+      },
+    })
+    await controller.refreshSessionTail("session-1")
+    controller.applyEvent({
+      id: "part-session-1",
+      type: "message.part.updated",
+      properties: {
+        sessionID: "session-1",
+        time: 2,
+        part: part("message-2", "pending-part", "base", "session-1"),
+      },
+    })
+
+    expect(
+      selectClientSessionMessages(controller.getState(), "session-2")
+        .find((item) => item.info.id === "message-2")
+        ?.parts.find((item) => item.id === "pending-part")?.text,
+    ).toBe("base session-2")
+    expect(
+      selectClientSessionMessages(controller.getState(), "session-1")
+        .find((item) => item.info.id === "message-2")
+        ?.parts.find((item) => item.id === "pending-part")?.text,
+    ).toBe("base")
+    controller.stop()
+  })
+
+  test("keeps raw deletion authoritative over every pre-deletion session response and replay", async () => {
+    const releaseInvalidation = Promise.withResolvers<void>()
+    const sessionRequests = new Array<{
+      input: Parameters<ClientStateSyncTransport["session"]>[0]
+      resolve: (snapshot: OpencodeXSessionSnapshot) => void
+    }>()
+    const cardRequest = Promise.withResolvers<OpencodeXSessionCardPage>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      cards: async () => cardRequest.promise,
+      session: async (input) => {
+        if (input.limit === 50) return sessionSnapshot("initial", "initial", "initial")
+        return new Promise((resolve) => sessionRequests.push({ input, resolve }))
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await releaseInvalidation.promise
+          yield { type: "event", event: event("cursor-2", 0) }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({
+      transport,
+      batchMs: 0,
+      sessionRefreshDelayMs: 10_000,
+    })
+    await controller.start()
+    await controller.refreshSessionTail("session-1", { limit: 50 })
+    const tail = controller.refreshSessionTail("session-1", { limit: 999 }).catch((cause) => cause)
+    const older = controller
+      .loadOlderSessionPage("session-1", { before: "message-1", limit: 998 })
+      .catch((cause) => cause)
+    const fetched = controller
+      .fetchSessionPage("session-1", { before: "message-1", limit: 997 })
+      .catch((cause) => cause)
+    const exact = controller.ensureSessionCards(["missing-session"]).catch((cause) => cause)
+    releaseInvalidation.resolve()
+    await waitFor(() => controller.getMetrics().sessionRefreshTimers === 1)
+    controller.applyEvent({
+      id: "pending-before-delete",
+      type: "message.part.delta",
+      properties: {
+        sessionID: "session-1",
+        messageID: "message-2",
+        partID: "pending-before-delete",
+        field: "text",
+        delta: "pending",
+      },
+    })
+    const deleted: Event = {
+      id: "authoritative-delete",
+      type: "session.deleted",
+      properties: { sessionID: "session-1", info: session("session-1", "Deleted") },
+    }
+    controller.applyEvent({
+      id: "authoritative-exact-delete",
+      type: "session.deleted",
+      properties: { sessionID: "missing-session", info: session("missing-session", "Deleted exact") },
+    })
+    controller.applyEvent(deleted)
+
+    expect(sessionRequests).toHaveLength(3)
+    expect(sessionRequests.every((request) => request.input.signal.aborted)).toBe(true)
+    expect(controller.getState().sessions.records["session-1"]).toBeUndefined()
+    expect(controller.getState().sessionDetails["session-1"]).toBeUndefined()
+    expect(controller.getState().sessionLoads["session-1"]).toBeUndefined()
+    expect(controller.getState().dirtySessions["session-1"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-1"]).toBe(true)
+    await expect(controller.refreshSessionTail("session-1")).rejects.toMatchObject({ name: "AbortError" })
+    expect(controller.getMetrics()).toMatchObject({
+      activeSessionRequests: 0,
+      activeCardRequests: 0,
+      sessionRefreshTimers: 0,
+      sessionTailOptions: 0,
+      bufferedSessionEvents: 0,
+    })
+
+    sessionRequests.forEach((request) =>
+      request.resolve(sessionSnapshot("late", `late-${request.input.limit}`, "late")),
+    )
+    cardRequest.resolve({
+      items: [session("missing-session", "Late")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: { "missing-session": sessionUiState("missing-session", "needs_review") },
+    })
+    for (const result of await Promise.all([tail, older, fetched, exact])) expect(result).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessions.records["session-1"]).toBeUndefined()
+    expect(controller.getState().sessions.records["missing-session"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-1"]).toBe(true)
+
+    controller.applyEvent({
+      id: "created-after-delete",
+      type: "session.created",
+      properties: { sessionID: "session-1", info: session("session-1", "Recreated") },
+    })
+    expect(controller.getState().sessions.records["session-1"]?.title).toBe("Recreated")
+    controller.applyEvent(deleted)
+    expect(controller.getState().sessions.records["session-1"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-1"]).toBe(true)
+    controller.stop()
+  })
+
+  test("removes replayed deletions immediately and exact-resolves disconnected archives", async () => {
+    const root = snapshot("cursor-1", "digest-1", [
+      session("session-delete", "Delete"),
+      session("session-archive", "Archive"),
+    ])
+    let snapshots = 0
+    const cardRequests: string[][] = []
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        snapshots += 1
+        return snapshots === 1 ? root : snapshot(`cursor-${snapshots}`, `digest-${snapshots}`, [])
+      },
+      cards: async (input) => {
+        cardRequests.push(input.sessionIDs ?? [])
+        return {
+          items: [],
+          hasMore: false,
+          missing: input.sessionIDs ?? [],
+          sessionUiState: {},
+        }
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "old"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          yield {
+            type: "event",
+            event: catalogEvent("cursor-2", 0, "session-delete", "session.deleted"),
+          }
+          yield {
+            type: "event",
+            event: catalogEvent("cursor-3", 0, "session-archive", "session.updated"),
+          }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport, batchMs: 0 })
+    await controller.start()
+    await waitFor(() => snapshots >= 2 && cardRequests.length === 1)
+
+    expect(controller.getState().sessions.records["session-delete"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-delete"]).toBe(true)
+    expect(cardRequests).toEqual([["session-archive"]])
+    expect(controller.getState().sessions.records["session-archive"]).toBeUndefined()
+    expect(controller.getState().tombstones.sessions["session-archive"]).toBe(true)
+    controller.stop()
+  })
+
+  test("aborts stale hydration when exact catalog resolution reports an archive", async () => {
+    const releaseEvent = Promise.withResolvers<void>()
+    const pendingSession = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    let rootLoads = 0
+    let sessionSignal: AbortSignal | undefined
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () =>
+        snapshot(
+          `cursor-${++rootLoads}`,
+          `digest-${rootLoads}`,
+          rootLoads === 1 ? [session("session-archive", "Archive")] : [],
+        ),
+      cards: async (input) => ({
+        items: [],
+        hasMore: false,
+        missing: input.sessionIDs ?? [],
+        sessionUiState: {},
+      }),
+      session: async (input) => {
+        sessionSignal = input.signal
+        return pendingSession.promise
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await releaseEvent.promise
+          yield {
+            type: "event",
+            event: catalogEvent("cursor-2", 0, "session-archive", "session.updated"),
+          }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport, batchMs: 0 })
+    await controller.start()
+    const hydration = controller.refreshSessionTail("session-archive").catch((cause) => cause)
+    releaseEvent.resolve()
+    await waitFor(() => Boolean(sessionSignal?.aborted) && controller.getState().tombstones.sessions["session-archive"])
+
+    pendingSession.resolve(sessionSnapshot("late", "late", "late", "session-archive"))
+    expect(await hydration).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessions.records["session-archive"]).toBeUndefined()
+    controller.stop()
+  })
+
+  test("normalizes loading on stop and starts again after aborted work", async () => {
+    const pendingSession = Promise.withResolvers<OpencodeXSessionSnapshot>()
+    const pendingCards = Promise.withResolvers<OpencodeXSessionCardPage>()
+    let snapshots = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot(`cursor-${++snapshots}`, `digest-${snapshots}`, [session("session-1", "First")]),
+      cards: async () => pendingCards.promise,
+      session: async () => pendingSession.promise,
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: `cursor-${snapshots}` }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const tail = controller.refreshSessionTail("session-1").catch((cause) => cause)
+    const cards = controller.loadSessionCards().catch((cause) => cause)
+    expect(controller.getState().sessionLoads["session-1"]?.initial).toBe("loading")
+    expect(controller.getState().sessionCards.loading).toBe(true)
+
+    controller.stop()
+    expect(controller.getState().phase).toBe("idle")
+    expect(controller.getState().sessionLoads["session-1"]).toMatchObject({ initial: "idle", older: "idle" })
+    expect(controller.getState().sessionCards.loading).toBe(false)
+    expect(controller.getMetrics()).toMatchObject({ activeSessionRequests: 0, activeCardRequests: 0 })
+
+    await controller.start()
+    expect(controller.getState().phase).toBe("ready")
+    expect(controller.getState().lifecycle.status).toBe("connected")
+    expect(snapshots).toBe(2)
+    pendingSession.resolve(sessionSnapshot("late", "late", "late"))
+    pendingCards.resolve({
+      items: [session("session-late", "Late")],
+      hasMore: false,
+      missing: [],
+      sessionUiState: { "session-late": sessionUiState("session-late", "needs_review") },
+    })
+    expect(await tail).toMatchObject({ name: "AbortError" })
+    expect(await cards).toMatchObject({ name: "AbortError" })
+    expect(controller.getState().sessions.records["session-late"]).toBeUndefined()
+    controller.stop()
+  })
+
+  test("retains and selects project and view-only sessions from the known ID union", () => {
+    const projectOnly = { ...session("project-only", "Project only"), project: null }
+    const viewOnly = { ...session("view-only", "View only"), parentID: "parent", project: null }
+    const firstSnapshot = snapshot("cursor-1", "digest-1", [])
+    firstSnapshot.payloads.catalog.projects = [
+      {
+        id: "project-1",
+        project: {
+          id: "project-1",
+          worktree: "C:/Work/OpencodeX",
+          time: { created: 1, updated: 1 },
+          sandboxes: [],
+        },
+        folders: [],
+        sessionIDs: [projectOnly.id],
+      },
+    ]
+    firstSnapshot.payloads.catalog.views = [
+      {
+        id: "view-1",
+        title: "View",
+        layout: "list",
+        sessionIDs: ["view-only", "view-id-only"],
+        timeCreated: 1,
+        timeUpdated: 1,
+      },
+    ]
+    const controller = createClientStateSync({ transport: unusedTransport() })
+    const catalog = applyClientStateSnapshot(controller.getState(), firstSnapshot)
+    const detailed = ["project-only", "view-only", "view-id-only"].reduce(
+      (state, sessionID) => applyClientSessionSnapshot(state, sessionSnapshot("tail", sessionID, "detail", sessionID)),
+      catalog,
+    )
+    const nextSnapshot = snapshot("cursor-2", "digest-2", [])
+    nextSnapshot.payloads.catalog.projects = firstSnapshot.payloads.catalog.projects
+    nextSnapshot.payloads.catalog.views = firstSnapshot.payloads.catalog.views
+    const retained = applyClientStateSnapshot(detailed, nextSnapshot)
+
+    expect([...selectClientKnownSessionIDs(retained)].sort()).toEqual([
+      "project-only",
+      "view-id-only",
+      "view-only",
+    ])
+    expect(selectClientStateSyncSnapshot(retained, () => true)?.projects[0]?.sessionIDs).toEqual(["project-only"])
+    expect(selectClientStateSyncSnapshot(retained, () => true)?.projects[0]?.sessions[0]).toBe(
+      retained.sessions.records["project-only"],
+    )
+    expect(Object.keys(retained.sessionDetails).sort()).toEqual(["project-only", "view-id-only", "view-only"])
+    expect(selectClientStateSyncSnapshot(retained)?.sessions.map((item) => item.id).sort()).toEqual([
+      "project-only",
+      "view-id-only",
+      "view-only",
+    ])
+    expect(selectClientSessionChildren(retained, "parent")).toEqual([])
+
+    const omitted = applyClientStateSnapshot(retained, snapshot("cursor-3", "digest-3", []))
+    expect(omitted.sessionDetails).toBe(retained.sessionDetails)
+    const removed = applyClientSessionCardPage(omitted, {
+      items: [],
+      hasMore: false,
+      missing: ["project-only", "view-id-only", "view-only"],
+      sessionUiState: {},
+    })
+    expect(removed.sessionDetails).toEqual({})
+    expect(removed.tombstones.sessions).toMatchObject({
+      "project-only": true,
+      "view-id-only": true,
+      "view-only": true,
+    })
   })
 
   test("resets and reconnects when the retention floor rejects the current cursor", async () => {
@@ -541,7 +1905,7 @@ describe("client state sync", () => {
     const controller = createClientStateSync({ transport, batchMs: 0, sessionRefreshDelayMs: 20 })
     await controller.start()
     await eventsWaiting
-    await controller.hydrateSession("session-1")
+    await controller.refreshSessionTail("session-1")
     releaseEvents()
     await waitFor(() => sessionLoads === 2)
 
@@ -552,6 +1916,138 @@ describe("client state sync", () => {
     expect(controller.getMetrics().sessionInvalidations).toBe(8)
     expect(controller.getMetrics().sessionCorrectionsCoalesced).toBeGreaterThan(0)
     expect(controller.getState().dirtySessions["session-1"]).toBeUndefined()
+    controller.stop()
+  })
+
+  test("applies ordered live message batches with one commit and notification", async () => {
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "stable"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+    const commits = controller.getMetrics().commits
+    const revision = controller.getState().sessionDetails["session-1"]?.revision ?? 0
+    let notifications = 0
+    const unsubscribe = controller.subscribe(() => (notifications += 1))
+
+    expect(
+      controller.applyEvents([
+        {
+          id: "batch-message",
+          type: "message.updated",
+          properties: { sessionID: "session-1", info: message("message-3", 3) },
+        },
+        {
+          id: "batch-part",
+          type: "message.part.updated",
+          properties: {
+            sessionID: "session-1",
+            time: 2,
+            part: part("message-3", "part-3", "hello"),
+          },
+        },
+        {
+          id: "batch-delta",
+          type: "message.part.delta",
+          properties: {
+            sessionID: "session-1",
+            messageID: "message-3",
+            partID: "part-3",
+            field: "text",
+            delta: " world",
+          },
+        },
+        {
+          id: "batch-delta-contiguous",
+          type: "message.part.delta",
+          properties: {
+            sessionID: "session-1",
+            messageID: "message-3",
+            partID: "part-3",
+            field: "text",
+            delta: "!",
+          },
+        },
+      ]),
+    ).toEqual([true, true, true, true])
+
+    expect(selectClientSessionMessages(controller.getState(), "session-1").at(-1)?.parts).toEqual([
+      part("message-3", "part-3", "hello world!"),
+    ])
+    expect(controller.getState().sessionDetails["session-1"]?.revision).toBe(revision + 3)
+    expect(controller.getMetrics()).toMatchObject({ commits: commits + 1, liveEvents: 4 })
+    expect(notifications).toBe(1)
+    unsubscribe()
+    controller.stop()
+  })
+
+  test("deduplicates live event IDs within and across batches", () => {
+    const controller = createClientStateSync({ transport: unusedTransport() })
+    const first: Event = {
+      id: "duplicate-session",
+      type: "session.created",
+      properties: { sessionID: "session-1", info: session("session-1", "First") },
+    }
+    const duplicate: Event = {
+      id: "duplicate-session",
+      type: "session.updated",
+      properties: { sessionID: "session-1", info: session("session-1", "Ignored") },
+    }
+
+    expect(controller.applyEvents([first, duplicate])).toEqual([true, true])
+    expect(controller.getState().sessions.records["session-1"]?.title).toBe("First")
+    expect(controller.getMetrics()).toMatchObject({ liveEvents: 1, liveEventDuplicates: 1, commits: 1 })
+    expect(controller.applyEvent(duplicate)).toBe(true)
+    expect(controller.getMetrics()).toMatchObject({ liveEvents: 1, liveEventDuplicates: 2, commits: 1 })
+  })
+
+  test("preserves fallback and invalidation boundaries in live event batches", async () => {
+    let rootLoads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot(`cursor-${++rootLoads}`, `digest-${rootLoads}`, [session("session-1", "First")]),
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "stable"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const commits = controller.getMetrics().commits
+    let notifications = 0
+    const unsubscribe = controller.subscribe(() => (notifications += 1))
+
+    expect(
+      controller.applyEvents([
+        {
+          id: "batch-busy-before-fallback",
+          type: "session.status",
+          properties: { sessionID: "session-1", status: { type: "busy" } },
+        },
+        { id: "batch-fallback", type: "file.edited", properties: { file: "src/index.ts" } },
+        { id: "batch-idle-before-invalidation", type: "session.idle", properties: { sessionID: "session-1" } },
+        { id: "batch-view-created", type: "opencodex.view.created", properties: { viewID: "view-1" } },
+        {
+          id: "batch-busy-after-invalidation",
+          type: "session.status",
+          properties: { sessionID: "session-1", status: { type: "busy" } },
+        },
+      ]),
+    ).toEqual([true, false, true, true, true])
+
+    expect(controller.getMetrics()).toMatchObject({ commits: commits + 4, liveEvents: 4, rootSnapshots: 2 })
+    expect(notifications).toBe(4)
+    await waitFor(() => !controller.getState().dirtyCatalog)
+    expect(rootLoads).toBe(2)
+    unsubscribe()
     controller.stop()
   })
 
@@ -567,7 +2063,7 @@ describe("client state sync", () => {
     }
     const controller = createClientStateSync({ transport })
     await controller.start()
-    await controller.hydrateSession("session-1")
+    await controller.refreshSessionTail("session-1")
 
     expect(
       controller.applyEvent({
@@ -629,7 +2125,7 @@ describe("client state sync", () => {
     }
     const controller = createClientStateSync({ transport })
     await controller.start()
-    await controller.hydrateSession("session-1")
+    await controller.refreshSessionTail("session-1")
     controller.applyEvent({
       id: "permission-asked",
       type: "permission.asked",
@@ -736,7 +2232,7 @@ describe("client state sync", () => {
         properties: { viewID: "view-1" },
       }),
     ).toBe(true)
-    await waitFor(() => loads === 2)
+    await waitFor(() => loads === 2 && controller.getState().dirtyCatalog === false)
 
     expect(controller.getMetrics().rootSnapshots).toBe(2)
     expect(controller.getState().dirtyCatalog).toBe(false)
@@ -800,7 +2296,7 @@ function snapshot(cursor: string, digest: string, sessions: Session[]): Opencode
     payloads: {
       catalog: {
         projects: [],
-        sessions,
+        sessionCards: { items: sessions, hasMore: false, missing: [], sessionUiState: {} },
         views: [],
         sessionStatus: {},
         permissions: [],
@@ -823,17 +2319,17 @@ function operationsSnapshot(cursor: string, digest: string): OpencodeXOperations
   }
 }
 
-function sessionSnapshot(cursor: string, digest: string, text: string): OpencodeXSessionSnapshot {
+function sessionSnapshot(cursor: string, digest: string, text: string, sessionID = "session-1"): OpencodeXSessionSnapshot {
   return {
     scope: scope(),
     epoch: "epoch-1",
     cursor,
     digest,
-    session: session("session-1", "First"),
+    session: session(sessionID, "First"),
     messages: {
       items: [
-        { info: message("message-1", 1), parts: [part("message-1", "part-1", "stable")] },
-        { info: message("message-2", 2), parts: [part("message-2", "part-2", text)] },
+        { info: message("message-1", 1, sessionID), parts: [part("message-1", "part-1", "stable", sessionID)] },
+        { info: message("message-2", 2, sessionID), parts: [part("message-2", "part-2", text, sessionID)] },
       ],
       coverage: { firstMessageID: "message-1", lastMessageID: "message-2" },
       boundary: { hasMore: false },
@@ -842,6 +2338,21 @@ function sessionSnapshot(cursor: string, digest: string, text: string): Opencode
     diff: [],
     pendingInteractions: { permissions: [], questions: [] },
   }
+}
+
+function singleMessageSessionSnapshot(
+  sessionID: string,
+  cursor: string,
+  digest: string,
+  messageID: string,
+  text: string,
+) {
+  const result = sessionSnapshot(cursor, digest, text, sessionID)
+  result.messages.items = [
+    { info: message(messageID, 1, sessionID), parts: [part(messageID, `part-${messageID}`, text, sessionID)] },
+  ]
+  result.messages.coverage = { firstMessageID: messageID, lastMessageID: messageID }
+  return result
 }
 
 function event(cursor: string, aggregateSequence: number): OpencodeXStateEvent {
@@ -857,6 +2368,19 @@ function event(cursor: string, aggregateSequence: number): OpencodeXStateEvent {
   }
 }
 
+function catalogEvent(cursor: string, aggregateSequence: number, sessionID: string, eventType: string): OpencodeXStateEvent {
+  return {
+    id: `event-${cursor}`,
+    scope: scope(),
+    epoch: "epoch-1",
+    cursor,
+    aggregateSequence,
+    domain: "catalog",
+    operation: "invalidate",
+    payload: { aggregateID: sessionID, eventType },
+  }
+}
+
 function session(id: string, title: string): Session {
   return {
     id,
@@ -869,10 +2393,17 @@ function session(id: string, title: string): Session {
   }
 }
 
-function message(id: string, created: number): Message {
+function sessionUiState(
+  sessionID: string,
+  displayStatus: "idle" | "in_progress" | "input_needed" | "needs_review",
+) {
+  return { sessionID, reviewedFiles: [], displayStatus, updated: displayStatus !== "idle" }
+}
+
+function message(id: string, created: number, sessionID = "session-1"): Message {
   return {
     id,
-    sessionID: "session-1",
+    sessionID,
     role: "user",
     time: { created },
     agent: "build",
@@ -880,10 +2411,10 @@ function message(id: string, created: number): Message {
   }
 }
 
-function part(messageID: string, id: string, text: string): Part {
+function part(messageID: string, id: string, text: string, sessionID = "session-1"): Part {
   return {
     id,
-    sessionID: "session-1",
+    sessionID,
     messageID,
     type: "text",
     text,

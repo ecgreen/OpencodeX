@@ -6,10 +6,12 @@ import {
 import { Database } from "@opencode-ai/core/database/database"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { ProjectV2 } from "@opencode-ai/core/project"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { Effect } from "effect"
 import path from "path"
+import { renderableSessionWhere } from "./session-filter"
 
 type DatabaseService = Database.Interface["db"]
 type FolderRow = typeof OpencodeXProjectFolderTable.$inferSelect
@@ -213,9 +215,16 @@ export function addSession(
 
 export function listSessionIDs(db: DatabaseService, opencodexProjectID: string) {
   return db
-    .select()
+    .select({
+      session_id: OpencodeXProjectSessionTable.session_id,
+      opencodex_project_id: OpencodeXProjectSessionTable.opencodex_project_id,
+      path: OpencodeXProjectSessionTable.path,
+      time_created: OpencodeXProjectSessionTable.time_created,
+      time_updated: OpencodeXProjectSessionTable.time_updated,
+    })
     .from(OpencodeXProjectSessionTable)
-    .where(eq(OpencodeXProjectSessionTable.opencodex_project_id, opencodexProjectID))
+    .innerJoin(SessionTable, eq(SessionTable.id, OpencodeXProjectSessionTable.session_id))
+    .where(and(eq(OpencodeXProjectSessionTable.opencodex_project_id, opencodexProjectID), renderableSessionWhere()))
     .all()
     .pipe(Effect.orDie)
 }
@@ -230,7 +239,20 @@ export function getSessionProject(db: DatabaseService, sessionID: SessionID) {
 }
 
 export function listAllSessionIDs(db: DatabaseService) {
-  return db.select().from(OpencodeXProjectSessionTable).all().pipe(Effect.orDie)
+  return db
+    .select({
+      session_id: OpencodeXProjectSessionTable.session_id,
+      opencodex_project_id: OpencodeXProjectSessionTable.opencodex_project_id,
+      path: OpencodeXProjectSessionTable.path,
+      time_created: OpencodeXProjectSessionTable.time_created,
+      time_updated: OpencodeXProjectSessionTable.time_updated,
+    })
+    .from(OpencodeXProjectSessionTable)
+    .innerJoin(SessionTable, eq(SessionTable.id, OpencodeXProjectSessionTable.session_id))
+    .where(renderableSessionWhere())
+    .orderBy(desc(OpencodeXProjectSessionTable.time_updated), desc(OpencodeXProjectSessionTable.session_id))
+    .all()
+    .pipe(Effect.orDie)
 }
 
 export function removeSession(db: DatabaseService, sessionID: SessionID) {

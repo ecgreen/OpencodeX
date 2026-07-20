@@ -1,4 +1,5 @@
-import type { Command, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { Command, Session } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
 import { createSession, deleteSession, updateView, type PromptPart } from "./store"
@@ -26,7 +27,7 @@ export type ViewPromptSendTarget = {
 export async function runViewPromptAction(input: {
   gui?: GuiClient
   item: ViewItem
-  view?: OpencodeXView
+  view?: ClientCatalogView
   text: string | GuiPromptInfo
   agentForSession: (session: Session) => string
   modelForSession: (session: Session) => string
@@ -41,7 +42,7 @@ export async function runViewPromptAction(input: {
   rememberModel: (model: string) => void
   syncViewSession: (session: Session) => Promise<void>
   refresh: () => Promise<void>
-  prepareTarget?: (gui: GuiClient, item: ViewItem, view?: OpencodeXView) => Promise<PreparedViewPromptTarget>
+  prepareTarget?: (gui: GuiClient, item: ViewItem, view?: ClientCatalogView) => Promise<PreparedViewPromptTarget>
 }) {
   const submission = prepareViewPromptSubmission({ gui: input.gui, item: input.item, prompt: normalizePromptInput(input.text) })
   if (!submission) return
@@ -83,7 +84,7 @@ export function prepareViewPromptSubmission(input: { gui?: GuiClient; item: View
   return { gui: input.gui, item: input.item, draftID: viewItemID(input.item), prompt: input.prompt }
 }
 
-export async function prepareViewPromptTarget(gui: GuiClient, item: ViewItem, view?: OpencodeXView): Promise<PreparedViewPromptTarget> {
+export async function prepareViewPromptTarget(gui: GuiClient, item: ViewItem, view?: ClientCatalogView): Promise<PreparedViewPromptTarget> {
   const draftSession = viewItemSession(item, gui.directory)
   if (item.kind === "session") return { type: "ready", draftSession, target: draftSession }
 

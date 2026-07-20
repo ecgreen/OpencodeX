@@ -24,9 +24,9 @@ const status = Effect.fn("FileTest.status")(function* () {
   return yield* file.status()
 })
 
-const read = Effect.fn("FileTest.read")(function* (input: string) {
+const read = Effect.fn("FileTest.read")(function* (input: string, options?: File.ReadOptions) {
   const file = yield* File.Service
-  return yield* file.read(input)
+  return yield* file.read(input, options)
 })
 
 const list = Effect.fn("FileTest.list")(function* (dir?: string) {
@@ -122,6 +122,73 @@ describe("file/index Filesystem patterns", () => {
         expect(result.content).toBe("line1\nline2\nline3")
       }),
     )
+
+    it.instance("uses file bytes for exact and multibyte read limits", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "multibyte.txt"), "éé", "utf-8"))
+
+        expect(yield* read("multibyte.txt", { maxBytes: 4 })).toEqual({
+          type: "text",
+          content: "éé",
+          bytes: 4,
+          truncated: false,
+        })
+        expect(yield* read("multibyte.txt", { maxBytes: 3 })).toEqual({
+          type: "text",
+          content: "",
+          bytes: 4,
+          truncated: true,
+        })
+      }),
+    )
+
+    it.instance(
+      "returns oversized text metadata without building a diff",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const limit = 2 * 1024 * 1024
+          yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "large.txt"), "small", "utf-8"))
+          yield* gitAddAll(test.directory)
+          yield* gitCommit(test.directory, "add bounded file")
+          yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "large.txt"), "x".repeat(limit + 1), "utf-8"))
+
+          const result = yield* read("large.txt", { maxBytes: limit })
+          expect(result).toEqual({
+            type: "text",
+            content: "",
+            bytes: limit + 1,
+            truncated: true,
+          })
+          expect(result.diff).toBeUndefined()
+          expect(result.patch).toBeUndefined()
+        }),
+      { git: true },
+    )
+
+    it.instance(
+      "omits Git diff and patch work for every bounded read",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "bounded.txt"), "before\n", "utf-8"))
+          yield* gitAddAll(test.directory)
+          yield* gitCommit(test.directory, "add bounded read fixture")
+          yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "bounded.txt"), "after\n", "utf-8"))
+
+          const result = yield* read("bounded.txt", { maxBytes: 64 })
+          expect(result).toEqual({
+            type: "text",
+            content: "after",
+            bytes: 6,
+            truncated: false,
+          })
+          expect(result.diff).toBeUndefined()
+          expect(result.patch).toBeUndefined()
+        }),
+      { git: true },
+    )
   })
 
   describe("read() - binary content", () => {
@@ -149,6 +216,23 @@ describe("file/index Filesystem patterns", () => {
         const result = yield* read("binary.so")
         expect(result.type).toBe("binary")
         expect(result.content).toBe("")
+      }),
+    )
+
+    it.instance("returns oversized image metadata without base64 encoding", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const limit = 2 * 1024 * 1024
+        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "large.png"), Buffer.alloc(limit + 1)))
+
+        expect(yield* read("large.png", { maxBytes: limit })).toEqual({
+          type: "text",
+          content: "",
+          encoding: "base64",
+          mimeType: "image/png",
+          bytes: limit + 1,
+          truncated: true,
+        })
       }),
     )
   })

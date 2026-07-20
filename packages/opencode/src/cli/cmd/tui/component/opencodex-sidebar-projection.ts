@@ -22,11 +22,10 @@ export function createOpencodeXSidebarProjection(input: {
   const sessions = createMemo(() => input.sync.data.session.filter((session) => !session.parentID).toSorted((a, b) => b.time.updated - a.time.updated))
   const sessionByID = createMemo(() => new Map(sessions().map((session) => [session.id, session])))
   const allSessionByID = createMemo(() => new Map([
-    ...input.projects().flatMap((project) => project.sessions.map((session) => [session.id, session] as const)),
     ...sessions().map((session) => [session.id, session] as const),
   ]))
-  const projectIDBySessionID = createMemo(() => new Map(input.projects().flatMap((project) => project.sessions.map((session) => [session.id, project.id] as const))))
-  const projectTitleBySessionID = createMemo(() => new Map(input.projects().flatMap((project) => project.sessions.map((session) => [session.id, projectTitle(project)] as const))))
+  const projectIDBySessionID = createMemo(() => new Map(input.projects().flatMap((project) => project.sessionIDs.map((sessionID) => [sessionID, project.id] as const))))
+  const projectTitleBySessionID = createMemo(() => new Map(input.projects().flatMap((project) => project.sessionIDs.map((sessionID) => [sessionID, projectTitle(project)] as const))))
   const allSidebarSessions = createMemo(() => [...allSessionByID().values()].filter((session) => !session.parentID && !isSwarmSession(session) && !isEmptyPlaceholderSession(session)).toSorted((a, b) => b.time.updated - a.time.updated))
   const pinnedSessions = createMemo(() => pinnedSidebarItems(input.local.session.pinned(), allSidebarSessions()))
   const pinnedSessionIDs = createMemo(() => new Set(pinnedSessions().map((session) => session.id)))
@@ -55,8 +54,8 @@ export function createOpencodeXSidebarProjection(input: {
     if (input.route.data.type === "home" && pendingProjectSession()) return `pending:${pendingProjectSession()?.projectID}`
   })
   const projectSessions = (project: OpencodeXProjectInfo) => recentProjectItems(
-    project.sessions
-      .map((session) => sessionByID().get(session.id) ?? session)
+    project.sessionIDs
+      .flatMap((sessionID) => sessionByID().get(sessionID) ?? [])
       .filter((session) => !isSwarmSession(session) && !isEmptyPlaceholderSession(session))
       .map(orderItem),
     orderState(),

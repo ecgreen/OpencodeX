@@ -30,10 +30,11 @@ export function createSessionSwitcherController(input: {
   })
 
   createEffect(() => {
-    const sessions = input.authoritative.snapshot()?.sessions
-    if (!sessions) return
-    const validIDs = new Set(mruSessionCandidates([], sessions).map((session) => session.id))
+    const state = input.authoritative.state()
+    if (!state) return
+    const missing = state.tombstones.sessions
     setMru((list) => {
+      const validIDs = new Set(list.filter((sessionID) => !missing[sessionID]))
       const next = pruneMruSessions(list, validIDs)
       return next === list ? list : persist(next)
     })

@@ -11,10 +11,14 @@ import { Todo } from "@/session/todo"
 import { Snapshot } from "@/snapshot"
 import { Context, Effect, Schema } from "effect"
 import { OpencodeXJob } from "./job"
+import { OpencodeXProject } from "./project"
+import { OpencodeXSessionCard } from "./session-card"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
+import { OpencodeXView } from "./view"
+import { SessionStatus } from "@/session/status"
 
-export const EPOCH = "2026-07-09.3"
+export const EPOCH = "2026-07-19.5"
 
 export const OpencodeXStateScope = Schema.Struct({
   projectID: ProjectV2.ID,
@@ -47,6 +51,17 @@ const OperationsPayload = Schema.Struct({
   swarms: Schema.Array(OpencodeXSwarm.Info),
 })
 
+export const OpencodeXCatalogSnapshot = Schema.Struct({
+  projects: Schema.Array(OpencodeXProject.CatalogInfo),
+  sessionCards: OpencodeXSessionCard.Page,
+  views: Schema.Array(OpencodeXView.CatalogInfo),
+  sessionStatus: Schema.Record(Schema.String, SessionStatus.Info),
+  permissions: Schema.Array(Permission.Request),
+  questions: Schema.Array(Question.Request),
+  sessionUiState: Schema.Record(Schema.String, OpencodeXSessionState.UiState),
+}).annotate({ identifier: "OpencodeXCatalogSnapshot" })
+export type OpencodeXCatalogSnapshot = Schema.Schema.Type<typeof OpencodeXCatalogSnapshot>
+
 export const OpencodeXStateSnapshot = Schema.Struct({
   scope: OpencodeXStateScope,
   epoch: Schema.String,
@@ -57,7 +72,7 @@ export const OpencodeXStateSnapshot = Schema.Struct({
     operations: StateDomainRevision,
   }),
   payloads: Schema.Struct({
-    catalog: OpencodeXSessionState.SyncSnapshot,
+    catalog: OpencodeXCatalogSnapshot,
     operations: OperationsPayload,
   }),
 }).annotate({ identifier: "OpencodeXStateSnapshot" })
@@ -137,6 +152,11 @@ export interface Interface {
   readonly listen: (listener: (event: OpencodeXStateEvent) => void) => Effect.Effect<Effect.Effect<void>>
   readonly snapshot: () => Effect.Effect<OpencodeXStateSnapshot>
   readonly operations: () => Effect.Effect<OpencodeXOperationsSnapshot>
+  readonly sessionCards: (input?: {
+    cursor?: string
+    limit?: number
+    sessionIDs?: readonly SessionID[]
+  }) => Effect.Effect<OpencodeXSessionCard.Page, OpencodeXSessionCard.InvalidCursorError>
   readonly session: (input: {
     sessionID: SessionID
     limit?: number

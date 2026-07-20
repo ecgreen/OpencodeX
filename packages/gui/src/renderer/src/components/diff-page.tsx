@@ -2,12 +2,15 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { File as FileDiffView } from "@opencode-ai/ui/file"
 import { For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import type { DiffFile, GuiSnapshot } from "../lib/store"
+import type { GuiClient } from "../lib/client"
 import type { DiffMode } from "../lib/routes"
-import { patchContents } from "../lib/tool-display"
+import { patchContents, shouldVirtualizeDiff } from "../lib/tool-display"
 import { title } from "../lib/format"
 import { buildDiffFileTree, expandedDirectories, flattenDiffFileTree, moveDiffSelection, nextDiffFile } from "../lib/diff-file-tree"
 import { Icon } from "./icon"
 import { Button, Select } from "./ui"
+import { createSessionSideGitController } from "./session-side-git-controller"
+import { SessionSideDiffPanel } from "./session-side-git-view"
 
 export type { DiffMode } from "../lib/routes"
 export type DiffView = "split" | "unified"
@@ -20,6 +23,8 @@ export function DiffPage(props: {
   session?: Session
   sessions: Session[]
   sessionUiState: GuiSnapshot["sessionUiState"]
+  gui?: GuiClient
+  directory?: string
   setMode: (mode: DiffMode) => void
   selectSession: (sessionID: string) => void
   close: () => void
@@ -35,11 +40,16 @@ export function DiffPage(props: {
   const [selectedTreeRow, setSelectedTreeRow] = createSignal("")
   const [expandedTree, setExpandedTree] = createSignal<ReadonlySet<string>>(new Set())
   const [reviewedFiles, setReviewedFiles] = createSignal<ReadonlySet<string>>(new Set())
-  const diffInput = createMemo(() => ({
+  const git = createSessionSideGitController({
+    active: () => props.mode === "git",
+    gui: () => props.gui,
+    directory: () => props.directory || props.gui?.directory || "",
+  })
+  const diffInput = createMemo(() => props.mode === "git" ? undefined : {
     mode: props.mode,
     sessionID: props.session?.id ?? "",
     session: props.session,
-  }))
+  })
   const [diff, { refetch }] = createResource(diffInput, async (input) => normalizeDiffs(await props.loadDiff({ mode: input.mode, session: input.session })))
   const files = createMemo(() => diff() ?? [])
   const fileTree = createMemo(() => buildDiffFileTree(files()))
@@ -165,6 +175,7 @@ export function DiffPage(props: {
   }
 
   return (
+    <Show when={props.mode === "git"} fallback={<>
     <section class="diff-page" tabindex="0" onKeyDown={handleKeyDown}>
       <header class="diff-header">
         <div>
@@ -265,6 +276,35 @@ export function DiffPage(props: {
         </Show>
       </Show>
     </section>
+    </>}>
+      <section class="diff-page">
+        <header class="diff-header">
+          <div>
+            <p class="eyebrow">Diff</p>
+            <h1>Working Tree</h1>
+          </div>
+          <div class="diff-actions">
+            <Button appearance="ghost" type="button" classList={{ selected: true }}><Icon name="folder" /> Working tree</Button>
+            <Button appearance="ghost" type="button" disabled={!props.session} onClick={() => props.setMode("last-turn")}><Icon name="session" /> Last turn</Button>
+            <Button appearance="ghost" type="button" onClick={git.refresh}><Icon name="activity" /> Refresh</Button>
+            <Button appearance="ghost" type="button" onClick={props.close}><Icon name="x" /> Close</Button>
+          </div>
+        </header>
+        <div class="diff-working-tree">
+          <SessionSideDiffPanel
+            title="Working Tree"
+            controller={git}
+            gui={props.gui}
+            directory={props.directory}
+            openCommitModal={() => {}}
+            openFile={() => {}}
+            refresh={git.refresh}
+            allowCommit={false}
+            allowEdit={false}
+          />
+        </div>
+      </section>
+    </Show>
   )
 }
 
@@ -316,7 +356,7 @@ function DiffPatch(props: { file: string; patch: string; view: DiffView }) {
             before={value().before}
             after={value().after}
             diffStyle={props.view}
-            virtualize={false}
+            virtualize={shouldVirtualizeDiff(props.patch)}
             hunkSeparators="simple"
           />
         )}

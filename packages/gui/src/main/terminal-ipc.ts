@@ -1,19 +1,27 @@
 import path from "node:path"
-import { spawn, type IPty } from "@lydell/node-pty"
+import type { IPty } from "@lydell/node-pty"
 import { app, ipcMain, type WebContents } from "electron"
 import { validString } from "./ipc-validation.js"
+import { ownerHasResourceCapacity } from "./native-resource-limits.js"
+import { createTerminalOutputBatcher } from "./terminal-output-batcher.js"
 
 type TerminalProcess = {
   ownerID: number
   proc: IPty
   closed: boolean
+  output: ReturnType<typeof createTerminalOutputBatcher>
+  disposeEvents: () => void
 }
 
 type PtyWithErrorEvents = IPty & {
   on?: (eventName: "error", listener: (error: Error & { code?: string }) => void) => void
+  off?: (eventName: "error", listener: (error: Error & { code?: string }) => void) => void
+  removeListener?: (eventName: "error", listener: (error: Error & { code?: string }) => void) => void
   _agent?: {
     inSocket?: {
       on?: (eventName: "error", listener: (error: Error & { code?: string }) => void) => void
+      off?: (eventName: "error", listener: (error: Error & { code?: string }) => void) => void
+      removeListener?: (eventName: "error", listener: (error: Error & { code?: string }) => void) => void
     }
   }
 }
@@ -22,7 +30,7 @@ const terminalProcesses = new Map<string, TerminalProcess>()
 const terminalOwners = new Set<number>()
 
 export function registerTerminalIpc() {
-  ipcMain.handle("opencodex:terminal:create", (event, raw: unknown) => {
+  ipcMain.handle("opencodex:terminal:create", async (event, raw: unknown) => {
     const input = validTerminalCreateInput(raw)
     if (!input) return { ok: false, message: "Invalid terminal request." }
     const existing = terminalProcesses.get(input.id)
@@ -31,10 +39,24 @@ export function registerTerminalIpc() {
         ? { ok: true, pid: existing.proc.pid }
         : { ok: false, message: "Terminal belongs to another renderer." }
     }
+    if (!ownerHasResourceCapacity(terminalProcesses.values(), event.sender.id)) {
+      return { ok: false, message: "This window already has the maximum of 8 terminals open." }
+    }
     const shell = terminalShell()
     const sender = event.sender
     const ownerID = sender.id
     try {
+      const { spawn } = await import("@lydell/node-pty")
+      if (sender.isDestroyed()) return { ok: false, message: "Terminal renderer was closed." }
+      const concurrent = terminalProcesses.get(input.id)
+      if (concurrent) {
+        return concurrent.ownerID === ownerID
+          ? { ok: true, pid: concurrent.proc.pid }
+          : { ok: false, message: "Terminal belongs to another renderer." }
+      }
+      if (!ownerHasResourceCapacity(terminalProcesses.values(), ownerID)) {
+        return { ok: false, message: "This window already has the maximum of 8 terminals open." }
+      }
       const proc = spawn(shell.command, shell.args, {
         name: "xterm-256color",
         cols: input.cols,
@@ -42,20 +64,37 @@ export function registerTerminalIpc() {
         cwd: input.cwd || app.getPath("home"),
         env: terminalEnvironment(),
       })
-      terminalProcesses.set(input.id, { ownerID, proc, closed: false })
-      registerTerminalErrorHandler(input.id, proc)
-      proc.onData((data) => sendTerminalEvent(sender, "opencodex:terminal:data", { id: input.id, data }))
-      proc.onExit((exit) => {
-        closeTerminal(input.id)
+      const terminal: TerminalProcess = {
+        ownerID,
+        proc,
+        closed: false,
+        output: createTerminalOutputBatcher({
+          emit: (data) => sendTerminalEvent(sender, "opencodex:terminal:data", { id: input.id, data }),
+        }),
+        disposeEvents: () => undefined,
+      }
+      terminalProcesses.set(input.id, terminal)
+      const disposeData = proc.onData(terminal.output.push)
+      const disposeExit = proc.onExit((exit) => {
+        if (terminalProcesses.get(input.id) !== terminal) return
+        terminal.output.close(true)
+        closeTerminal(input.id, proc)
         sendTerminalEvent(sender, "opencodex:terminal:exit", {
           id: input.id,
           ...(typeof exit.exitCode === "number" ? { exitCode: exit.exitCode } : {}),
           ...(typeof exit.signal === "number" || typeof exit.signal === "string" ? { signal: exit.signal } : {}),
         })
       })
+      const disposeErrors = registerTerminalErrorHandler(proc, () => destroyTerminal(input.id, ownerID))
+      terminal.disposeEvents = () => {
+        disposeData.dispose()
+        disposeExit.dispose()
+        disposeErrors()
+      }
       registerTerminalOwner(sender)
       return { ok: true, pid: proc.pid }
     } catch (error) {
+      destroyTerminal(input.id, ownerID)
       return { ok: false, message: error instanceof Error ? error.message : "Failed to open terminal." }
     }
   })
@@ -157,6 +196,8 @@ function destroyTerminal(id: string, ownerID?: number) {
   const terminal = terminalProcesses.get(id)
   if (!terminal || (ownerID !== undefined && terminal.ownerID !== ownerID)) return false
   terminal.closed = true
+  terminal.output.close(false)
+  terminal.disposeEvents()
   terminalProcesses.delete(id)
   try {
     terminal.proc.kill()
@@ -166,10 +207,12 @@ function destroyTerminal(id: string, ownerID?: number) {
   }
 }
 
-function closeTerminal(id: string) {
+function closeTerminal(id: string, proc?: IPty) {
   const terminal = terminalProcesses.get(id)
-  if (!terminal) return
+  if (!terminal || (proc && terminal.proc !== proc)) return
   terminal.closed = true
+  terminal.output.close(false)
+  terminal.disposeEvents()
   terminalProcesses.delete(id)
 }
 
@@ -185,7 +228,7 @@ function writeTerminal(id: string, data: string, ownerID: number) {
     terminal.proc.write(data)
     return true
   } catch {
-    closeTerminal(id)
+    destroyTerminal(id, ownerID)
     return false
   }
 }
@@ -197,13 +240,20 @@ function resizeTerminal(id: string, cols: number, rows: number, ownerID: number)
     terminal.proc.resize(cols, rows)
     return true
   } catch {
-    closeTerminal(id)
+    destroyTerminal(id, ownerID)
     return false
   }
 }
 
-function registerTerminalErrorHandler(id: string, proc: IPty) {
+function registerTerminalErrorHandler(proc: IPty, close: () => void) {
   const procWithErrors = proc as PtyWithErrorEvents
-  procWithErrors.on?.("error", () => closeTerminal(id))
-  procWithErrors._agent?.inSocket?.on?.("error", () => closeTerminal(id))
+  const listener = () => close()
+  procWithErrors.on?.("error", listener)
+  procWithErrors._agent?.inSocket?.on?.("error", listener)
+  return () => {
+    if (procWithErrors.off) procWithErrors.off("error", listener)
+    else procWithErrors.removeListener?.("error", listener)
+    if (procWithErrors._agent?.inSocket?.off) procWithErrors._agent.inSocket.off("error", listener)
+    else procWithErrors._agent?.inSocket?.removeListener?.("error", listener)
+  }
 }

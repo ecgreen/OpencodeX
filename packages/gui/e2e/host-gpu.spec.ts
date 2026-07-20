@@ -14,5 +14,6 @@ test("uses a hardware graphics adapter for host visual validation", async ({ bro
   const adapters = info.gpu.devices.map((device) => `${device.vendorString} ${device.deviceString}`.trim())
   expect(adapters.length, "Chrome did not report a graphics adapter").toBeGreaterThan(0)
   expect(adapters.some((adapter) => /swiftshader|software rasterizer/i.test(adapter)), adapters.join("\n")).toBe(false)
-  expect(info.gpu.featureStatus.gpu_compositing, JSON.stringify(info.gpu.featureStatus, null, 2)).not.toMatch(/disabled_software/i)
+  expect(info.gpu.featureStatus).toBeDefined()
+  expect(info.gpu.featureStatus?.gpu_compositing ?? "", JSON.stringify(info.gpu.featureStatus, null, 2)).not.toMatch(/disabled_software/i)
 })

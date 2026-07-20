@@ -6,10 +6,8 @@ import type {
   McpStatus,
   Message,
   OpencodeXJob,
-  OpencodeXProject,
   OpencodeXSessionUiState,
   OpencodeXSwarm,
-  OpencodeXView,
   Part,
   PermissionRequest,
   Provider,
@@ -23,7 +21,12 @@ import type {
   AgentPartInput,
   McpResource,
   VcsFileDiff,
+  OpencodexWorkbenchChangesPageResponse,
+  OpencodexWorkbenchChangesMetricsPageResponse,
+  OpencodexWorkbenchChangesPatchPageResponse,
+  OpencodexWorkbenchChangesPatchResponse,
 } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogProject, ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 
 export type MessageBundle = {
   info: Message
@@ -72,28 +75,9 @@ export type WorkbenchOperationResult = {
   content?: string
 }
 
-export type WorkbenchGitFileStatus = {
-  path: string
-  code: string
-  status: string
-  staged: boolean
-  unstaged: boolean
-  untracked: boolean
-}
-
-export type WorkbenchGitStatus = {
-  ok: boolean
-  message?: string
-  branch?: string
-  defaultBranch?: string
-  upstream?: string
-  ahead?: number
-  behind?: number
-  remote?: string
-  remoteUrl?: string
-  githubUrl?: string
-  clean: boolean
-  files: WorkbenchGitFileStatus[]
+export type WorkbenchFileReadResult = WorkbenchOperationResult & {
+  bytes?: number
+  truncated?: boolean
 }
 
 export type WorkbenchGitBranches = {
@@ -102,6 +86,13 @@ export type WorkbenchGitBranches = {
   current?: string
   branches: string[]
 }
+
+export type WorkbenchChangesPage = OpencodexWorkbenchChangesPageResponse
+export type WorkbenchChangeNode = WorkbenchChangesPage["items"][number]
+export type WorkbenchChangeFile = Extract<WorkbenchChangeNode, { type: "file" }>
+export type WorkbenchChangePatch = OpencodexWorkbenchChangesPatchResponse
+export type WorkbenchChangeMetricsPage = OpencodexWorkbenchChangesMetricsPageResponse
+export type WorkbenchChangePatchPage = OpencodexWorkbenchChangesPatchPageResponse
 
 export type WorkbenchGitHistoryFile = {
   path: string
@@ -124,8 +115,62 @@ export type WorkbenchDiagnostic = {
   path?: string
   line?: number
   column?: number
+  endLine?: number
+  endColumn?: number
   severity: "error" | "warning" | "info"
   message: string
+}
+
+export type WorkbenchFileDiagnosticsResult = {
+  ok: boolean
+  supported: boolean
+  reason?: string
+  message?: string
+  diagnostics: WorkbenchDiagnostic[]
+}
+
+export type WorkbenchDefinitionLocation = {
+  path: string
+  root?: string
+  readOnly?: true
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+}
+
+export type WorkbenchHoverResult = {
+  supported: boolean
+  message?: string
+  contents: Array<{
+    kind: "code" | "markdown" | "plaintext"
+    value: string
+    language?: string
+  }>
+  definitions: WorkbenchDefinitionLocation[]
+  range?: {
+    line: number
+    column: number
+    endLine: number
+    endColumn: number
+  }
+}
+
+export type WorkbenchCompletionItem = {
+  label: string
+  detail?: string
+  documentation?: string
+  insertText?: string
+  filterText?: string
+  sortText?: string
+  kind?: number
+  insertTextFormat?: number
+}
+
+export type WorkbenchCompletionResult = {
+  supported: boolean
+  message?: string
+  items: WorkbenchCompletionItem[]
 }
 
 export type WorkbenchDiagnosticsResult = {
@@ -157,7 +202,7 @@ export type SessionLoadOptions = {
 }
 
 export type GuiSnapshot = {
-  projects: OpencodeXProject[]
+  projects: ClientCatalogProject[]
   sessions: Session[]
   sessionStatus: Record<string, SessionStatus>
   sessionUiState: Record<string, OpencodeXSessionUiState>
@@ -175,7 +220,7 @@ export type GuiSnapshot = {
   plugins?: GuiPlugin[]
   swarms: OpencodeXSwarm[]
   jobs: OpencodeXJob[]
-  views: OpencodeXView[]
+  views: ClientCatalogView[]
 }
 
 export type SessionCardSnapshot = Pick<

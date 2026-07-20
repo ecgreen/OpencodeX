@@ -98,7 +98,7 @@ export function createOpencodeXDashboardData(input: {
       }
     })
     const viewRows = input.views().map((view) => {
-      const project = input.projects().find((item) => item.sessions.some((session) => view.sessionIDs.includes(session.id)))
+      const project = input.projects().find((item) => item.sessionIDs.some((sessionID) => view.sessionIDs.includes(sessionID)))
       const status = dashboardViewStatus(view, sessionByID, input.sync)
       return {
         id: `view:${view.id}`,
@@ -128,7 +128,7 @@ export function createOpencodeXDashboardData(input: {
   const viewRows = createMemo(() => dashboardRows().filter((row): row is DashboardRow & { view: OpencodeXView } => row.kind === "view" && row.view !== undefined))
   const projectSummaries = createMemo<DashboardProjectSummary[]>(() => input.projects().map((project) => {
     const rows = allDashboardRows().filter((row) => row.projectID === project.id)
-    return { project, rows, sessionCount: rows.filter((row) => row.kind === "session").length, swarmCount: rows.filter((row) => row.kind === "swarm").length, lastUpdated: Math.max(0, ...rows.map((row) => row.timeUpdated)) }
+    return { project, rows, sessionCount: project.sessionIDs.length, swarmCount: rows.filter((row) => row.kind === "swarm").length, lastUpdated: Math.max(0, ...rows.map((row) => row.timeUpdated)) }
   }).toSorted((a, b) => b.lastUpdated - a.lastUpdated))
   const attentionRows = createMemo(() => dashboardRows().filter((row): row is DashboardRow & { reason: string } => row.reason !== undefined).toSorted((a, b) => b.timeUpdated - a.timeUpdated))
   return {

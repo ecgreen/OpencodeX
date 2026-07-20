@@ -115,6 +115,48 @@ test("native browser ignores stale bounds after its host changes", async () => {
   }
 })
 
+test("concurrent browser ensures do not destroy the winning view", async () => {
+  const calls: string[] = []
+  let release = (_value: unknown) => undefined
+  const state = {
+    id: "browser-1",
+    url: "",
+    title: "",
+    canGoBack: false,
+    canGoForward: false,
+    loading: false,
+  }
+  const pending = new Promise<typeof state>((resolve) => { release = resolve })
+  const environment = installBrowserEnvironment({
+    create: async () => pending,
+    hide: async () => state,
+    destroy: async () => { calls.push("destroy"); return true },
+  })
+  let dispose = () => undefined
+  const controller = createRoot((cleanup) => {
+    dispose = cleanup
+    return createNativeBrowserController({
+      active: () => true,
+      activeID: () => "browser-1",
+      ids: () => ["browser-1"],
+      url: () => undefined,
+      applyState: () => undefined,
+    })
+  })
+
+  try {
+    const first = controller.showActive()
+    const second = controller.showActive()
+    release(state)
+    await Promise.all([first, second])
+    expect(calls).toEqual([])
+    expect(controller.lifecycle()).toBe("ready")
+  } finally {
+    dispose()
+    environment.restore()
+  }
+})
+
 test("session browser stays parked while its workspace is resizing", async () => {
   const calls: string[] = []
   const state = {

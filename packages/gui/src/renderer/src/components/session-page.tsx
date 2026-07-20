@@ -5,19 +5,17 @@ import { EMPTY_VIEW_PANE_RUNTIME_STATE } from "../lib/view-pane-state"
 import { nextPromptHistoryState, pushPromptStash, type GuiPromptStashEntry } from "../lib/prompt-state"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
 import {
-  clearComposerDraft,
   filePartFromFile,
   filePartFromPath,
   readComposerDraft,
   readComposerStash,
   subscribeComposerStash,
-  writeComposerDraft,
   writeComposerStash,
 } from "../lib/session-composer-helpers"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
 import { SessionSafetyDock } from "./session-safety-dock"
-import { PanelLoadingState } from "./panel-loading-state"
+import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
 import { createSessionModelController } from "./session-model-controller"
@@ -25,6 +23,7 @@ import type { SessionPageProps } from "./session-page-types"
 import { createSessionSidePanelController } from "./session-side-panel-controller"
 import { SessionToolbar } from "./session-toolbar"
 import { createSessionComposerPresentation } from "./session-composer-presentation"
+import { createSessionComposerInputController } from "./session-composer-input-controller"
 import { subscribeSessionBrowserCaptures } from "../lib/session-browser-capture"
 const SessionSidePanel = lazy(() => import("./session-side-panel").then((module) => ({ default: module.SessionSidePanel })))
 export function SessionPage(props: SessionPageProps) {
@@ -33,7 +32,6 @@ export function SessionPage(props: SessionPageProps) {
   let composerWasBlocked = blocked()
   let transcriptExpandedSessionID = ""
   let transcriptExpandedSessionKey = ""
-  let composerTextarea: HTMLTextAreaElement | undefined
   const models = createSessionModelController(props)
   const sidePanel = createSessionSidePanelController(props)
   const [localDraftPrompt, setLocalDraftPrompt] = createSignal(props.prompt)
@@ -79,6 +77,11 @@ export function SessionPage(props: SessionPageProps) {
     }))
   }
   const running = createMemo(() => props.status === "busy" || props.status === "retry")
+  const composerInput = createSessionComposerInputController({
+    sessionID: () => session()?.id,
+    draft: () => ({ input: draftPrompt(), parts: draftParts() }),
+    persistent: !props.composerState,
+  })
   const toolbarSession = createMemo(() => {
     const selected = session()
     if (!selected || selected.id.startsWith("pending:")) return
@@ -87,11 +90,7 @@ export function SessionPage(props: SessionPageProps) {
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
   const { slashQuery, visibleSlashCommands, slashMenuVisible, mentionQuery, mentionOptions, mentionMenuVisible, userHistory, usageLabel } = createSessionComposerPresentation({ props, draftPrompt, slashMenuOpen, blocked })
-  const resizeComposer = () => {
-    if (!composerTextarea) return
-    composerTextarea.style.height = "auto"
-    composerTextarea.style.height = `${composerTextarea.scrollHeight}px`
-  }
+  const resizeComposer = composerInput.resize
   const submitComposer = (event: SubmitEvent) => {
     event.preventDefault()
     const text = draftText()
@@ -105,8 +104,8 @@ export function SessionPage(props: SessionPageProps) {
     setDraftParts([])
     setHistoryIndex(-1)
     setHistoryDraft("")
-    requestAnimationFrame(resizeComposer)
-    clearComposerDraft(session()?.id)
+    resizeComposer()
+    composerInput.flush()
     props.submit(event, {
       input: promptText,
       parts: shellText !== undefined ? [] : parts.length ? [...(text ? [{ type: "text" as const, text }] : []), ...parts] : [{ type: "text", text }],
@@ -119,20 +118,21 @@ export function SessionPage(props: SessionPageProps) {
     const currentParts = draftParts()
     setDraftPrompt("")
     setSlashMenuOpen(false)
-    requestAnimationFrame(resizeComposer)
+    resizeComposer()
+    composerInput.flush()
     void command.run({ draftPrompt: currentDraft, draftParts: currentParts, setDraftPrompt, setDraftParts, openModelPicker: () => models.setPickerOpen(true) })
   }
   const completeSlashCommand = (command: SessionSlashCommand | undefined) => {
     if (!command) return
     setDraftPrompt(`/${command.name}`)
     setSlashMenuOpen(true)
-    requestAnimationFrame(resizeComposer)
+    resizeComposer()
   }
   const chooseMention = (option: PromptMentionOption) => {
     const nextPrompt = removeTrailingMentionQuery(draftPrompt())
     setDraftPrompt(nextPrompt)
     setDraftParts((current) => [...current, option.part])
-    requestAnimationFrame(resizeComposer)
+    resizeComposer()
   }
   const stashPrompt = () => {
     const prompt = { input: draftPrompt(), parts: draftParts() }
@@ -141,6 +141,7 @@ export function SessionPage(props: SessionPageProps) {
     writeComposerStash(next)
     setDraftPrompt("")
     setDraftParts([])
+    composerInput.flush()
   }
   const popStash = () => {
     const entries = readComposerStash()
@@ -151,7 +152,7 @@ export function SessionPage(props: SessionPageProps) {
     writeComposerStash(next)
     setDraftPrompt(entry.input)
     setDraftParts(entry.parts)
-    requestAnimationFrame(resizeComposer)
+    resizeComposer()
   }
   const loadHistory = (offset: number) => {
     const next = nextPromptHistoryState({
@@ -166,26 +167,26 @@ export function SessionPage(props: SessionPageProps) {
     setHistoryDraft(next.historyDraft)
     setDraftPrompt(next.draftPrompt)
     setDraftParts([])
-    requestAnimationFrame(resizeComposer)
+    resizeComposer()
     return true
   }
   const pasteFiles = async (files: File[]) => {
     const parts = await Promise.all(files.map(filePartFromFile))
     setDraftParts((current) => [...current, ...parts])
   }
-  onMount(() => onCleanup(subscribeSessionBrowserCaptures({ sessionID: () => session()?.id, pasteFiles, focus: () => composerTextarea?.focus({ preventScroll: true }) })))
+  onMount(() => onCleanup(subscribeSessionBrowserCaptures({ sessionID: () => session()?.id, pasteFiles, focus: () => composerInput.textarea()?.focus({ preventScroll: true }) })))
   const addContextPaths = (items: Array<{ path: string; type?: "file" | "directory" }>) => {
     const context = items.map((item) => ({ ...item, path: item.path.trim() })).filter((item) => item.path)
     if (context.length === 0) return
     setDraftParts((current) => [...current, ...context.map((item) => filePartFromPath(item))])
-    requestAnimationFrame(resizeComposer)
+    resizeComposer()
   }
   const addPickedContext = async () => {
     const items = await window.opencodex?.contextPaths?.(session()?.directory)
     if (!items?.length) return
     addContextPaths(items)
   }
-  const restoreComposerPrompt = createComposerPromptRestore({ setDraftPrompt, setDraftParts, resizeComposer, focus: () => composerTextarea?.focus({ preventScroll: true }) })
+  const restoreComposerPrompt = createComposerPromptRestore({ setDraftPrompt, setDraftParts, resizeComposer, focus: () => composerInput.textarea()?.focus({ preventScroll: true }) })
   const handleMessageAction = createSessionMessageActionHandler({ session, data: () => props.data, onMessageAction: props.onMessageAction, restorePrompt: restoreComposerPrompt })
   const dropContext = async (event: DragEvent) => {
     const files = Array.from(event.dataTransfer?.files ?? [])
@@ -213,19 +214,21 @@ export function SessionPage(props: SessionPageProps) {
     const token = props.composerFocusToken?.() ?? 0
     if (!token) return
     requestAnimationFrame(() => {
-      if (props.composerFocusToken?.() !== token || !composerTextarea || composerTextarea.disabled) return
-      composerTextarea.focus({ preventScroll: true })
+      const textarea = composerInput.textarea()
+      if (props.composerFocusToken?.() !== token || !textarea || textarea.disabled) return
+      textarea.focus({ preventScroll: true })
     })
   })
   createEffect(() => {
     const next = blocked()
-    if (composerWasBlocked && !next) requestAnimationFrame(() => composerTextarea?.focus({ preventScroll: true }))
+    if (composerWasBlocked && !next) requestAnimationFrame(() => composerInput.textarea()?.focus({ preventScroll: true }))
     composerWasBlocked = next
   })
   createEffect(() => {
     const id = props.session?.id ?? ""
     const key = `${id}:${props.session?.directory ?? ""}:${props.pending ? "pending" : "ready"}`
     if (key === transcriptExpandedSessionKey) return
+    composerInput.flushPending()
     const previousID = transcriptExpandedSessionID
     transcriptExpandedSessionKey = key
     transcriptExpandedSessionID = id
@@ -244,8 +247,8 @@ export function SessionPage(props: SessionPageProps) {
     const id = props.session?.id
     if (!id) return
     const value = { input: draftPrompt(), parts: draftParts() }
-    if (!value.input && value.parts.length === 0) clearComposerDraft(id)
-    else writeComposerDraft(id, value)
+    composerInput.schedule({ sessionID: id, draft: value })
+    if (!value.input && value.parts.length === 0) composerInput.flushPending()
   })
   return (
     <div class="page session-page" data-session-id={session()?.id}>
@@ -321,7 +324,7 @@ export function SessionPage(props: SessionPageProps) {
             variantLabel={models.variantLabel()}
             usageLabel={usageLabel()}
             submit={submitComposer}
-            setTextarea={(element) => { composerTextarea = element }}
+            setTextarea={composerInput.setTextarea}
             setDraftPrompt={setDraftPrompt}
             setDraftParts={setDraftParts}
             setHistoryIndex={setHistoryIndex}
@@ -348,7 +351,7 @@ export function SessionPage(props: SessionPageProps) {
         </div>
         <Show when={sidePanel.mounted() ? sidePanel.session() : undefined}>
           {(selected) => (
-            <Suspense fallback={<aside class="session-side-panel open workspace-panel-loading" aria-busy="true"><PanelLoadingState label="Loading workspace tools" /></aside>}>
+            <Suspense fallback={<SessionSidePanelLoading open={sidePanel.open()} widthRatio={sidePanel.widthRatio()} />}>
               <SessionSidePanel
                 open={sidePanel.open()}
                 widthRatio={sidePanel.widthRatio()}
@@ -359,6 +362,7 @@ export function SessionPage(props: SessionPageProps) {
                 lsp={props.lsp}
                 config={props.config}
                 gui={props.gui}
+                subscribeGlobalEvents={props.subscribeGlobalEvents}
                 directory={props.sidePanelDirectory ?? selected().directory}
                 request={sidePanel.request()}
                 startResize={sidePanel.startResize}

@@ -2086,6 +2086,17 @@ export type Config = {
   }
 }
 
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
 export type Model = {
   id: string
   providerID: string
@@ -2354,6 +2365,8 @@ export type FileContent = {
   }
   encoding?: "base64"
   mimeType?: string
+  bytes?: number
+  truncated?: boolean
 }
 
 export type File = {
@@ -2672,6 +2685,95 @@ export type OpencodeXStateScope = {
 
 export type OpencodeXStateCursor = string
 
+export type OpencodeXCatalogProject = {
+  id: string
+  name?: string
+  project: Project
+  folders: Array<OpencodeXProjectFolder>
+  sessionIDs: Array<string>
+}
+
+export type OpencodeXSessionCard = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+  }
+}
+
+export type OpencodeXSessionCardCursor = string
+
+export type OpencodeXSessionCardPage = {
+  items: Array<OpencodeXSessionCard>
+  hasMore: boolean
+  next?: OpencodeXSessionCardCursor
+  missing: Array<string>
+  sessionUiState: {
+    [key: string]: OpencodeXSessionUiState
+  }
+}
+
+export type OpencodeXCatalogView = {
+  id: string
+  title: string
+  focusedSessionID?: string
+  layout: string
+  sessionIDs: Array<string>
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXCatalogSnapshot = {
+  projects: Array<OpencodeXCatalogProject>
+  sessionCards: OpencodeXSessionCardPage
+  views: Array<OpencodeXCatalogView>
+  sessionStatus: {
+    [key: string]: SessionStatus
+  }
+  permissions: Array<PermissionRequest>
+  questions: Array<QuestionRequest>
+  sessionUiState: {
+    [key: string]: OpencodeXSessionUiState
+  }
+}
+
 export type OpencodeXJobFailure = {
   code: string
   message: string
@@ -2846,7 +2948,7 @@ export type OpencodeXStateSnapshot = {
     }
   }
   payloads: {
-    catalog: OpencodeXSessionSyncSnapshot
+    catalog: OpencodeXCatalogSnapshot
     operations: {
       jobs: Array<OpencodeXJob>
       swarms: Array<OpencodeXSwarm>
@@ -2967,17 +3069,6 @@ export type OpencodeXPluginInstallResult = {
 export type OpencodeXPluginToggleInput = {
   id: string
   enabled: boolean
-}
-
-export type ForbiddenError = {
-  _tag: "ForbiddenError"
-  message: string
-}
-
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
 }
 
 export type OpencodeXJobCreateInput = {
@@ -5836,6 +5927,217 @@ export type GlobalUpgradeResponses = {
 
 export type GlobalUpgradeResponse = GlobalUpgradeResponses[keyof GlobalUpgradeResponses]
 
+export type GlobalGuiBridgeSyncData = {
+  body?: {
+    clientID: string
+    token: string
+    capabilities: Array<
+      "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+    >
+    scopes: Array<{
+      directory: string
+      workspaceID?: string
+    }>
+  }
+  path?: never
+  query?: never
+  url: "/global/gui-bridge/sync"
+}
+
+export type GlobalGuiBridgeSyncErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalGuiBridgeSyncError = GlobalGuiBridgeSyncErrors[keyof GlobalGuiBridgeSyncErrors]
+
+export type GlobalGuiBridgeSyncResponses = {
+  /**
+   * GUI bridge desired state synchronized
+   */
+  200: {
+    ok: true
+    generation: string
+    added: number
+    removed: number
+    unchanged: number
+  }
+}
+
+export type GlobalGuiBridgeSyncResponse = GlobalGuiBridgeSyncResponses[keyof GlobalGuiBridgeSyncResponses]
+
+export type GlobalGuiBridgeUnregisterData = {
+  body?: {
+    clientID: string
+    token: string
+    generation: string
+  }
+  path?: never
+  query?: never
+  url: "/global/gui-bridge/unregister"
+}
+
+export type GlobalGuiBridgeUnregisterErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalGuiBridgeUnregisterError = GlobalGuiBridgeUnregisterErrors[keyof GlobalGuiBridgeUnregisterErrors]
+
+export type GlobalGuiBridgeUnregisterResponses = {
+  /**
+   * GUI bridge unregistered
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type GlobalGuiBridgeUnregisterResponse =
+  GlobalGuiBridgeUnregisterResponses[keyof GlobalGuiBridgeUnregisterResponses]
+
+export type GlobalGuiBridgeRespondData = {
+  body?:
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "workspace.open"
+        result:
+          | {
+              status: "ok"
+              output: {
+                path: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.navigate"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.state"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.screenshot"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+                dataURL: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.snapshot"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+                text: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+  path?: never
+  query?: never
+  url: "/global/gui-bridge/respond"
+}
+
+export type GlobalGuiBridgeRespondErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalGuiBridgeRespondError = GlobalGuiBridgeRespondErrors[keyof GlobalGuiBridgeRespondErrors]
+
+export type GlobalGuiBridgeRespondResponses = {
+  /**
+   * GUI bridge response accepted
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type GlobalGuiBridgeRespondResponse = GlobalGuiBridgeRespondResponses[keyof GlobalGuiBridgeRespondResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never
@@ -6419,6 +6721,7 @@ export type FileReadData = {
     directory?: string
     workspace?: string
     path: string
+    maxBytes?: string
   }
   url: "/file/content"
 }
@@ -7460,6 +7763,38 @@ export type OpencodexStateCapabilitiesResponses = {
 export type OpencodexStateCapabilitiesResponse =
   OpencodexStateCapabilitiesResponses[keyof OpencodexStateCapabilitiesResponses]
 
+export type OpencodexStateSessionCardsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    cursor?: string
+    limit?: string
+    ids?: string
+  }
+  url: "/experimental/opencodex/state/session-card"
+}
+
+export type OpencodexStateSessionCardsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateSessionCardsError = OpencodexStateSessionCardsErrors[keyof OpencodexStateSessionCardsErrors]
+
+export type OpencodexStateSessionCardsResponses = {
+  /**
+   * Bounded page of canonical OpencodeX session cards
+   */
+  200: OpencodeXSessionCardPage
+}
+
+export type OpencodexStateSessionCardsResponse =
+  OpencodexStateSessionCardsResponses[keyof OpencodexStateSessionCardsResponses]
+
 export type OpencodexStateSessionData = {
   body?: never
   path: {
@@ -7763,6 +8098,8 @@ export type OpencodexWorkbenchFileReadData = {
     directory?: string
     workspace?: string
     path: string
+    root?: string
+    maxBytes?: string
   }
   url: "/experimental/opencodex/workbench/file/read"
 }
@@ -7785,6 +8122,8 @@ export type OpencodexWorkbenchFileReadResponses = {
     reason?: string
     message?: string
     content?: string
+    bytes?: number
+    truncated?: boolean
   }
 }
 
@@ -7932,52 +8271,207 @@ export type OpencodexWorkbenchFileDeleteResponses = {
 export type OpencodexWorkbenchFileDeleteResponse =
   OpencodexWorkbenchFileDeleteResponses[keyof OpencodexWorkbenchFileDeleteResponses]
 
-export type OpencodexWorkbenchGitStatusData = {
-  body?: never
+export type OpencodexWorkbenchFileDiagnosticsData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+  }
   path?: never
-  query?: never
-  url: "/experimental/opencodex/workbench/git/status"
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/diagnostics"
 }
 
-export type OpencodexWorkbenchGitStatusErrors = {
+export type OpencodexWorkbenchFileDiagnosticsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type OpencodexWorkbenchGitStatusError =
-  OpencodexWorkbenchGitStatusErrors[keyof OpencodexWorkbenchGitStatusErrors]
+export type OpencodexWorkbenchFileDiagnosticsError =
+  OpencodexWorkbenchFileDiagnosticsErrors[keyof OpencodexWorkbenchFileDiagnosticsErrors]
 
-export type OpencodexWorkbenchGitStatusResponses = {
+export type OpencodexWorkbenchFileDiagnosticsResponses = {
   /**
-   * Workbench Git status
+   * Active-file diagnostics from the configured language server
    */
   200: {
     ok: boolean
+    supported: boolean
+    reason?: string
     message?: string
-    branch?: string
-    defaultBranch?: string
-    upstream?: string
-    ahead?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    behind?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    remote?: string
-    remoteUrl?: string
-    githubUrl?: string
-    clean: boolean
-    files: Array<{
-      path: string
-      code: string
-      status: string
-      staged: boolean
-      unstaged: boolean
-      untracked: boolean
+    diagnostics: Array<{
+      path?: string
+      line?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      severity: "error" | "warning" | "info"
+      message: string
     }>
   }
 }
 
-export type OpencodexWorkbenchGitStatusResponse =
-  OpencodexWorkbenchGitStatusResponses[keyof OpencodexWorkbenchGitStatusResponses]
+export type OpencodexWorkbenchFileDiagnosticsResponse =
+  OpencodexWorkbenchFileDiagnosticsResponses[keyof OpencodexWorkbenchFileDiagnosticsResponses]
+
+export type OpencodexWorkbenchFileDefinitionData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/definition"
+}
+
+export type OpencodexWorkbenchFileDefinitionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileDefinitionError =
+  OpencodexWorkbenchFileDefinitionErrors[keyof OpencodexWorkbenchFileDefinitionErrors]
+
+export type OpencodexWorkbenchFileDefinitionResponses = {
+  /**
+   * Definition locations for a GUI workbench file position
+   */
+  200: Array<{
+    path: string
+    root?: string
+    readOnly?: true
+    line: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    column: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    endLine: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    endColumn: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type OpencodexWorkbenchFileDefinitionResponse =
+  OpencodexWorkbenchFileDefinitionResponses[keyof OpencodexWorkbenchFileDefinitionResponses]
+
+export type OpencodexWorkbenchFileHoverData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/hover"
+}
+
+export type OpencodexWorkbenchFileHoverErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileHoverError =
+  OpencodexWorkbenchFileHoverErrors[keyof OpencodexWorkbenchFileHoverErrors]
+
+export type OpencodexWorkbenchFileHoverResponses = {
+  /**
+   * Type and definition details for a GUI workbench file position
+   */
+  200: {
+    supported: boolean
+    message?: string
+    contents: Array<{
+      kind: "code" | "markdown" | "plaintext"
+      value: string
+      language?: string
+    }>
+    definitions: Array<{
+      path: string
+      root?: string
+      readOnly?: true
+      line: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+    range?: {
+      line: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  }
+}
+
+export type OpencodexWorkbenchFileHoverResponse =
+  OpencodexWorkbenchFileHoverResponses[keyof OpencodexWorkbenchFileHoverResponses]
+
+export type OpencodexWorkbenchFileCompletionData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+    triggerKind?: 1 | 2 | 3
+    triggerCharacter?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/completion"
+}
+
+export type OpencodexWorkbenchFileCompletionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileCompletionError =
+  OpencodexWorkbenchFileCompletionErrors[keyof OpencodexWorkbenchFileCompletionErrors]
+
+export type OpencodexWorkbenchFileCompletionResponses = {
+  /**
+   * Completion items for a GUI workbench file position
+   */
+  200: {
+    supported: boolean
+    message?: string
+    items: Array<{
+      label: string
+      detail?: string
+      documentation?: string
+      insertText?: string
+      filterText?: string
+      sortText?: string
+      kind?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      insertTextFormat?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+  }
+}
+
+export type OpencodexWorkbenchFileCompletionResponse =
+  OpencodexWorkbenchFileCompletionResponses[keyof OpencodexWorkbenchFileCompletionResponses]
 
 export type OpencodexWorkbenchGitBranchesData = {
   body?: never
@@ -8011,35 +8505,222 @@ export type OpencodexWorkbenchGitBranchesResponses = {
 export type OpencodexWorkbenchGitBranchesResponse =
   OpencodexWorkbenchGitBranchesResponses[keyof OpencodexWorkbenchGitBranchesResponses]
 
-export type OpencodexWorkbenchGitDiffData = {
+export type OpencodexWorkbenchChangesPageData = {
   body?: never
   path?: never
-  query?: never
-  url: "/experimental/opencodex/workbench/git/diff"
+  query?: {
+    directory?: string
+    workspace?: string
+    path?: string
+    cursor?: string
+    revision?: string
+    limit?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/page"
 }
 
-export type OpencodexWorkbenchGitDiffErrors = {
+export type OpencodexWorkbenchChangesPageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type OpencodexWorkbenchGitDiffError = OpencodexWorkbenchGitDiffErrors[keyof OpencodexWorkbenchGitDiffErrors]
+export type OpencodexWorkbenchChangesPageError =
+  OpencodexWorkbenchChangesPageErrors[keyof OpencodexWorkbenchChangesPageErrors]
 
-export type OpencodexWorkbenchGitDiffResponses = {
+export type OpencodexWorkbenchChangesPageResponses = {
   /**
-   * Workbench Git diffs
+   * Paged GUI workbench changes
    */
   200: {
     ok: boolean
+    stale?: boolean
+    mode: "git" | "directory"
+    revision: string
+    path: string
+    items: Array<{
+      type: "file"
+      name: string
+      path: string
+      status: "added" | "deleted" | "modified"
+      staged: boolean
+      unstaged: boolean
+      untracked: boolean
+      openable: boolean
+      additions?: number
+      deletions?: number
+      binary?: boolean
+    }>
+    summary: {
+      fileCount: number
+      additions: number
+      deletions: number
+      metricsResolved: number
+      metricsTotal: number
+      metricsComplete: boolean
+    }
+    next?: string
     message?: string
-    data?: unknown
+    branch?: string
+    defaultBranch?: string
+    upstream?: string
+    ahead?: number
+    behind?: number
+    remoteUrl?: string
+    githubUrl?: string
   }
 }
 
-export type OpencodexWorkbenchGitDiffResponse =
-  OpencodexWorkbenchGitDiffResponses[keyof OpencodexWorkbenchGitDiffResponses]
+export type OpencodexWorkbenchChangesPageResponse =
+  OpencodexWorkbenchChangesPageResponses[keyof OpencodexWorkbenchChangesPageResponses]
+
+export type OpencodexWorkbenchChangesPatchData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+    revision?: string
+    context?: string
+    maxBytes?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/patch"
+}
+
+export type OpencodexWorkbenchChangesPatchErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesPatchError =
+  OpencodexWorkbenchChangesPatchErrors[keyof OpencodexWorkbenchChangesPatchErrors]
+
+export type OpencodexWorkbenchChangesPatchResponses = {
+  /**
+   * One bounded GUI workbench patch
+   */
+  200: {
+    ok: boolean
+    stale?: boolean
+    path: string
+    revision: string
+    status: "added" | "deleted" | "modified"
+    patch?: string
+    additions?: number
+    deletions?: number
+    binary: boolean
+    truncated: boolean
+    message?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesPatchResponse =
+  OpencodexWorkbenchChangesPatchResponses[keyof OpencodexWorkbenchChangesPatchResponses]
+
+export type OpencodexWorkbenchChangesMetricsPageData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    revision: string
+    path?: string
+    cursor?: string
+    limit?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/metrics/page"
+}
+
+export type OpencodexWorkbenchChangesMetricsPageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesMetricsPageError =
+  OpencodexWorkbenchChangesMetricsPageErrors[keyof OpencodexWorkbenchChangesMetricsPageErrors]
+
+export type OpencodexWorkbenchChangesMetricsPageResponses = {
+  /**
+   * Progressive GUI workbench change metrics
+   */
+  200: {
+    ok: boolean
+    stale: boolean
+    revision: string
+    items: Array<{
+      path: string
+      additions: number
+      deletions: number
+      binary: boolean
+    }>
+    next?: string
+    summary: {
+      fileCount: number
+      additions: number
+      deletions: number
+      metricsResolved: number
+      metricsTotal: number
+      metricsComplete: boolean
+    }
+    message?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesMetricsPageResponse =
+  OpencodexWorkbenchChangesMetricsPageResponses[keyof OpencodexWorkbenchChangesMetricsPageResponses]
+
+export type OpencodexWorkbenchChangesPatchPageData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+    revision: string
+    cursor?: string
+    context?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/patch/page"
+}
+
+export type OpencodexWorkbenchChangesPatchPageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesPatchPageError =
+  OpencodexWorkbenchChangesPatchPageErrors[keyof OpencodexWorkbenchChangesPatchPageErrors]
+
+export type OpencodexWorkbenchChangesPatchPageResponses = {
+  /**
+   * One page of a selected GUI workbench patch
+   */
+  200: {
+    ok: boolean
+    stale: boolean
+    path: string
+    revision: string
+    status: "added" | "deleted" | "modified"
+    patch?: string
+    additions?: number
+    deletions?: number
+    binary: boolean
+    complete: boolean
+    next?: string
+    message?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesPatchPageResponse =
+  OpencodexWorkbenchChangesPatchPageResponses[keyof OpencodexWorkbenchChangesPatchPageResponses]
 
 export type OpencodexWorkbenchGitHistoryData = {
   body?: never
@@ -8102,6 +8783,8 @@ export type OpencodexWorkbenchDiagnosticsResponses = {
       path?: string
       line?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       column?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       severity: "error" | "warning" | "info"
       message: string
     }>
@@ -8181,7 +8864,8 @@ export type OpencodexWorkbenchGitCreateBranchResponse =
 
 export type OpencodexWorkbenchGitStageData = {
   body?: {
-    paths: Array<string>
+    paths?: Array<string>
+    all?: boolean
   }
   path?: never
   query?: never
@@ -8214,7 +8898,8 @@ export type OpencodexWorkbenchGitStageResponse =
 
 export type OpencodexWorkbenchGitUnstageData = {
   body?: {
-    paths: Array<string>
+    paths?: Array<string>
+    all?: boolean
   }
   path?: never
   query?: never
@@ -8248,7 +8933,8 @@ export type OpencodexWorkbenchGitUnstageResponse =
 
 export type OpencodexWorkbenchGitDiscardData = {
   body?: {
-    paths: Array<string>
+    paths?: Array<string>
+    all?: boolean
   }
   path?: never
   query?: never
@@ -8866,220 +9552,6 @@ export type OpencodexWorkbenchGithubCreatePullResponses = {
 
 export type OpencodexWorkbenchGithubCreatePullResponse =
   OpencodexWorkbenchGithubCreatePullResponses[keyof OpencodexWorkbenchGithubCreatePullResponses]
-
-export type OpencodexGuiBridgeRegisterData = {
-  body?: {
-    clientID: string
-    token: string
-    capabilities: Array<
-      "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
-    >
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/opencodex/gui-bridge/register"
-}
-
-export type OpencodexGuiBridgeRegisterErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * ForbiddenError
-   */
-  403: ForbiddenError
-  /**
-   * ConflictError
-   */
-  409: ConflictError
-}
-
-export type OpencodexGuiBridgeRegisterError = OpencodexGuiBridgeRegisterErrors[keyof OpencodexGuiBridgeRegisterErrors]
-
-export type OpencodexGuiBridgeRegisterResponses = {
-  /**
-   * GUI bridge registered
-   */
-  200: {
-    ok: true
-  }
-}
-
-export type OpencodexGuiBridgeRegisterResponse =
-  OpencodexGuiBridgeRegisterResponses[keyof OpencodexGuiBridgeRegisterResponses]
-
-export type OpencodexGuiBridgeUnregisterData = {
-  body?: {
-    clientID: string
-    token: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/opencodex/gui-bridge/unregister"
-}
-
-export type OpencodexGuiBridgeUnregisterErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * ForbiddenError
-   */
-  403: ForbiddenError
-  /**
-   * ConflictError
-   */
-  409: ConflictError
-}
-
-export type OpencodexGuiBridgeUnregisterError =
-  OpencodexGuiBridgeUnregisterErrors[keyof OpencodexGuiBridgeUnregisterErrors]
-
-export type OpencodexGuiBridgeUnregisterResponses = {
-  /**
-   * GUI bridge unregistered
-   */
-  200: {
-    ok: true
-  }
-}
-
-export type OpencodexGuiBridgeUnregisterResponse =
-  OpencodexGuiBridgeUnregisterResponses[keyof OpencodexGuiBridgeUnregisterResponses]
-
-export type OpencodexGuiBridgeRespondData = {
-  body?:
-    | {
-        clientID: string
-        token: string
-        requestID: string
-        operation: "workspace.open"
-        result:
-          | {
-              status: "ok"
-              output: {
-                path: string
-              }
-            }
-          | {
-              status: "error"
-              message: string
-            }
-      }
-    | {
-        clientID: string
-        token: string
-        requestID: string
-        operation: "browser.navigate"
-        result:
-          | {
-              status: "ok"
-              output: {
-                url: string
-              }
-            }
-          | {
-              status: "error"
-              message: string
-            }
-      }
-    | {
-        clientID: string
-        token: string
-        requestID: string
-        operation: "browser.state"
-        result:
-          | {
-              status: "ok"
-              output: {
-                url: string
-              }
-            }
-          | {
-              status: "error"
-              message: string
-            }
-      }
-    | {
-        clientID: string
-        token: string
-        requestID: string
-        operation: "browser.screenshot"
-        result:
-          | {
-              status: "ok"
-              output: {
-                url: string
-                dataURL: string
-              }
-            }
-          | {
-              status: "error"
-              message: string
-            }
-      }
-    | {
-        clientID: string
-        token: string
-        requestID: string
-        operation: "browser.snapshot"
-        result:
-          | {
-              status: "ok"
-              output: {
-                url: string
-                text: string
-              }
-            }
-          | {
-              status: "error"
-              message: string
-            }
-      }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/opencodex/gui-bridge/respond"
-}
-
-export type OpencodexGuiBridgeRespondErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * ForbiddenError
-   */
-  403: ForbiddenError
-  /**
-   * ConflictError
-   */
-  409: ConflictError
-}
-
-export type OpencodexGuiBridgeRespondError = OpencodexGuiBridgeRespondErrors[keyof OpencodexGuiBridgeRespondErrors]
-
-export type OpencodexGuiBridgeRespondResponses = {
-  /**
-   * GUI bridge response accepted
-   */
-  200: {
-    ok: true
-  }
-}
-
-export type OpencodexGuiBridgeRespondResponse =
-  OpencodexGuiBridgeRespondResponses[keyof OpencodexGuiBridgeRespondResponses]
 
 export type OpencodexJobGetData = {
   body?: never

@@ -4,11 +4,22 @@ import remend from "remend"
 export type Block = {
   raw: string
   src: string
-  mode: "full" | "live"
+  mode: "full" | "live" | "open-fence"
+  language?: string
 }
 
 function refs(text: string) {
-  return /^\[[^\]]+\]:\s+\S+/m.test(text) || /^\[\^[^\]]+\]:\s+/m.test(text)
+  if (!text.includes("]:")) return false
+  return /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:\S+|\r?\n[ \t]+\S+)/m.test(text)
+}
+
+function language(value: string | undefined) {
+  return value?.trim().split(/\s+/, 1)[0] || undefined
+}
+
+function openCode(raw: string) {
+  const newline = raw.indexOf("\n")
+  return newline < 0 ? "" : raw.slice(newline + 1)
 }
 
 function open(raw: string) {
@@ -28,22 +39,28 @@ function heal(text: string) {
 
 export function stream(text: string, live: boolean) {
   if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
-  const src = heal(text)
-  if (refs(text)) return [{ raw: text, src, mode: "live" }] satisfies Block[]
+  if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const tokens = marked.lexer(text)
   const tail = tokens.findLastIndex((token) => token.type !== "space")
-  if (tail < 0) return [{ raw: text, src, mode: "live" }] satisfies Block[]
+  if (tail < 0) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const last = tokens[tail]
-  if (!last || last.type !== "code") return [{ raw: text, src, mode: "live" }] satisfies Block[]
-  const code = last as Tokens.Code
-  if (!open(code.raw)) return [{ raw: text, src, mode: "live" }] satisfies Block[]
-  const head = tokens
-    .slice(0, tail)
+  if (!last) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
+
+  const result: Block[] = []
+  for (let index = 0; index < tail; index++) {
+    const token = tokens[index]
+    if (!token || token.type === "space") continue
+    let raw = token.raw
+    while (tokens[index + 1]?.type === "space" && index + 1 < tail) raw += tokens[++index]!.raw
+    result.push({ raw, src: raw, mode: "full" })
+  }
+
+  const raw = tokens
+    .slice(tail)
     .map((token) => token.raw)
     .join("")
-  if (!head) return [{ raw: code.raw, src: code.raw, mode: "live" }] satisfies Block[]
-  return [
-    { raw: head, src: heal(head), mode: "live" },
-    { raw: code.raw, src: code.raw, mode: "live" },
-  ] satisfies Block[]
+  if (last.type !== "code") return [...result, { raw, src: heal(raw), mode: "live" }]
+  const code = last as Tokens.Code
+  if (!open(code.raw)) return [...result, { raw, src: heal(raw), mode: "live" }]
+  return [...result, { raw, src: openCode(code.raw), mode: "open-fence", language: language(code.lang) }]
 }

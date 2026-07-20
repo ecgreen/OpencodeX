@@ -38,12 +38,17 @@ function stateSnapshot(input: {
     payloads: {
       catalog: {
         projects: [],
-        sessions: input.sessions,
+        sessionCards: {
+          items: input.sessions,
+          hasMore: false,
+          missing: [],
+          sessionUiState: input.sessionUiState ?? {},
+        },
         views: input.views ?? [],
         sessionStatus: input.status ?? {},
         permissions: [],
         questions: [],
-        sessionUiState: input.sessionUiState ?? {},
+        sessionUiState: {},
       },
       operations: { jobs: [], swarms: [] },
     },

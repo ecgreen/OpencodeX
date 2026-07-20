@@ -1,4 +1,6 @@
-import { createMemo, createResource, type Accessor } from "solid-js"
+import type { FileNode } from "@opencode-ai/sdk/v2/client"
+import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createDebouncedSearch } from "../lib/async-search"
 import { buildPromptMentionOptions, referenceSearch } from "../lib/prompt-autocomplete"
 import { formatTokenCount, isAssistantMessage, textPart } from "../lib/session-composer-helpers"
 import type { SessionPageProps } from "./session-page-types"
@@ -26,21 +28,50 @@ export function createSessionComposerPresentation(input: { props: SessionPagePro
     const match = /(?:^|\s)@([^\s@]*)$/.exec(draft)
     return match?.[1]
   })
-  const mentionReferenceQuery = createMemo(() => {
+  const mentionFileSearch = createMemo(() => {
     const query = mentionQuery()
     if (query === undefined) return
-    return referenceSearch({ query, config: input.props.config })
+    const reference = referenceSearch({ query, config: input.props.config })
+    const directory = reference?.root ?? input.props.sidePanelDirectory ?? input.props.session?.directory ?? input.props.gui?.directory ?? ""
+    const context = `${input.props.gui?.url ?? "no-client"}\n${directory}`
+    return reference ? { kind: "reference" as const, ...reference, context } : { kind: "file" as const, query, directory, context }
   })
-  const mentionFileQuery = createMemo(() => {
-    const query = mentionQuery()
-    if (query === undefined || referenceSearch({ query, config: input.props.config })) return
-    return query
+  const [mentionFiles, setMentionFiles] = createSignal<FileNode[]>([])
+  const [mentionReferenceFiles, setMentionReferenceFiles] = createSignal<Array<{ alias: string; root: string; file: FileNode }>>([])
+  const fileSearch = createDebouncedSearch<NonNullable<ReturnType<typeof mentionFileSearch>>, FileNode[]>({
+    key: (query) => query.kind === "file"
+      ? `file\n${query.context}\n${query.query}`
+      : `reference\n${query.context}\n${query.root}\n${query.query}`,
+    load: (query, signal) => input.props.findFiles?.({
+      query: query.query,
+      ...(query.kind === "reference" ? { directory: query.root } : query.directory ? { directory: query.directory } : {}),
+      signal,
+    }) ?? Promise.resolve([]),
+    success: (files, query) => {
+      if (query.kind === "file") {
+        setMentionFiles(files)
+        setMentionReferenceFiles([])
+        return
+      }
+      setMentionFiles([])
+      setMentionReferenceFiles(files.map((file) => ({ alias: query.alias, root: query.root, file })))
+    },
+    error: () => {
+      setMentionFiles([])
+      setMentionReferenceFiles([])
+    },
   })
-  const [mentionFiles] = createResource(mentionFileQuery, async (query) => input.props.findFiles ? input.props.findFiles({ query }) : [])
-  const [mentionReferenceFiles] = createResource(mentionReferenceQuery, async (match) => {
-    if (!input.props.findFiles) return []
-    return (await input.props.findFiles({ query: match.query, directory: match.root })).map((file) => ({ alias: match.alias, root: match.root, file }))
+  createEffect(() => {
+    const query = mentionFileSearch()
+    if (query && input.props.findFiles) {
+      fileSearch.search(query)
+      return
+    }
+    fileSearch.clear()
+    setMentionFiles([])
+    setMentionReferenceFiles([])
   })
+  onCleanup(fileSearch.dispose)
   const mentionOptions = createMemo(() => {
     const query = mentionQuery()
     if (query === undefined) return []
@@ -48,8 +79,8 @@ export function createSessionComposerPresentation(input: { props: SessionPagePro
       query,
       agents: input.props.agents,
       config: input.props.config,
-      files: mentionFiles() ?? [],
-      referenceFiles: mentionReferenceFiles() ?? [],
+      files: mentionFiles(),
+      referenceFiles: mentionReferenceFiles(),
       mcpResources: input.props.mcpResources,
       limit: 10,
     })

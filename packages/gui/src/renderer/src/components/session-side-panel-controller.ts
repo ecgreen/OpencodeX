@@ -3,6 +3,7 @@ import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { SessionPageProps } from "./session-page-types"
 import type { SessionSidePanelRequest, SessionSidePanelTarget } from "./session-side-panel"
 import { registerSessionWorkspaceTargetHandler } from "../lib/session-workspace-bridge"
+import { createResizeSession } from "../lib/resize-session"
 
 const SIDE_PANEL_WIDTH_KEY = "opencodex.gui.sessionSidePanel.width"
 const sidePanelOpenBySessionID = new Map<string, boolean>()
@@ -59,7 +60,6 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     if (!enabled()) return
     const id = props.session?.id
     if (id && loadedSessionID === id) writeSidePanelOpen(id, open())
-    writeSidePanelWidthRatio(widthRatio())
   })
 
   function openTarget(target: SessionSidePanelTarget = { tab: "git" }) {
@@ -90,32 +90,45 @@ export function createSessionSidePanelController(props: SessionPageProps) {
 
   function startResize(event: PointerEvent & { currentTarget: HTMLElement }) {
     event.preventDefault()
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+    resizeCleanups.forEach((cleanup) => cleanup())
+    const handle = event.currentTarget
+    const pointerID = event.pointerId
+    handle.setPointerCapture?.(pointerID)
     window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-start"))
     const container = event.currentTarget.parentElement
     container?.classList.add("resizing")
     const containerWidth = container?.getBoundingClientRect().width ?? window.innerWidth
     const startX = event.clientX
     const startRatio = widthRatio()
+    const resize = createResizeSession(startRatio, {
+      preview: setWidthRatio,
+      persist: writeSidePanelWidthRatio,
+    })
     const onMove = (moveEvent: PointerEvent) => {
-      setWidthRatio(clampSidePanelWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
+      if (moveEvent.pointerId !== pointerID) return
+      resize.update(clampSidePanelWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
     }
     const cleanup = () => {
       if (!resizeCleanups.delete(cleanup)) return
       window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", cleanup)
-      window.removeEventListener("pointercancel", cleanup)
+      window.removeEventListener("pointerup", finish)
+      window.removeEventListener("pointercancel", finish)
+      if (handle.hasPointerCapture?.(pointerID)) handle.releasePointerCapture?.(pointerID)
       container?.classList.remove("resizing")
+      resize.finish()
       window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-end"))
+    }
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId === pointerID) cleanup()
     }
     resizeCleanups.add(cleanup)
     window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", cleanup)
-    window.addEventListener("pointercancel", cleanup)
+    window.addEventListener("pointerup", finish)
+    window.addEventListener("pointercancel", finish)
   }
 
   function toggleMaximized() {
-    setWidthRatio((current) => current >= 0.68 ? 0.4 : 0.7)
+    setPersistedWidthRatio(widthRatio() >= 0.68 ? 0.4 : 0.7)
   }
 
   function resizeByKeyboard(event: KeyboardEvent) {
@@ -131,7 +144,13 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     }
     if (next === undefined) return
     event.preventDefault()
-    setWidthRatio(clampSidePanelWidthRatio(next))
+    setPersistedWidthRatio(next)
+  }
+
+  function setPersistedWidthRatio(value: number) {
+    const next = clampSidePanelWidthRatio(value)
+    setWidthRatio(next)
+    writeSidePanelWidthRatio(next)
   }
 
   function openTranscriptTarget(event: MouseEvent) {

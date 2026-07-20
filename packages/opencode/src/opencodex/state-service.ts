@@ -30,6 +30,7 @@ export const layer = Layer.effect(
       listen: log.listen,
       snapshot: reader.snapshot,
       operations: reader.operations,
+      sessionCards: reader.sessionCards,
       session: reader.session,
     })
   }),

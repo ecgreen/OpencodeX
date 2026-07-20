@@ -19,6 +19,19 @@ export function clientStateSyncTransport(options: ClientStateSyncOptions): Clien
           { throwOnError: true },
         )
       ).data,
+    cards: async (input) =>
+      (
+        await client.opencodex.state.sessionCards(
+          {
+            directory: options.directory,
+            workspace: options.workspace,
+            cursor: input.cursor,
+            limit: input.limit === undefined ? undefined : String(input.limit),
+            ids: input.sessionIDs?.join(","),
+          },
+          { throwOnError: true, signal: input.signal },
+        )
+      ).data,
     session: async (input) =>
       (
         await client.opencodex.state.session(
@@ -29,7 +42,7 @@ export function clientStateSyncTransport(options: ClientStateSyncOptions): Clien
             limit: input.limit === undefined ? undefined : String(input.limit),
             before: input.before,
           },
-          { throwOnError: true },
+          { throwOnError: true, signal: input.signal },
         )
       ).data,
     events: async (input) =>

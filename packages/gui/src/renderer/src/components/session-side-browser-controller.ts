@@ -11,9 +11,11 @@ export function createSessionSideBrowserController(input: {
   menuOpen: Accessor<boolean>
   updateTab: (id: string, patch: Partial<OpenTab>) => void
 }) {
-  const [previewByID, setPreviewByID] = createSignal<Record<string, string>>({})
+  const [previewVersion, setPreviewVersion] = createSignal(0)
   const [parkedID, setParkedID] = createSignal("")
+  const previews = new Map<string, string>()
   const previewTokens = new Map<string, number>()
+  const previewTimers = new Map<string, number>()
   const native = createNativeBrowserController({
     active: () => input.active() && !untrack(parkedID),
     activeID: input.activeID,
@@ -28,8 +30,16 @@ export function createSessionSideBrowserController(input: {
   })
 
   const activePreview = createMemo(() => {
+    previewVersion()
     const tab = input.activeTab()
-    return tab?.kind === "web" ? previewByID()[tab.id] : undefined
+    return tab?.kind === "web" ? previews.get(tab.id) : undefined
+  })
+
+  onCleanup(() => {
+    previewTimers.forEach((timer) => clearTimeout(timer))
+    previewTimers.clear()
+    previewTokens.clear()
+    previews.clear()
   })
 
   createEffect(() => {
@@ -107,8 +117,15 @@ export function createSessionSideBrowserController(input: {
   function close(tab: OpenTab) {
     if (tab.kind !== "web") return
     native.destroy(tab.id)
+    const timer = previewTimers.get(tab.id)
+    if (timer !== undefined) clearTimeout(timer)
+    previewTimers.delete(tab.id)
     previewTokens.delete(tab.id)
-    setPreviewByID((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== tab.id)))
+    if (previews.delete(tab.id)) setPreviewVersion((current) => current + 1)
+  }
+
+  function closeAll(tabs: readonly OpenTab[] = input.tabs()) {
+    tabs.forEach(close)
   }
 
   function parkActive() {
@@ -121,10 +138,18 @@ export function createSessionSideBrowserController(input: {
     if (!browser) return
     const token = (previewTokens.get(id) ?? 0) + 1
     previewTokens.set(id, token)
-    window.setTimeout(() => void browser.screenshot(id).catch(() => undefined).then((screenshot) => {
-      if (!screenshot || previewTokens.get(id) !== token || !input.tabs().some((tab) => tab.id === id)) return
-      setPreviewByID((current) => ({ ...current, [id]: screenshot }))
-    }), 180)
+    const pending = previewTimers.get(id)
+    if (pending !== undefined) clearTimeout(pending)
+    previewTimers.set(id, window.setTimeout(() => {
+      previewTimers.delete(id)
+      void browser.screenshot(id).catch(() => undefined).then((screenshot) => {
+        if (!screenshot || previewTokens.get(id) !== token || !input.tabs().some((tab) => tab.id === id)) return
+        previews.delete(id)
+        previews.set(id, screenshot)
+        while (previews.size > 2) previews.delete(previews.keys().next().value!)
+        setPreviewVersion((current) => current + 1)
+      })
+    }, 180))
   }
 
   function park(id: string) {
@@ -145,6 +170,7 @@ export function createSessionSideBrowserController(input: {
     capture,
     snapshot,
     close,
+    closeAll,
     parkActive,
     hideAll: native.hideAll,
     setHost: native.setHost,

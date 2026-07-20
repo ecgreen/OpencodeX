@@ -143,5 +143,6 @@ function projectCollection(): GuiSnapshot["projects"][number] {
     project: project(),
     folders: [{ path: "C:/Work/OpencodeX" }],
     sessions: [],
+    sessionIDs: [],
   }
 }

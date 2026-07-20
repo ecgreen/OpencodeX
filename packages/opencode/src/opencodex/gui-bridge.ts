@@ -4,9 +4,22 @@ import { SessionID } from "@/session/schema"
 import { EventV2 } from "@opencode-ai/core/event"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
-import { Context, Deferred, Duration, Effect, Layer, Schema, SynchronizedRef } from "effect"
+import { Clock, Context, Deferred, Duration, Effect, Layer, Schema, SynchronizedRef } from "effect"
+import {
+  capabilitiesFor,
+  type Lease,
+  type Pending,
+  prune,
+  removeClientFromScopes,
+  scopeKey,
+  selectRegistration,
+  type State,
+  supports,
+  syncScopeIndex,
+} from "./gui-bridge-state"
 
 const DEFAULT_TIMEOUT = Duration.seconds(30)
+export const MAX_SCOPES = 512
 export const MAX_PNG_BYTES = 5 * 1024 * 1024
 export const MAX_SNAPSHOT_LENGTH = 200_000
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,"
@@ -24,6 +37,11 @@ export type Token = typeof Token.Type
 
 export const RequestID = Schema.String.check(Schema.isStartsWith("gbr_")).pipe(Schema.brand("GuiBridge.RequestID"))
 export type RequestID = typeof RequestID.Type
+
+export const LeaseGeneration = Schema.String.check(Schema.isStartsWith("gbl_")).pipe(
+  Schema.brand("GuiBridge.LeaseGeneration"),
+)
+export type LeaseGeneration = typeof LeaseGeneration.Type
 
 export const Operation = Schema.Literals([
   "workspace.open",
@@ -80,22 +98,41 @@ export const OperationRequest = Schema.Union([
 ])
 export type OperationRequest = typeof OperationRequest.Type
 
+export const RegistrationScope = Schema.Struct({
+  directory: Schema.String.check(Schema.isMinLength(1)),
+  workspaceID: Schema.optional(WorkspaceV2.ID),
+})
+export type Scope = typeof RegistrationScope.Type
+
+const RegistrationScopes = Schema.UniqueArray(RegistrationScope).check(Schema.isMaxLength(MAX_SCOPES))
+const Capabilities = Schema.UniqueArray(Operation).check(Schema.isMaxLength(Operation.literals.length))
+
 export class Registration extends Schema.Class<Registration>("GuiBridgeRegistration")({
   clientID: ClientID,
   token: Token,
-  directory: Schema.String,
-  workspaceID: Schema.optional(WorkspaceV2.ID),
-  capabilities: Schema.Array(Operation),
+  capabilities: Capabilities,
+  scopes: RegistrationScopes,
   expiresAt: Schema.optional(Schema.Number),
 }) {}
 
-export const RegisterPayload = Schema.Struct({
+export const SyncPayload = Schema.Struct({
   clientID: ClientID,
   token: Token,
-  capabilities: Schema.Array(Operation),
+  capabilities: Capabilities,
+  scopes: RegistrationScopes,
 })
-
-export const ClientPayload = Schema.Struct({ clientID: ClientID, token: Token })
+export const SyncResult = Schema.Struct({
+  ok: Schema.Literal(true),
+  generation: LeaseGeneration,
+  added: Schema.Int,
+  removed: Schema.Int,
+  unchanged: Schema.Int,
+})
+export const UnregisterPayload = Schema.Struct({
+  clientID: ClientID,
+  token: Token,
+  generation: LeaseGeneration,
+})
 export const MutationResult = Schema.Struct({ ok: Schema.Literal(true) })
 
 const FailureResult = Schema.Struct({
@@ -177,15 +214,6 @@ export class RequestNotFoundError extends Schema.TaggedErrorClass<RequestNotFoun
   }
 }
 
-export class RegistrationNotFoundError extends Schema.TaggedErrorClass<RegistrationNotFoundError>()(
-  "GuiBridgeRegistrationNotFoundError",
-  { clientID: ClientID },
-) {
-  override get message() {
-    return `GUI bridge client ${this.clientID} is not registered.`
-  }
-}
-
 export class CorrelationError extends Schema.TaggedErrorClass<CorrelationError>()("GuiBridgeCorrelationError", {
   requestID: RequestID,
   expected: Operation,
@@ -227,11 +255,6 @@ export class InvalidResponseError extends Schema.TaggedErrorClass<InvalidRespons
   }
 }
 
-export interface Scope {
-  readonly directory: string
-  readonly workspaceID?: WorkspaceV2.ID
-}
-
 export type Request = Scope &
   OperationRequest & {
     readonly sessionID: SessionID
@@ -239,42 +262,27 @@ export type Request = Scope &
   }
 
 export type Error = UnavailableError | TimeoutError | RemoteError
-export type ResponseError = AuthenticationError | RegistrationNotFoundError | RequestNotFoundError | CorrelationError
+export type ResponseError = AuthenticationError | RequestNotFoundError | CorrelationError
 
 export interface Interface {
-  readonly register: (input: Registration) => Effect.Effect<void, AuthenticationError>
-  readonly unregister: (input: Scope & typeof ClientPayload.Type) => Effect.Effect<void, ResponseError>
+  readonly sync: (input: Registration) => Effect.Effect<typeof SyncResult.Type, AuthenticationError>
+  readonly unregister: (input: typeof UnregisterPayload.Type) => Effect.Effect<void, AuthenticationError>
   readonly capabilities: (input: Scope) => Effect.Effect<Operation[]>
   readonly request: (input: Request) => Effect.Effect<ResponseOutput, Error>
   readonly respond: (input: RespondPayload) => Effect.Effect<void, ResponseError>
 }
 
-interface Pending {
-  readonly requestID: RequestID
-  readonly clientID: ClientID
-  readonly token: Token
-  readonly operation: Operation
-  readonly deferred: Deferred.Deferred<ResponseOutput, RemoteError | UnavailableError>
-}
-
-interface State {
-  readonly registrations: Map<ClientID, Registration>
-  readonly pending: Map<RequestID, Pending>
-}
-
-type RegisterResult =
-  | { readonly _tag: "Unauthorized" }
-  | { readonly _tag: "Registered"; readonly invalidated: Pending[] }
-type UnregisterResult =
-  | { readonly _tag: "Missing" }
-  | { readonly _tag: "Unauthorized" }
-  | { readonly _tag: "WrongScope" }
-  | { readonly _tag: "Unregistered"; readonly removed: Pending[] }
-type RespondResult =
-  | { readonly _tag: "Missing" }
-  | { readonly _tag: "Unauthorized"; readonly pending: Pending }
-  | { readonly _tag: "Mismatched"; readonly pending: Pending }
-  | { readonly _tag: "Matched"; readonly pending: Pending }
+type SyncStateResult =
+  | { readonly _tag: "Unauthorized"; readonly invalidated: Pending[] }
+  | { readonly _tag: "Synced"; readonly invalidated: Pending[]; readonly result: typeof SyncResult.Type }
+type UnregisterStateResult =
+  | { readonly _tag: "Unauthorized"; readonly invalidated: Pending[] }
+  | { readonly _tag: "Unregistered"; readonly invalidated: Pending[] }
+type RespondStateResult =
+  | { readonly _tag: "Missing"; readonly invalidated: Pending[] }
+  | { readonly _tag: "Unauthorized"; readonly invalidated: Pending[]; readonly pending: Pending }
+  | { readonly _tag: "Mismatched"; readonly invalidated: Pending[]; readonly pending: Pending }
+  | { readonly _tag: "Matched"; readonly invalidated: Pending[]; readonly pending: Pending }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/GuiBridge") {}
 
@@ -282,104 +290,125 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
-    const state = yield* SynchronizedRef.make<State>({ registrations: new Map(), pending: new Map() })
+    const state = yield* SynchronizedRef.make<State>({ registrations: new Map(), scopes: new Map(), pending: new Map() })
 
-    const failPending = (pending: Pending[], error: (item: Pending) => UnavailableError) =>
-      Effect.forEach(pending, (item) => Deferred.fail(item.deferred, error(item)), { discard: true })
+    const failPending = (pending: Pending[]) =>
+      Effect.forEach(
+        pending,
+        (item) => Deferred.fail(item.deferred, new UnavailableError({ operation: item.operation })),
+        { discard: true },
+      )
 
     yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        const pending = yield* SynchronizedRef.modify(state, (current) => [
-          Array.from(current.pending.values()),
-          { registrations: new Map(), pending: new Map() },
-        ])
-        yield* failPending(pending, (item) => new UnavailableError({ operation: item.operation }))
-      }),
+      SynchronizedRef.modify(state, (current) => [
+        Array.from(current.pending.values()),
+        { registrations: new Map(), scopes: new Map(), pending: new Map() },
+      ]).pipe(Effect.flatMap(failPending)),
     )
 
-    const register: Interface["register"] = Effect.fn("GuiBridge.register")(function* (input) {
-      const result = yield* SynchronizedRef.modify(state, (current): readonly [RegisterResult, State] => {
-        const existing = current.registrations.get(input.clientID)
-        if (existing && existing.token !== input.token) return [{ _tag: "Unauthorized" as const }, current]
+    const sync: Interface["sync"] = Effect.fn("GuiBridge.sync")(function* (input) {
+      const now = yield* Clock.currentTimeMillis
+      const result = yield* SynchronizedRef.modify(state, (current): readonly [SyncStateResult, State] => {
+        const pruned = prune(current, now)
+        const existing = pruned.state.registrations.get(input.clientID)
+        if (existing && existing.token !== input.token) {
+          return [{ _tag: "Unauthorized", invalidated: pruned.invalidated }, pruned.state]
+        }
 
-        const invalidated = Array.from(current.pending.values()).filter(
-          (item) =>
-            item.clientID === input.clientID &&
-            (item.token !== input.token ||
-              input.directory !== existing?.directory ||
-              input.workspaceID !== existing?.workspaceID ||
-              !input.capabilities.includes(item.operation)),
-        )
-        const registrations = new Map(current.registrations)
+        const desired = new Map(input.scopes.map((scope) => [scopeKey(scope), scope]))
+        const previous = existing?.scopes ?? new Map<string, Scope>()
+        const added = Array.from(desired.keys()).filter((key) => !previous.has(key))
+        const removed = Array.from(previous.keys()).filter((key) => !desired.has(key))
+        const unchanged = Array.from(desired.keys()).filter((key) => previous.has(key))
+        const generation = LeaseGeneration.make(Identifier.create("gbl", "ascending"))
+        const registration: Lease = { ...input, generation, scopes: desired }
+        const registrations = new Map(pruned.state.registrations)
         registrations.delete(input.clientID)
-        registrations.set(input.clientID, input)
-        const pending = new Map(current.pending)
-        invalidated.forEach((item) => pending.delete(item.requestID))
+        if (desired.size > 0) registrations.set(input.clientID, registration)
+        const scopes = syncScopeIndex(pruned.state.scopes, input.clientID, previous, desired)
+        const affected = Array.from(pruned.state.pending.values()).filter(
+          (item) => item.clientID === input.clientID && !supports(registration, item.scope, item.operation),
+        )
+        const pending = new Map(pruned.state.pending)
+        affected.forEach((item) => pending.delete(item.requestID))
         return [
-          { _tag: "Registered" as const, invalidated },
-          { registrations, pending },
+          {
+            _tag: "Synced",
+            invalidated: [...pruned.invalidated, ...affected],
+            result: { ok: true, generation, added: added.length, removed: removed.length, unchanged: unchanged.length },
+          },
+          { registrations, scopes, pending },
         ]
       })
+      yield* failPending(result.invalidated)
       if (result._tag === "Unauthorized") return yield* new AuthenticationError({ clientID: input.clientID })
-      yield* failPending(result.invalidated, (item) => new UnavailableError({ operation: item.operation }))
+      return result.result
     }, Effect.uninterruptible)
 
     const unregister: Interface["unregister"] = Effect.fn("GuiBridge.unregister")(function* (input) {
-      const result = yield* SynchronizedRef.modify(state, (current): readonly [UnregisterResult, State] => {
-        const registration = current.registrations.get(input.clientID)
-        if (!registration) return [{ _tag: "Missing" as const }, current]
-        if (registration.token !== input.token) return [{ _tag: "Unauthorized" as const }, current]
-        if (registration.directory !== input.directory || registration.workspaceID !== input.workspaceID) {
-          return [{ _tag: "WrongScope" as const }, current]
+      const now = yield* Clock.currentTimeMillis
+      const result = yield* SynchronizedRef.modify(state, (current): readonly [UnregisterStateResult, State] => {
+        const pruned = prune(current, now)
+        const registration = pruned.state.registrations.get(input.clientID)
+        if (!registration) {
+          return [{ _tag: "Unregistered", invalidated: pruned.invalidated }, pruned.state]
         }
-        const registrations = new Map(current.registrations)
+        if (registration.token !== input.token) {
+          return [{ _tag: "Unauthorized", invalidated: pruned.invalidated }, pruned.state]
+        }
+        if (registration.generation !== input.generation) {
+          return [{ _tag: "Unregistered", invalidated: pruned.invalidated }, pruned.state]
+        }
+        const registrations = new Map(pruned.state.registrations)
         registrations.delete(input.clientID)
-        const removed = Array.from(current.pending.values()).filter((item) => item.clientID === input.clientID)
-        const pending = new Map(current.pending)
-        removed.forEach((item) => pending.delete(item.requestID))
+        const affected = Array.from(pruned.state.pending.values()).filter((item) => item.clientID === input.clientID)
+        const pending = new Map(pruned.state.pending)
+        affected.forEach((item) => pending.delete(item.requestID))
         return [
-          { _tag: "Unregistered" as const, removed },
-          { registrations, pending },
+          { _tag: "Unregistered", invalidated: [...pruned.invalidated, ...affected] },
+          {
+            registrations,
+            scopes: removeClientFromScopes(pruned.state.scopes, input.clientID),
+            pending,
+          },
         ]
       })
-      if (result._tag === "Missing") {
-        return yield* new RegistrationNotFoundError({ clientID: input.clientID })
-      }
-      if (result._tag === "Unauthorized" || result._tag === "WrongScope") {
-        return yield* new AuthenticationError({ clientID: input.clientID })
-      }
-      yield* failPending(result.removed, (item) => new UnavailableError({ operation: item.operation }))
+      yield* failPending(result.invalidated)
+      if (result._tag === "Unauthorized") return yield* new AuthenticationError({ clientID: input.clientID })
     }, Effect.uninterruptible)
 
     const capabilities: Interface["capabilities"] = Effect.fn("GuiBridge.capabilities")(function* (input) {
-      const registrations = (yield* SynchronizedRef.get(state)).registrations
-      return Array.from(
-        new Set(
-          Array.from(registrations.values())
-            .filter((registration) => registrationLive(registration) && scopeMatches(registration, input))
-            .flatMap((registration) => registration.capabilities),
-        ),
-      )
-    })
+      const now = yield* Clock.currentTimeMillis
+      const result = yield* SynchronizedRef.modify(state, (current) => {
+        const pruned = prune(current, now)
+        return [{ value: capabilitiesFor(pruned.state, input), invalidated: pruned.invalidated }, pruned.state]
+      })
+      yield* failPending(result.invalidated)
+      return result.value
+    }, Effect.uninterruptible)
 
     const request: Interface["request"] = Effect.fn("GuiBridge.request")(function* (input) {
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis
           const requestID = RequestID.make(Identifier.create("gbr", "ascending"))
           const deferred = yield* Deferred.make<ResponseOutput, RemoteError | UnavailableError>()
-          const registration = yield* SynchronizedRef.modify(state, (current) => {
-            const registration = selectRegistration(current.registrations, input, input.operation)
-            if (!registration) return [undefined, current]
-            const pending = new Map(current.pending).set(requestID, {
+          const selected = yield* SynchronizedRef.modify(state, (current) => {
+            const pruned = prune(current, now)
+            const registration = selectRegistration(pruned.state, input, input.operation)
+            if (!registration) return [{ registration, invalidated: pruned.invalidated }, pruned.state]
+            const pending = new Map(pruned.state.pending).set(requestID, {
               requestID,
               clientID: registration.clientID,
               token: registration.token,
+              scope: { directory: input.directory, workspaceID: input.workspaceID },
               operation: input.operation,
               deferred,
             })
-            return [registration, { ...current, pending }]
+            return [{ registration, invalidated: pruned.invalidated }, { ...pruned.state, pending }]
           })
-          if (!registration) return yield* new UnavailableError({ operation: input.operation })
+          yield* failPending(selected.invalidated)
+          if (!selected.registration) return yield* new UnavailableError({ operation: input.operation })
 
           return yield* restore(
             Effect.gen(function* () {
@@ -387,17 +416,12 @@ export const layer = Layer.effect(
                 Event.Request,
                 {
                   requestID,
-                  clientID: registration.clientID,
+                  clientID: selected.registration.clientID,
                   sessionID: input.sessionID,
                   operation: input.operation,
                   input: input.input,
                 },
-                {
-                  location: {
-                    directory: AbsolutePath.make(input.directory),
-                    workspaceID: input.workspaceID,
-                  },
-                },
+                { location: { directory: AbsolutePath.make(input.directory), workspaceID: input.workspaceID } },
               )
               return yield* Deferred.await(deferred).pipe(
                 Effect.timeoutOrElse({
@@ -421,30 +445,32 @@ export const layer = Layer.effect(
     })
 
     const respond: Interface["respond"] = Effect.fn("GuiBridge.respond")(function* (input) {
-      const result = yield* SynchronizedRef.modify(state, (current): readonly [RespondResult, State] => {
-        const pending = current.pending.get(input.requestID)
-        if (!pending) return [{ _tag: "Missing" as const }, current]
-        const registration = current.registrations.get(input.clientID)
+      const now = yield* Clock.currentTimeMillis
+      const result = yield* SynchronizedRef.modify(state, (current): readonly [RespondStateResult, State] => {
+        const pruned = prune(current, now)
+        const pending = pruned.state.pending.get(input.requestID)
+        if (!pending) return [{ _tag: "Missing", invalidated: pruned.invalidated }, pruned.state]
+        const registration = pruned.state.registrations.get(input.clientID)
         if (
           !registration ||
-          !registrationLive(registration) ||
           registration.token !== input.token ||
           pending.token !== input.token ||
-          pending.clientID !== input.clientID
+          pending.clientID !== input.clientID ||
+          !supports(registration, pending.scope, pending.operation)
         ) {
-          return [{ _tag: "Unauthorized" as const, pending }, current]
+          return [{ _tag: "Unauthorized", invalidated: pruned.invalidated, pending }, pruned.state]
         }
         if (pending.operation !== input.operation) {
-          return [{ _tag: "Mismatched" as const, pending }, current]
+          return [{ _tag: "Mismatched", invalidated: pruned.invalidated, pending }, pruned.state]
         }
-        const entries = new Map(current.pending)
+        const entries = new Map(pruned.state.pending)
         entries.delete(input.requestID)
         return [
-          { _tag: "Matched" as const, pending },
-          { ...current, pending: entries },
+          { _tag: "Matched", invalidated: pruned.invalidated, pending },
+          { ...pruned.state, pending: entries },
         ]
       })
-
+      yield* failPending(result.invalidated)
       if (result._tag === "Missing") return yield* new RequestNotFoundError({ requestID: input.requestID })
       if (result._tag === "Unauthorized") return yield* new AuthenticationError({ clientID: input.clientID })
       if (result._tag === "Mismatched") {
@@ -464,27 +490,10 @@ export const layer = Layer.effect(
       yield* Deferred.succeed(result.pending.deferred, input.result.output)
     }, Effect.uninterruptible)
 
-    return Service.of({ register, unregister, capabilities, request, respond })
+    return Service.of({ sync, unregister, capabilities, request, respond })
   }),
 )
 
 export const defaultLayer = layer.pipe(Layer.provide(EventV2Bridge.defaultLayer))
-
-function scopeMatches(registration: Registration, scope: Scope) {
-  if (registration.directory !== scope.directory) return false
-  if (scope.workspaceID === undefined) return registration.workspaceID === undefined
-  return registration.workspaceID === undefined || registration.workspaceID === scope.workspaceID
-}
-
-function selectRegistration(registrations: Map<ClientID, Registration>, scope: Scope, operation: Operation) {
-  const matches = Array.from(registrations.values())
-    .filter((registration) => registrationLive(registration) && scopeMatches(registration, scope) && registration.capabilities.includes(operation))
-    .toReversed()
-  return matches.find((registration) => registration.workspaceID === scope.workspaceID) ?? matches[0]
-}
-
-function registrationLive(registration: Registration) {
-  return registration.expiresAt === undefined || registration.expiresAt > Date.now()
-}
 
 export * as GuiBridge from "./gui-bridge"

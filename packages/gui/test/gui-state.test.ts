@@ -52,7 +52,7 @@ function snapshot(): OpencodeXStateSnapshot {
     payloads: {
       catalog: {
         projects: [],
-        sessions: [session()],
+        sessionCards: { items: [session()], hasMore: false, missing: [], sessionUiState: {} },
         views: [],
         sessionStatus: {},
         permissions: [],

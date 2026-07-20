@@ -1,12 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import type { GlobalSession, OpencodeXView, PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/store"
-import { deriveSessionStatus, deriveViewStatus, markSessionSeenInSnapshot, markSessionViewedInSnapshot, reconcileSessionUiState, type DerivedSessionStatus } from "../src/renderer/src/lib/session-status"
+import { deriveSessionStatus, deriveViewStatus, isActiveSessionStatus, markSessionViewedInSnapshot, reconcileSessionUiState, type DerivedSessionStatus } from "../src/renderer/src/lib/session-status"
 import { deriveStatus as deriveTuiStatus } from "../../opencode/src/cli/cmd/tui/component/opencodex-session-status-core"
 
 const sessionID = "ses_sync"
 
 describe("GUI session status parity", () => {
+  test("includes only actionable or unseen sessions in the dashboard active set", () => {
+    const statuses: DerivedSessionStatus[] = ["in_progress", "input_needed", "ready_for_review"]
+    expect(statuses.filter(isActiveSessionStatus)).toEqual([
+      "in_progress",
+      "input_needed",
+      "ready_for_review",
+    ])
+    expect(isActiveSessionStatus("dormant")).toBe(false)
+    expect(isActiveSessionStatus("failed")).toBe(false)
+  })
+
   test("derives the same backend states as the TUI", () => {
     const cases = [
       {
@@ -125,34 +136,8 @@ describe("GUI session status parity", () => {
       displayStatus: "idle",
       updated: false,
     })
-    expect(markSessionViewedInSnapshot(next, sessionID, 100)).toBe(next)
-  })
-
-  test("marks opened sessions as seen without clearing review metadata", () => {
-    const current = snapshot({
-      sessions: [session(sessionID, 200)],
-      sessionUiState: {
-        [sessionID]: {
-          sessionID,
-          seenAt: 20,
-          reviewedAt: 30,
-          reviewedFiles: ["src/app.tsx"],
-          displayStatus: "needs_review",
-          updated: true,
-        },
-      },
-    })
-
-    const next = markSessionSeenInSnapshot(current, sessionID, 200)
-
-    expect(next.sessionUiState[sessionID]).toMatchObject({
-      seenAt: 200,
-      reviewedAt: 30,
-      reviewedFiles: ["src/app.tsx"],
-      displayStatus: "needs_review",
-      updated: false,
-    })
     expect(deriveSessionStatus(next, next.sessions[0])).toBe("dormant")
+    expect(markSessionViewedInSnapshot(next, sessionID, 100)).toBe(next)
   })
 
   test("keeps dashboard and sidebar view status derivation on the same helper", () => {

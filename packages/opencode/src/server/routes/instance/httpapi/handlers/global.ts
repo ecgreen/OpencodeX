@@ -13,6 +13,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
 import { GlobalUpgradeInput } from "../groups/global"
+import { makeGuiBridgeHandlers } from "./gui-bridge"
 
 const log = Log.create({ service: "server" })
 
@@ -71,6 +72,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const config = yield* Config.Service
     const installation = yield* Installation.Service
     const bridge = yield* EffectBridge.make()
+    const guiBridge = yield* makeGuiBridgeHandlers()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       return { healthy: true as const, version: InstallationVersion }
@@ -153,5 +155,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handleRaw("upgrade", upgradeRaw)
+      .handle("guiBridgeSync", guiBridge.guiBridgeSync)
+      .handle("guiBridgeUnregister", guiBridge.guiBridgeUnregister)
+      .handle("guiBridgeRespond", guiBridge.guiBridgeRespond)
   }),
 )

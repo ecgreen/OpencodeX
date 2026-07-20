@@ -13,6 +13,7 @@ export type OpencodeXProjectInfo = {
   project: { id: string; name?: string; worktree: string }
   folders: { path: string }[]
   sessions: Session[]
+  sessionIDs: string[]
 }
 
 export type SidebarSessionOrderItem = ClientSessionOrderInput & { session: Session }

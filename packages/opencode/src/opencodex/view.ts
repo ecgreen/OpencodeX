@@ -5,8 +5,10 @@ import { Identifier } from "@opencode-ai/core/util/identifier"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
-import { Context, Effect, Layer, Option, Schema } from "effect"
-import { asc, eq, inArray, max } from "drizzle-orm"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { Context, Effect, Layer, Option, Schema, Struct } from "effect"
+import { and, asc, eq, inArray, max } from "drizzle-orm"
+import { renderableSessionWhere } from "./session-filter"
 
 const Metadata = Schema.Record(Schema.String, Schema.Any)
 const decodeMetadata = Schema.decodeUnknownOption(Schema.fromJsonString(Metadata))
@@ -40,6 +42,11 @@ export const Info = Schema.Struct({
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "OpencodeXView" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+export const CatalogInfo = Schema.Struct({
+  ...Struct.omit(Info.fields, ["sessions"]),
+}).annotate({ identifier: "OpencodeXCatalogView" })
+export type CatalogInfo = Schema.Schema.Type<typeof CatalogInfo>
 
 export const CreateInput = Schema.Struct({
   id: Schema.optional(Schema.String),
@@ -99,6 +106,7 @@ export class ValidationError extends Schema.TaggedErrorClass<ValidationError>()(
 
 export interface Interface {
   readonly list: (input?: { sessions?: Session.GlobalInfo[] }) => Effect.Effect<Info[]>
+  readonly listCatalog: () => Effect.Effect<CatalogInfo[]>
   readonly get: (viewID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info, ValidationError | Session.NotFound>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError | ValidationError | Session.NotFound>
@@ -134,37 +142,81 @@ export const layer = Layer.effect(
     const session = yield* Session.Service
     const events = yield* EventV2Bridge.Service
 
-    const hydrateMany = Effect.fn("OpencodeXView.hydrateMany")(function* (
+    const listAssignments = Effect.fn("OpencodeXView.listAssignments")(function* (
       rows: (typeof OpencodeXViewTable.$inferSelect)[],
-      input?: { sessions?: Session.GlobalInfo[] },
     ) {
       if (rows.length === 0) return []
-      const assignments = yield* db
-        .select()
+      return yield* db
+        .select({
+          view_id: OpencodeXViewSessionTable.view_id,
+          session_id: OpencodeXViewSessionTable.session_id,
+          sort_order: OpencodeXViewSessionTable.sort_order,
+        })
         .from(OpencodeXViewSessionTable)
+        .innerJoin(SessionTable, eq(SessionTable.id, OpencodeXViewSessionTable.session_id))
         .where(
-          inArray(
-            OpencodeXViewSessionTable.view_id,
-            rows.map((row) => row.id),
+          and(
+            inArray(
+              OpencodeXViewSessionTable.view_id,
+              rows.map((row) => row.id),
+            ),
+            renderableSessionWhere(),
           ),
         )
         .orderBy(OpencodeXViewSessionTable.view_id, OpencodeXViewSessionTable.sort_order)
         .all()
         .pipe(Effect.orDie)
-      const all = assignments.length === 0 ? [] : (input?.sessions ?? (yield* session.listGlobal({ limit: 5_000 })))
+    })
+
+    const hydrateMany = Effect.fn("OpencodeXView.hydrateMany")(function* (
+      rows: (typeof OpencodeXViewTable.$inferSelect)[],
+      input?: { sessions?: Session.GlobalInfo[] },
+    ) {
+      if (rows.length === 0) return []
+      const assignments = yield* listAssignments(rows)
+      const all =
+        assignments.length === 0
+          ? []
+          : (input?.sessions ?? (yield* session.listGlobalByIDs(assignments.map((item) => item.session_id))))
       const byID = new Map(all.map((item) => [item.id, item]))
       const byView = Map.groupBy(assignments, (assignment) => assignment.view_id)
       return rows.map((row) => {
-        const sessions = (byView.get(row.id) ?? [])
+        const assigned = byView.get(row.id) ?? []
+        const sessions = assigned
           .map((assignment) => byID.get(assignment.session_id))
           .filter((item): item is Session.GlobalInfo => item !== undefined)
         return {
           id: row.id,
           title: row.title,
-          focusedSessionID: row.focused_session_id ?? sessions[0]?.id,
+          focusedSessionID:
+            row.focused_session_id && assigned.some((item) => item.session_id === row.focused_session_id)
+              ? row.focused_session_id
+              : assigned[0]?.session_id,
           layout: row.layout,
           sessions,
-          sessionIDs: sessions.map((item) => item.id),
+          sessionIDs: assigned.map((item) => item.session_id),
+          metadata: row.metadata_json ? Option.getOrUndefined(decodeMetadata(row.metadata_json)) : undefined,
+          timeCreated: row.time_created,
+          timeUpdated: row.time_updated,
+        }
+      })
+    })
+
+    const hydrateCatalogMany = Effect.fn("OpencodeXView.hydrateCatalogMany")(function* (
+      rows: (typeof OpencodeXViewTable.$inferSelect)[],
+    ) {
+      const byView = Map.groupBy(yield* listAssignments(rows), (assignment) => assignment.view_id)
+      return rows.map((row) => {
+        const sessionIDs = (byView.get(row.id) ?? []).map((assignment) => assignment.session_id)
+        return {
+          id: row.id,
+          title: row.title,
+          focusedSessionID:
+            row.focused_session_id && sessionIDs.includes(row.focused_session_id)
+              ? row.focused_session_id
+              : sessionIDs[0],
+          layout: row.layout,
+          sessionIDs,
           metadata: row.metadata_json ? Option.getOrUndefined(decodeMetadata(row.metadata_json)) : undefined,
           timeCreated: row.time_created,
           timeUpdated: row.time_updated,
@@ -222,6 +274,17 @@ export const layer = Layer.effect(
           .all()
           .pipe(Effect.orDie),
         input,
+      )
+    })
+
+    const listCatalog = Effect.fn("OpencodeXView.listCatalog")(function* () {
+      return yield* hydrateCatalogMany(
+        yield* db
+          .select()
+          .from(OpencodeXViewTable)
+          .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
+          .all()
+          .pipe(Effect.orDie),
       )
     })
 
@@ -334,7 +397,7 @@ export const layer = Layer.effect(
       return true
     })
 
-    return Service.of({ list, get, create, update, reorder, remove })
+    return Service.of({ list, listCatalog, get, create, update, reorder, remove })
   }),
 )
 

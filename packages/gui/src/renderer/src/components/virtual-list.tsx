@@ -13,6 +13,7 @@ export function VirtualList<T>(props: {
   let viewport: HTMLDivElement | undefined
   const [scrollTop, setScrollTop] = createSignal(0)
   const [viewportHeight, setViewportHeight] = createSignal(props.rowHeight * 12)
+  let visibleRows = new Map<T, { item: T; index: number }>()
   const window = createMemo(() => virtualWindow({
     count: props.items.length,
     rowHeight: props.rowHeight,
@@ -20,10 +21,18 @@ export function VirtualList<T>(props: {
     viewportHeight: viewportHeight(),
     overscan: props.overscan,
   }))
-  const visible = createMemo(() => props.items.slice(window().start, window().end).map((item, index) => ({
-    item,
-    index: window().start + index,
-  })))
+  const visible = createMemo(() => {
+    const next = new Map<T, { item: T; index: number }>()
+    const rows = props.items.slice(window().start, window().end).map((item, index) => {
+      const absolute = window().start + index
+      const existing = visibleRows.get(item)
+      const row = existing?.index === absolute ? existing : { item, index: absolute }
+      next.set(item, row)
+      return row
+    })
+    visibleRows = next
+    return rows
+  })
 
   onMount(() => {
     if (!viewport) return
