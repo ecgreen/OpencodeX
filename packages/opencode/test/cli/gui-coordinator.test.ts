@@ -327,7 +327,7 @@ function withFixture<A, E, R>(use: (fixture: Fixture) => Effect.Effect<A, E, R>)
       )
     }),
     use,
-    (fixture) => Effect.promise(() => removeFixture(fixture.home)).pipe(Effect.ignore),
+    (fixture) => Effect.tryPromise(() => removeFixture(fixture.home)).pipe(Effect.ignore),
   )
 }
 
