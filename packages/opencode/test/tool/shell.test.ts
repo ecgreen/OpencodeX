@@ -1137,29 +1137,45 @@ describe("tool.shell abort", () => {
   )
 
   it.live("streams metadata updates progressively", () =>
-    runIn(
-      projectRoot,
-      Effect.gen(function* () {
-        const updates: string[] = []
-        const result = yield* run(
-          {
-            command: `echo first && sleep 0.1 && echo second`,
-            description: "Streaming test",
-          },
-          {
-            ...ctx,
-            metadata: (input) =>
-              Effect.sync(() => {
-                const output = (input.metadata as { output?: string })?.output
-                if (output) updates.push(output)
-              }),
-          },
-        )
-        expect(result.output).toContain("first")
-        expect(result.output).toContain("second")
-        expect(updates.length).toBeGreaterThan(1)
-      }),
-    ),
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped()
+      const gate = path.join(directory, "metadata-ready")
+      // Keep this quote-free across bash, PowerShell, and cmd while the child waits for an observable callback.
+      const code =
+        "process.stdout.write(String.fromCharCode(102,105,114,115,116,10));" +
+        "while(!(await Bun.file(Bun.argv[1]).exists()))await Bun.sleep(10);" +
+        "process.stdout.write(String.fromCharCode(115,101,99,111,110,100,10))"
+      const command = `${PS.has(sh()) ? "& " : ""}${bin} -e ${evalarg(code)} ${quote(gate.replaceAll("\\", "/"))}`
+
+      yield* runIn(
+        directory,
+        Effect.gen(function* () {
+          const updates: string[] = []
+          const result = yield* run(
+            {
+              command,
+              description: "Streaming test",
+              timeout: 5_000,
+            },
+            {
+              ...ctx,
+              metadata: (input) =>
+                Effect.gen(function* () {
+                  const output = (input.metadata as { output?: string })?.output
+                  if (!output) return
+                  updates.push(output)
+                  if (output.includes("first") && !output.includes("second")) {
+                    yield* Effect.promise(() => Bun.write(gate, "ready"))
+                  }
+                }),
+            },
+          )
+          expect(result.output).toContain("first")
+          expect(result.output).toContain("second")
+          expect(updates.length).toBeGreaterThan(1)
+        }),
+      )
+    }),
   )
 })
 

@@ -5,7 +5,7 @@ import {
   type ClientStateSyncState,
 } from "@opencode-ai/sdk/v2/client-sync"
 import { clientAttentionItems, createClientWorkItemSelector } from "@opencode-ai/sdk/v2/work-item"
-import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
+import { createMemo, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
 import { connectGuiClient, type GuiClient } from "../lib/client"
 import { emptyGuiSnapshot } from "../lib/gui-state"
 import { createGlobalEventFanout } from "../lib/global-event-fanout"

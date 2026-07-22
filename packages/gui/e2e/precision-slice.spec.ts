@@ -184,7 +184,11 @@ async function createSession(request: APIRequestContext, projectID: string, titl
     data: { projectID, directory: fixtureDirectory, title },
   })
   expect(response.ok(), await response.text()).toBe(true)
-  return response.json() as Promise<{ id: string }>
+  const body: unknown = await response.json()
+  if (!body || typeof body !== "object" || !("id" in body) || typeof body.id !== "string") {
+    throw new Error("Session response did not include an ID")
+  }
+  return { id: body.id }
 }
 
 async function createFixture(request: APIRequestContext, testInfo: TestInfo) {
