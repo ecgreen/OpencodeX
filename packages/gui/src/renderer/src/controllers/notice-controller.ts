@@ -12,9 +12,20 @@ export function createNoticeController() {
     timer = setTimeout(() => setNotice(undefined), tone === "error" ? 8_000 : 4_000)
   }
 
+  async function attempt(action: () => Promise<boolean>) {
+    try {
+      return await action()
+    } catch (cause) {
+      console.error(cause)
+      show(cause instanceof Error ? cause.message : String(cause), "error")
+      return false
+    }
+  }
+
   return {
     notice,
     alert: (message: string) => show(message, "info"),
+    attempt,
     clear() {
       clearTimeout(timer)
       setNotice(undefined)

@@ -1073,6 +1073,64 @@ describe("HttpApi SDK", () => {
     ),
   )
 
+  serverPathParity("serializes concurrent swarm assignments and protects internal jobs", (serverPath) =>
+    withFakeLlm(serverPath, ({ sdk, llm, directory }) =>
+      Effect.gen(function* () {
+        yield* llm.hang
+        const swarmID = yield* createDurableSwarm({ sdk, directory, title: "Concurrent swarm" })
+        const assigned = yield* Effect.all(
+          ["first", "second"].map((prompt) =>
+            capture(() =>
+              sdk.opencodex.swarm.task.assign({
+                swarmID,
+                opencodeXSwarmAssignTaskInput: { prompt },
+              }),
+            ),
+          ),
+          { concurrency: "unbounded" },
+        )
+        expect(assigned.map((response) => response.status).toSorted()).toEqual([200, 400])
+        const jobResponse = yield* capture(() => sdk.opencodex.job.list())
+        const jobs = array(jobResponse.data).filter((job) => record(job).swarmID === swarmID)
+        expect(jobs.filter((job) => record(job).kind === "swarm.orchestrator")).toHaveLength(1)
+        expect(jobs.filter((job) => record(job).kind === "swarm.worker")).toHaveLength(1)
+
+        const blocked = yield* capture(() =>
+          sdk.opencodex.job.cancel({ jobID: String(record(jobs[0]).id) }),
+        )
+        expect(blocked.status).toBe(400)
+        yield* llm.wait(1)
+        expect((yield* capture(() => sdk.opencodex.swarm.cancel({ swarmID }))).status).toBe(200)
+        expect(record((yield* waitForSwarm(sdk, swarmID)).data).status).toBe("cancelled")
+      }),
+    ),
+  )
+
+  serverPathParity("does not synthesize after cancellation reaches active workers", (serverPath) =>
+    withFakeLlm(serverPath, ({ sdk, llm, directory }) =>
+      Effect.gen(function* () {
+        yield* llm.text("orchestrator complete")
+        yield* llm.hang
+        const swarmID = yield* createDurableSwarm({ sdk, directory, title: "Worker cancellation swarm" })
+        yield* capture(() =>
+          sdk.opencodex.swarm.task.assign({
+            swarmID,
+            opencodeXSwarmAssignTaskInput: { prompt: "Cancel during worker execution." },
+          }),
+        )
+        yield* llm.wait(2)
+        yield* capture(() => sdk.opencodex.swarm.cancel({ swarmID }))
+        const cancelled = yield* waitForSwarm(sdk, swarmID)
+        const jobResponse = yield* capture(() => sdk.opencodex.job.list())
+        const jobs = array(jobResponse.data).filter((job) => record(job).swarmID === swarmID)
+
+        expect(record(cancelled.data).status).toBe("cancelled")
+        expect(jobs.filter((job) => record(job).kind === "swarm.synthesis")).toHaveLength(0)
+        expect(jobs.some((job) => ["queued", "claimed", "running"].includes(String(record(job).status)))).toBe(false)
+      }),
+    ),
+  )
+
   httpapi(
     "includes project skills in REST API prompt context",
     withFakeLlmProject("default", { setup: writeProjectSkill }, ({ sdk, llm }) =>

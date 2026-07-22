@@ -46,33 +46,44 @@ export async function runSessionPromptAction(input: {
   openCreatedSession: (sessionID: string, session: Session) => void
   prepareTarget?: (gui: GuiClient, route: SessionPromptRoute, session: Session) => Promise<PreparedSessionPromptTarget>
 }) {
+  const prompt = normalizePromptInput(input.text)
   const submission = prepareSessionPromptSubmission({
     gui: input.gui,
     route: input.route,
     session: input.session,
-    prompt: normalizePromptInput(input.text),
+    prompt,
     permissionCount: input.permissionCount,
     questionCount: input.questionCount,
   })
-  if (!submission) return
-  input.setPrompt("")
+  if (!submission) {
+    if (!input.gui) throw new Error("The backend connection is not ready. Wait for OpencodeX to reconnect and try again.")
+    if (!sessionPromptRoute(input.route)) throw new Error("This route cannot submit session prompts.")
+    if (!input.session) throw new Error("The selected session is not available. Reopen it and try again.")
+    return false
+  }
   input.setLoadingSessionID(submission.session.id)
-  const prepared = await (input.prepareTarget ?? prepareSessionPromptTarget)(submission.gui, submission.route, submission.session)
-  const target = prepareSessionPromptSendTarget({
-    target: prepared.target,
-    agent: input.agent,
-    model: input.model,
-    variant: input.variant,
-    prompt: submission.prompt,
-  })
-  if (prepared.createdSessionID) input.openCreatedSession(prepared.createdSessionID, prepared.target)
-  const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
-  if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
-  else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
-  else await input.sendPrompt(target.sessionID, submission.prompt.input, target.options)
-  if (target.modelToRemember) input.rememberModel(target.modelToRemember)
-  await input.syncSession(target.sessionID)
-  await input.refresh()
+  try {
+    const prepared = await (input.prepareTarget ?? prepareSessionPromptTarget)(submission.gui, submission.route, submission.session)
+    const target = prepareSessionPromptSendTarget({
+      target: prepared.target,
+      agent: input.agent,
+      model: input.model,
+      variant: input.variant,
+      prompt: submission.prompt,
+    })
+    const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
+    if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
+    else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
+    else await input.sendPrompt(target.sessionID, submission.prompt.input, target.options)
+    input.setPrompt("")
+    if (prepared.createdSessionID) input.openCreatedSession(prepared.createdSessionID, prepared.target)
+    if (target.modelToRemember) input.rememberModel(target.modelToRemember)
+    await input.syncSession(target.sessionID)
+    await input.refresh()
+    return true
+  } finally {
+    input.setLoadingSessionID("")
+  }
 }
 
 export function prepareSessionPromptSubmission(input: {

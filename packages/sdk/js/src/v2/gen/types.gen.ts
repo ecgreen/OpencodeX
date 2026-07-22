@@ -48,6 +48,7 @@ export type Event =
   | EventPermissionReplied
   | EventSessionDiff
   | EventSessionError
+  | EventOpencodexSettingsUpdated
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
@@ -94,6 +95,7 @@ export type Event =
   | EventOpencodexSessionStateUpdated
   | EventServerConnected
   | EventGlobalDisposed
+  | EventOpencodexPluginConfigUpdated
   | EventAccountAdded
   | EventAccountRemoved
   | EventAccountSwitched
@@ -115,6 +117,8 @@ export type OpencodeXStateEvent = {
   scope: OpencodeXStateScope
   epoch: string
   cursor: OpencodeXStateCursor
+  position: number
+  visibility: "global" | "instance"
   aggregateSequence: number
   domain: "capabilities" | "catalog" | "operations" | "session"
   operation: "invalidate"
@@ -134,6 +138,10 @@ export type OpencodeXStateStreamFrame =
   | {
       type: "event"
       event: OpencodeXStateEvent
+    }
+  | {
+      type: "heartbeat"
+      epoch: string
     }
   | {
       type: "reset_required"
@@ -1203,6 +1211,13 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.settings.updated"
+        properties: {
+          revision: string
+        }
+      }
+    | {
+        id: string
         type: "question.asked"
         properties: {
           id: string
@@ -1603,6 +1618,14 @@ export type GlobalEvent = {
         type: "global.disposed"
         properties: {
           [key: string]: unknown
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.plugin_config.updated"
+        properties: {
+          global: boolean
+          spec: string
         }
       }
     | {
@@ -2501,10 +2524,12 @@ export type OpencodeXPermissionMode = "strict" | "configured" | "auto" | "yolo"
 
 export type OpencodeXSettings = {
   permission_mode?: OpencodeXPermissionMode
+  revision: string
 }
 
 export type OpencodeXSettingsUpdateInput = {
   permission_mode: OpencodeXPermissionMode
+  expectedRevision: string
 }
 
 export type Project = {
@@ -3059,6 +3084,7 @@ export type OpencodeXPluginInstallItem = {
 
 export type OpencodeXPluginInstallResult = {
   ok: boolean
+  spec?: string
   message?: string
   dir?: string
   tui: boolean
@@ -5237,6 +5263,14 @@ export type EventSessionError = {
   }
 }
 
+export type EventOpencodexSettingsUpdated = {
+  id: string
+  type: "opencodex.settings.updated"
+  properties: {
+    revision: string
+  }
+}
+
 export type EventQuestionAsked = {
   id: string
   type: "question.asked"
@@ -5632,6 +5666,15 @@ export type EventGlobalDisposed = {
   }
 }
 
+export type EventOpencodexPluginConfigUpdated = {
+  id: string
+  type: "opencodex.plugin_config.updated"
+  properties: {
+    global: boolean
+    spec: string
+  }
+}
+
 export type EventAccountAdded = {
   id: string
   type: "account.added"
@@ -5787,6 +5830,7 @@ export type GlobalHealthResponses = {
   200: {
     healthy: true
     version: string
+    active: boolean
   }
 }
 
@@ -7430,6 +7474,10 @@ export type OpencodexSettingsUpdateErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
 }
 
 export type OpencodexSettingsUpdateError = OpencodexSettingsUpdateErrors[keyof OpencodexSettingsUpdateErrors]
@@ -7862,6 +7910,7 @@ export type OpencodexStateEventResponse = OpencodexStateEventResponses[keyof Ope
 
 export type OpencodexSessionStateUpdateData = {
   body?: {
+    expectedReviewedFiles?: Array<string>
     seenAt?: number
     reviewedAt?: number
     reviewedFiles?: Array<string>
@@ -7882,6 +7931,10 @@ export type OpencodexSessionStateUpdateErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
 }
 
 export type OpencodexSessionStateUpdateError =
@@ -10301,6 +10354,7 @@ export type OpencodexViewGetResponse = OpencodexViewGetResponses[keyof Opencodex
 
 export type OpencodexViewUpdateData = {
   body?: {
+    expectedTimeUpdated: number
     title?: string
     sessionIDs?: Array<string>
     focusedSessionID?: string
@@ -10325,6 +10379,10 @@ export type OpencodexViewUpdateErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
 }
 
 export type OpencodexViewUpdateError = OpencodexViewUpdateErrors[keyof OpencodexViewUpdateErrors]

@@ -54,7 +54,7 @@ describe("GUI session prompt decisions", () => {
   test("runs session prompt sends through clear, load, send, sync, refresh, and route handoff", async () => {
     const calls: string[] = []
 
-    await runSessionPromptAction({
+    const accepted = await runSessionPromptAction({
       gui: gui(),
       route: { name: "new-session", projectID: "project-1" },
       session: session("draft"),
@@ -74,21 +74,23 @@ describe("GUI session prompt decisions", () => {
       prepareTarget: async () => ({ target: session("created"), createdSessionID: "created" }),
     })
 
+    expect(accepted).toBe(true)
     expect(calls).toEqual([
-      "prompt:",
       "loading:draft",
-      "route:created",
       "send:created:hello:build:anthropic/claude-sonnet:fast",
+      "prompt:",
+      "route:created",
       "remember:anthropic/claude-sonnet",
       "sync:created",
       "refresh",
+      "loading:",
     ])
   })
 
   test("stops session prompt actions when blocked by pending permission requests", async () => {
     const calls: string[] = []
 
-    await runSessionPromptAction({
+    const accepted = await runSessionPromptAction({
       gui: gui(),
       route: { name: "session" },
       session: session("session-1"),
@@ -107,7 +109,61 @@ describe("GUI session prompt decisions", () => {
       openCreatedSession: () => calls.push("route"),
     })
 
+    expect(accepted).toBe(false)
     expect(calls).toEqual([])
+  })
+
+  test("rejects unavailable sessions visibly without clearing the prompt", async () => {
+    const calls: string[] = []
+
+    await expect(runSessionPromptAction({
+      gui: gui(),
+      route: { name: "session" },
+      session: undefined,
+      text: "hello",
+      permissionCount: 0,
+      questionCount: 0,
+      agent: "",
+      model: "",
+      variant: "",
+      setPrompt: () => calls.push("prompt"),
+      setLoadingSessionID: () => calls.push("loading"),
+      sendPrompt: async () => calls.push("send"),
+      rememberModel: () => calls.push("remember"),
+      syncSession: async () => calls.push("sync"),
+      refresh: async () => calls.push("refresh"),
+      openCreatedSession: () => calls.push("route"),
+    })).rejects.toThrow("The selected session is not available")
+
+    expect(calls).toEqual([])
+  })
+
+  test("preserves the prompt and clears loading when admission fails", async () => {
+    const calls: string[] = []
+
+    await expect(runSessionPromptAction({
+      gui: gui(),
+      route: { name: "session" },
+      session: session("session-1"),
+      text: "hello",
+      permissionCount: 0,
+      questionCount: 0,
+      agent: "",
+      model: "",
+      variant: "",
+      setPrompt: () => calls.push("prompt"),
+      setLoadingSessionID: (sessionID) => calls.push(`loading:${sessionID}`),
+      sendPrompt: async () => {
+        calls.push("send")
+        throw new Error("admission failed")
+      },
+      rememberModel: () => calls.push("remember"),
+      syncSession: async () => calls.push("sync"),
+      refresh: async () => calls.push("refresh"),
+      openCreatedSession: () => calls.push("route"),
+    })).rejects.toThrow("admission failed")
+
+    expect(calls).toEqual(["loading:session-1", "send", "loading:"])
   })
 
   test("routes backend slash commands through session.command with selection and part payload", async () => {
@@ -142,12 +198,13 @@ describe("GUI session prompt decisions", () => {
     })
 
     expect(calls).toEqual([
-      "prompt:",
       "loading:session-1",
       "command:session-1:review:staged changes:build:anthropic/claude-sonnet:fast:2",
+      "prompt:",
       "remember",
       "sync:session-1",
       "refresh",
+      "loading:",
     ])
   })
 
@@ -175,12 +232,13 @@ describe("GUI session prompt decisions", () => {
     })
 
     expect(calls).toEqual([
-      "prompt:",
       "loading:session-1",
       "shell:session-1:bun test:build:anthropic/claude-sonnet",
+      "prompt:",
       "remember:anthropic/claude-sonnet",
       "sync:session-1",
       "refresh",
+      "loading:",
     ])
   })
 })

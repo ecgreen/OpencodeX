@@ -9,7 +9,7 @@ import { Identifier } from "@opencode-ai/core/util/identifier"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXJob } from "@/opencodex/job"
 import { Context, Effect, Layer } from "effect"
-import { eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, notInArray } from "drizzle-orm"
 import {
   PlanService,
   ReadService,
@@ -50,7 +50,7 @@ const create = Effect.fn("OpencodeXSwarm.create")(function* (input: CreateInput)
   return yield* reader.get(created.id).pipe(Effect.orDie)
 })
 
-const update = Effect.fn("OpencodeXSwarm.update")(function* (swarmID: string, input: UpdateInput) {
+const updateUnlocked = Effect.fnUntraced(function* (swarmID: string, input: UpdateInput) {
   const swarm = yield* reader.get(swarmID)
   if (["queued", "running", "cancelling"].includes(swarm.status)) {
     return yield* new ValidationError({ message: "Wait for the active swarm run before editing its configuration." })
@@ -60,19 +60,26 @@ const update = Effect.fn("OpencodeXSwarm.update")(function* (swarmID: string, in
     if (invalid) return yield* new ValidationError({ message: invalid })
   }
   const now = Date.now()
-  const afterCommit = yield* db
-    .transaction(
+  const afterCommit = yield* stateEvents.barrier(
+    db.transaction(
       (transaction) =>
         Effect.gen(function* () {
-          yield* transaction
+          const updated = yield* transaction
             .update(OpencodeXSwarmTable)
             .set({
               title: input.title?.trim() || undefined,
               metadata_json: input.metadata ? serializeMetadata(input.metadata) : undefined,
               time_updated: now,
             })
-            .where(eq(OpencodeXSwarmTable.id, swarmID))
-            .run()
+            .where(
+              and(
+                eq(OpencodeXSwarmTable.id, swarmID),
+                notInArray(OpencodeXSwarmTable.status, ["queued", "running", "cancelling"]),
+              ),
+            )
+            .returning({ id: OpencodeXSwarmTable.id })
+            .get()
+          if (!updated) return undefined
           if (input.roles) {
             yield* transaction.delete(OpencodeXSwarmRoleTable).where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID)).run()
             yield* Effect.forEach(
@@ -106,13 +113,20 @@ const update = Effect.fn("OpencodeXSwarm.update")(function* (swarmID: string, in
           })
         }),
       { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+    ).pipe(Effect.orDie),
+  )
+  if (!afterCommit) {
+    return yield* new ValidationError({ message: "Wait for the active swarm run before editing its configuration." })
+  }
   yield* afterCommit
   return yield* reader.get(swarmID)
 })
 
-const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
+const update = Effect.fn("OpencodeXSwarm.update")(function* (swarmID: string, input: UpdateInput) {
+  return yield* stateEvents.barrier(updateUnlocked(swarmID, input))
+})
+
+const cancelUnlocked = Effect.fnUntraced(function* (swarmID: string) {
   const swarm = yield* reader.get(swarmID)
   if (["completed", "partially_failed", "failed", "cancelled"].includes(swarm.status)) return swarm
   const pendingRuns = swarm.runs.filter((run) => !["completed", "partially_failed", "failed", "cancelled"].includes(run.status))
@@ -121,15 +135,22 @@ const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
   )
   const pendingRoles = swarm.roles.filter((role) => !["completed", "failed", "cancelled"].includes(role.status))
   const now = Date.now()
-  const afterCommit = yield* db
-    .transaction(
+  const afterCommit = yield* stateEvents.barrier(
+    db.transaction(
       (transaction) =>
         Effect.gen(function* () {
-          yield* transaction
+          const updated = yield* transaction
             .update(OpencodeXSwarmTable)
             .set({ status: "cancelling", time_updated: now })
-            .where(eq(OpencodeXSwarmTable.id, swarmID))
-            .run()
+            .where(
+              and(
+                eq(OpencodeXSwarmTable.id, swarmID),
+                notInArray(OpencodeXSwarmTable.status, ["completed", "partially_failed", "failed", "cancelled"]),
+              ),
+            )
+            .returning({ id: OpencodeXSwarmTable.id })
+            .get()
+          if (!updated) return undefined
           if (pendingRuns.length > 0) {
             yield* transaction
               .update(OpencodeXSwarmRunTable)
@@ -157,11 +178,15 @@ const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
           })
         }),
       { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+    ).pipe(Effect.orDie),
+  )
+  if (!afterCommit) return yield* reader.get(swarmID)
   yield* afterCommit
   const relatedJobs = (yield* jobs.list()).filter(
-    (job) => job.swarmID === swarmID && !["succeeded", "failed", "cancelled", "interrupted"].includes(job.status),
+    (job) =>
+      job.swarmID === swarmID &&
+      !["succeeded", "cancelled"].includes(job.status) &&
+      (!["failed", "interrupted"].includes(job.status) || job.attempt < job.maxAttempts),
   )
   yield* Effect.forEach(
     relatedJobs,
@@ -176,7 +201,7 @@ const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
               : undefined,
         )
         .pipe(Effect.ignore),
-    { concurrency: "unbounded", discard: true },
+    { concurrency: 1, discard: true },
   )
   yield* Effect.forEach(
     [
@@ -202,18 +227,35 @@ const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
   return yield* reader.get(swarmID)
 })
 
-const remove = Effect.fn("OpencodeXSwarm.remove")(function* (swarmID: string) {
-  yield* cancel(swarmID)
+const cancel = Effect.fn("OpencodeXSwarm.cancel")(function* (swarmID: string) {
+  return yield* stateEvents.barrier(cancelUnlocked(swarmID))
+})
+
+const removeUnlocked = Effect.fnUntraced(function* (swarmID: string) {
+  yield* cancelUnlocked(swarmID)
   const active = (yield* jobs.list()).some(
     (job) => job.swarmID === swarmID && ["queued", "claimed", "running"].includes(job.status),
   )
   if (active) return false
-  yield* db.delete(OpencodeXSwarmTable).where(eq(OpencodeXSwarmTable.id, swarmID)).run().pipe(Effect.orDie)
-  yield* stateEvents.publish(StateEvent.Deleted, { swarmID })
+  const event = yield* db
+    .transaction(
+      (transaction) =>
+        Effect.gen(function* () {
+          yield* transaction.delete(OpencodeXSwarmTable).where(eq(OpencodeXSwarmTable.id, swarmID)).run()
+          return yield* stateEvents.commit(StateEvent.Deleted, { swarmID })
+        }),
+      { behavior: "immediate" },
+    )
+    .pipe(Effect.orDie)
+  yield* stateEvents.broadcast(event)
   return true
 })
 
-const addRole = Effect.fn("OpencodeXSwarm.addRole")(function* (swarmID: string, input: AddRoleInput) {
+const remove = Effect.fn("OpencodeXSwarm.remove")(function* (swarmID: string) {
+  return yield* stateEvents.barrier(removeUnlocked(swarmID))
+})
+
+const addRoleUnlocked = Effect.fnUntraced(function* (swarmID: string, input: AddRoleInput) {
   const swarm = yield* reader.get(swarmID)
   if (["queued", "running", "cancelling"].includes(swarm.status)) {
     return yield* new ValidationError({ message: "Wait for the active swarm run before adding a role." })
@@ -221,31 +263,46 @@ const addRole = Effect.fn("OpencodeXSwarm.addRole")(function* (swarmID: string, 
   const invalid = validateRoles([...swarm.roles, input.role])
   if (invalid) return yield* new ValidationError({ message: invalid })
   const now = Date.now()
-  yield* db
-    .insert(OpencodeXSwarmRoleTable)
-    .values({
-      id: `swr_${Identifier.ascending()}`,
-      swarm_id: swarmID,
-      name: input.role.name,
-      agent: input.role.agent,
-      skill: input.role.skill,
-      provider_id: input.role.providerID,
-      model_id: input.role.modelID,
-      model_profile: input.role.modelProfile,
-      status: "planned",
-      instructions: input.role.instructions,
-      sort_order: swarm.roles.length,
-      metadata_json: serializeMetadata(input.role.metadata),
-      time_created: now,
-      time_updated: now,
-    })
-    .run()
+  const afterCommit = yield* db
+    .transaction(
+      (transaction) =>
+        Effect.gen(function* () {
+          yield* transaction
+            .insert(OpencodeXSwarmRoleTable)
+            .values({
+              id: `swr_${Identifier.ascending()}`,
+              swarm_id: swarmID,
+              name: input.role.name,
+              agent: input.role.agent,
+              skill: input.role.skill,
+              provider_id: input.role.providerID,
+              model_id: input.role.modelID,
+              model_profile: input.role.modelProfile,
+              status: "planned",
+              instructions: input.role.instructions,
+              sort_order: swarm.roles.length,
+              metadata_json: serializeMetadata(input.role.metadata),
+              time_created: now,
+              time_updated: now,
+            })
+            .run()
+          return yield* status.commitEvent(transaction, swarmID, {
+            kind: "swarm.role.added",
+            message: `${input.role.name} added`,
+          })
+        }),
+      { behavior: "immediate" },
+    )
     .pipe(Effect.orDie)
-  yield* status.event(swarmID, { kind: "swarm.role.added", message: `${input.role.name} added` })
+  yield* afterCommit
   return yield* reader.get(swarmID)
 })
 
-const updateRole = Effect.fn("OpencodeXSwarm.updateRole")(function* (
+const addRole = Effect.fn("OpencodeXSwarm.addRole")(function* (swarmID: string, input: AddRoleInput) {
+  return yield* stateEvents.barrier(addRoleUnlocked(swarmID, input))
+})
+
+const updateRoleUnlocked = Effect.fnUntraced(function* (
   swarmID: string,
   roleID: string,
   input: UpdateRoleInput,
@@ -263,24 +320,44 @@ const updateRole = Effect.fn("OpencodeXSwarm.updateRole")(function* (
     ),
   )
   if (invalid) return yield* new ValidationError({ message: invalid })
-  yield* db
-    .update(OpencodeXSwarmRoleTable)
-    .set({
-      name: input.name,
-      agent: input.agent,
-      skill: input.skill,
-      provider_id: input.providerID,
-      model_id: input.modelID,
-      model_profile: input.modelProfile,
-      instructions: input.instructions,
-      metadata_json: serializeMetadata(input.metadata),
-      time_updated: Date.now(),
-    })
-    .where(eq(OpencodeXSwarmRoleTable.id, roleID))
-    .run()
+  const afterCommit = yield* db
+    .transaction(
+      (transaction) =>
+        Effect.gen(function* () {
+          yield* transaction
+            .update(OpencodeXSwarmRoleTable)
+            .set({
+              name: input.name,
+              agent: input.agent,
+              skill: input.skill,
+              provider_id: input.providerID,
+              model_id: input.modelID,
+              model_profile: input.modelProfile,
+              instructions: input.instructions,
+              metadata_json: serializeMetadata(input.metadata),
+              time_updated: Date.now(),
+            })
+            .where(eq(OpencodeXSwarmRoleTable.id, roleID))
+            .run()
+          return yield* status.commitEvent(transaction, swarmID, {
+            roleID,
+            kind: "swarm.role.updated",
+            message: "Role updated",
+          })
+        }),
+      { behavior: "immediate" },
+    )
     .pipe(Effect.orDie)
-  yield* status.event(swarmID, { roleID, kind: "swarm.role.updated", message: "Role updated" })
+  yield* afterCommit
   return yield* reader.get(swarmID)
+})
+
+const updateRole = Effect.fn("OpencodeXSwarm.updateRole")(function* (
+  swarmID: string,
+  roleID: string,
+  input: UpdateRoleInput,
+) {
+  return yield* stateEvents.barrier(updateRoleUnlocked(swarmID, roleID, input))
 })
 
     return SwarmMutations.of({ create, update, cancel, remove, addRole, updateRole })

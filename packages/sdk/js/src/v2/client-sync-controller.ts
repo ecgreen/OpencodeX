@@ -1,6 +1,13 @@
-import type { Event, OpencodeXSessionCardPage, OpencodeXStateSnapshot, OpencodeXStateStreamFrame } from "./client.js"
+import type {
+  Event,
+  OpencodeXSessionCardPage,
+  OpencodeXStateEvent,
+  OpencodeXStateSnapshot,
+  OpencodeXStateStreamFrame,
+} from "./client.js"
 import {
   applyClientSessionEvent,
+  beginClientSessionEventBuffer,
   clearClientSessionEventBuffers,
   createClientSessionEventBuffers,
   drainClientSessionEventBuffer,
@@ -32,6 +39,8 @@ import type {
 } from "./client-sync-types.js"
 import { isClientSessionRenderable } from "./client-sync-cards.js"
 
+const MAX_QUEUED_STATE_FRAMES = 1_024
+
 export function createClientStateSync(options: ClientStateSyncOptions): ClientStateSyncController {
   const transport = options.transport ?? clientStateSyncTransport(options)
   const listeners = new Set<(state: ClientStateSyncState) => void>()
@@ -44,18 +53,22 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
   const deletedSessionGenerations = new Map<string, number>()
   const sessionCardGenerations = new Map<string, number>()
   const sessionRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const sessionCorrectionAttempts = new Map<string, number>()
   const sessionEventBuffers = createClientSessionEventBuffers()
   const seenEventIDs = new Set<string>()
   const seenEventIDOrder = new Array<string>()
+  const dirtyCatalogSessions = new Map<string, number>()
   let state = emptyClientStateSyncState()
   let stopped = true
   let connection: AbortController | undefined
   let connectionGeneration = 0
   let catalogRequestID = 0
   let operationsRequestID = 0
+  let capabilityRequestID = 0
   let sessionRequestGeneration = 0
   let sessionDeletionGeneration = 0
   let sessionCardGeneration = 0
+  let catalogSessionInvalidationGeneration = 0
   let cardRequestGeneration = 0
   let paginationGeneration = 0
   let paginationRequest: Promise<OpencodeXSessionCardPage> | undefined
@@ -67,6 +80,8 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
   let capabilityRefreshQueued = false
   let batchTimer: ReturnType<typeof setTimeout> | undefined
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let pollTimer: ReturnType<typeof setInterval> | undefined
+  let polling = false
   let reconnectAttempt = 0
   const metrics: ClientStateSyncMetrics = {
     commits: 0,
@@ -188,6 +203,15 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       sessionCardGenerations.delete(sessionID)
     })
   }
+  function rememberEventID(id: string) {
+    if (seenEventIDs.has(id)) return
+    seenEventIDs.add(id)
+    seenEventIDOrder.push(id)
+    while (seenEventIDOrder.length > 2_048) {
+      const stale = seenEventIDOrder.shift()
+      if (stale) seenEventIDs.delete(stale)
+    }
+  }
   const refresh = () => {
     rootRefreshQueued = true
     if (rootRefresh) return rootRefresh
@@ -212,10 +236,17 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
           clearSettledSessionCardGenerations()
           continue
         }
+        const previous = state
         const next = withoutStaleSessionCards(snapshot, cardGeneration)
         resetPaginationLane()
         markSessionCardPage(next.payloads.catalog.sessionCards, cardGeneration)
-        commit(applyClientStateSnapshot(state, next))
+        const resolved = applyClientStateSnapshot(state, next)
+        commit(resolved)
+        Object.keys(previous.sessionDetails).forEach((sessionID) => {
+          const before = previous.sessions.records[sessionID]
+          const after = resolved.sessions.records[sessionID]
+          if (after && before?.time.updated !== after.time.updated) scheduleSessionRefresh(sessionID)
+        })
         rootCardRequests.delete(cardGeneration)
         clearSettledDeletionGenerations()
         clearSettledSessionCardGenerations()
@@ -224,6 +255,19 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       rootRefresh = undefined
     })
     return rootRefresh
+  }
+  const poll = () => {
+    if (stopped || polling) return
+    polling = true
+    void Promise.all([refresh(), refreshCapabilities()])
+      .catch(() => undefined)
+      .finally(() => {
+        polling = false
+      })
+  }
+  const startPolling = () => {
+    if (!options.pollIntervalMs || options.pollIntervalMs <= 0 || pollTimer !== undefined) return
+    pollTimer = setInterval(poll, options.pollIntervalMs)
   }
   const refreshCapabilities = () => {
     if (!transport.capabilities) return Promise.resolve()
@@ -235,8 +279,18 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
         if (stopped) break
         capabilityRefreshQueued = false
         metrics.capabilitySnapshots += 1
+        const requestID = ++capabilityRequestID
         const capabilities = await transport.capabilities?.()
-        if (!capabilities || stopped) continue
+        if (!capabilities || requestID !== capabilityRequestID || stopped) continue
+        if (
+          state.phase !== "ready" ||
+          state.epoch !== capabilities.epoch ||
+          !sameClientStateScope(state.scope, capabilities.scope)
+        ) {
+          capabilityRefreshQueued = true
+          await refresh()
+          continue
+        }
         commit({
           ...state,
           capabilities: reconcileValue(state.capabilities, capabilities),
@@ -462,51 +516,53 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     if (refreshTimer !== undefined) clearTimeout(refreshTimer)
     sessionRefreshTimers.delete(sessionID)
   }
-  const refreshSessionTail = (sessionID: string, input: ClientSessionTailOptions = {}) => {
+  const refreshSessionTail = (sessionID: string, input: ClientSessionTailOptions = {}, correction = false) => {
     if (input.signal?.aborted) return Promise.reject(sessionRequestAbortError(input.signal))
     if (state.tombstones.sessions[sessionID] && deletedSessionGenerations.has(sessionID))
       return Promise.reject(staleSessionRequestError())
     clearSessionRefreshTimer(sessionID)
     const tailOptions = input.limit === undefined ? {} : { limit: input.limit }
     sessionTailOptions.set(sessionID, tailOptions)
+    if (!state.sessionDetails[sessionID]) beginClientSessionEventBuffer(sessionEventBuffers, sessionID)
     const request = beginSessionRequest(sessionID, "tail", undefined, input.signal)
-    commit(setClientSessionLoadState(state, sessionID, "initial", "loading"))
+    if (!correction) commit(setClientSessionLoadState(state, sessionID, "initial", "loading"))
     metrics.sessionSnapshots += 1
     return transport.session({ sessionID, ...tailOptions, signal: request.controller.signal }).then(
       (snapshot) => {
         if (sessionRequests.get(request.key)?.generation === request.generation && request.controller.signal.aborted) {
           finishSessionRequest(request)
-          commit(resetClientSessionLoadAfterAbort(state, sessionID, "initial"))
+          if (!correction) commit(resetClientSessionLoadAfterAbort(state, sessionID, "initial"))
+          if (!state.sessionDetails[sessionID]) clearClientSessionEventBuffers(sessionEventBuffers, sessionID)
           throw sessionRequestAbortError(request.controller.signal)
         }
         if (!isCurrentSessionRequest(request)) throw staleSessionRequestError()
         finishSessionRequest(request)
         if (request.revision !== undefined && state.sessionDetails[sessionID]?.revision !== request.revision) {
-          commit(setClientSessionLoadState(state, sessionID, "initial", "ready"))
+          if (!correction) commit(setClientSessionLoadState(state, sessionID, "initial", "ready"))
           scheduleSessionRefresh(sessionID)
           return snapshot
         }
-        commit(
-          setClientSessionLoadState(
-            drainClientSessionEventBuffer(applyClientSessionSnapshot(state, snapshot), sessionID, sessionEventBuffers),
-            sessionID,
-            "initial",
-            "ready",
-          ),
+        const next = drainClientSessionEventBuffer(
+          applyClientSessionSnapshot(state, snapshot),
+          sessionID,
+          sessionEventBuffers,
         )
+        commit(correction ? next : setClientSessionLoadState(next, sessionID, "initial", "ready"))
         return snapshot
       },
       (error) => {
         if (sessionRequests.get(request.key)?.generation === request.generation) {
           const aborted = request.controller.signal.aborted
           finishSessionRequest(request)
-          commit(
-            aborted
-              ? resetClientSessionLoadAfterAbort(state, sessionID, "initial")
-              : setClientSessionLoadState(state, sessionID, "initial", "error", clientStateSyncError(error)),
-          )
+          if (!correction)
+            commit(
+              aborted
+                ? resetClientSessionLoadAfterAbort(state, sessionID, "initial")
+                : setClientSessionLoadState(state, sessionID, "initial", "error", clientStateSyncError(error)),
+            )
           if (aborted) throw sessionRequestAbortError(request.controller.signal)
         }
+        if (!state.sessionDetails[sessionID]) clearClientSessionEventBuffers(sessionEventBuffers, sessionID)
         if (request.controller.signal.aborted) throw sessionRequestAbortError(request.controller.signal)
         throw error
       },
@@ -595,6 +651,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     abortSessionRequests(sessionID)
     abortCardRequests(sessionID)
     clearSessionRefreshTimer(sessionID)
+    sessionCorrectionAttempts.delete(sessionID)
     sessionTailOptions.delete(sessionID)
     clearClientSessionEventBuffers(sessionEventBuffers, sessionID)
     commit(releaseClientSessionState(state, sessionID))
@@ -607,51 +664,82 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     abortSessionRequests(sessionID, false)
     abortCardRequests(sessionID)
     clearSessionRefreshTimer(sessionID)
+    sessionCorrectionAttempts.delete(sessionID)
     sessionTailOptions.delete(sessionID)
     clearClientSessionEventBuffers(sessionEventBuffers, sessionID)
   }
-  const scheduleSessionRefresh = (sessionID: string) => {
-    metrics.sessionInvalidations += 1
+  const scheduleSessionRefresh = (sessionID: string, retry = false) => {
+    if (!retry) metrics.sessionInvalidations += 1
     const current = sessionRefreshTimers.get(sessionID)
     if (current !== undefined) {
       metrics.sessionCorrectionsCoalesced += 1
       clearTimeout(current)
     }
+    const attempt = retry ? (sessionCorrectionAttempts.get(sessionID) ?? 0) + 1 : 0
+    if (retry) sessionCorrectionAttempts.set(sessionID, attempt)
+    else sessionCorrectionAttempts.delete(sessionID)
+    const delay = retry
+      ? Math.min(30_000, (options.sessionRefreshDelayMs ?? 500) * 2 ** Math.min(attempt, 6))
+      : (options.sessionRefreshDelayMs ?? 500)
     sessionRefreshTimers.set(
       sessionID,
       setTimeout(() => {
         sessionRefreshTimers.delete(sessionID)
         if (stopped || !state.sessionDetails[sessionID]) return
-        void refreshSessionTail(sessionID, sessionTailOptions.get(sessionID)).catch(() => undefined)
-      }, options.sessionRefreshDelayMs ?? 500),
+        if (hasSessionRequest(sessionID, "tail")) {
+          scheduleSessionRefresh(sessionID, true)
+          return
+        }
+        void refreshSessionTail(sessionID, sessionTailOptions.get(sessionID), true).then(
+          () => sessionCorrectionAttempts.delete(sessionID),
+          () => {
+            const detail = state.sessionDetails[sessionID]
+            const card = state.sessions.records[sessionID]
+            if (
+              stopped ||
+              !detail ||
+              (!state.dirtySessions[sessionID] && (!card || card.time.updated <= detail.snapshot.session.time.updated))
+            )
+              return
+            scheduleSessionRefresh(sessionID, true)
+          },
+        )
+      }, delay),
     )
   }
-  const reloadDirty = (
+  const reloadDirty = async (
     catalog: boolean,
     operations: boolean,
     capabilities: boolean,
     sessions: string[],
     catalogSessions: string[],
   ) => {
-    if (catalog)
-      void refresh()
-        .then(async () => {
-          if (!transport.cards || catalogSessions.length === 0) return
-          for (let index = 0; index < catalogSessions.length; index += 200) {
-            await fetchCards({ sessionIDs: catalogSessions.slice(index, index + 200) }, false)
-          }
+    catalogSessions.forEach((sessionID) => dirtyCatalogSessions.set(sessionID, ++catalogSessionInvalidationGeneration))
+    const reloadCatalog = async () => {
+      if (catalog) await refresh()
+      if (!transport.cards) {
+        dirtyCatalogSessions.clear()
+        return
+      }
+      const pending = [...dirtyCatalogSessions]
+      for (let index = 0; index < pending.length; index += 200) {
+        const batch = pending.slice(index, index + 200)
+        await fetchCards(
+          {
+            sessionIDs: batch.map(([sessionID]) => sessionID),
+          },
+          false,
+        )
+        batch.forEach(([sessionID, generation]) => {
+          if (dirtyCatalogSessions.get(sessionID) === generation) dirtyCatalogSessions.delete(sessionID)
         })
-        .catch((error) => {
-          if (
-            error instanceof Error &&
-            error.name === "AbortError" &&
-            error.message === "Session request was superseded or released"
-          )
-            return
-          fail(error)
-        })
-    if (!catalog && operations) void refreshOperations().catch(fail)
-    if (capabilities) void refreshCapabilities().catch(fail)
+      }
+    }
+    await Promise.all([
+      catalog || dirtyCatalogSessions.size > 0 ? reloadCatalog() : Promise.resolve(),
+      !catalog && operations ? refreshOperations() : Promise.resolve(),
+      capabilities ? refreshCapabilities() : Promise.resolve(),
+    ])
     sessions.forEach((sessionID) => {
       if (!state.sessionDetails[sessionID]) return
       scheduleSessionRefresh(sessionID)
@@ -668,6 +756,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     metrics.batches += 1
     let next = state
     let reset = false
+    let gap: OpencodeXStateEvent | undefined
     let catalog = false
     let operations = false
     let capabilities = false
@@ -675,19 +764,31 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     const catalogSessions = new Set<string>()
     for (const frame of frames) {
       if (frame.type === "ready") continue
+      if (frame.type === "heartbeat") {
+        if (state.epoch && frame.epoch !== state.epoch) {
+          reset = true
+          break
+        }
+        continue
+      }
       if (frame.type === "reset_required") {
         reset = true
-        continue
+        break
       }
       const result = applyClientStateEvent(next, frame.event)
       const changed = result.state !== next
       next = result.state
-      if (result.gap) reset = true
+      if (result.gap) {
+        gap = frame.event
+        break
+      }
+      if (frame.event.domain !== "session") rememberEventID(frame.event.id)
       if (changed && frame.event.domain === "catalog") {
         catalog = true
-        if (frame.event.payload.eventType.startsWith("session.")) {
+        if (isSessionCatalogEvent(frame.event.payload.eventType)) {
           const sessionID = frame.event.payload.aggregateID
           if (frame.event.payload.eventType === "session.deleted") {
+            dirtyCatalogSessions.delete(sessionID)
             invalidateDeletedSession(sessionID)
             next = applyClientSessionCardPage(next, {
               items: [],
@@ -706,17 +807,33 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       if (changed && frame.event.domain === "capabilities") capabilities = true
       if (changed && frame.event.domain === "session") sessions.add(frame.event.payload.aggregateID)
     }
+    if (reset) {
+      void resetState().catch(recover)
+      return
+    }
+    if (gap) {
+      const error = new Error(
+        `State event gap at ${gap.cursor} for ${gap.visibility}:${gap.payload.aggregateID} sequence ${gap.aggregateSequence}`,
+      )
+      connection?.abort(error)
+      reconnect(connectionGeneration, error)
+      return
+    }
     commit(next)
     clearSettledDeletionGenerations()
     clearSettledSessionCardGenerations()
-    if (reset) {
-      void resetState().catch(fail)
-      return
-    }
-    reloadDirty(catalog, operations, capabilities, [...sessions], [...catalogSessions])
+    void reloadDirty(catalog, operations, capabilities, [...sessions], [...catalogSessions]).catch((error) => {
+      if (isSupersededSessionRequest(error)) return
+      recover(error)
+    })
   }
   const queue = (generation: number, frame: OpencodeXStateStreamFrame) => {
     if (generation !== connectionGeneration) return
+    if (queuedFrames.length >= MAX_QUEUED_STATE_FRAMES) {
+      queuedFrames.length = 0
+      void resetState().catch(recover)
+      return
+    }
     queuedFrames.push({ generation, frame })
     if (batchTimer !== undefined) return
     batchTimer = setTimeout(flush, options.batchMs ?? 16)
@@ -747,23 +864,52 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     if (ready.type !== "ready") throw new Error("State stream did not begin with ready")
     reconnectAttempt = 0
     const buffered = new Array<OpencodeXStateStreamFrame>()
+    let bufferOverflowed = false
     let bootstrapping = state.phase !== "ready"
     const consume = async () => {
       for await (const input of { [Symbol.asyncIterator]: () => iterator }) {
         if (generation !== connectionGeneration || stopped) return
         metrics.streamFrames += 1
         const frame = decodeClientStateFrame(input)
+        if (bootstrapping && buffered.length >= MAX_QUEUED_STATE_FRAMES) {
+          bufferOverflowed = true
+          controller.abort()
+          return
+        }
         if (bootstrapping) buffered.push(frame)
         else queue(generation, frame)
       }
     }
     const consuming = consume()
     void consuming.catch(() => undefined)
+    let flushedBootstrapFrames = false
     if (bootstrapping) {
       await refresh()
       if (generation !== connectionGeneration || stopped) return
-      buffered.forEach((frame) => queue(generation, frame))
+      if (bufferOverflowed) throw new Error("State stream bootstrap buffer overflow")
+      await Promise.all(
+        [...sessionTailOptions].flatMap(([sessionID, input]) => {
+          if (state.sessions.records[sessionID]) return [refreshSessionTail(sessionID, input)]
+          sessionTailOptions.delete(sessionID)
+          return []
+        }),
+      )
       bootstrapping = false
+      buffered.forEach((frame) => queue(generation, frame))
+      if (batchTimer !== undefined) {
+        flushedBootstrapFrames = true
+        clearTimeout(batchTimer)
+        flush()
+      }
+    }
+    if (!flushedBootstrapFrames) {
+      await reloadDirty(
+        state.dirtyCatalog,
+        state.dirtyOperations,
+        state.dirtyCapabilities,
+        Object.keys(state.dirtySessions),
+        [],
+      )
     }
     commit({
       ...state,
@@ -775,9 +921,16 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       },
       error: undefined,
     })
+    const reconnectAfterConsume = (cause: unknown) => {
+      if (queuedFrames.some((item) => item.generation === generation)) {
+        if (batchTimer !== undefined) clearTimeout(batchTimer)
+        flush()
+      }
+      reconnect(generation, cause)
+    }
     void consuming.then(
-      () => reconnect(generation, new Error("State stream ended")),
-      (error) => reconnect(generation, error),
+      () => reconnectAfterConsume(new Error("State stream ended")),
+      (error) => reconnectAfterConsume(error),
     )
   }
   const reconnect = (generation: number, cause?: unknown) => {
@@ -818,15 +971,17 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     reconnectTimer = undefined
     catalogRequestID += 1
     operationsRequestID += 1
+    capabilityRequestID += 1
     abortSessionRequests()
     abortCardRequests()
     rootCardRequests.clear()
-    sessionTailOptions.clear()
     sessionRefreshTimers.forEach((timer) => clearTimeout(timer))
     sessionRefreshTimers.clear()
+    sessionCorrectionAttempts.clear()
     clearClientSessionEventBuffers(sessionEventBuffers)
     deletedSessionGenerations.clear()
     sessionCardGenerations.clear()
+    dirtyCatalogSessions.clear()
     seenEventIDs.clear()
     seenEventIDOrder.length = 0
     queuedFrames.length = 0
@@ -834,8 +989,9 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       ...emptyClientStateSyncState(),
       phase: "resetting",
       lifecycle: { status: "resetting", data: "empty", attempt: 0 },
+      dirtyCapabilities: reloadCapabilities,
     })
-    await Promise.all([connect(), reloadCapabilities ? refreshCapabilities() : Promise.resolve()])
+    await connect()
   }
   const fail = (error: unknown) => {
     if (stopped) return
@@ -851,6 +1007,10 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       error: clientStateSyncError(error),
     })
   }
+  const recover = (error: unknown) => {
+    fail(error)
+    reconnect(connectionGeneration, error)
+  }
   const applyEvents = (events: readonly Event[]) => {
     const handled = new Array<boolean>()
     let next = state
@@ -858,11 +1018,9 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       const event = events[index]
       if (seenEventIDs.has(event.id)) {
         metrics.liveEventDuplicates += 1
-        if (event.type !== "session.deleted") {
-          handled.push(true)
-          index += 1
-          continue
-        }
+        handled.push(true)
+        index += 1
+        continue
       }
       const group = contiguousDeltaGroup(events, index, seenEventIDs)
       if (
@@ -889,16 +1047,9 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       }
       metrics.liveEvents += group.events.length
       group.events.forEach((item) => {
-        if (!seenEventIDs.has(item.id)) {
-          seenEventIDs.add(item.id)
-          seenEventIDOrder.push(item.id)
-        }
+        rememberEventID(item.id)
         handled.push(true)
       })
-      while (seenEventIDOrder.length > 2_048) {
-        const stale = seenEventIDOrder.shift()
-        if (stale) seenEventIDs.delete(stale)
-      }
       index += group.events.length
       if (result.handled) {
         next = result.state
@@ -953,6 +1104,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
         reconnect(connectionGeneration, error)
         throw error
       })
+      startPolling()
     },
     stop() {
       stopped = true
@@ -960,6 +1112,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       connection?.abort()
       catalogRequestID += 1
       operationsRequestID += 1
+      capabilityRequestID += 1
       rootRefreshQueued = false
       operationsRefreshQueued = false
       capabilityRefreshQueued = false
@@ -968,16 +1121,21 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       rootCardRequests.clear()
       deletedSessionGenerations.clear()
       sessionCardGenerations.clear()
+      dirtyCatalogSessions.clear()
       sessionTailOptions.clear()
       sessionRefreshTimers.forEach((timer) => clearTimeout(timer))
       sessionRefreshTimers.clear()
+      sessionCorrectionAttempts.clear()
       clearClientSessionEventBuffers(sessionEventBuffers)
       seenEventIDs.clear()
       seenEventIDOrder.length = 0
       if (batchTimer !== undefined) clearTimeout(batchTimer)
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
+      if (pollTimer !== undefined) clearInterval(pollTimer)
       batchTimer = undefined
       reconnectTimer = undefined
+      pollTimer = undefined
+      polling = false
       reconnectAttempt = 0
       queuedFrames.length = 0
       commit({
@@ -1120,5 +1278,22 @@ function sameDeltaTarget(left: PartDeltaEvent, right: PartDeltaEvent) {
     left.properties.messageID === right.properties.messageID &&
     left.properties.partID === right.properties.partID &&
     left.properties.field === right.properties.field
+  )
+}
+
+function isSessionCatalogEvent(eventType: string) {
+  return (
+    eventType.startsWith("session.") ||
+    eventType.startsWith("permission.") ||
+    eventType.startsWith("question.") ||
+    eventType.startsWith("opencodex.session_state.")
+  )
+}
+
+function isSupersededSessionRequest(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.name === "AbortError" &&
+    error.message === "Session request was superseded or released"
   )
 }

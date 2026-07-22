@@ -3161,6 +3161,7 @@ export class SessionState extends HeyApiClient {
   public update<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
+      expectedReviewedFiles?: Array<string>
       seenAt?: number
       reviewedAt?: number
       reviewedFiles?: Array<string>
@@ -3173,6 +3174,7 @@ export class SessionState extends HeyApiClient {
         {
           args: [
             { in: "path", key: "sessionID" },
+            { in: "body", key: "expectedReviewedFiles" },
             { in: "body", key: "seenAt" },
             { in: "body", key: "reviewedAt" },
             { in: "body", key: "reviewedFiles" },
@@ -5111,6 +5113,7 @@ export class View extends HeyApiClient {
   public update<ThrowOnError extends boolean = false>(
     parameters: {
       viewID: string
+      expectedTimeUpdated?: number
       title?: string
       sessionIDs?: Array<string>
       focusedSessionID?: string
@@ -5127,6 +5130,7 @@ export class View extends HeyApiClient {
         {
           args: [
             { in: "path", key: "viewID" },
+            { in: "body", key: "expectedTimeUpdated" },
             { in: "body", key: "title" },
             { in: "body", key: "sessionIDs" },
             { in: "body", key: "focusedSessionID" },

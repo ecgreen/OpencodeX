@@ -30,7 +30,7 @@ import type {
   OpencodeXSwarm,
   OpencodeXView,
 } from "./opencodex-operations-types"
-import { deriveStatus } from "./opencodex-session-status"
+import { REVIEW_READY_ICON, deriveStatus, isReviewReadyStatus } from "./opencodex-session-status"
 
 function SessionFooterStatus(props: { status: DashboardStatus }) {
   const kv = useKV()
@@ -43,7 +43,14 @@ function SessionFooterStatus(props: { status: DashboardStatus }) {
     }
   })
   return (
-    <Show when={props.status === "in_progress"} fallback={<text fg={dashboardStatusColor(props.status)}>{dashboardStatusLabel(props.status)}</text>}>
+    <Show
+      when={props.status === "in_progress"}
+      fallback={
+        <text fg={dashboardStatusColor(props.status)}>
+          {isReviewReadyStatus(props.status) ? REVIEW_READY_ICON : dashboardStatusLabel(props.status)}
+        </text>
+      }
+    >
       <Show when={animationsEnabled()} fallback={<text fg={dashboardStatusColor("in_progress")}>⋯</text>}>
         <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
       </Show>
@@ -65,11 +72,11 @@ export function SessionCard(props: {
   const status = createMemo(() => props.displayStatus ?? deriveStatus(props.session.id, sync))
   const project = createMemo(() => projectForSession(props.projects, props.session.id))
   const detail = createMemo(() => [project() ? projectTitle(props.projects, project()!.id) : undefined, sessionSwarmTitle(props.session, props.swarms) ?? modelLabel(props.session)].filter(Boolean).join(" - "))
-  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed", "needs_review"].includes(status()))
-  const titleColor = createMemo(() => ["review_ready", "unviewed", "needs_review"].includes(status()) ? dashboardStatusColor(status()) : theme.text)
+  const animatedTitle = createMemo(() => status() === "input_needed" || isReviewReadyStatus(status()))
+  const titleColor = createMemo(() => isReviewReadyStatus(status()) ? dashboardStatusColor(status()) : theme.text)
   const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(status()) : titleColor())
   return (
-    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected ? theme.primary : dashboardStatusColor(status())} onMouseUp={() => route.navigate({ type: "session", sessionID: props.session.id })}>
+    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected && !isReviewReadyStatus(status()) ? theme.primary : dashboardStatusColor(status())} onMouseUp={() => route.navigate({ type: "session", sessionID: props.session.id })}>
       <box flexDirection="row" gap={1} alignItems="center">
         <Show when={animatedTitle()} fallback={<text attributes={TextAttributes.BOLD} fg={titleColor()}>{truncate(props.session.title, props.width - 4)}</text>}>
           <LogoShimmerText text={truncate(props.session.title, props.width - 7)} ink={titleInk()} attributes={TextAttributes.BOLD} />
@@ -115,18 +122,18 @@ export function ProjectCard(props: { summary: DashboardProjectSummary; width: nu
 
 export function AttentionCard(props: { row: DashboardRow; width: number; selected?: boolean }) {
   const { theme } = useTheme()
-  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed", "needs_review"].includes(props.row.dashboardStatus ?? ""))
-  const titleColor = createMemo(() => ["review_ready", "unviewed", "needs_review"].includes(props.row.dashboardStatus ?? "") ? dashboardRowColor(props.row, theme) : theme.text)
+  const animatedTitle = createMemo(() => props.row.dashboardStatus === "input_needed" || isReviewReadyStatus(props.row.dashboardStatus ?? ""))
+  const titleColor = createMemo(() => isReviewReadyStatus(props.row.dashboardStatus ?? "") ? dashboardRowColor(props.row, theme) : theme.text)
   const titleInk = createMemo(() => animatedTitle() ? dashboardRowColor(props.row, theme) : titleColor())
   return (
-    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected ? theme.primary : dashboardRowColor(props.row, theme)} onMouseUp={props.row.open}>
+    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected && !isReviewReadyStatus(props.row.dashboardStatus ?? "") ? theme.primary : dashboardRowColor(props.row, theme)} onMouseUp={props.row.open}>
       <Show when={animatedTitle()} fallback={<text attributes={TextAttributes.BOLD} fg={titleColor()}>{truncate(props.row.title, props.width - 4)}</text>}>
         <LogoShimmerText text={truncate(props.row.title, props.width - 7)} ink={titleInk()} attributes={TextAttributes.BOLD} />
       </Show>
       <Show when={props.row.subtitle}>{(subtitle) => <text fg={theme.textMuted}>{truncate(subtitle(), props.width - 4)}</text>}</Show>
       <box width="100%" flexDirection="row" justifyContent="space-between">
         <text fg={theme.textMuted}>{timeAgo(props.row.timeUpdated)}</text>
-        <text fg={dashboardRowColor(props.row, theme)}>{dashboardRowStatusLabel(props.row)}</text>
+        <text fg={dashboardRowColor(props.row, theme)}>{isReviewReadyStatus(props.row.dashboardStatus ?? "") ? REVIEW_READY_ICON : dashboardRowStatusLabel(props.row)}</text>
       </box>
     </box>
   )
@@ -136,11 +143,11 @@ export function ViewCard(props: { view: OpencodeXView; status: DashboardStatus; 
   const { theme } = useTheme()
   const route = useRoute()
   const sessionCount = createMemo(() => props.view.sessionIDs.length)
-  const animatedTitle = createMemo(() => ["input_needed", "review_ready", "unviewed", "needs_review"].includes(props.status))
-  const titleColor = createMemo(() => ["review_ready", "unviewed", "needs_review"].includes(props.status) ? dashboardStatusColor(props.status) : theme.text)
+  const animatedTitle = createMemo(() => props.status === "input_needed" || isReviewReadyStatus(props.status))
+  const titleColor = createMemo(() => isReviewReadyStatus(props.status) ? dashboardStatusColor(props.status) : theme.text)
   const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(props.status) : titleColor())
   return (
-    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected ? theme.primary : dashboardStatusColor(props.status)} onMouseUp={() => route.navigate({ type: "opencodex-view", viewID: props.view.id })}>
+    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected && !isReviewReadyStatus(props.status) ? theme.primary : dashboardStatusColor(props.status)} onMouseUp={() => route.navigate({ type: "opencodex-view", viewID: props.view.id })}>
       <Show when={animatedTitle()} fallback={<text attributes={TextAttributes.BOLD} fg={titleColor()}>{truncate(props.view.title, props.width - 4)}</text>}>
         <LogoShimmerText text={truncate(props.view.title, props.width - 7)} ink={titleInk()} attributes={TextAttributes.BOLD} />
       </Show>

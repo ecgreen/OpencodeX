@@ -2,7 +2,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { EventV2 } from "@opencode-ai/core/event"
 import { OpencodeXJobTable } from "@opencode-ai/core/opencodex/sql"
 import { Effect } from "effect"
-import { and, eq, inArray, like, lt, notLike, or } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm"
 import { hydrate } from "./job-model"
 import {
   Event,
@@ -99,6 +99,7 @@ export function createJobLifecycle(
           target: "cancelled",
           owner: input.owner,
           settlement,
+          condition: isNotNull(OpencodeXJobTable.cancel_requested_at),
           values: {
             completed_at: Date.now(),
             lease_owner: null,
@@ -127,6 +128,7 @@ export function createJobLifecycle(
       target: input.outcome.status,
       owner: input.owner,
       settlement,
+      condition: isNull(OpencodeXJobTable.cancel_requested_at),
       values: {
         completed_at: Date.now(),
         lease_owner: null,
@@ -159,6 +161,7 @@ export function createJobLifecycle(
     return yield* store.transition({
       job: current,
       target: "queued",
+      condition: isNull(OpencodeXJobTable.cancel_requested_at),
       values: {
         lease_owner: null,
         lease_expires_at: null,
@@ -174,9 +177,13 @@ export function createJobLifecycle(
 
   const cancel = Effect.fn("OpencodeXJob.cancel")(function* (jobID: string, settlement?: TransactionalSettlement) {
     const current = yield* store.get(jobID)
-    if (["succeeded", "failed", "cancelled", "interrupted"].includes(current.status)) return current
+    if (
+      ["succeeded", "cancelled"].includes(current.status) ||
+      (["failed", "interrupted"].includes(current.status) && current.attempt >= current.maxAttempts)
+    )
+      return current
     const now = Date.now()
-    if (current.status === "queued") {
+    if (["queued", "failed", "interrupted"].includes(current.status)) {
       return yield* store.transition({
         job: current,
         target: "cancelled",
@@ -191,14 +198,21 @@ export function createJobLifecycle(
       })
     }
     if (current.cancelRequestedAt) return current
-    const committed = yield* db
-      .transaction(
+    const committed = yield* events.barrier(
+      db.transaction(
         (transaction) =>
           Effect.gen(function* () {
             const row = yield* transaction
               .update(OpencodeXJobTable)
               .set({ cancel_requested_at: now, status_reason: "Cancellation requested", time_updated: now })
-              .where(and(eq(OpencodeXJobTable.id, current.id), eq(OpencodeXJobTable.status, current.status)))
+              .where(
+                and(
+                  eq(OpencodeXJobTable.id, current.id),
+                  eq(OpencodeXJobTable.status, current.status),
+                  eq(OpencodeXJobTable.attempt, current.attempt),
+                  isNull(OpencodeXJobTable.cancel_requested_at),
+                ),
+              )
               .returning()
               .get()
             if (!row) return undefined
@@ -207,8 +221,8 @@ export function createJobLifecycle(
             return { result, event }
           }),
         { behavior: "immediate" },
-      )
-      .pipe(Effect.orDie)
+      ).pipe(Effect.orDie),
+    )
     if (!committed) {
       return yield* new TransitionError({
         jobID: current.id,
@@ -235,29 +249,33 @@ export function createJobLifecycle(
     return yield* settle({ jobID, owner, outcome: { status: "cancelled" } })
   })
 
-  const recover = Effect.fn("OpencodeXJob.recover")(function* (now = Date.now()) {
+  const recover = Effect.fn("OpencodeXJob.recover")(function* (
+    now = Date.now(),
+    settlement?: (job: ReturnType<typeof hydrate>) => TransactionalSettlement | undefined,
+  ) {
     const rows = yield* db
       .select()
       .from(OpencodeXJobTable)
       .where(
         and(
           inArray(OpencodeXJobTable.status, ["claimed", "running"]),
-          or(
-            lt(OpencodeXJobTable.lease_expires_at, now),
-            lt(OpencodeXJobTable.timeout_at, now),
-            and(like(OpencodeXJobTable.lease_owner, "local:%"), notLike(OpencodeXJobTable.lease_owner, `local:${process.pid}:%`)),
-          ),
+          or(lt(OpencodeXJobTable.lease_expires_at, now), lt(OpencodeXJobTable.timeout_at, now)),
         ),
       )
       .all()
       .pipe(Effect.orDie)
     return yield* Effect.forEach(
       rows,
-      (row) =>
-        store
+      (row) => {
+        const job = hydrate(row)
+        return store
           .transition({
-            job: hydrate(row),
+            job,
             target: row.cancel_requested_at ? "cancelled" : "interrupted",
+            owner: row.lease_owner ?? undefined,
+            settlement:
+              row.cancel_requested_at || row.attempt >= row.max_attempts ? settlement?.(job) : undefined,
+            condition: or(lt(OpencodeXJobTable.lease_expires_at, now), lt(OpencodeXJobTable.timeout_at, now)),
             values: {
               completed_at: now,
               lease_owner: null,
@@ -267,7 +285,8 @@ export function createJobLifecycle(
                 : "Interrupted after an expired lease or timeout",
             },
           })
-          .pipe(Effect.catchTag("OpencodeX.Job.TransitionError", () => Effect.succeed(hydrate(row)))),
+          .pipe(Effect.catchTag("OpencodeX.Job.TransitionError", () => Effect.succeed(hydrate(row))))
+      },
       { concurrency: 1 },
     )
   })

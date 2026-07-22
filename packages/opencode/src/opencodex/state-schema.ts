@@ -18,7 +18,7 @@ import { OpencodeXSwarm } from "./swarm"
 import { OpencodeXView } from "./view"
 import { SessionStatus } from "@/session/status"
 
-export const EPOCH = "2026-07-19.5"
+export const EPOCH = "2026-07-20.1"
 
 export const OpencodeXStateScope = Schema.Struct({
   projectID: ProjectV2.ID,
@@ -109,6 +109,8 @@ export const OpencodeXStateEvent = Schema.Struct({
   scope: OpencodeXStateScope,
   epoch: Schema.String,
   cursor: OpencodeXStateCursor,
+  position: NonNegativeInt,
+  visibility: Schema.Literals(["global", "instance"]),
   aggregateSequence: NonNegativeInt,
   domain: Schema.Literals(["capabilities", "catalog", "operations", "session"]),
   operation: Schema.Literal("invalidate"),
@@ -124,6 +126,7 @@ export const OpencodeXStateStreamFrame = Schema.Union([
     cursor: OpencodeXStateCursor,
   }),
   Schema.Struct({ type: Schema.Literal("event"), event: OpencodeXStateEvent }),
+  Schema.Struct({ type: Schema.Literal("heartbeat"), epoch: Schema.String }),
   Schema.Struct({
     type: Schema.Literal("reset_required"),
     scope: OpencodeXStateScope,
@@ -136,13 +139,19 @@ export type OpencodeXStateStreamFrame = Schema.Schema.Type<typeof OpencodeXState
 
 export const CursorPayload = Schema.Struct({
   epoch: Schema.String,
+  databaseID: Schema.String,
   scope: OpencodeXStateScope,
   position: NonNegativeInt,
 })
 
 export type Replay =
-  | { readonly reset: true; readonly reason: string; readonly cursor: OpencodeXStateCursor }
-  | { readonly reset: false; readonly events: readonly OpencodeXStateEvent[]; readonly cursor: OpencodeXStateCursor }
+  | { readonly reset: true; readonly reason: string; readonly cursor: OpencodeXStateCursor; readonly position: number }
+  | {
+      readonly reset: false
+      readonly events: readonly OpencodeXStateEvent[]
+      readonly cursor: OpencodeXStateCursor
+      readonly position: number
+    }
 
 export interface Interface {
   readonly scope: () => Effect.Effect<OpencodeXStateScope>

@@ -86,7 +86,7 @@ export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem
       }
       focus={(sessionID, focusComposer) => props.model.view.focus(sessionID, { focusComposer })}
       openSidePanelTarget={props.model.view.openSidePanel}
-      submit={(event, item, text) => void run(() => props.model.view.submitPrompt(event, item, text))}
+      submit={(event, item, text) => props.model.notices.attempt(() => props.model.view.submitPrompt(event, item, text))}
       replyPermission={(request, reply) => void run(() => props.model.management.permission(request, reply))}
       replyQuestion={(request, answers) => void run(() => props.model.management.replyToQuestion(request, answers))}
       rejectQuestion={(request) => void run(() => props.model.management.rejectQuestionRequest(request))}

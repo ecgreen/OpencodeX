@@ -13,7 +13,8 @@ import { Effect } from "effect"
 import path from "path"
 import { renderableSessionWhere } from "./session-filter"
 
-type DatabaseService = Database.Interface["db"]
+type Transaction = Parameters<Parameters<Database.Interface["db"]["transaction"]>[0]>[0]
+type DatabaseService = Database.Interface["db"] | Transaction
 type FolderRow = typeof OpencodeXProjectFolderTable.$inferSelect
 export type ProjectRow = typeof OpencodeXProjectTable.$inferSelect
 
@@ -77,22 +78,16 @@ export function createProject(db: DatabaseService, input: { id: string; projectI
 }
 
 export function reorderProjects(db: DatabaseService, projectIDs: readonly string[]) {
-  return db
-    .transaction(
-      (tx) =>
-        Effect.forEach(
-          projectIDs,
-          (id, index) =>
-            tx
-              .update(OpencodeXProjectTable)
-              .set({ sort_order: index, time_updated: Date.now() })
-              .where(eq(OpencodeXProjectTable.id, id))
-              .run(),
-          { discard: true },
-        ),
-      { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+  return Effect.forEach(
+    projectIDs,
+    (id, index) =>
+      db
+        .update(OpencodeXProjectTable)
+        .set({ sort_order: index, time_updated: Date.now() })
+        .where(eq(OpencodeXProjectTable.id, id))
+        .run(),
+    { discard: true },
+  ).pipe(Effect.orDie)
 }
 
 export function updateProject(
@@ -139,39 +134,33 @@ export function replaceFolders(
 ) {
   const now = Date.now()
   const paths = [...new Set(input.folders.map(normalizeFolderPath))]
-  return db
-    .transaction(
-      (tx) =>
-        Effect.gen(function* () {
-          yield* tx
-            .delete(OpencodeXProjectFolderTable)
-            .where(eq(OpencodeXProjectFolderTable.opencodex_project_id, input.opencodexProjectID))
-            .run()
-          if (paths.length === 0) return
-          yield* tx
-    .insert(OpencodeXProjectFolderTable)
-            .values(
-              paths.map((item) => ({
-                path: item,
-                opencodex_project_id: input.opencodexProjectID,
-                project_id: input.projectID,
-                time_created: now,
-                time_updated: now,
-              })),
-            )
-    .onConflictDoUpdate({
-      target: [OpencodeXProjectFolderTable.opencodex_project_id, OpencodeXProjectFolderTable.path],
-      set: {
-                opencodex_project_id: input.opencodexProjectID,
-                project_id: input.projectID,
-                time_updated: now,
-              },
-            })
-            .run()
-        }),
-      { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+  return Effect.gen(function* () {
+    yield* db
+      .delete(OpencodeXProjectFolderTable)
+      .where(eq(OpencodeXProjectFolderTable.opencodex_project_id, input.opencodexProjectID))
+      .run()
+    if (paths.length === 0) return
+    yield* db
+      .insert(OpencodeXProjectFolderTable)
+      .values(
+        paths.map((item) => ({
+          path: item,
+          opencodex_project_id: input.opencodexProjectID,
+          project_id: input.projectID,
+          time_created: now,
+          time_updated: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [OpencodeXProjectFolderTable.opencodex_project_id, OpencodeXProjectFolderTable.path],
+        set: {
+          opencodex_project_id: input.opencodexProjectID,
+          project_id: input.projectID,
+          time_updated: now,
+        },
+      })
+      .run()
+  }).pipe(Effect.orDie)
 }
 
 export function removeFolder(db: DatabaseService, opencodexProjectID: string, folder: string) {

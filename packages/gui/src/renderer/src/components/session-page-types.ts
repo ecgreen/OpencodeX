@@ -29,7 +29,7 @@ export type SessionPageProps = {
   setSelectedModel: (value: string) => void
   selectedVariant: string
   setSelectedVariant: (value: string) => void
-  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => void
+  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => Promise<boolean>
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void

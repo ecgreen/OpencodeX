@@ -142,12 +142,12 @@ export function createTuiAppSystemCommands(controller: ReturnType<typeof createT
     },
     {
       name: "app.toggle.session_directory_filter",
-      title: controller.kv.get("session_directory_filter_enabled", true)
+      title: controller.kv.get("session_directory_filter_enabled", false)
         ? "Disable session directory filtering"
         : "Enable session directory filtering",
       category: "System",
       run: async () => {
-        controller.kv.set("session_directory_filter_enabled", !controller.kv.get("session_directory_filter_enabled", true))
+        controller.kv.set("session_directory_filter_enabled", !controller.kv.get("session_directory_filter_enabled", false))
         await controller.sync.session.refresh()
         controller.dialog.clear()
       },

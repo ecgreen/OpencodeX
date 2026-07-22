@@ -41,10 +41,8 @@ export function coordinatorDatabaseIdentity(database: string) {
   return process.platform === "win32" ? resolved.toLowerCase() : resolved
 }
 
-export function coordinatorKey(directory: string, database: string) {
-  return createHash("sha1")
-    .update(`${normalizeDirectory(directory)}\0${coordinatorDatabaseIdentity(database)}`)
-    .digest("hex")
+export function coordinatorKey(database: string) {
+  return createHash("sha1").update(coordinatorDatabaseIdentity(database)).digest("hex")
 }
 
 export function coordinatorManifestPath(key: string) {

@@ -8,6 +8,7 @@ import type {
   TuiPluginStatus,
 } from "@opencode-ai/plugin/tui"
 import type { ConfigPlugin } from "@/config/plugin"
+import type { OpencodeXPluginInstallResult } from "@opencode-ai/sdk/v2"
 import type { PluginMeta } from "@/plugin/meta"
 import type { PluginSource } from "@/plugin/shared"
 import type { HostPluginApi, HostSlots } from "./slots"
@@ -57,6 +58,8 @@ export type RuntimeState = {
   plugins: PluginEntry[]
   plugins_by_id: Map<string, PluginEntry>
   pending: Map<string, ConfigPlugin.Origin>
+  install?: (spec: string, global: boolean) => Promise<OpencodeXPluginInstallResult>
+  toggle?: (plugin: { id: string; source: string; internal: boolean }, enabled: boolean) => Promise<boolean>
   dispose_timeout_ms: number
   actions: RuntimeActions
 }

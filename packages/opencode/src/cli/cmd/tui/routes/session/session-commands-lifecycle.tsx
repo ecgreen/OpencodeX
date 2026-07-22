@@ -16,9 +16,10 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
       enabled: controller.sync.data.config.share !== "disabled",
       slash: { name: "share" },
       run: async () => {
-        const copy = (url: string) => Clipboard.copy(url)
-          .then(() => controller.toast.show({ message: "Share URL copied to clipboard!", variant: "success" }))
-          .catch(() => controller.toast.show({ message: "Failed to copy URL to clipboard", variant: "error" }))
+        const copy = (url: string) =>
+          Clipboard.copy(url)
+            .then(() => controller.toast.show({ message: "Share URL copied to clipboard!", variant: "success" }))
+            .catch(() => controller.toast.show({ message: "Failed to copy URL to clipboard", variant: "error" }))
         const url = controller.session()?.share?.url
         if (url) {
           await copy(url)
@@ -26,16 +27,23 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
           return
         }
         if (!controller.kv.get("share_consent", false)) {
-          const confirmed = await DialogConfirm.show(controller.dialog, "Share Session", "Are you sure you want to share it?")
+          const confirmed = await DialogConfirm.show(
+            controller.dialog,
+            "Share Session",
+            "Are you sure you want to share it?",
+          )
           if (confirmed !== true) return
           controller.kv.set("share_consent", true)
         }
-        await controller.sdk.client.session.share({ sessionID: controller.route.sessionID })
+        await controller.sdk.client.session
+          .share({ sessionID: controller.route.sessionID })
           .then((result) => copy(result.data!.share!.url))
-          .catch((error) => controller.toast.show({
-            message: error instanceof Error ? error.message : "Failed to share session",
-            variant: "error",
-          }))
+          .catch((error) =>
+            controller.toast.show({
+              message: error instanceof Error ? error.message : "Failed to share session",
+              variant: "error",
+            }),
+          )
         controller.dialog.clear()
       },
     },
@@ -51,25 +59,27 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
       value: "session.timeline",
       category: "Session",
       slash: { name: "timeline" },
-      run: () => controller.dialog.replace(() => (
-        <DialogTimeline
-          onMove={(messageID) => moveToMessage(controller, messageID)}
-          sessionID={controller.route.sessionID}
-          setPrompt={(prompt) => controller.prompt()?.set(prompt)}
-        />
-      )),
+      run: () =>
+        controller.dialog.replace(() => (
+          <DialogTimeline
+            onMove={(messageID) => moveToMessage(controller, messageID)}
+            sessionID={controller.route.sessionID}
+            setPrompt={(prompt) => controller.prompt()?.set(prompt)}
+          />
+        )),
     },
     {
       title: "Fork session",
       value: "session.fork",
       category: "Session",
       slash: { name: "fork" },
-      run: () => controller.dialog.replace(() => (
-        <DialogForkFromTimeline
-          onMove={(messageID) => messageID ? moveToMessage(controller, messageID) : undefined}
-          sessionID={controller.route.sessionID}
-        />
-      )),
+      run: () =>
+        controller.dialog.replace(() => (
+          <DialogForkFromTimeline
+            onMove={(messageID) => (messageID ? moveToMessage(controller, messageID) : undefined)}
+            sessionID={controller.route.sessionID}
+          />
+        )),
     },
     {
       title: "Compact session",
@@ -79,7 +89,11 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
       run: () => {
         const model = controller.local.model.current()
         if (!model) {
-          controller.toast.show({ variant: "warning", message: "Connect a provider to summarize this session", duration: 3000 })
+          controller.toast.show({
+            variant: "warning",
+            message: "Connect a provider to summarize this session",
+            duration: 3000,
+          })
           return
         }
         void controller.sdk.client.session.summarize({
@@ -97,12 +111,15 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
       enabled: Boolean(controller.session()?.share?.url),
       slash: { name: "unshare" },
       run: async () => {
-        await controller.sdk.client.session.unshare({ sessionID: controller.route.sessionID })
+        await controller.sdk.client.session
+          .unshare({ sessionID: controller.route.sessionID })
           .then(() => controller.toast.show({ message: "Session unshared successfully", variant: "success" }))
-          .catch((error) => controller.toast.show({
-            message: error instanceof Error ? error.message : "Failed to unshare session",
-            variant: "error",
-          }))
+          .catch((error) =>
+            controller.toast.show({
+              message: error instanceof Error ? error.message : "Failed to unshare session",
+              variant: "error",
+            }),
+          )
         controller.dialog.clear()
       },
     },
@@ -113,21 +130,27 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
       slash: { name: "undo" },
       run: async () => {
         if (controller.sync.data.session_status[controller.route.sessionID]?.type !== "idle") {
+          controller.sync.session.setPendingPrompt(controller.route.sessionID, undefined)
           await controller.sdk.client.session.abort({ sessionID: controller.route.sessionID }).catch(() => {})
         }
         const revertID = controller.session()?.revert?.messageID
-        const message = controller.messages().findLast((item) => (!revertID || item.id < revertID) && item.role === "user")
+        const message = controller
+          .messages()
+          .findLast((item) => (!revertID || item.id < revertID) && item.role === "user")
         if (!message) return
-        void controller.sdk.client.session.revert({ sessionID: controller.route.sessionID, messageID: message.id })
+        void controller.sdk.client.session
+          .revert({ sessionID: controller.route.sessionID, messageID: message.id })
           .then(controller.toBottom)
-        controller.prompt()?.set((controller.sync.data.part[message.id] ?? []).reduce(
-          (prompt, part) => {
-            if (part.type === "text" && !part.synthetic) prompt.input += part.text
-            if (part.type === "file") prompt.parts.push(part)
-            return prompt
-          },
-          { input: "", parts: [] as PromptInfo["parts"] },
-        ))
+        controller.prompt()?.set(
+          (controller.sync.data.part[message.id] ?? []).reduce(
+            (prompt, part) => {
+              if (part.type === "text" && !part.synthetic) prompt.input += part.text
+              if (part.type === "file") prompt.parts.push(part)
+              return prompt
+            },
+            { input: "", parts: [] as PromptInfo["parts"] },
+          ),
+        )
         controller.dialog.clear()
       },
     },

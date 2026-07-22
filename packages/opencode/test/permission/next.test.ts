@@ -959,7 +959,7 @@ it.instance(
   { git: true },
 )
 
-it.live("permission requests stay isolated by directory", () =>
+it.live("permission requests remain visible and actionable across directories", () =>
   Effect.gen(function* () {
     const one = yield* tmpdirScoped({ git: true })
     const two = yield* tmpdirScoped({ git: true })
@@ -995,16 +995,17 @@ it.live("permission requests stay isolated by directory", () =>
       )
       .pipe(Effect.forkScoped)
 
-    const onePending = yield* store.provide({ directory: one }, waitForPending(1))
-    const twoPending = yield* store.provide({ directory: two }, waitForPending(1))
+    const onePending = yield* store.provide({ directory: one }, waitForPending(2))
+    const twoPending = yield* store.provide({ directory: two }, waitForPending(2))
 
-    expect(onePending).toHaveLength(1)
-    expect(twoPending).toHaveLength(1)
-    expect(onePending[0].id).toBe(PermissionID.make("per_dir_a"))
-    expect(twoPending[0].id).toBe(PermissionID.make("per_dir_b"))
+    expect(onePending.map((item) => item.id).toSorted()).toEqual(twoPending.map((item) => item.id).toSorted())
+    expect(onePending.map((item) => item.id).toSorted()).toEqual([
+      PermissionID.make("per_dir_a"),
+      PermissionID.make("per_dir_b"),
+    ])
 
-    yield* store.provide({ directory: one }, reply({ requestID: onePending[0].id, reply: "reject" }))
-    yield* store.provide({ directory: two }, reply({ requestID: twoPending[0].id, reply: "reject" }))
+    yield* store.provide({ directory: two }, reply({ requestID: PermissionID.make("per_dir_a"), reply: "reject" }))
+    yield* store.provide({ directory: one }, reply({ requestID: PermissionID.make("per_dir_b"), reply: "reject" }))
 
     yield* Fiber.await(a)
     yield* Fiber.await(b)

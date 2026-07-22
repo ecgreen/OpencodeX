@@ -17,6 +17,8 @@ test("projects authoritative catalog, interactions, and loaded session details f
   const projection = projectTuiClientState({
     ...state,
     capabilities: {
+      scope: { projectID: "project-1", directory: "/repo" },
+      epoch: "epoch-1",
       revision: "capabilities-1",
       providers: [],
       connectedProviderIDs: ["anthropic"],

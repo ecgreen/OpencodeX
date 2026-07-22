@@ -3,7 +3,7 @@ import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXView } from "@/opencodex/view"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiError, OpenApi } from "effect/unstable/httpapi"
-import { ApiNotFoundError, ProjectNotFoundError } from "../errors"
+import { ApiNotFoundError, ConflictError, ProjectNotFoundError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware } from "../middleware/workspace-routing"
@@ -159,7 +159,7 @@ export const opencodexGroup = opencodexWorkbenchGroup
       params: { viewID: Schema.String },
       payload: UpdateViewPayload,
       success: described(OpencodeXView.Info, "Updated OpencodeX view"),
-      error: [HttpApiError.BadRequest, ApiNotFoundError],
+      error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
     }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.view.update", summary: "Update OpencodeX view" })),
     HttpApiEndpoint.delete("removeView", `${OPENCODEX_ROOT}/view/:viewID`, {
       params: { viewID: Schema.String },

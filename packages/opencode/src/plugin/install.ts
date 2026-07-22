@@ -13,7 +13,14 @@ import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@opencode-ai/core/util/flock"
 import { isRecord } from "@/util/record"
 
-import { parsePluginSpecifier, readPackageThemes, readPluginPackage, resolvePluginTarget } from "./shared"
+import {
+  isPathPluginSpec,
+  parsePluginSpecifier,
+  readPackageThemes,
+  readPluginPackage,
+  resolvePathPluginTarget,
+  resolvePluginTarget,
+} from "./shared"
 
 type Mode = "noop" | "add" | "replace"
 type Kind = "server" | "tui"
@@ -30,6 +37,7 @@ export type InstallDeps = {
 export type PatchDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
+  remove?: (file: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
   files: (dir: string, name: "opencode" | "tui") => string[]
 }
@@ -54,7 +62,7 @@ type Err<C extends string, T> = {
   code: C
 } & T
 
-export type InstallResult = Ok<{ target: string }> | Err<"install_failed", { error: unknown }>
+export type InstallResult = Ok<{ spec: string; target: string }> | Err<"install_failed", { error: unknown }>
 
 export type ManifestResult =
   | Ok<{ targets: Target[] }>
@@ -71,7 +79,14 @@ type PatchErr =
   | Err<"invalid_json", { kind: Kind; file: string; line: number; col: number; parse: string }>
   | Err<"patch_failed", { kind: Kind; error: unknown }>
 
-type PatchOne = Ok<{ item: PatchItem }> | PatchErr
+type PreparedPatch = {
+  item: PatchItem
+  existed: boolean
+  source: string
+  text?: string
+}
+
+type PatchOne = Ok<{ prepared: PreparedPatch }> | PatchErr
 
 export type PatchResult = Ok<{ dir: string; items: PatchItem[] }> | (PatchErr & { dir: string })
 
@@ -81,9 +96,8 @@ const defaultInstallDeps: InstallDeps = {
 
 const defaultPatchDeps: PatchDeps = {
   readText: (file) => Filesystem.readText(file),
-  write: async (file, text) => {
-    await Filesystem.write(file, text)
-  },
+  write: (file, text) => Filesystem.writeAtomic(file, text),
+  remove: (file) => Filesystem.remove(file),
   exists: (file) => Filesystem.exists(file),
   files: (dir, name) => ConfigPaths.fileInDirectory(dir, name),
 }
@@ -256,8 +270,19 @@ function patchPluginList(
   }
 }
 
-export async function installPlugin(spec: string, dep: InstallDeps = defaultInstallDeps): Promise<InstallResult> {
-  const target = await dep.resolve(spec).then(
+export async function installPlugin(
+  spec: string,
+  dep: InstallDeps = defaultInstallDeps,
+  directory = process.cwd(),
+): Promise<InstallResult> {
+  const normalized = await Promise.resolve()
+    .then(() => (isPathPluginSpec(spec) ? resolvePathPluginTarget(spec, directory) : spec))
+    .then(
+      (item) => ({ ok: true as const, item }),
+      (error: unknown) => ({ ok: false as const, error }),
+    )
+  if (!normalized.ok) return { ok: false, code: "install_failed", error: normalized.error }
+  const target = await dep.resolve(normalized.item).then(
     (item) => ({
       ok: true as const,
       item,
@@ -276,6 +301,7 @@ export async function installPlugin(spec: string, dep: InstallDeps = defaultInst
   }
   return {
     ok: true,
+    spec: normalized.item,
     target: target.item,
   }
 }
@@ -342,15 +368,16 @@ function patchName(kind: Kind): "opencode" | "tui" {
   return "tui"
 }
 
-async function patchOne(dir: string, target: Target, spec: string, force: boolean, dep: PatchDeps): Promise<PatchOne> {
+async function prepareOne(dir: string, target: Target, spec: string, force: boolean, dep: PatchDeps): Promise<PatchOne> {
   const name = patchName(target.kind)
-  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.join(dir, name))}`)
 
   const files = dep.files(dir, name)
   let cfg = files[0]
+  let existed = false
   for (const file of files) {
     if (!(await dep.exists(file))) continue
     cfg = file
+    existed = true
     break
   }
 
@@ -390,50 +417,81 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
   if (out.mode === "noop") {
     return {
       ok: true,
-      item: {
-        kind: target.kind,
-        mode: out.mode,
-        file: cfg,
+      prepared: {
+        item: {
+          kind: target.kind,
+          mode: out.mode,
+          file: cfg,
+        },
+        existed,
+        source: src,
       },
-    }
-  }
-
-  const write = await dep.write(cfg, out.text).catch((error: unknown) => error)
-  if (write instanceof Error) {
-    return {
-      ok: false,
-      code: "patch_failed",
-      kind: target.kind,
-      error: write,
     }
   }
 
   return {
     ok: true,
-    item: {
-      kind: target.kind,
-      mode: out.mode,
-      file: cfg,
+    prepared: {
+      item: {
+        kind: target.kind,
+        mode: out.mode,
+        file: cfg,
+      },
+      existed,
+      source: src,
+      text: out.text,
     },
   }
 }
 
 export async function patchPluginConfig(input: PatchInput, dep: PatchDeps = defaultPatchDeps): Promise<PatchResult> {
   const dir = patchDir(input)
-  const items: PatchItem[] = []
+  const root = input.vcs === "git" && input.worktree !== "/" ? input.worktree : input.directory
+  if (!input.global && !Filesystem.contains(Filesystem.resolve(root), Filesystem.resolve(dir))) {
+    return {
+      ok: false,
+      code: "patch_failed",
+      kind: input.targets[0]?.kind ?? "server",
+      error: new Error(`Plugin config directory escapes ${root}`),
+      dir,
+    }
+  }
+  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(dir)}`)
+  const prepared: PreparedPatch[] = []
   for (const target of input.targets) {
-    const hit = await patchOne(dir, target, input.spec, Boolean(input.force), dep)
+    const hit = await prepareOne(dir, target, input.spec, Boolean(input.force), dep)
     if (!hit.ok) {
       return {
         ...hit,
         dir,
       }
     }
-    items.push(hit.item)
+    prepared.push(hit.prepared)
+  }
+  const attempted: PreparedPatch[] = []
+  for (const item of prepared) {
+    if (item.text === undefined) continue
+    attempted.push(item)
+    const error = await dep.write(item.item.file, item.text).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    )
+    if (error === undefined) continue
+    for (const rollback of attempted.reverse()) {
+      if (rollback.existed) await dep.write(rollback.item.file, rollback.source).catch(() => undefined)
+      if (!rollback.existed && dep.remove) await dep.remove(rollback.item.file).catch(() => undefined)
+    }
+    return {
+      ok: false,
+      code: "patch_failed",
+      kind: item.item.kind,
+      error,
+      dir,
+    }
   }
   return {
     ok: true,
     dir,
-    items,
+    items: prepared.map((item) => item.item),
   }
 }

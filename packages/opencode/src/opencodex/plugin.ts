@@ -1,3 +1,4 @@
+import { EventV2 } from "@opencode-ai/core/event"
 import { Schema } from "effect"
 
 export const Kind = Schema.Literals(["server", "tui"])
@@ -37,6 +38,7 @@ export type InstallItem = Schema.Schema.Type<typeof InstallItem>
 
 export const InstallResult = Schema.Struct({
   ok: Schema.Boolean,
+  spec: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
   dir: Schema.optional(Schema.String),
   tui: Schema.Boolean,
@@ -50,5 +52,15 @@ export const ToggleInput = Schema.Struct({
   enabled: Schema.Boolean,
 }).annotate({ identifier: "OpencodeXPluginToggleInput" })
 export type ToggleInput = Schema.Schema.Type<typeof ToggleInput>
+
+export const Event = {
+  Updated: EventV2.define({
+    type: "opencodex.plugin_config.updated",
+    schema: {
+      global: Schema.Boolean,
+      spec: Schema.String,
+    },
+  }),
+}
 
 export * as OpencodeXPlugin from "./plugin"

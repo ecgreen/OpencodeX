@@ -58,15 +58,17 @@ export const workspaceHandlers = HttpApiBuilder.group(InstanceHttpApi, "workspac
     })
 
     const remove = Effect.fn("WorkspaceHttpApi.remove")(function* (ctx: { params: { id: Workspace.Info["id"] } }) {
-      return yield* workspace.remove(ctx.params.id)
+      return yield* workspace.remove(ctx.params.id, (yield* InstanceState.context).project.id)
     })
 
     const warp = Effect.fn("WorkspaceHttpApi.warp")(function* (ctx: { payload: typeof WarpPayload.Type }) {
+      const instance = yield* InstanceState.context
       yield* workspace
         .sessionWarp({
           workspaceID: ctx.payload.id,
           sessionID: ctx.payload.sessionID,
           copyChanges: ctx.payload.copyChanges,
+          projectID: instance.project.id,
         })
         .pipe(
           Effect.mapError((error) => {

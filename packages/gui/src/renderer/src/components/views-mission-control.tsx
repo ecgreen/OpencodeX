@@ -293,6 +293,9 @@ function ViewSummaryRow(props: {
       <Show when={props.summary.sessionRows.length > 0 || props.summary.pendingCount > 0}>
         <p class="view-summary-session-line">{viewSessionPreview(props.summary)}</p>
       </Show>
+      <Show when={props.summary.status === "ready_for_review"}>
+        <span class="status-glyph" aria-label={sessionStatusLabel(props.summary.status)} />
+      </Show>
     </article>
   )
 }

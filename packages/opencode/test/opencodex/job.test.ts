@@ -37,6 +37,21 @@ it.live("submits idempotently and runs the legal lifecycle", () =>
   }),
 )
 
+it.live("returns one winner for concurrent idempotent creation", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* Effect.all(
+      Array.from({ length: 20 }, () =>
+        jobs.create({ kind: "test.concurrent", idempotencyKey: "job-concurrent-idempotency" }),
+      ),
+      { concurrency: "unbounded" },
+    )
+
+    expect(new Set(created.map((job) => job.id)).size).toBe(1)
+    expect((yield* jobs.list()).filter((job) => job.idempotencyKey === "job-concurrent-idempotency")).toHaveLength(1)
+  }),
+)
+
 it.live("rolls back terminal job state when transactional settlement fails", () =>
   Effect.gen(function* () {
     const jobs = yield* OpencodeXJob.Service
@@ -99,6 +114,59 @@ it.live("interrupts work with an expired lease and permits a bounded retry", () 
 
     const retryError = yield* Effect.flip(jobs.retry(created.id))
     expect(retryError._tag).toBe("OpencodeX.Job.TransitionError")
+  }),
+)
+
+it.live("does not recover a fresh lease owned by another process", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* jobs.create({ kind: "test", idempotencyKey: "job-fresh-foreign-lease" })
+    yield* jobs.claim({ jobID: created.id, owner: "local:999999:other", leaseMs: 30_000 })
+    yield* jobs.start(created.id, "local:999999:other")
+
+    const recovered = yield* jobs.recover(Date.now())
+
+    expect(recovered.some((job) => job.id === created.id)).toBe(false)
+    expect((yield* jobs.get(created.id)).status).toBe("running")
+  }),
+)
+
+it.live("runs terminal settlement while recovering an exhausted lease", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* jobs.create({ kind: "test.recovery-settlement", maxAttempts: 1 })
+    yield* jobs.claim({ jobID: created.id, owner: "expired-owner", leaseMs: 30_000 })
+    yield* jobs.start(created.id, "expired-owner")
+    let settled: OpencodeXJob.Info | undefined
+
+    const recovered = yield* jobs.recover(Date.now() + 60_000, () => (job) =>
+      Effect.succeed(Effect.sync(() => (settled = job)).pipe(Effect.asVoid)),
+    )
+
+    expect(recovered.find((job) => job.id === created.id)?.status).toBe("interrupted")
+    expect(settled?.id).toBe(created.id)
+    expect(settled?.status).toBe("interrupted")
+  }),
+)
+
+it.live("cancellation wins before a retryable failed job is requeued", () =>
+  Effect.gen(function* () {
+    const jobs = yield* OpencodeXJob.Service
+    const created = yield* jobs.create({
+      kind: "test",
+      idempotencyKey: "job-cancel-before-retry",
+      maxAttempts: 2,
+    })
+    yield* jobs.claim({ jobID: created.id, owner: "runner-a", leaseMs: 30_000 })
+    yield* jobs.start(created.id, "runner-a")
+    yield* jobs.fail({
+      jobID: created.id,
+      owner: "runner-a",
+      failure: { code: "RETRYABLE", message: "retryable" },
+    })
+
+    expect((yield* jobs.cancel(created.id)).status).toBe("cancelled")
+    expect((yield* jobs.retry(created.id).pipe(Effect.flip))._tag).toBe("OpencodeX.Job.TransitionError")
   }),
 )
 

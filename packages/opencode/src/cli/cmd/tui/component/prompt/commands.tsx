@@ -8,6 +8,7 @@ import { useRenderer } from "@opentui/solid"
 import { useDialog } from "@tui/ui/dialog"
 import { useProject } from "@tui/context/project"
 import { useSDK } from "@tui/context/sdk"
+import { useSync } from "@tui/context/sync"
 import { useToast } from "../../ui/toast"
 import { OPENCODE_BASE_MODE, useBindings } from "../../keymap"
 import { useTuiConfig } from "../../context/tui-config"
@@ -43,91 +44,101 @@ export function installPromptCommands(input: {
   const project = useProject()
   const renderer = useRenderer()
   const sdk = useSDK()
+  const sync = useSync()
   const toast = useToast()
   const tuiConfig = useTuiConfig()
-  const commands = createMemo(() => [
-    {
-      title: "Clear prompt",
-      name: "prompt.clear",
-      category: "Prompt",
-      hidden: true,
-      run: () => {
-        input.clear()
-        dialog.clear()
+  const commands = createMemo(() =>
+    [
+      {
+        title: "Clear prompt",
+        name: "prompt.clear",
+        category: "Prompt",
+        hidden: true,
+        run: () => {
+          input.clear()
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: "Submit prompt",
-      name: "prompt.submit",
-      category: "Prompt",
-      hidden: true,
-      run: async () => {
-        if (!input.textarea().focused || !(await input.submit())) return
-        dialog.clear()
+      {
+        title: "Submit prompt",
+        name: "prompt.submit",
+        category: "Prompt",
+        hidden: true,
+        run: async () => {
+          if (!input.textarea().focused || !(await input.submit())) return
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: "Remove editor context",
-      name: "prompt.editor_context.clear",
-      category: "Prompt",
-      enabled: Boolean(input.editor.context()),
-      run: () => {
-        input.editor.dismiss()
-        dialog.clear()
+      {
+        title: "Remove editor context",
+        name: "prompt.editor_context.clear",
+        category: "Prompt",
+        enabled: Boolean(input.editor.context()),
+        run: () => {
+          input.editor.dismiss()
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: "Paste",
-      name: "prompt.paste",
-      category: "Prompt",
-      hidden: true,
-      run: async (context: CommandContext<Renderable, KeyEvent>) => {
-        context.event.preventDefault()
-        context.event.stopPropagation()
-        const content = await Clipboard.read()
-        if (content?.mime.startsWith("image/")) {
-          input.paste.attachment({ filename: "clipboard", mime: content.mime, content: content.data })
-          return
-        }
-        if (content?.mime === "text/plain") await input.paste.inputText(content.data)
+      {
+        title: "Paste",
+        name: "prompt.paste",
+        category: "Prompt",
+        hidden: true,
+        run: async (context: CommandContext<Renderable, KeyEvent>) => {
+          context.event.preventDefault()
+          context.event.stopPropagation()
+          const content = await Clipboard.read()
+          if (content?.mime.startsWith("image/")) {
+            input.paste.attachment({ filename: "clipboard", mime: content.mime, content: content.data })
+            return
+          }
+          if (content?.mime === "text/plain") await input.paste.inputText(content.data)
+        },
       },
-    },
-    {
-      title: "Interrupt session",
-      name: "session.interrupt",
-      category: "Session",
-      hidden: true,
-      enabled: input.status().type !== "idle" || (input.opencodex.swarmID() !== undefined && !input.opencodex.deletedSwarmSession()),
-      run: () => interrupt(input),
-    },
-    {
-      title: "Open editor",
-      category: "Session",
-      name: "prompt.editor",
-      slashName: "editor",
-      run: openEditor,
-    },
-    {
-      title: "Skills",
-      name: "prompt.skills",
-      category: "Prompt",
-      slashName: "skills",
-      run: () => dialog.replace(() => <DialogSkill onSelect={(skill) => {
-        input.textarea().setText(`/${skill} `)
-        input.setStore("prompt", { input: `/${skill} `, parts: [] })
-        input.textarea().gotoBufferEnd()
-      }} />),
-    },
-    {
-      title: "Warp",
-      desc: "Change the workspace for the session",
-      name: "workspace.set",
-      category: "Session",
-      enabled: Flag.OPENCODE_EXPERIMENTAL_WORKSPACES,
-      slashName: "warp",
-      run: () => void input.workspace.open(),
-    },
-  ].map((command) => ({ namespace: "palette", ...command })))
+      {
+        title: "Interrupt session",
+        name: "session.interrupt",
+        category: "Session",
+        hidden: true,
+        enabled:
+          input.status().type !== "idle" ||
+          (input.opencodex.swarmID() !== undefined && !input.opencodex.deletedSwarmSession()),
+        run: () => interrupt(input),
+      },
+      {
+        title: "Open editor",
+        category: "Session",
+        name: "prompt.editor",
+        slashName: "editor",
+        run: openEditor,
+      },
+      {
+        title: "Skills",
+        name: "prompt.skills",
+        category: "Prompt",
+        slashName: "skills",
+        run: () =>
+          dialog.replace(() => (
+            <DialogSkill
+              onSelect={(skill) => {
+                input.textarea().setText(`/${skill} `)
+                input.setStore("prompt", { input: `/${skill} `, parts: [] })
+                input.textarea().gotoBufferEnd()
+              }}
+            />
+          )),
+      },
+      {
+        title: "Warp",
+        desc: "Change the workspace for the session",
+        name: "workspace.set",
+        category: "Session",
+        enabled: Flag.OPENCODE_EXPERIMENTAL_WORKSPACES,
+        slashName: "warp",
+        run: () => void input.workspace.open(),
+      },
+    ].map((command) => ({ namespace: "palette", ...command })),
+  )
 
   useBindings(() => ({ commands: commands() }))
   useBindings(() => ({
@@ -160,13 +171,17 @@ export function installPromptCommands(input: {
     }
     const swarmID = context.opencodex.swarmID()
     if (swarmID && !context.opencodex.deletedSwarmSession()) {
-      void sdk.request(`/experimental/opencodex/swarm/${swarmID}/cancel`, { method: "POST" })
+      void sdk
+        .request(`/experimental/opencodex/swarm/${swarmID}/cancel`, { method: "POST" })
         .then(() => {
           toast.show({ message: "Swarm cancellation requested.", variant: "info" })
           refreshOpencodeXSidebar()
         })
-        .catch((error: Error) => toast.show({ message: `Cancelling swarm failed: ${errorMessage(error)}`, variant: "error" }))
+        .catch((error: Error) =>
+          toast.show({ message: `Cancelling swarm failed: ${errorMessage(error)}`, variant: "error" }),
+        )
     }
+    sync.session.setPendingPrompt(sessionID, undefined)
     void sdk.client.session.abort({ sessionID })
     context.setStore("interrupt", 0)
     dialog.clear()
@@ -176,24 +191,34 @@ export function installPromptCommands(input: {
     dialog.clear()
     const text = input.state.prompt.parts
       .filter((part) => part.type === "text")
-      .reduce((value, part) => part.source ? value.replace(part.source.text.value, part.text) : value, input.state.prompt.input)
+      .reduce(
+        (value, part) => (part.source ? value.replace(part.source.text.value, part.text) : value),
+        input.state.prompt.input,
+      )
     const parts = input.state.prompt.parts.filter((part) => part.type !== "text")
     const content = await Editor.open({
       value: text,
       renderer,
-      cwd: (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree)
-        || project.instance.directory()
-        || process.cwd(),
+      cwd:
+        (project.instance.path().worktree === "/" ? undefined : project.instance.path().worktree) ||
+        project.instance.directory() ||
+        process.cwd(),
     })
     if (!content) return
     input.textarea().setText(content)
     const updated = parts.flatMap((part) => {
-      const virtualText = part.type === "file" ? part.source?.text?.value : part.type === "agent" ? part.source?.value : undefined
+      const virtualText =
+        part.type === "file" ? part.source?.text?.value : part.type === "agent" ? part.source?.value : undefined
       if (!virtualText) return [part]
       const start = content.indexOf(virtualText)
       if (start === -1) return []
       if (part.type === "file" && part.source?.text) {
-        return [{ ...part, source: { ...part.source, text: { ...part.source.text, start, end: start + virtualText.length } } }]
+        return [
+          {
+            ...part,
+            source: { ...part.source, text: { ...part.source.text, start, end: start + virtualText.length } },
+          },
+        ]
       }
       if (part.type === "agent" && part.source) {
         return [{ ...part, source: { ...part.source, start, end: start + virtualText.length } }]

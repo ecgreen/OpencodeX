@@ -203,6 +203,42 @@ describe("GuiBridge", () => {
     }),
   )
 
+  it.effect("redelivers a pending request when the selected GUI renews its lease", () =>
+    Effect.gen(function* () {
+      const bridge = yield* GuiBridge.Service
+      const events = yield* EventV2Bridge.Service
+      const first = yield* Deferred.make<GuiBridge.RequestID>()
+      const second = yield* Deferred.make<GuiBridge.RequestID>()
+      const delivered: GuiBridge.RequestID[] = []
+      const unsubscribe = yield* events.listen((event) => {
+        if (event.type !== GuiBridge.Event.Request.type || !event.data || typeof event.data !== "object")
+          return Effect.void
+        if (!("requestID" in event.data) || typeof event.data.requestID !== "string") return Effect.void
+        const requestID = GuiBridge.RequestID.make(event.data.requestID)
+        delivered.push(requestID)
+        return Deferred.succeed(delivered.length === 1 ? first : second, requestID).pipe(Effect.asVoid)
+      })
+      yield* Effect.addFinalizer(() => unsubscribe)
+      yield* bridge.sync(registration(["browser.state"]))
+      const fiber = yield* bridge
+        .request({ directory, sessionID, operation: "browser.state", input: {} })
+        .pipe(Effect.forkScoped)
+      const requestID = yield* Deferred.await(first)
+
+      yield* bridge.sync(registration(["browser.state"]))
+      expect(yield* Deferred.await(second)).toBe(requestID)
+
+      yield* bridge.respond({
+        clientID,
+        token,
+        requestID,
+        operation: "browser.state",
+        result: { status: "ok", output: { url: "https://example.com/" } },
+      })
+      expect(yield* Fiber.join(fiber)).toEqual({ url: "https://example.com/" })
+    }),
+  )
+
   it.effect("fails unavailable requests without publishing", () =>
     Effect.gen(function* () {
       const bridge = yield* GuiBridge.Service

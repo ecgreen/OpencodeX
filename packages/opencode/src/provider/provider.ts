@@ -31,7 +31,6 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
 
 const log = Log.create({ service: "provider" })
-const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
 const LOCAL_MODEL_DISCOVERY_TIMEOUT = 1_000
 const LOCAL_MODEL_PROVIDERS = [
   {
@@ -210,7 +209,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
           return sdk.responses(modelID)
         },
-        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
+        options: {},
       }),
     xai: () =>
       Effect.succeed({

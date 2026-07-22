@@ -9,13 +9,17 @@ import { SessionID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
+import { Database } from "@opencode-ai/core/database/database"
 
 const it = testEffect(
-  Layer.mergeAll(Question.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer)), CrossSpawnSpawner.defaultLayer),
+  Layer.mergeAll(
+    Question.layer.pipe(Layer.provide(Database.defaultLayer), Layer.provideMerge(EventV2Bridge.defaultLayer)),
+    CrossSpawnSpawner.defaultLayer,
+  ),
 )
 const lifecycle = testEffect(
   Layer.mergeAll(
-    Question.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer)),
+    Question.layer.pipe(Layer.provide(Database.defaultLayer), Layer.provideMerge(EventV2Bridge.defaultLayer)),
     CrossSpawnSpawner.defaultLayer,
     testInstanceStoreLayer,
   ),
@@ -371,7 +375,7 @@ it.instance(
   { git: true },
 )
 
-lifecycle.live("questions stay isolated by directory", () =>
+lifecycle.live("questions remain visible and actionable across directories", () =>
   Effect.gen(function* () {
     const one = yield* tmpdirScoped({ git: true })
     const two = yield* tmpdirScoped({ git: true })
@@ -398,16 +402,17 @@ lifecycle.live("questions stay isolated by directory", () =>
       ],
     }).pipe(provideInstance(two), Effect.forkScoped)
 
-    const onePending = yield* waitForPending(1).pipe(provideInstance(one))
-    const twoPending = yield* waitForPending(1).pipe(provideInstance(two))
+    const onePending = yield* waitForPending(2).pipe(provideInstance(one))
+    const twoPending = yield* waitForPending(2).pipe(provideInstance(two))
 
-    expect(onePending.length).toBe(1)
-    expect(twoPending.length).toBe(1)
-    expect(onePending[0].sessionID).toBe(SessionID.make("ses_one"))
-    expect(twoPending[0].sessionID).toBe(SessionID.make("ses_two"))
+    expect(onePending.map((item) => item.id).toSorted()).toEqual(twoPending.map((item) => item.id).toSorted())
+    expect(onePending.map((item) => item.sessionID).toSorted()).toEqual([
+      SessionID.make("ses_one"),
+      SessionID.make("ses_two"),
+    ])
 
-    yield* rejectEffect(onePending[0].id).pipe(provideInstance(one))
-    yield* rejectEffect(twoPending[0].id).pipe(provideInstance(two))
+    yield* rejectEffect(onePending.find((item) => item.sessionID === "ses_one")!.id).pipe(provideInstance(two))
+    yield* rejectEffect(twoPending.find((item) => item.sessionID === "ses_two")!.id).pipe(provideInstance(one))
 
     expect((yield* Fiber.await(fiber1))._tag).toBe("Failure")
     expect((yield* Fiber.await(fiber2))._tag).toBe("Failure")

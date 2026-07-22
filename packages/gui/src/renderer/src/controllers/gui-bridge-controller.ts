@@ -25,6 +25,9 @@ export function createGuiBridgeController(input: {
   const baseClientID = `gui-${crypto.randomUUID()}`
   const token = randomToken()
   const tails = new Map<string, Promise<void>>()
+  const activeRequests = new Set<string>()
+  const completedRequests = new Set<string>()
+  const completedRequestOrder: string[] = []
   const desired = createMemo(() => {
     const snapshot = input.authoritative.snapshot()
     const route = input.navigation.route()
@@ -61,12 +64,18 @@ export function createGuiBridgeController(input: {
   } | undefined
   const unsubscribe = input.authoritative.subscribeGlobalEvents((event) => {
     const request = guiBridgeRequestFromEvent(event, baseClientID)
-    if (!request) return
-    const tail = (tails.get(request.sessionID) ?? Promise.resolve()).then(() => handle(request)).catch((cause) => {
+    if (!request || activeRequests.has(request.requestID) || completedRequests.has(request.requestID)) return
+    activeRequests.add(request.requestID)
+    const requestTask = (tails.get(request.sessionID) ?? Promise.resolve()).then(() => handle(request))
+    const tail = requestTask.catch((cause) => {
       console.error("GUI bridge request failed", cause)
     })
     tails.set(request.sessionID, tail)
-    void tail.finally(() => {
+    void requestTask.then(
+      () => rememberCompletedRequest(request.requestID),
+      () => undefined,
+    ).finally(() => {
+      activeRequests.delete(request.requestID)
       if (tails.get(request.sessionID) === tail) tails.delete(request.sessionID)
     })
   })
@@ -122,6 +131,15 @@ export function createGuiBridgeController(input: {
     active = undefined
     window.clearInterval(current.renewal)
     void current.lease.dispose()
+  }
+
+  function rememberCompletedRequest(requestID: string) {
+    completedRequests.add(requestID)
+    completedRequestOrder.push(requestID)
+    while (completedRequestOrder.length > 2_000) {
+      const stale = completedRequestOrder.shift()
+      if (stale) completedRequests.delete(stale)
+    }
   }
 
   async function handle(request: GuiBridgeRequest) {

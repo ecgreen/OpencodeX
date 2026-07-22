@@ -412,18 +412,18 @@ export const layer = Layer.effect(
       get: Effect.fn("Agent.get")(function* (agent: string) {
         return applyPermissionModeToAgent(
           yield* InstanceState.useEffect(state, (s) => s.get(agent)),
-          (yield* opencodexSettings.get()).permission_mode,
+          (yield* opencodexSettings.get().pipe(Effect.orDie)).permission_mode,
         )
       }),
       list: Effect.fn("Agent.list")(function* () {
         const agents = yield* InstanceState.useEffect(state, (s) => s.list())
-        const mode = (yield* opencodexSettings.get()).permission_mode
+        const mode = (yield* opencodexSettings.get().pipe(Effect.orDie)).permission_mode
         return agents.map((agent) => applyPermissionModeToAgent(agent, mode))
       }),
       defaultInfo: Effect.fn("Agent.defaultInfo")(function* () {
         return applyPermissionModeToAgent(
           yield* InstanceState.useEffect(state, (s) => s.defaultInfo()),
-          (yield* opencodexSettings.get()).permission_mode,
+          (yield* opencodexSettings.get().pipe(Effect.orDie)).permission_mode,
         )
       }),
       defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {

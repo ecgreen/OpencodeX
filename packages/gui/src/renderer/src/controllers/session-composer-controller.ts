@@ -19,11 +19,15 @@ export function createSessionComposerController(input: {
   async function submit(event: SubmitEvent, value?: string | GuiPromptInfo) {
     event.preventDefault()
     const client = input.authoritative.client()
+    const route = input.navigation.route()
+    if (!input.selection.selectedSession() && route.name === "session") {
+      await input.authoritative.ensureSessionCards([route.sessionID])
+    }
     const session = input.selection.selectedSession()
-    const pinCreatedSession = input.state.pendingPinnedRouteKey() === activeSessionRouteKey(input.navigation.route())
-    await runSessionPromptAction({
+    const pinCreatedSession = input.state.pendingPinnedRouteKey() === activeSessionRouteKey(route)
+    return runSessionPromptAction({
       gui: client,
-      route: input.navigation.route(),
+      route,
       session,
       text: value ?? input.state.prompt(),
       permissionCount: input.selection.selectedPermissions().length,

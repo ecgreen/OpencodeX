@@ -4,7 +4,7 @@ import { OpencodeXView } from "@/opencodex/view"
 import { Project } from "@/project/project"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
-import { notFound, ProjectNotFoundError } from "../errors"
+import { ConflictError, notFound, ProjectNotFoundError } from "../errors"
 import { UpdateJobPayload, UpdateViewPayload } from "../groups/opencodex"
 
 export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeOperationsHandlers")(function* () {
@@ -12,10 +12,19 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
   const swarms = yield* OpencodeXSwarm.Service
   const views = yield* OpencodeXView.Service
 
+  const requireMutableJob = Effect.fn("OpencodeXHttpApi.requireMutableJob")(function* (jobID: string) {
+    const job = yield* mapJobErrors(jobs.get(jobID))
+    if (job.source !== "swarm" && !job.kind.startsWith("swarm.")) return job
+    return yield* new HttpApiError.BadRequest({})
+  })
+
   const listJobs = Effect.fn("OpencodeXHttpApi.listJobs")(function* () {
     return yield* jobs.list()
   })
   const createJob = Effect.fn("OpencodeXHttpApi.createJob")(function* (ctx: { payload: OpencodeXJob.CreateInput }) {
+    if (ctx.payload.source === "swarm" || ctx.payload.kind.startsWith("swarm.")) {
+      return yield* new HttpApiError.BadRequest({})
+    }
     return yield* jobs.create(ctx.payload)
   })
   const getJob = Effect.fn("OpencodeXHttpApi.getJob")(function* (ctx: { params: { jobID: string } }) {
@@ -25,42 +34,50 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     params: { jobID: string }
     payload: typeof UpdateJobPayload.Type
   }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.update({ ...ctx.payload, id: ctx.params.jobID }))
   })
   const cancelJob = Effect.fn("OpencodeXHttpApi.cancelJob")(function* (ctx: { params: { jobID: string } }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.cancel(ctx.params.jobID))
   })
   const claimJob = Effect.fn("OpencodeXHttpApi.claimJob")(function* (ctx: {
     params: { jobID: string }
     payload: Omit<OpencodeXJob.ClaimInput, "jobID">
   }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.claim({ ...ctx.payload, jobID: ctx.params.jobID }))
   })
   const startJob = Effect.fn("OpencodeXHttpApi.startJob")(function* (ctx: {
     params: { jobID: string }
     payload: { owner: string }
   }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.start(ctx.params.jobID, ctx.payload.owner))
   })
   const renewJob = Effect.fn("OpencodeXHttpApi.renewJob")(function* (ctx: {
     params: { jobID: string }
     payload: Omit<OpencodeXJob.ClaimInput, "jobID">
   }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.renew({ ...ctx.payload, jobID: ctx.params.jobID }))
   })
   const succeedJob = Effect.fn("OpencodeXHttpApi.succeedJob")(function* (ctx: {
     params: { jobID: string }
     payload: Omit<OpencodeXJob.CompleteInput, "jobID">
   }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.succeed({ ...ctx.payload, jobID: ctx.params.jobID }))
   })
   const failJob = Effect.fn("OpencodeXHttpApi.failJob")(function* (ctx: {
     params: { jobID: string }
     payload: Omit<OpencodeXJob.FailInput, "jobID">
   }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.fail({ ...ctx.payload, jobID: ctx.params.jobID }))
   })
   const retryJob = Effect.fn("OpencodeXHttpApi.retryJob")(function* (ctx: { params: { jobID: string } }) {
+    yield* requireMutableJob(ctx.params.jobID)
     return yield* mapJobErrors(jobs.retry(ctx.params.jobID))
   })
 
@@ -130,7 +147,7 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     params: { viewID: string }
     payload: typeof UpdateViewPayload.Type
   }) {
-    return yield* mapViewErrors(
+    return yield* mapViewUpdateErrors(
       views
         .update({ ...ctx.payload, id: ctx.params.viewID })
         .pipe(
@@ -200,6 +217,24 @@ function mapSwarmErrors<A, R>(
     Effect.catchTag("OpencodeX.Swarm.NotFoundError", (error) => Effect.fail(notFound(`Swarm not found: ${error.swarmID}`))),
     Effect.catchTag("OpencodeX.Swarm.RoleNotFoundError", (error) => Effect.fail(notFound(`Swarm role not found: ${error.roleID}`))),
     Effect.catchTag("OpencodeX.Swarm.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+  )
+}
+
+function mapViewUpdateErrors<A, R>(
+  effect: Effect.Effect<
+    A,
+    OpencodeXView.NotFoundError | OpencodeXView.ValidationError | OpencodeXView.ConflictError,
+    R
+  >,
+) {
+  return effect.pipe(
+    Effect.catchTag("OpencodeX.View.NotFoundError", (error) => Effect.fail(notFound(`View not found: ${error.viewID}`))),
+    Effect.catchTag("OpencodeX.View.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+    Effect.catchTag("OpencodeX.View.ConflictError", (error) =>
+      Effect.fail(
+        new ConflictError({ message: "The view changed before this update was applied.", resource: error.viewID }),
+      ),
+    ),
   )
 }
 

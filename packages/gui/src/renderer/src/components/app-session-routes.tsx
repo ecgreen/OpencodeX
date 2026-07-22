@@ -77,7 +77,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       }}
       selectedVariant={model.sessionState.selectedVariant()}
       setSelectedVariant={model.sessionState.setSelectedVariant}
-      submit={model.sessionComposer.submit}
+      submit={(event, prompt) => model.notices.attempt(() => model.sessionComposer.submit(event, prompt))}
       permissions={model.sessionSelection.selectedPermissions()}
       questions={model.sessionSelection.selectedQuestions()}
       replyPermission={(request, reply) => void model.notices.run(() => model.management.permission(request, reply))}

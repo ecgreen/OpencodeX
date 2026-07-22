@@ -2,25 +2,33 @@ import { Config } from "@/config/config"
 import { ConfigPlugin } from "@/config/plugin"
 import { directories, fileInDirectory, files } from "@/config/paths"
 import { InstanceState } from "@/effect/instance-state"
+import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXPlugin } from "@/opencodex/plugin"
 import { installPlugin, patchPluginConfig, readPluginManifest } from "@/plugin/install"
 import { internalTuiPluginManifest } from "@/plugin/internal-tui-manifest"
 import { PluginLoader } from "@/plugin/loader"
+import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { readPluginId, readV1Plugin, resolvePluginId } from "@/plugin/shared"
 import { errorMessage } from "@/util/error"
 import { Filesystem } from "@/util/filesystem"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
-import { applyEdits, modify, parse } from "jsonc-parser"
+import { Flock } from "@opencode-ai/core/util/flock"
+import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
 import { PluginListQuery } from "../groups/opencodex"
+import { markInstanceForDisposal } from "../lifecycle"
+import path from "path"
 
 export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePluginHandlers")(function* () {
   const config = yield* Config.Service
   const fs = yield* AppFileSystem.Service
   const runtimeFlags = yield* RuntimeFlags.Service
+  const events = yield* EventV2Bridge.Service
+  const bridge = yield* EffectBridge.make()
 
   const snapshot = Effect.fn("OpencodeXHttpApi.pluginSnapshot")(function* () {
     const instance = yield* InstanceState.context
@@ -44,7 +52,7 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
     const spec = ctx.payload.spec.trim()
     if (!spec) return yield* Effect.fail(new HttpApiError.BadRequest({}))
     const instance = yield* InstanceState.context
-    const installed = yield* Effect.promise(() => installPlugin(spec))
+    const installed = yield* Effect.promise(() => installPlugin(spec, undefined, instance.directory))
     if (!installed.ok) {
       return {
         ok: false,
@@ -69,7 +77,7 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
     }
     const patch = yield* Effect.promise(() =>
       patchPluginConfig({
-        spec,
+        spec: installed.spec,
         targets: manifest.targets,
         force: ctx.payload.force,
         global: ctx.payload.global,
@@ -91,8 +99,17 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
       }
     }
     yield* config.invalidate()
+    yield* events.publish(OpencodeXPlugin.Event.Updated, {
+      global: Boolean(ctx.payload.global),
+      spec: installed.spec,
+    })
+    if (patch.items.some((item) => item.kind === "server" && item.mode !== "noop")) {
+      if (ctx.payload.global) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
+      if (!ctx.payload.global) yield* markInstanceForDisposal(instance)
+    }
     return {
       ok: true,
+      spec: installed.spec,
       dir: patch.dir,
       tui: manifest.targets.some((item) => item.kind === "tui"),
       server: manifest.targets.some((item) => item.kind === "server"),
@@ -106,7 +123,13 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
   }) {
     const item = (yield* snapshot()).find((plugin) => plugin.id === ctx.payload.id)
     if (!item || !item.canToggle || item.kind !== "tui") return yield* Effect.fail(new HttpApiError.BadRequest({}))
-    yield* patchTuiPluginEnabled(item.source, item.pluginID, ctx.payload.enabled, fs)
+    if (!(yield* Effect.promise(() => patchTuiPluginEnabled(item.source, item.pluginID, ctx.payload.enabled)))) {
+      return yield* Effect.fail(new HttpApiError.BadRequest({}))
+    }
+    yield* events.publish(OpencodeXPlugin.Event.Updated, {
+      global: item.scope !== "local",
+      spec: item.spec,
+    })
     const next = (yield* snapshot()).find((plugin) => plugin.id === ctx.payload.id)
     if (!next) return yield* Effect.fail(new HttpApiError.BadRequest({}))
     return next
@@ -313,16 +336,20 @@ function serverPlugins(config: Config.Info) {
   )
 }
 
-function patchTuiPluginEnabled(file: string, spec: string, enabled: boolean, fs: AppFileSystem.Interface) {
-  return Effect.gen(function* () {
-    const before = (yield* fs.readFileStringSafe(file).pipe(Effect.orDie)) ?? "{}"
-    const parsed = parse(before)
-    if (parsed !== undefined && !isRecord(parsed)) return yield* Effect.fail(new HttpApiError.BadRequest({}))
-    const document = before.trim() ? before : "{}"
-    const next = applyEdits(
-      document,
-      modify(document, ["plugin_enabled", spec], enabled, { formattingOptions: { insertSpaces: true, tabSize: 2 } }),
-    )
-    yield* fs.writeFileString(file, next).pipe(Effect.orDie)
+async function patchTuiPluginEnabled(file: string, spec: string, enabled: boolean) {
+  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.dirname(file))}`)
+  const before = await Filesystem.readText(file).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return "{}"
+    throw error
   })
+  const errors: ParseError[] = []
+  const parsed = parse(before, errors, { allowTrailingComma: true })
+  if (errors.length > 0 || (parsed !== undefined && !isRecord(parsed))) return false
+  const document = before.trim() ? before : "{}"
+  const next = applyEdits(
+    document,
+    modify(document, ["plugin_enabled", spec], enabled, { formattingOptions: { insertSpaces: true, tabSize: 2 } }),
+  )
+  await Filesystem.writeAtomic(file, next)
+  return true
 }

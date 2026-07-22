@@ -26,7 +26,8 @@ export async function createPromptSession(input: {
     model: { providerID: input.model.providerID, id: input.model.modelID, variant: input.variant },
   }
   const result = input.props.createSession
-    ? await input.props.createSession(createInput)
+    ? await input.props
+        .createSession(createInput)
         .then((session) => ({ data: session, error: undefined }))
         .catch((error: Error) => ({ data: undefined, error }))
     : input.pendingProject
@@ -47,7 +48,11 @@ export async function createPromptSession(input: {
           model: createInput.model,
         })
   if (result.error || !result.data) {
-    input.showError(input.pendingProject ? `Creating a project session failed: ${errorMessage(result.error ?? "no response")}` : "Creating a session failed. Open console for more details.")
+    input.showError(
+      input.pendingProject
+        ? `Creating a project session failed: ${errorMessage(result.error ?? "no response")}`
+        : "Creating a session failed. Open console for more details.",
+    )
     return
   }
 
@@ -81,28 +86,33 @@ export function sendPromptToSession(input: {
 }) {
   const messageID = MessageID.ascending()
   const files = input.parts.filter((part) => part.type !== "text")
-  const editorParts = input.editorSelection && input.editorSelectionPending
-    ? [{
-        id: PartID.ascending(),
-        type: "text" as const,
-        text: formatEditorContext(input.editorSelection),
-        synthetic: true,
-        metadata: {
-          kind: "editor_context",
-          source: input.editorSelection.source ?? "editor",
-          filePath: input.editorSelection.filePath,
-          ranges: input.editorSelection.ranges,
-        },
-      }]
-    : []
+  const editorParts =
+    input.editorSelection && input.editorSelectionPending
+      ? [
+          {
+            id: PartID.ascending(),
+            type: "text" as const,
+            text: formatEditorContext(input.editorSelection),
+            synthetic: true,
+            metadata: {
+              kind: "editor_context",
+              source: input.editorSelection.source ?? "editor",
+              filePath: input.editorSelection.filePath,
+              ranges: input.editorSelection.ranges,
+            },
+          },
+        ]
+      : []
   const swarmParts = input.swarmMode
-    ? [{
-        id: PartID.ascending(),
-        type: "text" as const,
-        text: opencodeXSwarmModeInstructions(input.swarmMode),
-        synthetic: true,
-        metadata: { kind: "opencodex_swarm_execution_mode", mode: input.swarmMode },
-      }]
+    ? [
+        {
+          id: PartID.ascending(),
+          type: "text" as const,
+          text: opencodeXSwarmModeInstructions(input.swarmMode),
+          synthetic: true,
+          metadata: { kind: "opencodex_swarm_execution_mode", mode: input.swarmMode },
+        },
+      ]
     : []
 
   if (input.mode === "shell") {
@@ -119,20 +129,24 @@ export function sendPromptToSession(input: {
     const firstLine = firstLineEnd === -1 ? input.text : input.text.slice(0, firstLineEnd)
     const [command, ...firstLineArgs] = firstLine.split(" ")
     const rest = firstLineEnd === -1 ? "" : input.text.slice(firstLineEnd + 1)
-    void input.sdk.client.session.command({
-      sessionID: input.sessionID,
-      command: command.slice(1),
-      arguments: firstLineArgs.join(" ") + (rest ? "\n" + rest : ""),
-      agent: input.agent,
-      model: `${input.model.providerID}/${input.model.modelID}`,
-      messageID,
-      variant: input.variant,
-      parts: files.filter((part) => part.type === "file").map((part) => ({ id: PartID.ascending(), ...part })),
-    })
+    input.sync.session.setPendingPrompt(input.sessionID, messageID)
+    void input.sdk.client.session
+      .command({
+        sessionID: input.sessionID,
+        command: command.slice(1),
+        arguments: firstLineArgs.join(" ") + (rest ? "\n" + rest : ""),
+        agent: input.agent,
+        model: `${input.model.providerID}/${input.model.modelID}`,
+        messageID,
+        variant: input.variant,
+        parts: files.filter((part) => part.type === "file").map((part) => ({ id: PartID.ascending(), ...part })),
+      })
+      .catch(() => input.sync.session.setPendingPrompt(input.sessionID, undefined))
     return { editorContextSent: false }
   }
+  input.sync.session.setPendingPrompt(input.sessionID, messageID)
   input.sdk.client.session
-    .prompt({
+    .promptAsync({
       sessionID: input.sessionID,
       ...input.model,
       messageID,
@@ -146,6 +160,6 @@ export function sendPromptToSession(input: {
         ...files.map((part) => ({ id: PartID.ascending(), ...part })),
       ],
     })
-    .catch(() => undefined)
+    .catch(() => input.sync.session.setPendingPrompt(input.sessionID, undefined))
   return { editorContextSent: editorParts.length > 0 }
 }

@@ -76,6 +76,7 @@ export const OpencodeXStateEventTable = sqliteTable(
   {
     position: integer().primaryKey({ autoIncrement: true }),
     id: text().notNull().unique(),
+    visibility: text().$type<"global" | "instance">().notNull().default("instance"),
     project_id: text().notNull(),
     workspace_id: text(),
     directory: text().notNull(),
@@ -88,6 +89,7 @@ export const OpencodeXStateEventTable = sqliteTable(
     created_at: integer().notNull(),
   },
   (table) => [
+    index("opencodex_state_event_visibility_position_idx").on(table.visibility, table.position),
     index("opencodex_state_event_scope_position_idx").on(
       table.project_id,
       table.workspace_id,
@@ -103,6 +105,28 @@ export const OpencodeXStateEventTable = sqliteTable(
     ),
   ],
 )
+
+export const OpencodeXStateAggregateSequenceTable = sqliteTable(
+  "opencodex_state_aggregate_sequence",
+  {
+    visibility: text().$type<"global" | "instance">().notNull(),
+    project_id: text().notNull(),
+    workspace_id: text().notNull(),
+    directory: text().notNull(),
+    aggregate_id: text().notNull(),
+    aggregate_sequence: integer().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.visibility, table.project_id, table.workspace_id, table.directory, table.aggregate_id],
+    }),
+  ],
+)
+
+export const OpencodeXStateMetadataTable = sqliteTable("opencodex_state_metadata", {
+  key: text().primaryKey(),
+  value: text().notNull(),
+})
 
 export const OpencodeXViewTable = sqliteTable(
   "opencodex_view",

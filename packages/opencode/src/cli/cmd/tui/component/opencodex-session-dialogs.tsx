@@ -138,7 +138,7 @@ function OpencodeXSessionManager() {
     if (!view) return
     const title = await DialogPrompt.show(dialog, "View name", { placeholder: "View name", value: view.title })
     if (title === null) return void dialog.replace(() => <OpencodeXSessionManager />)
-    await sdk.request<OpencodeXViewInfo>(`/experimental/opencodex/view/${viewID}`, { method: "PATCH", body: JSON.stringify({ title: title.trim() }) }).then(() => { list(); dialog.replace(() => <OpencodeXSessionManager />) }).catch((error: Error) => DialogAlert.show(dialog, "Rename View", error.message))
+    await sdk.request<OpencodeXViewInfo>(`/experimental/opencodex/view/${viewID}`, { method: "PATCH", body: JSON.stringify({ expectedTimeUpdated: view.timeUpdated, title: title.trim() }) }).then(() => { list(); dialog.replace(() => <OpencodeXSessionManager />) }).catch((error: Error) => DialogAlert.show(dialog, "Rename View", error.message))
   }
   async function reorderView(viewID: string, offset: number) {
     const ids = (views() ?? []).map((view) => view.id)

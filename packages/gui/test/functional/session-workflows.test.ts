@@ -29,13 +29,14 @@ describe("GUI functional session workflows", () => {
     })
 
     expect(calls).toEqual([
-      "prompt:",
       "loading:draft",
-      "route:created",
       "send:created:build it:build:anthropic/claude-sonnet:fast",
+      "prompt:",
+      "route:created",
       "remember:anthropic/claude-sonnet",
       "sync:created",
       "refresh",
+      "loading:",
     ])
   })
 
@@ -63,7 +64,7 @@ describe("GUI functional session workflows", () => {
       openCreatedSession: () => calls.push("route"),
     })
 
-    expect(calls).toEqual(["prompt:", "loading:session-1", "command:session-1:review:staged changes", "sync:session-1", "refresh"])
+    expect(calls).toEqual(["loading:session-1", "command:session-1:review:staged changes", "prompt:", "sync:session-1", "refresh", "loading:"])
   })
 
   test("exposes local TUI parity slash commands through the composer catalog", async () => {

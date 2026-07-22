@@ -71,7 +71,6 @@ jobs:
 
   unit:
     name: unit (${{ matrix.os }})
-    needs: static
     strategy:
       fail-fast: false
       matrix:
@@ -106,7 +105,7 @@ jobs:
 
   gui-e2e:
     name: gui e2e (chromium)
-    needs: [changes, static]
+    needs: changes
     if: needs.changes.outputs.gui == 'true'
     runs-on: ubuntu-latest
     steps:

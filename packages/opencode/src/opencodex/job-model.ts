@@ -10,9 +10,9 @@ export const transitions: Record<Status, Status[]> = {
   claimed: ["queued", "running", "cancelled", "interrupted"],
   running: ["succeeded", "failed", "cancelled", "interrupted"],
   succeeded: [],
-  failed: ["queued"],
+  failed: ["queued", "cancelled"],
   cancelled: [],
-  interrupted: ["queued"],
+  interrupted: ["queued", "cancelled"],
 }
 
 export function encode(value: Record<string, unknown> | undefined) {

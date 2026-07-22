@@ -1,4 +1,5 @@
 import type {
+  Event,
   Message,
   Agent,
   Provider,
@@ -18,6 +19,7 @@ import type {
   ProviderAuthMethod,
   VcsInfo,
   ClientStateSyncController,
+  ClientSessionDetailState,
   ClientStateSyncLifecycle,
   ClientStateSyncState,
   ClientCatalogProject,
@@ -26,10 +28,7 @@ import type {
   ClientCatalogView,
   OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
-import {
-  createClientStateSync,
-  createClientWorkItemSelector,
-} from "@opencode-ai/sdk/v2"
+import { createClientStateSync } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
@@ -44,7 +43,16 @@ import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
-import { projectTuiClientState } from "./sync-state"
+import {
+  changedTuiSessionDetails,
+  collectTuiLiveDetailChanges,
+  projectTuiClientState,
+  projectTuiSessionDetail,
+  type TuiLiveDetailChange,
+  tuiClientStateChanges,
+} from "./sync-state"
+
+const PENDING_PROMPT_IDLE_RELEASE_MS = 500
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
@@ -76,6 +84,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       }
       session_ui_state: {
         [sessionID: string]: OpencodeXSessionUiState
+      }
+      session_pending_prompt: {
+        [sessionID: string]: string | undefined
       }
       session_sync_revision: string | undefined
       session_diff: {
@@ -123,6 +134,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       session: [],
       session_status: {},
       session_ui_state: {},
+      session_pending_prompt: {},
       session_sync_revision: undefined,
       session_diff: {},
       todo: {},
@@ -146,10 +158,83 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     let stateSyncStart: Promise<void> | undefined
     let unsubscribeStateSync: (() => void) | undefined
     let stateSyncScope = ""
-    const selectWorkItems = createClientWorkItemSelector()
+    let appliedStateSync: ClientStateSyncState | undefined
+    let liveDetailChanges: Map<string, TuiLiveDetailChange> | undefined
+    const pendingPromptReleaseTimers = new Map<string, Timer>()
+
+    function clearProjectedState() {
+      fullSyncedSessions.clear()
+      appliedSessionVersions.clear()
+      appliedStateSync = undefined
+      batch(() => {
+        setStore("provider", reconcile([]))
+        setStore("provider_default", reconcile({}))
+        setStore("provider_next", reconcile({ all: [], default: {}, connected: [] }))
+        setStore("provider_auth", reconcile({}))
+        setStore("agent", reconcile([]))
+        setStore("command", reconcile([]))
+        setStore("permission", reconcile({}))
+        setStore("question", reconcile({}))
+        setStore("config", reconcile({}))
+        setStore("opencodex_project", reconcile([]))
+        setStore("opencodex_job", reconcile([]))
+        setStore("opencodex_swarm", reconcile([]))
+        setStore("opencodex_view", reconcile([]))
+        setStore("session", reconcile([]))
+        setStore("session_status", reconcile({}))
+        setStore("session_ui_state", reconcile({}))
+        setStore("session_sync_revision", undefined)
+        setStore("session_diff", reconcile({}))
+        setStore("todo", reconcile({}))
+        setStore("message", reconcile({}))
+        setStore("part", reconcile({}))
+        setStore("lsp", reconcile([]))
+        setStore("mcp", reconcile({}))
+        setStore("mcp_resource", reconcile({}))
+        setStore("formatter", reconcile([]))
+      })
+    }
+
+    function pruneSessionDetails(sessionIDs: ReadonlySet<string>) {
+      const removed = new Set(
+        [...Object.keys(store.message), ...Object.keys(store.todo), ...Object.keys(store.session_diff)].filter(
+          (sessionID) => !sessionIDs.has(sessionID),
+        ),
+      )
+      if (removed.size === 0) return
+      const messageIDs = new Set(
+        [...removed].flatMap((sessionID) => (store.message[sessionID] ?? []).map((item) => item.id)),
+      )
+      setStore(
+        "message",
+        produce((draft) => removed.forEach((sessionID) => delete draft[sessionID])),
+      )
+      setStore(
+        "todo",
+        produce((draft) => removed.forEach((sessionID) => delete draft[sessionID])),
+      )
+      setStore(
+        "session_diff",
+        produce((draft) => removed.forEach((sessionID) => delete draft[sessionID])),
+      )
+      setStore(
+        "session_pending_prompt",
+        produce((draft) => removed.forEach((sessionID) => delete draft[sessionID])),
+      )
+      setStore(
+        "part",
+        produce((draft) => messageIDs.forEach((messageID) => delete draft[messageID])),
+      )
+      removed.forEach((sessionID) => {
+        clearTimeout(pendingPromptReleaseTimers.get(sessionID))
+        pendingPromptReleaseTimers.delete(sessionID)
+        fullSyncedSessions.delete(sessionID)
+        appliedSessionVersions.delete(sessionID)
+      })
+    }
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
-      if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
+      if (!kv.get("session_directory_filter_enabled", false)) return { scope: "project" }
       if (!project.data.instance.path.worktree || !project.data.instance.path.directory) return { scope: "project" }
       return {
         path: path
@@ -158,59 +243,171 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       }
     }
 
-    function applyStateSync(state: ClientStateSyncState) {
-      const projection = projectTuiClientState(state, {
-        directory: kv.get("session_directory_filter_enabled", true) ? project.instance.directory() : undefined,
-        workItems: selectWorkItems(state),
+    function applyStateSync(state: ClientStateSyncState, forceProjection = false) {
+      const previous = appliedStateSync
+      const changes = forceProjection ? tuiClientStateChanges(undefined, state) : tuiClientStateChanges(previous, state)
+      const rootChanged = changes.catalog || changes.operations || changes.capabilities || changes.presentation
+      const projection = rootChanged
+        ? projectTuiClientState(state, {
+            directory: kv.get("session_directory_filter_enabled", false) ? project.instance.directory() : undefined,
+            includeDetails: false,
+          })
+        : undefined
+      const sessionIDs = projection ? new Set(projection.sessions.map((session) => session.id)) : undefined
+      const detailChanges = liveDetailChanges
+      const targetedDetails = detailChanges !== undefined && detailChanges.size > 0 && !changes.presentation
+      const visible = (sessionID: string) =>
+        sessionIDs?.has(sessionID) ?? Binary.search(store.session, sessionID, (session) => session.id).found
+      const details =
+        changes.details || changes.presentation
+          ? (targetedDetails
+              ? [...detailChanges.keys()].flatMap((sessionID): Array<[string, ClientSessionDetailState]> => {
+                  const detail = state.sessionDetails[sessionID]
+                  return detail ? [[sessionID, detail]] : []
+                })
+              : changedTuiSessionDetails(previous, state, changes.presentation)
+            ).filter(([sessionID]) => visible(sessionID))
+          : []
+      appliedStateSync = state
+      Object.entries(store.session_pending_prompt).forEach(([sessionID, messageID]) => {
+        if (!messageID) return
+        const status = state.sessionStatus[sessionID]
+        if (status?.type === "busy" || status?.type === "retry") {
+          clearTimeout(pendingPromptReleaseTimers.get(sessionID))
+          pendingPromptReleaseTimers.delete(sessionID)
+          return
+        }
+        schedulePendingPromptRelease(sessionID)
       })
       batch(() => {
         setStore("state_sync", reconcile(state.lifecycle))
-        if (!projection) return
-        setStore("session_sync_revision", projection.revision)
-        setStore("opencodex_project", reconcile(projection.projects))
-        setStore("opencodex_view", reconcile(projection.views))
-        if (projection.jobs && projection.swarms) {
-          setStore("opencodex_job", reconcile(projection.jobs))
-          setStore("opencodex_swarm", reconcile(projection.swarms))
+        if (rootChanged && !projection) {
+          if (state.lifecycle.data === "empty") clearProjectedState()
+          return
         }
-        setStore("session", reconcile(projection.sessions))
-        setStore("session_status", reconcile(projection.sessionStatus))
-        setStore("session_ui_state", reconcile(projection.sessionUiState))
-        setStore("permission", reconcile(projection.permissions))
-        setStore("question", reconcile(projection.questions))
-        if (projection.capabilities) {
-          setStore("provider", reconcile(projection.capabilities.providers))
-          setStore("provider_default", reconcile(projection.capabilities.providerDefaults))
-          setStore("provider_next", reconcile(projection.capabilities.providerList))
-          setStore("agent", reconcile(projection.capabilities.agents))
-          setStore("command", reconcile(projection.capabilities.commands))
-          setStore("lsp", reconcile(projection.capabilities.lsp))
-          setStore("mcp", reconcile(projection.capabilities.mcp))
-          if (projection.capabilities.config) setStore("config", reconcile(projection.capabilities.config))
-          setStore("mcp_resource", reconcile(projection.capabilities.mcpResources))
-          setStore("formatter", reconcile(projection.capabilities.formatter))
+        if (projection) {
+          setStore("session_sync_revision", projection.revision)
+          if (changes.catalog || changes.presentation) {
+            setStore("opencodex_project", reconcile(projection.projects))
+            setStore("opencodex_view", reconcile(projection.views))
+            setStore("session", reconcile(projection.sessions))
+            setStore("session_status", reconcile(projection.sessionStatus))
+            setStore("session_ui_state", reconcile(projection.sessionUiState))
+            setStore("permission", reconcile(projection.permissions))
+            setStore("question", reconcile(projection.questions))
+          }
+          if (changes.operations && projection.jobs && projection.swarms) {
+            setStore("opencodex_job", reconcile(projection.jobs))
+            setStore("opencodex_swarm", reconcile(projection.swarms))
+          }
+          if (changes.capabilities && projection.capabilities) {
+            setStore("provider", reconcile(projection.capabilities.providers))
+            setStore("provider_default", reconcile(projection.capabilities.providerDefaults))
+            setStore("provider_next", reconcile(projection.capabilities.providerList))
+            setStore("agent", reconcile(projection.capabilities.agents))
+            setStore("command", reconcile(projection.capabilities.commands))
+            setStore("lsp", reconcile(projection.capabilities.lsp))
+            setStore("mcp", reconcile(projection.capabilities.mcp))
+            if (projection.capabilities.config) setStore("config", reconcile(projection.capabilities.config))
+            setStore("mcp_resource", reconcile(projection.capabilities.mcpResources))
+            setStore("formatter", reconcile(projection.capabilities.formatter))
+          }
         }
-        Object.entries(projection.details).forEach(([sessionID, detail]) => {
-          if (appliedSessionVersions.get(sessionID) === detail.version) return
-          appliedSessionVersions.set(sessionID, detail.version)
-          const messages = detail.messages
-          const messageIDs = new Set(messages.map((message) => message.info.id))
-          ;(store.message[sessionID] ?? []).forEach((message) => {
-            if (messageIDs.has(message.id)) return
-            setStore(
-              "part",
-              produce((draft) => {
-                delete draft[message.id]
-              }),
+        const removedTarget =
+          targetedDetails && [...detailChanges.keys()].some((sessionID) => !state.sessionDetails[sessionID])
+        if (changes.presentation || (changes.details && (!targetedDetails || removedTarget)))
+          pruneSessionDetails(new Set(Object.keys(state.sessionDetails).filter(visible)))
+        details.forEach(([sessionID, detail]) =>
+          applySessionDetail(state, sessionID, detail, previous?.sessionDetails[sessionID]),
+        )
+      })
+    }
+
+    function applySessionDetail(
+      state: ClientStateSyncState,
+      sessionID: string,
+      detail: ClientSessionDetailState,
+      previous: ClientSessionDetailState | undefined,
+    ) {
+      const version = `${state.epoch ?? ""}:${detail.revision}`
+      if (appliedSessionVersions.get(sessionID) === version) return
+      appliedSessionVersions.set(sessionID, version)
+      const hinted = liveDetailChanges?.has(sessionID) === true
+      const hint = liveDetailChanges?.get(sessionID)
+      const pendingPrompt = store.session_pending_prompt[sessionID]
+      const response = pendingPrompt
+        ? (hinted ? [...(hint?.messageIDs ?? [])] : detail.messageIDs)
+            .map((messageID) => detail.messages[messageID])
+            .find((message) => message?.role === "assistant" && message.parentID === pendingPrompt)
+        : undefined
+      if (
+        response?.role === "assistant" &&
+        (response.time.completed ||
+          state.sessionStatus[sessionID]?.type === "busy" ||
+          state.sessionStatus[sessionID]?.type === "retry" ||
+          (detail.partIDs[response.id]?.length ?? 0) > 0)
+      )
+        updatePendingPrompt(sessionID, undefined)
+      const messages = store.message[sessionID]
+      if (
+        !previous ||
+        !messages ||
+        messages.length !== detail.messageIDs.length ||
+        previous.messageIDs !== detail.messageIDs
+      ) {
+        replaceSessionDetail(state, sessionID)
+        return
+      }
+      const messageIDs = hinted ? [...(hint?.messageIDs ?? [])] : detail.messageIDs
+      messageIDs.forEach((messageID) => {
+        const messageIndex = detail.messageIDs.indexOf(messageID)
+        if (messageIndex === -1) return
+        const message = detail.messages[messageID]
+        if (message && previous.messages[messageID] !== message)
+          setStore("message", sessionID, messageIndex, reconcile(message))
+        const partIDs = detail.partIDs[messageID] ?? []
+        const parts = store.part[messageID] ?? []
+        if (previous.partIDs[messageID] !== partIDs || parts.length !== partIDs.length) {
+          setStore("part", messageID, reconcile(partIDs.flatMap((partID) => detail.parts[partID] ?? [])))
+          return
+        }
+        const changedPartIDs = hinted
+          ? [...(hint?.partIDs ?? [])].filter(
+              (partID) => (detail.parts[partID] ?? previous.parts[partID])?.messageID === messageID,
             )
-          })
-          setStore("message", sessionID, reconcile(messages.map((message) => message.info)))
-          messages.forEach((message) => setStore("part", message.info.id, reconcile(message.parts)))
-          setStore("todo", sessionID, reconcile(detail.todos))
-          setStore("session_diff", sessionID, reconcile(detail.diff))
-          upsertSession(detail.session)
+          : partIDs
+        changedPartIDs.forEach((partID) => {
+          const partIndex = partIDs.indexOf(partID)
+          if (partIndex === -1) return
+          const part = detail.parts[partID]
+          if (part && previous.parts[partID] !== part) setStore("part", messageID, partIndex, reconcile(part))
         })
       })
+      if (previous.snapshot.todos !== detail.snapshot.todos)
+        setStore("todo", sessionID, reconcile(detail.snapshot.todos))
+      if (previous.snapshot.diff !== detail.snapshot.diff)
+        setStore("session_diff", sessionID, reconcile(detail.snapshot.diff))
+      if (previous.snapshot.session !== detail.snapshot.session) upsertSession(detail.snapshot.session)
+    }
+
+    function replaceSessionDetail(state: ClientStateSyncState, sessionID: string) {
+      const detail = projectTuiSessionDetail(state, sessionID)
+      if (!detail) return
+      const messageIDs = new Set(detail.messages.map((message) => message.info.id))
+      ;(store.message[sessionID] ?? []).forEach((message) => {
+        if (messageIDs.has(message.id)) return
+        setStore(
+          "part",
+          produce((draft) => {
+            delete draft[message.id]
+          }),
+        )
+      })
+      setStore("message", sessionID, reconcile(detail.messages.map((message) => message.info)))
+      detail.messages.forEach((message) => setStore("part", message.info.id, reconcile(message.parts)))
+      setStore("todo", sessionID, reconcile(detail.todos))
+      setStore("session_diff", sessionID, reconcile(detail.diff))
+      upsertSession(detail.session)
     }
 
     function startStateSync() {
@@ -221,8 +418,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       unsubscribeStateSync?.()
       stateSync?.stop()
       stateSyncStart = undefined
-      fullSyncedSessions.clear()
-      appliedSessionVersions.clear()
+      clearProjectedState()
+      setStore("state_sync", reconcile({ status: "bootstrapping", data: "empty", attempt: 0 }))
       stateSyncScope = scope
       stateSync = createClientStateSync({ client: sdk.client, directory, workspace })
       unsubscribeStateSync = stateSync.subscribe(applyStateSync)
@@ -260,14 +457,66 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     onCleanup(() => {
+      pendingPromptReleaseTimers.forEach(clearTimeout)
+      pendingPromptReleaseTimers.clear()
       unsubscribeStateSync?.()
       stateSync?.stop()
     })
 
     createEffect(startStateSync)
 
-    event.subscribe((event, { workspace }) => {
-      if (stateSync?.applyEvent(event)) return
+    event.subscribeBatchAll((events) => {
+      events.forEach((item) => {
+        if (item.event.type === "session.error" && item.event.properties.sessionID) {
+          updatePendingPrompt(item.event.properties.sessionID, undefined)
+          return
+        }
+        if (item.event.type === "session.idle") {
+          schedulePendingPromptRelease(item.event.properties.sessionID)
+          return
+        }
+        if (item.event.type !== "session.status") return
+        if (item.event.properties.status.type === "idle") {
+          schedulePendingPromptRelease(item.event.properties.sessionID)
+          return
+        }
+        clearTimeout(pendingPromptReleaseTimers.get(item.event.properties.sessionID))
+        pendingPromptReleaseTimers.delete(item.event.properties.sessionID)
+      })
+      // applyEvents notifies synchronously, so these IDs bound live projection work to this batch.
+      liveDetailChanges = collectTuiLiveDetailChanges(events.map((item) => item.event))
+      const handled = (() => {
+        try {
+          return stateSync?.applyEvents(events.map((item) => item.event)) ?? []
+        } finally {
+          liveDetailChanges = undefined
+        }
+      })()
+      events.forEach((item, index) => {
+        if (handled[index]) return
+        applyGlobalEventFallback(item.event, item.metadata)
+      })
+    })
+
+    function updatePendingPrompt(sessionID: string, messageID: string | undefined) {
+      clearTimeout(pendingPromptReleaseTimers.get(sessionID))
+      pendingPromptReleaseTimers.delete(sessionID)
+      setStore("session_pending_prompt", sessionID, messageID)
+    }
+
+    function schedulePendingPromptRelease(sessionID: string) {
+      const messageID = store.session_pending_prompt[sessionID]
+      if (!messageID || pendingPromptReleaseTimers.has(sessionID)) return
+      const timer = setTimeout(() => {
+        pendingPromptReleaseTimers.delete(sessionID)
+        if (store.session_pending_prompt[sessionID] === messageID) updatePendingPrompt(sessionID, undefined)
+      }, PENDING_PROMPT_IDLE_RELEASE_MS)
+      timer.unref?.()
+      pendingPromptReleaseTimers.set(sessionID, timer)
+    }
+
+    function applyGlobalEventFallback(event: Event, metadata: { directory: string; workspace: string | undefined }) {
+      if (metadata.directory !== "global" && metadata.directory !== project.instance.directory()) return
       switch (event.type) {
         case "server.instance.disposed":
           void bootstrap({ refreshState: true })
@@ -284,12 +533,30 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           break
 
         case "vcs.branch.updated": {
-          if (workspace === project.workspace.current()) {
+          if (metadata.workspace === project.workspace.current()) {
             setStore("vcs", { branch: event.properties.branch })
           }
           break
         }
       }
+    }
+
+    let rawEventGeneration = 0
+    createEffect(() => {
+      const generation = sdk.eventConnectionGeneration()
+      if (generation === 0) return
+      const previous = rawEventGeneration
+      rawEventGeneration = generation
+      if (previous === 0 || !stateSync || stateSync.getState().phase !== "ready") return
+      const controller = stateSync
+      void Promise.all([
+        controller.refresh(),
+        ...[...fullSyncedSessions].map((sessionID) => controller.refreshSessionTail(sessionID, { limit: 100 })),
+      ]).catch((error) => {
+        Log.Default.warn("tui reconnect correction failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
     })
 
     const exit = useExit()
@@ -377,7 +644,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         async refresh() {
           const controller = await requireStateSync()
           await controller.refresh()
-          applyStateSync(controller.getState())
+          applyStateSync(controller.getState(), true)
         },
         get hasMore() {
           return stateSync?.getState().sessionCards.hasMore ?? false
@@ -386,18 +653,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const controller = await requireStateSync()
           if (!controller.getState().sessionCards.hasMore) return false
           await controller.loadSessionCards()
-          applyStateSync(controller.getState())
           return true
         },
         async ensure(sessionIDs: readonly string[]) {
           const controller = await requireStateSync()
           await controller.ensureSessionCards(sessionIDs)
-          applyStateSync(controller.getState())
         },
         async refreshStatus() {
           const controller = await requireStateSync()
           await controller.refresh()
-          applyStateSync(controller.getState())
         },
         status(sessionID: string) {
           const session = result.session.get(sessionID)
@@ -409,11 +673,26 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           if (last.role === "user") return "working"
           return last.time.completed ? "idle" : "working"
         },
+        setPendingPrompt(sessionID: string, messageID: string | undefined) {
+          updatePendingPrompt(sessionID, messageID)
+        },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
-          await (await requireStateSync())
+          const controller = await requireStateSync()
+          await controller
             .refreshSessionTail(sessionID, { limit: 100 })
-            .then(() => fullSyncedSessions.add(sessionID))
+            .then(async (snapshot) => {
+              const cursors = new Set<string>()
+              for (let boundary = snapshot.messages.boundary; boundary.hasMore; ) {
+                if (!boundary.next || cursors.has(boundary.next)) {
+                  throw new Error("Authoritative session pagination did not advance")
+                }
+                cursors.add(boundary.next)
+                boundary = (await controller.loadOlderSessionPage(sessionID, { before: boundary.next, limit: 100 }))
+                  .messages.boundary
+              }
+              fullSyncedSessions.add(sessionID)
+            })
             .catch((error) => {
               Log.Default.warn("tui session hydration failed", {
                 sessionID,

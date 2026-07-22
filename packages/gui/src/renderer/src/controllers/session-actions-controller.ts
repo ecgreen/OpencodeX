@@ -266,11 +266,16 @@ export function createSessionActionsController(input: {
   async function updateReviewedFiles(session: Session, reviewedFiles: string[]) {
     const client = input.client()
     if (!client) return
+    const currentState = input.snapshot()?.sessionUiState[session.id]
     const reviewedAt =
       reviewedFiles.length > 0 && session.summary?.files === reviewedFiles.length
         ? Math.max(Date.now(), session.time.updated)
         : undefined
-    await updateSessionUiState(client, session.id, { reviewedFiles, reviewedAt })
+    await updateSessionUiState(client, session.id, {
+      expectedReviewedFiles: currentState?.reviewedFiles ?? [],
+      reviewedFiles,
+      reviewedAt,
+    })
     input.setSnapshot((current) =>
       current
         ? {

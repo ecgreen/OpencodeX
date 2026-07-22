@@ -8,7 +8,7 @@ import {
   sidebarStatusColor,
   sidebarStatusLabel,
 } from "./opencodex-sidebar-model"
-import { deriveStatus, deriveViewStatus, statusColor } from "./opencodex-session-status"
+import { REVIEW_READY_ICON, deriveStatus, deriveViewStatus, isReviewReadyStatus, statusColor } from "./opencodex-session-status"
 import { OpencodeXSidebarStatusCard } from "./opencodex-sidebar-status-card"
 import type { OpencodeXViewInfo, SidebarStatus } from "./opencodex-sidebar-types"
 
@@ -26,7 +26,7 @@ export function OpencodeXSidebarSessionRow(props: {
   )
   const displayStatus = createMemo<SidebarStatus>(() => unviewed() ? "unviewed" : status())
   const statusFg = createMemo(() => sidebarStatusColor(displayStatus()))
-  const attention = createMemo(() => ["unviewed", "review_ready", "needs_review"].includes(displayStatus()))
+  const attention = createMemo(() => isReviewReadyStatus(displayStatus()))
   const titleColor = createMemo(() => {
     if (attention()) return statusFg()
     if (status() !== "dormant") return statusColor(status())
@@ -44,12 +44,14 @@ export function OpencodeXSidebarSessionRow(props: {
       active={active()}
       title={[sessionTitle(props.session, props.controller.sync), props.titleSuffix].filter(Boolean).join(" - ")}
       titleColor={titleColor()}
+      preserveTitleColor={isReviewReadyStatus(displayStatus())}
       borderColor={attention() ? statusFg() : props.controller.isRowSelected(props.rowID) ? props.controller.theme.primary : statusFg()}
       animateTitle={displayStatus() === "input_needed" || attention()}
       detail={detail()}
       progress={status() === "in_progress"}
       progressColor={statusColor("in_progress")}
       progressWidth={3}
+      statusText={isReviewReadyStatus(displayStatus()) ? REVIEW_READY_ICON : undefined}
       onOpen={() => props.controller.route.navigate({ type: "session", sessionID: props.session.id })}
     />
   )
@@ -71,7 +73,7 @@ export function OpencodeXSidebarViewRow(props: {
     }) ? "unviewed" : "dormant"
   })
   const statusFg = createMemo(() => sidebarStatusColor(status()))
-  const attention = createMemo(() => ["unviewed", "review_ready", "needs_review"].includes(status()))
+  const attention = createMemo(() => isReviewReadyStatus(status()))
   const titleColor = createMemo(() => {
     if (attention() || status() !== "dormant") return statusFg()
     return active() ? props.controller.theme.text : props.controller.theme.textMuted
@@ -84,13 +86,14 @@ export function OpencodeXSidebarViewRow(props: {
       active={active()}
       title={props.view.title}
       titleColor={titleColor()}
+      preserveTitleColor={isReviewReadyStatus(status())}
       borderColor={attention() ? statusFg() : props.controller.isRowSelected(props.rowID) ? props.controller.theme.primary : statusFg()}
       animateTitle={status() === "input_needed" || attention()}
       detail={`${props.view.sessionIDs.length} session${props.view.sessionIDs.length === 1 ? "" : "s"}`}
       progress={status() === "in_progress"}
       progressColor={statusColor("in_progress")}
       progressWidth={4}
-      statusText={sidebarStatusLabel(status())}
+      statusText={isReviewReadyStatus(status()) ? REVIEW_READY_ICON : sidebarStatusLabel(status())}
       onOpen={() => props.controller.route.navigate({ type: "opencodex-view", viewID: props.view.id })}
     />
   )

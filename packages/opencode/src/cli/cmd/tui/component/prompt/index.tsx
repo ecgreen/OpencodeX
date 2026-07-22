@@ -37,7 +37,13 @@ export function Prompt(props: PromptProps) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
-  const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
+  const status = createMemo(() => {
+    const sessionID = props.sessionID ?? ""
+    const current = sync.data.session_status?.[sessionID]
+    if (sync.data.session_pending_prompt?.[sessionID] && (!current || current.type === "idle"))
+      return { type: "busy" } as const
+    return current ?? ({ type: "idle" } as const)
+  })
   const history = usePromptHistory()
   const drafts = usePromptDrafts()
   const renderer = useRenderer()

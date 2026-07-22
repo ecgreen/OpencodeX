@@ -175,82 +175,84 @@ export const layer = Layer.effect(
     function commitSyncEvent(
       event: Payload,
       input?: { readonly seq: number; readonly aggregateID: string; readonly ownerID?: string },
+      handlers: Array<{ handler: Sync; filter?: SyncFilter }> = [],
     ) {
       return Effect.gen(function* () {
         const definition = registry.get(event.type)
         const sync = definition?.sync
-        if (sync) {
-          if (event.version !== sync.version) {
-            yield* Effect.die(
-              new InvalidSyncEventError({
-                type: event.type,
-                message: `Expected event version ${sync.version}, got ${event.version}`,
-              }),
-            )
-          }
-          const aggregateID = (event.data as Record<string, unknown>)[sync.aggregate]
-          if (typeof aggregateID !== "string") {
-            yield* Effect.die(
-              new InvalidSyncEventError({
-                type: event.type,
-                message: `Expected string aggregate field ${sync.aggregate}`,
-              }),
-            )
-          } else {
-            const list = projectors.get(event.type) ?? []
-            yield* db
-              .transaction(
-                () =>
-                  Effect.gen(function* () {
-                    const row = yield* db
-                      .select({ seq: EventSequenceTable.seq, ownerID: EventSequenceTable.owner_id })
-                      .from(EventSequenceTable)
-                      .where(eq(EventSequenceTable.aggregate_id, aggregateID))
-                      .get()
-                      .pipe(Effect.orDie)
-                    const latest = row?.seq ?? -1
-                    if (input && input.seq <= latest) return
-                    if (input && row?.ownerID && row.ownerID !== input.ownerID) return
-                    const seq = input?.seq ?? latest + 1
-                    if (input && seq !== latest + 1) {
-                      yield* Effect.die(
-                        new InvalidSyncEventError({
-                          type: event.type,
-                          message: `Sequence mismatch for aggregate ${aggregateID}: expected ${latest + 1}, got ${seq}`,
-                        }),
-                      )
-                    }
-                    for (const projector of list) {
-                      yield* projector(event as Payload)
-                    }
-                    yield* db
-                      .insert(EventSequenceTable)
-                      .values([{ aggregate_id: aggregateID, seq, owner_id: input?.ownerID }])
-                      .onConflictDoUpdate({
-                        target: EventSequenceTable.aggregate_id,
-                        set: { seq },
-                      })
-                      .run()
-                      .pipe(Effect.orDie)
-                    yield* db
-                      .insert(EventTable)
-                      .values([
-                        {
-                          id: event.id,
-                          aggregate_id: aggregateID,
-                          seq,
-                          type: versionedType(definition.type, sync.version),
-                          data: event.data as Record<string, unknown>,
-                        },
-                      ])
-                      .run()
-                      .pipe(Effect.orDie)
-                  }),
-                { behavior: "immediate" },
-              )
-              .pipe(Effect.orDie)
-          }
+        if (!sync) {
+          for (const item of handlers) yield* item.handler(event)
+          return true
         }
+        if (event.version !== sync.version) {
+          return yield* Effect.die(
+            new InvalidSyncEventError({
+              type: event.type,
+              message: `Expected event version ${sync.version}, got ${event.version}`,
+            }),
+          )
+        }
+        const aggregateID = (event.data as Record<string, unknown>)[sync.aggregate]
+        if (typeof aggregateID !== "string") {
+          return yield* Effect.die(
+            new InvalidSyncEventError({
+              type: event.type,
+              message: `Expected string aggregate field ${sync.aggregate}`,
+            }),
+          )
+        }
+        const list = projectors.get(event.type) ?? []
+        return yield* db
+          .transaction(
+            () =>
+              Effect.gen(function* () {
+                const row = yield* db
+                  .select({ seq: EventSequenceTable.seq, ownerID: EventSequenceTable.owner_id })
+                  .from(EventSequenceTable)
+                  .where(eq(EventSequenceTable.aggregate_id, aggregateID))
+                  .get()
+                  .pipe(Effect.orDie)
+                const latest = row?.seq ?? -1
+                if (input && input.seq <= latest) return false
+                if (input && row?.ownerID && row.ownerID !== input.ownerID) return false
+                const seq = input?.seq ?? latest + 1
+                if (input && seq !== latest + 1) {
+                  return yield* Effect.die(
+                    new InvalidSyncEventError({
+                      type: event.type,
+                      message: `Sequence mismatch for aggregate ${aggregateID}: expected ${latest + 1}, got ${seq}`,
+                    }),
+                  )
+                }
+                for (const item of handlers) yield* item.handler(event)
+                for (const projector of list) yield* projector(event as Payload)
+                yield* db
+                  .insert(EventSequenceTable)
+                  .values([{ aggregate_id: aggregateID, seq, owner_id: input?.ownerID }])
+                  .onConflictDoUpdate({
+                    target: EventSequenceTable.aggregate_id,
+                    set: { seq, ...(input?.ownerID ? { owner_id: input.ownerID } : {}) },
+                  })
+                  .run()
+                  .pipe(Effect.orDie)
+                yield* db
+                  .insert(EventTable)
+                  .values([
+                    {
+                      id: event.id,
+                      aggregate_id: aggregateID,
+                      seq,
+                      type: versionedType(definition.type, sync.version),
+                      data: event.data as Record<string, unknown>,
+                    },
+                  ])
+                  .run()
+                  .pipe(Effect.orDie)
+                return true
+              }),
+            { behavior: "immediate" },
+          )
+          .pipe(Effect.orDie)
       })
     }
 
@@ -261,18 +263,14 @@ export const layer = Layer.effect(
       })
     }
 
-    function persistEvent<D extends Definition>(event: Payload<D>) {
+    function persistEvent<D extends Definition>(
+      event: Payload<D>,
+      input?: { readonly seq: number; readonly aggregateID: string; readonly ownerID?: string },
+    ) {
       const handlers = syncHandlers.filter((item) => item.filter?.(event as Payload) ?? true)
-      if (handlers.length === 0 && registry.get(event.type)?.sync === undefined) return Effect.void
+      if (handlers.length === 0 && registry.get(event.type)?.sync === undefined) return Effect.succeed(true)
       return db
-        .transaction(
-          () =>
-            Effect.gen(function* () {
-              for (const item of handlers) yield* item.handler(event as Payload)
-              yield* commitSyncEvent(event as Payload)
-            }),
-          { behavior: "immediate" },
-        )
+        .transaction(() => commitSyncEvent(event as Payload, input, handlers), { behavior: "immediate" })
         .pipe(Effect.orDie)
     }
 
@@ -336,12 +334,12 @@ export const layer = Layer.effect(
               version: definition.sync.version,
               data: event.data,
             } as Payload
-            yield* commitSyncEvent(payload, {
+            const applied = yield* persistEvent(payload, {
               seq: event.seq,
               aggregateID: event.aggregateID,
               ownerID: options?.ownerID,
             })
-            if (options?.publish) {
+            if (applied && options?.publish) {
               for (const listener of listeners) {
                 yield* listener(payload)
               }

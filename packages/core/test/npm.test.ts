@@ -9,8 +9,6 @@ import { Npm } from "@opencode-ai/core/npm"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { tmpdir } from "./fixture/tmpdir"
 
-const win = process.platform === "win32"
-
 const writePackage = (dir: string, pkg: Record<string, unknown>) =>
   Bun.write(
     path.join(dir, "package.json"),
@@ -28,17 +26,21 @@ const npmLayer = (cache: string) =>
     Layer.provide(NodeFileSystem.layer),
   )
 
-describe("Npm.sanitize", () => {
-  test("keeps normal scoped package specs unchanged", () => {
-    expect(Npm.sanitize("@opencode/acme")).toBe("@opencode/acme")
-    expect(Npm.sanitize("@opencode/acme@1.0.0")).toBe("@opencode/acme@1.0.0")
-    expect(Npm.sanitize("prettier")).toBe("prettier")
+describe("Npm.cacheKey", () => {
+  test("uses fixed path-safe keys for package specs", () => {
+    const normal = Npm.cacheKey("@opencode/acme@1.0.0")
+    const traversal = Npm.cacheKey("acme@git+https://example.com/../../../../escape.git")
+    expect(normal).toMatch(/^[a-f0-9]{64}$/)
+    expect(traversal).toMatch(/^[a-f0-9]{64}$/)
+    expect(traversal).not.toBe(normal)
   })
+})
 
-  test("handles git https specs", () => {
-    const spec = "acme@git+https://github.com/opencode/acme.git"
-    const expected = win ? "acme@git+https_//github.com/opencode/acme.git" : spec
-    expect(Npm.sanitize(spec)).toBe(expected)
+describe("AppFileSystem.contains", () => {
+  test("rejects siblings and cross-root paths", () => {
+    expect(AppFileSystem.contains(path.join("root", "project"), path.join("root", "project", "file"))).toBe(true)
+    expect(AppFileSystem.contains(path.join("root", "project"), path.join("root", "project-other"))).toBe(false)
+    if (process.platform === "win32") expect(AppFileSystem.contains("C:\\root", "D:\\root")).toBe(false)
   })
 })
 
@@ -53,7 +55,7 @@ describe("Npm.add", () => {
     await Bun.write(path.join(tmp.path, "fixture-provider", "index.js"), "export const fixture = true\n")
 
     const spec = `fixture-provider@file:${path.join(tmp.path, "fixture-provider")}`
-    await fs.mkdir(path.join(tmp.path, "cache", "packages", Npm.sanitize(spec)), { recursive: true })
+    await fs.mkdir(path.join(tmp.path, "cache", "packages", Npm.cacheKey(spec)), { recursive: true })
 
     const entry = await Effect.gen(function* () {
       const npm = yield* Npm.Service

@@ -9,7 +9,7 @@ import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
-import { notFound, ProjectNotFoundError } from "../errors"
+import { ConflictError, notFound, ProjectNotFoundError } from "../errors"
 import {
   SessionSyncQuery,
   UpdateProjectPayload,
@@ -126,7 +126,16 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
     payload: typeof UpdateSessionStatePayload.Type
   }) {
     yield* SessionError.mapStorageNotFound(sessions.get(ctx.params.sessionID))
-    return yield* sessionState.update({ ...ctx.payload, sessionID: ctx.params.sessionID })
+    return yield* sessionState.update({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+      Effect.catchTag("OpencodeX.SessionState.ConflictError", (error) =>
+        Effect.fail(
+          new ConflictError({
+            message: "The session review state changed before this update was applied.",
+            resource: error.sessionID,
+          }),
+        ),
+      ),
+    )
   })
 
   const moveSession = Effect.fn("OpencodeXHttpApi.moveSession")(function* (ctx: {

@@ -49,6 +49,20 @@ export function layer(options: Options = {}) {
 
       const wake = () => Queue.offer(wakeups, undefined).pipe(Effect.asVoid)
 
+      const settleOutcome = Effect.fnUntraced(function* (
+        jobID: string,
+        owner: string,
+        outcome: OpencodeXJob.TerminalOutcome,
+        settled?: Settled,
+      ) {
+        const result = yield* jobs.settle({ jobID, owner, outcome }, settled).pipe(Effect.option)
+        if (Option.isSome(result)) return
+        const latest = yield* jobs.get(jobID).pipe(Effect.option)
+        if (Option.isNone(latest) || ["succeeded", "failed", "cancelled"].includes(latest.value.status)) return
+        if (!latest.value.cancelRequestedAt) return
+        yield* jobs.settle({ jobID, owner, outcome: { status: "cancelled" } }, settled).pipe(Effect.ignore)
+      })
+
       const finish = Effect.fn("OpencodeXJobDispatcher.finish")(function* (
         job: OpencodeXJob.Info,
         handler: { executor: Executor; settled?: Settled },
@@ -58,42 +72,40 @@ export function layer(options: Options = {}) {
         const latest = yield* jobs.get(job.id).pipe(Effect.option)
         if (Option.isNone(latest) || latest.value.status === "cancelled") return
         if (latest.value.cancelRequestedAt) {
-          yield* jobs
-            .settle({ jobID: job.id, owner, outcome: { status: "cancelled" } }, handler.settled)
-            .pipe(Effect.ignore)
+          yield* settleOutcome(job.id, owner, { status: "cancelled" }, handler.settled)
           return
         }
         if (Exit.isSuccess(exit)) {
-          yield* jobs
-            .settle(
-              {
-                jobID: job.id,
-                owner,
-                outcome: { status: "succeeded", result: exit.value === undefined ? undefined : exit.value },
-              },
-              handler.settled,
-            )
-            .pipe(Effect.ignore)
+          yield* settleOutcome(
+            job.id,
+            owner,
+            { status: "succeeded", result: exit.value === undefined ? undefined : exit.value },
+            handler.settled,
+          )
           return
         }
         const message = errorMessage(Cause.squash(exit.cause))
         if (latest.value.attempt >= latest.value.maxAttempts) {
-          yield* jobs
-            .settle(
-              {
-                jobID: job.id,
-                owner,
-                outcome: { status: "failed", failure: { code: "JOB_EXECUTION_FAILED", message } },
-              },
-              handler.settled,
-            )
-            .pipe(Effect.ignore)
+          yield* settleOutcome(
+            job.id,
+            owner,
+            { status: "failed", failure: { code: "JOB_EXECUTION_FAILED", message } },
+            handler.settled,
+          )
           return
         }
         const failed = yield* jobs
           .fail({ jobID: job.id, owner, failure: { code: "JOB_EXECUTION_FAILED", message } })
           .pipe(Effect.option)
-        if (Option.isNone(failed)) return
+        if (Option.isNone(failed)) {
+          yield* settleOutcome(
+            job.id,
+            owner,
+            { status: "failed", failure: { code: "JOB_EXECUTION_FAILED", message } },
+            handler.settled,
+          )
+          return
+        }
         yield* jobs.retry(job.id).pipe(Effect.ignore)
       })
 
@@ -200,7 +212,7 @@ export function layer(options: Options = {}) {
       })
 
       const recover = Effect.fn("OpencodeXJobDispatcher.recover")(function* () {
-        const recovered = yield* jobs.recover()
+        const recovered = yield* jobs.recover(undefined, (job) => executors.get(job.kind)?.settled)
         yield* Effect.forEach(
           recovered.filter((job) => job.attempt < job.maxAttempts),
           (job) => jobs.retry(job.id).pipe(Effect.ignore),
@@ -239,7 +251,6 @@ export function layer(options: Options = {}) {
         }),
       )
 
-      yield* recover()
       yield* Queue.take(wakeups).pipe(Effect.andThen(dispatch()), Effect.forever, Effect.forkIn(scope))
       yield* Effect.sleep(options.recoveryMs ?? 10_000).pipe(
         Effect.andThen(recover()),
@@ -249,10 +260,13 @@ export function layer(options: Options = {}) {
 
       return Service.of({
         register(kind, executor, settled) {
-          return Effect.sync(() => {
-            const handler = { executor, settled }
-            executors.set(kind, handler)
-            Queue.offerUnsafe(wakeups, undefined)
+          return Effect.gen(function* () {
+            const handler = yield* Effect.sync(() => {
+              const current = { executor, settled }
+              executors.set(kind, current)
+              return current
+            })
+            yield* recover()
             return Effect.sync(() => {
               if (executors.get(kind) === handler) executors.delete(kind)
             })

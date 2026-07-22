@@ -400,6 +400,28 @@ describe("EventV2", () => {
     }),
   )
 
+  it.effect("runs durable sync handlers once for an applied replay", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const received = new Array<EventV2.Payload>()
+      const aggregateID = EventV2.ID.create()
+      const replayed = {
+        id: EventV2.ID.create(),
+        type: EventV2.versionedType(SyncMessage.type, 1),
+        seq: 0,
+        aggregateID,
+        data: { id: aggregateID, text: "replayed" },
+      }
+      yield* events.sync((event) => Effect.sync(() => received.push(event)))
+
+      yield* events.replay(replayed)
+      yield* events.replay(replayed)
+
+      expect(received).toHaveLength(1)
+      expect(received[0]?.id).toBe(replayed.id)
+    }),
+  )
+
   it.effect("replay defects on sequence mismatch", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service
@@ -523,6 +545,7 @@ describe("EventV2", () => {
     Effect.gen(function* () {
       const events = yield* EventV2.Service
       const received = new Array<EventV2.Payload>()
+      const broadcast = new Array<EventV2.Payload>()
       const aggregateID = EventV2.ID.create()
       yield* events.publish(SyncMessage, { id: aggregateID, text: "seed" })
       yield* events.claim(aggregateID, "owner-a")
@@ -531,6 +554,12 @@ describe("EventV2", () => {
           received.push(event)
         }),
       )
+      const unsubscribe = yield* events.listen((event) =>
+        Effect.sync(() => {
+          if (event.type === SyncMessage.type) broadcast.push(event)
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
 
       yield* events.replay(
         {
@@ -540,10 +569,37 @@ describe("EventV2", () => {
           aggregateID,
           data: { id: aggregateID, text: "ignored" },
         },
-        { ownerID: "owner-b" },
+        { ownerID: "owner-b", publish: true },
       )
 
       expect(received).toHaveLength(0)
+      expect(broadcast).toHaveLength(0)
+    }),
+  )
+
+  it.effect("does not broadcast duplicate replay events", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const aggregateID = EventV2.ID.create()
+      const received = new Array<EventV2.Payload>()
+      const unsubscribe = yield* events.listen((event) =>
+        Effect.sync(() => {
+          if (event.type === SyncMessage.type) received.push(event)
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const replayed = {
+        id: EventV2.ID.create(),
+        type: EventV2.versionedType(SyncMessage.type, 1),
+        seq: 0,
+        aggregateID,
+        data: { id: aggregateID, text: "once" },
+      }
+
+      yield* events.replay(replayed, { publish: true })
+      yield* events.replay(replayed, { publish: true })
+
+      expect(received).toHaveLength(1)
     }),
   )
 

@@ -38,7 +38,7 @@ export function ViewPaneHost(props: {
   setSelectedVariant: (sessionID: string, value: string) => void
   focus: (sessionID: string, focusComposer: boolean) => void
   openSidePanelTarget?: (sessionID: string, target: SessionSidePanelTarget) => void
-  submit: (event: SubmitEvent, item: ViewItem, prompt: GuiPromptInfo) => void
+  submit: (event: SubmitEvent, item: ViewItem, prompt: GuiPromptInfo) => Promise<boolean>
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void

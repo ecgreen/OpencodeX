@@ -1,7 +1,8 @@
-import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
+import { chmod, mkdir, readFile, rename, rm, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
-import { dirname, isAbsolute, join, relative, resolve as pathResolve, win32 } from "path"
+import { randomUUID } from "crypto"
+import { basename, dirname, isAbsolute, join, relative, resolve as pathResolve, sep, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 import { Glob } from "@opencode-ai/core/util/glob"
@@ -10,6 +11,21 @@ import { fileURLToPath } from "url"
 // Fast sync version for metadata checks
 export async function exists(p: string): Promise<boolean> {
   return existsSync(p)
+}
+
+export async function writeAtomic(file: string, content: string) {
+  const temporary = join(dirname(file), `.${basename(file)}.${process.pid}.${randomUUID()}.tmp`)
+  await mkdir(dirname(file), { recursive: true })
+  try {
+    await writeFile(temporary, content)
+    await rename(temporary, file)
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined)
+  }
+}
+
+export async function remove(file: string) {
+  await rm(file, { force: true })
 }
 
 export async function isDir(p: string): Promise<boolean> {
@@ -169,7 +185,8 @@ export function overlaps(a: string, b: string) {
 }
 
 export function contains(parent: string, child: string) {
-  return !relative(parent, child).startsWith("..")
+  const result = relative(parent, child)
+  return result === "" || (!isAbsolute(result) && result !== ".." && !result.startsWith(`..${sep}`))
 }
 
 export async function findUp(

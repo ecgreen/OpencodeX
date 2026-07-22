@@ -60,6 +60,8 @@ export function clientStateSyncTransport(options: ClientStateSyncOptions): Clien
         )
       ).data
       return {
+        scope: snapshot.scope,
+        epoch: snapshot.epoch,
         revision: snapshot.revision,
         providers: snapshot.payload.provider.all,
         connectedProviderIDs: snapshot.payload.provider.connected,
@@ -111,7 +113,49 @@ export function decodeClientStateFrame(input: unknown): OpencodeXStateStreamFram
 
 function isClientStateFrame(input: unknown): input is OpencodeXStateStreamFrame {
   if (!isRecord(input)) return false
-  return input.type === "ready" || input.type === "event" || input.type === "reset_required"
+  if (input.type === "heartbeat") return typeof input.epoch === "string"
+  if (input.type === "event") return isClientStateEvent(input.event)
+  if (input.type === "ready")
+    return isClientStateScope(input.scope) && typeof input.epoch === "string" && typeof input.cursor === "string"
+  if (input.type === "reset_required")
+    return (
+      isClientStateScope(input.scope) &&
+      typeof input.epoch === "string" &&
+      typeof input.cursor === "string" &&
+      typeof input.reason === "string"
+    )
+  return false
+}
+
+function isClientStateEvent(input: unknown) {
+  if (!isRecord(input) || !isRecord(input.payload)) return false
+  return (
+    typeof input.id === "string" &&
+    isClientStateScope(input.scope) &&
+    typeof input.epoch === "string" &&
+    typeof input.cursor === "string" &&
+    typeof input.position === "number" &&
+    Number.isSafeInteger(input.position) &&
+    (input.visibility === "global" || input.visibility === "instance") &&
+    typeof input.aggregateSequence === "number" &&
+    Number.isSafeInteger(input.aggregateSequence) &&
+    (input.domain === "capabilities" ||
+      input.domain === "catalog" ||
+      input.domain === "operations" ||
+      input.domain === "session") &&
+    input.operation === "invalidate" &&
+    typeof input.payload.aggregateID === "string" &&
+    typeof input.payload.eventType === "string"
+  )
+}
+
+function isClientStateScope(input: unknown) {
+  return (
+    isRecord(input) &&
+    typeof input.projectID === "string" &&
+    typeof input.directory === "string" &&
+    (input.workspaceID === undefined || typeof input.workspaceID === "string")
+  )
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

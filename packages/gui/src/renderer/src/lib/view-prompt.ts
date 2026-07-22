@@ -44,14 +44,18 @@ export async function runViewPromptAction(input: {
   refresh: () => Promise<void>
   prepareTarget?: (gui: GuiClient, item: ViewItem, view?: ClientCatalogView) => Promise<PreparedViewPromptTarget>
 }) {
+  if (!input.gui) throw new Error("The backend connection is not ready. Wait for OpencodeX to reconnect and try again.")
   const submission = prepareViewPromptSubmission({ gui: input.gui, item: input.item, prompt: normalizePromptInput(input.text) })
-  if (!submission) return
+  if (!submission) return false
   const showDraftLoading = submission.item.kind === "pending"
   if (showDraftLoading) input.setDraftLoading(submission.draftID, true)
   try {
     const prepared = await (input.prepareTarget ?? prepareViewPromptTarget)(submission.gui, submission.item, input.view)
-    if (prepared.type === "notice") return input.alert(prepared.message)
-    if (prepared.type === "unavailable") return
+    if (prepared.type === "notice") {
+      input.alert(prepared.message)
+      return false
+    }
+    if (prepared.type === "unavailable") throw new Error("The view session could not be prepared. Try again.")
     if (prepared.focusSessionID) input.setFocusedSessionID(prepared.focusSessionID)
     const target = prepareViewPromptSendTarget({
       target: prepared.target,
@@ -67,6 +71,7 @@ export async function runViewPromptAction(input: {
     if (target.modelToRemember) input.rememberModel(target.modelToRemember)
     await input.syncViewSession(prepared.target)
     await input.refresh()
+    return true
   } finally {
     if (showDraftLoading) input.setDraftLoading(submission.draftID, false)
   }
@@ -104,6 +109,7 @@ export async function prepareViewPromptTarget(gui: GuiClient, item: ViewItem, vi
   const pending = pendingViewSessions(view).filter((slot) => slot.id !== item.slot.id)
   const next = replacePendingViewPane(view, item.slot.id, createdSession.id, pending)
   await updateView(gui, view.id, {
+    expectedTimeUpdated: Number(view.timeUpdated),
     sessionIDs: next.sessionIDs,
     focusedSessionID: createdSession.id,
     metadata: next.metadata,

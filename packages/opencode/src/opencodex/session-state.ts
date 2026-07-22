@@ -24,6 +24,7 @@ export type Info = Schema.Schema.Type<typeof Info>
 
 export const UpdateInput = Schema.Struct({
   sessionID: SessionID,
+  expectedReviewedFiles: Schema.optional(Schema.Array(Schema.String)),
   seenAt: Schema.optional(NonNegativeInt),
   reviewedAt: Schema.optional(NonNegativeInt),
   reviewedFiles: Schema.optional(Schema.Array(Schema.String)),
@@ -86,10 +87,14 @@ export const Event = {
 export interface Interface {
   readonly get: (sessionID: SessionID) => Effect.Effect<Info | undefined>
   readonly list: (sessionIDs: readonly SessionID[]) => Effect.Effect<Record<string, Info>>
-  readonly update: (input: UpdateInput) => Effect.Effect<Info>
+  readonly update: (input: UpdateInput) => Effect.Effect<Info, ConflictError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/OpencodeXSessionState") {}
+
+export class ConflictError extends Schema.TaggedErrorClass<ConflictError>()("OpencodeX.SessionState.ConflictError", {
+  sessionID: SessionID,
+}) {}
 
 function hydrate(row: typeof OpencodeXSessionStateTable.$inferSelect): Info {
   return {
@@ -197,6 +202,13 @@ export const layer = Layer.effect(
       return yield* events.barrier(
         Effect.gen(function* () {
       const current = yield* get(input.sessionID)
+      if (input.reviewedFiles !== undefined) {
+        const expected = reviewedFiles(input.expectedReviewedFiles, undefined).toSorted()
+        const persisted = (current?.reviewedFiles ?? []).toSorted()
+        if (expected.length !== persisted.length || expected.some((file, index) => file !== persisted[index])) {
+          return yield* new ConflictError({ sessionID: input.sessionID })
+        }
+      }
       const state = {
         sessionID: input.sessionID,
         ...(maxOptional(current?.seenAt, input.seenAt) === undefined
@@ -206,7 +218,7 @@ export const layer = Layer.effect(
           ? {}
           : { reviewedAt: maxOptional(current?.reviewedAt, input.reviewedAt) }),
         reviewedFiles: reviewedFiles(input.reviewedFiles, current),
-        timeUpdated: Date.now(),
+        timeUpdated: Math.max(Date.now(), (current?.timeUpdated ?? 0) + 1),
       }
       yield* events.publish(Event.Updated, { sessionID: input.sessionID, state })
       return state

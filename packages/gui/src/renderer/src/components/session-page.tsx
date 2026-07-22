@@ -1,9 +1,7 @@
 import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { PromptPart } from "../lib/store"
-import { EMPTY_VIEW_PANE_RUNTIME_STATE } from "../lib/view-pane-state"
 import { nextPromptHistoryState, pushPromptStash, type GuiPromptStashEntry } from "../lib/prompt-state"
-import type { PromptMentionOption } from "../lib/prompt-autocomplete"
+import { removeTrailingMentionQuery, type PromptMentionOption } from "../lib/prompt-autocomplete"
 import {
   filePartFromFile,
   filePartFromPath,
@@ -20,8 +18,9 @@ import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
+import { SessionPageToolbar } from "./session-page-toolbar"
 import { createSessionSidePanelController } from "./session-side-panel-controller"
-import { SessionToolbar } from "./session-toolbar"
+import { createSessionComposerDraftState } from "./session-composer-draft-state"
 import { createSessionComposerPresentation } from "./session-composer-presentation"
 import { createSessionComposerInputController } from "./session-composer-input-controller"
 import { subscribeSessionBrowserCaptures } from "../lib/session-browser-capture"
@@ -34,83 +33,63 @@ export function SessionPage(props: SessionPageProps) {
   let transcriptExpandedSessionKey = ""
   const models = createSessionModelController(props)
   const sidePanel = createSessionSidePanelController(props)
-  const [localDraftPrompt, setLocalDraftPrompt] = createSignal(props.prompt)
-  const [localDraftParts, setLocalDraftParts] = createSignal<PromptPart[]>([])
   const [stash, setStash] = createSignal<GuiPromptStashEntry[]>(readComposerStash())
-  const [localHistoryIndex, setLocalHistoryIndex] = createSignal(-1)
-  const [localHistoryDraft, setLocalHistoryDraft] = createSignal("")
   const [slashMenuOpen, setSlashMenuOpen] = createSignal(false)
   const [selectedSlashCommand, setSelectedSlashCommand] = createSignal(0)
   const [emptyStateDismissed, setEmptyStateDismissed] = createSignal(false)
   onMount(() => onCleanup(subscribeComposerStash(setStash)))
-  const composerState = () => props.composerState ?? EMPTY_VIEW_PANE_RUNTIME_STATE
-  const draftPrompt = () => props.composerState ? composerState().draft.input : localDraftPrompt()
-  const draftParts = () => props.composerState ? composerState().draft.parts : localDraftParts()
-  const historyIndex = () => props.composerState ? composerState().historyIndex : localHistoryIndex()
-  const historyDraft = () => props.composerState ? composerState().historyDraft : localHistoryDraft()
-  const setDraftPrompt = (value: string | ((current: string) => string)) => {
-    if (!props.updateComposerState) return setLocalDraftPrompt(value)
-    props.updateComposerState((state) => {
-      const next = typeof value === "function" ? value(state.draft.input) : value
-      return { ...state, draft: { ...state.draft, input: next } }
-    })
-  }
-  const setDraftParts = (value: PromptPart[] | ((current: PromptPart[]) => PromptPart[])) => {
-    if (!props.updateComposerState) return setLocalDraftParts(value)
-    props.updateComposerState((state) => {
-      const next = typeof value === "function" ? value(state.draft.parts) : value
-      return { ...state, draft: { ...state.draft, parts: next } }
-    })
-  }
-  const setHistoryIndex = (value: number | ((current: number) => number)) => {
-    if (!props.updateComposerState) return setLocalHistoryIndex(value)
-    props.updateComposerState((state) => ({
-      ...state,
-      historyIndex: typeof value === "function" ? value(state.historyIndex) : value,
-    }))
-  }
-  const setHistoryDraft = (value: string | ((current: string) => string)) => {
-    if (!props.updateComposerState) return setLocalHistoryDraft(value)
-    props.updateComposerState((state) => ({
-      ...state,
-      historyDraft: typeof value === "function" ? value(state.historyDraft) : value,
-    }))
-  }
+  const composerState = createSessionComposerDraftState(props)
+  const draftPrompt = composerState.draftPrompt
+  const draftParts = composerState.draftParts
+  const historyIndex = composerState.historyIndex
+  const historyDraft = composerState.historyDraft
+  const setDraftPrompt = composerState.setDraftPrompt
+  const setDraftParts = composerState.setDraftParts
+  const setHistoryIndex = composerState.setHistoryIndex
+  const setHistoryDraft = composerState.setHistoryDraft
   const running = createMemo(() => props.status === "busy" || props.status === "retry")
   const composerInput = createSessionComposerInputController({
     sessionID: () => session()?.id,
     draft: () => ({ input: draftPrompt(), parts: draftParts() }),
     persistent: !props.composerState,
   })
-  const toolbarSession = createMemo(() => {
-    const selected = session()
-    if (!selected || selected.id.startsWith("pending:")) return
-    return selected
-  })
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
   const { slashQuery, visibleSlashCommands, slashMenuVisible, mentionQuery, mentionOptions, mentionMenuVisible, userHistory, usageLabel } = createSessionComposerPresentation({ props, draftPrompt, slashMenuOpen, blocked })
   const resizeComposer = composerInput.resize
-  const submitComposer = (event: SubmitEvent) => {
+  const submitComposer = async (event: SubmitEvent) => {
     event.preventDefault()
+    const draft = draftPrompt()
     const text = draftText()
-    const parts = draftParts()
+    const parts = [...draftParts()]
     if (blocked() || (!text && parts.length === 0)) return
     if (props.pending && sidePanel.open()) sidePanel.requestPendingOpenHandoff()
     const shellText = text.startsWith("!") ? text.slice(1).trimStart() : undefined
     const promptText = shellText ?? text
-    setEmptyStateDismissed(true)
     setDraftPrompt("")
     setDraftParts([])
-    setHistoryIndex(-1)
-    setHistoryDraft("")
     resizeComposer()
     composerInput.flush()
-    props.submit(event, {
+    const accepted = await props.submit(event, {
       input: promptText,
-      parts: shellText !== undefined ? [] : parts.length ? [...(text ? [{ type: "text" as const, text }] : []), ...parts] : [{ type: "text", text }],
+      parts:
+        shellText !== undefined
+          ? []
+          : parts.length
+            ? [...(text ? [{ type: "text" as const, text }] : []), ...parts]
+            : [{ type: "text", text }],
       ...(shellText !== undefined ? { mode: "shell" } : {}),
     })
+    if (!accepted) {
+      setDraftPrompt((current) => (!draft ? current : current ? `${draft}\n${current}` : draft))
+      setDraftParts((current) => [...parts, ...current])
+      resizeComposer()
+      composerInput.flush()
+      return
+    }
+    setEmptyStateDismissed(true)
+    setHistoryIndex(-1)
+    setHistoryDraft("")
   }
   const runSlashCommand = (command: SessionSlashCommand | undefined) => {
     if (!command || command.disabled) return
@@ -252,34 +231,7 @@ export function SessionPage(props: SessionPageProps) {
   })
   return (
     <div class="page session-page" data-session-id={session()?.id}>
-      <div class="session-page-top">
-        <Show when={toolbarSession()}>
-          {(selected) => (
-            <SessionToolbar
-              session={selected()}
-              projectName={props.projectName}
-              pending={props.pending}
-              showTimestamps={props.showTimestamps}
-              showThinking={props.showThinking}
-              showToolDetails={props.showToolDetails}
-              showScrollbar={props.showScrollbar}
-              showGenericToolOutput={props.showGenericToolOutput}
-              renameSession={props.renameSession}
-              moveSession={props.moveSession}
-              deleteSession={props.deleteSession}
-              readyForReview={props.readyForReview}
-              markSessionReviewed={props.markSessionReviewed}
-              toggleTimestamps={props.toggleTimestamps}
-              toggleThinking={props.toggleThinking}
-              toggleToolDetails={props.toggleToolDetails}
-              toggleScrollbar={props.toggleScrollbar}
-              toggleGenericToolOutput={props.toggleGenericToolOutput}
-              sidePanelOpen={sidePanel.enabled() ? sidePanel.open() : undefined}
-              toggleSidePanel={sidePanel.enabled() ? sidePanel.toggle : undefined}
-            />
-          )}
-        </Show>
-      </div>
+      <SessionPageToolbar props={props} sidePanel={sidePanel} />
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
         <div class="session-workspace">
           <TranscriptPanel
@@ -390,7 +342,4 @@ export function SessionPage(props: SessionPageProps) {
       </Show>
     </div>
   )
-}
-function removeTrailingMentionQuery(input: string) {
-  return input.replace(/(^|\s)@[^\s@]*$/, "$1").replace(/[ \t]+$/, "")
 }

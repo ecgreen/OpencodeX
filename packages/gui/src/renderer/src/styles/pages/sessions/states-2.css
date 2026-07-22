@@ -248,28 +248,7 @@
   border-radius: inherit;
   background: linear-gradient(112deg,transparent 30%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 42%,color-mix(in srgb,var(--session-state-color) 6%,transparent) 50%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 58%,transparent 70%);
   background-size: 240% 100%;
-  animation: sidebar-review-shine 8s cubic-bezier(.22,1,.36,1) infinite;
-}
-
-@keyframes sidebar-review-shine {
-  0%,8% {
-    opacity: 0;
-    background-position: 130% 0;
-  }
-
-  12% {
-    opacity: 1;
-  }
-
-  76% {
-    opacity: 1;
-    background-position: -30% 0;
-  }
-
-  80%,to {
-    opacity: 0;
-    background-position: -30% 0;
-  }
+  animation: ready-card-shine 8s cubic-bezier(.22,1,.36,1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

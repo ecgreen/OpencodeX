@@ -79,6 +79,15 @@ describe("GUI session presentation controller", () => {
     expect(controller.visibleSessionIDs()).toEqual([])
   })
 
+  test("evicts visible sessions that were never cached", () => {
+    const controller = createSessionPresentationController()
+    controller.reconcile("epoch-1:scope-a", new Set(["visible"]))
+    controller.setVisible(["visible"])
+
+    expect(controller.reconcile("epoch-1:scope-a", new Set())).toEqual(["visible"])
+    expect(controller.visibleSessionIDs()).toEqual([])
+  })
+
   test("defers release and rechecks retained presentation state before applying it", async () => {
     const retained = new Set<string>()
     const released: string[] = []

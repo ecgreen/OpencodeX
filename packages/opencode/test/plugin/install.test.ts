@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
+import { pathToFileURL } from "url"
 import { parse as parseJsonc } from "jsonc-parser"
 import { Filesystem } from "@/util/filesystem"
-import { createPlugTask, type PlugCtx, type PlugDeps } from "../../src/cli/cmd/plug"
+import {
+  createPlugTask,
+  installPluginThroughCoordinator,
+  type PlugCtx,
+  type PlugDeps,
+} from "../../src/cli/cmd/plug"
+import { patchPluginConfig } from "../../src/plugin/install"
 import { tmpdir } from "../fixture/fixture"
 
 function deps(global: string, target: string | Error): PlugDeps {
@@ -109,6 +116,34 @@ async function read(file: string) {
 }
 
 describe("plugin.install.task", () => {
+  test("routes through an active coordinator without a direct config write", async () => {
+    await using tmp = await tmpdir()
+    const manifest = {
+      version: 2 as const,
+      key: "test",
+      directory: tmp.path,
+      database: path.join(tmp.path, "opencode.db"),
+      pid: process.pid,
+      url: "http://127.0.0.1:4096",
+      username: "user",
+      password: "password",
+      token: "token",
+      createdAt: new Date().toISOString(),
+    }
+    const calls: string[] = []
+    const result = await installPluginThroughCoordinator({ mod: "acme", global: true }, ctx(tmp.path), {
+      active: async () => manifest,
+      install: async (active, input, context) => {
+        calls.push(active.key, input.mod, String(input.global), context.directory)
+        return { ok: true, spec: "acme@1.0.0", dir: tmp.path, tui: false, server: true, items: [] }
+      },
+    })
+
+    expect(result).toMatchObject({ ok: true, spec: "acme@1.0.0" })
+    expect(calls).toEqual(["test", "acme", "true", tmp.path])
+    expect(await Filesystem.exists(path.join(tmp.path, ".opencode", "opencode.jsonc"))).toBe(false)
+  })
+
   test("writes both server and tui config entries", async () => {
     await using tmp = await tmpdir()
     const target = await plugin(tmp.path, ["server", "tui"])
@@ -566,5 +601,66 @@ describe("plugin.install.task", () => {
     const ok = await run(ctx(tmp.path))
     expect(ok).toBe(false)
     expect(await Filesystem.exists(path.join(tmp.path, ".opencode", "opencode.jsonc"))).toBe(false)
+  })
+
+  test("rolls back the server config when the tui write fails", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, ".opencode")
+    const server = path.join(dir, "opencode.jsonc")
+    const tui = path.join(dir, "tui.jsonc")
+    const serverBefore = JSON.stringify({ plugin: ["server-seed"] }, null, 2)
+    const tuiBefore = JSON.stringify({ plugin: ["tui-seed"] }, null, 2)
+    await fs.mkdir(dir, { recursive: true })
+    await Bun.write(server, serverBefore)
+    await Bun.write(tui, tuiBefore)
+
+    const result = await patchPluginConfig(
+      {
+        spec: "acme@1.0.0",
+        targets: [{ kind: "server" }, { kind: "tui" }],
+        vcs: "git",
+        worktree: tmp.path,
+        directory: tmp.path,
+      },
+      {
+        readText: (file) => Filesystem.readText(file),
+        write: async (file, text) => {
+          if (file === tui) throw new Error("simulated tui write failure")
+          await Filesystem.write(file, text)
+        },
+        remove: (file) => Filesystem.remove(file),
+        exists: (file) => Filesystem.exists(file),
+        files: (root, name) => [path.join(root, `${name}.jsonc`), path.join(root, `${name}.json`)],
+      },
+    )
+
+    expect(result.ok).toBe(false)
+    expect(await Bun.file(server).text()).toBe(serverBefore)
+    expect(await Bun.file(tui).text()).toBe(tuiBefore)
+  })
+
+  test("rejects a local config symlink outside the selected worktree", async () => {
+    await using tmp = await tmpdir()
+    const target = await plugin(tmp.path, ["server"])
+    const outside = path.join(tmp.path, "outside")
+    const worktree = path.join(tmp.path, "worktree")
+    await fs.mkdir(outside)
+    await fs.mkdir(worktree)
+    await fs.symlink(outside, path.join(worktree, ".opencode"), process.platform === "win32" ? "junction" : "dir")
+    const run = createPlugTask({ mod: "acme@1.2.3" }, deps(path.join(tmp.path, "global"), target))
+
+    expect(await run(ctx(worktree))).toBe(false)
+    expect(await Filesystem.exists(path.join(outside, "opencode.jsonc"))).toBe(false)
+  })
+
+  test("resolves relative plugin paths against the authoritative directory", async () => {
+    await using tmp = await tmpdir()
+    const target = await plugin(tmp.path, ["server"])
+    const run = createPlugTask({ mod: "./plugin" }, deps(path.join(tmp.path, "global"), target))
+
+    expect(await run(ctx(tmp.path))).toBe(true)
+    expect((await read(path.join(tmp.path, ".opencode", "opencode.jsonc"))).plugin).toEqual([
+      pathToFileURL(target).href,
+    ])
   })
 })

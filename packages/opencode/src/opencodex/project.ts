@@ -3,11 +3,13 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ProjectV2 } from "@opencode-ai/core/project"
+import { AbsolutePath } from "@opencode-ai/core/schema"
+import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Context, Effect, Layer, Option, Schema, Struct } from "effect"
+import { Context, Effect, Layer, Option, Schema, Semaphore, Struct } from "effect"
 import { inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -141,8 +143,8 @@ function mergeMetadata(input: { session?: Record<string, unknown>; project: Reco
     ...input.session,
     ...input.project,
     opencodex: {
-      ...(isRecord(input.project.opencodex) ? input.project.opencodex : {}),
       ...(isRecord(input.session?.opencodex) ? input.session.opencodex : {}),
+      ...(isRecord(input.project.opencodex) ? input.project.opencodex : {}),
     },
   }
 }
@@ -182,6 +184,7 @@ export const layer = Layer.effect(
     const store = yield* InstanceStore.Service
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
+    const mutationLock = Semaphore.makeUnsafe(1)
 
     const validate = Effect.fn("OpencodeXProject.validate")(function* (input: ValidateInput) {
       const folders = yield* Effect.forEach(
@@ -361,16 +364,37 @@ export const layer = Layer.effect(
       return yield* hydrate(row)
     })
 
-    const create = Effect.fn("OpencodeXProject.create")(function* (input: CreateInput) {
+    const createUnlocked = Effect.fnUntraced(function* (input: CreateInput) {
       const folders = yield* normalizeFolders({ folders: input.folders ?? [] })
       const { project: item } = yield* project.fromDirectory(folders[0] ?? input.directory ?? process.cwd())
       const id = `opx_${Identifier.ascending()}`
       const name = input.name?.trim()
-      yield* OpencodeXProjectFolder.createProject(db, { id, projectID: item.id, name: name || undefined })
-      yield* OpencodeXProjectFolder.replaceFolders(db, { opencodexProjectID: id, projectID: item.id, folders })
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              yield* OpencodeXProjectFolder.createProject(transaction, {
+                id,
+                projectID: item.id,
+                name: name || undefined,
+              })
+              yield* OpencodeXProjectFolder.replaceFolders(transaction, {
+                opencodexProjectID: id,
+                projectID: item.id,
+                folders,
+              })
+              return yield* events.commit(Event.Created, { projectID: id })
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.catchTag("SqlError", Effect.die)),
+      )
       const result = yield* get(id)
-      yield* events.publish(Event.Created, { projectID: id })
+      yield* events.broadcast(event)
       return result
+    })
+
+    const create = Effect.fn("OpencodeXProject.create")(function* (input: CreateInput) {
+      return yield* mutationLock.withPermits(1)(createUnlocked(input))
     })
 
     const metadata = Effect.fn("OpencodeXProject.metadata")(function* (projectID: string) {
@@ -386,54 +410,102 @@ export const layer = Layer.effect(
       }
     })
 
-    const update = Effect.fn("OpencodeXProject.update")(function* (input: UpdateInput) {
-      const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
-      if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
+    const updateUnlocked = Effect.fnUntraced(function* (input: UpdateInput) {
       const folders = input.folders
         ? yield* normalizeFolders({ projectID: input.projectID, folders: input.folders })
         : undefined
-      const upstream =
-        folders && folders.length > 0
-          ? (yield* project.fromDirectory(folders[0])).project
-          : yield* project.get(current.project_id)
-      if (!upstream) return yield* new Project.NotFoundError({ projectID: current.project_id })
+      const folderProject = folders && folders.length > 0 ? (yield* project.fromDirectory(folders[0])).project : undefined
       const name = input.name?.trim()
-      yield* OpencodeXProjectFolder.updateProject(db, {
-        id: input.projectID,
-        projectID: upstream.id,
-        name: name === undefined ? current.name : name || null,
-      })
-      if (folders) {
-        yield* OpencodeXProjectFolder.replaceFolders(db, {
-          opencodexProjectID: input.projectID,
-          projectID: upstream.id,
-          folders,
-        })
-      }
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* OpencodeXProjectFolder.getProject(transaction, input.projectID)
+              if (!current) {
+                return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
+              }
+              const upstream = folderProject ?? (yield* project.get(current.project_id))
+              if (!upstream) return yield* new Project.NotFoundError({ projectID: current.project_id })
+              yield* OpencodeXProjectFolder.updateProject(transaction, {
+                id: input.projectID,
+                projectID: upstream.id,
+                name: name === undefined ? current.name : name || null,
+              })
+              if (folders) {
+                yield* OpencodeXProjectFolder.replaceFolders(transaction, {
+                  opencodexProjectID: input.projectID,
+                  projectID: upstream.id,
+                  folders,
+                })
+              }
+              return yield* events.commit(Event.Updated, { projectID: input.projectID })
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.catchTag("SqlError", Effect.die)),
+      )
       const result = yield* get(input.projectID)
-      yield* events.publish(Event.Updated, { projectID: input.projectID })
+      yield* events.broadcast(event)
+      return result
+    })
+
+    const update = Effect.fn("OpencodeXProject.update")(function* (input: UpdateInput) {
+      return yield* mutationLock.withPermits(1)(updateUnlocked(input))
+    })
+
+    const reorderUnlocked = Effect.fnUntraced(function* (input: ReorderInput) {
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const rows = yield* OpencodeXProjectFolder.listProjects(transaction)
+              const knownIDs = new Set(rows.map((row) => row.id))
+              const requestedIDs = [...new Set(input.projectIDs)].filter((id) => knownIDs.has(id))
+              yield* OpencodeXProjectFolder.reorderProjects(transaction, [
+                ...requestedIDs,
+                ...rows.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
+              ])
+              return yield* events.commit(Event.Reordered, { collectionID: "opencodex.projects" })
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.catchTag("SqlError", Effect.die)),
+      )
+      const result = yield* list()
+      yield* events.broadcast(event)
       return result
     })
 
     const reorder = Effect.fn("OpencodeXProject.reorder")(function* (input: ReorderInput) {
-      const rows = yield* OpencodeXProjectFolder.listProjects(db)
-      const knownIDs = new Set(rows.map((row) => row.id))
-      const requestedIDs = [...new Set(input.projectIDs)].filter((id) => knownIDs.has(id))
-      yield* OpencodeXProjectFolder.reorderProjects(db, [
-        ...requestedIDs,
-        ...rows.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
-      ])
-      const result = yield* list()
-      yield* events.publish(Event.Reordered, { collectionID: "opencodex.projects" })
-      return result
+      return yield* mutationLock.withPermits(1)(reorderUnlocked(input))
     })
 
-    const createSession = Effect.fn("OpencodeXProject.createSession")(function* (input: CreateSessionInput) {
+    const createSessionUnlocked = Effect.fnUntraced(function* (input: CreateSessionInput) {
       const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
       if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
       if (input.sessionID) {
         const existing = yield* sessions.get(input.sessionID).pipe(Effect.option)
-        if (Option.isSome(existing)) return existing.value
+        if (Option.isSome(existing)) {
+          if (!input.hidden) {
+            const event = yield* events.barrier(
+              db.transaction(
+                (transaction) =>
+                  Effect.gen(function* () {
+                    yield* OpencodeXProjectFolder.addSession(transaction, {
+                      opencodexProjectID: input.projectID,
+                      sessionID: existing.value.id,
+                      path: existing.value.directory,
+                    })
+                    return yield* events.commit(Event.SessionAssigned, {
+                      projectID: input.projectID,
+                      sessionID: existing.value.id,
+                    })
+                  }),
+                { behavior: "immediate" },
+              ).pipe(Effect.catchTag("SqlError", Effect.die)),
+            )
+            yield* events.broadcast(event)
+          }
+          return existing.value
+        }
       }
       const directory = OpencodeXProjectFolder.normalizeFolderPath(input.directory)
       if (!(yield* fs.isDir(directory).pipe(Effect.orDie))) {
@@ -455,43 +527,113 @@ export const layer = Layer.effect(
         }),
       )
       if (!input.hidden) {
-        yield* OpencodeXProjectFolder.addSession(db, {
-          opencodexProjectID: input.projectID,
-          sessionID: result.id,
-          path: directory,
-        })
-        yield* events.publish(Event.SessionAssigned, { projectID: input.projectID, sessionID: result.id })
+        const event = yield* events.barrier(
+          db.transaction(
+            (transaction) =>
+              Effect.gen(function* () {
+                yield* OpencodeXProjectFolder.addSession(transaction, {
+                  opencodexProjectID: input.projectID,
+                  sessionID: result.id,
+                  path: directory,
+                })
+                return yield* events.commit(Event.SessionAssigned, { projectID: input.projectID, sessionID: result.id })
+              }),
+            { behavior: "immediate" },
+          ).pipe(Effect.catchTag("SqlError", Effect.die)),
+        )
+        yield* events.broadcast(event)
       }
       return result
     })
 
+    const createSession = Effect.fn("OpencodeXProject.createSession")(function* (input: CreateSessionInput) {
+      return yield* mutationLock.withPermits(1)(createSessionUnlocked(input))
+    })
+
+    const moveSessionUnlocked = Effect.fnUntraced(function* (input: MoveSessionInput) {
+      const result = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* OpencodeXProjectFolder.getProject(transaction, input.projectID)
+              if (!current) {
+                return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
+              }
+              const session = yield* sessions.get(input.sessionID)
+              const folders = yield* OpencodeXProjectFolder.listFolders(transaction, input.projectID)
+              const next = {
+                ...session,
+                metadata: mergeMetadata({
+                  session: session.metadata,
+                  project: {
+                    opencodex: {
+                      projectID: input.projectID,
+                      ...(current.name ? { name: current.name } : {}),
+                      folders: folders.map((folder) => folder.path),
+                    },
+                  },
+                }),
+                time: { ...session.time, updated: Date.now() },
+              }
+              yield* OpencodeXProjectFolder.addSession(transaction, {
+                opencodexProjectID: input.projectID,
+                sessionID: session.id,
+                path: session.directory,
+              })
+              const sessionEvent = yield* events.commit(
+                SessionLegacy.Event.Updated,
+                { sessionID: session.id, info: next },
+                {
+                  location: {
+                    directory: AbsolutePath.make(next.directory),
+                    ...(next.workspaceID ? { workspaceID: next.workspaceID } : {}),
+                  },
+                },
+              )
+              const assignmentEvent = yield* events.commit(Event.SessionAssigned, {
+                projectID: input.projectID,
+                sessionID: session.id,
+              })
+              return { next, sessionEvent, assignmentEvent }
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.catchTag("SqlError", Effect.die)),
+      )
+      yield* events.broadcast(result.sessionEvent)
+      yield* events.broadcast(result.assignmentEvent)
+      return result.next
+    })
+
     const moveSession = Effect.fn("OpencodeXProject.moveSession")(function* (input: MoveSessionInput) {
-      const current = yield* OpencodeXProjectFolder.getProject(db, input.projectID)
-      if (!current) return yield* new Project.NotFoundError({ projectID: ProjectV2.ID.make(input.projectID) })
-      const session = yield* sessions.get(input.sessionID)
-      yield* sessions.setMetadata({
-        sessionID: session.id,
-        metadata: mergeMetadata({ session: session.metadata, project: yield* metadata(input.projectID) }),
-      })
-      yield* OpencodeXProjectFolder.addSession(db, {
-        opencodexProjectID: input.projectID,
-        sessionID: session.id,
-        path: session.directory,
-      })
-      yield* events.publish(Event.SessionAssigned, { projectID: input.projectID, sessionID: session.id })
-      return session
+      return yield* mutationLock.withPermits(1)(moveSessionUnlocked(input))
+    })
+
+    const removeProjectUnlocked = Effect.fnUntraced(function* (projectID: string) {
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              yield* OpencodeXProjectFolder.removeProject(transaction, projectID)
+              return yield* events.commit(Event.Deleted, { projectID })
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.catchTag("SqlError", Effect.die)),
+      )
+      yield* events.broadcast(event)
+      return true
     })
 
     const removeProject = Effect.fn("OpencodeXProject.removeProject")(function* (projectID: string) {
-      yield* OpencodeXProjectFolder.removeProject(db, projectID)
-      yield* events.publish(Event.Deleted, { projectID })
+      return yield* mutationLock.withPermits(1)(removeProjectUnlocked(projectID))
+    })
+
+    const removeSessionUnlocked = Effect.fnUntraced(function* (sessionID: SessionID) {
+      yield* sessions.remove(sessionID).pipe(Effect.catchTag("NotFoundError", () => Effect.void))
       return true
     })
 
     const removeSession = Effect.fn("OpencodeXProject.removeSession")(function* (sessionID: SessionID) {
-      yield* OpencodeXProjectFolder.removeSession(db, sessionID)
-      yield* sessions.remove(sessionID).pipe(Effect.catchTag("NotFoundError", () => Effect.void))
-      return true
+      return yield* mutationLock.withPermits(1)(removeSessionUnlocked(sessionID))
     })
 
     return Service.of({

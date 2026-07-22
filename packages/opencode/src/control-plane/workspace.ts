@@ -2,7 +2,7 @@ import { Context, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effe
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { Database } from "@opencode-ai/core/database/database"
-import { asc } from "drizzle-orm"
+import { and, asc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { Project } from "@/project/project"
@@ -89,6 +89,7 @@ export const SessionWarpInput = Schema.Struct({
   workspaceID: Schema.NullOr(WorkspaceV2.ID),
   sessionID: SessionID,
   copyChanges: Schema.optional(Schema.Boolean),
+  projectID: Schema.optional(ProjectV2.ID),
 })
 export type SessionWarpInput = Schema.Schema.Type<typeof SessionWarpInput>
 
@@ -105,6 +106,10 @@ export class WorkspaceNotFoundError extends Schema.TaggedErrorClass<WorkspaceNot
     workspaceID: WorkspaceV2.ID,
   },
 ) {}
+
+export class WorkspaceScopeError extends Schema.TaggedErrorClass<WorkspaceScopeError>()("WorkspaceScopeError", {
+  message: Schema.String,
+}) {}
 
 export class SessionEventsNotFoundError extends Schema.TaggedErrorClass<SessionEventsNotFoundError>()(
   "WorkspaceSessionEventsNotFoundError",
@@ -138,6 +143,7 @@ export class SyncAbortedError extends Schema.TaggedErrorClass<SyncAbortedError>(
 type CreateError = Auth.AuthError
 type SessionWarpError =
   | WorkspaceNotFoundError
+  | WorkspaceScopeError
   | SessionEventsNotFoundError
   | SessionWarpHttpError
   | Vcs.PatchApplyError
@@ -151,7 +157,7 @@ export interface Interface {
   readonly list: (project: Project.Info) => Effect.Effect<Info[]>
   readonly syncList: (project: Project.Info) => Effect.Effect<void>
   readonly get: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
-  readonly remove: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
+  readonly remove: (id: WorkspaceV2.ID, projectID?: ProjectV2.ID) => Effect.Effect<Info | undefined>
   readonly status: () => Effect.Effect<ConnectionStatus[]>
   readonly isSyncing: (workspaceID: WorkspaceV2.ID) => Effect.Effect<boolean>
   readonly waitForSync: (
@@ -603,15 +609,28 @@ export const layer = Layer.effect(
         })
 
         const current = yield* db
-          .select({ workspaceID: SessionTable.workspace_id })
+          .select({ workspaceID: SessionTable.workspace_id, projectID: SessionTable.project_id })
           .from(SessionTable)
           .where(eq(SessionTable.id, input.sessionID))
           .get()
           .pipe(Effect.orDie)
+        if (input.projectID && current?.projectID !== input.projectID) {
+          return yield* new WorkspaceScopeError({ message: "Session does not belong to the active project" })
+        }
+        const destination = input.workspaceID ? yield* get(input.workspaceID) : undefined
+        if (input.workspaceID && (!destination || (input.projectID && destination.projectID !== input.projectID))) {
+          return yield* new WorkspaceNotFoundError({
+            message: `Workspace not found: ${input.workspaceID}`,
+            workspaceID: input.workspaceID,
+          })
+        }
 
         if (current?.workspaceID) {
           const previous = yield* get(current.workspaceID)
           if (previous) {
+            if (input.projectID && previous.projectID !== input.projectID) {
+              return yield* new WorkspaceScopeError({ message: "Source workspace does not belong to the active project" })
+            }
             const target = yield* WorkspaceAdapterRuntime.target(previous)
 
             if (target.type === "remote") {
@@ -678,12 +697,8 @@ export const layer = Layer.effect(
         }
 
         const workspaceID = input.workspaceID
-        const space = yield* get(workspaceID)
-        if (!space)
-          return yield* new WorkspaceNotFoundError({
-            message: `Workspace not found: ${workspaceID}`,
-            workspaceID,
-          })
+        const space = destination
+        if (!space) return yield* Effect.die(new Error(`Validated workspace is missing: ${workspaceID}`))
 
         const target = yield* WorkspaceAdapterRuntime.target(space)
 
@@ -889,7 +904,14 @@ export const layer = Layer.effect(
       return fromRow(row)
     })
 
-    const remove = Effect.fn("Workspace.remove")(function* (id: WorkspaceV2.ID) {
+    const remove = Effect.fn("Workspace.remove")(function* (id: WorkspaceV2.ID, projectID?: ProjectV2.ID) {
+      const row = yield* db
+        .select()
+        .from(WorkspaceTable)
+        .where(and(eq(WorkspaceTable.id, id), projectID ? eq(WorkspaceTable.project_id, projectID) : undefined))
+        .get()
+        .pipe(Effect.orDie)
+      if (!row) return
       const sessions = yield* db
         .select({ id: SessionTable.id, parentID: SessionTable.parent_id })
         .from(SessionTable)
@@ -903,9 +925,6 @@ export const layer = Layer.effect(
           session.remove(sessionInfo.id).pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.void)),
         { discard: true },
       )
-
-      const row = yield* db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, id)).get().pipe(Effect.orDie)
-      if (!row) return
 
       yield* stopSync(id)
 

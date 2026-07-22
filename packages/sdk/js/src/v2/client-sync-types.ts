@@ -41,6 +41,7 @@ export type ClientSessionDetailState = {
   messages: Record<string, Message>
   partIDs: Record<string, string[]>
   parts: Record<string, Part>
+  livePartText?: Record<string, { base: string; text: string }>
 }
 
 export type ClientStateSyncLifecycle = {
@@ -103,6 +104,8 @@ export type ClientCatalogSnapshot = {
 }
 
 export type ClientCapabilitiesSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
   revision: string
   providers: Provider[]
   connectedProviderIDs: string[]
@@ -123,6 +126,7 @@ export type ClientStateSyncState = {
   scope?: OpencodeXStateScope
   epoch?: string
   cursor?: string
+  position?: number
   digest?: string
   projects: ClientEntityState<OpencodeXCatalogProject>
   sessions: ClientEntityState<Session>
@@ -240,4 +244,5 @@ export type ClientStateSyncOptions = {
   reconnectJitter?: () => number
   clock?: () => number
   sessionRefreshDelayMs?: number
+  pollIntervalMs?: number
 }

@@ -8,6 +8,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
 import { OpencodeXJob } from "@/opencodex/job"
@@ -64,6 +65,7 @@ export const swarmExecutionLayer = Layer.effect(
     const sessions = yield* Session.Service
     const prompt = yield* SessionPrompt.Service
     const background = yield* BackgroundJob.Service
+    const events = yield* EventV2Bridge.Service
     const status = yield* SwarmStatus
 
 function metadataString(job: OpencodeXJob.Info, key: string) {
@@ -200,8 +202,8 @@ const markRunning = Effect.fn("OpencodeXSwarm.markPhaseRunning")(function* (
   const swarmID = job.swarmID
   const runID = job.metadata.runID
   const now = Date.now()
-  const afterCommit = yield* db
-    .transaction(
+  const afterCommit = yield* events.barrier(
+    db.transaction(
       (transaction) =>
         Effect.gen(function* () {
           if (job.roleID) {
@@ -243,8 +245,8 @@ const markRunning = Effect.fn("OpencodeXSwarm.markPhaseRunning")(function* (
           })
         }),
       { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+    ).pipe(Effect.orDie),
+  )
   yield* afterCommit
 })
 

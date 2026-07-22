@@ -1,6 +1,6 @@
 import type { Part, Session } from "@opencode-ai/sdk/v2"
 import type { useSync } from "@tui/context/sync"
-import { NEW_RESULT_COLOR, statusColor, statusLabel } from "./opencodex-session-status"
+import { REVIEW_READY_COLOR, isReviewReadyStatus, statusColor, statusLabel } from "./opencodex-session-status"
 import type { OpencodeXProjectInfo, OpencodeXSwarmInfo, SidebarStatus } from "./opencodex-sidebar-types"
 
 export function isSessionNotFound(error: unknown) {
@@ -55,7 +55,7 @@ export function projectTitle(project: OpencodeXProjectInfo) {
 }
 
 export function sidebarStatusColor(status: SidebarStatus) {
-  return status === "unviewed" || status === "review_ready" || status === "needs_review" ? NEW_RESULT_COLOR : statusColor(status)
+  return isReviewReadyStatus(status) ? REVIEW_READY_COLOR : statusColor(status)
 }
 
 export function sidebarStatusLabel(status: SidebarStatus) {

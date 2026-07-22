@@ -97,10 +97,12 @@ export function OpencodeXViewRoute() {
     setLocalFocus(id)
     const item = items().find((candidate) => viewItemID(candidate) === id)
     if (item?.kind !== "session") return
+    const current = view()
+    if (!current) return
     void sdk
       .request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
         method: "PATCH",
-        body: JSON.stringify({ focusedSessionID: item.session.id }),
+        body: JSON.stringify({ expectedTimeUpdated: current.timeUpdated, focusedSessionID: item.session.id }),
       })
       .catch(() => {
         setLocalFocus(undefined)
@@ -116,12 +118,14 @@ export function OpencodeXViewRoute() {
 
   const materializePendingSession = async (slot: PendingViewSession, session: SyncSession) => {
     const current = view()
+    if (!current) return
     const pending = pendingViewSessions(current).filter((item) => item.id !== slot.id)
     const sessionIDs = [...(current?.sessionIDs ?? []).filter((sessionID) => sessionID !== session.id), session.id]
     await sdk
       .request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
         method: "PATCH",
         body: JSON.stringify({
+          expectedTimeUpdated: current.timeUpdated,
           sessionIDs,
           focusedSessionID: session.id,
           metadata: metadataWithPendingSessions(current?.metadata, pending),

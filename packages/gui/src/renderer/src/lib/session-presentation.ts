@@ -60,14 +60,16 @@ export function createSessionPresentationController(
     },
     reconcile(nextScope, availableSessionIDs) {
       if (scope !== nextScope) {
-        const evicted = [...access.keys()]
+        const evicted = [...new Set([...access.keys(), ...visible])]
         scope = nextScope
         visible.clear()
         access.clear()
         abortLoads()
         return evicted
       }
-      const evicted = [...access.keys()].filter((sessionID) => !availableSessionIDs.has(sessionID))
+      const evicted = [...new Set([...access.keys(), ...visible])].filter(
+        (sessionID) => !availableSessionIDs.has(sessionID),
+      )
       evicted.forEach((sessionID) => {
         visible.delete(sessionID)
         access.delete(sessionID)

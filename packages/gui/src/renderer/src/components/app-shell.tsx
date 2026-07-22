@@ -13,6 +13,7 @@ import {
   measurePerformance,
 } from "../lib/performance"
 import { projectNameForSession } from "../lib/project-name"
+import { shouldShowConnectionWarning } from "../lib/connection-warning"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
 import type { GuiSnapshot } from "../lib/store"
 import { AppLoadingSkeleton } from "./app-loading"
@@ -241,11 +242,7 @@ export function AppShell(props: { model: GuiAppModel }) {
       />
       <main class="stage" data-layout={model.navigation.layoutMode()}>
         <Show
-          when={
-            model.authoritative.state()?.lifecycle.status === "reconnecting" ||
-            (model.authoritative.state()?.lifecycle.status === "error" &&
-              model.authoritative.state()?.lifecycle.data === "stale")
-          }
+          when={shouldShowConnectionWarning(model.authoritative.state()?.lifecycle)}
         >
           <div class="sync-status-banner" role="status" aria-live="polite">
             <span>

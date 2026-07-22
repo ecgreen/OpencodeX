@@ -198,12 +198,25 @@
   color: transparent;
 }
 
-.dashboard-status-card.status-ready-for-review.interactive:hover strong {
-  color: transparent;
+:is(.dashboard-status-card,.dashboard-view-card).status-ready-for-review {
+  overflow: hidden;
 }
 
-.dashboard-status-card.status-ready-for-review.interactive:focus-within strong {
-  color: transparent;
+:is(.dashboard-status-card,.dashboard-view-card).status-ready-for-review::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(112deg,transparent 30%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 42%,color-mix(in srgb,var(--session-state-color) 7%,transparent) 50%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 58%,transparent 70%);
+  background-size: 240% 100%;
+  animation: ready-card-shine 8s cubic-bezier(.22,1,.36,1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.dashboard-status-card,.dashboard-view-card).status-ready-for-review::after {
+    animation: none;
+  }
 }
 
 .dashboard-status-card.status-needs-review.interactive:hover strong {

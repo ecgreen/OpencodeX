@@ -53,7 +53,12 @@ export function createViewController(input: {
   })
   const sessions = createMemo(() => viewSessionsInOrder(activeView()).slice(0, 8))
   const items = createMemo<ViewItem[]>(() => orderedViewItems(activeView(), sessions()))
-  const loadKey = createMemo(() => viewSessionsSyncKey(activeView()?.id, sessions()))
+  const loadKey = createMemo(() => {
+    const state = input.authoritative.state()
+    const key = viewSessionsSyncKey(activeView()?.id, sessions())
+    if (!key || state?.phase !== "ready" || !state.epoch || !state.scope) return ""
+    return `${state.epoch}:${state.scope.projectID}:${state.scope.workspaceID ?? ""}:${state.scope.directory}:${key}`
+  })
   const membershipKey = createMemo(() => viewItemsMembershipKey(activeView()?.id, items()))
   const focusedSession = createMemo(() =>
     focusedViewItemID({ localID: focusedSessionID(), persistedID: activeView()?.focusedSessionID, items: items() }),
@@ -149,7 +154,7 @@ export function createViewController(input: {
     event.preventDefault()
     const client = input.authoritative.client()
     const paneID = viewItemID(item)
-    await runViewPromptAction({
+    return runViewPromptAction({
       gui: client,
       item,
       view: activeView(),
@@ -300,7 +305,7 @@ export function createViewController(input: {
       focusPersistTimer = undefined
       const client = input.authoritative.client()
       if (!client) return
-      void updateViewFocus(client, view.id, sessionID).catch(() => {
+      void updateViewFocus(client, view.id, Number(view.timeUpdated), sessionID).catch(() => {
         setFocusedSessionID("")
         void input.authoritative.refresh().catch(() => undefined)
       })

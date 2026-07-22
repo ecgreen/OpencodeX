@@ -25,7 +25,12 @@ import { Image } from "../../src/image/image"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "@opencode-ai/core/session/sql"
+import {
+  SessionCommandTable,
+  SessionExecutionTable,
+  SessionMessageTable,
+  SessionTable,
+} from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -155,7 +160,10 @@ const lsp = Layer.succeed(
   }),
 )
 
-const status = SessionStatus.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer))
+const status = SessionStatus.layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provideMerge(EventV2Bridge.defaultLayer),
+)
 const run = SessionRunState.layer.pipe(Layer.provide(status))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
@@ -461,6 +469,137 @@ noLLMServer.instance(
       if (result.info.role === "assistant") expect(result.info.finish).toBe("stop")
     }),
   { config: cfg },
+)
+
+it.instance("promptAsync persists its message and execution intent before returning", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "durable async" }],
+    })
+
+    const command = yield* db
+      .select()
+      .from(SessionCommandTable)
+      .where(eq(SessionCommandTable.session_id, chat.id))
+      .get()
+      .pipe(Effect.orDie)
+    expect(command?.status).toMatch(/queued|running/)
+    expect((yield* sessions.messages({ sessionID: chat.id })).some((message) => message.info.id === command?.message_id)).toBe(
+      true,
+    )
+
+    yield* llm.wait(1)
+    yield* prompt.cancel(chat.id)
+  }),
+)
+
+it.instance("cancel marks both active and queued prompt intents terminal", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "active async" }],
+    })
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "queued async" }],
+    })
+    yield* llm.wait(1)
+    yield* prompt.cancel(chat.id)
+
+    const commands = yield* db
+      .select({ status: SessionCommandTable.status })
+      .from(SessionCommandTable)
+      .where(eq(SessionCommandTable.session_id, chat.id))
+      .all()
+      .pipe(Effect.orDie)
+    expect(commands).toHaveLength(2)
+    expect(commands.every((command) => command.status === "cancelled")).toBe(true)
+    yield* Effect.sleep(100)
+    expect((yield* llm.inputs).length).toBe(1)
+  }),
+)
+
+it.instance("recover launches an accepted queued prompt intent", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+    const message = yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "recover async" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .transaction(
+        (transaction) =>
+          Effect.gen(function* () {
+            yield* transaction
+              .insert(SessionCommandTable)
+              .values({
+                id: "sec_recovery_test",
+                session_id: chat.id,
+                message_id: message.info.id,
+                project_id: session.project_id,
+                directory: session.directory,
+                status: "queued",
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+            yield* transaction
+              .insert(SessionExecutionTable)
+              .values({
+                session_id: chat.id,
+                project_id: session.project_id,
+                directory: session.directory,
+                state: "queued",
+                queued_at: now,
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+
+    yield* prompt.recover()
+    yield* llm.wait(1)
+    expect(
+      yield* db
+        .select({ status: SessionCommandTable.status })
+        .from(SessionCommandTable)
+        .where(eq(SessionCommandTable.id, "sec_recovery_test"))
+        .get()
+        .pipe(Effect.orDie),
+    ).toEqual({ status: "running" })
+    yield* prompt.cancel(chat.id)
+  }),
 )
 
 it.instance("loop exits without an LLM request for interrupted orphan tool calls", () =>

@@ -291,7 +291,11 @@ export function createAuthoritativeStateController(input: {
         setClient(gui)
         setSnapshot(emptyGuiSnapshot())
         setLoading("Loading workspace")
-        stateSync = createClientStateSync({ client: gui.client, directory: gui.directory || undefined })
+        stateSync = createClientStateSync({
+          client: gui.client,
+          directory: gui.directory || undefined,
+          pollIntervalMs: 1_000,
+        })
         unsubscribeState = stateSync.subscribe(applyState)
         unsubscribeEvents = subscribeEvents(gui, handleGlobalEvent)
         await stateSync.start()

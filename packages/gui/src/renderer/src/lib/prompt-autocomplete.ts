@@ -52,6 +52,10 @@ export function restorePromptPartsFromEditedText(previous: PromptPart[], edited:
   return prunePromptPartsForInput(edited, previous)
 }
 
+export function removeTrailingMentionQuery(input: string) {
+  return input.replace(/(^|\s)@[^\s@]*$/, "$1").replace(/[ \t]+$/, "")
+}
+
 function agentOptions(agents: Agent[]): PromptMentionOption[] {
   return agents
     .filter((agent) => !agent.hidden && agent.mode !== "primary")

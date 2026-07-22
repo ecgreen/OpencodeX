@@ -62,6 +62,7 @@
 
 .dashboard-view-card.status-ready-for-review {
   --session-state-color: var(--info);
+  background: linear-gradient(90deg,var(--blue-soft),color-mix(in srgb,var(--element) 34%,var(--panel)) 58%);
 }
 
 .dashboard-view-card.status-failed {
@@ -114,6 +115,16 @@
 .dashboard-summary-card .status-glyph {
   right: 40px;
   color: var(--session-state-color);
+}
+
+.dashboard-summary-card.status-ready-for-review .status-glyph {
+  right: 10px;
+  bottom: 8px;
+}
+
+.dashboard-status-card.status-ready-for-review .status-glyph {
+  right: 10px;
+  bottom: 10px;
 }
 
 .dashboard-summary-card .card-action-menu {

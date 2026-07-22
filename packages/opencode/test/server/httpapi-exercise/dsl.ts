@@ -202,9 +202,14 @@ export function route(template: string, params: Record<string, string>) {
 }
 
 export function controlledPtyInput(title: string | undefined) {
+  const command =
+    process.platform === "win32" ? Bun.which("pwsh") || Bun.which("powershell") || "powershell.exe" : "/bin/sh"
   return {
-    command: "/bin/sh",
-    args: ["-c", "sleep 30"],
+    command,
+    args:
+      process.platform === "win32"
+        ? ["-NoLogo", "-NoProfile", "-Command", "Start-Sleep -Seconds 30"]
+        : ["-c", "sleep 30"],
     ...(title ? { title } : {}),
   }
 }

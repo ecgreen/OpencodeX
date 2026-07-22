@@ -15,7 +15,10 @@ import { Provider } from "../../src/provider/provider"
 import { Skill } from "../../src/skill"
 import { Truncate } from "../../src/tool/truncate"
 
-const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}, settings: OpencodeXSettings.Info = {}) =>
+const agentLayer = (
+  flags: Partial<RuntimeFlags.Info> = {},
+  settings: Omit<OpencodeXSettings.Info, "revision"> = {},
+) =>
   Agent.layer.pipe(
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Provider.defaultLayer),

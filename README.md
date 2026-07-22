@@ -65,7 +65,7 @@ The color is applied to both the title row and the model-name sub-row, so you ca
 
 ### A multi-session dashboard
 
-The dashboard is the first thing you see when you launch `opencodex`. It lists every conversation in the current project, grouped by recency and status, with a one-line preview of the last user message on each row. Press `o` from anywhere in the TUI to jump back to it. The dashboard and the sidebar share the same data source, so they stay in sync without manual refresh.
+The dashboard is the first thing you see when you launch `opencodex`. It lists conversations across your OpencodeX projects, grouped by recency and status, with a one-line preview of the last user message on each row. Press `o` from anywhere in the TUI to jump back to it. The dashboard and the sidebar share the same data source, so they stay in sync without manual refresh. Exact-directory filtering remains available from the command palette when you want a workspace-only view.
 
 ```
   OpencodeX dashboard

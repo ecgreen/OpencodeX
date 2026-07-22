@@ -152,7 +152,7 @@ it.live("OpenAI Codex headerTimeout default can be disabled by config", () =>
   }),
 )
 
-it.live("OpenAI API auth gets default headerTimeout", () =>
+it.live("OpenAI API auth does not impose a response header timeout", () =>
   Effect.gen(function* () {
     yield* withAuthContent(
       Effect.gen(function* () {
@@ -160,7 +160,7 @@ it.live("OpenAI API auth gets default headerTimeout", () =>
           Effect.gen(function* () {
             const provider = yield* Provider.Service
             const openai = yield* provider.getProvider(ProviderV2.ID.openai)
-            expect(openai.options.headerTimeout).toBe(10_000)
+            expect(openai.options.headerTimeout).toBeUndefined()
           }),
         )
       }),

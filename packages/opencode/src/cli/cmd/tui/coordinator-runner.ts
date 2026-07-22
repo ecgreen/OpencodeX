@@ -6,6 +6,7 @@ import { Server } from "@/server/server"
 import { errorMessage } from "@/util/error"
 import { Filesystem } from "@/util/filesystem"
 import {
+  acquireCoordinatorOwnerLock,
   coordinatorStartupLock,
   coordinatorDatabaseIdentity,
   coordinatorKey,
@@ -23,6 +24,7 @@ const CLIENT_MONITOR_INTERVAL = 2_000
 type OwnedCoordinator = {
   owned: true
   manifest: TuiCoordinatorManifest
+  ownerLock: { release: () => Promise<void> }
   server: Awaited<ReturnType<typeof Server.listen>>
   reason?: string
   stopped: boolean
@@ -39,8 +41,8 @@ export type CoordinatorRunnerOptions = {
 export const runCoordinator = Effect.fn("TuiCoordinator.run")(function* (input: CoordinatorRunnerOptions) {
   const directory = Filesystem.resolve(input.directory)
   const database = coordinatorDatabaseIdentity()
-  const key = coordinatorKey(directory, database)
-  if (input.key && input.key !== key) throw new Error("TUI coordinator key does not match its directory and database")
+  const key = coordinatorKey(database)
+  if (input.key && input.key !== key) throw new Error("TUI coordinator key does not match its database")
   const username = requiredEnv("OPENCODE_TUI_COORDINATOR_USERNAME")
   const password = requiredEnv("OPENCODE_TUI_COORDINATOR_PASSWORD")
   const token = requiredEnv("OPENCODE_TUI_COORDINATOR_TOKEN")
@@ -87,35 +89,54 @@ function startCoordinator(
 ) {
   const start = Effect.fnUntraced(function* () {
     input.signal?.throwIfAborted()
-    const existing = yield* Effect.promise(() => readActiveCoordinator(input.directory, input.key))
+    const existing = yield* Effect.promise(() => readActiveCoordinator(input.key, input.database))
     if (existing) return { owned: false as const, manifest: existing }
-    if (input.beforeStart) yield* input.beforeStart
-    input.signal?.throwIfAborted()
+    const ownerLock = yield* Effect.tryPromise({
+      try: () => acquireCoordinatorOwnerLock(input.key),
+      catch: (error) => new Error(`Failed to acquire TUI coordinator ownership: ${errorMessage(error)}`),
+    })
+    const launch = Effect.gen(function* () {
+      const claimed = yield* Effect.promise(() => readActiveCoordinator(input.key, input.database))
+      if (claimed) {
+        yield* Effect.promise(() => ownerLock.release())
+        return { owned: false as const, manifest: claimed }
+      }
+      if (input.beforeStart) yield* input.beforeStart
+      input.signal?.throwIfAborted()
 
-    const server = yield* Effect.promise(() =>
-      Server.listen({
-        hostname: "127.0.0.1",
-        port: 0,
-        mdns: false,
-        cors: [],
-      }),
-    )
-    const manifest = {
-      version: 2 as const,
-      key: input.key,
-      directory: input.directory,
-      database: input.database,
-      pid: process.pid,
-      url: server.url.toString(),
-      username: input.username,
-      password: input.password,
-      token: input.token,
-      createdAt: new Date().toISOString(),
-    }
-    return yield* Effect.promise(() => writeCoordinatorManifest(manifest)).pipe(
-      Effect.as({ owned: true as const, manifest, server, stopped: false, reason: undefined as string | undefined }),
-      Effect.onError(() => Effect.promise(() => server.stop(true)).pipe(Effect.ignore)),
-    )
+      const server = yield* Effect.promise(() =>
+        Server.listen({
+          hostname: "127.0.0.1",
+          port: 0,
+          mdns: false,
+          cors: [],
+        }),
+      )
+      const manifest = {
+        version: 2 as const,
+        key: input.key,
+        directory: input.directory,
+        database: input.database,
+        pid: process.pid,
+        url: server.url.toString(),
+        username: input.username,
+        password: input.password,
+        token: input.token,
+        createdAt: new Date().toISOString(),
+      }
+      return yield* Effect.promise(() => writeCoordinatorManifest(manifest)).pipe(
+        Effect.as({
+          owned: true as const,
+          manifest,
+          ownerLock,
+          server,
+          stopped: false,
+          reason: undefined as string | undefined,
+        }),
+        Effect.onError(() => Effect.promise(() => server.stop(true)).pipe(Effect.ignore)),
+      )
+    })
+    return yield* launch.pipe(Effect.onError(() => Effect.promise(() => ownerLock.release()).pipe(Effect.ignore)))
   })
 
   if (input.startupLock === false) return start()
@@ -138,7 +159,7 @@ function waitForShutdown(resource: OwnedCoordinator, signal?: AbortSignal) {
     const onSignal = () => finish("signal")
     const onAbort = () => finish("abort")
     const onBeforeExit = () => finish("beforeExit")
-    const monitor = createClientMonitor(resource.manifest.key, finish)
+    const monitor = createClientMonitor(resource.manifest, finish)
 
     process.on("SIGINT", onSignal)
     process.on("SIGTERM", onSignal)
@@ -178,18 +199,25 @@ function stopCoordinator(resource: OwnedCoordinator, reason: string) {
         Effect.sync(() => Log.Default.warn("tui coordinator dispose failed", { error: errorMessage(error) })),
       ),
     )
-    yield* Effect.tryPromise(() => removeCoordinatorManifest(resource.manifest.key, resource.manifest.token)).pipe(
-      Effect.ignore,
-    )
     yield* Effect.tryPromise(() => resource.server.stop(true)).pipe(
       Effect.catch((error) =>
         Effect.sync(() => Log.Default.warn("tui coordinator server stop failed", { error: errorMessage(error) })),
       ),
     )
+    yield* Effect.tryPromise(() => removeCoordinatorManifest(resource.manifest.key, resource.manifest.token)).pipe(
+      Effect.ignore,
+    )
+    yield* Effect.tryPromise(() => resource.ownerLock.release()).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() =>
+          Log.Default.warn("tui coordinator owner lock release failed", { error: errorMessage(error) }),
+        ),
+      ),
+    )
   })
 }
 
-function createClientMonitor(key: string, stop: (reason: string) => void) {
+function createClientMonitor(manifest: TuiCoordinatorManifest, stop: (reason: string) => void) {
   let sawClient = false
   let disposed = false
   let lastClientCount = -1
@@ -212,10 +240,14 @@ function createClientMonitor(key: string, stop: (reason: string) => void) {
     cancelShutdown()
     shutdownTimer = setTimeout(() => {
       shutdownTimer = undefined
-      void readActiveCoordinatorClientLeases(key)
-        .then((leases) => {
+      void readActiveCoordinatorClientLeases(manifest.key)
+        .then(async (leases) => {
           if (disposed) return
           if (leases.length === 0) {
+            if (await coordinatorHasDurableActivity(manifest)) {
+              sawClient = true
+              return
+            }
             stop(reason)
             return
           }
@@ -235,7 +267,7 @@ function createClientMonitor(key: string, stop: (reason: string) => void) {
 
   const check = async () => {
     if (disposed) return
-    const leases = await readActiveCoordinatorClientLeases(key)
+    const leases = await readActiveCoordinatorClientLeases(manifest.key)
     if (leases.length > 0) {
       sawClient = true
       cancelFirstClientTimeout()
@@ -254,7 +286,17 @@ function createClientMonitor(key: string, stop: (reason: string) => void) {
     scheduleShutdown("all coordinator clients closed", IDLE_SHUTDOWN_TIMEOUT)
   }
 
-  firstClientTimer = setTimeout(() => stop("no coordinator clients connected"), FIRST_CLIENT_TIMEOUT)
+  firstClientTimer = setTimeout(() => {
+    firstClientTimer = undefined
+    void coordinatorHasDurableActivity(manifest).then((active) => {
+      if (disposed) return
+      if (!active) {
+        stop("no coordinator clients connected")
+        return
+      }
+      sawClient = true
+    })
+  }, FIRST_CLIENT_TIMEOUT)
   firstClientTimer.unref?.()
   const interval = setInterval(() => {
     void check().catch((error) => {
@@ -272,6 +314,20 @@ function createClientMonitor(key: string, stop: (reason: string) => void) {
       cancelShutdown()
       clearInterval(interval)
     },
+  }
+}
+
+async function coordinatorHasDurableActivity(manifest: TuiCoordinatorManifest) {
+  try {
+    const response = await fetch(new URL("/global/health", manifest.url), {
+      headers: ServerAuth.headers({ username: manifest.username, password: manifest.password }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const body = (await response.json()) as unknown
+    return typeof body === "object" && body !== null && "active" in body && body.active === true
+  } catch (error) {
+    Log.Default.warn("tui coordinator activity check failed", { error: errorMessage(error) })
+    return true
   }
 }
 

@@ -1,5 +1,6 @@
 import { useEvent } from "@tui/context/event"
 import type {
+  Event,
   SessionMessage,
   SessionMessageAssistant,
   SessionMessageAssistantReasoning,
@@ -7,6 +8,7 @@ import type {
   SessionMessageAssistantTool,
 } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
+import { createEffect } from "solid-js"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
 
@@ -60,6 +62,10 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
 
     const event = useEvent()
     const sdk = useSDK()
+    const retainedSessions = new Set<string>()
+    const requests = new Map<string, { generation: number; events: Event[] }>()
+    let requestGeneration = 0
+    let connectionGeneration = 0
 
     function update(sessionID: string, fn: (messages: SessionMessage[]) => void) {
       setStore(
@@ -70,8 +76,40 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
       )
     }
 
-    event.subscribe((event) => {
+    function applyEvent(event: Event) {
       switch (event.type) {
+        case "session.deleted": {
+          const sessionID = event.properties.info.id
+          retainedSessions.delete(sessionID)
+          requests.delete(sessionID)
+          setStore(
+            "messages",
+            produce((draft) => {
+              delete draft[sessionID]
+            }),
+          )
+          break
+        }
+        case "session.next.agent.switched":
+          update(event.properties.sessionID, (draft) => {
+            draft.unshift({
+              id: event.id,
+              type: "agent-switched",
+              agent: event.properties.agent,
+              time: { created: event.properties.timestamp },
+            })
+          })
+          break
+        case "session.next.model.switched":
+          update(event.properties.sessionID, (draft) => {
+            draft.unshift({
+              id: event.id,
+              type: "model-switched",
+              model: event.properties.model,
+              time: { created: event.properties.timestamp },
+            })
+          })
+          break
         case "session.next.prompted": {
           update(event.properties.sessionID, (draft) => {
             draft.unshift({
@@ -80,6 +118,7 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
               text: event.properties.prompt.text,
               files: event.properties.prompt.files,
               agents: event.properties.prompt.agents,
+              references: event.properties.prompt.references,
               time: { created: event.properties.timestamp },
             })
           })
@@ -283,6 +322,55 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
           })
           break
       }
+    }
+
+    event.subscribe((incoming) => {
+      const sessionID = sessionEventID(incoming)
+      const request = sessionID ? requests.get(sessionID) : undefined
+      if (request) {
+        request.events.push(incoming)
+        return
+      }
+      applyEvent(incoming)
+    })
+
+    async function syncMessages(sessionID: string) {
+      retainedSessions.add(sessionID)
+      const request = { generation: ++requestGeneration, events: new Array<Event>() }
+      requests.set(sessionID, request)
+      return sdk.client.v2.session.messages({ sessionID }).then(
+        (response) => {
+          if (requests.get(sessionID)?.generation !== request.generation) return false
+          requests.delete(sessionID)
+          if (!response.data) {
+            request.events.forEach(applyEvent)
+            return false
+          }
+          setStore("messages", sessionID, reconcile(response.data.items))
+          request.events.forEach(applyEvent)
+          return true
+        },
+        (error) => {
+          if (requests.get(sessionID)?.generation === request.generation) {
+            requests.delete(sessionID)
+            request.events.forEach(applyEvent)
+          }
+          throw error
+        },
+      )
+    }
+
+    createEffect(() => {
+      const generation = sdk.eventConnectionGeneration()
+      if (!generation || !connectionGeneration) {
+        connectionGeneration = generation
+        return
+      }
+      if (generation === connectionGeneration) return
+      connectionGeneration = generation
+      retainedSessions.forEach((sessionID) => {
+        void syncMessages(sessionID).catch(() => undefined)
+      })
     })
 
     const result = {
@@ -290,8 +378,7 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
       session: {
         message: {
           async sync(sessionID: string) {
-            const response = await sdk.client.v2.session.messages({ sessionID })
-            setStore("messages", sessionID, reconcile(response.data?.items ?? []))
+            await syncMessages(sessionID)
           },
           fromSession(sessionID: string) {
             const messages = store.messages[sessionID]
@@ -305,3 +392,10 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
     return result
   },
 })
+
+function sessionEventID(event: Event) {
+  if (!event.type.startsWith("session.next.") && event.type !== "session.deleted") return
+  const properties: unknown = event.properties
+  if (!properties || typeof properties !== "object" || !("sessionID" in properties)) return
+  return typeof properties.sessionID === "string" ? properties.sessionID : undefined
+}

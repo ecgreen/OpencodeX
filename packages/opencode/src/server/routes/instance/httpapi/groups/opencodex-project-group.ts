@@ -8,7 +8,7 @@ import { SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { ApiNotFoundError, ProjectNotFoundError } from "../errors"
+import { ApiNotFoundError, ConflictError, ProjectNotFoundError } from "../errors"
 import { described } from "./metadata"
 import {
   OPENCODEX_ROOT,
@@ -31,7 +31,7 @@ export const opencodexProjectGroup = HttpApiGroup.make("opencodex").add(
   HttpApiEndpoint.patch("updateSettings", `${OPENCODEX_ROOT}/settings`, {
     payload: OpencodeXSettings.UpdateInput,
     success: described(OpencodeXSettings.Info, "Updated OpenCodeX-only settings"),
-    error: HttpApiError.BadRequest,
+    error: [HttpApiError.BadRequest, ConflictError],
   }).annotateMerge(
     OpenApi.annotations({ identifier: "opencodex.settings.update", summary: "Update OpenCodeX-only settings" }),
   ),
@@ -146,7 +146,7 @@ export const opencodexProjectGroup = HttpApiGroup.make("opencodex").add(
     params: { sessionID: SessionID },
     payload: UpdateSessionStatePayload,
     success: described(OpencodeXSessionState.Info, "Updated OpencodeX session UI state"),
-    error: [HttpApiError.BadRequest, ApiNotFoundError],
+    error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
   }).annotateMerge(
     OpenApi.annotations({ identifier: "opencodex.session_state.update", summary: "Update OpencodeX session UI state" }),
   ),

@@ -7,12 +7,14 @@ import {
 import { Database } from "@opencode-ai/core/database/database"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { Agent } from "@/agent/agent"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXJobDispatcher } from "@/opencodex/job-dispatcher"
+import { insertJob } from "@/opencodex/job-store"
 import { Provider } from "@/provider/provider"
 import { MessageID, SessionID } from "@/session/schema"
 import { Context, Effect, Layer } from "effect"
-import { eq } from "drizzle-orm"
+import { and, eq, notInArray } from "drizzle-orm"
 import {
   ReadService,
   NotFoundError,
@@ -57,7 +59,7 @@ export const swarmRunLayer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const reader = yield* ReadService
-    const jobs = yield* OpencodeXJob.Service
+    const events = yield* EventV2Bridge.Service
     const dispatcher = yield* OpencodeXJobDispatcher.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
@@ -82,7 +84,7 @@ const resolveAgent = Effect.fn("OpencodeXSwarm.resolveRunAgent")(function* (requ
   )
 })
 
-const createRoleJob = Effect.fn("OpencodeXSwarm.createRoleJob")(function* (input: {
+const createRoleJobInput = Effect.fn("OpencodeXSwarm.createRoleJobInput")(function* (input: {
   swarm: Info
   runID: string
   role: Role
@@ -95,7 +97,8 @@ const createRoleJob = Effect.fn("OpencodeXSwarm.createRoleJob")(function* (input
 }) {
   const model = selectedRoleModel(input.role) ?? (yield* defaultModel())
   const agent = yield* resolveAgent(input.agent ?? input.role.agent)
-  return yield* jobs.create({
+  const job: OpencodeXJob.CreateInputType = {
+    id: `oxj_${Identifier.ascending()}`,
     kind: `swarm.${input.phase}`,
     title: `${input.swarm.title}: ${input.role.name}`,
     source: "swarm",
@@ -116,15 +119,19 @@ const createRoleJob = Effect.fn("OpencodeXSwarm.createRoleJob")(function* (input
       variant: input.variant,
       sessionID: SessionID.descending(),
       messageID: MessageID.ascending(),
-      dispatchReady: false,
+      dispatchReady: true,
     },
-  })
+  }
+  return job
 })
 
-const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: string, input: RunInput) {
+const createRunUnlocked = Effect.fn("OpencodeXSwarm.createRunUnlocked")(function* (swarmID: string, input: RunInput) {
   const swarm = yield* reader.get(swarmID)
   if (swarm.status === "cancelled") {
     return yield* new ValidationError({ message: "Cancelled swarms cannot run tasks." })
+  }
+  if (swarm.runs.some((run) => ["queued", "running", "cancelling"].includes(run.status))) {
+    return yield* new ValidationError({ message: "This swarm already has an active run." })
   }
   const invalid = validateRoles(swarm.roles)
   if (invalid) return yield* new ValidationError({ message: invalid })
@@ -133,7 +140,7 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
   const runID = `swrn_${Identifier.ascending()}`
   const now = Date.now()
   const mode = executionMode(input)
-  const orchestratorJob = yield* createRoleJob({
+  const orchestratorJobInput = yield* createRoleJobInput({
     swarm,
     runID,
     role: orchestrator,
@@ -146,12 +153,12 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
   const workerPlans = yield* Effect.forEach(
     swarm.roles.filter((role) => role.id !== orchestrator.id),
     Effect.fnUntraced(function* (role) {
-      const job = yield* createRoleJob({
+      const job = yield* createRoleJobInput({
         swarm,
         runID,
         role,
         phase: "worker",
-        parentJobID: orchestratorJob.id,
+        parentJobID: orchestratorJobInput.id,
         executionMode: mode,
         variant: input.variant,
         now,
@@ -161,10 +168,40 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
     { concurrency: 1 },
   )
   const orchestratorRunID = `swar_${Identifier.ascending()}`
-  const afterCommit = yield* db
-    .transaction(
+  const afterCommit = yield* events.barrier(
+    Effect.gen(function* () {
+      const latest = yield* reader.get(swarmID)
+      if (latest.runs.some((run) => ["queued", "running", "cancelling"].includes(run.status))) return undefined
+      return yield* db.transaction(
       (transaction) =>
         Effect.gen(function* () {
+          const claimed = yield* transaction
+            .update(OpencodeXSwarmTable)
+            .set({
+              title: swarm.title === "New swarm" ? defaultTitle(input.prompt) : undefined,
+              prompt: input.prompt,
+              status: "queued",
+              completed_at: null,
+              synthesis_session_id: null,
+              time_updated: now,
+            })
+            .where(
+              and(
+                eq(OpencodeXSwarmTable.id, swarmID),
+                notInArray(OpencodeXSwarmTable.status, ["queued", "running", "cancelling"]),
+              ),
+            )
+            .returning({ id: OpencodeXSwarmTable.id })
+            .get()
+          if (!claimed) return undefined
+          const orchestratorJob = yield* insertJob(transaction, events, orchestratorJobInput)
+          const workerJobs = yield* Effect.forEach(
+            workerPlans,
+            Effect.fnUntraced(function* (plan) {
+              return { ...plan, committed: yield* insertJob(transaction, events, plan.job) }
+            }),
+            { concurrency: 1 },
+          )
           yield* transaction
             .insert(OpencodeXSwarmRunTable)
             .values({
@@ -181,18 +218,6 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
             })
             .run()
           yield* transaction
-            .update(OpencodeXSwarmTable)
-            .set({
-              title: swarm.title === "New swarm" ? defaultTitle(input.prompt) : undefined,
-              prompt: input.prompt,
-              status: "queued",
-              completed_at: null,
-              synthesis_session_id: null,
-              time_updated: now,
-            })
-            .where(eq(OpencodeXSwarmTable.id, swarmID))
-            .run()
-          yield* transaction
             .insert(OpencodeXSwarmAgentRunTable)
             .values({
               id: orchestratorRunID,
@@ -201,13 +226,13 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
               role_id: orchestrator.id,
               status: "queued",
               prompt: input.prompt,
-              job_id: orchestratorJob.id,
+              job_id: orchestratorJob.result.id,
               time_created: now,
               time_updated: now,
             })
             .run()
           yield* Effect.forEach(
-            workerPlans,
+            workerJobs,
             (plan) =>
               transaction
                 .insert(OpencodeXSwarmAgentRunTable)
@@ -218,7 +243,7 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
                   role_id: plan.role.id,
                   status: "queued",
                   prompt: input.prompt,
-                  job_id: plan.job.id,
+                  job_id: plan.committed.result.id,
                   time_created: now,
                   time_updated: now,
                 })
@@ -226,7 +251,10 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
             { discard: true },
           )
           yield* Effect.forEach(
-            [{ role: orchestrator, job: orchestratorJob }, ...workerPlans],
+            [{ role: orchestrator, job: orchestratorJob.result }, ...workerJobs.map((plan) => ({
+              role: plan.role,
+              job: plan.committed.result,
+            }))],
             (plan) =>
               transaction
                 .update(OpencodeXSwarmRoleTable)
@@ -235,23 +263,35 @@ const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: stri
                 .run(),
             { discard: true },
           )
-          return yield* status.commitEvent(transaction, swarmID, {
+          const swarmEvent = yield* status.commitEvent(transaction, swarmID, {
             runID,
             kind: "swarm.run.queued",
             message: "Swarm run queued",
           })
+          return [
+            ...(orchestratorJob.event ? [events.broadcast(orchestratorJob.event).pipe(Effect.asVoid)] : []),
+            ...workerJobs.flatMap((plan) =>
+              plan.committed.event ? [events.broadcast(plan.committed.event).pipe(Effect.asVoid)] : [],
+            ),
+            swarmEvent,
+          ]
         }),
       { behavior: "immediate" },
     )
-    .pipe(Effect.orDie)
-  yield* afterCommit
-  yield* Effect.forEach(
-    [orchestratorJob, ...workerPlans.map((plan) => plan.job)],
-    (job) => jobs.update({ id: job.id, metadata: { ...job.metadata, dispatchReady: true } }).pipe(Effect.orDie),
-    { concurrency: 1, discard: true },
+      .pipe(
+        Effect.catchTag("SqlError", Effect.die),
+        Effect.catchTag("EffectDrizzleQueryError", Effect.die),
+      )
+    }),
   )
+  if (!afterCommit) return yield* new ValidationError({ message: "This swarm already has an active run." })
+  yield* Effect.forEach(afterCommit, (effect) => effect, { concurrency: 1, discard: true })
   yield* dispatcher.wake()
   return yield* reader.get(swarmID)
+})
+
+const createRun = Effect.fn("OpencodeXSwarm.createRun")(function* (swarmID: string, input: RunInput) {
+  return yield* events.barrier(createRunUnlocked(swarmID, input))
 })
 
 const start = Effect.fn("OpencodeXSwarm.start")(function* (swarmID: string) {
@@ -270,13 +310,14 @@ const assignTask = Effect.fn("OpencodeXSwarm.assignTask")(function* (
 ) {
   const prompt = input.prompt.trim()
   if (!prompt) return yield* new ValidationError({ message: "Swarm run prompt cannot be empty." })
-  yield* status.event(swarmID, { kind: "swarm.task.assigned", message: "Task assigned to swarm team" })
-  return yield* createRun(swarmID, {
+  const result = yield* createRun(swarmID, {
     prompt,
     agent: input.agent,
     mode: input.mode,
     variant: input.variant,
   })
+  yield* status.event(swarmID, { kind: "swarm.task.assigned", message: "Task assigned to swarm team" })
+  return result
 })
 
     return SwarmRun.of({ createRun, start, assignTask })

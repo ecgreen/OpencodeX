@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
+import { rememberBackendAuthority } from "./backend-authority.js"
 import fs from "node:fs"
 import path from "node:path"
 import {
@@ -12,7 +13,6 @@ import {
   coordinatorStartupLogPath,
   createSidecarLaunch,
   createStartupLog,
-  normalizeDirectory,
   selectedDatabaseEnv,
   sidecarDatabase,
   startError,
@@ -53,7 +53,8 @@ export function startSidecar(signal?: AbortSignal) {
   const controller = new AbortController()
   const abort = () => controller.abort()
   signal?.addEventListener("abort", abort, { once: true })
-  const startup = coordinatorConnection(workingDirectory(), controller.signal)
+  const directory = workingDirectory()
+  const startup = coordinatorConnection(directory, controller.signal)
     .then(async (manifest) => {
       if (generation !== state.generation || controller.signal.aborted) throw startupStoppedError()
       const lease = startCoordinatorClientLease(manifest.key)
@@ -75,7 +76,7 @@ export function startSidecar(signal?: AbortSignal) {
       state.lease = lease
       if (state.child?.process.pid === manifest.pid && process.env.OPENCODEX_GUI_SMOKE !== "1")
         state.child = undefined
-      const connection = connectionFromManifest(manifest)
+      const connection = connectionFromManifest(manifest, directory)
       state.connection = connection
       return connection
     })
@@ -111,38 +112,53 @@ export async function stopSidecar() {
 
 async function coordinatorConnection(directory: string, signal: AbortSignal) {
   const database = await sidecarDatabase(directory)
-  const key = coordinatorKey(directory, database)
+  await rememberBackendAuthority(database)
+  const key = coordinatorKey(database)
   throwIfStartupStopped(signal)
-  const existing = await activeCoordinator(directory, key, database)
+  const existing = await activeCoordinator(key, database)
   throwIfStartupStopped(signal)
   if (existing) return existing
   throwIfStartupStopped(signal)
   return spawnCoordinator(directory, key, database, signal)
 }
 
-function connectionFromManifest(manifest: CoordinatorManifest) {
+function connectionFromManifest(manifest: CoordinatorManifest, directory: string) {
   return {
     url: manifest.url,
     username: manifest.username,
     password: manifest.password,
-    directory: manifest.directory,
+    directory,
   }
 }
 
-async function activeCoordinator(directory: string, key: string, database: string) {
-  const manifest = await readCoordinatorManifest(key).catch(() => undefined)
+async function activeCoordinator(key: string, database: string) {
+  const manifest = await readActiveManifest(key)
   if (!manifest) return undefined
   if (
     manifest.key !== key ||
-    normalizeDirectory(manifest.directory) !== normalizeDirectory(directory) ||
     coordinatorDatabaseIdentity(manifest.database) !== coordinatorDatabaseIdentity(database)
   ) {
-    await fs.promises.rm(coordinatorManifestPath(key), { force: true }).catch(() => undefined)
+    await removeCoordinatorManifest(key, manifest.token)
     return undefined
   }
   if (await isSidecarConnectionHealthy(manifest)) return manifest
-  await fs.promises.rm(coordinatorManifestPath(key), { force: true }).catch(() => undefined)
+  if (isProcessAlive(manifest.pid)) {
+    throw new Error(`OpencodeX coordinator process ${manifest.pid} is alive but unhealthy; refusing to replace it`)
+  }
+  await removeCoordinatorManifest(key, manifest.token)
   return undefined
+}
+
+async function readActiveManifest(key: string) {
+  try {
+    return await readCoordinatorManifest(key)
+  } catch (error) {
+    if (isMissingFile(error)) return undefined
+    const token = await readCoordinatorManifestToken(key)
+    if (!token) throw new Error("Invalid TUI coordinator manifest cannot be removed safely")
+    await removeCoordinatorManifest(key, token)
+    return undefined
+  }
 }
 
 async function readCoordinatorManifest(key: string) {
@@ -163,6 +179,37 @@ async function readCoordinatorManifest(key: string) {
     throw new Error("Invalid TUI coordinator manifest")
   }
   return parsed as CoordinatorManifest
+}
+
+async function readCoordinatorManifestToken(key: string) {
+  return fs.promises
+    .readFile(coordinatorManifestPath(key), "utf8")
+    .then((raw) => JSON.parse(raw) as Partial<CoordinatorManifest>)
+    .then((manifest) => (typeof manifest.token === "string" ? manifest.token : undefined))
+    .catch(() => undefined)
+}
+
+async function removeCoordinatorManifest(key: string, token: string) {
+  if ((await readCoordinatorManifestToken(key)) !== token) return
+  await fs.promises.rm(coordinatorManifestPath(key), { force: true })
+}
+
+function isMissingFile(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  )
+}
+
+function isProcessAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM"
+  }
 }
 
 export async function isSidecarConnectionHealthy(manifest: Pick<CoordinatorManifest, "url" | "username" | "password">) {
@@ -187,20 +234,33 @@ function startCoordinatorClientLease(key: string) {
   const dir = coordinatorClientDir(key)
   const file = path.join(dir, `${process.pid}.gui.json`)
   let disposed = false
-  const write = async () => {
-    if (disposed) return
-    await fs.promises.mkdir(dir, { recursive: true })
-    if (disposed) return
-    await fs.promises.writeFile(
-      file,
-      JSON.stringify({
-        version: 1,
-        key,
-        pid: process.pid,
-        updatedAt: Date.now(),
-      }),
-      { mode: 0o600 },
-    )
+  let writing = Promise.resolve()
+  const write = () => {
+    const next = writing.catch(() => {}).then(async () => {
+      if (disposed) return
+      await fs.promises.mkdir(dir, { recursive: true })
+      if (disposed) return
+      const temporary = `${file}.${randomBytes(4).toString("hex")}.tmp`
+      try {
+        await fs.promises.writeFile(
+          temporary,
+          JSON.stringify({
+            version: 1,
+            key,
+            pid: process.pid,
+            updatedAt: Date.now(),
+          }),
+          { mode: 0o600 },
+        )
+        if (disposed) return
+        await fs.promises.rename(temporary, file)
+        if (disposed) await fs.promises.rm(file, { force: true })
+      } finally {
+        await fs.promises.rm(temporary, { force: true }).catch(() => undefined)
+      }
+    })
+    writing = next
+    return next
   }
   const timer = setInterval(() => {
     void write().catch(() => {})
@@ -214,7 +274,7 @@ function startCoordinatorClientLease(key: string) {
       if (disposed) return
       disposed = true
       clearInterval(timer)
-      await ready.catch(() => undefined)
+      await Promise.all([ready.catch(() => undefined), writing.catch(() => undefined)])
       await fs.promises.rm(file, { force: true }).catch(() => undefined)
     },
   }
@@ -274,7 +334,7 @@ async function waitForCoordinator(directory: string, child: ChildProcess, starte
   })
   while (Date.now() - startedAt < START_TIMEOUT) {
     throwIfStartupStopped(signal)
-    const manifest = await activeCoordinator(directory, coordinatorKey(directory, started.database), started.database)
+    const manifest = await activeCoordinator(coordinatorKey(started.database), started.database)
     throwIfStartupStopped(signal)
     if (manifest) return manifest
     if (failure) throw failure
@@ -315,5 +375,5 @@ async function stopOwnedCoordinator(owned: NonNullable<SidecarState["child"]>) {
   await stopDetachedChild(child)
   const manifest = await readCoordinatorManifest(owned.key).catch(() => undefined)
   if (!manifest || manifest.pid !== child.pid || manifest.token !== owned.token) return
-  await fs.promises.rm(coordinatorManifestPath(owned.key), { force: true }).catch(() => undefined)
+  await removeCoordinatorManifest(owned.key, owned.token).catch(() => undefined)
 }

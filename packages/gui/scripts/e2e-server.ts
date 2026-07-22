@@ -156,10 +156,19 @@ async function initializeBackend() {
   })
   if (!response.ok)
     throw new Error(`GUI e2e backend initialization failed with ${response.status}: ${await response.text()}`)
+  const currentSettings = await fetch(new URL("/experimental/opencodex/settings", backendURL), {
+    headers,
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!currentSettings.ok)
+    throw new Error(`GUI e2e settings read failed with ${currentSettings.status}: ${await currentSettings.text()}`)
   const settings = await fetch(new URL("/experimental/opencodex/settings", backendURL), {
     method: "PATCH",
     headers: { ...headers, "content-type": "application/json" },
-    body: JSON.stringify({ permission_mode: "configured" }),
+    body: JSON.stringify({
+      permission_mode: "configured",
+      expectedRevision: String((await currentSettings.json()).revision),
+    }),
     signal: AbortSignal.timeout(30_000),
   })
   if (!settings.ok)

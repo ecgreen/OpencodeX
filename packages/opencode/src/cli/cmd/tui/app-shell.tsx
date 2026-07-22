@@ -34,7 +34,6 @@ export function TuiAppShell(props: { controller: ReturnType<typeof createTuiAppC
         <box flexGrow={1} minHeight={0} flexDirection="row">
           <OpencodeXSidebar />
           <box flexGrow={1} minHeight={0} minWidth={0} flexDirection="column">
-            <StateSyncBanner controller={props.controller} />
             <Switch>
               <Match when={props.controller.route.data.type === "home"}><Home /></Match>
               <Match when={props.controller.route.data.type === "session"}>
@@ -55,32 +54,5 @@ export function TuiAppShell(props: { controller: ReturnType<typeof createTuiAppC
       </Show>
       <StartupLoading ready={props.controller.ready} />
     </box>
-  )
-}
-
-function StateSyncBanner(props: { controller: ReturnType<typeof createTuiAppController> }) {
-  const visible = () => ["reconnecting", "error"].includes(props.controller.sync.stateSync.lifecycle.status)
-  return (
-    <Show when={visible()}>
-      <box
-        height={1}
-        flexShrink={0}
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={1}
-        paddingRight={1}
-        backgroundColor={props.controller.themeState.theme.backgroundPanel}
-      >
-        <text fg={props.controller.themeState.theme.warning} flexShrink={1}>
-          Connection interrupted · showing last authoritative state
-        </text>
-        <text
-          fg={props.controller.themeState.theme.primary}
-          onMouseUp={() => void props.controller.sync.stateSync.retry().catch(props.controller.toast.error)}
-        >
-          retry now
-        </text>
-      </box>
-    </Show>
   )
 }

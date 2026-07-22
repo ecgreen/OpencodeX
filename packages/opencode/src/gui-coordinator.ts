@@ -29,7 +29,12 @@ try {
     }),
   )
 } catch (error) {
-  const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  const message =
+    error instanceof Error
+      ? error.stack?.includes(error.message)
+        ? error.stack
+        : [error.message, error.stack].filter(Boolean).join("\n")
+      : String(error)
   process.stderr.write(message + "\n")
   process.exitCode = 1
 }

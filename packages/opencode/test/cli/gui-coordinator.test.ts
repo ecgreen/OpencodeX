@@ -4,6 +4,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
+import { Database } from "bun:sqlite"
 import { awaitWithTimeout, it, pollWithTimeout } from "../lib/effect"
 
 const root = path.resolve(import.meta.dir, "../..")
@@ -32,6 +33,7 @@ type Fixture = {
   key: string
   manifest: string
   clients: string
+  ownerLock: string
 }
 
 describe("GUI coordinator direct entry", () => {
@@ -95,12 +97,71 @@ describe("GUI coordinator direct entry", () => {
   )
 
   it.live(
-    "converges direct and hidden CLI launches on one manifest",
+    "stays alive without clients while durable backend activity exists",
     () =>
       withFixture((fixture) =>
         Effect.gen(function* () {
+          const durable = databaseFixture(fixture, path.join(fixture.home, "activity.db"))
+          const child = yield* spawnCoordinator(durable, "direct", "durable-activity")
+          const manifest = yield* waitForManifest(durable, child)
+          const health = yield* Effect.promise(() =>
+            fetch(new URL("/global/health", manifest.url), { headers: coordinatorHeaders(manifest) }),
+          )
+          expect(health.status).toBe(200)
+          const lease = yield* writeLease(durable)
+          return yield* Effect.acquireUseRelease(
+            Effect.sync(() => new Database(durable.database)),
+            (database) =>
+              Effect.gen(function* () {
+                const now = Date.now()
+                yield* Effect.sync(() =>
+                  database.run(
+                    `INSERT INTO session_interaction
+                      (id, kind, session_id, project_id, directory, state, request_json, time_created, time_updated)
+                     VALUES (?, 'question', 'ses_activity', 'project', ?, 'pending', '{}', ?, ?)`,
+                    ["que_activity", durable.directory, now, now],
+                  ),
+                )
+                yield* Effect.sleep("2500 millis")
+                yield* Effect.promise(() => fs.rm(lease, { force: true }))
+
+                yield* Effect.sleep("9 seconds")
+                expect(child.process.exitCode).toBeNull()
+
+                yield* Effect.sync(() =>
+                  database.run(
+                    "UPDATE session_interaction SET state = 'replied', responded_at = ?, time_updated = ? WHERE id = 'que_activity'",
+                    [Date.now(), Date.now()],
+                  ),
+                )
+                expect(
+                  yield* awaitWithTimeout(
+                    Effect.promise(() => child.process.exited),
+                    "coordinator did not stop after durable activity settled",
+                    "15 seconds",
+                  ),
+                ).toBe(0)
+              }),
+            (database) => Effect.sync(() => database.close()),
+          )
+        }),
+      ),
+    60_000,
+  )
+
+  it.live(
+    "converges GUI and TUI launches from two directories on one database",
+    () =>
+      withFixture((fixture) =>
+        Effect.gen(function* () {
+          const tuiDirectory = path.join(fixture.home, "other-workspace")
+          yield* Effect.promise(() => fs.mkdir(tuiDirectory, { recursive: true }))
+          const tuiFixture = databaseFixture({ home: fixture.home, directory: tuiDirectory }, fixture.database)
+          expect(tuiFixture.key).toBe(fixture.key)
+          expect(tuiFixture.manifest).toBe(fixture.manifest)
+
           const direct = yield* spawnCoordinator(fixture, "direct", "gui")
-          const hidden = yield* spawnCoordinator(fixture, "hidden", "tui")
+          const hidden = yield* spawnCoordinator(tuiFixture, "hidden", "tui")
           const manifest = yield* waitForManifest(fixture, direct, hidden)
           yield* writeLease(fixture)
 
@@ -115,6 +176,10 @@ describe("GUI coordinator direct entry", () => {
           ).toBe(0)
           expect(winner.process.exitCode).toBeNull()
           expect((yield* readManifest(fixture))?.pid).toBe(manifest.pid)
+          expect((yield* Effect.promise(() => fs.stat(fixture.ownerLock))).isDirectory()).toBe(true)
+          expect([normalizeDirectory(fixture.directory), normalizeDirectory(tuiDirectory)]).toContain(
+            normalizeDirectory(manifest.directory),
+          )
 
           const response = yield* Effect.promise(() =>
             fetch(new URL("/global/health", manifest.url), { headers: coordinatorHeaders(manifest) }),
@@ -127,6 +192,47 @@ describe("GUI coordinator direct entry", () => {
         }),
       ),
     90_000,
+  )
+
+  it.live(
+    "does not replace an unhealthy manifest while its owner PID is alive",
+    () =>
+      withFixture((fixture) =>
+        Effect.gen(function* () {
+          const token = randomBytes(24).toString("base64url")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(path.dirname(fixture.manifest), { recursive: true })
+            await fs.writeFile(
+              fixture.manifest,
+              JSON.stringify({
+                version: 2,
+                key: fixture.key,
+                directory: fixture.directory,
+                database: normalizeDatabase(fixture.database),
+                pid: process.pid,
+                url: "http://127.0.0.1:1/",
+                username: "existing-owner",
+                password: "existing-password",
+                token,
+                createdAt: new Date().toISOString(),
+              } satisfies Manifest),
+            )
+          })
+
+          const child = yield* spawnCoordinator(fixture, "direct", "contender")
+          expect(
+            yield* awaitWithTimeout(
+              Effect.promise(() => child.process.exited),
+              "competing coordinator did not reject the live owner",
+              "10 seconds",
+            ),
+          ).toBe(1)
+          expect(yield* Effect.promise(() => child.stderr)).toContain("is alive but unhealthy; refusing to replace it")
+          expect(yield* readManifest(fixture)).toMatchObject({ pid: process.pid, token })
+          yield* Effect.promise(() => fs.rm(fixture.manifest, { force: true }))
+        }),
+      ),
+    60_000,
   )
 
   it.live(
@@ -338,9 +444,7 @@ function coordinatorHeaders(manifest: Manifest) {
 }
 
 function databaseFixture(fixture: Pick<Fixture, "home" | "directory">, database: string): Fixture {
-  const key = createHash("sha1")
-    .update(`${normalizeDirectory(fixture.directory)}\0${normalizeDatabase(database)}`)
-    .digest("hex")
+  const key = createHash("sha1").update(normalizeDatabase(database)).digest("hex")
   const coordinatorRoot = path.join(fixture.home, "state", "opencode", "tui-coordinators")
   return {
     ...fixture,
@@ -348,6 +452,13 @@ function databaseFixture(fixture: Pick<Fixture, "home" | "directory">, database:
     key,
     manifest: path.join(coordinatorRoot, `${key}.json`),
     clients: path.join(coordinatorRoot, `${key}.clients`),
+    ownerLock: path.join(
+      fixture.home,
+      "state",
+      "opencode",
+      "locks",
+      `${createHash("sha1").update(`tui-coordinator-owner:${key}`).digest("hex")}.lock`,
+    ),
   }
 }
 

@@ -167,7 +167,10 @@ export interface Interface {
     settlement?: TransactionalSettlement,
   ) => Effect.Effect<Info, NotFoundError | TransitionError>
   readonly acknowledgeCancel: (jobID: string, owner: string) => Effect.Effect<Info, NotFoundError | TransitionError>
-  readonly recover: (now?: number) => Effect.Effect<Info[]>
+  readonly recover: (
+    now?: number,
+    settlement?: (job: Info) => TransactionalSettlement | undefined,
+  ) => Effect.Effect<Info[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/OpencodeXJob") {}

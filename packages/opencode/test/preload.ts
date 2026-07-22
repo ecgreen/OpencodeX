@@ -11,7 +11,10 @@ const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
   const busy = (error: unknown) =>
-    typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "EBUSY" || (process.platform === "win32" && error.code === "EFAULT"))
   const rm = async (left: number): Promise<void> => {
     Bun.gc(true)
     await sleep(100)
@@ -22,8 +25,8 @@ afterAll(async () => {
     })
   }
 
-  // Windows can keep SQLite WAL handles alive until GC finalizers run, so we
-  // force GC and retry teardown to avoid flaky EBUSY in test cleanup.
+  // Bun can report retained Windows SQLite handles as EBUSY or EFAULT, so force
+  // GC and retry teardown without hiding persistent or unrelated failures.
   await rm(30)
 })
 

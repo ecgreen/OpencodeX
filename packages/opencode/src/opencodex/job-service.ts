@@ -12,7 +12,6 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const store = createJobStore(database.db, events)
     const lifecycle = createJobLifecycle(database.db, events, store)
-    yield* lifecycle.recover()
     return Service.of({
       list: store.list,
       get: store.get,

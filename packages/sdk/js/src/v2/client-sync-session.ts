@@ -1,6 +1,7 @@
 import type { GlobalSession, OpencodeClient, OpencodeXProject, OpencodeXSessionState, Session } from "./client.js"
 
 export type ClientSessionStateUpdate = {
+  expectedReviewedFiles?: readonly string[]
   seenAt?: number
   reviewedAt?: number
   reviewedFiles?: readonly string[]
@@ -15,6 +16,7 @@ export async function updateClientSessionState(
     await client.opencodex.sessionState.update(
       {
         sessionID,
+        expectedReviewedFiles: input.expectedReviewedFiles ? [...input.expectedReviewedFiles] : undefined,
         seenAt: input.seenAt,
         reviewedAt: input.reviewedAt,
         reviewedFiles: input.reviewedFiles ? [...input.reviewedFiles] : undefined,

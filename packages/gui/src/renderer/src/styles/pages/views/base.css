@@ -113,7 +113,7 @@
 }
 
 .view-summary-row.status-ready-for-review {
-  --view-row-accent: var(--accent) ;
+  --view-row-accent: var(--info) ;
 }
 
 .view-summary-row.status-failed {
@@ -195,6 +195,10 @@
   line-height: 1.35;
 }
 
+.view-summary-row.status-ready-for-review .view-summary-session-line {
+  padding-right: 18px;
+}
+
 .view-status-dot {
   width: 8px;
   height: 8px;
@@ -220,11 +224,11 @@
 }
 
 .view-status-dot.status-ready-for-review {
-  background: var(--accent);
+  background: var(--info);
 }
 
 .status-ready-for-review .view-status-dot {
-  background: var(--accent);
+  background: var(--info);
 }
 
 .view-status-dot.status-failed {

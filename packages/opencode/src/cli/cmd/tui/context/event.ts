@@ -3,19 +3,44 @@ import { useProject } from "./project"
 import { useSDK } from "./sdk"
 
 type EventMetadata = {
+  directory: string
   workspace: string | undefined
+}
+
+type EventItem = {
+  event: Event
+  metadata: EventMetadata
 }
 
 export function useEvent() {
   const project = useProject()
   const sdk = useSDK()
 
+  function subscribeAll(handler: (event: Event, metadata: EventMetadata) => void) {
+    return sdk.event.on("event", (event) => {
+      const payload = normalizeGlobalPayload(event.payload)
+      if (payload) handler(payload, { directory: event.directory, workspace: event.workspace })
+    })
+  }
+
   function subscribe(handler: (event: Event, metadata: EventMetadata) => void) {
     return sdk.event.on("event", (event) => {
-      if (event.directory === "global" || event.project === project.project()) {
-        const payload = normalizeGlobalPayload(event.payload)
-        if (payload) handler(payload, { workspace: event.workspace })
-      }
+      if (event.directory !== "global" && event.directory !== project.instance.directory()) return
+      const payload = normalizeGlobalPayload(event.payload)
+      if (payload) handler(payload, { directory: event.directory, workspace: event.workspace })
+    })
+  }
+
+  function subscribeBatchAll(handler: (events: EventItem[]) => void) {
+    return sdk.event.on("batch", (events) => {
+      handler(
+        events.flatMap((event) => {
+          const payload = normalizeGlobalPayload(event.payload)
+          return payload
+            ? [{ event: payload, metadata: { directory: event.directory, workspace: event.workspace } }]
+            : []
+        }),
+      )
     })
   }
 
@@ -31,6 +56,8 @@ export function useEvent() {
 
   return {
     subscribe,
+    subscribeAll,
+    subscribeBatchAll,
     on,
   }
 }

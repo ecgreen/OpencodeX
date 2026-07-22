@@ -270,7 +270,7 @@ test("GUI and TUI adapters retain parity after event-before-snapshot replay and 
   releaseSnapshot()
   await starting
   await controller.refreshCapabilities()
-  await waitFor(() => snapshots === 2 && connections === 2)
+  await waitFor(() => snapshots >= 2 && connections >= 2)
 
   expectClientParity(controller.getState())
   expect(controller.getState().cursor).toBe("cursor-2")
@@ -306,7 +306,7 @@ test("GUI and TUI adapters retain parity after a retention reset replaces canoni
       }
     },
     session: async () => sessionSnapshot(),
-    capabilities: async () => capabilities(),
+    capabilities: async () => capabilities("epoch-2"),
     events: async ({ signal }) => {
       connections += 1
       const connection = connections
@@ -390,6 +390,8 @@ function stateEvent(
       scope: scope(),
       epoch: "epoch-1",
       cursor,
+      position: Number(cursor.replace(/\D/g, "")) || 1,
+      visibility: "global" as const,
       aggregateSequence,
       domain,
       operation: "invalidate" as const,
@@ -466,8 +468,10 @@ function olderSessionSnapshot(): OpencodeXSessionSnapshot {
   }
 }
 
-function capabilities(): ClientCapabilitiesSnapshot {
+function capabilities(epoch = "epoch-1"): ClientCapabilitiesSnapshot {
   return {
+    scope: scope(),
+    epoch,
     revision: "capabilities-1",
     providers: [],
     connectedProviderIDs: ["anthropic"],

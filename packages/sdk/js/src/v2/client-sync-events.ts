@@ -37,6 +37,10 @@ export function clearClientSessionEventBuffers(buffers: ClientSessionEventBuffer
   buffers.clear()
 }
 
+export function beginClientSessionEventBuffer(buffers: ClientSessionEventBuffers, sessionID: string) {
+  getClientSessionEventBuffer(buffers, sessionID)
+}
+
 export function drainClientSessionEventBuffer(
   current: ClientStateSyncState,
   sessionID: string,
@@ -51,20 +55,24 @@ export function drainClientSessionEventBuffer(
   const pendingParts = Array.from(buffer.pendingParts).flatMap(([messageID, parts]) => {
     if (!detail.messages[messageID]) return []
     buffer.pendingParts.delete(messageID)
-    return parts.map((part) => applyPendingClientPartDeltas(part, buffer))
+    return parts
   })
   const withParts = pendingParts.reduce(upsertClientPart, detail)
   const parts = Object.fromEntries(
     Object.entries(withParts.parts).map(([partID, part]) => [partID, applyPendingClientPartDeltas(part, buffer)]),
   )
   const changedParts = Object.keys(parts).some((partID) => parts[partID] !== withParts.parts[partID])
+  const withLiveParts = Object.entries(parts).reduce(
+    (current, [partID, part]) => recordLivePartText(current, withParts.parts[partID], part),
+    withParts,
+  )
   const next =
     pendingParts.length === 0 && !changedParts
       ? replayed
       : replaceClientSessionDetail(replayed, sessionID, {
-          ...withParts,
-          revision: withParts.revision + 1,
-          parts: changedParts ? parts : withParts.parts,
+          ...withLiveParts,
+          revision: withLiveParts.revision + 1,
+          parts: changedParts ? parts : withLiveParts.parts,
         })
   const cleared = clearClientDetailTombstones(next, sessionID)
   if (buffer.pendingEvents.length === 0 && buffer.pendingParts.size === 0 && buffer.pendingPartDeltas.size === 0)
@@ -178,8 +186,7 @@ export function applyClientSessionEvent(
     case "message.updated": {
       const detail = current.sessionDetails[event.properties.info.sessionID]
       if (!detail) {
-        if (!current.tombstones.sessions[event.properties.info.sessionID])
-          getClientSessionEventBuffer(buffers, event.properties.info.sessionID).pendingEvents.push(event)
+        buffers.get(event.properties.info.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
       const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.info.sessionID)
@@ -187,7 +194,10 @@ export function applyClientSessionEvent(
       const bufferedParts = sessionBuffers.pendingParts.get(messageID) ?? []
       sessionBuffers.pendingParts.delete(messageID)
       const next = bufferedParts.reduce(
-        (result, part) => upsertClientPart(result, applyPendingClientPartDeltas(part, sessionBuffers)),
+        (result, part) => {
+          const updated = applyPendingClientPartDeltas(part, sessionBuffers)
+          return recordLivePartText(upsertClientPart(result, updated), part, updated)
+        },
         {
           ...detail,
           revision: detail.revision + 1,
@@ -208,8 +218,9 @@ export function applyClientSessionEvent(
       if (sessionBuffers) forgetPendingClientMessage(event.properties.messageID, sessionBuffers)
       const detail = current.sessionDetails[event.properties.sessionID]
       if (!detail) {
-        if (current.tombstones.sessions[event.properties.sessionID]) return { state: current, handled: true }
-        getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        const buffer = buffers.get(event.properties.sessionID)
+        if (!buffer) return { state: current, handled: true }
+        buffer.pendingEvents.push(event)
         return {
           state: markClientMessageTombstone(current, event.properties.sessionID, event.properties.messageID),
           handled: true,
@@ -231,14 +242,21 @@ export function applyClientSessionEvent(
         state: removedPartIDs.reduce(
           (state, partID) => markClientPartTombstone(state, event.properties.sessionID, partID),
           markClientMessageTombstone(
-            replaceClientSessionDetail(current, event.properties.sessionID, {
-              ...detail,
-              revision: detail.revision + 1,
-              messageIDs: detail.messageIDs.filter((messageID) => messageID !== event.properties.messageID),
-              messages,
-              partIDs,
-              parts,
-            }),
+            replaceClientSessionDetail(
+              current,
+              event.properties.sessionID,
+              clearLivePartText(
+                {
+                  ...detail,
+                  revision: detail.revision + 1,
+                  messageIDs: detail.messageIDs.filter((messageID) => messageID !== event.properties.messageID),
+                  messages,
+                  partIDs,
+                  parts,
+                },
+                removedPartIDs,
+              ),
+            ),
             event.properties.sessionID,
             event.properties.messageID,
           ),
@@ -249,24 +267,27 @@ export function applyClientSessionEvent(
     case "message.part.updated": {
       const detail = current.sessionDetails[event.properties.part.sessionID]
       if (!detail) {
-        if (!current.tombstones.sessions[event.properties.part.sessionID])
-          getClientSessionEventBuffer(buffers, event.properties.part.sessionID).pendingEvents.push(event)
+        buffers.get(event.properties.part.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
       const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.part.sessionID)
-      const part = applyPendingClientPartDeltas(event.properties.part, sessionBuffers)
-      if (!detail.messages[part.messageID]) {
+      if (!detail.messages[event.properties.part.messageID]) {
         sessionBuffers.pendingParts.set(
-          part.messageID,
-          upsertClientPartList(sessionBuffers.pendingParts.get(part.messageID) ?? [], part),
+          event.properties.part.messageID,
+          upsertClientPartList(
+            sessionBuffers.pendingParts.get(event.properties.part.messageID) ?? [],
+            event.properties.part,
+          ),
         )
         return { state: current, handled: true }
       }
+      const part = applyPendingClientPartDeltas(event.properties.part, sessionBuffers)
+      const updated = recordLivePartText(upsertClientPart(detail, part), event.properties.part, part)
       return {
         state: clearClientPartTombstone(
           replaceClientSessionDetail(current, part.sessionID, {
-            ...upsertClientPart(detail, part),
-            revision: detail.revision + 1,
+            ...updated,
+            revision: updated.revision + 1,
           }),
           part.id,
         ),
@@ -276,8 +297,7 @@ export function applyClientSessionEvent(
     case "message.part.delta": {
       const detail = current.sessionDetails[event.properties.sessionID]
       if (!detail) {
-        if (current.tombstones.sessions[event.properties.sessionID]) return { state: current, handled: true }
-        getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        buffers.get(event.properties.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
       const part = detail.parts[event.properties.partID]
@@ -290,12 +310,24 @@ export function applyClientSessionEvent(
       }
       const next = applyClientPartDelta(part, event.properties.field, event.properties.delta)
       if (next === part) return { state: current, handled: true }
+      if ((part.type !== "text" && part.type !== "reasoning") || (next.type !== "text" && next.type !== "reasoning"))
+        return { state: current, handled: true }
+      const live = detail.livePartText?.[part.id]
       return {
-        state: replaceClientSessionDetail(current, event.properties.sessionID, {
-          ...detail,
-          revision: detail.revision + 1,
-          parts: { ...detail.parts, [part.id]: next },
-        }),
+        state: replaceClientSessionDetail(
+          current,
+          event.properties.sessionID,
+          recordLivePartText(
+            {
+              ...detail,
+              revision: detail.revision + 1,
+              parts: { ...detail.parts, [part.id]: next },
+            },
+            part,
+            next,
+            live,
+          ),
+        ),
         handled: true,
       }
     }
@@ -304,8 +336,9 @@ export function applyClientSessionEvent(
       if (sessionBuffers) forgetPendingClientPart(event.properties.messageID, event.properties.partID, sessionBuffers)
       const detail = current.sessionDetails[event.properties.sessionID]
       if (!detail) {
-        if (!current.tombstones.sessions[event.properties.sessionID])
-          getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        const buffer = buffers.get(event.properties.sessionID)
+        if (!buffer) return { state: current, handled: true }
+        buffer.pendingEvents.push(event)
         return {
           state: markClientPartTombstone(current, event.properties.sessionID, event.properties.partID),
           handled: true,
@@ -320,17 +353,24 @@ export function applyClientSessionEvent(
       delete parts[event.properties.partID]
       return {
         state: markClientPartTombstone(
-          replaceClientSessionDetail(current, event.properties.sessionID, {
-            ...detail,
-            revision: detail.revision + 1,
-            partIDs: {
-              ...detail.partIDs,
-              [event.properties.messageID]: (detail.partIDs[event.properties.messageID] ?? []).filter(
-                (partID) => partID !== event.properties.partID,
-              ),
-            },
-            parts,
-          }),
+          replaceClientSessionDetail(
+            current,
+            event.properties.sessionID,
+            clearLivePartText(
+              {
+                ...detail,
+                revision: detail.revision + 1,
+                partIDs: {
+                  ...detail.partIDs,
+                  [event.properties.messageID]: (detail.partIDs[event.properties.messageID] ?? []).filter(
+                    (partID) => partID !== event.properties.partID,
+                  ),
+                },
+                parts,
+              },
+              [event.properties.partID],
+            ),
+          ),
           event.properties.sessionID,
           event.properties.partID,
         ),
@@ -339,8 +379,7 @@ export function applyClientSessionEvent(
     }
     case "todo.updated":
       if (!current.sessionDetails[event.properties.sessionID]) {
-        if (!current.tombstones.sessions[event.properties.sessionID])
-          getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        buffers.get(event.properties.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
       return {
@@ -352,8 +391,7 @@ export function applyClientSessionEvent(
       }
     case "session.diff":
       if (!current.sessionDetails[event.properties.sessionID]) {
-        if (!current.tombstones.sessions[event.properties.sessionID])
-          getClientSessionEventBuffer(buffers, event.properties.sessionID).pendingEvents.push(event)
+        buffers.get(event.properties.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
       return {
@@ -369,6 +407,8 @@ export function applyClientSessionEvent(
 }
 
 function patchClientSession(current: ClientStateSyncState, session: Session) {
+  const previous = current.sessions.records[session.id]
+  if (previous && previous.time.updated > session.time.updated) return current
   const sessionDetails = current.sessionDetails[session.id]
     ? {
         ...current.sessionDetails,
@@ -535,13 +575,44 @@ function updateClientSessionSnapshot(
 }
 
 function upsertClientPart(detail: ClientSessionDetailState, part: Part): ClientSessionDetailState {
-  return {
+  const updated = {
     ...detail,
     partIDs: {
       ...detail.partIDs,
       [part.messageID]: upsertClientPartID(detail.partIDs[part.messageID] ?? [], part.id),
     },
     parts: { ...detail.parts, [part.id]: part },
+  }
+  return clearLivePartText(updated, [part.id])
+}
+
+function clearLivePartText(detail: ClientSessionDetailState, partIDs: readonly string[]) {
+  if (!detail.livePartText || !partIDs.some((partID) => detail.livePartText?.[partID])) return detail
+  const livePartText = { ...detail.livePartText }
+  partIDs.forEach((partID) => delete livePartText[partID])
+  return { ...detail, livePartText: Object.keys(livePartText).length > 0 ? livePartText : undefined }
+}
+
+function recordLivePartText(
+  detail: ClientSessionDetailState,
+  base: Part | undefined,
+  next: Part,
+  existing?: { base: string; text: string },
+) {
+  if (
+    !base ||
+    (base.type !== "text" && base.type !== "reasoning") ||
+    (next.type !== "text" && next.type !== "reasoning") ||
+    next.time?.end !== undefined ||
+    base.text === next.text
+  )
+    return detail
+  return {
+    ...detail,
+    livePartText: {
+      ...detail.livePartText,
+      [next.id]: existing ? { ...existing, text: next.text } : { base: base.text, text: next.text },
+    },
   }
 }
 
@@ -565,14 +636,6 @@ function rememberPendingClientPartDelta(
   input: { messageID: string; partID: string; field: string; delta: string },
   buffers: ClientSessionEventBuffer,
 ) {
-  const pending = buffers.pendingParts.get(input.messageID)
-  if (pending?.some((part) => part.id === input.partID)) {
-    buffers.pendingParts.set(
-      input.messageID,
-      pending.map((part) => (part.id === input.partID ? applyClientPartDelta(part, input.field, input.delta) : part)),
-    )
-    return
-  }
   const deltas = buffers.pendingPartDeltas.get(input.messageID) ?? new Map<string, string>()
   const key = `${input.partID}\0${input.field}`
   deltas.set(key, (deltas.get(key) ?? "") + input.delta)
@@ -582,6 +645,13 @@ function rememberPendingClientPartDelta(
 function applyPendingClientPartDeltas(part: Part, buffers: ClientSessionEventBuffer) {
   const deltas = buffers.pendingPartDeltas.get(part.messageID)
   if (!deltas) return part
+  if ((part.type === "text" || part.type === "reasoning") && part.time?.end !== undefined) {
+    Array.from(deltas.keys())
+      .filter((key) => key.startsWith(`${part.id}\0`))
+      .forEach((key) => deltas.delete(key))
+    if (deltas.size === 0) buffers.pendingPartDeltas.delete(part.messageID)
+    return part
+  }
   const next = Array.from(deltas).reduce((current, [key, delta]) => {
     const [partID, field] = key.split("\0")
     if (partID !== part.id || !field) return current

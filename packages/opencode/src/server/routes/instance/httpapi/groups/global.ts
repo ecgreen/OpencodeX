@@ -12,6 +12,7 @@ import { ConflictError, ForbiddenError, InvalidRequestError } from "../errors"
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
+  active: Schema.Boolean,
 })
 
 const SyncEventSchemas = EventV2.registry

@@ -132,14 +132,14 @@ export async function reorderViews(gui: GuiClient, viewIDs: string[]) {
   return gui.client.opencodex.view.reorder({ opencodeXViewReorderInput: { viewIDs } }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function updateViewFocus(gui: GuiClient, viewID: string, focusedSessionID: string) {
-  return gui.client.opencodex.view.update({ viewID, focusedSessionID }, { headers: authHeaders(gui), throwOnError: true })
+export async function updateViewFocus(gui: GuiClient, viewID: string, expectedTimeUpdated: number, focusedSessionID: string) {
+  return gui.client.opencodex.view.update({ viewID, expectedTimeUpdated, focusedSessionID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
 export async function deleteView(gui: GuiClient, viewID: string) {
   return gui.client.opencodex.view.delete({ viewID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function updateView(gui: GuiClient, viewID: string, input: { title?: string; sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
+export async function updateView(gui: GuiClient, viewID: string, input: { expectedTimeUpdated: number; title?: string; sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
   return gui.client.opencodex.view.update({ viewID, ...input }, { headers: authHeaders(gui), throwOnError: true })
 }

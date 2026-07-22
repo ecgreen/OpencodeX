@@ -336,9 +336,9 @@
 }
 
 .dashboard-status-card.status-ready-for-review {
-  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
-  background: transparent;
-  --card-accent: var(--purple);
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+  background: linear-gradient(90deg,var(--blue-soft),var(--surface) 58%);
+  --card-accent: var(--blue);
   --session-state-color: var(--info) ;
 }
 

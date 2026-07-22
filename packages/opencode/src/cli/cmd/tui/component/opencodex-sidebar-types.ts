@@ -18,7 +18,13 @@ export type OpencodeXProjectInfo = {
 
 export type SidebarSessionOrderItem = ClientSessionOrderInput & { session: Session }
 export type OpencodeXSwarmInfo = { id: string; title: string }
-export type OpencodeXViewInfo = { id: string; title: string; sessionIDs: string[]; focusedSessionID?: string }
+export type OpencodeXViewInfo = {
+  id: string
+  title: string
+  sessionIDs: string[]
+  focusedSessionID?: string
+  timeUpdated: number
+}
 export type SessionManagerOptionValue = { type: "session"; id: string } | { type: "view"; id: string }
 export type SidebarStatus = DerivedStatus | "review_ready" | "unviewed"
 export type OpencodeXProjectValidation = { valid: boolean; folders: { input: string; path: string; valid: boolean; message?: string }[] }

@@ -38,7 +38,7 @@ export function ViewPane(props: {
   questions: QuestionRequest[]
   focus: (focusComposer: boolean) => void
   openSidePanelTarget?: (target: SessionSidePanelTarget) => void
-  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => void
+  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => Promise<boolean>
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void

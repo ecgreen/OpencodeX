@@ -244,8 +244,11 @@ export function createManagementActionsController(input: {
   }) {
     const client = input.client()
     if (!client) return
+    const current = value.viewID ? input.snapshot()?.views.find((view) => view.id === value.viewID) : undefined
+    if (value.viewID && !current) return
     const view = value.viewID
       ? await updateView(client, value.viewID, {
+          expectedTimeUpdated: Number(current?.timeUpdated ?? 0),
           title: value.title,
           sessionIDs: value.sessionIDs,
           metadata: value.metadata,

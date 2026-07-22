@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, primaryKey, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { ProjectTable } from "../project/sql"
 import type { SessionMessage } from "./message"
 import type { Snapshot } from "../snapshot"
@@ -137,3 +137,82 @@ export const PermissionTable = sqliteTable("permission", {
   ...Timestamps,
   data: text({ mode: "json" }).notNull().$type<PermissionV2.Ruleset>(),
 })
+
+export const SessionExecutionTable = sqliteTable(
+  "session_execution",
+  {
+    session_id: text().$type<SessionSchema.ID>().primaryKey(),
+    project_id: text().notNull(),
+    directory: text().notNull(),
+    state: text().$type<"idle" | "queued" | "running" | "interrupted">().notNull(),
+    owner_id: text(),
+    generation: integer().notNull().default(0),
+    lease_expires_at: integer(),
+    cancel_requested_at: integer(),
+    queued_at: integer(),
+    started_at: integer(),
+    completed_at: integer(),
+    ...Timestamps,
+  },
+  (table) => [
+    index("session_execution_state_idx").on(table.state, table.lease_expires_at),
+    index("session_execution_directory_idx").on(table.directory),
+  ],
+)
+
+export const SessionStatusTable = sqliteTable(
+  "session_status",
+  {
+    session_id: text().$type<SessionSchema.ID>().primaryKey(),
+    project_id: text().notNull(),
+    directory: text().notNull(),
+    status: text({ mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    ...Timestamps,
+  },
+  (table) => [index("session_status_directory_idx").on(table.directory)],
+)
+
+export const SessionInteractionTable = sqliteTable(
+  "session_interaction",
+  {
+    id: text().primaryKey(),
+    kind: text().$type<"permission" | "question">().notNull(),
+    session_id: text().$type<SessionSchema.ID>().notNull(),
+    project_id: text().notNull(),
+    directory: text().notNull(),
+    state: text().$type<"pending" | "replied" | "rejected">().notNull(),
+    request_json: text({ mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    response_json: text({ mode: "json" }).$type<Record<string, unknown>>(),
+    responded_at: integer(),
+    ...Timestamps,
+  },
+  (table) => [
+    index("session_interaction_pending_idx").on(table.kind, table.state, table.directory),
+    index("session_interaction_session_idx").on(table.session_id, table.state),
+  ],
+)
+
+export const SessionCommandTable = sqliteTable(
+  "session_command",
+  {
+    id: text().primaryKey(),
+    session_id: text().$type<SessionSchema.ID>().notNull(),
+    message_id: text().$type<MessageID>().notNull(),
+    project_id: text().notNull(),
+    directory: text().notNull(),
+    status: text().$type<"queued" | "running" | "succeeded" | "failed" | "cancelled">().notNull(),
+    owner_id: text(),
+    claim_generation: integer().notNull().default(0),
+    lease_expires_at: integer(),
+    error: text(),
+    started_at: integer(),
+    completed_at: integer(),
+    ...Timestamps,
+  },
+  (table) => [
+    index("session_command_status_idx").on(table.status, table.directory),
+    index("session_command_session_idx").on(table.session_id, table.status),
+    index("session_command_lease_idx").on(table.status, table.lease_expires_at),
+    uniqueIndex("session_command_message_idx").on(table.session_id, table.message_id),
+  ],
+)

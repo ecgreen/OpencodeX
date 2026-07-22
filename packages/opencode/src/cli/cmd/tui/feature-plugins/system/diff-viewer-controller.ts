@@ -285,7 +285,11 @@ export function createDiffViewerController(api: TuiPluginApi) {
         reviewedAt && currentState?.displayStatus === "needs_review" ? "idle" : (currentState?.displayStatus ?? "idle"),
       updated: currentState?.updated ?? false,
     })
-    void updateClientSessionState(api.client, currentSessionID, { reviewedFiles: [...next], reviewedAt }).catch(() => {})
+    void updateClientSessionState(api.client, currentSessionID, {
+      expectedReviewedFiles: currentState?.reviewedFiles ?? [],
+      reviewedFiles: [...next],
+      reviewedAt,
+    }).catch(() => {})
   }
 
   const toggleSinglePatch = () => {

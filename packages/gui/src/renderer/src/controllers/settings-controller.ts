@@ -21,18 +21,23 @@ export function createSettingsController(input: {
   const [permissionMode, setPermissionMode] = createSignal<PermissionMode>()
   const [savingPermissionMode, setSavingPermissionMode] = createSignal(false)
   const [permissionModeError, setPermissionModeError] = createSignal<string>()
+  let permissionModeRevision: string | undefined
   let loadedClient: ReturnType<typeof input.authoritative.client>
+  let loadedCapabilitiesRevision: string | undefined
 
   createEffect(() => {
     const gui = input.authoritative.client()
-    if (!gui || gui === loadedClient) return
+    const revision = input.authoritative.state()?.capabilities?.revision
+    if (!gui || (gui === loadedClient && revision === loadedCapabilitiesRevision)) return
     loadedClient = gui
+    loadedCapabilitiesRevision = revision
     void loadPermissionMode(gui)
   })
 
   async function loadPermissionMode(gui: NonNullable<ReturnType<typeof input.authoritative.client>>) {
     try {
       const result = await gui.client.opencodex.settings.get({ headers: authHeaders(gui), throwOnError: true })
+      permissionModeRevision = result.data?.revision
       const mode = result.data?.permission_mode
       if (isPermissionMode(mode)) {
         setPermissionMode(mode)
@@ -58,6 +63,10 @@ export function createSettingsController(input: {
   async function changePermissionMode(mode: PermissionMode) {
     const gui = input.authoritative.client()
     if (!gui || savingPermissionMode()) return
+    if (!permissionModeRevision) {
+      await loadPermissionMode(gui)
+      return
+    }
     if (
       mode === "yolo" &&
       !(await input.dialogs.confirm({
@@ -72,12 +81,14 @@ export function createSettingsController(input: {
     setSavingPermissionMode(true)
     setPermissionModeError(undefined)
     try {
-      await gui.client.opencodex.settings.update(
-        { opencodeXSettingsUpdateInput: { permission_mode: mode } },
+      const result = await gui.client.opencodex.settings.update(
+        { opencodeXSettingsUpdateInput: { permission_mode: mode, expectedRevision: permissionModeRevision } },
         { headers: authHeaders(gui), throwOnError: true },
       )
+      permissionModeRevision = result.data?.revision ?? permissionModeRevision
       setPermissionMode(mode)
     } catch (cause) {
+      await loadPermissionMode(gui)
       const message = cause instanceof Error ? cause.message : String(cause)
       setPermissionModeError(message)
       input.alert(`Failed to update permission mode: ${message}`)

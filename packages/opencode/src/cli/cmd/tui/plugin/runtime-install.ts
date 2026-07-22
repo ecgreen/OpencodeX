@@ -100,6 +100,27 @@ export async function installPluginBySpec(
   }
 
   const dir = state.api.state.path
+  if (state.install) {
+    const installed = await state.install(spec, global).catch((error) => ({
+      ok: false as const,
+      message: errorMessage(error),
+      tui: false,
+      server: false,
+      items: [],
+    }))
+    if (!installed.ok) return { ok: false, message: installed.message ?? `Failed to install ${spec}` }
+    const canonical = installed.spec ?? spec
+    const tui = installed.items.find((item) => item.kind === "tui")
+    if (installed.tui) {
+      state.pending.set(spec, {
+        spec: canonical,
+        scope: global ? "global" : "local",
+        source: (tui?.file ?? dir.config) || path.join(installed.dir ?? dir.directory ?? state.directory, "tui.json"),
+      })
+    }
+    return { ok: true, dir: installed.dir ?? dir.directory ?? state.directory, tui: installed.tui }
+  }
+
   if (!dir.directory) {
     return {
       ok: false,
@@ -107,7 +128,7 @@ export async function installPluginBySpec(
     }
   }
 
-  const install = await installPlugin(spec)
+  const install = await installPlugin(spec, undefined, dir.directory)
   if (!install.ok) {
     const detail = installDetail(install.error)
     return {
@@ -132,7 +153,7 @@ export async function installPluginBySpec(
   }
 
   const patch = await patchPluginConfig({
-    spec,
+    spec: install.spec,
     targets: manifest.targets,
     global,
     vcs: dir.worktree && dir.worktree !== "/" ? "git" : undefined,
@@ -156,7 +177,7 @@ export async function installPluginBySpec(
   if (tui) {
     const file = patch.items.find((item) => item.kind === "tui")?.file
     state.pending.set(spec, {
-      spec: tui.opts ? ([spec, tui.opts] as ConfigPlugin.Spec) : spec,
+      spec: tui.opts ? ([install.spec, tui.opts] as ConfigPlugin.Spec) : install.spec,
       scope: global ? "global" : "local",
       source: (file ?? dir.config) || path.join(patch.dir, "tui.json"),
     })

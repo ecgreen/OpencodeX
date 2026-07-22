@@ -17,6 +17,7 @@ export function OpencodeXSidebarStatusCard(props: {
   active: boolean
   title: string
   titleColor: RGBA
+  preserveTitleColor?: boolean
   borderColor: RGBA
   animateTitle: boolean
   detail: string
@@ -66,7 +67,7 @@ export function OpencodeXSidebarStatusCard(props: {
             fallback={
               <text
                 attributes={TextAttributes.BOLD}
-                fg={style.textColor(props.rowID, props.titleColor)}
+                fg={props.preserveTitleColor ? props.titleColor : style.textColor(props.rowID, props.titleColor)}
                 overflow="hidden"
                 wrapMode="none"
                 truncate
@@ -77,7 +78,7 @@ export function OpencodeXSidebarStatusCard(props: {
           >
             <LogoShimmerText
               text={titleLabel(props.title, SIDEBAR_CARD_TITLE_WIDTH)}
-              ink={style.textColor(props.rowID, props.titleColor)}
+              ink={props.preserveTitleColor ? props.titleColor : style.textColor(props.rowID, props.titleColor)}
               attributes={TextAttributes.BOLD}
               wrapMode="none"
               truncate

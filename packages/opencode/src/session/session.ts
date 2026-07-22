@@ -761,29 +761,22 @@ export const layer: Layer.Layer<
 
     const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
       const session = yield* get(sessionID)
-      try {
-        // `remove` needs to work in all cases, such as broken sessions that
-        // run cleanup without instance state.
-        const hasInstance = yield* InstanceState.directory.pipe(
-          Effect.as(true),
-          Effect.catchCause(() => Effect.succeed(false)),
-        )
+      // `remove` needs to work in all cases, such as broken sessions that
+      // run cleanup without instance state.
+      const hasInstance = yield* InstanceState.directory.pipe(
+        Effect.as(true),
+        Effect.catchCause(() => Effect.succeed(false)),
+      )
 
-        if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
-        const kids = yield* children(sessionID)
-        for (const child of kids) {
-          yield* remove(child.id)
-        }
+      if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
+      const kids = yield* children(sessionID)
+      for (const child of kids) yield* remove(child.id)
 
-        yield* events.publish(
-          SessionLegacy.Event.Deleted,
-          { sessionID, info: session },
-          { location: eventLocation(session) },
-        )
-        yield* events.remove(sessionID)
-      } catch (e) {
-        log.error(e)
-      }
+      yield* events.publish(
+        SessionLegacy.Event.Deleted,
+        { sessionID, info: session },
+        { location: eventLocation(session) },
+      )
     })
 
     const updateMessage = <T extends SessionLegacy.Info>(msg: T): Effect.Effect<T> =>
@@ -900,19 +893,33 @@ export const layer: Layer.Layer<
     })
 
     const patch = (sessionID: SessionID, info: Patch) =>
-      Effect.gen(function* () {
-        const current = yield* get(sessionID)
-        const next = {
-          ...current,
-          ...info,
-          time: info.time ? { ...current.time, ...info.time } : current.time,
-          share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
-          summary: info.summary === null ? undefined : (info.summary ?? current.summary),
-          revert: info.revert === null ? undefined : (info.revert ?? current.revert),
-          permission: info.permission === null ? undefined : (info.permission ?? current.permission),
-        } as Info
-        yield* events.publish(SessionLegacy.Event.Updated, { sessionID, info: next }, { location: eventLocation(next) })
-      })
+      events.barrier(
+        Effect.gen(function* () {
+          const event = yield* db.transaction(
+            () =>
+              Effect.gen(function* () {
+                const current = yield* get(sessionID)
+                const next = {
+                  ...current,
+                  ...info,
+                  time: info.time ? { ...current.time, ...info.time } : current.time,
+                  share:
+                    info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
+                  summary: info.summary === null ? undefined : (info.summary ?? current.summary),
+                  revert: info.revert === null ? undefined : (info.revert ?? current.revert),
+                  permission: info.permission === null ? undefined : (info.permission ?? current.permission),
+                } as Info
+                return yield* events.commit(
+                  SessionLegacy.Event.Updated,
+                  { sessionID, info: next },
+                  { location: eventLocation(next) },
+                )
+              }),
+            { behavior: "immediate" },
+          )
+          yield* events.broadcast(event)
+        }),
+      )
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)

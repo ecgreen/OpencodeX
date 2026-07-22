@@ -37,8 +37,8 @@ export const planLayer = Layer.effect(
       const invalid = validateRoles(roles)
       if (invalid) return yield* new ValidationError({ message: invalid })
       const title = input.title?.trim() || defaultTitle(prompt)
-      yield* db
-        .transaction(
+      const event = yield* events.barrier(
+        db.transaction(
           (tx) =>
             Effect.gen(function* () {
               yield* tx
@@ -91,11 +91,12 @@ export const planLayer = Layer.effect(
                   time_updated: now,
                 })
                 .run()
+              return yield* events.commit(StateEvent.Created, { swarmID })
             }),
           { behavior: "immediate" },
-        )
-        .pipe(Effect.orDie)
-      yield* events.publish(StateEvent.Created, { swarmID })
+        ).pipe(Effect.orDie),
+      )
+      yield* events.broadcast(event)
       return { id: swarmID, title, roles }
     })
 

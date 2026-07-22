@@ -41,6 +41,8 @@ export async function init(input: {
   config: TuiConfig.Resolved
   dispose?: () => void
   disposeTimeoutMs?: number
+  install?: RuntimeState["install"]
+  toggle?: RuntimeState["toggle"]
 }) {
   const cwd = process.cwd()
   if (loaded) {
@@ -95,6 +97,8 @@ async function load(input: {
   config: TuiConfig.Resolved
   dispose?: () => void
   disposeTimeoutMs?: number
+  install?: RuntimeState["install"]
+  toggle?: RuntimeState["toggle"]
 }) {
   const cwd = process.cwd()
   const next: RuntimeState = {
@@ -105,6 +109,8 @@ async function load(input: {
     plugins: [],
     plugins_by_id: new Map(),
     pending: new Map(),
+    install: input.install,
+    toggle: input.toggle,
     dispose_timeout_ms: input.disposeTimeoutMs ?? DISPOSE_TIMEOUT_MS,
     actions,
   }

@@ -45,13 +45,19 @@ export function applyOnly(db: Database, input: Migration[]) {
 
     for (const migration of input) {
       if (completed.has(migration.id)) continue
-      yield* db.transaction((tx) =>
-        Effect.gen(function* () {
-          if (!process.env.OPENCODE_SKIP_MIGRATIONS) yield* migration.up(tx)
-          yield* tx.run(
-            sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
-          )
-        }),
+      yield* db.transaction(
+        (tx) =>
+          Effect.gen(function* () {
+            const applied = yield* tx.get<{ id: string }>(
+              sql`SELECT id FROM ${sql.identifier("migration")} WHERE id = ${migration.id}`,
+            )
+            if (applied) return
+            if (!process.env.OPENCODE_SKIP_MIGRATIONS) yield* migration.up(tx)
+            yield* tx.run(
+              sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
+            )
+          }),
+        { behavior: "immediate" },
       )
     }
   })

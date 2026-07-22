@@ -11,17 +11,16 @@ import { useExit } from "../../context/exit"
 import { useCommandSlashes, useOpencodeKeymap } from "../../keymap"
 import { DialogProvider } from "../dialog-provider"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
-import { getPendingOpencodeXProjectSession, setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "../opencodex-session-state"
+import {
+  getPendingOpencodeXProjectSession,
+  setPendingOpencodeXProjectSession,
+  setPendingOpencodeXSwarmTask,
+} from "../opencodex-session-state"
 import { refreshOpencodeXSidebar } from "../opencodex-sidebar"
 import { errorMessage } from "@/util/error"
 import { usePromptDrafts } from "./drafts"
 import { expandPromptText } from "./extmarks"
-import {
-  latestSwarmSessionID,
-  matchOpencodeXSwarm,
-  opencodeXSwarmExecutionMode,
-  promptSlash,
-} from "./helpers"
+import { latestSwarmSessionID, matchOpencodeXSwarm, opencodeXSwarmExecutionMode, promptSlash } from "./helpers"
 import { usePromptHistory } from "./history"
 import type { createPromptEditorContext } from "./editor-context"
 import type { createPromptOpencodeXContext } from "./opencodex"
@@ -73,7 +72,8 @@ export function createPromptSubmit(input: {
       input.setStore("prompt", "input", textarea.plainText)
       input.syncExtmarks()
     }
-    if (input.props.disabled || input.workspace.creating() || input.autoVisible() || !input.state.prompt.input) return false
+    if (input.props.disabled || input.workspace.creating() || input.autoVisible() || !input.state.prompt.input)
+      return false
     const trimmed = input.state.prompt.input.trim()
     if (["exit", "quit", ":q"].includes(trimmed)) {
       void exit()
@@ -103,10 +103,14 @@ export function createPromptSubmit(input: {
     const workspaceSession = input.props.sessionID ? sync.session.get(input.props.sessionID) : undefined
     const workspaceID = workspaceSession?.workspaceID
     if (input.props.sessionID && workspaceID && (project.workspace.status(workspaceID) ?? "error") !== "connected") {
-      dialog.replace(() => <DialogWorkspaceUnavailable onRestore={() => {
-        void input.workspace.open()
-        return false
-      }} />)
+      dialog.replace(() => (
+        <DialogWorkspaceUnavailable
+          onRestore={() => {
+            void input.workspace.open()
+            return false
+          }}
+        />
+      ))
       return false
     }
 
@@ -115,9 +119,13 @@ export function createPromptSubmit(input: {
     if (!sessionID) return true
     const text = expandPromptText(textarea, input.state, input.promptPartTypeID())
     if (input.opencodex.deletedSwarmSession() && !isPromptSessionCommand(sync, input.state.mode, text)) {
-      toast.show({ message: "This swarm was deleted. The session is read-only; slash commands still work.", variant: "warning" })
+      toast.show({
+        message: "This swarm was deleted. The session is read-only; slash commands still work.",
+        variant: "warning",
+      })
       return false
     }
+    if (!input.props.sessionID) await sync.session.sync(sessionID)
     const result = sendPromptToSession({
       sdk,
       sync,
@@ -146,7 +154,11 @@ export function createPromptSubmit(input: {
     const slash = promptSlash(trimmed)
     if (slash?.name === "swarm" || slash?.name === "open-swarm") {
       if (slash.name === "swarm" && input.session.startedSwarmSession()) {
-        toast.show({ message: "Started swarm sessions cannot switch model or swarm.", variant: "warning", duration: 3000 })
+        toast.show({
+          message: "Started swarm sessions cannot switch model or swarm.",
+          variant: "warning",
+          duration: 3000,
+        })
         return false
       }
       if (!slash.arguments.trim()) {

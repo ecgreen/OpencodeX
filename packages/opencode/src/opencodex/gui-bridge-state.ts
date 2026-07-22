@@ -4,12 +4,14 @@ import type {
   LeaseGeneration,
   Operation,
   RequestID,
+  RequestInput,
   RemoteError,
   ResponseOutput,
   Scope,
   Token,
   UnavailableError,
 } from "./gui-bridge"
+import type { SessionID } from "@/session/schema"
 
 export interface Lease {
   readonly clientID: ClientID
@@ -31,6 +33,8 @@ export interface Pending {
   readonly token: Token
   readonly scope: Scope
   readonly operation: Operation
+  readonly sessionID: SessionID
+  readonly input: RequestInput
   readonly deferred: Deferred.Deferred<ResponseOutput, RemoteError | UnavailableError>
 }
 

@@ -41,11 +41,15 @@ export type FetchHandler = (url: URL) => Response | Promise<Response> | undefine
 export function createFetch(override?: FetchHandler) {
   const session = [] as URL[]
   const requests = [] as URL[]
+  const requestHeaders = [] as Headers[]
   const fetch = Object.assign(
     async (...args: Parameters<typeof globalThis.fetch>) => {
       const [input, init] = args
       const url = new URL(input instanceof Request ? input.url : String(input))
       requests.push(url)
+      const headers = new Headers(input instanceof Request ? input.headers : undefined)
+      new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
+      requestHeaders.push(headers)
       if (url.pathname === "/session" || url.pathname === "/experimental/opencodex/state") session.push(url)
 
       const overridden = await override?.(url)
@@ -150,7 +154,7 @@ export function createFetch(override?: FetchHandler) {
     { preconnect: globalThis.fetch.preconnect },
   )
 
-  return { fetch, requests, session }
+  return { fetch, requests, requestHeaders, session }
 }
 
 function stateEvents(signal?: AbortSignal | null) {

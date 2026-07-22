@@ -7,9 +7,10 @@ import {
 import type { useSync } from "@tui/context/sync"
 import type { useTheme } from "@tui/context/theme"
 import {
-  NEW_RESULT_COLOR,
+  REVIEW_READY_COLOR,
   deriveStatus,
   deriveViewStatus,
+  isReviewReadyStatus,
   statusColor as derivedStatusColor,
   statusLabel,
 } from "./opencodex-session-status"
@@ -24,8 +25,6 @@ import type {
   OpencodeXSwarmRun,
   OpencodeXView,
 } from "./opencodex-operations-types"
-
-const REVIEW_READY_PURPLE = NEW_RESULT_COLOR
 
 export function timeAgo(input: number) {
   const seconds = Math.max(0, Math.floor((Date.now() - input) / 1000))
@@ -121,13 +120,12 @@ export function isGenericDashboardSession(session: DashboardSession) {
 }
 
 export function dashboardStatusColor(status: DashboardStatus) {
-  if (status === "unviewed") return NEW_RESULT_COLOR
-  if (status === "review_ready" || status === "needs_review") return REVIEW_READY_PURPLE
+  if (isReviewReadyStatus(status)) return REVIEW_READY_COLOR
   return derivedStatusColor(status)
 }
 
 export function dashboardStatusLabel(status: DashboardStatus) {
-  if (status === "unviewed" || status === "review_ready" || status === "needs_review") return "Ready for review"
+  if (isReviewReadyStatus(status)) return "Ready for review"
   return statusLabel(status)
 }
 

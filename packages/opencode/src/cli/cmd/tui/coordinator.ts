@@ -18,10 +18,14 @@ export const TuiCoordinatorCommand = cmd({
       }),
   handler: async (args) => {
     if (typeof args.directory !== "string") throw new Error("directory is required")
+    const key = coordinatorKey()
+    if (typeof args.key !== "string" || args.key !== key) {
+      throw new Error("TUI coordinator key does not match its database")
+    }
     await Effect.runPromise(
       runCoordinator({
         directory: args.directory,
-        key: typeof args.key === "string" ? args.key : coordinatorKey(args.directory),
+        key,
         startupLock: process.env[COORDINATOR_STARTUP_LOCK_HELD] !== "1",
       }),
     )

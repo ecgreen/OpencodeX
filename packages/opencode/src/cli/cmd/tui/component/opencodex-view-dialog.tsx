@@ -438,6 +438,7 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       .request<OpencodeXView>(props.view ? `/experimental/opencodex/view/${props.view.id}` : "/experimental/opencodex/view", {
         method: props.view ? "PATCH" : "POST",
         body: JSON.stringify({
+          ...(props.view ? { expectedTimeUpdated: props.view.timeUpdated } : {}),
           title: viewTitle,
           sessionIDs,
           metadata: metadataWithPendingSessions(props.view?.metadata, pending),

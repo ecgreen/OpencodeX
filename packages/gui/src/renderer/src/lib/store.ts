@@ -352,22 +352,46 @@ export async function rejectQuestion(gui: GuiClient, requestID: string, director
   )
 }
 
-export function subscribeEvents(gui: GuiClient, onEvent: (event: GlobalEvent) => void) {
+export function subscribeEvents(
+  gui: GuiClient,
+  onEvent: (event: GlobalEvent) => void,
+  options: { retryDelayMs?: number; maxRetryDelayMs?: number } = {},
+) {
   const controller = new AbortController()
   void (async () => {
+    let attempt = 0
     while (!controller.signal.aborted) {
       try {
         const events = await gui.client.global.event({ signal: controller.signal, sseMaxRetryAttempts: 0 })
-        await gui.client.sync.start({ directory: gui.directory || undefined }).catch(() => {})
+        const started = await gui.client.sync.start({ directory: gui.directory || undefined })
+        if (started.error || started.data !== true) throw new Error("Workspace sync failed to start")
+        attempt = 0
         for await (const event of events.stream) {
           if (controller.signal.aborted) break
           onEvent(event)
         }
       } catch {
         if (controller.signal.aborted) break
-        await new Promise((resolve) => setTimeout(resolve, 1_000))
       }
+      if (controller.signal.aborted) break
+      attempt += 1
+      await abortableDelay(
+        Math.min(options.maxRetryDelayMs ?? 30_000, (options.retryDelayMs ?? 1_000) * 2 ** (attempt - 1)),
+        controller.signal,
+      )
     }
   })()
   return () => controller.abort()
+}
+
+function abortableDelay(delay: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", done)
+      resolve()
+    }
+    const timer = setTimeout(done, delay)
+    signal.addEventListener("abort", done, { once: true })
+  })
 }

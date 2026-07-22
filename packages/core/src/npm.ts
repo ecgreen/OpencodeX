@@ -1,6 +1,7 @@
 export * as Npm from "./npm"
 
 import path from "path"
+import { createHash } from "crypto"
 import npa from "npm-package-arg"
 import { Effect, Schema, Context, Layer, Option, FileSystem } from "effect"
 import { NodeFileSystem } from "@effect/platform-node"
@@ -37,11 +38,8 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Npm") {}
 
-const illegal = process.platform === "win32" ? new Set(["<", ">", ":", '"', "|", "?", "*"]) : undefined
-
-export function sanitize(pkg: string) {
-  if (!illegal) return pkg
-  return Array.from(pkg, (char) => (illegal.has(char) || char.charCodeAt(0) < 32 ? "_" : char)).join("")
+export function cacheKey(pkg: string) {
+  return createHash("sha256").update(pkg).digest("hex")
 }
 
 const resolveEntryPoint = (name: string, dir: string): EntryPoint => {
@@ -74,7 +72,7 @@ export const layer = Layer.effect(
     const global = yield* Global.Service
     const fs = yield* FileSystem.FileSystem
     const flock = yield* EffectFlock.Service
-    const directory = (pkg: string) => path.join(global.cache, "packages", sanitize(pkg))
+    const directory = (pkg: string) => path.join(global.cache, "packages", cacheKey(pkg))
     const reify = (input: { dir: string; add?: string[] }) =>
       Effect.gen(function* () {
         yield* flock.acquire(`npm-install:${input.dir}`)
@@ -114,21 +112,25 @@ export const layer = Layer.effect(
       const dir = directory(pkg)
       const name = (() => {
         try {
-          return npa(pkg).name ?? pkg
+          return npa(pkg).name
         } catch {
-          return pkg
+          return undefined
         }
       })()
 
-      if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
+      if (name && (yield* afs.existsSafe(path.join(dir, "node_modules", name)))) {
         return resolveEntryPoint(name, path.join(dir, "node_modules", name))
       }
 
       const tree = yield* reify({ dir, add: [pkg] })
       const first = tree.edgesOut.values().next().value?.to
       if (!first) {
+        if (!name) return yield* new InstallFailedError({ add: [pkg], dir })
         const result = resolveEntryPoint(name, path.join(dir, "node_modules", name))
         if (Option.isSome(result.entrypoint)) return result
+        return yield* new InstallFailedError({ add: [pkg], dir })
+      }
+      if (!AppFileSystem.contains(dir, first.path)) {
         return yield* new InstallFailedError({ add: [pkg], dir })
       }
       return resolveEntryPoint(first.name, first.path)
@@ -189,6 +191,14 @@ export const layer = Layer.effect(
 
     const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
       const dir = directory(pkg)
+      const name = (() => {
+        try {
+          return npa(pkg).name
+        } catch {
+          return undefined
+        }
+      })()
+      if (!name) return Option.none<string>()
       const binDir = path.join(dir, "node_modules", ".bin")
 
       const pick = Effect.fnUntraced(function* () {
@@ -200,12 +210,12 @@ export const layer = Layer.effect(
         if (bin) return files.includes(bin) ? Option.some(bin) : Option.none<string>()
         if (files.length === 1) return Option.some(files[0])
 
-        const pkgJson = yield* afs.readJson(path.join(dir, "node_modules", pkg, "package.json")).pipe(Effect.option)
+        const pkgJson = yield* afs.readJson(path.join(dir, "node_modules", name, "package.json")).pipe(Effect.option)
 
         if (Option.isSome(pkgJson)) {
           const parsed = pkgJson.value as { bin?: string | Record<string, string> }
           if (parsed?.bin) {
-            const unscoped = pkg.startsWith("@") ? pkg.split("/")[1] : pkg
+            const unscoped = name.startsWith("@") ? name.split("/")[1] : name
             const parsedBin = parsed.bin
             if (typeof parsedBin === "string") return Option.some(unscoped)
             const keys = Object.keys(parsedBin)

@@ -257,6 +257,7 @@
 
 .status-glyph {
   position: absolute;
+  z-index: 1;
   right: 10px;
   bottom: 8px;
   width: 7px;
@@ -275,6 +276,27 @@
 
   92%,to {
     background-position: -160% 0;
+  }
+}
+
+@keyframes ready-card-shine {
+  0%,8% {
+    opacity: 0;
+    background-position: 130% 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  76% {
+    opacity: 1;
+    background-position: -30% 0;
+  }
+
+  80%,to {
+    opacity: 0;
+    background-position: -30% 0;
   }
 }
 

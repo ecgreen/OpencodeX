@@ -4,14 +4,9 @@ import { ProjectV2 } from "@opencode-ai/core/project"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { MessageV2 } from "@/session/message-v2"
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq, isNull, or } from "drizzle-orm"
 import { Effect } from "effect"
-import {
-  EPOCH,
-  OpencodeXStateCursor,
-  type OpencodeXStateEvent,
-  type OpencodeXStateScope,
-} from "./state-schema"
+import { EPOCH, OpencodeXStateCursor, type OpencodeXStateEvent, type OpencodeXStateScope } from "./state-schema"
 
 export const currentStateScope = Effect.fn("OpencodeXState.scope")(function* () {
   const instance = yield* InstanceRef
@@ -24,8 +19,10 @@ export const currentStateScope = Effect.fn("OpencodeXState.scope")(function* () 
   }
 })
 
-export function encodeCursor(scope: OpencodeXStateScope, position: number) {
-  return OpencodeXStateCursor.make(Buffer.from(JSON.stringify({ epoch: EPOCH, scope, position })).toString("base64url"))
+export function encodeCursor(databaseID: string, scope: OpencodeXStateScope, position: number) {
+  return OpencodeXStateCursor.make(
+    Buffer.from(JSON.stringify({ epoch: EPOCH, databaseID, scope, position })).toString("base64url"),
+  )
 }
 
 export function revision(position: number) {
@@ -33,7 +30,9 @@ export function revision(position: number) {
 }
 
 export function sameScope(left: OpencodeXStateScope, right: OpencodeXStateScope) {
-  return left.projectID === right.projectID && left.workspaceID === right.workspaceID && left.directory === right.directory
+  return (
+    left.projectID === right.projectID && left.workspaceID === right.workspaceID && left.directory === right.directory
+  )
 }
 
 export function groupBySession<T extends { sessionID: string }>(items: readonly T[]) {
@@ -76,10 +75,20 @@ export function aggregateID(event: EventV2.Payload) {
   return event.id
 }
 
+export function eventVisibility(event: EventV2.Payload, domain: NonNullable<ReturnType<typeof durableDomain>>) {
+  if (event.type === "opencodex.settings.updated") return "global" as const
+  if (event.type === "opencodex.plugin_config.updated") {
+    const data = event.data && typeof event.data === "object" ? event.data : undefined
+    return data && "global" in data && data.global === true ? ("global" as const) : ("instance" as const)
+  }
+  return domain === "capabilities" ? ("instance" as const) : ("global" as const)
+}
+
 function eventDomain(event: EventV2.Payload): "capabilities" | "catalog" | "operations" | "session" | undefined {
   if (isCapabilitiesEvent(event)) return "capabilities"
   if (event.type.startsWith("opencodex.job.") || event.type.startsWith("opencodex.swarm.")) return "operations"
-  if (event.type.startsWith("message.") || event.type === "todo.updated" || event.type === "session.diff") return "session"
+  if (event.type.startsWith("message.") || event.type === "todo.updated" || event.type === "session.diff")
+    return "session"
   if (
     event.type.startsWith("session.") ||
     event.type.startsWith("permission.") ||
@@ -93,7 +102,13 @@ function eventDomain(event: EventV2.Payload): "capabilities" | "catalog" | "oper
 }
 
 function isCapabilitiesEvent(event: EventV2.Payload) {
-  return event.type === "plugin.added" || event.type === "lsp.updated" || event.type === "mcp.tools.changed"
+  return (
+    event.type === "plugin.added" ||
+    event.type === "lsp.updated" ||
+    event.type === "mcp.tools.changed" ||
+    event.type === "opencodex.settings.updated" ||
+    event.type === "opencodex.plugin_config.updated"
+  )
 }
 
 export function whereScope(scope: OpencodeXStateScope) {
@@ -106,17 +121,39 @@ export function whereScope(scope: OpencodeXStateScope) {
   )
 }
 
-export function hydrateStateEvent(row: typeof OpencodeXStateEventTable.$inferSelect): OpencodeXStateEvent {
-  const scope = {
-    projectID: ProjectV2.ID.make(row.project_id),
-    ...(row.workspace_id === null ? {} : { workspaceID: WorkspaceV2.ID.make(row.workspace_id) }),
-    directory: row.directory,
-  }
+export function whereVisible(scope: OpencodeXStateScope) {
+  return or(
+    eq(OpencodeXStateEventTable.visibility, "global"),
+    and(eq(OpencodeXStateEventTable.visibility, "instance"), whereScope(scope)),
+  )
+}
+
+export function whereVisibilityBucket(visibility: "global" | "instance", scope: OpencodeXStateScope) {
+  if (visibility === "global") return eq(OpencodeXStateEventTable.visibility, "global")
+  return and(eq(OpencodeXStateEventTable.visibility, "instance"), whereScope(scope))
+}
+
+export function hydrateStateEvent(
+  row: typeof OpencodeXStateEventTable.$inferSelect,
+  databaseID: string,
+  targetScope: OpencodeXStateScope,
+): OpencodeXStateEvent {
+  const visibility = row.visibility === "global" ? ("global" as const) : ("instance" as const)
+  const scope =
+    visibility === "global"
+      ? targetScope
+      : {
+          projectID: ProjectV2.ID.make(row.project_id),
+          ...(row.workspace_id === null ? {} : { workspaceID: WorkspaceV2.ID.make(row.workspace_id) }),
+          directory: row.directory,
+        }
   return {
     id: EventV2.ID.make(row.id),
     scope,
     epoch: EPOCH,
-    cursor: encodeCursor(scope, row.position),
+    cursor: encodeCursor(databaseID, scope, row.position),
+    position: row.position,
+    visibility,
     aggregateSequence: row.aggregate_sequence,
     domain:
       row.domain === "session"

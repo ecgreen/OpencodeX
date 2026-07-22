@@ -4,6 +4,7 @@ import type {
   OpencodeXStateEvent,
   OpencodeXStateScope,
   OpencodeXStateSnapshot,
+  Part,
   Session,
 } from "./client.js"
 import type {
@@ -40,14 +41,14 @@ export function applyClientStateSnapshot(
   const catalog = snapshot.payloads.catalog
   const projects = reconcileEntities(previous.projects, catalog.projects, (item) => item.id)
   const views = reconcileEntities(previous.views, catalog.views, (item) => item.id)
-  const paged = applyClientSessionCardPage(previous, catalog.sessionCards, {
+  const paged = applyClientSessionCardPage({ ...previous, projects, views }, catalog.sessionCards, {
     root: true,
   })
   const permissions = reconcileEntities(previous.permissions, catalog.permissions, (item) => item.id)
   const questions = reconcileEntities(previous.questions, catalog.questions, (item) => item.id)
   const jobs = reconcileEntities(previous.jobs, snapshot.payloads.operations.jobs, (item) => item.id)
   const swarms = reconcileEntities(previous.swarms, snapshot.payloads.operations.swarms, (item) => item.id)
-  const knownSessionIDs = collectKnownSessionIDs(paged.sessions, projects, views)
+  const knownSessionIDs = collectKnownSessionIDs(paged.sessions, paged.projects, paged.views)
   return {
     ...paged,
     phase: "ready",
@@ -55,8 +56,8 @@ export function applyClientStateSnapshot(
     epoch: snapshot.epoch,
     cursor: previous.cursor ?? snapshot.cursor,
     digest: snapshot.digest,
-    projects,
-    views,
+    projects: paged.projects,
+    views: paged.views,
     permissions,
     questions,
     jobs,
@@ -108,13 +109,32 @@ export function applyClientSessionSnapshot(
     (options.prepend || !current.dirtySessions[snapshot.session.id])
   )
     return current
-  const incoming = new Map(snapshot.messages.items.map((item) => [item.info.id, item]))
+  const incomingItems = snapshot.messages.items.flatMap((item) => {
+    if (current.tombstones.messages[item.info.id]) return []
+    const parts = item.parts.filter((part) => !current.tombstones.parts[part.id])
+    return [{ ...item, parts }]
+  })
+  const incoming = new Map(incomingItems.map((item) => [item.info.id, item]))
   const preservedIDs = previous
     ? previous.messageIDs.filter((messageID) => options.prepend || previous.messageCoverage[messageID] === "older")
     : []
+  const incomingParts = new Map(incomingItems.flatMap((item) => item.parts.map((part) => [part.id, part] as const)))
+  const livePartText = options.prepend
+    ? (previous?.livePartText ?? {})
+    : Object.fromEntries(
+        Object.entries(previous?.livePartText ?? {}).filter(([partID, live]) => {
+          const part = incomingParts.get(partID)
+          if (!part) {
+            const previousPart = previous?.parts[partID]
+            return previousPart ? preservedIDs.includes(previousPart.messageID) : false
+          }
+          if (part.type !== "text" && part.type !== "reasoning") return false
+          return previous?.parts[partID]?.type === part.type && part.time?.end === undefined && part.text === live.base
+        }),
+      )
   const messageIDs = options.prepend
-    ? [...new Set([...snapshot.messages.items.map((item) => item.info.id), ...preservedIDs])]
-    : [...new Set([...preservedIDs, ...snapshot.messages.items.map((item) => item.info.id)])]
+    ? [...new Set([...incomingItems.map((item) => item.info.id), ...preservedIDs])]
+    : [...new Set([...preservedIDs, ...incomingItems.map((item) => item.info.id)])]
   const messages = reconcileRecord(
     previous?.messages ?? {},
     Object.fromEntries(
@@ -148,7 +168,8 @@ export function applyClientSessionSnapshot(
           })
         }
         const bundle = incoming.get(messageID)
-        if (bundle) return bundle.parts.map((part) => [part.id, part] as const)
+        if (bundle)
+          return bundle.parts.map((part) => [part.id, applyLivePartText(part, livePartText[part.id])] as const)
         return (previous?.partIDs[messageID] ?? []).flatMap((partID) => {
           const part = previous?.parts[partID]
           return part ? [[partID, part] as const] : []
@@ -175,7 +196,7 @@ export function applyClientSessionSnapshot(
   const deletedPartIDs = previous
     ? [
         ...deletedMessageIDs.flatMap((messageID) => previous.partIDs[messageID] ?? []),
-        ...snapshot.messages.items.flatMap((item) => {
+        ...incomingItems.flatMap((item) => {
           const currentPartIDs = new Set(item.parts.map((part) => part.id))
           return (previous.partIDs[item.info.id] ?? []).filter((partID) => !currentPartIDs.has(partID))
         }),
@@ -208,6 +229,7 @@ export function applyClientSessionSnapshot(
         messages,
         partIDs,
         parts,
+        livePartText: Object.keys(livePartText).length > 0 ? livePartText : undefined,
       },
     },
     dirtySessions,
@@ -228,6 +250,12 @@ export function applyClientSessionSnapshot(
   }
 }
 
+function applyLivePartText(incoming: Part, live: { base: string; text: string } | undefined): Part {
+  if (!live) return incoming
+  if (incoming.type === "text" || incoming.type === "reasoning") return { ...incoming, text: live.text }
+  return incoming
+}
+
 export function applyClientStateEvent(
   current: ClientStateSyncState,
   event: OpencodeXStateEvent,
@@ -235,21 +263,35 @@ export function applyClientStateEvent(
   if (current.epoch && (current.epoch !== event.epoch || !sameClientStateScope(current.scope, event.scope))) {
     return { state: current, gap: true }
   }
-  const previous = current.aggregateSequences[event.payload.aggregateID]
+  const aggregateKey = `${event.visibility}:${event.payload.aggregateID}`
+  const previous = current.aggregateSequences[aggregateKey]
   if (previous !== undefined && event.aggregateSequence <= previous) return { state: current, gap: false }
   if (previous !== undefined && event.aggregateSequence !== previous + 1) return { state: current, gap: true }
-  const aggregateSequences = { ...current.aggregateSequences, [event.payload.aggregateID]: event.aggregateSequence }
+  if (current.position !== undefined && event.position <= current.position) return { state: current, gap: true }
+  const aggregateSequences = { ...current.aggregateSequences, [aggregateKey]: event.aggregateSequence }
   switch (event.operation) {
     case "invalidate":
       switch (event.domain) {
         case "capabilities":
           return {
-            state: { ...current, cursor: event.cursor, aggregateSequences, dirtyCapabilities: true },
+            state: {
+              ...current,
+              cursor: event.cursor,
+              position: event.position,
+              aggregateSequences,
+              dirtyCapabilities: true,
+            },
             gap: false,
           }
         case "catalog":
           return {
-            state: { ...current, cursor: event.cursor, aggregateSequences, dirtyCatalog: true },
+            state: {
+              ...current,
+              cursor: event.cursor,
+              position: event.position,
+              aggregateSequences,
+              dirtyCatalog: true,
+            },
             gap: false,
           }
         case "session":
@@ -257,6 +299,7 @@ export function applyClientStateEvent(
             state: {
               ...current,
               cursor: event.cursor,
+              position: event.position,
               aggregateSequences,
               dirtySessions: { ...current.dirtySessions, [event.payload.aggregateID]: true },
             },
@@ -264,7 +307,13 @@ export function applyClientStateEvent(
           }
         case "operations":
           return {
-            state: { ...current, cursor: event.cursor, aggregateSequences, dirtyOperations: true },
+            state: {
+              ...current,
+              cursor: event.cursor,
+              position: event.position,
+              aggregateSequences,
+              dirtyOperations: true,
+            },
             gap: false,
           }
       }

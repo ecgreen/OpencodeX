@@ -11,8 +11,8 @@ import { Effect } from "effect"
 import { OpencodeXJob } from "./job"
 import { OpencodeXProject } from "./project"
 import { OpencodeXSessionCard, makeReader as makeSessionCardReader } from "./session-card"
-import { groupBySession, encodeCursor, revision } from "./state-event"
-import { EPOCH } from "./state-schema"
+import { groupBySession, revision } from "./state-event"
+import { EPOCH, type OpencodeXStateScope } from "./state-schema"
 import type { StateLog } from "./state-log"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
@@ -73,11 +73,11 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
     }
   })
 
-  const snapshot = Effect.fn("OpencodeXState.snapshot")(function* () {
-    return yield* events.barrier(
-      Effect.gen(function* () {
-        const scope = yield* log.scope()
-        const [projectList, viewList, statusList, permissionList, questionList, operations, unseenReviewSessionIDs] = yield* Effect.all(
+  const readRootPayloads = Effect.fn("OpencodeXState.readRootPayloads")(function* (scope: OpencodeXStateScope) {
+    while (true) {
+      const before = yield* log.revisionVector(scope)
+      const [projectList, viewList, statusList, permissionList, questionList, operations, unseenReviewSessionIDs] =
+        yield* Effect.all(
           [
             projects.listCatalog(),
             views.listCatalog(),
@@ -89,44 +89,69 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
           ],
           { concurrency: "unbounded" },
         )
-        const cardPage = yield* sessionCards
-          .initial(
-            [
-              ...permissionList.map((item) => item.sessionID),
-              ...questionList.map((item) => item.sessionID),
-              ...statusList.keys(),
-              ...unseenReviewSessionIDs,
-              ...operations.jobs.flatMap((job) =>
-                job.sessionID && (job.status === "queued" || job.status === "claimed" || job.status === "running")
-                  ? [job.sessionID]
-                  : [],
-              ),
-              ...viewList.flatMap((view) => (view.focusedSessionID ? [view.focusedSessionID] : [])),
-            ].filter((sessionID, index, all) => all.indexOf(sessionID) === index),
-          )
-          .pipe(Effect.flatMap((page) => withUiState(page, statusList, permissionList, questionList)))
-        const catalog = {
-          projects: projectList,
-          sessionCards: cardPage,
-          views: viewList,
-          sessionStatus: Object.fromEntries(statusList),
-          permissions: permissionList,
-          questions: questionList,
-          sessionUiState: cardPage.sessionUiState,
-        }
-        const revisions = yield* log.revisionVector(scope)
+      const cardPage = yield* sessionCards
+        .initial(
+          [
+            ...permissionList.map((item) => item.sessionID),
+            ...questionList.map((item) => item.sessionID),
+            ...statusList.keys(),
+            ...unseenReviewSessionIDs,
+            ...operations.jobs.flatMap((job) =>
+              job.sessionID && (job.status === "queued" || job.status === "claimed" || job.status === "running")
+                ? [job.sessionID]
+                : [],
+            ),
+            ...viewList.flatMap((view) => (view.focusedSessionID ? [view.focusedSessionID] : [])),
+          ].filter((sessionID, index, all) => all.indexOf(sessionID) === index),
+        )
+        .pipe(Effect.flatMap((page) => withUiState(page, statusList, permissionList, questionList)))
+      const catalog = {
+        projects: projectList,
+        sessionCards: cardPage,
+        views: viewList,
+        sessionStatus: Object.fromEntries(statusList),
+        permissions: permissionList,
+        questions: questionList,
+        sessionUiState: cardPage.sessionUiState,
+      }
+      const revisions = yield* log.revisionVector(scope)
+      if (
+        revisions.catalog !== before.catalog ||
+        revisions.operations !== before.operations
+      )
+        continue
+      return { catalog, operations, revisions }
+    }
+  })
+
+  const readStableOperations = Effect.fn("OpencodeXState.readStableOperations")(function* (scope: OpencodeXStateScope) {
+    while (true) {
+      const before = yield* log.revisionVector(scope)
+      const payload = yield* readOperations()
+      const revisions = yield* log.revisionVector(scope)
+      if (revisions.operations !== before.operations) continue
+      return { payload, revisions }
+    }
+  })
+
+  const snapshot = Effect.fn("OpencodeXState.snapshot")(function* () {
+    return yield* events.barrier(
+      Effect.gen(function* () {
+        const scope = yield* log.scope()
+        const { catalog, operations, revisions } = yield* readRootPayloads(scope)
         const catalogDigest = revision(revisions.catalog)
         const operationsDigest = revision(revisions.operations)
+        const payloads = { catalog, operations }
         return {
           scope,
           epoch: EPOCH,
-          cursor: encodeCursor(scope, Math.max(...Object.values(revisions))),
-          digest: `${catalogDigest}.${operationsDigest}`,
+          cursor: log.cursorAt(scope, Math.max(...Object.values(revisions))),
+          digest: Bun.hash(JSON.stringify(payloads)).toString(36),
           domains: {
-            catalog: { revision: catalogDigest, digest: catalogDigest },
-            operations: { revision: operationsDigest, digest: operationsDigest },
+            catalog: { revision: catalogDigest, digest: Bun.hash(JSON.stringify(catalog)).toString(36) },
+            operations: { revision: operationsDigest, digest: Bun.hash(JSON.stringify(operations)).toString(36) },
           },
-          payloads: { catalog, operations },
+          payloads,
         }
       }),
     )
@@ -136,16 +161,14 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
     return yield* events.barrier(
       Effect.gen(function* () {
         const scope = yield* log.scope()
-        const [payload, revisions] = yield* Effect.all([readOperations(), log.revisionVector(scope)], {
-          concurrency: "unbounded",
-        })
+        const { payload, revisions } = yield* readStableOperations(scope)
         const operationsRevision = revision(revisions.operations)
         return {
           scope,
           epoch: EPOCH,
-          cursor: encodeCursor(scope, Math.max(...Object.values(revisions))),
+          cursor: log.cursorAt(scope, Math.max(...Object.values(revisions))),
           revision: operationsRevision,
-          digest: operationsRevision,
+          digest: Bun.hash(JSON.stringify(payload)).toString(36),
           payload,
         }
       }),
@@ -208,7 +231,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
         return {
           scope,
           epoch: EPOCH,
-          cursor: encodeCursor(scope, yield* log.position(scope)),
+          cursor: log.cursorAt(scope, yield* log.position(scope)),
           digest: Bun.hash(JSON.stringify(content)).toString(36),
           ...content,
         }

@@ -120,6 +120,13 @@ export function createSessionSelectionController(input: {
   })
 
   createEffect(() => {
+    const route = input.navigation.route()
+    const state = input.authoritative.state()
+    if (route.name !== "session" || state?.phase !== "ready" || !state.tombstones.sessions[route.sessionID]) return
+    input.navigation.setRoute({ name: "dashboard" }, { replace: true })
+  })
+
+  createEffect(() => {
     if (input.navigation.route().name !== "session") return
     const session = selectedSession()
     if (!session || input.state.selectionSessionID() === session.id) return

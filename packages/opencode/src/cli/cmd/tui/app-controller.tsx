@@ -74,7 +74,34 @@ export function createTuiAppController(props: { onSnapshot?: () => Promise<strin
   const args = useArgs()
   const connected = useConnected()
 
-  TuiPluginRuntime.init({ api, config: tuiConfig, dispose: () => attention.dispose() })
+  TuiPluginRuntime.init({
+    api,
+    config: tuiConfig,
+    dispose: () => attention.dispose(),
+    install: async (spec, global) => {
+      const result = await sdk.client.opencodex.plugin.install(
+        { opencodeXPluginInstallInput: { spec, global } },
+        { throwOnError: true },
+      )
+      if (!result.data) throw new Error(`Backend returned no plugin install result for ${spec}`)
+      return result.data
+    },
+    toggle: async (plugin, enabled) => {
+      const listed = await sdk.client.opencodex.plugin.list(undefined, { throwOnError: true })
+      const item = listed.data?.find(
+        (candidate) =>
+          candidate.kind === "tui" &&
+          candidate.pluginID === plugin.id &&
+          (plugin.internal ? candidate.scope === "internal" : candidate.source === plugin.source),
+      )
+      if (!item) return false
+      await sdk.client.opencodex.plugin.toggle(
+        { opencodeXPluginToggleInput: { id: item.id, enabled } },
+        { throwOnError: true },
+      )
+      return true
+    },
+  })
     .catch((error) => console.error("Failed to load TUI plugins", error))
     .finally(() => setReady(true))
 

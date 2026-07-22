@@ -1,12 +1,13 @@
 import { OpencodeXViewSessionTable, OpencodeXViewTable } from "@opencode-ai/core/opencodex/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { EventV2 } from "@opencode-ai/core/event"
+import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Context, Effect, Layer, Option, Schema, Struct } from "effect"
+import { Context, Effect, Layer, Option, Schema, Semaphore, Struct } from "effect"
 import { and, asc, eq, inArray, max } from "drizzle-orm"
 import { renderableSessionWhere } from "./session-filter"
 
@@ -60,6 +61,7 @@ export type CreateInput = Schema.Schema.Type<typeof CreateInput>
 
 export const UpdateInput = Schema.Struct({
   id: Schema.String,
+  expectedTimeUpdated: NonNegativeInt,
   title: Schema.optional(Schema.String),
   sessionIDs: Schema.optional(Schema.Array(SessionID)),
   focusedSessionID: Schema.optional(SessionID),
@@ -104,12 +106,18 @@ export class ValidationError extends Schema.TaggedErrorClass<ValidationError>()(
   message: Schema.String,
 }) {}
 
+export class ConflictError extends Schema.TaggedErrorClass<ConflictError>()("OpencodeX.View.ConflictError", {
+  viewID: Schema.String,
+}) {}
+
 export interface Interface {
   readonly list: (input?: { sessions?: Session.GlobalInfo[] }) => Effect.Effect<Info[]>
   readonly listCatalog: () => Effect.Effect<CatalogInfo[]>
   readonly get: (viewID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info, ValidationError | Session.NotFound>
-  readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError | ValidationError | Session.NotFound>
+  readonly update: (
+    input: UpdateInput,
+  ) => Effect.Effect<Info, NotFoundError | ValidationError | ConflictError | Session.NotFound>
   readonly reorder: (input: ReorderInput) => Effect.Effect<Info[]>
   readonly remove: (viewID: string) => Effect.Effect<boolean, NotFoundError>
 }
@@ -141,6 +149,7 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const session = yield* Session.Service
     const events = yield* EventV2Bridge.Service
+    const mutationLock = Semaphore.makeUnsafe(1)
 
     const listAssignments = Effect.fn("OpencodeXView.listAssignments")(function* (
       rows: (typeof OpencodeXViewTable.$inferSelect)[],
@@ -228,41 +237,26 @@ export const layer = Layer.effect(
       return (yield* hydrateMany([row]))[0]
     })
 
-    const replaceSessions = Effect.fn("OpencodeXView.replaceSessions")(function* (
+    const replaceSessions = Effect.fnUntraced(function* (
+      database: Parameters<Parameters<Database.Interface["db"]["transaction"]>[0]>[0],
       viewID: string,
       sessionIDs: readonly SessionID[],
-      options?: { allowEmpty?: boolean },
     ) {
-      const normalized = yield* validateSessionIDs(sessionIDs, options)
-      yield* Effect.forEach(normalized, (sessionID) => session.get(sessionID), {
-        concurrency: "unbounded",
-        discard: true,
-      })
       const now = Date.now()
-      yield* db
-        .transaction(
-          (tx) =>
-            Effect.gen(function* () {
-              yield* tx.delete(OpencodeXViewSessionTable).where(eq(OpencodeXViewSessionTable.view_id, viewID)).run()
-              if (normalized.length > 0) {
-                yield* tx
-                  .insert(OpencodeXViewSessionTable)
-                  .values(
-                    normalized.map((sessionID, index) => ({
-                      view_id: viewID,
-                      session_id: sessionID,
-                      sort_order: index,
-                      time_created: now,
-                      time_updated: now,
-                    })),
-                  )
-                  .run()
-              }
-            }),
-          { behavior: "immediate" },
+      yield* database.delete(OpencodeXViewSessionTable).where(eq(OpencodeXViewSessionTable.view_id, viewID)).run()
+      if (sessionIDs.length === 0) return
+      yield* database
+        .insert(OpencodeXViewSessionTable)
+        .values(
+          sessionIDs.map((sessionID, index) => ({
+            view_id: viewID,
+            session_id: sessionID,
+            sort_order: index,
+            time_created: now,
+            time_updated: now,
+          })),
         )
-        .pipe(Effect.orDie)
-      return normalized
+        .run()
     })
 
     const list = Effect.fn("OpencodeXView.list")(function* (input?: { sessions?: Session.GlobalInfo[] }) {
@@ -270,7 +264,7 @@ export const layer = Layer.effect(
         yield* db
           .select()
           .from(OpencodeXViewTable)
-          .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
+          .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created), asc(OpencodeXViewTable.id))
           .all()
           .pipe(Effect.orDie),
         input,
@@ -282,7 +276,7 @@ export const layer = Layer.effect(
         yield* db
           .select()
           .from(OpencodeXViewTable)
-          .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
+          .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created), asc(OpencodeXViewTable.id))
           .all()
           .pipe(Effect.orDie),
       )
@@ -299,7 +293,7 @@ export const layer = Layer.effect(
       return yield* hydrate(row)
     })
 
-    const create = Effect.fn("OpencodeXView.create")(function* (input: CreateInput) {
+    const createUnlocked = Effect.fnUntraced(function* (input: CreateInput) {
       const sessionIDs = yield* validateSessionIDs(input.sessionIDs, { allowEmpty: hasPendingSessions(input.metadata) })
       const focusedSessionID =
         input.focusedSessionID && sessionIDs.includes(input.focusedSessionID) ? input.focusedSessionID : sessionIDs[0]
@@ -309,92 +303,187 @@ export const layer = Layer.effect(
       })
       const now = Date.now()
       const id = input.id ?? `oxv_${Identifier.ascending()}`
-      const sortOrder =
-        ((yield* db
-          .select({ value: max(OpencodeXViewTable.sort_order) })
-          .from(OpencodeXViewTable)
-          .get()
-          .pipe(Effect.orDie))?.value ?? -1) + 1
-      yield* db
-        .insert(OpencodeXViewTable)
-        .values({
-          id,
-          title: input.title?.trim() || "Multi-session view",
-          focused_session_id: focusedSessionID,
-          layout: input.layout ?? "auto",
-          sort_order: sortOrder,
-          metadata_json: serializeMetadata(input.metadata),
-          time_created: now,
-          time_updated: now,
-        })
-        .run()
-        .pipe(Effect.orDie)
-      yield* replaceSessions(id, sessionIDs, { allowEmpty: hasPendingSessions(input.metadata) })
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const sortOrder =
+                ((yield* transaction.select({ value: max(OpencodeXViewTable.sort_order) }).from(OpencodeXViewTable).get())
+                  ?.value ?? -1) + 1
+              yield* transaction
+                .insert(OpencodeXViewTable)
+                .values({
+                  id,
+                  title: input.title?.trim() || "Multi-session view",
+                  focused_session_id: focusedSessionID,
+                  layout: input.layout ?? "auto",
+                  sort_order: sortOrder,
+                  metadata_json: serializeMetadata(input.metadata),
+                  time_created: now,
+                  time_updated: now,
+                })
+                .run()
+              yield* replaceSessions(transaction, id, sessionIDs)
+              return yield* events.commit(Event.Created, { viewID: id })
+            }),
+          { behavior: "immediate" },
+        ).pipe(
+          Effect.catchTag("SqlError", Effect.die),
+          Effect.catchTag("EffectDrizzleQueryError", Effect.die),
+        ),
+      )
       const result = yield* get(id).pipe(Effect.orDie)
-      yield* events.publish(Event.Created, { viewID: id })
+      yield* events.broadcast(event)
+      return result
+    })
+
+    const create = Effect.fn("OpencodeXView.create")(function* (input: CreateInput) {
+      return yield* mutationLock.withPermits(1)(createUnlocked(input))
+    })
+
+    const updateUnlocked = Effect.fnUntraced(function* (input: UpdateInput) {
+      const requestedSessionIDs = input.sessionIDs ? normalizeSessionIDs(input.sessionIDs) : undefined
+      if (requestedSessionIDs) {
+        yield* Effect.forEach(requestedSessionIDs, (sessionID) => session.get(sessionID), {
+          concurrency: "unbounded",
+          discard: true,
+        })
+      }
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* transaction
+                .select()
+                .from(OpencodeXViewTable)
+                .where(eq(OpencodeXViewTable.id, input.id))
+                .get()
+              if (!current) return yield* new NotFoundError({ viewID: input.id })
+              if (current.time_updated !== input.expectedTimeUpdated) {
+                return yield* new ConflictError({ viewID: input.id })
+              }
+              const currentSessionIDs = (
+                yield* transaction
+                  .select({ sessionID: OpencodeXViewSessionTable.session_id })
+                  .from(OpencodeXViewSessionTable)
+                  .where(eq(OpencodeXViewSessionTable.view_id, input.id))
+                  .orderBy(asc(OpencodeXViewSessionTable.sort_order))
+                  .all()
+              ).map((item) => item.sessionID)
+              const metadata =
+                input.metadata ??
+                (current.metadata_json ? Option.getOrUndefined(decodeMetadata(current.metadata_json)) : undefined)
+              const sessionIDs = yield* validateSessionIDs(requestedSessionIDs ?? currentSessionIDs, {
+                allowEmpty: hasPendingSessions(metadata),
+              })
+              const focusedSessionID =
+                input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
+                  ? input.focusedSessionID
+                  : current.focused_session_id && sessionIDs.includes(current.focused_session_id)
+                    ? current.focused_session_id
+                    : sessionIDs[0]
+              if (requestedSessionIDs) yield* replaceSessions(transaction, input.id, sessionIDs)
+              yield* transaction
+                .update(OpencodeXViewTable)
+                .set({
+                  title: input.title?.trim() || undefined,
+                  focused_session_id: focusedSessionID,
+                  layout: input.layout,
+                  metadata_json: input.metadata ? serializeMetadata(input.metadata) : undefined,
+                  time_updated: Math.max(Date.now(), current.time_updated + 1),
+                })
+                .where(eq(OpencodeXViewTable.id, input.id))
+                .run()
+              return yield* events.commit(Event.Updated, { viewID: input.id })
+            }),
+          { behavior: "immediate" },
+        ).pipe(
+          Effect.catchTag("SqlError", Effect.die),
+          Effect.catchTag("EffectDrizzleQueryError", Effect.die),
+        ),
+      )
+      const result = yield* get(input.id)
+      yield* events.broadcast(event)
       return result
     })
 
     const update = Effect.fn("OpencodeXView.update")(function* (input: UpdateInput) {
-      const current = yield* get(input.id)
-      const metadata = input.metadata ?? current.metadata
-      const sessionIDs = input.sessionIDs
-        ? yield* replaceSessions(input.id, input.sessionIDs, { allowEmpty: hasPendingSessions(metadata) })
-        : current.sessionIDs
-      const focusedSessionID =
-        input.focusedSessionID && sessionIDs.includes(input.focusedSessionID)
-          ? input.focusedSessionID
-          : current.focusedSessionID && sessionIDs.includes(current.focusedSessionID)
-            ? current.focusedSessionID
-            : sessionIDs[0]
-      const result = yield* db
-        .update(OpencodeXViewTable)
-        .set({
-          title: input.title?.trim() || undefined,
-          focused_session_id: focusedSessionID,
-          layout: input.layout,
-          metadata_json: input.metadata ? serializeMetadata(input.metadata) : undefined,
-          time_updated: Date.now(),
-        })
-        .where(eq(OpencodeXViewTable.id, input.id))
-        .returning()
-        .get()
-        .pipe(Effect.orDie, Effect.flatMap(hydrate))
-      yield* events.publish(Event.Updated, { viewID: input.id })
+      return yield* mutationLock.withPermits(1)(updateUnlocked(input))
+    })
+
+    const reorderUnlocked = Effect.fnUntraced(function* (input: ReorderInput) {
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* transaction
+                .select()
+                .from(OpencodeXViewTable)
+                .orderBy(
+                  asc(OpencodeXViewTable.sort_order),
+                  asc(OpencodeXViewTable.time_created),
+                  asc(OpencodeXViewTable.id),
+                )
+                .all()
+              const knownIDs = new Set(current.map((row) => row.id))
+              const requestedIDs = [...new Set(input.viewIDs)].filter((id) => knownIDs.has(id))
+              const orderedIDs = [
+                ...requestedIDs,
+                ...current.map((row) => row.id).filter((id) => !requestedIDs.includes(id)),
+              ]
+              yield* Effect.forEach(
+                orderedIDs.map((id, index) => ({ id, index })),
+                ({ id, index }) =>
+                  transaction
+                    .update(OpencodeXViewTable)
+                    .set({ sort_order: index, time_updated: Date.now() })
+                    .where(eq(OpencodeXViewTable.id, id))
+                    .run(),
+                { discard: true },
+              )
+              return yield* events.commit(Event.Reordered, { collectionID: "opencodex.views" })
+            }),
+          { behavior: "immediate" },
+        ).pipe(
+          Effect.catchTag("SqlError", Effect.die),
+          Effect.catchTag("EffectDrizzleQueryError", Effect.die),
+        ),
+      )
+      const result = yield* list()
+      yield* events.broadcast(event)
       return result
     })
 
     const reorder = Effect.fn("OpencodeXView.reorder")(function* (input: ReorderInput) {
-      const current = yield* db
-        .select()
-        .from(OpencodeXViewTable)
-        .orderBy(asc(OpencodeXViewTable.sort_order), asc(OpencodeXViewTable.time_created))
-        .all()
-        .pipe(Effect.orDie)
-      const knownIDs = new Set(current.map((row) => row.id))
-      const requestedIDs = [...new Set(input.viewIDs)].filter((id) => knownIDs.has(id))
-      const orderedIDs = [...requestedIDs, ...current.map((row) => row.id).filter((id) => !requestedIDs.includes(id))]
-      yield* Effect.forEach(
-        orderedIDs.map((id, index) => ({ id, index })),
-        ({ id, index }) =>
-          db
-            .update(OpencodeXViewTable)
-            .set({ sort_order: index })
-            .where(eq(OpencodeXViewTable.id, id))
-            .run()
-            .pipe(Effect.orDie),
-        { discard: true },
+      return yield* mutationLock.withPermits(1)(reorderUnlocked(input))
+    })
+
+    const removeUnlocked = Effect.fnUntraced(function* (viewID: string) {
+      const event = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* transaction
+                .select({ id: OpencodeXViewTable.id })
+                .from(OpencodeXViewTable)
+                .where(eq(OpencodeXViewTable.id, viewID))
+                .get()
+              if (!current) return yield* new NotFoundError({ viewID })
+              yield* transaction.delete(OpencodeXViewTable).where(eq(OpencodeXViewTable.id, viewID)).run()
+              return yield* events.commit(Event.Deleted, { viewID })
+            }),
+          { behavior: "immediate" },
+        ).pipe(
+          Effect.catchTag("SqlError", Effect.die),
+          Effect.catchTag("EffectDrizzleQueryError", Effect.die),
+        ),
       )
-      const result = yield* list()
-      yield* events.publish(Event.Reordered, { collectionID: "opencodex.views" })
-      return result
+      yield* events.broadcast(event)
+      return true
     })
 
     const remove = Effect.fn("OpencodeXView.remove")(function* (viewID: string) {
-      yield* get(viewID)
-      yield* db.delete(OpencodeXViewTable).where(eq(OpencodeXViewTable.id, viewID)).run().pipe(Effect.orDie)
-      yield* events.publish(Event.Deleted, { viewID })
-      return true
+      return yield* mutationLock.withPermits(1)(removeUnlocked(viewID))
     })
 
     return Service.of({ list, listCatalog, get, create, update, reorder, remove })

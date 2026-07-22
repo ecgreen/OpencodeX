@@ -2,7 +2,13 @@ import { afterEach, describe, expect } from "bun:test"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Database } from "@opencode-ai/core/database/database"
-import { OpencodeXProjectSessionTable, OpencodeXSessionStateTable, OpencodeXViewSessionTable } from "@opencode-ai/core/opencodex/sql"
+import {
+  OpencodeXJobTable,
+  OpencodeXProjectSessionTable,
+  OpencodeXSessionStateTable,
+  OpencodeXViewSessionTable,
+  OpencodeXViewTable,
+} from "@opencode-ai/core/opencodex/sql"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionID } from "../../src/session/schema"
 import { eq } from "drizzle-orm"
@@ -68,6 +74,130 @@ afterEach(async () => {
 })
 
 describe("OpencodeX state HTTP API", () => {
+  it.live("rejects stale reviewed-file replacements while merging timestamps", () =>
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped({ git: true, config: { formatter: false, lsp: false } })
+      const server = yield* HttpServer.HttpServer
+      const base = HttpServer.formatAddress(server.address)
+      const request = (path: string, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers)
+        headers.set("x-opencode-directory", directory)
+        if (init.body) headers.set("content-type", "application/json")
+        return fetch(new URL(path, base), { ...init, headers })
+      }
+      const created = record(
+        yield* Effect.promise(() =>
+          request("/session", { method: "POST", body: JSON.stringify({ title: "review state" }) }).then((response) =>
+            response.json(),
+          ),
+        ),
+      )
+      const sessionID = String(created.id)
+      const initial = yield* Effect.promise(() =>
+        request(`/experimental/opencodex/session-state/${sessionID}`, {
+          method: "PATCH",
+          body: JSON.stringify({ reviewedFiles: ["base.ts"], expectedReviewedFiles: [] }),
+        }),
+      )
+      expect(initial.status).toBe(200)
+      const responses = yield* Effect.promise(() =>
+        Promise.all([
+          request(`/experimental/opencodex/session-state/${sessionID}`, {
+            method: "PATCH",
+            body: JSON.stringify({ seenAt: 10 }),
+          }),
+          request(`/experimental/opencodex/session-state/${sessionID}`, {
+            method: "PATCH",
+            body: JSON.stringify({ reviewedFiles: ["first.ts"], expectedReviewedFiles: ["base.ts"] }),
+          }),
+          request(`/experimental/opencodex/session-state/${sessionID}`, {
+            method: "PATCH",
+            body: JSON.stringify({ reviewedFiles: ["second.ts"], expectedReviewedFiles: ["base.ts"] }),
+          }),
+        ]),
+      )
+      expect(responses.map((response) => response.status).toSorted()).toEqual([200, 200, 409])
+      const snapshot = record(
+        yield* Effect.promise(() =>
+          request("/experimental/opencodex/state").then((response) => response.json()),
+        ),
+      )
+      const state = record(record(record(record(snapshot).payloads).catalog).sessionUiState)[sessionID]
+      expect(record(state).seenAt).toBe(10)
+      expect([["first.ts"], ["second.ts"]]).toContainEqual(record(state).reviewedFiles)
+    }),
+  )
+
+  it.live("rejects a stale concurrent view replacement", () =>
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped({ git: true, config: { formatter: false, lsp: false } })
+      const server = yield* HttpServer.HttpServer
+      const base = HttpServer.formatAddress(server.address)
+      const request = (path: string, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers)
+        headers.set("x-opencode-directory", directory)
+        if (init.body) headers.set("content-type", "application/json")
+        return fetch(new URL(path, base), { ...init, headers })
+      }
+      const sessions = yield* Effect.promise(() =>
+        Promise.all(
+          ["left", "right"].map((title) =>
+            request("/session", { method: "POST", body: JSON.stringify({ title }) }).then((response) =>
+              response.json(),
+            ),
+          ),
+        ),
+      )
+      const sessionIDs = sessions.map((item) => String(record(item).id))
+      const view = record(
+        yield* Effect.promise(() =>
+          request("/experimental/opencodex/view", {
+            method: "POST",
+            body: JSON.stringify({ title: "original", sessionIDs: [sessionIDs[0]] }),
+          }).then((response) => response.json()),
+        ),
+      )
+      const responses = yield* Effect.promise(() =>
+        Promise.all(
+          [
+            { title: "first", sessionIDs, focusedSessionID: sessionIDs[0] },
+            { title: "second", sessionIDs: [sessionIDs[1]], focusedSessionID: sessionIDs[1] },
+          ].map((update) =>
+            request(`/experimental/opencodex/view/${String(view.id)}`, {
+              method: "PATCH",
+              body: JSON.stringify({ ...update, expectedTimeUpdated: Number(view.timeUpdated) }),
+            }),
+          ),
+        ),
+      )
+      expect(responses.map((response) => response.status).toSorted()).toEqual([200, 409])
+      const successful = responses.find((response) => response.ok)
+      if (!successful) return yield* Effect.die(new Error("Concurrent view update had no winner"))
+      const winner = record(yield* Effect.promise(() => successful.json()))
+      const current = record(
+        yield* Effect.promise(() =>
+          request(`/experimental/opencodex/view/${String(view.id)}`).then((response) => response.json()),
+        ),
+      )
+      expect(current.title).toBe(winner.title)
+      expect(current.sessionIDs).toEqual(winner.sessionIDs)
+      const { db } = yield* Database.Service
+      const persisted = yield* db
+        .select({ focusedSessionID: OpencodeXViewTable.focused_session_id })
+        .from(OpencodeXViewTable)
+        .where(eq(OpencodeXViewTable.id, String(view.id)))
+        .get()
+        .pipe(Effect.orDie)
+      const assignments = yield* db
+        .select({ sessionID: OpencodeXViewSessionTable.session_id })
+        .from(OpencodeXViewSessionTable)
+        .where(eq(OpencodeXViewSessionTable.view_id, String(view.id)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(assignments.map((item) => String(item.sessionID))).toContain(String(persisted?.focusedSessionID))
+    }),
+  )
+
   it.live("serves atomic snapshots and scoped replayable SSE", () =>
     Effect.gen(function* () {
       const firstDirectory = yield* tmpdirScoped({ git: true, config: { formatter: false, lsp: false } })
@@ -138,6 +268,29 @@ describe("OpencodeX state HTTP API", () => {
         seenAt: 10,
         reviewedFiles: ["src/app.tsx"],
       })
+      const { db } = yield* Database.Service
+      yield* db
+        .update(SessionTable)
+        .set({ title: "manual refresh title" })
+        .where(eq(SessionTable.id, SessionID.make(sessionID)))
+        .run()
+        .pipe(Effect.orDie)
+      const manuallyRefreshed = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state").then((response) => response.json()),
+        ),
+      )
+      expect(record(record(manuallyRefreshed.domains).catalog).revision).toBe(
+        record(record(snapshot.domains).catalog).revision,
+      )
+      expect(record(record(manuallyRefreshed.domains).catalog).digest).not.toBe(
+        record(record(snapshot.domains).catalog).digest,
+      )
+      expect(
+        (record(record(record(manuallyRefreshed.payloads).catalog).sessionCards).items as unknown[])
+          .map(record)
+          .find((item) => item.id === sessionID)?.title,
+      ).toBe("manual refresh title")
 
       const capabilities = record(
         yield* Effect.promise(() =>
@@ -267,18 +420,48 @@ describe("OpencodeX state HTTP API", () => {
         ),
       )
       expect(operationSnapshot.scope).toEqual(snapshot.scope)
-      expect(operationSnapshot.revision).toBe(operationSnapshot.digest)
+      expect(operationSnapshot.revision).not.toBe(operationSnapshot.digest)
       expect(typeof operationSnapshot.cursor).toBe("string")
       const operationSnapshotJobs = record(operationSnapshot.payload).jobs
       expect(
         Array.isArray(operationSnapshotJobs) && operationSnapshotJobs.some((job) => record(job).id === createdJob.id),
       ).toBe(true)
-      controller.abort()
-
+      yield* db
+        .update(OpencodeXJobTable)
+        .set({ title: "manually refreshed operation" })
+        .where(eq(OpencodeXJobTable.id, String(createdJob.id)))
+        .run()
+        .pipe(Effect.orDie)
+      const manuallyRefreshedOperations = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state/operations").then((value) => value.json()),
+        ),
+      )
+      expect(manuallyRefreshedOperations.revision).toBe(operationSnapshot.revision)
+      expect(manuallyRefreshedOperations.digest).not.toBe(operationSnapshot.digest)
+      expect(
+        (record(manuallyRefreshedOperations.payload).jobs as unknown[])
+          .map(record)
+          .find((job) => job.id === createdJob.id)?.title,
+      ).toBe("manually refreshed operation")
       const second = yield* Effect.promise(() =>
         request(secondDirectory, "/session", { method: "POST", body: JSON.stringify({ title: "isolated" }) }).then(
           (value) => value.json(),
         ),
+      )
+      const crossDirectoryCreated = record(yield* Effect.promise(() => events.next()))
+      expect(record(crossDirectoryCreated.event).visibility).toBe("global")
+      expect(record(crossDirectoryCreated.event).scope).toEqual(snapshot.scope)
+      expect(record(record(crossDirectoryCreated.event).payload).aggregateID).toBe(String(record(second).id))
+      const [firstGlobalSnapshot, secondGlobalSnapshot] = yield* Effect.promise(() =>
+        Promise.all(
+          [firstDirectory, secondDirectory].map((directory) =>
+            request(directory, "/experimental/opencodex/state").then((response) => response.json()),
+          ),
+        ),
+      )
+      expect(record(record(record(firstGlobalSnapshot).domains).catalog).digest).toBe(
+        record(record(record(secondGlobalSnapshot).domains).catalog).digest,
       )
       yield* Effect.promise(() =>
         request(secondDirectory, `/session/${String(record(second).id)}`, {
@@ -286,6 +469,11 @@ describe("OpencodeX state HTTP API", () => {
           body: JSON.stringify({ title: "isolated update" }),
         }),
       )
+      const crossDirectoryUpdated = record(yield* Effect.promise(() => events.next()))
+      expect(record(crossDirectoryUpdated.event).visibility).toBe("global")
+      expect(record(record(crossDirectoryUpdated.event).payload).eventType).toBe("session.updated")
+      controller.abort()
+
       yield* Effect.promise(() =>
         request(firstDirectory, `/session/${sessionID}`, {
           method: "PATCH",
@@ -304,18 +492,43 @@ describe("OpencodeX state HTTP API", () => {
       const replay = stream(replayResponse)
       yield* Effect.addFinalizer(() => Effect.sync(() => replayController.abort()))
       expect(record(yield* Effect.promise(() => replay.next())).type).toBe("ready")
-      const replayed = record(yield* Effect.promise(() => replay.next()))
-      expect(replayed.type).toBe("event")
-      expect(record(record(replayed.event).scope).directory).toBe(firstDirectory)
-      expect(record(record(replayed.event).payload).aggregateID).toBe(sessionID)
-      expect(Number(record(replayed.event).aggregateSequence)).toBe(Number(record(live.event).aggregateSequence) + 1)
+      const replayed = yield* Effect.promise(() => Promise.all([replay.next(), replay.next(), replay.next()]))
+      const replayedEvents = replayed.map(record).map((frame) => record(frame.event))
+      expect(replayedEvents.map((event) => record(event.scope).directory)).toEqual([
+        firstDirectory,
+        firstDirectory,
+        firstDirectory,
+      ])
+      expect(replayedEvents.map((event) => record(event.payload).aggregateID)).toEqual([
+        String(record(second).id),
+        String(record(second).id),
+        sessionID,
+      ])
+      expect(Number(replayedEvents[2]?.aggregateSequence)).toBe(Number(record(live.event).aggregateSequence) + 1)
       replayController.abort()
+
+      const headerController = new AbortController()
+      const headerReplay = stream(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/state/event", {
+            signal: headerController.signal,
+            headers: { "last-event-id": String(record(jobLive.event).cursor) },
+          }),
+        ),
+      )
+      yield* Effect.addFinalizer(() => Effect.sync(() => headerController.abort()))
+      expect(record(yield* Effect.promise(() => headerReplay.next())).type).toBe("ready")
+      expect(
+        record(record(yield* Effect.promise(() => headerReplay.next())).event).cursor,
+      ).toBe(record(replayedEvents[0]).cursor)
+      headerController.abort()
 
       const resetController = new AbortController()
       const reset = stream(
         yield* Effect.promise(() =>
           request(firstDirectory, "/experimental/opencodex/state/event?after=invalid", {
             signal: resetController.signal,
+            headers: { "last-event-id": String(record(jobLive.event).cursor) },
           }),
         ),
       )
@@ -323,6 +536,61 @@ describe("OpencodeX state HTTP API", () => {
       expect(record(yield* Effect.promise(() => reset.next())).type).toBe("ready")
       expect(record(yield* Effect.promise(() => reset.next())).type).toBe("reset_required")
       resetController.abort()
+    }),
+  )
+
+  it.live("hands replay off to live delivery without dropping or duplicating an event", () =>
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped({ git: true, config: { formatter: false, lsp: false } })
+      const server = yield* HttpServer.HttpServer
+      const base = HttpServer.formatAddress(server.address)
+      const request = (path: string, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers)
+        headers.set("x-opencode-directory", directory)
+        if (init.body) headers.set("content-type", "application/json")
+        return fetch(new URL(path, base), { ...init, headers })
+      }
+      const created = record(
+        yield* Effect.promise(() =>
+          request("/session", { method: "POST", body: JSON.stringify({ title: "handoff" }) }).then((response) =>
+            response.json(),
+          ),
+        ),
+      )
+      const sessionID = String(created.id)
+      const snapshot = record(
+        yield* Effect.promise(() => request("/experimental/opencodex/state").then((response) => response.json())),
+      )
+      const controller = new AbortController()
+      yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()))
+      const [response] = yield* Effect.promise(() =>
+        Promise.all([
+          request(`/experimental/opencodex/state/event?after=${encodeURIComponent(String(snapshot.cursor))}`, {
+            signal: controller.signal,
+          }),
+          request(`/session/${sessionID}`, {
+            method: "PATCH",
+            body: JSON.stringify({ title: "during handoff" }),
+          }),
+        ]),
+      )
+      const events = stream(response)
+      expect(record(yield* Effect.promise(() => events.next())).type).toBe("ready")
+      const first = record(record(yield* Effect.promise(() => events.next())).event)
+      expect(first.visibility).toBe("global")
+      expect(record(first.payload).aggregateID).toBe(sessionID)
+
+      yield* Effect.promise(() =>
+        request(`/session/${sessionID}`, {
+          method: "PATCH",
+          body: JSON.stringify({ title: "after handoff" }),
+        }),
+      )
+      const second = record(record(yield* Effect.promise(() => events.next())).event)
+      expect(second.id).not.toBe(first.id)
+      expect(Number(second.position)).toBeGreaterThan(Number(first.position))
+      expect(Number(second.aggregateSequence)).toBe(Number(first.aggregateSequence) + 1)
+      controller.abort()
     }),
   )
 

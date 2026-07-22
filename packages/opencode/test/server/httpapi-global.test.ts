@@ -7,6 +7,7 @@ import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
 import { Installation } from "../../src/installation"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
+import { Database } from "@opencode-ai/core/database/database"
 import { GuiBridge } from "../../src/opencodex/gui-bridge"
 import { SessionID } from "../../src/session/schema"
 import { ServerAuth } from "../../src/server/auth"
@@ -42,6 +43,7 @@ const apiLayer = HttpRouter.serve(
   ),
   Layer.provide(ServerAuth.Config.layer({ password: Option.none(), username: "opencode" })),
   Layer.provideMerge(guiBridgeLayer),
+  Layer.provide(Database.defaultLayer),
 )
 const it = testEffect(apiLayer)
 

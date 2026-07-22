@@ -8,6 +8,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Truncate } from "@/tool/truncate"
 import { testEffect } from "../lib/effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
+import { Database } from "@opencode-ai/core/database/database"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-session"),
@@ -23,7 +24,7 @@ const ctx = {
 
 const it = testEffect(
   Layer.mergeAll(
-    Question.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer)),
+    Question.layer.pipe(Layer.provide(Database.defaultLayer), Layer.provideMerge(EventV2Bridge.defaultLayer)),
     CrossSpawnSpawner.defaultLayer,
     Truncate.defaultLayer,
     Agent.defaultLayer,

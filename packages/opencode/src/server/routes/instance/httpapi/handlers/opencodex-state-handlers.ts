@@ -10,7 +10,7 @@ import { OpencodeXSessionCard } from "@/opencodex/session-card"
 import { ProviderCatalog } from "@/provider/catalog"
 import { SessionID } from "@/session/schema"
 import { Effect, Option, Queue, Stream } from "effect"
-import { HttpServerResponse } from "effect/unstable/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiError } from "effect/unstable/httpapi"
 import { encode } from "effect/unstable/encoding/Sse"
 import { StateEventQuery, StateSessionCardQuery, StateSessionQuery } from "../groups/opencodex"
@@ -110,18 +110,33 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
 
   const stateEvent = Effect.fn("OpencodeXHttpApi.stateEvent")(function* (ctx: {
     query: typeof StateEventQuery.Type
+    request: HttpServerRequest.HttpServerRequest
   }) {
     const scope = yield* state.scope()
-    const queue = yield* Queue.unbounded<OpencodeXState.OpencodeXStateEvent>()
-    const unsubscribe = yield* state.listen((event) => Queue.offerUnsafe(queue, event))
+    const after = ctx.query.after ?? ctx.request.headers["last-event-id"]
+    const queue = yield* Queue.dropping<
+      { readonly type: "event"; readonly event: OpencodeXState.OpencodeXStateEvent } | { readonly type: "overflow" }
+    >(1_024)
+    let overflowed = false
+    const unsubscribe = yield* state.listen((event) => {
+      if (overflowed) return
+      if (Queue.offerUnsafe(queue, { type: "event", event })) return
+      overflowed = true
+      while (Queue.takeUnsafe(queue) !== undefined) {}
+      Queue.offerUnsafe(queue, { type: "overflow" })
+    })
     yield* Effect.addFinalizer(() => unsubscribe)
-    const replay = yield* state.barrier(
+    const { replay, queued } = yield* state.barrier(
       Effect.gen(function* () {
-        const result = yield* state.replay(ctx.query.after)
-        while (Option.isSome(yield* Queue.poll(queue))) {
-          // Events through the barrier cursor are already included in replay.
+        const replay = yield* state.replay(after)
+        const queued = new Array<
+          { readonly type: "event"; readonly event: OpencodeXState.OpencodeXStateEvent } | { readonly type: "overflow" }
+        >()
+        while (true) {
+          const item = yield* Queue.poll(queue)
+          if (Option.isNone(item)) return { replay, queued }
+          queued.push(item.value)
         }
-        return result
       }),
     )
     const ready: OpencodeXState.OpencodeXStateStreamFrame = {
@@ -130,30 +145,41 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
       epoch: OpencodeXState.EPOCH,
       cursor: replay.cursor,
     }
+    const resetFrame = (cursor: OpencodeXState.OpencodeXStateCursor, reason: string) =>
+      ({
+        type: "reset_required",
+        scope,
+        epoch: OpencodeXState.EPOCH,
+        cursor,
+        reason,
+      }) satisfies OpencodeXState.OpencodeXStateStreamFrame
+    const handoff = queued.flatMap((item): readonly OpencodeXState.OpencodeXStateStreamFrame[] => {
+      if (item.type === "overflow") return [resetFrame(replay.cursor, "state stream queue overflow")]
+      if (item.event.position <= replay.position) return []
+      return [{ type: "event" as const, event: item.event }]
+    })
+    const handoffOverflowed = queued.some((item) => item.type === "overflow")
     const initial: OpencodeXState.OpencodeXStateStreamFrame[] = replay.reset
-      ? [
-          ready,
-          {
-            type: "reset_required",
-            scope,
-            epoch: OpencodeXState.EPOCH,
-            cursor: replay.cursor,
-            reason: replay.reason,
-          },
-        ]
-      : [ready, ...replay.events.map((event) => ({ type: "event" as const, event }))]
+      ? [ready, resetFrame(replay.cursor, replay.reason)]
+      : handoffOverflowed
+        ? [ready, resetFrame(replay.cursor, "state stream queue overflow")]
+      : [ready, ...replay.events.map((event) => ({ type: "event" as const, event })), ...handoff]
     const live = Stream.fromQueue(queue).pipe(
-      Stream.filter(
-        (event) =>
-          event.scope.projectID === scope.projectID &&
-          event.scope.workspaceID === scope.workspaceID &&
-          event.scope.directory === scope.directory,
+      Stream.filter((item) => item.type === "overflow" || item.event.position > replay.position),
+      Stream.mapEffect(
+        (item): Effect.Effect<OpencodeXState.OpencodeXStateStreamFrame> =>
+          item.type === "event"
+            ? Effect.succeed({ type: "event", event: item.event })
+            : state.cursor().pipe(Effect.map((cursor) => resetFrame(cursor, "state stream queue overflow"))),
       ),
-      Stream.map((event): OpencodeXState.OpencodeXStateStreamFrame => ({ type: "event", event })),
+    )
+    const heartbeat = Stream.tick("10 seconds").pipe(
+      Stream.drop(1),
+      Stream.map((): OpencodeXState.OpencodeXStateStreamFrame => ({ type: "heartbeat", epoch: OpencodeXState.EPOCH })),
     )
     return HttpServerResponse.stream(
       Stream.fromIterable(initial).pipe(
-        Stream.concat(live),
+        Stream.concat(live.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
         Stream.map((data) => ({
           _tag: "Event" as const,
           event: data.type,

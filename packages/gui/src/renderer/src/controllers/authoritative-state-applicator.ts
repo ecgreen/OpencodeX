@@ -60,6 +60,7 @@ export function createAuthoritativeStateApplicator(input: {
     batch(() => {
       input.setState(nextState)
       updateLifecycle(nextState)
+      if (nextState.phase !== "ready") return
       if (changes.presentation) input.reconcilePresentation(nextState)
       const snapshotStarted = startPerformance()
       const currentSnapshot = input.snapshot()

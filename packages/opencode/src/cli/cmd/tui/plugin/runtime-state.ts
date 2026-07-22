@@ -1,26 +1,21 @@
 import type { TuiPluginStatus } from "@opencode-ai/plugin/tui"
 import { TuiConfig } from "@/cli/cmd/tui/config/tui"
-import { isRecord } from "@/util/record"
 import { createPluginApi } from "./runtime-api"
 import { fail } from "./runtime-diagnostics"
 import { createPluginScope } from "./runtime-scope"
 import { syncPluginThemes } from "./runtime-theme"
-import type { Api, PluginEntry, RuntimeState } from "./runtime-types"
+import type { PluginEntry, RuntimeState } from "./runtime-types"
 
-const KV_KEY = "plugin_enabled"
-
-function readPluginEnabledMap(value: unknown) {
-  if (!isRecord(value)) return {}
-  return Object.fromEntries(
-    Object.entries(value).filter((item): item is [string, boolean] => typeof item[1] === "boolean"),
+function persistPluginEnabledState(state: RuntimeState, plugin: PluginEntry, enabled: boolean) {
+  if (!state.toggle) return Promise.resolve(true)
+  return state.toggle(
+    {
+      id: plugin.id,
+      source: plugin.load.origin.source,
+      internal: plugin.load.source === "internal",
+    },
+    enabled,
   )
-}
-
-function writePluginEnabledState(api: Api, id: string, enabled: boolean) {
-  api.kv.set(KV_KEY, {
-    ...readPluginEnabledMap(api.kv.get(KV_KEY, {})),
-    [id]: enabled,
-  })
 }
 
 export function listPluginStatus(state: RuntimeState): TuiPluginStatus[] {
@@ -35,8 +30,8 @@ export function listPluginStatus(state: RuntimeState): TuiPluginStatus[] {
 }
 
 export async function deactivatePluginEntry(state: RuntimeState, plugin: PluginEntry, persist: boolean) {
+  if (persist && !(await persistPluginEnabledState(state, plugin, false))) return false
   plugin.enabled = false
-  if (persist) writePluginEnabledState(state.api, plugin.id, false)
   if (!plugin.scope) return true
   const scope = plugin.scope
   plugin.scope = undefined
@@ -45,8 +40,8 @@ export async function deactivatePluginEntry(state: RuntimeState, plugin: PluginE
 }
 
 export async function activatePluginEntry(state: RuntimeState, plugin: PluginEntry, persist: boolean) {
+  if (persist && !(await persistPluginEnabledState(state, plugin, true))) return false
   plugin.enabled = true
-  if (persist) writePluginEnabledState(state.api, plugin.id, true)
   if (plugin.scope) return true
 
   const scope = createPluginScope(plugin.load, plugin.id, state.dispose_timeout_ms)
@@ -62,6 +57,8 @@ export async function activatePluginEntry(state: RuntimeState, plugin: PluginEnt
     })
 
   if (!ok) {
+    plugin.enabled = false
+    if (persist) await persistPluginEnabledState(state, plugin, false)
     await scope.dispose()
     return false
   }
@@ -99,10 +96,7 @@ export function addPluginEntry(state: RuntimeState, plugin: PluginEntry) {
 }
 
 export function applyInitialPluginEnabledState(state: RuntimeState, config: TuiConfig.Resolved) {
-  const map = {
-    ...readPluginEnabledMap(config.plugin_enabled),
-    ...readPluginEnabledMap(state.api.kv.get(KV_KEY, {})),
-  }
+  const map = config.plugin_enabled ?? {}
   state.plugins.forEach((plugin) => {
     const enabled = map[plugin.id]
     if (enabled !== undefined) plugin.enabled = enabled

@@ -11,7 +11,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXJob } from "@/opencodex/job"
 import { MessageID, SessionID } from "@/session/schema"
 import { Context, Effect, Layer } from "effect"
-import { eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { NotFoundError, ReadService, StateEvent, type RoleStatus, type Status } from "./swarm-schema"
 import { serializeMetadata } from "./swarm-model"
 
@@ -80,9 +80,11 @@ export const swarmStatusLayer = Layer.effect(
       }).pipe(Effect.orDie)
 
     const event = Effect.fn("OpencodeXSwarm.event")(function* (swarmID: string, input: EventInput) {
-      const afterCommit = yield* db
-        .transaction((transaction) => commitEvent(transaction, swarmID, input), { behavior: "immediate" })
-        .pipe(Effect.orDie)
+      const afterCommit = yield* stateEvents.barrier(
+        db
+          .transaction((transaction) => commitEvent(transaction, swarmID, input), { behavior: "immediate" })
+          .pipe(Effect.orDie),
+      )
       yield* afterCommit
     })
 
@@ -95,16 +97,17 @@ export const swarmStatusLayer = Layer.effect(
     ) {
       const terminal = ["completed", "partially_failed", "failed", "cancelled"].includes(status)
       const now = Date.now()
-      const afterCommit = yield* db
-        .transaction(
+      const afterCommit = yield* stateEvents.barrier(
+        db.transaction(
           (transaction) =>
             Effect.gen(function* () {
               const run = yield* transaction
-                .select({ prompt: OpencodeXSwarmRunTable.prompt })
+                .select({ prompt: OpencodeXSwarmRunTable.prompt, status: OpencodeXSwarmRunTable.status })
                 .from(OpencodeXSwarmRunTable)
                 .where(eq(OpencodeXSwarmRunTable.id, runID))
                 .get()
               if (!run) return Effect.void
+              if (["completed", "partially_failed", "failed", "cancelled"].includes(run.status)) return Effect.void
               yield* transaction
                 .update(OpencodeXSwarmRunTable)
                 .set({
@@ -134,8 +137,8 @@ export const swarmStatusLayer = Layer.effect(
               })
             }),
           { behavior: "immediate" },
-        )
-        .pipe(Effect.orDie)
+        ).pipe(Effect.orDie),
+      )
       yield* afterCommit
     })
 
@@ -152,6 +155,13 @@ export const swarmStatusLayer = Layer.effect(
         (job) => job.swarmID === swarmID && job.metadata?.runID === run.id,
       )
       if (related.some((job) => ["queued", "claimed", "running"].includes(job.status))) return
+      if (
+        ["cancelling"].includes(swarm.status) ||
+        related.some((job) => job.status === "cancelled")
+      ) {
+        yield* updateRunStatus(swarmID, run.id, "cancelled", "Swarm cancellation acknowledged")
+        return
+      }
       const synthesis = related.find((job) => job.kind === "swarm.synthesis")
       if (synthesis) {
         if (!["succeeded", "failed", "cancelled", "interrupted"].includes(synthesis.status)) return
@@ -229,7 +239,7 @@ export const swarmStatusLayer = Layer.effect(
         yield* transaction
           .update(OpencodeXSwarmRoleTable)
           .set({ status, session_id: job.sessionID, time_updated: now })
-          .where(eq(OpencodeXSwarmRoleTable.id, job.roleID))
+          .where(and(eq(OpencodeXSwarmRoleTable.id, job.roleID), eq(OpencodeXSwarmRoleTable.job_id, job.id)))
           .run()
         const broadcast = yield* commitEvent(transaction, job.swarmID, {
           runID: job.metadata.runID,
@@ -259,11 +269,18 @@ export const swarmStatusLayer = Layer.effect(
               ? "cancelled"
               : "failed"
         const now = job.completedAt ?? Date.now()
-        yield* transaction
+        const updated = yield* transaction
           .update(OpencodeXSwarmRunTable)
           .set({ status, result_session_id: job.sessionID, completed_at: now, time_updated: now })
-          .where(eq(OpencodeXSwarmRunTable.id, job.metadata.runID))
-          .run()
+          .where(
+            and(
+              eq(OpencodeXSwarmRunTable.id, job.metadata.runID),
+              inArray(OpencodeXSwarmRunTable.status, ["planned", "queued", "running", "cancelling"]),
+            ),
+          )
+          .returning({ id: OpencodeXSwarmRunTable.id })
+          .get()
+        if (!updated) return Effect.void
         yield* transaction
           .update(OpencodeXSwarmTable)
           .set({ status, synthesis_session_id: job.sessionID, completed_at: now, time_updated: now })

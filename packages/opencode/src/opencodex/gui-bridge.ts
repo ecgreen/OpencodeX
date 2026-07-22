@@ -274,7 +274,12 @@ export interface Interface {
 
 type SyncStateResult =
   | { readonly _tag: "Unauthorized"; readonly invalidated: Pending[] }
-  | { readonly _tag: "Synced"; readonly invalidated: Pending[]; readonly result: typeof SyncResult.Type }
+  | {
+      readonly _tag: "Synced"
+      readonly invalidated: Pending[]
+      readonly redeliver: Pending[]
+      readonly result: typeof SyncResult.Type
+    }
 type UnregisterStateResult =
   | { readonly _tag: "Unauthorized"; readonly invalidated: Pending[] }
   | { readonly _tag: "Unregistered"; readonly invalidated: Pending[] }
@@ -297,6 +302,19 @@ export const layer = Layer.effect(
         pending,
         (item) => Deferred.fail(item.deferred, new UnavailableError({ operation: item.operation })),
         { discard: true },
+      )
+
+    const publishRequest = (pending: Pending) =>
+      events.publish(
+        Event.Request,
+        {
+          requestID: pending.requestID,
+          clientID: pending.clientID,
+          sessionID: pending.sessionID,
+          operation: pending.operation,
+          input: pending.input,
+        },
+        { location: { directory: AbsolutePath.make(pending.scope.directory), workspaceID: pending.scope.workspaceID } },
       )
 
     yield* Effect.addFinalizer(() =>
@@ -335,6 +353,9 @@ export const layer = Layer.effect(
           {
             _tag: "Synced",
             invalidated: [...pruned.invalidated, ...affected],
+            redeliver: Array.from(pending.values()).filter(
+              (item) => item.clientID === input.clientID && supports(registration, item.scope, item.operation),
+            ),
             result: { ok: true, generation, added: added.length, removed: removed.length, unchanged: unchanged.length },
           },
           { registrations, scopes, pending },
@@ -342,6 +363,7 @@ export const layer = Layer.effect(
       })
       yield* failPending(result.invalidated)
       if (result._tag === "Unauthorized") return yield* new AuthenticationError({ clientID: input.clientID })
+      yield* Effect.forEach(result.redeliver, publishRequest, { discard: true })
       return result.result
     }, Effect.uninterruptible)
 
@@ -403,6 +425,8 @@ export const layer = Layer.effect(
               token: registration.token,
               scope: { directory: input.directory, workspaceID: input.workspaceID },
               operation: input.operation,
+              sessionID: input.sessionID,
+              input: input.input,
               deferred,
             })
             return [{ registration, invalidated: pruned.invalidated }, { ...pruned.state, pending }]
@@ -412,17 +436,16 @@ export const layer = Layer.effect(
 
           return yield* restore(
             Effect.gen(function* () {
-              yield* events.publish(
-                Event.Request,
-                {
-                  requestID,
-                  clientID: selected.registration.clientID,
-                  sessionID: input.sessionID,
-                  operation: input.operation,
-                  input: input.input,
-                },
-                { location: { directory: AbsolutePath.make(input.directory), workspaceID: input.workspaceID } },
-              )
+              yield* publishRequest({
+                requestID,
+                clientID: selected.registration.clientID,
+                token: selected.registration.token,
+                scope: { directory: input.directory, workspaceID: input.workspaceID },
+                operation: input.operation,
+                sessionID: input.sessionID,
+                input: input.input,
+                deferred,
+              })
               return yield* Deferred.await(deferred).pipe(
                 Effect.timeoutOrElse({
                   duration: input.timeout ?? DEFAULT_TIMEOUT,
