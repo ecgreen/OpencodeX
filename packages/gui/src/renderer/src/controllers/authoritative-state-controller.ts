@@ -11,19 +11,29 @@ import { emptyGuiSnapshot } from "../lib/gui-state"
 import { createGlobalEventFanout } from "../lib/global-event-fanout"
 import { createGlobalEventBatcher } from "../lib/global-event-batcher"
 import { globalEventAction, globalEventID, globalEventPayload } from "../lib/live-session-patch"
-import { RENDERER_PERFORMANCE_MARKS, RENDERER_PERFORMANCE_MEASURES, markPerformance, measurePerformance } from "../lib/performance"
+import {
+  RENDERER_PERFORMANCE_MARKS,
+  RENDERER_PERFORMANCE_MEASURES,
+  markPerformance,
+  measurePerformance,
+} from "../lib/performance"
 import type { Route } from "../lib/routes"
 import { createSessionHydrationController } from "../lib/session-hydration"
 import { loadMruSessions } from "../lib/mru-sessions"
 import { readSidebarPreferences } from "../lib/sidebar-preferences"
-export { LOAD_MORE_MESSAGE_MULTIPLIER, SESSION_MESSAGE_PAGE_LIMIT, VIEW_MESSAGE_PAGE_LIMIT } from "../lib/session-hydration"
+export {
+  LOAD_MORE_MESSAGE_MULTIPLIER,
+  SESSION_MESSAGE_PAGE_LIMIT,
+  VIEW_MESSAGE_PAGE_LIMIT,
+} from "../lib/session-hydration"
 import { createDeferredSessionRelease, createSessionPresentationController } from "../lib/session-presentation"
+import { subscribeEvents, type GuiSnapshot, type SessionData } from "../lib/store"
 import {
-  subscribeEvents,
-  type GuiSnapshot,
-  type SessionData,
-} from "../lib/store"
-import { EMPTY_VIEW_PANE_RUNTIME_STATE, setRecordEntry, updateViewPaneRuntimeState, type ViewPaneRuntimeState } from "../lib/view-pane-state"
+  EMPTY_VIEW_PANE_RUNTIME_STATE,
+  setRecordEntry,
+  updateViewPaneRuntimeState,
+  type ViewPaneRuntimeState,
+} from "../lib/view-pane-state"
 import { createAuthoritativeStateApplicator } from "./authoritative-state-applicator"
 
 export const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
@@ -72,7 +82,7 @@ export function createAuthoritativeStateController(input: {
     fallback: applyGlobalEventFallback,
   })
   const selectWorkItems = createClientWorkItemSelector()
-  const workItems = createMemo(() => state() ? selectWorkItems(state()!) : [])
+  const workItems = createMemo(() => (state() ? selectWorkItems(state()!) : []))
   const attentionItems = createMemo(() => clientAttentionItems(workItems()))
   const applyAuthoritativeState = createAuthoritativeStateApplicator({
     state,
@@ -294,7 +304,6 @@ export function createAuthoritativeStateController(input: {
         stateSync = createClientStateSync({
           client: gui.client,
           directory: gui.directory || undefined,
-          pollIntervalMs: 1_000,
         })
         unsubscribeState = stateSync.subscribe(applyState)
         unsubscribeEvents = subscribeEvents(gui, handleGlobalEvent)

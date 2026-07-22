@@ -16,7 +16,10 @@ const title = `Git Workspace ${path.basename(directory)}`
 const run = promisify(execFile)
 let ready = false
 
-test("streams metrics, renders deletion patches, and refreshes without remounting", async ({ page, request }, testInfo) => {
+test("streams metrics, renders deletion patches, and refreshes without remounting", async ({
+  page,
+  request,
+}, testInfo) => {
   await ensureFixture(request)
   await configure(page, { width: 1440, height: 960 }, "dark", "no-preference")
   const metricGates = [deferred(), deferred(), deferred()]
@@ -24,6 +27,10 @@ test("streams metrics, renders deletion patches, and refreshes without remountin
   let metricRequests = 0
   let manifestRequests = 0
   await page.route("**/experimental/opencodex/workbench/changes/metrics/page**", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("limit") !== "32") {
+      await route.continue()
+      return
+    }
     const gate = metricGates[metricRequests++]
     if (gate) await gate.promise
     await route.continue()
@@ -38,7 +45,7 @@ test("streams metrics, renders deletion patches, and refreshes without remountin
   const root = page.locator(".session-side-diff")
   const header = root.locator(":scope > header")
   await expect(header).toContainText("68 files")
-  await expect(header).toContainText("Measuring 0/68")
+  await expect(header).toContainText("Measuring 1/68")
   metricGates[0].resolve()
   await expect(header).toContainText("Measuring 32/68")
   metricGates[1].resolve()
@@ -49,7 +56,9 @@ test("streams metrics, renders deletion patches, and refreshes without remountin
   await expect(header).toContainText("-3")
 
   const list = page.locator(".session-side-file-list")
-  await list.evaluate((element) => { element.scrollTop = element.scrollHeight })
+  await list.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
   const deleted = list.getByRole("treeitem", { name: /deleted\.ts/ })
   await expect(deleted).toBeVisible()
   await deleted.click()
@@ -59,7 +68,9 @@ test("streams metrics, renders deletion patches, and refreshes without remountin
   await expect(deletedPatch.getByRole("button", { name: "Edit" })).toHaveCount(0)
   await expect(page.locator(".session-side-patch")).toContainText("export const removed")
 
-  await list.evaluate((element) => { element.scrollTop = 0 })
+  await list.evaluate((element) => {
+    element.scrollTop = 0
+  })
   const disappearing = list.getByRole("treeitem", { name: /file-000\.ts/ })
   await disappearing.click()
   await root.evaluate((element) => {
@@ -73,7 +84,11 @@ test("streams metrics, renders deletion patches, and refreshes without remountin
   })
   await expect(header).toContainText("Refreshing")
   await expect(root).toBeVisible()
-  expect(await page.evaluate(() => Reflect.get(window, "__opencodexGitRoot") === document.querySelector(".session-side-diff"))).toBe(true)
+  expect(
+    await page.evaluate(
+      () => Reflect.get(window, "__opencodexGitRoot") === document.querySelector(".session-side-diff"),
+    ),
+  ).toBe(true)
   await expect(disappearing).toBeVisible()
   refreshGate.resolve()
   await expect(header).toContainText("67 files")
@@ -83,10 +98,17 @@ test("streams metrics, renders deletion patches, and refreshes without remountin
   await attachScreenshot(page, testInfo, "git-workspace-progressive-refresh")
 })
 
-for (const viewport of [{ width: 980, height: 680 }, { width: 1440, height: 960 }, { width: 1920, height: 1080 }]) {
+for (const viewport of [
+  { width: 980, height: 680 },
+  { width: 1440, height: 960 },
+  { width: 1920, height: 1080 },
+]) {
   for (const theme of ["dark", "light"] as const) {
     for (const motion of ["no-preference", "reduce"] as const) {
-      test(`Git workspace geometry at ${viewport.width}x${viewport.height}, ${theme}, ${motion}`, async ({ page, request }, testInfo) => {
+      test(`Git workspace geometry at ${viewport.width}x${viewport.height}, ${theme}, ${motion}`, async ({
+        page,
+        request,
+      }, testInfo) => {
         await ensureFixture(request)
         await configure(page, viewport, theme, motion)
         await openGitWorkspace(page)
@@ -110,20 +132,34 @@ async function ensureFixture(request: APIRequestContext) {
   await run("git", ["config", "user.name", "OpencodeX E2E"], { cwd: directory })
   await run("git", ["add", "."], { cwd: directory })
   await run("git", ["commit", "--quiet", "-m", "fixture"], { cwd: directory })
-  await writeFile(path.join(directory, "src", "modified.ts"), "export const value = 2\nexport const keep = true\nexport const added = true\n")
+  await writeFile(
+    path.join(directory, "src", "modified.ts"),
+    "export const value = 2\nexport const keep = true\nexport const added = true\n",
+  )
   await rm(path.join(directory, "src", "deleted.ts"))
-  await Promise.all(Array.from({ length: 65 }, async (_, index) => {
-    const group = path.join(directory, "generated", `group-${Math.floor(index / 10).toString().padStart(2, "0")}`)
-    await mkdir(group, { recursive: true })
-    await writeFile(path.join(group, `file-${index.toString().padStart(3, "0")}.ts`), `export const value${index} = ${index}\nexport const ready${index} = true\n`)
-  }))
+  await Promise.all(
+    Array.from({ length: 65 }, async (_, index) => {
+      const group = path.join(
+        directory,
+        "generated",
+        `group-${Math.floor(index / 10)
+          .toString()
+          .padStart(2, "0")}`,
+      )
+      await mkdir(group, { recursive: true })
+      await writeFile(
+        path.join(group, `file-${index.toString().padStart(3, "0")}.ts`),
+        `export const value${index} = ${index}\nexport const ready${index} = true\n`,
+      )
+    }),
+  )
   await writeFile(path.join(directory, "image.bin"), Buffer.from([0, 1, 2, 3]))
   const project = await request.post(`${backendURL}/experimental/opencodex/project`, {
     headers,
     data: { name: "Git Workspace", directory, folders: [directory] },
   })
   expect(project.ok(), await project.text()).toBe(true)
-  const body = await project.json() as { id: string }
+  const body = (await project.json()) as { id: string }
   const session = await request.post(`${backendURL}/experimental/opencodex/session`, {
     headers,
     data: { projectID: body.id, directory, title },
@@ -153,21 +189,29 @@ async function openGitWorkspace(page: Page) {
   await expect(page.locator(".session-side-panel")).toBeVisible()
   const newTab = page.getByRole("button", { name: "New tab" })
   if (await newTab.count()) await newTab.click()
-  await page.locator(".session-side-panel").getByRole("button", { name: /^Git Review/ }).dispatchEvent("click")
+  await page
+    .locator(".session-side-panel")
+    .getByRole("button", { name: /^Git Review/ })
+    .dispatchEvent("click")
   await expect(page.locator(".session-side-diff")).toBeVisible()
 }
 
 function deferred() {
   let resolve: () => void = () => {}
-  const promise = new Promise<void>((done) => { resolve = done })
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
   return { promise, resolve }
 }
 
 async function expectNoDocumentOverflow(page: Page) {
-  expect(await page.evaluate(() =>
-    document.documentElement.scrollHeight <= document.documentElement.clientHeight + 1 &&
-    document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
-  )).toBe(true)
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollHeight <= document.documentElement.clientHeight + 1 &&
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+    ),
+  ).toBe(true)
 }
 
 async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {

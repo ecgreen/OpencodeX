@@ -12,16 +12,23 @@ const headers = {
 test("keeps sibling view transcript scroll independent while loading older messages", async ({ page, request }) => {
   test.setTimeout(90_000)
   const project = await createProject(request)
-  const firstSession = await createSession(request, project.id, "Scroll Isolation One")
-  const secondSession = await createSession(request, project.id, "Scroll Isolation Two")
+  const firstTitle = `Scroll Isolation One ${project.id}`
+  const secondTitle = `Scroll Isolation Two ${project.id}`
+  const firstSession = await createSession(request, project.id, firstTitle)
+  const secondSession = await createSession(request, project.id, secondTitle)
   await Promise.all([seedMessages(request, firstSession.id), seedMessages(request, secondSession.id)])
 
   await page.goto("/")
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
   await page.getByRole("button", { name: "Views: Create and manage multi-session views", exact: true }).click()
   await page.getByRole("button", { name: "Create view", exact: true }).click()
-  await page.locator(".view-session-card", { hasText: "Scroll Isolation One" }).click()
-  await page.locator(".view-session-card", { hasText: "Scroll Isolation Two" }).click()
+  await page.getByRole("searchbox", { name: "Search available sessions" }).fill(project.id)
+  const firstCheckbox = page.getByRole("checkbox", { name: firstTitle })
+  const secondCheckbox = page.getByRole("checkbox", { name: secondTitle })
+  await firstCheckbox.press("Space")
+  await expect(firstCheckbox).toBeChecked()
+  await secondCheckbox.press("Space")
+  await expect(secondCheckbox).toBeChecked()
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Scroll Isolation View")
   await page.getByRole("button", { name: "Create view", exact: true }).click()
 
@@ -43,7 +50,9 @@ test("keeps sibling view transcript scroll independent while loading older messa
   await first.evaluate((element) => {
     element.dataset.isolationScrollEvents = ""
     element.addEventListener("scroll", () => {
-      element.dataset.isolationScrollEvents = [element.dataset.isolationScrollEvents, String(element.scrollTop)].filter(Boolean).join(",")
+      element.dataset.isolationScrollEvents = [element.dataset.isolationScrollEvents, String(element.scrollTop)]
+        .filter(Boolean)
+        .join(",")
     })
   })
 
@@ -84,6 +93,7 @@ async function seedMessages(request: APIRequestContext, sessionID: string) {
       headers,
       data: {
         agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
         noReply: true,
         parts: [{ type: "text", text: `Message ${index + 1}: ${"independent transcript content ".repeat(5)}` }],
       },
@@ -104,9 +114,12 @@ function scrollMetrics(transcript: Locator) {
 }
 
 function settleLayout(transcript: Locator) {
-  return transcript.evaluate(() => new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-  }))
+  return transcript.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }),
+  )
 }
 
 async function viewPlacement(view: Locator, transcript: Locator) {

@@ -129,7 +129,7 @@ jobs:
         with:
           name: gui-performance-${{ github.run_attempt }}
           include-hidden-files: true
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14
           path: packages/gui/.artifacts/e2e-performance
       - name: Upload failing GUI artifacts

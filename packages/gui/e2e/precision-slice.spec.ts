@@ -12,8 +12,6 @@ const viewports = [
   { width: 1440, height: 960 },
   { width: 1920, height: 1080 },
 ] as const
-let fixture: { projectID: string; sessionTitle: string } | undefined
-
 for (const viewport of viewports) {
   for (const theme of ["dark", "light"] as const) {
     for (const motion of ["no-preference", "reduce"] as const) {
@@ -21,11 +19,13 @@ for (const viewport of viewports) {
         page,
         request,
       }, testInfo) => {
+        const visualFixture = await createFixture(request, testInfo)
         await configurePage(page, viewport, theme, motion)
         await page.goto("/")
         await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
-        const visualFixture = await ensureFixture(request)
-        const sessionCard = page.locator(".dashboard-active-sessions .session-link-shell", { hasText: visualFixture.sessionTitle }).first()
+        const sessionCard = page
+          .locator(".dashboard-active-sessions .session-link-shell", { hasText: visualFixture.sessionTitle })
+          .first()
         await expect(sessionCard).toBeVisible()
         await expectNavigationContract(page)
         await expect(page.getByRole("button", { name: "New session", exact: true }).first()).toBeVisible()
@@ -59,10 +59,10 @@ test("records navigation, collapse, disclosure, session opening, and composer fo
   })
   const page = await context.newPage()
   try {
+    const visualFixture = await createFixture(request, testInfo)
     await configurePage(page, { width: 1440, height: 960 }, "dark", "no-preference")
     await page.goto("/")
     await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
-    const visualFixture = await ensureFixture(request)
 
     await page.getByRole("button", { name: /^Projects:/ }).click()
     await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible()
@@ -72,7 +72,9 @@ test("records navigation, collapse, disclosure, session opening, and composer fo
     await expect(page.locator(".app-shell")).toHaveClass(/rail-collapsed/)
     await page.getByRole("button", { name: "Toggle sidebar" }).click()
 
-    const card = page.locator(".dashboard-active-sessions .session-link-shell", { hasText: visualFixture.sessionTitle }).first()
+    const card = page
+      .locator(".dashboard-active-sessions .session-link-shell", { hasText: visualFixture.sessionTitle })
+      .first()
     await card.hover()
     await expect(card.locator(".pin-toggle")).toHaveCount(0)
     await card.click({ button: "right" })
@@ -109,16 +111,18 @@ test("keeps warm route interactions inside the precision performance budget", as
   const durations: number[] = []
   for (let index = 0; index < 20; index += 1) {
     const target = index % 2 === 0 ? "Projects:" : "Dashboard:"
-    durations.push(await page.evaluate(async (prefix) => {
-      const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) =>
-        element.getAttribute("aria-label")?.startsWith(prefix),
-      )
-      if (!button) throw new Error(`Navigation button not found: ${prefix}`)
-      const started = performance.now()
-      button.click()
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-      return performance.now() - started
-    }, target))
+    durations.push(
+      await page.evaluate(async (prefix) => {
+        const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) =>
+          element.getAttribute("aria-label")?.startsWith(prefix),
+        )
+        if (!button) throw new Error(`Navigation button not found: ${prefix}`)
+        const started = performance.now()
+        button.click()
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        return performance.now() - started
+      }, target),
+    )
   }
   const sorted = durations.toSorted((a, b) => a - b)
   expect(sorted[Math.ceil(sorted.length * 0.95) - 1]).toBeLessThan(
@@ -148,12 +152,7 @@ async function expectNavigationContract(page: Page) {
   await expect(nav.locator("small")).toHaveCount(0)
   await expect(nav.getByRole("button", { name: /^Status:/ })).toHaveCount(0)
   await expect(nav.getByRole("button", { name: /^Settings:/ })).toHaveCount(0)
-  await expect(nav.locator(".nav-label")).toHaveText([
-    "Dashboard",
-    "Projects",
-    "Swarms",
-    "Views",
-  ])
+  await expect(nav.locator(".nav-label")).toHaveText(["Dashboard", "Projects", "Swarms", "Views"])
 }
 
 async function expectNoDocumentOverflow(page: Page) {
@@ -185,15 +184,15 @@ async function createSession(request: APIRequestContext, projectID: string, titl
     data: { projectID, directory: fixtureDirectory, title },
   })
   expect(response.ok(), await response.text()).toBe(true)
+  return response.json() as Promise<{ id: string }>
 }
 
-async function ensureFixture(request: APIRequestContext) {
-  if (fixture) return fixture
-  const project = await createProject(request, "Precision Slice")
-  const sessionTitle = "Precision Slice Session"
-  await createSession(request, project.id, sessionTitle)
-  fixture = { projectID: project.id, sessionTitle }
-  return fixture
+async function createFixture(request: APIRequestContext, testInfo: TestInfo) {
+  const suffix = `${testInfo.title.replaceAll(/[^a-z0-9]+/gi, "-")}-${testInfo.retry}`
+  const project = await createProject(request, `Precision Slice ${suffix}`)
+  const sessionTitle = `Precision Slice Session ${suffix}`
+  const session = await createSession(request, project.id, sessionTitle)
+  return { projectID: project.id, sessionID: session.id, sessionTitle }
 }
 
 async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {

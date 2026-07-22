@@ -2250,12 +2250,17 @@ describe("client state sync", () => {
           await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
         })(),
     }
-    const controller = createClientStateSync({ transport, batchMs: 0, sessionRefreshDelayMs: 20 })
+    const controller = createClientStateSync({ transport, batchMs: 0, sessionRefreshDelayMs: 100 })
     await controller.start()
     await eventsWaiting
     await controller.refreshSessionTail("session-1")
     releaseEvents()
-    await waitFor(() => sessionLoads === 2)
+    await waitFor(
+      () =>
+        controller.getMetrics().streamFrames === 9 &&
+        sessionLoads === 2 &&
+        controller.getState().dirtySessions["session-1"] === undefined,
+    )
 
     expect(controller.getMetrics().streamFrames).toBe(9)
     expect(controller.getMetrics().batches).toBeGreaterThan(1)

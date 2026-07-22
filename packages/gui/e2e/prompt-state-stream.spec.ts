@@ -19,12 +19,20 @@ test("keeps the authoritative connection current while prompting", async ({ page
   const project = (await projectResponse.json()) as { id: string }
   const sessionResponse = await request.post(`${backendURL}/experimental/opencodex/session`, {
     headers,
-    data: { projectID: project.id, directory: fixtureDirectory, title: "Prompt Stream Session" },
+    data: {
+      projectID: project.id,
+      directory: fixtureDirectory,
+      title: "Prompt Stream Session",
+      model: { providerID: "test", id: "test-model" },
+    },
   })
   expect(sessionResponse.ok(), await sessionResponse.text()).toBe(true)
   await sessionResponse.json()
 
-  await page.getByRole("button", { name: /Prompt Stream Session/ }).first().click()
+  await page
+    .getByRole("button", { name: /Prompt Stream Session/ })
+    .first()
+    .click()
   const composer = page.getByRole("textbox", { name: "Message OpencodeX..." })
   await expect(composer).toBeVisible()
   await composer.fill("stream stays connected")

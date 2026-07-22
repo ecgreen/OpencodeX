@@ -8,7 +8,7 @@ const headers = {
   authorization: "Basic b3BlbmNvZGU6b3BlbmNvZGV4LWUyZQ==",
   "x-opencode-directory": fixtureDirectory,
 }
-const title = "File Workspace Navigation"
+const title = `File Workspace Navigation ${path.basename(fixtureDirectory)}`
 let ready = false
 
 test("navigates definitions and uses the compact file finder", async ({ page, request }) => {
@@ -169,8 +169,8 @@ async function openSourceFile(page: Page) {
     return
   }
   await page.getByRole("button", { name: "Open file" }).click()
-  await page.getByRole("treeitem", { name: "src" }).dispatchEvent("click")
-  await page.getByRole("treeitem", { name: "app.ts" }).dispatchEvent("click")
+  await page.getByRole("treeitem", { name: "src", exact: true }).click()
+  await page.getByRole("treeitem", { name: "app.ts", exact: true }).click()
   await expect(content).toContainText("console.log(answer)")
 }
 

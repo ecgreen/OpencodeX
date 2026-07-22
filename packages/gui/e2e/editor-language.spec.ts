@@ -45,33 +45,56 @@ async function createFixture(request: APIRequestContext) {
   await mkdir(path.join(projectDirectory, "src"), { recursive: true })
   await mkdir(path.join(fixtureDirectory, "node_modules", "fixture-library"), { recursive: true })
   await writeFile(path.join(projectDirectory, "bun.lock"), "")
-  await writeFile(path.join(projectDirectory, "package.json"), JSON.stringify({ name: "fixture-app", dependencies: { "fixture-library": "1.0.0" } }))
-  await writeFile(path.join(projectDirectory, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, jsx: "preserve", moduleResolution: "node" } }))
-  await writeFile(path.join(projectDirectory, "src", "app.tsx"), [
-    'import { answer, createThing } from "fixture-library"',
-    "const item = createThing()",
-    "console.log(answer)",
-    "item.",
-    "export function App() { return <div>{answer}</div> }",
-    "",
-  ].join("\n"))
-  await writeFile(path.join(fixtureDirectory, "node_modules", "fixture-library", "package.json"), JSON.stringify({
-    name: "fixture-library",
-    version: "1.0.0",
-    types: "index.d.ts",
-  }))
-  await writeFile(path.join(fixtureDirectory, "node_modules", "fixture-library", "index.d.ts"), [
-    "export declare const answer: number",
-    "export interface FixtureThing { run(): string; stop(): void }",
-    "export declare function createThing(): FixtureThing",
-    "",
-  ].join("\n"))
+  await writeFile(
+    path.join(projectDirectory, "package.json"),
+    JSON.stringify({ name: "fixture-app", dependencies: { "fixture-library": "1.0.0" } }),
+  )
+  await writeFile(
+    path.join(projectDirectory, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        jsx: "preserve",
+        moduleResolution: "node",
+        baseUrl: ".",
+        paths: { "fixture-library": ["../../node_modules/fixture-library"] },
+      },
+    }),
+  )
+  await writeFile(
+    path.join(projectDirectory, "src", "app.tsx"),
+    [
+      'import { answer, createThing } from "fixture-library"',
+      "const item = createThing()",
+      "console.log(answer)",
+      "item.",
+      "export function App() { return <div>{answer}</div> }",
+      "",
+    ].join("\n"),
+  )
+  await writeFile(
+    path.join(fixtureDirectory, "node_modules", "fixture-library", "package.json"),
+    JSON.stringify({
+      name: "fixture-library",
+      version: "1.0.0",
+      types: "index.d.ts",
+    }),
+  )
+  await writeFile(
+    path.join(fixtureDirectory, "node_modules", "fixture-library", "index.d.ts"),
+    [
+      "export declare const answer: number",
+      "export interface FixtureThing { run(): string; stop(): void }",
+      "export declare function createThing(): FixtureThing",
+      "",
+    ].join("\n"),
+  )
   const project = await request.post(`${backendURL}/experimental/opencodex/project`, {
     headers,
     data: { name: "Editor Language", directory: projectDirectory, folders: [projectDirectory, fixtureDirectory] },
   })
   expect(project.ok(), await project.text()).toBe(true)
-  const body = await project.json() as { id: string }
+  const body = (await project.json()) as { id: string }
   const session = await request.post(`${backendURL}/experimental/opencodex/session`, {
     headers,
     data: { projectID: body.id, directory: projectDirectory, title },
@@ -85,36 +108,42 @@ async function hoverText(page: Page, text: string, line: number) {
 }
 
 async function clickAfterLine(page: Page, line: number) {
-  const point = await page.locator(".workbench-codemirror .cm-line").nth(line).evaluate((root) => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-    const nodes: Node[] = []
-    while (walker.nextNode()) nodes.push(walker.currentNode)
-    const node = nodes.findLast((item) => item.textContent)
-    if (!node?.textContent) return
-    const range = document.createRange()
-    range.setStart(node, node.textContent.length - 1)
-    range.setEnd(node, node.textContent.length)
-    const rect = range.getBoundingClientRect()
-    return { x: rect.right - 1, y: rect.top + rect.height / 2 }
-  })
+  const point = await page
+    .locator(".workbench-codemirror .cm-line")
+    .nth(line)
+    .evaluate((root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      const nodes: Node[] = []
+      while (walker.nextNode()) nodes.push(walker.currentNode)
+      const node = nodes.findLast((item) => item.textContent)
+      if (!node?.textContent) return
+      const range = document.createRange()
+      range.setStart(node, node.textContent.length - 1)
+      range.setEnd(node, node.textContent.length)
+      const rect = range.getBoundingClientRect()
+      return { x: rect.right - 1, y: rect.top + rect.height / 2 }
+    })
   if (!point) throw new Error(`Could not find editor line ${line + 1}`)
   await page.mouse.click(point.x, point.y)
 }
 
 async function textPoint(page: Page, text: string, line: number) {
-  const point = await page.locator(".workbench-codemirror .cm-line").nth(line).evaluate((root, value) => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-    while (walker.nextNode()) {
-      const node = walker.currentNode
-      const offset = (node.textContent ?? "").indexOf(value)
-      if (offset < 0) continue
-      const range = document.createRange()
-      range.setStart(node, offset)
-      range.setEnd(node, offset + value.length)
-      const rect = range.getBoundingClientRect()
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-    }
-  }, text)
+  const point = await page
+    .locator(".workbench-codemirror .cm-line")
+    .nth(line)
+    .evaluate((root, value) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      while (walker.nextNode()) {
+        const node = walker.currentNode
+        const offset = (node.textContent ?? "").indexOf(value)
+        if (offset < 0) continue
+        const range = document.createRange()
+        range.setStart(node, offset)
+        range.setEnd(node, offset + value.length)
+        const rect = range.getBoundingClientRect()
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      }
+    }, text)
   if (!point) throw new Error(`Could not find ${text} on editor line ${line + 1}`)
   return point
 }

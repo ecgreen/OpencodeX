@@ -72,8 +72,14 @@ test("stacks collapsed rail destinations vertically", async ({ page }) => {
 
 async function managerHeadingTop(page: Page, route: string, heading: string) {
   await openRoute(page, route)
+  const layout = route === "Views" ? "full-bleed" : "scroll-page"
+  await expect(page.locator(".stage")).toHaveAttribute("data-layout", layout)
+  await expect(page.locator(".stage-content")).toHaveClass(new RegExp(`\\b${layout}\\b`))
   const element = page.getByRole("heading", { name: heading, exact: true })
   await expect(element).toBeVisible()
+  await element.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
   return element.evaluate((node) => Math.round((node.closest("header") ?? node).getBoundingClientRect().top))
 }
 

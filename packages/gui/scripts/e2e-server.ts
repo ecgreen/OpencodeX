@@ -8,12 +8,12 @@ const productionRenderer = process.argv.includes("--production-renderer")
 const runtime = path.join(gui, ".artifacts", productionRenderer ? "e2e-performance" : "e2e", "runtime")
 const workspace = productionRenderer
   ? path.join(runtime, "workspace")
-  : process.env.OPENCODEX_GUI_E2E_DIRECTORY ?? root
+  : (process.env.OPENCODEX_GUI_E2E_DIRECTORY ?? root)
 const backendURL = "http://127.0.0.1:4097"
 const rendererPort = productionRenderer ? 4175 : 4173
 const rendererURL = `http://127.0.0.1:${rendererPort}`
 const username = "opencode"
-const password = productionRenderer ? "opencodex-e2e" : process.env.OPENCODEX_GUI_E2E_PASSWORD ?? "opencodex-e2e"
+const password = productionRenderer ? "opencodex-e2e" : (process.env.OPENCODEX_GUI_E2E_PASSWORD ?? "opencodex-e2e")
 const children: Bun.Subprocess[] = []
 let stopping = false
 
@@ -35,10 +35,37 @@ await Promise.all(
 )
 if (productionRenderer) {
   await Bun.write(path.join(workspace, "README.md"), "# Isolated GUI performance workspace\n")
-  const git = Bun.spawn({ cmd: ["git", "init", "--quiet"], cwd: workspace, stdin: "ignore", stdout: "ignore", stderr: "inherit" })
+  const git = Bun.spawn({
+    cmd: ["git", "init", "--quiet"],
+    cwd: workspace,
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "inherit",
+  })
   const code = await git.exited
   if (code !== 0) throw new Error(`Performance workspace git init exited with code ${code}`)
 }
+
+const llm = productionRenderer
+  ? undefined
+  : Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        if (new URL(request.url).pathname !== "/v1/chat/completions") return new Response("Not found", { status: 404 })
+        await Bun.sleep(500)
+        return new Response(
+          [
+            `data: ${JSON.stringify({ id: "chatcmpl-e2e", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] })}`,
+            `data: ${JSON.stringify({ id: "chatcmpl-e2e", object: "chat.completion.chunk", choices: [{ delta: { content: "ok" } }] })}`,
+            `data: ${JSON.stringify({ id: "chatcmpl-e2e", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] })}`,
+            "data: [DONE]",
+            "",
+          ].join("\n\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        )
+      },
+    })
 
 const backend = spawn(
   [
@@ -68,6 +95,36 @@ const backend = spawn(
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "1",
     OPENCODE_PURE: "1",
+    ...(llm
+      ? {
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({
+            model: "test/test-model",
+            provider: {
+              test: {
+                name: "Test",
+                id: "test",
+                env: [],
+                npm: "@ai-sdk/openai-compatible",
+                models: {
+                  "test-model": {
+                    id: "test-model",
+                    name: "Test Model",
+                    attachment: false,
+                    reasoning: false,
+                    temperature: false,
+                    tool_call: true,
+                    release_date: "2025-01-01",
+                    limit: { context: 100_000, output: 10_000 },
+                    cost: { input: 0, output: 0 },
+                    options: {},
+                  },
+                },
+                options: { apiKey: "test-key", baseURL: new URL("/v1", llm.url).href },
+              },
+            },
+          }),
+        }
+      : {}),
     OPENCODE_SERVER_PASSWORD: password,
     OPENCODE_SERVER_USERNAME: username,
     OPENCODE_TEST_HOME: path.join(runtime, "home"),
@@ -179,4 +236,5 @@ function stop() {
   if (stopping) return
   stopping = true
   children.forEach((child) => child.kill())
+  llm?.stop(true)
 }

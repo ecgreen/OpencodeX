@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import path from "node:path"
 import { fixtureDirectory } from "./fixture-directory"
 
 const backendURL = "http://127.0.0.1:4097"
@@ -7,8 +8,9 @@ const headers = {
   "x-opencode-directory": fixtureDirectory,
 }
 
-test("completes project, session, swarm, view, menu, and keyboard workflows", async ({ page, request }) => {
+test("completes project, session, swarm, view, menu, and keyboard workflows", async ({ page, request }, testInfo) => {
   test.setTimeout(90_000)
+  const projectName = `GUI Acceptance ${path.basename(fixtureDirectory)}-${testInfo.retry}`
   const failures: string[] = []
   page.on("console", (message) => {
     if (message.type() === "error") failures.push(message.text())
@@ -19,14 +21,16 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   await page.goto("/")
   await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
 
-  const project = await createProject(request)
-  await expect(page.getByRole("button", { name: "GUI Acceptance", exact: true })).toBeVisible()
+  const project = await createProject(request, projectName)
+  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible()
   await createSession(request, project.id)
   await createSession(request, project.id, "GUI Acceptance Companion")
   await expect(page.getByRole("button", { name: /GUI Acceptance Session/ }).first()).toBeVisible()
 
-  await page.getByRole("button", { name: /GUI Acceptance .*2 sessions/ }).click()
-  await expect(page.getByRole("heading", { name: "GUI Acceptance" })).toBeVisible()
+  await page.getByRole("button", { name: "Projects: Manage project groups and folders", exact: true }).click()
+  await page.getByRole("searchbox", { name: "Search projects or folders" }).fill(projectName)
+  await page.locator(".project-directory-row", { hasText: projectName }).locator(".project-directory-open").click()
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible()
   await page.getByRole("button", { name: "New session", exact: true }).click()
   await expect(page.getByRole("textbox", { name: "Message OpencodeX..." })).toBeFocused()
   await page.getByTitle("Choose model").click()
@@ -49,8 +53,13 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
 
   await page.getByRole("button", { name: "Views: Create and manage multi-session views", exact: true }).click()
   await page.getByRole("button", { name: "Create view", exact: true }).click()
-  await page.locator(".view-session-card", { hasText: "GUI Acceptance Session" }).click()
-  await page.locator(".view-session-card", { hasText: "GUI Acceptance Companion" }).click()
+  await page.getByRole("searchbox", { name: "Search available sessions" }).fill(path.basename(fixtureDirectory))
+  const sessionCheckbox = page.getByRole("checkbox", { name: "GUI Acceptance Session" })
+  const companionCheckbox = page.getByRole("checkbox", { name: "GUI Acceptance Companion" })
+  await sessionCheckbox.press("Space")
+  await expect(sessionCheckbox).toBeChecked()
+  await companionCheckbox.press("Space")
+  await expect(companionCheckbox).toBeChecked()
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("GUI Acceptance View")
   await page.getByRole("button", { name: "Create view", exact: true }).click()
   await expect(page.getByRole("heading", { name: "GUI Acceptance View" })).toBeVisible()
@@ -85,11 +94,11 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   expect(failures).toEqual([])
 })
 
-async function createProject(request: APIRequestContext) {
+async function createProject(request: APIRequestContext, name: string) {
   const response = await request.post(`${backendURL}/experimental/opencodex/project`, {
     headers,
     data: {
-      name: "GUI Acceptance",
+      name,
       directory: fixtureDirectory,
       folders: [fixtureDirectory],
     },
