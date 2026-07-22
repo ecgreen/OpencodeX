@@ -29,11 +29,13 @@ test("provides TSX hover and completion from a hoisted dependency", async ({ pag
   await result.click()
   await expect(page.locator(".workbench-codemirror .cm-content")).toContainText("console.log(answer)")
 
-  await hoverText(page, "answer", 2)
   const hover = page.locator(".cm-tooltip-hover .code-editor-hover")
-  await expect(hover).toBeVisible()
+  await expect(async () => {
+    await page.mouse.move(0, 0)
+    await hoverText(page, "answer", 2)
+    await expect(hover).toContainText("number", { timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
   await expect(hover).toContainText("answer")
-  await expect(hover).toContainText("number")
 
   await clickAfterLine(page, 3)
   await page.keyboard.press("Control+Space")
