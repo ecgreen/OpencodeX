@@ -24,10 +24,12 @@ export function projectViews(
   state?: SessionOrderState,
 ) {
   const sessionIDs = new Set(project.sessionIDs)
+  const terminalSessionIDs = new Set((project.terminalSessions ?? []).map((session) => session.id))
   return (snapshot?.views ?? [])
     .filter(
       (view) =>
         view.sessionIDs.some((sessionID) => sessionIDs.has(sessionID)) ||
+        (view.members ?? []).some((member) => member.kind === "terminal" && terminalSessionIDs.has(member.id)) ||
         pendingViewSessions(view).some((item) => item.projectID === project.id),
     )
     .toSorted((a, b) => timeValue(b.timeUpdated) - timeValue(a.timeUpdated))
@@ -101,6 +103,7 @@ export function projectLatestActivity(
   return Math.max(
     0,
     ...projectSessions(project, snapshot, state).map((session) => timeValue(session.time.updated)),
+    ...(project.terminalSessions ?? []).map((session) => timeValue(session.timeUpdated)),
     ...projectSwarms(project, snapshot).map((swarm) => timeValue(swarm.timeUpdated)),
     ...projectViews(project, snapshot).map((view) => timeValue(view.timeUpdated)),
     timeValue(project.project.time?.updated),
@@ -108,7 +111,7 @@ export function projectLatestActivity(
 }
 
 export function projectViewSessionCount(view: ClientCatalogView) {
-  return view.sessionIDs.length + pendingViewSessions(view).length
+  return (view.members?.length ?? view.sessionIDs.length) + pendingViewSessions(view).length
 }
 
 export function projectSessionStatus(

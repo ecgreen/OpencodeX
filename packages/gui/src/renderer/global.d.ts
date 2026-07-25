@@ -2,17 +2,23 @@ import type {
   BrowserSnapshot,
   BrowserCapture,
   BrowserState,
+  ClaudeCodeStatus,
   ContextPath,
   GuiConnection,
   TerminalDataEvent,
   TerminalExitEvent,
   TerminalResult,
+  TerminalCreateInput,
 } from "../preload/index"
 
 declare global {
   interface Window {
     opencodex?: {
       connection(): Promise<GuiConnection>
+      installationID(): Promise<string>
+      claude: {
+        status(): Promise<ClaudeCodeStatus>
+      }
       folder(defaultPath?: string): Promise<string | undefined>
       folders?(defaultPath?: string): Promise<string[] | undefined>
       file?(defaultPath?: string): Promise<string | undefined>
@@ -20,7 +26,7 @@ declare global {
       pathForFile?(file: File): string
       editor(input: { value: string; cwd?: string }): Promise<string | undefined>
       terminal?: {
-        create(input: { id: string; cwd?: string; cols?: number; rows?: number }): Promise<TerminalResult>
+        create(input: TerminalCreateInput): Promise<TerminalResult>
         write(input: { id: string; data: string }): void
         resize(input: { id: string; cols: number; rows: number }): void
         destroy(id: string): Promise<boolean>

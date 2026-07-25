@@ -348,20 +348,3 @@
   background: var(--panel);
   padding: 6px 8px;
 }
-
-.tool-diagnostics pre {
-  overflow: visible;
-  max-height: none;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--theme-border);
-  border-radius: 7px;
-  color: var(--text);
-  background: var(--theme-canvas);
-  white-space: pre-wrap;
-}
-
-.tool-diagnostics {
-  display: grid;
-  gap: 7px;
-}

@@ -90,6 +90,7 @@ export function prepareViewPromptSubmission(input: { gui?: GuiClient; item: View
 }
 
 export async function prepareViewPromptTarget(gui: GuiClient, item: ViewItem, view?: ClientCatalogView): Promise<PreparedViewPromptTarget> {
+  if (item.kind === "terminal") return { type: "notice", message: "Claude Code terminal panes accept input directly in the terminal." }
   const draftSession = viewItemSession(item, gui.directory)
   if (item.kind === "session") return { type: "ready", draftSession, target: draftSession }
 
@@ -110,8 +111,8 @@ export async function prepareViewPromptTarget(gui: GuiClient, item: ViewItem, vi
   const next = replacePendingViewPane(view, item.slot.id, createdSession.id, pending)
   await updateView(gui, view.id, {
     expectedTimeUpdated: Number(view.timeUpdated),
-    sessionIDs: next.sessionIDs,
-    focusedSessionID: createdSession.id,
+    members: next.members,
+    focusedItemID: createdSession.id,
     metadata: next.metadata,
   }).catch(async (error: Error) => {
     await deleteSession(gui, createdSession.id).catch(() => undefined)

@@ -10,6 +10,8 @@ import {
   subscribeComposerStash,
   writeComposerStash,
 } from "../lib/session-composer-helpers"
+import { readClaudeDriverMarker } from "../lib/claude-driver-marker"
+import { Button, InlineNotice } from "./ui"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
 import { SessionSafetyDock } from "./session-safety-dock"
@@ -63,6 +65,9 @@ export function SessionPage(props: SessionPageProps) {
     const text = draftText()
     const parts = [...draftParts()]
     if (blocked() || (!text && parts.length === 0)) return
+    // Sending here fails server-side with no assistant message to hang the error
+    // on, so the draft is kept and the composer banner explains the fix.
+    if (models.disconnectedProvider()) return
     if (props.pending && sidePanel.open()) sidePanel.requestPendingOpenHandoff()
     const shellText = text.startsWith("!") ? text.slice(1).trimStart() : undefined
     const promptText = shellText ?? text
@@ -229,9 +234,26 @@ export function SessionPage(props: SessionPageProps) {
     composerInput.schedule({ sessionID: id, draft: value })
     if (!value.input && value.parts.length === 0) composerInput.flushPending()
   })
+  // A mirrored Claude Code session cannot run headlessly until the CLI is
+  // signed in; the raw terminal page is where that happens.
+  const claudeDriver = createMemo(() => readClaudeDriverMarker(session()?.metadata))
   return (
     <div class="page session-page" data-session-id={session()?.id}>
       <SessionPageToolbar props={props} sidePanel={sidePanel} />
+      <Show when={claudeDriver()?.authState === "needs-login" ? claudeDriver() : undefined}>
+        {(marker) => (
+          <InlineNotice tone="warning" title="Claude Code needs to be signed in">
+            <p>Open the raw terminal to complete sign-in, then return to this session.</p>
+            <Button
+              appearance="outline"
+              size="compact"
+              onClick={() => props.openTerminalSession?.(marker().terminalSessionID)}
+            >
+              Open terminal to sign in
+            </Button>
+          </InlineNotice>
+        )}
+      </Show>
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
         <div class="session-workspace">
           <TranscriptPanel
@@ -251,12 +273,15 @@ export function SessionPage(props: SessionPageProps) {
             loadOlderMessages={props.loadOlderMessages}
             messageAction={props.onMessageAction ? handleMessageAction : undefined}
             emptyStateSuggestion={restoreComposerPrompt}
+            connectProvider={props.connectProvider}
           />
           <Show when={blocked()}>
             <SessionSafetyDock permissions={props.permissions} questions={props.questions} messages={props.data.messages} replyPermission={props.replyPermission} replyQuestion={props.replyQuestion} rejectQuestion={props.rejectQuestion} />
           </Show>
           <SessionComposer
             blocked={blocked()}
+            disconnectedProviderName={models.disconnectedProvider()?.name}
+            connectProvider={props.connectProvider ? () => props.connectProvider?.(models.disconnectedProvider()?.id) : undefined}
             running={running()}
             mode={models.mode()}
             draftPrompt={draftPrompt()}
@@ -328,6 +353,7 @@ export function SessionPage(props: SessionPageProps) {
       <Show when={models.pickerOpen()}>
         <SessionModelPicker
           query={models.query()}
+          searching={models.searching()}
           favorites={models.favorites()}
           selectedModel={props.selectedModel}
           favoriteOptions={models.filteredFavoriteOptions()}
@@ -338,6 +364,7 @@ export function SessionPage(props: SessionPageProps) {
           setQuery={models.setQuery}
           select={models.select}
           toggleFavorite={models.toggleFavorite}
+          connectProvider={props.connectProvider}
         />
       </Show>
     </div>

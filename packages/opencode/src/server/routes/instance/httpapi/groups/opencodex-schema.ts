@@ -2,6 +2,7 @@ import { File } from "@/file"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
+import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
 import { OpencodeXView } from "@/opencodex/view"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { Schema, Struct } from "effect"
@@ -17,6 +18,9 @@ export const CompleteJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.Complet
 export const FailJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.FailInput.fields, ["jobID"]))
 export const StartJobPayload = Schema.Struct({ owner: Schema.String })
 export const UpdateViewPayload = Schema.Struct(Struct.omit(OpencodeXView.UpdateInput.fields, ["id"]))
+export const UpdateTerminalSessionPayload = Schema.Struct(
+  Struct.omit(OpencodeXTerminalSession.UpdateInput.fields, ["id"]),
+)
 export const UpdateSessionStatePayload = Schema.Struct(
   Struct.omit(OpencodeXSessionState.UpdateInput.fields, ["sessionID"]),
 )

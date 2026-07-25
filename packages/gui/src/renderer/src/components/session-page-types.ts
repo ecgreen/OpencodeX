@@ -16,6 +16,8 @@ export type SessionPageProps = {
   setPrompt: (value: string) => void
   providers: Provider[]
   connectedProviderIDs?: string[]
+  /** Opens the credential flow, optionally pre-selecting a provider. */
+  connectProvider?: (providerID?: string) => void
   mcp: Record<string, McpStatus>
   mcpResources?: Record<string, McpResource>
   lsp: LspStatus[]
@@ -38,6 +40,8 @@ export type SessionPageProps = {
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  /** Opens the raw Claude Code terminal page, used for sign-in recovery. */
+  openTerminalSession?: (terminalSessionID: string) => void
   slashCommands: SessionSlashCommand[]
   concealCodeBlocks?: boolean
   showTimestamps: boolean

@@ -9,7 +9,7 @@ import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
 import { ViewPane } from "./view-pane"
 
 export function ViewPaneHost(props: {
-  item: ViewItem
+  item: Exclude<ViewItem, { kind: "terminal" }>
   projectName?: string
   data: SessionData
   loading: boolean
@@ -27,6 +27,7 @@ export function ViewPaneHost(props: {
   selectedVariant: string
   providers: Provider[]
   connectedProviderIDs?: string[]
+  connectProvider?: (providerID?: string) => void
   mcp?: GuiSnapshot["mcp"]
   mcpResources?: GuiSnapshot["mcpResources"]
   lsp?: GuiSnapshot["lsp"]
@@ -78,6 +79,7 @@ export function ViewPaneHost(props: {
       updateComposerState={props.updateComposerState}
       providers={props.providers}
       connectedProviderIDs={props.connectedProviderIDs}
+      connectProvider={props.connectProvider}
       mcp={props.mcp ?? {}}
       mcpResources={props.mcpResources}
       lsp={props.lsp ?? []}

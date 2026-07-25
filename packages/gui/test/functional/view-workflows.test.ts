@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession } from "@opencode-ai/sdk/v2/client"
+import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import {
   eventSessionID,
   markViewSessionsLoaded,
@@ -15,6 +17,8 @@ import {
 } from "../../src/renderer/src/lib/view-pane-state"
 import {
   metadataWithPendingSessions,
+  orderedViewItems,
+  replacePendingViewPane,
   viewItemID,
   viewItemsMembershipKey,
   viewSessionsSyncKey,
@@ -79,6 +83,55 @@ describe("GUI functional view workflows", () => {
       ),
     )
     expect(items.map(viewItemID)).toEqual(["session-a", "session-b"])
+  })
+
+  test("keeps Claude terminals in canonical mixed View order and pending replacement", () => {
+    const terminal: OpencodeXTerminalSession = {
+      id: "oxts_terminal",
+      driver: "claude-code",
+      title: "Claude workspace",
+      directory: "C:/Work/OpencodeX",
+      resumeID: "11111111-1111-4111-8111-111111111111",
+      installationID: "22222222-2222-4222-8222-222222222222",
+      timeCreated: 1,
+      timeUpdated: 2,
+    }
+    const catalog: ClientCatalogView = {
+      id: "view-1",
+      title: "Mixed",
+      layout: "grid",
+      sessionIDs: ["session-a", "session-b"],
+      sessions: [session("session-a"), session("session-b")],
+      terminalSessions: [terminal],
+      members: [
+        { kind: "session", id: "session-a" },
+        { kind: "terminal", id: terminal.id },
+        { kind: "session", id: "session-b" },
+      ],
+      metadata: {
+        opencodex: {
+          pendingSessions: [{ id: "pending-1", directory: "C:/Work/OpencodeX" }],
+        },
+      },
+      timeCreated: 1,
+      timeUpdated: 2,
+    }
+    const items = orderedViewItems(catalog, catalog.sessions)
+    expect(items.map((item) => `${item.kind}:${viewItemID(item)}`)).toEqual([
+      "session:session-a",
+      `terminal:${terminal.id}`,
+      "session:session-b",
+      "pending:pending-1",
+    ])
+
+    const replaced = replacePendingViewPane(catalog, "pending-1", "session-c", [])
+    expect(replaced.members).toEqual([
+      { kind: "session", id: "session-a" },
+      { kind: "terminal", id: terminal.id },
+      { kind: "session", id: "session-b" },
+      { kind: "session", id: "session-c" },
+    ])
+    expect(viewItemsMembershipKey(catalog.id, items)).toContain(terminal.id)
   })
 
   test("sends prompts from view panes and routes backend commands", async () => {

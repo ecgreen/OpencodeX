@@ -49,22 +49,37 @@ export function OpencodeXViewRoute() {
       .filter((session): session is SyncSession => session !== undefined)
       .slice(0, 8)
   })
-  const items = createMemo<ViewItem[]>(() =>
-    [
-      ...sessions().map((session): ViewItem => ({ kind: "session", session })),
-      ...pendingViewSessions(view()).map((slot): ViewItem => ({ kind: "pending", slot })),
-    ].slice(0, 8),
-  )
+  const items = createMemo<ViewItem[]>(() => {
+    const current = view()
+    if (!current) return []
+    const sessionByID = new Map(sessions().map((session) => [session.id, session]))
+    // Both fields need the fallback: a server predating this feature sends
+    // neither terminalSessions nor members.
+    const terminalByID = new Map((current.terminalSessions ?? []).map((terminal) => [terminal.id, terminal]))
+    const members = current.members ?? current.sessionIDs.map((id) => ({ kind: "session" as const, id }))
+    return [
+      ...members.flatMap((member): ViewItem[] => {
+        if (member.kind === "session") {
+          const session = sessionByID.get(member.id)
+          return session ? [{ kind: "session", session }] : []
+        }
+        const terminal = terminalByID.get(member.id)
+        return terminal ? [{ kind: "terminal", terminal }] : []
+      }),
+      ...pendingViewSessions(current).map((slot): ViewItem => ({ kind: "pending", slot })),
+    ].slice(0, 8)
+  })
   const focusedItemID = createMemo(() => {
     const known = new Set(items().map(viewItemID))
     if (localFocus() && known.has(localFocus()!)) return localFocus()
+    if (view()?.focusedItemID && known.has(view()!.focusedItemID!)) return view()!.focusedItemID
     if (view()?.focusedSessionID && known.has(view()!.focusedSessionID!)) return view()!.focusedSessionID
     return items()[0] ? viewItemID(items()[0]) : undefined
   })
 
   createEffect(() => {
     const current = view()
-    const revision = current ? `${current.id}:${current.timeUpdated}:${current.focusedSessionID ?? ""}` : ""
+    const revision = current ? `${current.id}:${current.timeUpdated}:${current.focusedItemID ?? current.focusedSessionID ?? ""}` : ""
     if (revision === authoritativeFocusRevision) return
     authoritativeFocusRevision = revision
     setLocalFocus(undefined)
@@ -96,13 +111,20 @@ export function OpencodeXViewRoute() {
     if (focusedItemID() === id) return
     setLocalFocus(id)
     const item = items().find((candidate) => viewItemID(candidate) === id)
-    if (item?.kind !== "session") return
     const current = view()
     if (!current) return
+    // Pending slots are not persisted members: the server would discard the
+    // focus id but still commit an update, invalidating every client's catalog
+    // on each arrow-key press.
+    if (item?.kind === "pending") return
     void sdk
       .request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
         method: "PATCH",
-        body: JSON.stringify({ expectedTimeUpdated: current.timeUpdated, focusedSessionID: item.session.id }),
+        body: JSON.stringify({
+          expectedTimeUpdated: current.timeUpdated,
+          focusedItemID: id,
+          ...(item?.kind === "session" ? { focusedSessionID: item.session.id } : {}),
+        }),
       })
       .catch(() => {
         setLocalFocus(undefined)
@@ -120,14 +142,19 @@ export function OpencodeXViewRoute() {
     const current = view()
     if (!current) return
     const pending = pendingViewSessions(current).filter((item) => item.id !== slot.id)
-    const sessionIDs = [...(current?.sessionIDs ?? []).filter((sessionID) => sessionID !== session.id), session.id]
+    const members = [
+      ...(current.members ?? current.sessionIDs.map((id) => ({ kind: "session" as const, id }))).filter(
+        (member) => member.kind !== "session" || member.id !== session.id,
+      ),
+      { kind: "session" as const, id: session.id },
+    ]
     await sdk
       .request<OpencodeXView>(`/experimental/opencodex/view/${route.viewID}`, {
         method: "PATCH",
         body: JSON.stringify({
           expectedTimeUpdated: current.timeUpdated,
-          sessionIDs,
-          focusedSessionID: session.id,
+          members,
+          focusedItemID: session.id,
           metadata: metadataWithPendingSessions(current?.metadata, pending),
         }),
       })

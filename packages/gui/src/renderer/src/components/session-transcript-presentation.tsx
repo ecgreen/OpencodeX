@@ -1,9 +1,49 @@
 import type { AssistantMessage, Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show } from "solid-js"
 import type { MessageBundle } from "../lib/store"
+import { bundleError, messageErrorDetail, messageErrorProviderID, messageErrorStatusCode, messageErrorTitle } from "../lib/message-error"
 import { formatTokenCount } from "../lib/session-composer-helpers"
 import { OpencodeXLogo } from "./chrome"
+import { Icon } from "./icon"
 import { Button } from "./ui"
+
+export function TranscriptMessageError(props: {
+  message: MessageBundle["info"]
+  providers: Provider[]
+  connectProvider?: (providerID?: string) => void
+}) {
+  const error = () => bundleError(props.message)
+  const providerID = () => {
+    const current = error()
+    return current ? messageErrorProviderID(current) : undefined
+  }
+  const providerName = () => props.providers.find((provider) => provider.id === providerID())?.name ?? providerID()
+  return (
+    <Show when={error()}>
+      {(current) => (
+        <div class="transcript-message-error" role="alert">
+          <span class="transcript-message-error-icon"><Icon name="warning" /></span>
+          <div class="transcript-message-error-body">
+            <strong>{messageErrorTitle(current())}</strong>
+            <Show when={messageErrorDetail(current())}>
+              {(detail) => <p>{detail()}</p>}
+            </Show>
+            <Show when={messageErrorStatusCode(current())}>
+              {(status) => <small>HTTP {status()}</small>}
+            </Show>
+          </div>
+          <Show when={providerID() ? props.connectProvider : undefined}>
+            {(connect) => (
+              <Button appearance="outline" type="button" onClick={() => connect()(providerID())}>
+                Connect {providerName()}
+              </Button>
+            )}
+          </Show>
+        </div>
+      )}
+    </Show>
+  )
+}
 
 export function hasActiveAssistantProgress(messages: MessageBundle[]) {
   return activeAssistantProgressParts(messages).length > 0
@@ -90,21 +130,31 @@ export function TranscriptLoadingSkeleton(props: { visible: boolean }) {
   </div>
 }
 
-const EMPTY_STATE_SUGGESTIONS = ["Explain this codebase", "Find and fix a bug", "Add tests for recent changes"]
+const EMPTY_STATE_SUGGESTIONS = [
+  { icon: "code", prompt: "Explain this codebase" },
+  { icon: "search", prompt: "Find and fix a bug" },
+  { icon: "squareCheck", prompt: "Add tests for recent changes" },
+]
 
-export function SessionEmptyState(props: { visible: boolean; handoff: boolean; onSuggestion?: (prompt: string) => void }) {
+export function SessionEmptyState(props: {
+  visible: boolean
+  handoff: boolean
+  onSuggestion?: (prompt: string) => void
+}) {
   return (
     <div class="session-empty-state" classList={{ visible: props.visible, handoff: props.handoff }} aria-hidden={!props.visible}>
       <OpencodeXLogo active={props.visible} />
-      <p>What should OpencodeX work on?</p>
+      <h2>What should OpencodeX work on?</h2>
+      <p class="session-empty-state-subline">Describe a task in the composer, or pick a starting point.</p>
       <Show when={props.visible && props.onSuggestion}>
         {(suggest) => (
           <>
             <div class="session-empty-state-suggestions">
               <For each={EMPTY_STATE_SUGGESTIONS}>
-                {(prompt) => (
-                  <Button appearance="outline" size="compact" class="session-empty-state-suggestion" tabIndex={props.visible ? 0 : -1} onClick={() => suggest()(prompt)}>
-                    {prompt}
+                {(item) => (
+                  <Button appearance="outline" class="session-starter" tabIndex={props.visible ? 0 : -1} onClick={() => suggest()(item.prompt)}>
+                    <span class="session-starter-icon"><Icon name={item.icon} /></span>
+                    <span>{item.prompt}</span>
                   </Button>
                 )}
               </For>

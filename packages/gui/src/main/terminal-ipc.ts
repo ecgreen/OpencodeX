@@ -1,12 +1,17 @@
 import path from "node:path"
+import { stat } from "node:fs/promises"
 import type { IPty } from "@lydell/node-pty"
 import { app, ipcMain, type WebContents } from "electron"
+import { CLAUDE_MISSING_MESSAGE, type ClaudeCodeStatus, type TerminalCreateInput, type TerminalLaunchProfile, type TerminalResult } from "../shared/terminal.js"
+import { claudeArguments, probeClaudeCode, resolveClaudeExecutable } from "./claude-code.js"
+import { installationID, isUUID } from "./installation-id.js"
 import { validString } from "./ipc-validation.js"
 import { ownerHasResourceCapacity } from "./native-resource-limits.js"
 import { createTerminalOutputBatcher } from "./terminal-output-batcher.js"
 
 type TerminalProcess = {
   ownerID: number
+  profileKind: TerminalLaunchProfile["kind"]
   proc: IPty
   closed: boolean
   output: ReturnType<typeof createTerminalOutputBatcher>
@@ -30,42 +35,43 @@ const terminalProcesses = new Map<string, TerminalProcess>()
 const terminalOwners = new Set<number>()
 
 export function registerTerminalIpc() {
-  ipcMain.handle("opencodex:terminal:create", async (event, raw: unknown) => {
+  ipcMain.handle("opencodex:installation-id", () => installationID())
+  ipcMain.handle("opencodex:claude:status", () => claudeStatus())
+
+  ipcMain.handle("opencodex:terminal:create", async (event, raw: unknown): Promise<TerminalResult> => {
     const input = validTerminalCreateInput(raw)
-    if (!input) return { ok: false, message: "Invalid terminal request." }
+    if (!input) return failure("invalid-request", "Invalid terminal request.")
     const existing = terminalProcesses.get(input.id)
     if (existing) {
-      return existing.ownerID === event.sender.id
-        ? { ok: true, pid: existing.proc.pid }
-        : { ok: false, message: "Terminal belongs to another renderer." }
+      return duplicateResult(existing, event.sender.id, input.profile.kind)
     }
     if (!ownerHasResourceCapacity(terminalProcesses.values(), event.sender.id)) {
-      return { ok: false, message: "This window already has the maximum of 8 terminals open." }
+      return failure("resource-limit", "This window already has the maximum of 8 terminals open.")
     }
-    const shell = terminalShell()
     const sender = event.sender
     const ownerID = sender.id
     try {
+      const launch = await terminalLaunch(input)
+      if (!("command" in launch)) return launch
       const { spawn } = await import("@lydell/node-pty")
-      if (sender.isDestroyed()) return { ok: false, message: "Terminal renderer was closed." }
+      if (sender.isDestroyed()) return failure("error", "Terminal renderer was closed.")
       const concurrent = terminalProcesses.get(input.id)
       if (concurrent) {
-        return concurrent.ownerID === ownerID
-          ? { ok: true, pid: concurrent.proc.pid }
-          : { ok: false, message: "Terminal belongs to another renderer." }
+        return duplicateResult(concurrent, ownerID, input.profile.kind)
       }
       if (!ownerHasResourceCapacity(terminalProcesses.values(), ownerID)) {
-        return { ok: false, message: "This window already has the maximum of 8 terminals open." }
+        return failure("resource-limit", "This window already has the maximum of 8 terminals open.")
       }
-      const proc = spawn(shell.command, shell.args, {
+      const proc = spawn(launch.command, launch.args, {
         name: "xterm-256color",
         cols: input.cols,
         rows: input.rows,
-        cwd: input.cwd || app.getPath("home"),
+        cwd: launch.cwd,
         env: terminalEnvironment(),
       })
       const terminal: TerminalProcess = {
         ownerID,
+        profileKind: input.profile.kind,
         proc,
         closed: false,
         output: createTerminalOutputBatcher({
@@ -85,7 +91,18 @@ export function registerTerminalIpc() {
           ...(typeof exit.signal === "number" || typeof exit.signal === "string" ? { signal: exit.signal } : {}),
         })
       })
-      const disposeErrors = registerTerminalErrorHandler(proc, () => destroyTerminal(input.id, ownerID))
+      // disposeEvents must be complete before the error handler can fire, or a
+      // synchronous pty error would tear down with the placeholder and leak
+      // the data/exit listeners.
+      terminal.disposeEvents = () => {
+        disposeData.dispose()
+        disposeExit.dispose()
+      }
+      const disposeErrors = registerTerminalErrorHandler(proc, (error) => {
+        sendTerminalEvent(sender, "opencodex:terminal:exit", { id: input.id, message: "The terminal process failed." })
+        console.error("terminal process error", input.id, error)
+        destroyTerminal(input.id, ownerID)
+      })
       terminal.disposeEvents = () => {
         disposeData.dispose()
         disposeExit.dispose()
@@ -95,7 +112,8 @@ export function registerTerminalIpc() {
       return { ok: true, pid: proc.pid }
     } catch (error) {
       destroyTerminal(input.id, ownerID)
-      return { ok: false, message: error instanceof Error ? error.message : "Failed to open terminal." }
+      console.error("terminal create failed", input.id, error)
+      return failure("error", "Failed to open the terminal. See the application log for details.")
     }
   })
 
@@ -129,6 +147,30 @@ export function registerTerminalIpc() {
   })
 }
 
+/**
+ * An id may be re-used only by the same window AND the same profile kind. A
+ * shell terminal answering for a claude-code id would bypass every claude
+ * launch guard while looking like a success to the renderer.
+ */
+function duplicateResult(existing: TerminalProcess, senderID: number, profileKind: TerminalLaunchProfile["kind"]): TerminalResult {
+  if (existing.ownerID !== senderID) return failure("duplicate-window", "Already open in another OpencodeX window.")
+  if (existing.profileKind !== profileKind) return failure("invalid-request", "This terminal id is already in use by a different profile.")
+  return { ok: true, pid: existing.proc.pid }
+}
+
+let claudeStatusCache: { value: Promise<ClaudeCodeStatus>; at: number } | undefined
+
+/** The probe stats every PATH entry and spawns `claude --version`; cache it. */
+function claudeStatus() {
+  if (claudeStatusCache && Date.now() - claudeStatusCache.at < 5_000) return claudeStatusCache.value
+  const value = probeClaudeCode(app.getPath("home"))
+  claudeStatusCache = { value, at: Date.now() }
+  value.catch(() => {
+    claudeStatusCache = undefined
+  })
+  return value
+}
+
 function registerTerminalOwner(sender: WebContents) {
   if (terminalOwners.has(sender.id)) return
   terminalOwners.add(sender.id)
@@ -142,15 +184,42 @@ function registerTerminalOwner(sender: WebContents) {
 
 function validTerminalCreateInput(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const input = value as { id?: unknown; cwd?: unknown; cols?: unknown; rows?: unknown }
+  const input = value as { id?: unknown; cwd?: unknown; cols?: unknown; rows?: unknown; profile?: unknown }
   const id = validString(input.id)
   if (!id) return undefined
   const cwd = validString(input.cwd)?.trim()
+  const profile = validTerminalLaunchProfile(input.profile)
+  if (input.profile !== undefined && !profile) return undefined
   return {
     id,
     ...(cwd ? { cwd } : {}),
     cols: terminalDimension(input.cols, 100),
     rows: terminalDimension(input.rows, 30),
+    profile: profile ?? { kind: "shell" as const },
+  }
+}
+
+function validTerminalLaunchProfile(value: unknown): TerminalLaunchProfile | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const profile = value as {
+    kind?: unknown
+    mode?: unknown
+    resumeID?: unknown
+    name?: unknown
+    installationID?: unknown
+  }
+  if (profile.kind === "shell") return { kind: "shell" }
+  if (profile.kind !== "claude-code" || (profile.mode !== "new" && profile.mode !== "resume")) return undefined
+  const resumeID = validString(profile.resumeID)?.trim()
+  const installation = validString(profile.installationID)?.trim()
+  const name = validString(profile.name)?.trim()
+  if (!resumeID || !installation || (profile.name !== undefined && name === undefined)) return undefined
+  return {
+    kind: "claude-code",
+    mode: profile.mode,
+    resumeID,
+    installationID: installation,
+    ...(name ? { name: name.slice(0, 200) } : {}),
   }
 }
 
@@ -184,6 +253,35 @@ function terminalShell() {
     return { command, args: isPowerShell ? ["-NoLogo", "-NoProfile", "-NoExit"] : [] }
   }
   return { command: process.env.SHELL || "/bin/sh", args: [] as string[] }
+}
+
+async function terminalLaunch(input: TerminalCreateInput & { profile: TerminalLaunchProfile }) {
+  if (input.profile.kind === "shell") {
+    const shell = terminalShell()
+    return { ...shell, cwd: input.cwd || app.getPath("home") }
+  }
+  if (!/^terminal-session:oxts_[a-z0-9]+$/i.test(input.id) || !isUUID(input.profile.resumeID)) {
+    return failure("invalid-request", "Invalid Claude Code terminal identity.")
+  }
+  if (!isUUID(input.profile.installationID) || input.profile.installationID.toLowerCase() !== (await installationID())) {
+    return failure("wrong-device", "Available on another device.")
+  }
+  if (!input.cwd || !path.isAbsolute(input.cwd)) {
+    return failure("invalid-directory", "The original working directory is unavailable.")
+  }
+  const directory = await stat(input.cwd).catch(() => undefined)
+  if (!directory?.isDirectory()) {
+    return failure("invalid-directory", "The original working directory is unavailable.")
+  }
+  const command = await resolveClaudeExecutable({ home: app.getPath("home") })
+  if (!command) {
+    return failure("missing-cli", CLAUDE_MISSING_MESSAGE)
+  }
+  return { command, args: claudeArguments(input.profile), cwd: input.cwd }
+}
+
+function failure(code: NonNullable<TerminalResult["code"]>, message: string): TerminalResult {
+  return { ok: false, code, message }
 }
 
 function terminalEnvironment() {
@@ -245,9 +343,9 @@ function resizeTerminal(id: string, cols: number, rows: number, ownerID: number)
   }
 }
 
-function registerTerminalErrorHandler(proc: IPty, close: () => void) {
+function registerTerminalErrorHandler(proc: IPty, close: (error: Error) => void) {
   const procWithErrors = proc as PtyWithErrorEvents
-  const listener = () => close()
+  const listener = (error: Error) => close(error)
   procWithErrors.on?.("error", listener)
   procWithErrors._agent?.inSocket?.on?.("error", listener)
   return () => {

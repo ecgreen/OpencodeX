@@ -1,11 +1,14 @@
 import type {
   OpencodeXSwarmRoleInput,
+  OpencodeXTerminalSession,
+  OpencodeXViewMember,
   PermissionRequest,
   QuestionAnswer,
   QuestionRequest,
 } from "@opencode-ai/sdk/v2/client"
 import type { Accessor, Setter } from "solid-js"
 import type { createDialogController } from "./dialog-controller"
+import type { createClaudeTerminalController } from "./claude-terminal-controller"
 import type { createNavigationController } from "./navigation-controller"
 import type { createPluginController } from "./plugin-controller"
 import type { GuiClient } from "../lib/client"
@@ -20,6 +23,7 @@ import {
 import { activeSessionRouteKey } from "../lib/route-selection"
 import { runPermissionAction, sessionDirectoryForRequest } from "../lib/session-actions"
 import { opencodeXSwarmExecutionMode } from "../lib/swarm-actions"
+import { createClaudeManagementActions } from "./management-claude-actions"
 import {
   assignSwarmTask,
   cancelSwarm,
@@ -45,6 +49,7 @@ export function createManagementActionsController(input: {
   snapshot: Accessor<GuiSnapshot | undefined>
   navigation: ReturnType<typeof createNavigationController>
   dialogs: ReturnType<typeof createDialogController>
+  claudeTerminals: ReturnType<typeof createClaudeTerminalController>
   plugins: ReturnType<typeof createPluginController>
   refresh: () => Promise<void>
   refreshCapabilities: () => Promise<void>
@@ -55,6 +60,7 @@ export function createManagementActionsController(input: {
   selectedAgent: Accessor<string>
   selectedVariant: Accessor<string>
 }) {
+  const claude = createClaudeManagementActions(input)
   async function permission(request: PermissionRequest, reply: "once" | "always" | "reject") {
     const client = input.client()
     if (!client) return
@@ -239,7 +245,7 @@ export function createManagementActionsController(input: {
   async function saveView(value: {
     viewID?: string
     title: string
-    sessionIDs: string[]
+    members: OpencodeXViewMember[]
     metadata?: Record<string, unknown>
   }) {
     const client = input.client()
@@ -250,10 +256,10 @@ export function createManagementActionsController(input: {
       ? await updateView(client, value.viewID, {
           expectedTimeUpdated: Number(current?.timeUpdated ?? 0),
           title: value.title,
-          sessionIDs: value.sessionIDs,
+          members: value.members,
           metadata: value.metadata,
         }).then((result) => result.data)
-      : await createView(client, { title: value.title, sessionIDs: value.sessionIDs, metadata: value.metadata }).then(
+      : await createView(client, { title: value.title, members: value.members, metadata: value.metadata }).then(
           (result) => result.data,
         )
     await input.refresh()
@@ -314,6 +320,10 @@ export function createManagementActionsController(input: {
     },
     createPinnedSession,
     createSwarm: createSwarmAction,
+    createClaudeSession: claude.createClaudeSession,
+    renameClaudeSession: claude.renameClaudeSession,
+    moveClaudeSession: claude.moveClaudeSession,
+    removeClaudeSession: claude.removeClaudeSession,
     saveSwarm,
     assignSwarmTask: assignTask,
     cancelSwarm: cancelSwarmAction,

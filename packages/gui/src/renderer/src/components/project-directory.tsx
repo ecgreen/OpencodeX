@@ -277,7 +277,7 @@ function ProjectDirectoryRow(props: {
 function ProjectDirectoryMeta(props: { project: GuiSnapshot["projects"][number]; snapshot?: GuiSnapshot; sessionOrderState?: SessionOrderState }) {
   return (
     <div class="project-directory-meta">
-      <span>{projectSessions(props.project, props.snapshot, props.sessionOrderState).length} sessions</span>
+      <span>{projectSessions(props.project, props.snapshot, props.sessionOrderState).length + props.project.terminalSessions.length} sessions</span>
       <span>{projectSwarms(props.project, props.snapshot).length} swarms</span>
       <span>{projectViews(props.project, props.snapshot, props.sessionOrderState).length} views</span>
       <span>{formatActivity(projectLatestActivity(props.project, props.snapshot, props.sessionOrderState))}</span>

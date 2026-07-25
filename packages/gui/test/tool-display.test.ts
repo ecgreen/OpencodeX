@@ -4,28 +4,68 @@ import type { MessageBundle } from "../src/renderer/src/lib/store"
 import {
   collapseOutput,
   copyFullToolText,
+  humanizeToolTitle,
   NESTED_TRANSCRIPT_DIFF_OPTIONS,
   patchContents,
   permissionTitle,
   permissionToolPart,
   shouldShowRawToolData,
   shouldVirtualizeDiff,
+  toolCategory,
   toolDisplayTitle,
+  toolErrorSummary,
   toolHasVisibleDetails,
   toolPatchTitle,
+  toolTier,
   toolVisibleOutput,
 } from "../src/renderer/src/lib/tool-display"
 
 describe("GUI tool display helpers", () => {
   test("formats common tool titles from input and metadata", () => {
     expect(toolDisplayTitle("grep", { pattern: "needle", path: "src" }, { matches: 2 })).toBe('Grep "needle" in src (2 matches)')
+    expect(toolDisplayTitle("grep", { pattern: "needle" }, { matches: 1 })).toBe('Grep "needle" (1 match)')
     expect(toolDisplayTitle("question", { questions: [{}] }, {})).toBe("Ask 1 question")
-    expect(toolDisplayTitle("task", { subagent_type: "review", description: "check changes" }, {})).toBe("review task: check changes")
-    expect(toolDisplayTitle("todowrite", {}, {}, "error")).toBe("Todo update failed")
+    expect(toolDisplayTitle("task", { subagent_type: "review", description: "check changes" }, {})).toBe("Task review: check changes")
     expect(toolDisplayTitle("workspace_open", { path: "C:/repo/README.md" }, {})).toBe("Open workspace C:/repo/README.md")
     expect(toolDisplayTitle("browser_navigate", { url: "https://example.com/" }, {})).toBe("Navigate browser https://example.com/")
     expect(toolDisplayTitle("browser_screenshot", {}, { url: "https://example.com/" })).toBe("Capture browser https://example.com/")
     expect(toolDisplayTitle("browser_snapshot", {}, { url: "https://example.com/" })).toBe("Snapshot browser https://example.com/")
+  })
+
+  test("uses verb-first titles and reports patched file counts", () => {
+    expect(toolDisplayTitle("webfetch", { url: "https://example.com/" }, {})).toBe("Fetch https://example.com/")
+    expect(toolDisplayTitle("websearch", { query: "solid signals" }, {})).toBe('Search "solid signals"')
+    expect(toolDisplayTitle("skill", { name: "graphify" }, {})).toBe("Load skill graphify")
+    expect(toolDisplayTitle("apply_patch", {}, {})).toBe("Patch")
+    expect(toolDisplayTitle("apply_patch", {}, { files: [{ relativePath: "src/app.ts" }] })).toBe("Patch app.ts")
+    expect(toolDisplayTitle("apply_patch", {}, { files: [{ relativePath: "a.ts" }, { relativePath: "b.ts" }] })).toBe("Patch 2 files")
+    expect(toolDisplayTitle("todowrite", {}, {}, "error")).toBe("Update todos")
+  })
+
+  test("falls back to the streamed title, then a humanized tool id", () => {
+    expect(toolDisplayTitle("github_create_issue", {}, {}, "running", "Creating issue #42")).toBe("Creating issue #42")
+    expect(toolDisplayTitle("github_create_issue", {}, {}, "completed")).toBe("Github · create issue")
+    expect(toolDisplayTitle("plan_exit", {}, {})).toBe("Exit plan mode")
+    expect(humanizeToolTitle("lint")).toBe("Lint")
+    // A registry title always wins over a streamed one, so titles stay stable.
+    expect(toolDisplayTitle("read", { filePath: "README.md" }, {}, "running", "Reading...")).toBe("Read README.md")
+  })
+
+  test("summarizes tool errors onto a single line", () => {
+    expect(toolErrorSummary(errorState("  boom \n\n  happened  "))).toBe("boom happened")
+    expect(toolErrorSummary(errorState("x".repeat(200)), 10)).toBe(`${"x".repeat(10)}…`)
+    expect(toolErrorSummary(completedState("fine"))).toBe("")
+  })
+
+  test("maps tools to accent categories and card or row tiers", () => {
+    expect(toolCategory("grep")).toBe("search")
+    expect(toolCategory("apply_patch")).toBe("file")
+    expect(toolCategory("todowrite")).toBe("plan")
+    expect(toolCategory("some_mcp_tool")).toBe("generic")
+    expect(toolTier("edit", "completed")).toBe("card")
+    expect(toolTier("grep", "completed")).toBe("row")
+    // Failures are always worth a card, whatever the tool.
+    expect(toolTier("grep", "error")).toBe("card")
   })
 
   test("strips shell control sequences from visible output", () => {
@@ -33,8 +73,10 @@ describe("GUI tool display helpers", () => {
     expect(toolVisibleOutput("shell", runningState(), { output: "\x1B[32mgreen\x1B[0m" })).toBe("green")
   })
 
-  test("keeps read tools quiet unless there is an error", () => {
+  test("expands read tools only when there is a preview or an error to show", () => {
     expect(toolHasVisibleDetails("read", { filePath: "README.md" }, {}, "content")).toBe(false)
+    expect(toolHasVisibleDetails("read", { filePath: "README.md" }, { preview: "   " }, "content")).toBe(false)
+    expect(toolHasVisibleDetails("read", { filePath: "README.md" }, { preview: "line one" }, "")).toBe(true)
     expect(toolHasVisibleDetails("read", { filePath: "README.md" }, {}, "", "failed")).toBe(true)
   })
 
@@ -98,6 +140,10 @@ function completedState(output: string): Extract<Part, { type: "tool" }>["state"
 
 function runningState(): Extract<Part, { type: "tool" }>["state"] {
   return { status: "running", title: "", metadata: {} } as Extract<Part, { type: "tool" }>["state"]
+}
+
+function errorState(error: string): Extract<Part, { type: "tool" }>["state"] {
+  return { status: "error", error, metadata: {} } as Extract<Part, { type: "tool" }>["state"]
 }
 
 function permission(value: string): PermissionRequest {

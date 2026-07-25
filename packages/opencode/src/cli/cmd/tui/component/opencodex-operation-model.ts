@@ -14,6 +14,7 @@ import {
   statusColor as derivedStatusColor,
   statusLabel,
 } from "./opencodex-session-status"
+import { viewSessionMemberIDs } from "./opencodex-view-model"
 import type {
   DashboardProjectSummary,
   DashboardRow,
@@ -143,9 +144,12 @@ export function dashboardSessionStatus(session: DashboardSession, sync: ReturnTy
 }
 
 export function dashboardViewStatus(view: OpencodeXView, sessions: ReadonlyMap<string, DashboardSession>, sync: ReturnType<typeof useSync>): DashboardStatus {
-  const status = deriveViewStatus(view.sessionIDs, sync)
+  // Status derives from session members only; terminal panes have no synced
+  // activity, so a terminal-only view intentionally reads as dormant.
+  const memberSessionIDs = viewSessionMemberIDs(view)
+  const status = deriveViewStatus(memberSessionIDs, sync)
   if (status !== "dormant") return status
-  return view.sessionIDs
+  return memberSessionIDs
     .map((sessionID) => sessions.get(sessionID))
     .filter((session): session is DashboardSession => session !== undefined)
     .some((session) => isUnviewed(session, sync))

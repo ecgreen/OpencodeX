@@ -1,5 +1,5 @@
-import { Button } from "./ui"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import { Button, StatusBadge } from "./ui"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import type { AttentionItem, WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, title } from "../lib/format"
@@ -13,37 +13,108 @@ import { ProjectsOverview, projectLabel } from "./project-directory"
 
 export function SessionCollectionPage(props: {
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   projects: GuiSnapshot["projects"]
   sessionStatus: GuiSnapshot["sessionStatus"]
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  moveTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  terminalStatus: (terminalSession: OpencodeXTerminalSession) => string
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
+  createSession: () => void
+  createTerminalSession: () => void
 }) {
-  const projectBySessionID = createMemo(() => new Map(props.projects.flatMap((project) => project.sessionIDs.map((sessionID) => [sessionID, title(project.name ?? project.project.name)] as const))))
+  const projectBySessionID = createMemo(() => new Map(props.projects.flatMap((project) => [
+    ...project.sessionIDs,
+    ...project.terminalSessions.map((session) => session.id),
+  ].map((sessionID) => [sessionID, title(project.name ?? project.project.name)] as const))))
+  const sessions = createMemo(() => [
+    ...props.sessions.map((session) => ({ kind: "session" as const, session, updated: session.time.updated })),
+    ...props.terminalSessions.map((terminalSession) => ({
+      kind: "terminal" as const,
+      terminalSession,
+      updated: Number(terminalSession.timeUpdated),
+    })),
+  ].sort((a, b) => b.updated - a.updated))
   return (
     <div class="page placeholder-page list-page">
       <p class="eyebrow">Sessions</p>
-      <h1>Session workspace</h1>
-      <p>Open, monitor, and resume existing TUI-compatible sessions from the shared backend data model.</p>
-      <For each={props.sessions} fallback={<Empty text="No sessions" />}>
-        {(session) => (
-          <SessionCollectionRow
-            session={session}
-            project={projectBySessionID().get(session.id)}
-            status={props.sessionStatus[session.id]?.type ?? "idle"}
-            pinned={props.sessionPinned(session.id)}
-            open={() => props.openSession(session.id)}
-            togglePinned={() => props.toggleSessionPinned(session.id)}
-            rename={() => props.renameSession(session)}
-            move={() => props.moveSession(session)}
-            remove={() => props.deleteSession(session)}
-          />
-        )}
+      <div class="collection-page-heading">
+        <div>
+          <h1>Session workspace</h1>
+          <p>Open OpenCode conversations and durable Claude Code terminal sessions.</p>
+        </div>
+        <div class="row-actions">
+          <Button appearance="solid" tone="accent" icon="plus" onClick={props.createSession}>New session</Button>
+          <Button appearance="outline" onClick={props.createTerminalSession}>Claude Code</Button>
+        </div>
+      </div>
+      <For each={sessions()} fallback={<Empty text="No sessions" />}>
+        {(item) => item.kind === "session" ? (
+            <SessionCollectionRow
+              session={item.session}
+              project={projectBySessionID().get(item.session.id)}
+              status={props.sessionStatus[item.session.id]?.type ?? "idle"}
+              pinned={props.sessionPinned(item.session.id)}
+              open={() => props.openSession(item.session.id)}
+              togglePinned={() => props.toggleSessionPinned(item.session.id)}
+              rename={() => props.renameSession(item.session)}
+              move={() => props.moveSession(item.session)}
+              remove={() => props.deleteSession(item.session)}
+            />
+          ) : (
+            <TerminalSessionCollectionRow
+              terminalSession={item.terminalSession}
+              project={projectBySessionID().get(item.terminalSession.id)}
+              status={props.terminalStatus(item.terminalSession)}
+              pinned={props.sessionPinned(item.terminalSession.id)}
+              open={() => props.openTerminalSession(item.terminalSession.id)}
+              togglePinned={() => props.toggleSessionPinned(item.terminalSession.id)}
+              rename={() => props.renameTerminalSession(item.terminalSession)}
+              move={() => props.moveTerminalSession(item.terminalSession)}
+              remove={() => props.removeTerminalSession(item.terminalSession)}
+            />
+          )}
       </For>
     </div>
+  )
+}
+
+function TerminalSessionCollectionRow(props: {
+  terminalSession: OpencodeXTerminalSession
+  project?: string
+  status: string
+  pinned: boolean
+  open: () => void
+  togglePinned: () => void
+  rename: () => void
+  move: () => void
+  remove: () => void
+}) {
+  const name = () => title(props.terminalSession.title)
+  const actions = () => [
+    { label: props.pinned ? "Unpin session" : "Pin session", icon: "pin" as const, onSelect: props.togglePinned },
+    { label: "Rename", icon: "pencil" as const, onSelect: props.rename },
+    { label: "Move to project", icon: "folder" as const, onSelect: props.move },
+    { label: "Remove from OpencodeX", icon: "trash" as const, danger: true, onSelect: props.remove },
+  ]
+  return (
+    <article class="card-row session-collection-row">
+      <Button appearance="ghost" type="button" class="session-collection-open" onClick={props.open}>
+        <span>
+          <span class="session-collection-title"><strong>{name()}</strong><StatusBadge status="info">Claude Code</StatusBadge></span>
+          <small>{[props.project, compactPath(props.terminalSession.directory)].filter(Boolean).join(" - ")}</small>
+        </span>
+        <StatusBadge status={props.status}>{props.status}</StatusBadge>
+      </Button>
+      <CardActionMenu label={name()} actions={actions()} />
+    </article>
   )
 }
 
@@ -87,9 +158,11 @@ export function ProjectCollectionPage(props: {
   projectID?: string
   openProject: (projectID: string) => void
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
+  createTerminalSession: (projectID?: string, directory?: string) => void
   createSwarm: (projectID: string) => void
   createProjectView: (projectID: string, sessionIDs: string[]) => void
   createProject: () => void
@@ -99,6 +172,7 @@ export function ProjectCollectionPage(props: {
   reorderProject: (sourceID: string, targetID: string, placement: "before" | "after") => void
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
+  terminalStatus: (terminalSessionID: string) => string
 }) {
   const [query, setQuery] = createSignal("")
   const projects = createMemo(() => props.snapshot?.projects ?? [])
@@ -113,7 +187,7 @@ export function ProjectCollectionPage(props: {
   })
   const overview = createMemo(() => {
     const attention = props.attentionItems.filter((item) => item.projectID && projects().some((project) => project.id === item.projectID)).length
-    const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length, 0)
+    const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length + project.terminalSessions.length, 0)
     const swarms = projects().reduce((count, project) => count + projectSwarms(project, props.snapshot).length, 0)
     const views = projects().reduce((count, project) => count + projectViews(project, props.snapshot, props.sessionOrderState).length, 0)
     return { attention, sessions, swarms, views }
@@ -147,14 +221,17 @@ export function ProjectCollectionPage(props: {
           sessionOrderState={props.sessionOrderState}
           back={() => props.openProject("")}
           openSession={props.openSession}
+          openTerminalSession={props.openTerminalSession}
           openView={props.openView}
           openSwarm={props.openSwarm}
           createSession={props.createSession}
+          createTerminalSession={props.createTerminalSession}
           createSwarm={props.createSwarm}
           editProject={props.editProject}
           deleteProject={props.deleteProject}
           sessionPinned={props.sessionPinned}
           toggleSessionPinned={props.toggleSessionPinned}
+          terminalStatus={props.terminalStatus}
         />
       )}
     </Show>

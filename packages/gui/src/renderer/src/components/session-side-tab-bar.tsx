@@ -13,6 +13,7 @@ export function SessionSideTabBar(props: {
   addFile: () => void
   addTerminal: () => void
   addContext: () => void
+  showContext?: boolean
   addWeb: () => void
   changedFiles?: string[]
 }) {
@@ -118,7 +119,9 @@ export function SessionSideTabBar(props: {
             <Button appearance="ghost" type="button" onClick={props.addGit}><Icon name="branch" /><span>Git</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addFile}><Icon name="file" /><span>Files</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addTerminal}><Icon name="terminal" /><span>New Terminal</span></Button>
-            <Button appearance="ghost" type="button" onClick={props.addContext}><Icon name="context" /><span>Context</span></Button>
+            <Show when={props.showContext !== false}>
+              <Button appearance="ghost" type="button" onClick={props.addContext}><Icon name="context" /><span>Context</span></Button>
+            </Show>
             <Button appearance="ghost" type="button" onClick={props.addWeb}><Icon name="browser" /><span>New Webpage</span></Button>
           </div>
         </Portal>

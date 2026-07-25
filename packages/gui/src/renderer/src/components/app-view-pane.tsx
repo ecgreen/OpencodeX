@@ -1,12 +1,47 @@
-import { createMemo, lazy, type Accessor } from "solid-js"
+import { Show, createMemo, lazy, type Accessor } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { EMPTY_SESSION_DATA } from "../controllers/authoritative-state-controller"
 import { findFiles } from "../lib/store"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
+import { ClaudeTerminalViewPane } from "./claude-terminal-surface"
 
 const ViewPaneHost = lazy(() => import("./view-pane-host").then((module) => ({ default: module.ViewPaneHost })))
 
 export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem> }) {
+  const terminalSession = createMemo(() => {
+    const item = props.item()
+    return item.kind === "terminal" ? item.terminalSession : undefined
+  })
+  const openCodeItem = createMemo(() => {
+    const item = props.item()
+    return item.kind === "terminal" ? undefined : item
+  })
+  return (
+    <Show
+      when={terminalSession()}
+      fallback={
+        <Show when={openCodeItem()}>
+          {(item) => <OpenCodeViewPane model={props.model} item={item} />}
+        </Show>
+      }
+    >
+      {(terminalSession) => (
+        <ClaudeTerminalViewPane
+          terminalSession={terminalSession()}
+          controller={props.model.claudeTerminals}
+          focused={props.model.view.focusedSessionID() === terminalSession().id}
+          autoStart={props.model.view.autoStartTerminalID() === terminalSession().id}
+          focus={() => props.model.view.focus(terminalSession().id)}
+        />
+      )}
+    </Show>
+  )
+}
+
+function OpenCodeViewPane(props: {
+  model: GuiAppModel
+  item: Accessor<Exclude<ViewItem, { kind: "terminal" }>>
+}) {
   const paneID = createMemo(() => viewItemID(props.item()))
   const session = createMemo(() => viewItemSession(props.item()))
   const projectName = createMemo(() => {
@@ -52,6 +87,7 @@ export function AppViewPane(props: { model: GuiAppModel; item: Accessor<ViewItem
       composerFocusRequest={props.model.view.composerFocusRequest()}
       providers={props.model.authoritative.snapshot()?.providers ?? []}
       connectedProviderIDs={props.model.authoritative.snapshot()?.connectedProviderIDs ?? []}
+      connectProvider={(providerID) => void props.model.notices.run(() => props.model.capabilities.connectProvider(providerID))}
       mcp={props.model.authoritative.snapshot()?.mcp ?? {}}
       mcpResources={props.model.authoritative.snapshot()?.mcpResources ?? {}}
       lsp={props.model.authoritative.snapshot()?.lsp ?? []}

@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { Show, createMemo } from "solid-js"
 import { formatRelative, title } from "../lib/format"
@@ -52,6 +52,44 @@ export function SidebarSessionLink(props: {
   )
 }
 
+export function SidebarTerminalSessionLink(props: {
+  terminalSession: OpencodeXTerminalSession
+  status: string
+  active: boolean
+  nested?: boolean
+  pinned?: boolean
+  onClick: () => void
+  togglePinned?: () => void
+  renameSession?: () => void
+  removeSession?: () => void
+}) {
+  return (
+    <CardContextMenu actions={[
+      ...(props.renameSession ? [{ label: "Rename", icon: "pencil", onSelect: props.renameSession }] : []),
+      ...(props.removeSession ? [{ label: "Remove", icon: "trash", danger: true, onSelect: props.removeSession }] : []),
+    ]}>
+      {(openMenu) => (
+        <div class="session-link-shell" classList={{ nested: props.nested }} onContextMenu={openMenu}>
+          <Button
+            appearance="ghost"
+            title={`${title(props.terminalSession.title)} - Claude Code - ${props.status}`}
+            class="session-link terminal-session-link"
+            classList={{ active: props.active }}
+            onClick={props.onClick}
+          >
+            <span>{title(props.terminalSession.title)}</span>
+            <small><span>Claude Code · {props.status}</span></small>
+            <Show when={props.status === "running"}><span class="mini-spinner" aria-label="running" /></Show>
+          </Button>
+          <Show when={props.togglePinned}>
+            {(togglePinned) => <PinButton pinned={props.pinned === true} label={title(props.terminalSession.title)} onClick={togglePinned()} />}
+          </Show>
+        </div>
+      )}
+    </CardContextMenu>
+  )
+}
+
 export function SidebarViewLink(props: {
   view: ClientCatalogView
   snapshot?: GuiSnapshot
@@ -94,7 +132,7 @@ export function SidebarViewLink(props: {
 }
 
 export function viewSessionCount(view: ClientCatalogView) {
-  return view.sessionIDs.length + pendingViewSessions(view).length
+  return view.members.length + pendingViewSessions(view).length
 }
 
 function statusClass(status: DerivedSessionStatus) {

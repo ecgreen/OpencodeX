@@ -18,12 +18,14 @@ export type { SessionSidePanelContextOption, SessionSidePanelRequest, SessionSid
 export function SessionSidePanel(props: {
   open: boolean
   widthRatio: number
-  session: Session
-  data: SessionData
-  providers: Provider[]
-  mcp: GuiSnapshot["mcp"]
-  lsp: LspStatus[]
-  config: GuiSnapshot["config"]
+  session?: Session
+  sessionID?: string
+  data?: SessionData
+  providers?: Provider[]
+  mcp?: GuiSnapshot["mcp"]
+  lsp?: LspStatus[]
+  config?: GuiSnapshot["config"]
+  directoryOnly?: boolean
   gui?: GuiClient
   subscribeGlobalEvents?: (listener: (event: GlobalEvent) => void | Promise<void>) => () => void
   directory?: string
@@ -39,22 +41,26 @@ export function SessionSidePanel(props: {
   const [commitModalOpen, setCommitModalOpen] = createSignal(false)
   const [commitPaths, setCommitPaths] = createSignal<string[]>()
   const [gitActiveSessionID, setGitActiveSessionID] = createSignal("")
-  const gitTabActive = () => gitActiveSessionID() === props.session.id
-  const gitDirectory = createMemo(() => props.directory ?? props.session.directory)
+  const sessionID = () => props.sessionID ?? props.session?.id ?? ""
+  const gitTabActive = () => gitActiveSessionID() === sessionID()
+  const gitDirectory = createMemo(() => props.directory ?? props.session?.directory ?? "")
   const git = createSessionSideGitController({
     active: () => props.open && gitTabActive(),
     gui: () => props.gui,
     directory: gitDirectory,
     subscribeGlobalEvents: props.subscribeGlobalEvents,
   })
-  const contextModel = createMemo(() => sessionInspectorModel({
-    session: props.session,
-    data: props.data,
-    providers: props.providers,
-    mcp: props.mcp ?? {},
-    lsp: props.lsp ?? [],
-    lspEnabled: props.config?.lsp === undefined ? undefined : props.config.lsp !== false,
-  }))
+  const contextModel = createMemo(() => {
+    if (props.directoryOnly || !props.session || !props.data) return undefined
+    return sessionInspectorModel({
+      session: props.session,
+      data: props.data,
+      providers: props.providers ?? [],
+      mcp: props.mcp ?? {},
+      lsp: props.lsp ?? [],
+      lspEnabled: props.config?.lsp === undefined ? undefined : props.config.lsp !== false,
+    })
+  })
 
   createEffect(() => {
     if (!props.open || !gitTabActive()) return
@@ -114,12 +120,13 @@ export function SessionSidePanel(props: {
         inert={!props.open}
       >
         <SessionSideOpenPanel
-          sessionID={props.session.id}
+          sessionID={sessionID()}
           active={props.open}
           gui={props.gui}
-          directory={props.directory ?? props.session.directory}
+          directory={gitDirectory()}
           request={props.request}
-          contextModel={contextModel()}
+          contextModel={props.directoryOnly ? undefined : contextModel()}
+          directoryOnly={props.directoryOnly}
           contextOptions={props.contextOptions}
           selectedContextID={props.selectedContextID}
           selectContext={props.selectContext}
@@ -127,7 +134,7 @@ export function SessionSidePanel(props: {
           toggleContext={toggleContext}
           lsp={props.lsp ?? []}
           lspEnabled={props.config?.lsp === undefined ? undefined : props.config.lsp !== false}
-          diffs={props.data.diffs}
+          diffs={props.data?.diffs ?? []}
           git={git}
           openCommitModal={(path) => {
             setCommitPaths(path ? [path] : undefined)

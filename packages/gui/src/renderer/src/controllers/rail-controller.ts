@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import type { RailDragTarget, RailDropTarget, RailSectionName } from "../components/rail-sidebar"
@@ -43,6 +43,12 @@ export function createRailController(input: {
       .map((id) => sessions.get(id))
       .filter((session): session is Session => session !== undefined)
   })
+  const pinnedTerminalSessions = createMemo(() => {
+    const sessions = new Map((input.snapshot()?.terminalSessions ?? []).map((session) => [session.id, session]))
+    return pinnedSessionIDs()
+      .map((id) => sessions.get(id))
+      .filter((session): session is OpencodeXTerminalSession => session !== undefined)
+  })
   const pinnedViews = createMemo(() => {
     const views = new Map((input.snapshot()?.views ?? []).map((view) => [view.id, view]))
     return pinnedViewIDs()
@@ -68,7 +74,8 @@ export function createRailController(input: {
     if (!snapshot) return
     const missingSessionIDs = input.missingSessionIDs()
     const viewIDs = new Set(snapshot.views.map((view) => view.id))
-    const sessions = pinnedSessionIDs().filter((id) => !missingSessionIDs.has(id))
+    const terminalSessionIDs = new Set(snapshot.terminalSessions.map((session) => session.id))
+    const sessions = pinnedSessionIDs().filter((id) => id.startsWith("oxts_") ? terminalSessionIDs.has(id) : !missingSessionIDs.has(id))
     const views = pinnedViewIDs().filter((id) => viewIDs.has(id))
     if (sessions.join("\n") !== pinnedSessionIDs().join("\n")) setPinnedSessionIDs(sessions)
     if (views.join("\n") !== pinnedViewIDs().join("\n")) setPinnedViewIDs(views)
@@ -264,6 +271,7 @@ export function createRailController(input: {
     pinnedSessionIDSet,
     pinnedViewIDSet,
     pinnedSessions,
+    pinnedTerminalSessions,
     pinnedViews,
     toggleSection,
     toggleSessionPinned,

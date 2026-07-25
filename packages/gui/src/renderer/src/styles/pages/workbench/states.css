@@ -57,21 +57,6 @@
   --empty-action-tone: var(--warning) ;
 }
 
-.tool-diagnostics [data-component=code-block] pre {
-  overflow: visible;
-  max-height: none;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--theme-border);
-  border-radius: 7px;
-  background: var(--theme-canvas);
-  white-space: pre-wrap;
-}
-
-.tool-diagnostics [data-component=code-block] code {
-  background: transparent;
-}
-
 .workbench-tabs button.active {
   border-color: var(--workbench-accent);
   background: var(--workbench-panel-strong);

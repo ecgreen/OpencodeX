@@ -1,8 +1,10 @@
-import { createEffect, on } from "solid-js"
+import { createEffect, on, onCleanup } from "solid-js"
 import type { GuiAppModel } from "./controllers/app-model"
+import { sessionErrorNotice } from "./lib/message-error"
 import { createAppearanceController } from "./controllers/appearance-controller"
 import { createAuthoritativeStateController } from "./controllers/authoritative-state-controller"
 import { createCapabilityActionsController } from "./controllers/capability-actions-controller"
+import { createClaudeTerminalController } from "./controllers/claude-terminal-controller"
 import { createCommandController } from "./controllers/command-controller"
 import { createGuiBridgeController } from "./controllers/gui-bridge-controller"
 import { createDialogController } from "./controllers/dialog-controller"
@@ -39,12 +41,24 @@ export function App() {
     recentModels: sessionState.recentModels,
     setRecentModels: sessionState.setRecentModels,
   })
+  // Turns that fail before any assistant message exists (an unresolvable model,
+  // a rejected key) only ever emit this event — without it the session is blank.
+  onCleanup(
+    authoritative.subscribeGlobalEvents((event) => {
+      const message = sessionErrorNotice(event)
+      if (message) notices.show(message, "error")
+    }),
+  )
   const settings = createSettingsController({
     appearance,
     authoritative,
     dialogs,
     transcript: transcriptPreferences,
     alert: notices.alert,
+  })
+  const claudeTerminals = createClaudeTerminalController({
+    client: authoritative.client,
+    refresh: authoritative.refresh,
   })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
@@ -61,6 +75,7 @@ export function App() {
     snapshot: authoritative.snapshot,
     navigation,
     dialogs,
+    claudeTerminals,
     plugins,
     refresh: authoritative.refresh,
     refreshCapabilities: authoritative.refreshCapabilities,
@@ -104,6 +119,7 @@ export function App() {
   })
   const sessionSwitcher = createSessionSwitcherController({
     authoritative,
+    navigation,
     selection: sessionSelection,
     sessionActions,
   })
@@ -191,6 +207,7 @@ export function App() {
     appearance,
     authoritative,
     capabilities,
+    claudeTerminals,
     commands,
     dialogs,
     management,

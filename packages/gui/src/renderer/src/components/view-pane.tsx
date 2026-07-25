@@ -21,6 +21,7 @@ export function ViewPane(props: {
   updateComposerState: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   providers: Provider[]
   connectedProviderIDs?: string[]
+  connectProvider?: (providerID?: string) => void
   mcp: Record<string, McpStatus>
   mcpResources?: Record<string, McpResource>
   lsp: LspStatus[]
@@ -76,6 +77,7 @@ export function ViewPane(props: {
         setPrompt={() => undefined}
         providers={props.providers}
         connectedProviderIDs={props.connectedProviderIDs}
+        connectProvider={props.connectProvider}
         mcp={props.mcp}
         mcpResources={props.mcpResources}
         lsp={props.lsp}

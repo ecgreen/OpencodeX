@@ -1,15 +1,17 @@
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
 import { OpencodeXView } from "@/opencodex/view"
 import { Project } from "@/project/project"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
 import { ConflictError, notFound, ProjectNotFoundError } from "../errors"
-import { UpdateJobPayload, UpdateViewPayload } from "../groups/opencodex"
+import { UpdateJobPayload, UpdateTerminalSessionPayload, UpdateViewPayload } from "../groups/opencodex"
 
 export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeOperationsHandlers")(function* () {
   const jobs = yield* OpencodeXJob.Service
   const swarms = yield* OpencodeXSwarm.Service
+  const terminalSessions = yield* OpencodeXTerminalSession.Service
   const views = yield* OpencodeXView.Service
 
   const requireMutableJob = Effect.fn("OpencodeXHttpApi.requireMutableJob")(function* (jobID: string) {
@@ -126,12 +128,53 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     return yield* mapSwarmErrors(swarms.updateRole(ctx.params.swarmID, ctx.params.roleID, ctx.payload))
   })
 
+  const listTerminalSessions = Effect.fn("OpencodeXHttpApi.listTerminalSessions")(function* () {
+    return yield* terminalSessions.list()
+  })
+  const createTerminalSession = Effect.fn("OpencodeXHttpApi.createTerminalSession")(function* (ctx: {
+    payload: OpencodeXTerminalSession.CreateInput
+  }) {
+    return yield* terminalSessions
+      .create(ctx.payload)
+      .pipe(
+        Effect.catchTag("OpencodeX.TerminalSession.ValidationError", () =>
+          Effect.fail(new HttpApiError.BadRequest({})),
+        ),
+      )
+  })
+  const getTerminalSession = Effect.fn("OpencodeXHttpApi.getTerminalSession")(function* (ctx: {
+    params: { terminalSessionID: string }
+  }) {
+    return yield* mapTerminalSessionErrors(terminalSessions.get(ctx.params.terminalSessionID))
+  })
+  const updateTerminalSession = Effect.fn("OpencodeXHttpApi.updateTerminalSession")(function* (ctx: {
+    params: { terminalSessionID: string }
+    payload: typeof UpdateTerminalSessionPayload.Type
+  }) {
+    return yield* mapTerminalSessionUpdateErrors(
+      terminalSessions.update({ ...ctx.payload, id: ctx.params.terminalSessionID }),
+    )
+  })
+  const openTerminalSession = Effect.fn("OpencodeXHttpApi.openTerminalSession")(function* (ctx: {
+    params: { terminalSessionID: string }
+  }) {
+    return yield* mapTerminalSessionErrors(terminalSessions.opened(ctx.params.terminalSessionID))
+  })
+  const removeTerminalSession = Effect.fn("OpencodeXHttpApi.removeTerminalSession")(function* (ctx: {
+    params: { terminalSessionID: string }
+  }) {
+    return yield* mapTerminalSessionErrors(terminalSessions.remove(ctx.params.terminalSessionID))
+  })
+
   const listViews = Effect.fn("OpencodeXHttpApi.listViews")(function* () {
     return yield* views.list()
   })
   const createView = Effect.fn("OpencodeXHttpApi.createView")(function* (ctx: { payload: OpencodeXView.CreateInput }) {
     return yield* views.create(ctx.payload).pipe(
       Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." }))),
+      Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", () =>
+        Effect.fail(new OpencodeXView.ValidationError({ message: "Terminal session not found." })),
+      ),
       Effect.catchTag("OpencodeX.View.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
     )
   })
@@ -152,6 +195,9 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
         .update({ ...ctx.payload, id: ctx.params.viewID })
         .pipe(
           Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." }))),
+          Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", () =>
+            Effect.fail(new OpencodeXView.ValidationError({ message: "Terminal session not found." })),
+          ),
         ),
     )
   })
@@ -181,6 +227,12 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     removeSwarm,
     addSwarmRole,
     updateSwarmRole,
+    listTerminalSessions,
+    createTerminalSession,
+    getTerminalSession,
+    updateTerminalSession,
+    openTerminalSession,
+    removeTerminalSession,
     listViews,
     createView,
     reorderViews,
@@ -217,6 +269,46 @@ function mapSwarmErrors<A, R>(
     Effect.catchTag("OpencodeX.Swarm.NotFoundError", (error) => Effect.fail(notFound(`Swarm not found: ${error.swarmID}`))),
     Effect.catchTag("OpencodeX.Swarm.RoleNotFoundError", (error) => Effect.fail(notFound(`Swarm role not found: ${error.roleID}`))),
     Effect.catchTag("OpencodeX.Swarm.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+  )
+}
+
+function mapTerminalSessionErrors<A, R>(
+  effect: Effect.Effect<
+    A,
+    OpencodeXTerminalSession.NotFoundError | OpencodeXTerminalSession.ValidationError,
+    R
+  >,
+) {
+  return effect.pipe(
+    Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", (error) =>
+      Effect.fail(notFound(`Terminal session not found: ${error.terminalSessionID}`)),
+    ),
+    Effect.catchTag("OpencodeX.TerminalSession.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+  )
+}
+
+function mapTerminalSessionUpdateErrors<A, R>(
+  effect: Effect.Effect<
+    A,
+    | OpencodeXTerminalSession.NotFoundError
+    | OpencodeXTerminalSession.ValidationError
+    | OpencodeXTerminalSession.ConflictError,
+    R
+  >,
+) {
+  return effect.pipe(
+    Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", (error) =>
+      Effect.fail(notFound(`Terminal session not found: ${error.terminalSessionID}`)),
+    ),
+    Effect.catchTag("OpencodeX.TerminalSession.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+    Effect.catchTag("OpencodeX.TerminalSession.ConflictError", (error) =>
+      Effect.fail(
+        new ConflictError({
+          message: "The terminal session changed before this update was applied.",
+          resource: error.terminalSessionID,
+        }),
+      ),
+    ),
   )
 }
 

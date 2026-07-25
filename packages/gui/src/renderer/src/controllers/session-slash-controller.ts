@@ -311,7 +311,7 @@ export function createSessionSlashController(input: {
         switchAgent: options.switchAgent ?? input.sessionActions.switchAgent,
         toggleMcps: input.capabilityActions.toggleMcp,
         switchVariant: options.switchVariant ?? input.sessionActions.switchVariant,
-        connectProvider: input.capabilityActions.connectProvider,
+        connectProvider: () => input.capabilityActions.connectProvider(),
         switchOrg: input.capabilityActions.switchOrg,
         viewStatus: () => input.navigation.setRoute({ name: "status" }),
         switchTheme: input.sessionActions.switchTheme,

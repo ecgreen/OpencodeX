@@ -8,6 +8,7 @@ import type {
   OpencodeXStateEvent,
   OpencodeXStateSnapshot,
   OpencodeXStateStreamFrame,
+  OpencodeXTerminalSession,
   Part,
   Session,
 } from "../src/v2/client"
@@ -53,6 +54,43 @@ describe("client state sync", () => {
     })
     expect(missing.sessions.records["session-1"]).toBeUndefined()
     expect(missing.tombstones.sessions["session-1"]).toBe(true)
+  })
+
+  test("prunes evicted sessions from view members alongside sessionIDs", () => {
+    const controller = createClientStateSync({ transport: unusedTransport() })
+    const withView = snapshot("cursor-1", "digest-1", [session("session-1", "First"), session("session-2", "Second")])
+    withView.payloads.catalog.views = [
+      {
+        id: "view-1",
+        title: "View",
+        layout: "list",
+        sessionIDs: ["session-1", "session-2"],
+        members: [
+          { kind: "session", id: "session-1" },
+          { kind: "session", id: "session-2" },
+          { kind: "terminal", id: "oxts_1" },
+        ],
+        focusedItemID: "session-1",
+        timeCreated: 1,
+        timeUpdated: 1,
+      },
+    ]
+    const first = applyClientStateSnapshot(controller.getState(), withView)
+
+    const evicted = applyClientSessionCardPage(first, {
+      items: [],
+      hasMore: false,
+      missing: ["session-1"],
+      sessionUiState: {},
+    })
+    const view = evicted.views.records["view-1"]
+    // A stale member id would 400 the next membership PATCH built from it.
+    expect(view?.sessionIDs).toEqual(["session-2"])
+    expect(view?.members).toEqual([
+      { kind: "session", id: "session-2" },
+      { kind: "terminal", id: "oxts_1" },
+    ])
+    expect(view?.focusedItemID).toBe("session-2")
   })
 
   test("applies changed snapshot content at the same outbox cursor", () => {
@@ -1889,6 +1927,77 @@ describe("client state sync", () => {
     controller.stop()
   })
 
+  test("reconciles terminal sessions without loading conversation details", async () => {
+    const terminal = terminalSession("terminal-1", "Claude investigation", "project-1")
+    const initial = snapshot("cursor-1", "digest-1", [])
+    initial.payloads.catalog.terminalSessions = [terminal]
+    initial.payloads.catalog.projects = [
+      {
+        id: "project-1",
+        project: {
+          id: "project-1",
+          worktree: "C:/Work/OpencodeX",
+          time: { created: 1, updated: 1 },
+          sandboxes: [],
+        },
+        folders: [],
+        sessionIDs: [],
+        terminalSessionIDs: [terminal.id],
+      },
+    ]
+    initial.payloads.catalog.views = [
+      {
+        id: "view-1",
+        title: "Mixed tools",
+        layout: "list",
+        sessionIDs: [],
+        members: [{ kind: "terminal", id: terminal.id }],
+        focusedItemID: terminal.id,
+        timeCreated: 1,
+        timeUpdated: 1,
+      },
+    ]
+    const removed = snapshot("cursor-2", "digest-2", [])
+    let snapshots = 0
+    let detailLoads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => (++snapshots === 1 ? initial : removed),
+      session: async () => {
+        detailLoads += 1
+        return sessionSnapshot("cursor-1", "detail-1", "unexpected")
+      },
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    const state = controller.getState()
+    const selected = selectClientStateSyncSnapshot(state)
+    expect(state.terminalSessions.records[terminal.id]).toEqual(terminal)
+    expect(selected?.terminalSessions[0]).toBe(state.terminalSessions.records[terminal.id])
+    expect(selected?.projects[0]?.terminalSessions[0]).toBe(state.terminalSessions.records[terminal.id])
+    expect(selected?.views[0]?.terminalSessions[0]).toBe(state.terminalSessions.records[terminal.id])
+    expect(selectClientKnownSessionIDs(state)).toEqual(new Set())
+    expect(state.sessionDetails).toEqual({})
+    expect(detailLoads).toBe(0)
+
+    expect(
+      controller.applyEvent({
+        id: "terminal-updated",
+        type: "opencodex.terminal_session.updated",
+        properties: { terminalSessionID: terminal.id },
+      }),
+    ).toBe(true)
+    await waitFor(() => snapshots === 2 && controller.getState().dirtyCatalog === false)
+    expect(controller.getState().terminalSessions.records[terminal.id]).toBeUndefined()
+    expect(detailLoads).toBe(0)
+    controller.stop()
+  })
+
   test("retains and selects project and view-only sessions from the known ID union", () => {
     const projectOnly = { ...session("project-only", "Project only"), project: null }
     const viewOnly = { ...session("view-only", "View only"), parentID: "parent", project: null }
@@ -2934,6 +3043,7 @@ function snapshot(cursor: string, digest: string, sessions: Session[]): Opencode
       catalog: {
         projects: [],
         sessionCards: { items: sessions, hasMore: false, missing: [], sessionUiState: {} },
+        terminalSessions: [],
         views: [],
         sessionStatus: {},
         permissions: [],
@@ -2942,6 +3052,20 @@ function snapshot(cursor: string, digest: string, sessions: Session[]): Opencode
       },
       operations: { jobs: [], swarms: [] },
     },
+  }
+}
+
+function terminalSession(id: string, title: string, projectID?: string): OpencodeXTerminalSession {
+  return {
+    id,
+    driver: "claude-code",
+    title,
+    projectID,
+    directory: "C:/Work/OpencodeX",
+    resumeID: "11111111-1111-4111-8111-111111111111",
+    installationID: "22222222-2222-4222-8222-222222222222",
+    timeCreated: 1,
+    timeUpdated: 1,
   }
 }
 

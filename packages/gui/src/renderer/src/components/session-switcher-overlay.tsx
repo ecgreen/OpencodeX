@@ -1,7 +1,6 @@
 import { For, Show, createEffect, onCleanup } from "solid-js"
-import type { Session } from "@opencode-ai/sdk/v2/client"
 import { TextInput, Button } from "./ui"
-import type { SwitcherPreviewRow } from "../controllers/session-switcher-controller"
+import type { SwitcherPreviewRow, SwitcherSessionItem } from "../controllers/session-switcher-controller"
 import { formatRelative, title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
 import { projectNameForSession } from "../lib/project-name"
@@ -13,8 +12,9 @@ export function SessionSwitcherOverlay(props: {
   cursor: number
   query: string
   sticky: boolean
-  rows: Session[]
+  rows: SwitcherSessionItem[]
   snapshot: GuiSnapshot | undefined
+  terminalStatus: (item: Extract<SwitcherSessionItem, { kind: "terminal" }>) => string
   preview: (sessionID: string) => SwitcherPreviewRow[]
   filter: (value: string) => void
   move: (offset: 1 | -1) => void
@@ -46,9 +46,12 @@ export function SessionSwitcherOverlay(props: {
     })
   })
 
-  const derived = (session: Session) => deriveSessionStatus(props.snapshot, session)
-  const status = (session: Session) => sessionStatusLabel(derived(session))
-  const statusTone = (session: Session) => sessionStatusTone(derived(session))
+  const status = (item: SwitcherSessionItem) => item.kind === "terminal"
+    ? props.terminalStatus(item)
+    : sessionStatusLabel(deriveSessionStatus(props.snapshot, item.session))
+  const statusTone = (item: SwitcherSessionItem) => item.kind === "terminal"
+    ? (status(item) === "running" ? "success" : status(item) === "error" || status(item) === "missing-cli" ? "danger" : "neutral")
+    : sessionStatusTone(deriveSessionStatus(props.snapshot, item.session))
   const highlighted = () => props.rows[props.cursor]
 
   return (
@@ -154,17 +157,26 @@ export function SessionSwitcherOverlay(props: {
                       <small data-tone={statusTone(session())}>{status(session())}</small>
                     </header>
                     <Show
-                      when={props.preview(session().id).length > 0}
-                      fallback={<p class="session-switcher-preview-empty">Open this session once to preview its transcript.</p>}
+                      when={session().kind !== "terminal"}
+                      fallback={
+                        <p class="session-switcher-preview-empty">
+                          Claude Code owns this session's transcript. Open it in OpencodeX Desktop to continue.
+                        </p>
+                      }
                     >
-                      <For each={props.preview(session().id)}>
-                        {(row) => (
-                          <p class={`session-switcher-preview-row ${row.role}`}>
-                            <strong>{row.role === "user" ? "You" : "Assistant"}</strong>
-                            <span>{row.text}</span>
-                          </p>
-                        )}
-                      </For>
+                      <Show
+                        when={props.preview(session().id).length > 0}
+                        fallback={<p class="session-switcher-preview-empty">Open this session once to preview its transcript.</p>}
+                      >
+                        <For each={props.preview(session().id)}>
+                          {(row) => (
+                            <p class={`session-switcher-preview-row ${row.role}`}>
+                              <strong>{row.role === "user" ? "You" : "Assistant"}</strong>
+                              <span>{row.text}</span>
+                            </p>
+                          )}
+                        </For>
+                      </Show>
                     </Show>
                   </>
                 )}

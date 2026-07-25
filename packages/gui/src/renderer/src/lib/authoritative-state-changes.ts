@@ -11,6 +11,7 @@ export function authoritativeStateChanges(
       phase ||
       current.projects !== next.projects ||
       current.sessions !== next.sessions ||
+      current.terminalSessions !== next.terminalSessions ||
       current.views !== next.views ||
       current.permissions !== next.permissions ||
       current.questions !== next.questions ||

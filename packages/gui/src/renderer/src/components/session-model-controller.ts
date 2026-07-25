@@ -1,13 +1,21 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, onCleanup } from "solid-js"
+import { createDebouncedTask } from "../lib/deferred-work"
 import { isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
 import { readFavoriteModels, writeFavoriteModels } from "../lib/session-composer-helpers"
 import type { SessionPageProps } from "./session-page-types"
 
+/** Long enough that a fast typist filters the catalog once, not once per key. */
+const SEARCH_DEBOUNCE_MS = 90
+
 export function createSessionModelController(props: SessionPageProps) {
   const [pickerOpen, setPickerOpen] = createSignal(false)
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
+  // `query` drives the input so typing stays instant; `search` drives filtering.
   const [query, setQuery] = createSignal("")
+  const [search, setSearch] = createSignal("")
   const [favorites, setFavorites] = createSignal(readFavoriteModels())
+  const debouncedSearch = createDebouncedTask<string>(setSearch, SEARCH_DEBOUNCE_MS)
+  onCleanup(debouncedSearch.cancel)
   const options = createMemo(() =>
     props.providers.flatMap((provider) =>
       Object.values(provider.models)
@@ -27,10 +35,13 @@ export function createSessionModelController(props: SessionPageProps) {
       return option ? [option] : []
     }),
   )
+  // Connected providers first: those are the only ones that can answer a prompt,
+  // and it keeps the auto-expanded search results on models the user can send to.
   const providerGroups = createMemo(() => {
     const recents = new Set([...recentOptions(), ...favoriteOptions()].map((item) => modelValue(item.provider.id, item.model.id)))
+    const connected = new Set(props.connectedProviderIDs ?? [])
     return props.providers
-      .toSorted((a, b) => Number(a.id !== "opencode") - Number(b.id !== "opencode") || a.name.localeCompare(b.name))
+      .toSorted((a, b) => Number(!connected.has(a.id)) - Number(!connected.has(b.id)) || Number(a.id !== "opencode") - Number(b.id !== "opencode") || a.name.localeCompare(b.name))
       .map((provider) => ({
         provider,
         models: Object.values(provider.models)
@@ -40,11 +51,11 @@ export function createSessionModelController(props: SessionPageProps) {
       }))
       .filter((item) => item.models.length > 0)
   })
-  const filteredRecentOptions = createMemo(() => filterModelOptions(recentOptions(), query()))
-  const filteredFavoriteOptions = createMemo(() => filterModelOptions(favoriteOptions(), query()))
+  const filteredRecentOptions = createMemo(() => filterModelOptions(recentOptions(), search()))
+  const filteredFavoriteOptions = createMemo(() => filterModelOptions(favoriteOptions(), search()))
   const filteredProviderGroups = createMemo(() =>
     providerGroups()
-      .map((group) => ({ ...group, models: filterModelOptions(group.models.map((model) => ({ provider: group.provider, model })), query()).map((item) => item.model) }))
+      .map((group) => ({ provider: group.provider, models: filterProviderModels(group.provider, group.models, search()) }))
       .filter((group) => group.models.length > 0),
   )
   const activeProvider = createMemo(() => {
@@ -56,6 +67,14 @@ export function createSessionModelController(props: SessionPageProps) {
     const selection = parseModelValue(props.selectedModel)
     if (!selection) return
     return props.providers.find((provider) => provider.id === selection.providerID)?.models[selection.modelID]
+  })
+  // `connectedProviderIDs` mirrors the server's live provider registry, and a
+  // provider missing from it cannot resolve a model at all — the prompt dies
+  // before the request is built. Catch it here instead of at send time.
+  const disconnectedProvider = createMemo(() => {
+    const provider = activeProvider()
+    if (!provider) return undefined
+    return props.connectedProviderIDs?.includes(provider.id) ? undefined : provider
   })
   const variants = createMemo(() => Object.keys(activeModel()?.variants ?? {}))
   const mode = createMemo(() => props.selectedAgent === "plan" ? "plan" : props.selectedAgent === "goal" ? "goal" : "build")
@@ -84,11 +103,19 @@ export function createSessionModelController(props: SessionPageProps) {
     setVariantPickerOpen(false)
   }
 
+  function updateQuery(value: string) {
+    setQuery(value)
+    // Clearing should feel instant; only narrowing pays the debounce.
+    if (value.trim()) return debouncedSearch.schedule(value)
+    debouncedSearch.cancel()
+    setSearch(value)
+  }
+
   function select(providerID: string, modelID: string) {
     props.setSelectedModel(modelValue(providerID, modelID))
     setPickerOpen(false)
     setVariantPickerOpen(false)
-    setQuery("")
+    updateQuery("")
   }
 
   function toggleFavorite(value: string) {
@@ -105,11 +132,13 @@ export function createSessionModelController(props: SessionPageProps) {
     variantPickerOpen,
     setVariantPickerOpen,
     query,
-    setQuery,
+    setQuery: updateQuery,
+    searching: () => search().trim().length > 0,
     favorites,
     filteredFavoriteOptions,
     filteredRecentOptions,
     filteredProviderGroups,
+    disconnectedProvider,
     variants,
     mode,
     label,
@@ -126,5 +155,19 @@ export function createSessionModelController(props: SessionPageProps) {
 function filterModelOptions(options: ModelPickerOption[], query: string) {
   const needle = query.trim().toLowerCase()
   if (!needle) return options
-  return options.filter((option) => `${option.model.name ?? option.model.id} ${option.provider.name}`.toLowerCase().includes(needle))
+  return options.filter((option) => matchesModel(option.provider, option.model, needle))
+}
+
+/**
+ * Returns the provider's own model objects rather than fresh `{provider, model}`
+ * pairs so `<For>` keeps the rendered rows it already has when a search narrows.
+ */
+function filterProviderModels(provider: SessionPageProps["providers"][number], models: ModelPickerOption["model"][], query: string) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return models
+  return models.filter((model) => matchesModel(provider, model, needle))
+}
+
+function matchesModel(provider: ModelPickerOption["provider"], model: ModelPickerOption["model"], needle: string) {
+  return `${model.name ?? model.id} ${provider.name}`.toLowerCase().includes(needle)
 }

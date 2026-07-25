@@ -296,11 +296,11 @@ function fakeGui(
           },
           create: async (input: {
             opencodeXViewCreateInput?: {
-              sessionIDs: string[]
+              members: { kind: "session" | "terminal"; id: string }[]
               metadata?: { opencodex?: { pendingSessions?: unknown[] } }
             }
           }) => {
-            calls.push(`view.create:${input.opencodeXViewCreateInput?.sessionIDs.join(",")}`)
+            calls.push(`view.create:${input.opencodeXViewCreateInput?.members.map((member) => member.id).join(",")}`)
             if (input.opencodeXViewCreateInput?.metadata?.opencodex?.pendingSessions) {
               calls.push(
                 `view.create.pending:${input.opencodeXViewCreateInput.metadata.opencodex.pendingSessions.length}`,

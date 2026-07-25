@@ -1,4 +1,4 @@
-import type { OpencodeXSwarmRoleInput } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXSwarmRoleInput, OpencodeXViewMember } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./client"
 import { authHeaders } from "./store-auth"
 
@@ -116,12 +116,13 @@ export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { 
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function createView(gui: GuiClient, input: { title?: string; sessionIDs: string[]; metadata?: Record<string, unknown> }) {
+export async function createView(gui: GuiClient, input: { title?: string; sessionIDs?: string[]; members?: OpencodeXViewMember[]; metadata?: Record<string, unknown> }) {
+  const members = input.members ?? (input.sessionIDs ?? []).map((id): OpencodeXViewMember => ({ kind: "session", id }))
   return gui.client.opencodex.view.create({
     opencodeXViewCreateInput: {
       title: input.title,
-      sessionIDs: input.sessionIDs,
-      focusedSessionID: input.sessionIDs[0],
+      members,
+      focusedItemID: members[0]?.id,
       layout: "auto",
       metadata: input.metadata,
     },
@@ -132,14 +133,14 @@ export async function reorderViews(gui: GuiClient, viewIDs: string[]) {
   return gui.client.opencodex.view.reorder({ opencodeXViewReorderInput: { viewIDs } }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function updateViewFocus(gui: GuiClient, viewID: string, expectedTimeUpdated: number, focusedSessionID: string) {
-  return gui.client.opencodex.view.update({ viewID, expectedTimeUpdated, focusedSessionID }, { headers: authHeaders(gui), throwOnError: true })
+export async function updateViewFocus(gui: GuiClient, viewID: string, expectedTimeUpdated: number, focusedItemID: string) {
+  return gui.client.opencodex.view.update({ viewID, expectedTimeUpdated, focusedItemID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
 export async function deleteView(gui: GuiClient, viewID: string) {
   return gui.client.opencodex.view.delete({ viewID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function updateView(gui: GuiClient, viewID: string, input: { expectedTimeUpdated: number; title?: string; sessionIDs?: string[]; focusedSessionID?: string; metadata?: Record<string, unknown> }) {
+export async function updateView(gui: GuiClient, viewID: string, input: { expectedTimeUpdated: number; title?: string; sessionIDs?: string[]; members?: OpencodeXViewMember[]; focusedSessionID?: string; focusedItemID?: string; metadata?: Record<string, unknown> }) {
   return gui.client.opencodex.view.update({ viewID, ...input }, { headers: authHeaders(gui), throwOnError: true })
 }

@@ -1,8 +1,11 @@
-import { lazy } from "solid-js"
+import { Show, lazy } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
+import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
 import { findFiles } from "../lib/store"
+import { ClaudeTerminalPage } from "./claude-terminal-surface"
+import { Button, ErrorState, LoadingState } from "./ui"
 
 const ProjectCollectionPage = lazy(() =>
   import("./collection-pages").then((module) => ({ default: module.ProjectCollectionPage })),
@@ -58,6 +61,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       composerFocusToken={model.sessionState.composerFocusToken}
       providers={model.authoritative.snapshot()?.providers ?? []}
       connectedProviderIDs={model.authoritative.snapshot()?.connectedProviderIDs ?? []}
+      connectProvider={(providerID) => void model.notices.run(() => model.capabilities.connectProvider(providerID))}
       mcp={model.authoritative.snapshot()?.mcp ?? {}}
       mcpResources={model.authoritative.snapshot()?.mcpResources ?? {}}
       lsp={model.authoritative.snapshot()?.lsp ?? []}
@@ -88,6 +92,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       renameSession={(session) => void model.notices.run(() => model.sessionActions.rename(session))}
       moveSession={(session) => void model.notices.run(() => model.sessionActions.move(session))}
       deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
+      openTerminalSession={(terminalSessionID) => model.navigation.setRoute({ name: "terminal-session", terminalSessionID })}
       slashCommands={model.sessionSlash.commands(session(), {
         data: model.sessionSelection.activeSessionData(),
         restorePrompt: model.sessionState.setPrompt,
@@ -129,15 +134,65 @@ export function SessionsRoute(props: { model: GuiAppModel }) {
   return (
     <SessionCollectionPage
       sessions={model.sessionSelection.visibleSessions()}
+      terminalSessions={model.authoritative.snapshot()?.terminalSessions ?? []}
       projects={model.authoritative.snapshot()?.projects ?? []}
       sessionStatus={model.authoritative.snapshot()?.sessionStatus ?? {}}
       openSession={model.sessionActions.open}
+      openTerminalSession={(terminalSessionID) => model.navigation.setRoute(terminalSessionRoute(model.authoritative.snapshot()?.terminalSessions.find((record) => record.id === terminalSessionID), terminalSessionID))}
       renameSession={(session) => void model.notices.run(() => model.sessionActions.rename(session))}
       moveSession={(session) => void model.notices.run(() => model.sessionActions.move(session))}
       deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
+      renameTerminalSession={(session) => void model.notices.run(() => model.management.renameClaudeSession(session))}
+      moveTerminalSession={(session) => void model.notices.run(() => model.management.moveClaudeSession(session))}
+      removeTerminalSession={(session) => void model.notices.run(() => model.management.removeClaudeSession(session))}
+      terminalStatus={model.claudeTerminals.statusLabel}
       sessionPinned={(sessionID) => model.rail.pinnedSessionIDSet().has(sessionID)}
       toggleSessionPinned={model.rail.toggleSessionPinned}
+      createSession={() => void model.notices.run(() => model.management.createSession())}
+      createTerminalSession={() => void model.notices.run(async () => { await model.management.createClaudeSession() })}
     />
+  )
+}
+
+export function TerminalSessionRoute(props: { model: GuiAppModel }) {
+  const route = () => props.model.navigation.route()
+  const terminalSession = () => {
+    const current = route()
+    if (current.name !== "terminal-session") return undefined
+    return props.model.authoritative.snapshot()?.terminalSessions.find((item) => item.id === current.terminalSessionID)
+  }
+  return (
+    <Show
+      when={terminalSession()}
+      fallback={
+        props.model.authoritative.snapshot() ? (
+          <ErrorState
+            title="Claude Code session not found"
+            description="The catalog record may have been removed."
+            action={
+              <Button appearance="solid" tone="accent" onClick={() => props.model.navigation.setRoute({ name: "sessions" })}>
+                Back to Sessions
+              </Button>
+            }
+          />
+        ) : (
+          <LoadingState title="Loading Claude Code session" />
+        )
+      }
+    >
+      {(record) => (
+        <ClaudeTerminalPage
+          terminalSession={record()}
+          controller={props.model.claudeTerminals}
+          gui={props.model.authoritative.client()}
+          subscribeGlobalEvents={props.model.authoritative.subscribeGlobalEvents}
+          snapshot={props.model.authoritative.snapshot()}
+          rename={() => void props.model.notices.run(() => props.model.management.renameClaudeSession(record()))}
+          move={() => void props.model.notices.run(() => props.model.management.moveClaudeSession(record()))}
+          remove={() => void props.model.notices.run(() => props.model.management.removeClaudeSession(record()))}
+        />
+      )}
+    </Show>
   )
 }
 
@@ -154,10 +209,14 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
         model.navigation.setRoute(projectID ? { name: "projects", projectID } : { name: "projects" })
       }
       openSession={model.sessionActions.open}
+      openTerminalSession={(terminalSessionID) => model.navigation.setRoute(terminalSessionRoute(model.authoritative.snapshot()?.terminalSessions.find((record) => record.id === terminalSessionID), terminalSessionID))}
       openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
       openSwarm={(swarmID) => model.navigation.setRoute({ name: "swarms", swarmID })}
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
+      }
+      createTerminalSession={(projectID, directory) =>
+        void model.notices.run(async () => { await model.management.createClaudeSession(projectID, directory) })
       }
       createSwarm={(projectID) => void model.notices.run(() => model.management.createSwarm(projectID))}
       createProjectView={(projectID, sessionIDs) =>
@@ -176,6 +235,10 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       }
       sessionPinned={(sessionID) => model.rail.pinnedSessionIDSet().has(sessionID)}
       toggleSessionPinned={model.rail.toggleSessionPinned}
+      terminalStatus={(terminalSessionID) => {
+        const session = model.authoritative.snapshot()?.terminalSessions.find((item) => item.id === terminalSessionID)
+        return session ? model.claudeTerminals.statusLabel(session) : "idle"
+      }}
     />
   )
 }

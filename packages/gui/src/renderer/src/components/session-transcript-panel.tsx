@@ -19,8 +19,10 @@ import {
 import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/transcript-visibility"
 import { Icon } from "./icon"
 import { MessageActions } from "./message-actions"
+import { sessionDisclosureStore } from "../lib/disclosure"
+import { TranscriptChromeProvider } from "./session-part-chrome"
 import { DisplayPartView, activeTranscriptStreamingPartID, groupTranscriptParts } from "./session-transcript"
-import { SessionEmptyState, TranscriptLoadingSkeleton, activeAssistantProgressParts, hasActiveAssistantProgress, isScrollbarPointer, showTranscriptHeader, transcriptHeaderLabel } from "./session-transcript-presentation"
+import { SessionEmptyState, TranscriptLoadingSkeleton, TranscriptMessageError, activeAssistantProgressParts, hasActiveAssistantProgress, isScrollbarPointer, showTranscriptHeader, transcriptHeaderLabel } from "./session-transcript-presentation"
 
 const ASSISTANT_THINKING_DELAY_MS = 1_600
 
@@ -41,6 +43,7 @@ export function TranscriptPanel(props: {
   loadOlderMessages?: (cursor: string) => Promise<void>
   messageAction?: (action: SessionMessageActionKind, bundle: MessageBundle) => void
   emptyStateSuggestion?: (prompt: string) => void
+  connectProvider?: (providerID?: string) => void
 }) {
   let transcript: HTMLElement | undefined
   let transcriptContent: HTMLDivElement | undefined
@@ -67,6 +70,12 @@ export function TranscriptPanel(props: {
   const [loadingSkeletonVisible, setLoadingSkeletonVisible] = createSignal(props.loading)
   const pendingSession = () => props.sessionID.startsWith("pending:")
   const newMessageCount = createMemo(() => scrolledAway() ? transcriptNewMessageCount(visibleMessageIDs(), lastMessageIDAtRelease) : 0)
+  // Parts auto-collapse only while the reader is at the tail, and remember
+  // explicit toggles per session.
+  const transcriptChrome = {
+    following: () => !scrolledAway(),
+    disclosure: () => sessionDisclosureStore(props.sessionID),
+  }
   const clearAssistantThinkingTimer = () => {
     if (assistantThinkingTimer === undefined) return
     clearTimeout(assistantThinkingTimer)
@@ -301,6 +310,7 @@ export function TranscriptPanel(props: {
   })
 
   return (
+    <TranscriptChromeProvider value={transcriptChrome}>
     <div class="transcript-shell">
       <section
         class="transcript"
@@ -349,6 +359,7 @@ export function TranscriptPanel(props: {
                           </Show>
                         }}
                       </For>
+                      <TranscriptMessageError message={current().info} providers={props.providers} connectProvider={props.connectProvider} />
                       <Show when={props.messageAction}>
                         {(onAction) => <MessageActions bundle={current()} pending={pendingSession()} onAction={onAction()} />}
                       </Show>
@@ -379,5 +390,6 @@ export function TranscriptPanel(props: {
       <SessionEmptyState visible={emptyStateVisible()} handoff={emptyStateHandoff()} onSuggestion={props.emptyStateSuggestion} />
       <TranscriptLoadingSkeleton visible={loadingSkeletonVisible()} />
     </div>
+    </TranscriptChromeProvider>
   )
 }

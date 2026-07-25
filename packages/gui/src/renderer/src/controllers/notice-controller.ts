@@ -24,6 +24,7 @@ export function createNoticeController() {
 
   return {
     notice,
+    show,
     alert: (message: string) => show(message, "info"),
     attempt,
     clear() {

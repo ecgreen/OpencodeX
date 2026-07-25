@@ -25,12 +25,11 @@ import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-co
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
 import { SessionSideFileEditor } from "./session-side-file-editor"
 export function SessionSideOpenPanel(props: {
-  sessionID: string
-  active: boolean
-  gui?: GuiClient
-  directory?: string
+  sessionID: string; active: boolean
+  gui?: GuiClient; directory?: string
   request?: SessionSidePanelRequest
-  contextModel: ReturnType<typeof sessionInspectorModel>
+  contextModel?: ReturnType<typeof sessionInspectorModel>
+  directoryOnly?: boolean
   contextOptions?: SessionSidePanelContextOption[]
   selectedContextID?: string
   selectContext?: (id: string) => void
@@ -103,6 +102,7 @@ export function SessionSideOpenPanel(props: {
     languageStatus: diagnostics.setLanguageStatus,
   })
   const agent = createSessionSideAgentController({
+    enabled: () => !props.directoryOnly,
     sessionID: () => props.sessionID,
     directory: activeDirectory,
     tabs,
@@ -170,6 +170,7 @@ export function SessionSideOpenPanel(props: {
     handledRequestToken = request.token
     untrack(() => {
       if (request.tab === "context") {
+        if (props.directoryOnly) return
         addContextTab()
         return
       }
@@ -212,7 +213,10 @@ export function SessionSideOpenPanel(props: {
     tabBar.closeNewMenu()
     return id
   }
-  function addContextTab() { selectSingletonTab("context", "Context") }
+  function addContextTab() {
+    if (props.directoryOnly) return
+    selectSingletonTab("context", "Context")
+  }
   function addGitTab() { selectSingletonTab("git", "Git") }
   function addFileTab() { selectSingletonTab("files", "Files") }
   function addWebTab() {
@@ -295,9 +299,9 @@ export function SessionSideOpenPanel(props: {
 
   return (
     <section class="session-side-open">
-      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={files.openInActiveTab} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
+      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={files.openInActiveTab} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
       <Switch>
-        <Match when={activeTab()?.kind === "context"}>
+        <Match when={!props.directoryOnly && activeTab()?.kind === "context" && props.contextModel}>
           <div class="session-side-context">
             <Show when={(props.contextOptions?.length ?? 0) > 1}>
               <Select<NonNullable<typeof props.contextOptions>[number]>
@@ -311,7 +315,7 @@ export function SessionSideOpenPanel(props: {
               />
             </Show>
             <SessionContextPanel
-              model={props.contextModel}
+              model={props.contextModel!}
               lsp={props.lsp}
               lspEnabled={props.lspEnabled}
               diffs={props.diffs}
@@ -381,14 +385,11 @@ export function SessionSideOpenPanel(props: {
         </Match>
         <Match when={true}>
           <SessionSideEmptyState
-            directory={props.directory}
-            diffs={props.diffs}
-            openContext={addContextTab}
-            openGit={addGitTab}
-            openFiles={files.openExplorer}
+            directory={props.directory} diffs={props.diffs}
+            openContext={addContextTab} showContext={!props.directoryOnly}
+            openGit={addGitTab} openFiles={files.openExplorer}
             openChangedFile={(path) => void openInputInNewTab(path)}
-            openTerminal={terminals.create}
-            addWebTab={addWebTab}
+            openTerminal={terminals.create} addWebTab={addWebTab}
           />
         </Match>
       </Switch>

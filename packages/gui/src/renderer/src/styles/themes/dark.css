@@ -58,6 +58,8 @@
     --ds-motion-control: 160ms;
     --ds-motion-route: 220ms;
     --ds-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    /* Even-tempered curve for size changes; ease-enter front-loads too hard. */
+    --ds-ease-smooth: cubic-bezier(0.45, 0, 0.25, 1);
     --ds-font-ui: "Geist", "Segoe UI", sans-serif;
     --ds-font-technical: "Geist Mono", "Cascadia Code", monospace;
 
@@ -79,6 +81,13 @@
     --ds-success: var(--theme-success);
     --ds-info: var(--theme-info);
     --ds-shadow-overlay: 0 18px 48px var(--theme-shadow-medium);
+
+    /* Transcript part accents, keyed to what a tool did. See GUI_DESIGN_SYSTEM.md. */
+    --ds-accent-exec: var(--theme-success);
+    --ds-accent-file: var(--theme-info);
+    --ds-accent-plan: var(--theme-success);
+    --ds-accent-thinking: var(--theme-special);
+    --ds-accent-agent: var(--theme-special);
 
     --bg: var(--theme-canvas);
     --panel: var(--theme-surface);

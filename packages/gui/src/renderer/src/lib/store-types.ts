@@ -8,6 +8,7 @@ import type {
   OpencodeXJob,
   OpencodeXSessionUiState,
   OpencodeXSwarm,
+  OpencodeXTerminalSession,
   Part,
   PermissionRequest,
   Provider,
@@ -204,6 +205,7 @@ export type SessionLoadOptions = {
 export type GuiSnapshot = {
   projects: ClientCatalogProject[]
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   sessionStatus: Record<string, SessionStatus>
   sessionUiState: Record<string, OpencodeXSessionUiState>
   stateRevision?: string
@@ -225,7 +227,15 @@ export type GuiSnapshot = {
 
 export type SessionCardSnapshot = Pick<
   GuiSnapshot,
-  "projects" | "sessions" | "sessionStatus" | "sessionUiState" | "stateRevision" | "permissions" | "questions" | "views"
+  | "projects"
+  | "sessions"
+  | "terminalSessions"
+  | "sessionStatus"
+  | "sessionUiState"
+  | "stateRevision"
+  | "permissions"
+  | "questions"
+  | "views"
 >
 
 export type GuiCapabilitiesSnapshot = Pick<

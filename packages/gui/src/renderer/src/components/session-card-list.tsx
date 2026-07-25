@@ -1,5 +1,5 @@
-import { Button } from "./ui"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import { Button, StatusBadge } from "./ui"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import type { JSX } from "solid-js"
 import { Show, createMemo } from "solid-js"
@@ -81,6 +81,50 @@ export function SessionStatusCard(props: {
   )
 }
 
+export function TerminalSessionStatusCard(props: {
+  terminalSession: OpencodeXTerminalSession
+  status: string
+  openSession: (terminalSessionID: string) => void
+  pinned?: boolean
+  togglePinned?: () => void
+  renameSession?: () => void
+  removeSession?: () => void
+  compact?: boolean
+  meta?: string
+}) {
+  const actions = () => [
+    ...(props.togglePinned ? [{ label: props.pinned ? "Unpin" : "Pin", icon: "pin", onSelect: props.togglePinned }] : []),
+    ...(props.renameSession ? [{ label: "Rename", icon: "pencil", onSelect: props.renameSession }] : []),
+    ...(props.removeSession ? [{ label: "Remove", icon: "trash", danger: true, onSelect: props.removeSession }] : []),
+  ]
+  return (
+    <CardContextMenu actions={actions()}>
+      {(openMenu) => (
+        <article
+          class="dashboard-item-card dashboard-status-card interactive"
+          classList={{ compact: props.compact === true }}
+          onContextMenu={openMenu}
+        >
+          <Button appearance="ghost" class="dashboard-card-open" onClick={() => props.openSession(props.terminalSession.id)}>
+            <div class="terminal-session-card-title">
+              <strong>{title(props.terminalSession.title)}</strong>
+              <StatusBadge status="info">Claude Code</StatusBadge>
+            </div>
+            <footer>
+              <span class="card-status-label">{props.status}</span>
+              <small>{props.meta ?? [formatRelative(Number(props.terminalSession.timeUpdated)), compactTerminalDirectory(props.terminalSession.directory)].join(" - ")}</small>
+            </footer>
+          </Button>
+          <Show when={actions().length > 0}>
+            <CardActionMenu label={title(props.terminalSession.title)} actions={actions()} />
+          </Show>
+          <Show when={props.status === "running"}><span class="mini-spinner" aria-label="running" /></Show>
+        </article>
+      )}
+    </CardContextMenu>
+  )
+}
+
 export function sessionCardMeta(session: Session, snapshot?: GuiSnapshot) {
   return [formatRelative(session.time.updated), sessionProjectName(session, snapshot)].filter(Boolean).join(" - ")
 }
@@ -98,4 +142,9 @@ function sessionProjectName(session: Session, snapshot?: GuiSnapshot) {
   const project = (snapshot?.projects ?? []).find((item) => item.sessions.some((projectSession) => projectSession.id === session.id))
   if (!project) return undefined
   return title(project.name ?? project.project.name)
+}
+
+function compactTerminalDirectory(directory: string) {
+  const parts = directory.split(/[\\/]/).filter(Boolean)
+  return parts.at(-1) ?? directory
 }

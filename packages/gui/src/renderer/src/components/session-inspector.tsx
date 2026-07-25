@@ -2,7 +2,7 @@ import { Button } from "./ui"
 import type { LspStatus, McpStatus, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
 import type { SessionData } from "../lib/store"
-import { formatTodoStatus } from "../lib/tool-display"
+import { TodoList } from "./session-todo-list"
 
 type InspectorState = Record<string, boolean>
 
@@ -106,15 +106,7 @@ export function SessionContextPanel(props: {
       </Show>
       <Show when={props.model.visibleSections.todo}>
         <InspectorSection id="todo" title="Todo" collapsed={props.collapsed.todo} toggle={props.toggle}>
-          <For each={props.model.activeTodos}>
-            {(todo) => (
-              <div class={`inspector-todo ${todo.status}`}>
-                <span>{formatTodoStatus(todo.status)}</span>
-                <strong>{todo.content}</strong>
-                <small>{todo.priority}</small>
-              </div>
-            )}
-          </For>
+          <TodoList todos={props.model.activeTodos} class="inspector-todos" />
         </InspectorSection>
       </Show>
       <Show when={props.model.visibleSections.files}>

@@ -7,6 +7,7 @@ import { createColors, createFrames } from "@tui/ui/spinner"
 import "opentui-spinner/solid"
 import { createMemo, For, Show } from "solid-js"
 import { LogoShimmerText } from "./logo"
+import { viewMemberCount } from "./opencodex-view-model"
 import {
   dashboardRowColor,
   dashboardRowStatusLabel,
@@ -142,7 +143,7 @@ export function AttentionCard(props: { row: DashboardRow; width: number; selecte
 export function ViewCard(props: { view: OpencodeXView; status: DashboardStatus; width: number; selected?: boolean }) {
   const { theme } = useTheme()
   const route = useRoute()
-  const sessionCount = createMemo(() => props.view.sessionIDs.length)
+  const sessionCount = createMemo(() => viewMemberCount(props.view))
   const animatedTitle = createMemo(() => props.status === "input_needed" || isReviewReadyStatus(props.status))
   const titleColor = createMemo(() => isReviewReadyStatus(props.status) ? dashboardStatusColor(props.status) : theme.text)
   const titleInk = createMemo(() => animatedTitle() ? dashboardStatusColor(props.status) : titleColor())

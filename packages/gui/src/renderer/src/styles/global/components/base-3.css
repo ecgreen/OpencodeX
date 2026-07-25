@@ -54,14 +54,6 @@ details[open]>summary .output-chevron {
   transform: rotate(90deg);
 }
 
-.part.tool.running {
-  border-color: color-mix(in srgb,var(--theme-info) 38%,transparent);
-}
-
-.part.tool pre code {
-  white-space: pre-wrap;
-}
-
 .inline-checkbox {
   grid-template-columns: auto auto;
   align-items: center;

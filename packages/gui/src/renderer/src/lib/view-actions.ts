@@ -1,15 +1,20 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, OpencodeXViewMember, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogProject, ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { metadataWithPendingSessions, metadataWithViewPaneOrder, pendingViewSessions, viewPaneOrder, type PendingViewSession, type ViewPaneOrderItem } from "./view-items"
 
 export { metadataWithPendingSessions } from "./view-items"
 
-export type ViewSelection = { kind: "existing"; sessionID: string } | { kind: "pending"; slot: PendingViewSession }
+export type ViewSelection =
+  | { kind: "existing"; sessionID: string }
+  | { kind: "terminal"; terminalSessionID: string }
+  | { kind: "pending"; slot: PendingViewSession }
 export type ViewSessionProjectGroup = { project: ClientCatalogProject; sessions: Session[] }
 
 export function initialViewSelection(view?: ClientCatalogView): ViewSelection[] {
   const selection = [
-    ...(view?.sessionIDs ?? []).map((sessionID): ViewSelection => ({ kind: "existing", sessionID })),
+    ...(view?.members ?? (view?.sessionIDs ?? []).map((id): OpencodeXViewMember => ({ kind: "session", id }))).map((member): ViewSelection => member.kind === "session"
+      ? { kind: "existing", sessionID: member.id }
+      : { kind: "terminal", terminalSessionID: member.id }),
     ...pendingViewSessions(view).map((slot): ViewSelection => ({ kind: "pending", slot })),
   ]
   const byKey = new Map(selection.map((item) => [selectionKey(item), item]))
@@ -30,19 +35,36 @@ export function selectedPendingViewSessions(selection: ViewSelection[]) {
     .map((item) => item.slot)
 }
 
+export function selectedViewMembers(selection: ViewSelection[]) {
+  return selection.flatMap((item): OpencodeXViewMember[] => {
+    if (item.kind === "existing") return [{ kind: "session", id: item.sessionID }]
+    if (item.kind === "terminal") return [{ kind: "terminal", id: item.terminalSessionID }]
+    return []
+  })
+}
+
 export function metadataWithViewSelection(metadata: Record<string, unknown> | undefined, selection: ViewSelection[]) {
   return metadataWithViewPaneOrder(
     metadataWithPendingSessions(metadata, selectedPendingViewSessions(selection)),
-    selection.map((item): ViewPaneOrderItem => item.kind === "existing" ? { kind: "session", id: item.sessionID } : { kind: "pending", id: item.slot.id }),
+    selection.map((item): ViewPaneOrderItem => {
+      if (item.kind === "existing") return { kind: "session", id: item.sessionID }
+      if (item.kind === "terminal") return { kind: "terminal", id: item.terminalSessionID }
+      return { kind: "pending", id: item.slot.id }
+    }),
   )
 }
 
-export function viewTitle(input: { title: string; selection: ViewSelection[]; sessions: Session[] }) {
+export function viewTitle(input: { title: string; selection: ViewSelection[]; sessions: Session[]; terminalSessions?: OpencodeXTerminalSession[] }) {
   const trimmed = input.title.trim()
   if (trimmed) return trimmed
   const sessionIDs = selectedViewSessionIDs(input.selection)
   const first = input.sessions.find((session) => session.id === sessionIDs[0])
   if (first && input.selection.length === 1) return first.title
+  const selection = input.selection[0]
+  const firstTerminal = selection?.kind === "terminal"
+    ? input.terminalSessions?.find((session) => session.id === selection.terminalSessionID)
+    : undefined
+  if (firstTerminal && input.selection.length === 1) return firstTerminal.title
   return `${input.selection.length} session view`
 }
 
@@ -91,5 +113,7 @@ export function groupViewSessionsByProject(input: { sessions: Session[]; project
 }
 
 function selectionKey(item: ViewSelection) {
-  return item.kind === "existing" ? `session:${item.sessionID}` : `pending:${item.slot.id}`
+  if (item.kind === "existing") return `session:${item.sessionID}`
+  if (item.kind === "terminal") return `terminal:${item.terminalSessionID}`
+  return `pending:${item.slot.id}`
 }

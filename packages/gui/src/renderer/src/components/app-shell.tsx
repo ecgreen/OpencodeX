@@ -1,7 +1,7 @@
 import { Button } from "./ui"
 import { Show, Suspense, createEffect, createMemo, onCleanup, onMount } from "solid-js"
-import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiAppModel } from "../controllers/app-model"
+import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { NAV_ITEMS } from "../controllers/navigation-controller"
 import { guiPluginThemeCss } from "../lib/gui-plugins"
 import { projectSessions } from "../lib/app-session-lists"
@@ -12,10 +12,8 @@ import {
   markPerformance,
   measurePerformance,
 } from "../lib/performance"
-import { projectNameForSession } from "../lib/project-name"
 import { shouldShowConnectionWarning } from "../lib/connection-warning"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
-import type { GuiSnapshot } from "../lib/store"
 import { AppLoadingSkeleton } from "./app-loading"
 import { AppRoutes } from "./app-routes"
 import { Titlebar } from "./chrome"
@@ -25,6 +23,7 @@ import { DialogModal } from "./dialog-modal"
 import { KeyboardHelpModal } from "./keyboard-help"
 import { RailSidebar } from "./rail-sidebar"
 import { SessionSwitcherOverlay } from "./session-switcher-overlay"
+import { sessionPaletteTarget, terminalSessionPaletteTarget, titlebarPageLabel } from "./app-shell-palette"
 
 export function AppShell(props: { model: GuiAppModel }) {
   const model = props.model
@@ -37,6 +36,11 @@ export function AppShell(props: { model: GuiAppModel }) {
       RENDERER_PERFORMANCE_MARKS.bootstrap,
       RENDERER_PERFORMANCE_MARKS.appShellMounted,
     )
+    // Deep components (e.g. the terminal surface) request the guided CLI
+    // install without threading dialog access through every layer.
+    const installClaude = () => void model.dialogs.askClaudeInstall()
+    window.addEventListener("opencodex:claude-install", installClaude)
+    onCleanup(() => window.removeEventListener("opencodex:claude-install", installClaude))
   })
   createEffect(() => {
     const ready = !model.authoritative.loading() && !model.authoritative.error()
@@ -70,12 +74,17 @@ export function AppShell(props: { model: GuiAppModel }) {
       ...model.sessionSelection
         .visibleSessions()
         .map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open)),
+      ...snapshot.terminalSessions.map((session) => terminalSessionPaletteTarget(
+        session,
+        model.claudeTerminals.statusLabel(session),
+        (terminalSessionID) => model.navigation.setRoute({ name: "terminal-session", terminalSessionID }),
+      )),
       ...snapshot.projects.map(
         (project): PaletteTarget => ({
           kind: "project",
           id: project.id,
           title: title(project.name ?? project.project.name),
-          subtitle: `${project.sessionIDs.length} sessions`,
+          subtitle: `${project.sessionIDs.length + project.terminalSessions.length} sessions`,
           run: () => model.navigation.setRoute({ name: "projects", projectID: project.id }),
         }),
       ),
@@ -84,7 +93,7 @@ export function AppShell(props: { model: GuiAppModel }) {
           kind: "view",
           id: view.id,
           title: title(view.title),
-          subtitle: `${view.sessionIDs.length} panes`,
+          subtitle: `${view.members.length} panes`,
           run: () => model.navigation.setRoute({ name: "views", viewID: view.id }),
         }),
       ),
@@ -93,9 +102,18 @@ export function AppShell(props: { model: GuiAppModel }) {
   const paletteRecents = createMemo<PaletteTarget[]>(() => {
     const snapshot = model.authoritative.snapshot()
     if (!snapshot) return []
-    return model.sessionSwitcher
+    return [
+      ...model.sessionSwitcher
       .sessions()
-      .map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open))
+      .map((session) => sessionPaletteTarget(snapshot, session, model.sessionActions.open)),
+      ...[...snapshot.terminalSessions]
+        .sort((a, b) => Number(b.timeOpened ?? b.timeUpdated) - Number(a.timeOpened ?? a.timeUpdated))
+        .map((session) => terminalSessionPaletteTarget(
+          session,
+          model.claudeTerminals.statusLabel(session),
+          (terminalSessionID) => model.navigation.setRoute({ name: "terminal-session", terminalSessionID }),
+        )),
+    ]
   })
   const navBadges = createMemo((): Record<string, number> => {
     const snapshot = model.authoritative.snapshot()
@@ -123,6 +141,17 @@ export function AppShell(props: { model: GuiAppModel }) {
         status: status && status !== "dormant" ? sessionStatusLabel(status) : undefined,
         statusTone: status ? sessionStatusTone(status) : undefined,
       }
+    }
+    if (route.name === "terminal-session") {
+      const terminalSession = snapshot?.terminalSessions.find((item) => item.id === route.terminalSessionID)
+      if (terminalSession)
+        return {
+          context: "Sessions",
+          openContext: () => model.navigation.setRoute({ name: "sessions" }),
+          current: title(terminalSession.title),
+          status: "Claude Code",
+          statusTone: "info",
+        }
     }
     if (route.name === "projects" && route.projectID) {
       const project = snapshot?.projects.find((item) => item.id === route.projectID)
@@ -162,6 +191,11 @@ export function AppShell(props: { model: GuiAppModel }) {
         goForward={model.navigation.goForward}
         breadcrumb={breadcrumb()}
         newSession={() => void model.notices.run(() => model.management.createSession())}
+        newClaudeSession={() =>
+          void model.notices.run(async () => {
+            await model.management.createClaudeSession()
+          })
+        }
         newProject={() => void model.notices.run(model.management.createProject)}
         newView={() => void model.notices.run(model.management.createView)}
         newSwarm={() => void model.notices.run(() => model.management.createSwarm())}
@@ -171,22 +205,28 @@ export function AppShell(props: { model: GuiAppModel }) {
         openSwarms={() => model.navigation.setRoute({ name: "swarms" })}
         openViews={() => model.navigation.setRoute({ name: "views" })}
         toggleLeftSidebar={() => model.rail.setCollapsed((collapsed) => !collapsed)}
-        toggleViewSidePanel={model.view.sessions().length > 0 ? model.view.toggleSidePanel : undefined}
+        toggleViewSidePanel={model.view.items().length > 0 ? model.view.toggleSidePanel : undefined}
         openCommandPalette={() => model.overlays.setCommandPaletteOpen(true)}
         openKeyboardHelp={() => model.overlays.setKeyboardHelpOpen(true)}
       />
       <RailSidebar
         snapshot={model.authoritative.snapshot()}
         sessions={model.sessionSelection.visibleSessions()}
+        terminalSessions={model.authoritative.snapshot()?.terminalSessions ?? []}
         hasMoreSessions={model.authoritative.state()?.sessionCards.hasMore ?? false}
         loadingMoreSessions={model.authoritative.state()?.sessionCards.loading ?? false}
         loadMoreSessions={() => void model.notices.run(() => model.authoritative.loadMoreSessionCards().then(() => undefined))}
         pinnedSessions={model.rail.pinnedSessions()}
+        pinnedTerminalSessions={model.rail.pinnedTerminalSessions()}
         pinnedViews={model.rail.pinnedViews()}
         navItems={NAV_ITEMS}
         navBadges={navBadges()}
         activeRouteName={model.navigation.route().name}
         activeSessionID={model.sessionSelection.activeSessionID()}
+        activeTerminalSessionID={(() => {
+          const route = model.navigation.route()
+          return route.name === "terminal-session" ? route.terminalSessionID : ""
+        })()}
         activeViewID={model.view.activeView()?.id}
         railCollapsed={model.rail.collapsed()}
         railWidth={model.rail.width()}
@@ -210,11 +250,15 @@ export function AppShell(props: { model: GuiAppModel }) {
         openSettings={() => model.navigation.setRoute({ name: "settings" })}
         openRoute={(name) => model.navigation.setRoute({ name })}
         openSession={model.sessionActions.open}
+        openTerminalSession={(terminalSessionID) => model.navigation.setRoute(terminalSessionRoute(model.authoritative.snapshot()?.terminalSessions.find((record) => record.id === terminalSessionID), terminalSessionID))}
         openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
         openAllViews={() => model.navigation.setRoute({ name: "views" })}
         createProject={() => void model.notices.run(model.management.createProject)}
         createSession={(projectID, directory) =>
           void model.notices.run(() => model.management.createSession(projectID, directory))
+        }
+        createTerminalSession={(projectID, directory) =>
+          void model.notices.run(async () => { await model.management.createClaudeSession(projectID, directory) })
         }
         createPinnedSession={() => void model.notices.run(model.management.createPinnedSession)}
         createView={() => void model.notices.run(model.management.createView)}
@@ -222,6 +266,9 @@ export function AppShell(props: { model: GuiAppModel }) {
         toggleViewPinned={model.rail.toggleViewPinned}
         renameSession={(session) => void model.notices.run(() => model.sessionActions.rename(session))}
         deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
+        renameTerminalSession={(session) => void model.notices.run(() => model.management.renameClaudeSession(session))}
+        removeTerminalSession={(session) => void model.notices.run(() => model.management.removeClaudeSession(session))}
+        terminalStatus={model.claudeTerminals.statusLabel}
         editView={(viewID) => model.navigation.setRoute({ name: "view-edit", viewID })}
         deleteView={(viewID, name) => void model.notices.run(() => model.capabilities.deleteViewByID(viewID, name))}
         startDrag={model.rail.startDrag}
@@ -309,6 +356,7 @@ export function AppShell(props: { model: GuiAppModel }) {
         sticky={model.sessionSwitcher.sticky()}
         rows={model.sessionSwitcher.rows()}
         snapshot={model.authoritative.snapshot()}
+        terminalStatus={(item) => model.claudeTerminals.statusLabel(item.terminalSession)}
         preview={model.sessionSwitcher.preview}
         filter={model.sessionSwitcher.filter}
         move={model.sessionSwitcher.move}
@@ -339,31 +387,4 @@ export function AppShell(props: { model: GuiAppModel }) {
       <DialogModal dialog={model.dialogs.dialog()} close={model.dialogs.close} />
     </div>
   )
-}
-
-function sessionPaletteTarget(
-  snapshot: GuiSnapshot,
-  session: Session,
-  open: (sessionID: string) => void,
-): PaletteTarget {
-  const status = deriveSessionStatus(snapshot, session)
-  return {
-    kind: "session",
-    id: session.id,
-    title: title(session.title),
-    subtitle: projectNameForSession(snapshot.projects, session),
-    status: sessionStatusLabel(status),
-    statusTone: sessionStatusTone(status),
-    time: session.time.updated,
-    run: () => open(session.id),
-  }
-}
-
-function titlebarPageLabel(routeName: string) {
-  if (routeName === "new-session") return "New session"
-  if (routeName === "swarm-create") return "New swarm"
-  if (routeName === "view-edit") return "Edit view"
-  if (routeName === "diff") return "Diff"
-  const label = routeName.charAt(0).toUpperCase() + routeName.slice(1)
-  return label
 }

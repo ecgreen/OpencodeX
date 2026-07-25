@@ -1,6 +1,13 @@
 import type { Part, PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import type { MessageBundle } from "./store"
+import { arrayValue, collapseWhitespace, isRecordValue, numberValue, stringValue } from "./tool-values"
+
+export { arrayValue, collapseWhitespace, fileBasename, formatElapsed, formatToolValue, isRecordValue, numberValue, pluralize, stringValue } from "./tool-values"
+export { humanizeToolTitle, permissionTitle, toolDisplayTitle } from "./tool-title"
+
+/** One label for every "there is more than we rendered" affordance. */
+export const COPY_FULL_LABEL = "Copy full output"
 
 export const NESTED_TRANSCRIPT_DIFF_OPTIONS = {
   preserveScroll: false,
@@ -58,46 +65,40 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   h: "c",
 }
 
-type ToolTitleBuilder = (input: Record<string, unknown>, metadata: Record<string, unknown>) => string
-type PermissionTitleBuilder = (request: PermissionRequest, input: Record<string, unknown>) => string | undefined
+export type ToolCategory = "search" | "web" | "exec" | "file" | "plan" | "agent" | "generic"
 
-const TOOL_TITLE_BY_ID: Record<string, ToolTitleBuilder | undefined> = {
-  bash: shellTitle,
-  shell: shellTitle,
-  grep: (input, metadata) => `Grep ${quoteValue(input.pattern)}${inPath(input.path)}${countSuffix(metadata.matches, "match")}`,
-  glob: (input, metadata) => `Glob ${quoteValue(input.pattern)}${inPath(input.path)}${countSuffix(metadata.count, "match")}`,
-  read: (input) => fileToolTitle("Read", input),
-  write: (input) => fileToolTitle("Write", input),
-  edit: (input) => fileToolTitle("Edit", input),
-  apply_patch: () => "Patch",
-  todowrite: () => "Update todos",
-  question: (input) => `Ask ${arrayValue(input.questions).length || ""} question${arrayValue(input.questions).length === 1 ? "" : "s"}`.trim(),
-  task: (input) => `${stringValue(input.subagent_type) ?? "General"} task: ${stringValue(input.description) ?? "subagent"}`,
-  webfetch: (input) => `WebFetch ${stringValue(input.url) ?? ""}`.trim(),
-  websearch: (input) => `WebSearch ${quoteValue(input.query)}`,
-  skill: (input) => `Skill ${stringValue(input.name) ?? ""}`.trim(),
-  workspace_open: (input) => stringFieldTitle("Open workspace", input.path) ?? "Open workspace",
-  browser_navigate: (input) => stringFieldTitle("Navigate browser", input.url) ?? "Navigate browser",
-  browser_screenshot: (_input, metadata) => stringFieldTitle("Capture browser", metadata.url) ?? "Capture browser",
-  browser_snapshot: (_input, metadata) => stringFieldTitle("Snapshot browser", metadata.url) ?? "Snapshot browser",
+/**
+ * Drives the accent colour and icon a part gets. Categories are about what the
+ * tool *did*, not which package it came from, so unknown tools stay generic.
+ */
+export function toolCategory(tool: string): ToolCategory {
+  if (tool === "read" || tool === "grep" || tool === "glob" || tool === "list") return "search"
+  if (tool === "webfetch" || tool === "websearch" || tool.startsWith("browser_")) return "web"
+  if (tool === "bash" || tool === "shell") return "exec"
+  if (tool === "edit" || tool === "write" || tool === "apply_patch") return "file"
+  if (tool === "todowrite" || tool === "question" || tool === "plan_exit") return "plan"
+  if (tool === "task" || tool === "skill" || tool === "opencodex_swarm_create") return "agent"
+  return "generic"
 }
 
-const PERMISSION_TITLE_BY_ID: Record<string, PermissionTitleBuilder | undefined> = {
-  edit: (request) => typeof request.metadata.filepath === "string" ? `Edit ${request.metadata.filepath}` : undefined,
-  read: (_request, input) => stringFieldTitle("Read", input.filePath),
-  glob: (_request, input) => stringFieldTitle("Glob", input.pattern),
-  grep: (_request, input) => stringFieldTitle("Grep", input.pattern),
-  list: (_request, input) => stringFieldTitle("List", input.path),
-  bash: (_request, input) => stringValue(input.command),
-  task: (_request, input) => stringFieldTitle("Task:", input.description),
-  webfetch: (_request, input) => stringFieldTitle("WebFetch", input.url),
-  websearch: (_request, input) => stringFieldTitle("WebSearch", input.query),
-  external_directory: () => "Access external directory",
-  doom_loop: () => "Continue after repeated failures",
-  workspace_open: (_request, input) => stringFieldTitle("Open workspace", input.path),
-  browser_navigate: (_request, input) => stringFieldTitle("Navigate browser", input.url),
-  browser_screenshot: (_request, input) => stringFieldTitle("Capture browser", input.url),
-  browser_snapshot: (_request, input) => stringFieldTitle("Snapshot browser", input.url),
+/**
+ * Deliverables and attention states get card chrome; routine evidence stays a
+ * quiet row so a turn with thirty greps is still scannable.
+ */
+export function toolTier(tool: string, status: string): "card" | "row" {
+  if (status === "error") return "card"
+  const category = toolCategory(tool)
+  return category === "file" || category === "plan" ? "card" : "row"
+}
+
+export function toolStateTitle(state: Extract<Part, { type: "tool" }>["state"]) {
+  return "title" in state ? stringValue(state.title) : undefined
+}
+
+/** One-line failure text for collapsed rows and grouped items. */
+export function toolErrorSummary(state: Extract<Part, { type: "tool" }>["state"], max = 120) {
+  const message = toolError(state)
+  return message ? collapseWhitespace(message, max) : ""
 }
 
 export function toolStateInput(state: Extract<Part, { type: "tool" }>["state"]) {
@@ -110,11 +111,6 @@ export function toolVisibleOutput(tool: string, state: Extract<Part, { type: "to
   if (output) return tool === "bash" || tool === "shell" ? stripAnsiBasic(output) : output
   if ((tool === "bash" || tool === "shell") && typeof metadata.output === "string") return stripAnsiBasic(metadata.output)
   return ""
-}
-
-export function toolDisplayTitle(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>, status?: Extract<Part, { type: "tool" }>["state"]["status"]) {
-  if (tool === "todowrite" && status === "error") return "Todo update failed"
-  return TOOL_TITLE_BY_ID[tool]?.(input, metadata) ?? tool
 }
 
 function toolHasRichDetails(tool: string, metadata: Record<string, unknown>, input: Record<string, unknown>) {
@@ -130,7 +126,9 @@ function toolHasRichDetails(tool: string, metadata: Record<string, unknown>, inp
 
 export function toolHasVisibleDetails(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>, output: string, error?: string) {
   if (error) return true
-  if (tool === "read") return false
+  // Read is noisy when it echoes whole files, but the server ships a short
+  // preview - show that rather than an expander that opens onto nothing.
+  if (tool === "read") return Boolean(stringValue(metadata.preview)?.trim())
   if (output.trim()) return true
   if (toolHasRichDetails(tool, metadata, input)) return true
   if (arrayValue(metadata.diagnostics).length > 0) return true
@@ -146,30 +144,6 @@ export function field(label: string, value: unknown) {
   return { label, value }
 }
 
-export function stringValue(value: unknown) {
-  return typeof value === "string" ? value : undefined
-}
-
-export function numberValue(value: unknown) {
-  return typeof value === "number" ? value : undefined
-}
-
-export function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
-export function isRecordValue(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-export function formatToolValue(value: unknown): string {
-  if (typeof value === "string") return value
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
-  if (Array.isArray(value)) return value.map(formatToolValue).join(", ")
-  if (value === null || value === undefined) return ""
-  return JSON.stringify(value)
-}
-
 export function toolPatchTitle(type: string | undefined, name: string, file: Record<string, unknown>) {
   if (type === "delete") return `Deleted ${name}`
   if (type === "add") return `Created ${name}`
@@ -182,13 +156,6 @@ export function formatTodoStatus(status: string | undefined) {
   if (status === "in_progress") return "In progress"
   if (status === "cancelled") return "Cancelled"
   return "Pending"
-}
-
-export function todoStatusIcon(status: string | undefined) {
-  if (status === "completed") return "check"
-  if (status === "in_progress") return "play"
-  if (status === "cancelled") return "x"
-  return
 }
 
 export function languageFromPath(path: string | undefined) {
@@ -268,10 +235,6 @@ export function toolInput(request: PermissionRequest, part?: Extract<Part, { typ
   return request.metadata
 }
 
-export function permissionTitle(request: PermissionRequest, input: Record<string, unknown>) {
-  return PERMISSION_TITLE_BY_ID[request.permission]?.(request, input) ?? request.permission
-}
-
 export function permissionDiff(request: PermissionRequest) {
   if (typeof request.metadata.diff === "string") return request.metadata.diff
 }
@@ -295,35 +258,6 @@ export function shouldVirtualizeDiff(diff: string) {
 
 export function copyFullToolText(text: string, writeText: (value: string) => void | Promise<void> = (value) => navigator.clipboard.writeText(value)) {
   return writeText(text)
-}
-
-function quoteValue(value: unknown) {
-  const text = stringValue(value)
-  return text ? `"${text}"` : ""
-}
-
-function shellTitle(input: Record<string, unknown>) {
-  return stringValue(input.description) ?? stringValue(input.command) ?? "Shell"
-}
-
-function fileToolTitle(action: string, input: Record<string, unknown>) {
-  return `${action} ${stringValue(input.filePath) ?? "file"}`
-}
-
-function stringFieldTitle(label: string, value: unknown) {
-  const text = stringValue(value)
-  return text ? `${label} ${text}` : undefined
-}
-
-function inPath(value: unknown) {
-  const path = stringValue(value)
-  return path ? ` in ${path}` : ""
-}
-
-function countSuffix(value: unknown, noun: string) {
-  const count = numberValue(value)
-  if (!count) return ""
-  return ` (${count} ${noun}${count === 1 ? "" : "es"})`
 }
 
 function isDiffOutput(output: string) {

@@ -16,6 +16,7 @@ export function SessionSideOpenChrome(props: {
   addFile: () => void
   addTerminal: () => void
   addContext: () => void
+  directoryOnly?: boolean
   addWeb: () => void
   setWebInput: (value: string) => void
   openWebInput: () => void
@@ -37,14 +38,14 @@ export function SessionSideOpenChrome(props: {
   return <>
     <Show when={props.tabs.length > 0}>
       <div class="session-open-chrome">
-        <SessionSideTabBar controller={props.controller} addGit={props.addGit} addFile={props.addFile} addTerminal={props.addTerminal} addContext={props.addContext} addWeb={props.addWeb} changedFiles={props.changedFiles} />
+        <SessionSideTabBar controller={props.controller} addGit={props.addGit} addFile={props.addFile} addTerminal={props.addTerminal} addContext={props.addContext} showContext={!props.directoryOnly} addWeb={props.addWeb} changedFiles={props.changedFiles} />
         <Show when={tab()?.kind === "web"}><div class="session-open-bar">
           <IconButton icon="chevronLeft" label="Back" disabled={!tab()?.state?.canGoBack} onClick={() => props.browserAction("back")} />
           <IconButton icon="chevronRight" label="Forward" disabled={!tab()?.state?.canGoForward} onClick={() => props.browserAction("forward")} />
           <IconButton icon={tab()?.state?.loading ? "stop" : "refresh"} label={tab()?.state?.loading ? "Stop loading" : "Refresh"} onClick={() => props.browserAction(tab()?.state?.loading ? "stop" : "reload")} />
           <div class="session-open-location"><Icon name={tab()?.url?.startsWith("https://") ? "lock" : tab()?.url ? "warning" : "browser"} /><TextInput data-embedded="true" aria-label="Web address or search" value={(tab()?.input ?? "").replace(/^https:\/\//i, "")} onInput={(event) => props.setWebInput(event.currentTarget.value)} onKeyDown={(event) => event.key === "Enter" && props.openWebInput()} placeholder="Search or enter address" /></div>
           <IconButton icon="copy" label="Copy URL" disabled={!tab()?.url} onClick={() => void copyWebURL(tab()?.url)} />
-          <IconButton icon="camera" label="Capture webpage for this session" disabled={!tab()?.url} onClick={() => void captureWebpage(props, tab())} />
+          <Show when={!props.directoryOnly}><IconButton icon="camera" label="Capture webpage for this session" disabled={!tab()?.url} onClick={() => void captureWebpage(props, tab())} /></Show>
           <IconButton icon="code" label="Toggle developer tools" disabled={!tab()?.url} onClick={props.browserDevtools} />
           <IconButton icon="external" label="Open in external browser" disabled={!tab()?.url} onClick={props.browserExternal} />
         </div></Show>
@@ -55,7 +56,7 @@ export function SessionSideOpenChrome(props: {
       </div>
     </Show>
     <Show when={tab()?.message}>{(message) => <div class="session-side-message">{message()}</div>}</Show>
-    <Show when={props.agentBrowsing}><div class="session-open-agent-indicator" role="status"><Icon name="activity" />Agent browsing</div></Show>
+    <Show when={!props.directoryOnly && props.agentBrowsing}><div class="session-open-agent-indicator" role="status"><Icon name="activity" />Agent browsing</div></Show>
     <Show when={tab()?.kind === "file" && tab()?.externallyChanged}><div class="session-side-conflict" role="alert"><span>The file changed on disk while this tab has unsaved edits.</span><Button appearance="ghost" onClick={props.keepLocal}>Keep mine</Button><Button appearance="solid" tone="accent" onClick={props.reloadExternal}>Reload disk version</Button></div></Show>
   </>
 }

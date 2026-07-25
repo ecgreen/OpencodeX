@@ -95,6 +95,7 @@ function eventDomain(event: EventV2.Payload): "capabilities" | "catalog" | "oper
     event.type.startsWith("question.") ||
     event.type.startsWith("opencodex.session_state.") ||
     event.type.startsWith("opencodex.project.") ||
+    event.type.startsWith("opencodex.terminal_session.") ||
     event.type.startsWith("opencodex.view.")
   )
     return "catalog"

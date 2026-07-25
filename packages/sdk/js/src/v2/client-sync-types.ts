@@ -20,6 +20,7 @@ import type {
   OpencodeXStateScope,
   OpencodeXStateSnapshot,
   OpencodeXSwarm,
+  OpencodeXTerminalSession,
   Part,
   PermissionRequest,
   Provider,
@@ -90,12 +91,19 @@ export type ClientEnsureSessionCardsOptions = {
   signal?: AbortSignal
 }
 
-export type ClientCatalogProject = OpencodeXCatalogProject & { sessions: Session[] }
-export type ClientCatalogView = OpencodeXCatalogView & { sessions: Session[] }
+export type ClientCatalogProject = OpencodeXCatalogProject & {
+  sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
+}
+export type ClientCatalogView = OpencodeXCatalogView & {
+  sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
+}
 
 export type ClientCatalogSnapshot = {
   projects: ClientCatalogProject[]
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   views: ClientCatalogView[]
   sessionStatus: Record<string, SessionStatus>
   permissions: PermissionRequest[]
@@ -130,6 +138,7 @@ export type ClientStateSyncState = {
   digest?: string
   projects: ClientEntityState<OpencodeXCatalogProject>
   sessions: ClientEntityState<Session>
+  terminalSessions: ClientEntityState<OpencodeXTerminalSession>
   views: ClientEntityState<OpencodeXCatalogView>
   sessionCards: ClientSessionCardPageState
   permissions: ClientEntityState<PermissionRequest>

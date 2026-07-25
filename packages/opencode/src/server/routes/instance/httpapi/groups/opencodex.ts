@@ -15,6 +15,7 @@ export {
   UpdateJobPayload,
   UpdateProjectPayload,
   UpdateSessionStatePayload,
+  UpdateTerminalSessionPayload,
   UpdateViewPayload,
   WorkbenchDataResult,
   WorkbenchChangeDirectory,

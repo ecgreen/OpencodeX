@@ -221,6 +221,8 @@ describe("OpencodeX state HTTP API", () => {
       expect(operations).toContain("opencodex.state.session_cards")
       expect(operations).toContain("opencodex.state.session")
       expect(operations).toContain("opencodex.state.event")
+      expect(operations).toContain("opencodex.terminal_session.create")
+      expect(operations).toContain("opencodex.terminal_session.opened")
       const schemas = record(record(doc).components).schemas
       for (const name of [
         "OpencodeXStateScope",
@@ -242,6 +244,18 @@ describe("OpencodeX state HTTP API", () => {
         ),
       )
       const sessionID = String(record(created).id)
+      const createdTerminal = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, "/experimental/opencodex/terminal-session", {
+            method: "POST",
+            body: JSON.stringify({
+              title: "Claude state test",
+              directory: firstDirectory,
+              installationID: crypto.randomUUID(),
+            }),
+          }).then((response) => response.json()),
+        ),
+      )
       yield* Effect.promise(() =>
         Promise.all([
           request(firstDirectory, `/experimental/opencodex/session-state/${sessionID}`, {
@@ -264,6 +278,11 @@ describe("OpencodeX state HTTP API", () => {
       expect(typeof snapshot.cursor).toBe("string")
       expect(typeof record(record(snapshot.domains).catalog).digest).toBe("string")
       expect(Array.isArray(record(record(record(snapshot.payloads).catalog).sessionCards).items)).toBe(true)
+      expect(
+        (record(record(snapshot.payloads).catalog).terminalSessions as unknown[])
+          .map(record)
+          .find((item) => item.id === createdTerminal.id),
+      ).toMatchObject({ title: "Claude state test", directory: firstDirectory })
       expect(record(record(record(snapshot.payloads).catalog).sessionUiState)[sessionID]).toMatchObject({
         seenAt: 10,
         reviewedFiles: ["src/app.tsx"],
@@ -385,6 +404,16 @@ describe("OpencodeX state HTTP API", () => {
       expect(viewLive.type).toBe("event")
       expect(record(record(viewLive.event).payload).aggregateID).toBe(createdView.id)
       expect(record(record(viewLive.event).payload).eventType).toBe("opencodex.view.created")
+      yield* Effect.promise(() =>
+        request(firstDirectory, `/experimental/opencodex/terminal-session/${createdTerminal.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ expectedTimeUpdated: createdTerminal.timeUpdated, title: "Claude renamed" }),
+        }),
+      )
+      const terminalLive = record(yield* Effect.promise(() => events.next()))
+      expect(record(terminalLive.event).domain).toBe("catalog")
+      expect(record(record(terminalLive.event).payload).aggregateID).toBe(createdTerminal.id)
+      expect(record(record(terminalLive.event).payload).eventType).toBe("opencodex.terminal_session.updated")
       const beforeJob = record(
         yield* Effect.promise(() =>
           request(firstDirectory, "/experimental/opencodex/state").then((value) => value.json()),

@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
 import { Show, createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { compactPath } from "../lib/format"
+import { exitDescription, exitShouldRestart, terminalTheme } from "../lib/terminal-presentation"
 import { Icon } from "./icon"
 import type { OpenTab } from "./session-side-open-types"
 import { IconButton, TextInput } from "./ui"
@@ -19,6 +20,7 @@ type TerminalView = {
   disposeInput: () => void
   openURL: (url: string) => void
   resizeObserver?: ResizeObserver
+  persistent: boolean
 }
 
 const views = new Map<string, TerminalView>()
@@ -227,6 +229,32 @@ export const sessionTerminal = {
   },
 }
 
+export const terminalSurface = {
+  attach(
+    id: string,
+    host: HTMLElement,
+    write: (id: string, data: string) => void,
+    openURL?: (url: string) => void,
+    persistent = false,
+    focus = true,
+  ) {
+    return attach(id, host, write, openURL, persistent, focus)
+  },
+  dispose,
+  ensure(
+    id: string,
+    write: (id: string, data: string) => void,
+    openURL?: (url: string) => void,
+    persistent = false,
+  ) {
+    return ensure(id, write, openURL, persistent)
+  },
+  fit,
+  focus: sessionTerminal.focus,
+  markClosed: sessionTerminal.markClosed,
+  markOpen: sessionTerminal.markOpen,
+}
+
 function cancelRestart(id: string) {
   const timer = restartTimers.get(id)
   if (timer === undefined) return
@@ -234,30 +262,25 @@ function cancelRestart(id: string) {
   restartTimers.delete(id)
 }
 
-function exitDescription(event: { exitCode?: number; signal?: number | string }) {
-  if (typeof event.exitCode === "number") return ` with code ${event.exitCode}`
-  if (event.signal !== undefined) return ` from signal ${event.signal}`
-  return ""
-}
-
-function exitShouldRestart(event: { exitCode?: number; signal?: number | string }) {
-  return event.exitCode === undefined || event.exitCode !== 0 || event.signal !== undefined
-}
-
-function ensure(id: string, write: (id: string, data: string) => void, openURL?: (url: string) => void) {
+function ensure(
+  id: string,
+  write: (id: string, data: string) => void,
+  openURL?: (url: string) => void,
+  persistent = false,
+) {
   const existing = views.get(id)
   if (existing) {
     if (openURL) existing.openURL = openURL
+    if (persistent) existing.persistent = true
     views.delete(id)
     views.set(id, existing)
     return existing
   }
   if (views.size >= TERMINAL_VIEW_LIMIT) {
-    const oldest = views.keys().next().value
-    if (oldest) {
-      dispose(oldest)
-      void window.opencodex?.terminal?.destroy(oldest).catch(() => undefined)
-    }
+    const oldest = [...views].find(([, view]) => !view.persistent)?.[0]
+    if (!oldest) throw new Error("This window already has the maximum of 8 terminals open.")
+    dispose(oldest)
+    void window.opencodex?.terminal?.destroy(oldest).catch(() => undefined)
   }
   ensureThemeSync()
   const terminal = new Terminal({
@@ -299,6 +322,7 @@ function ensure(id: string, write: (id: string, data: string) => void, openURL?:
       resize.dispose()
       links.dispose()
     },
+    persistent,
   }
   views.set(id, view)
   return view
@@ -313,30 +337,24 @@ function ensureThemeSync() {
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
 }
 
-function terminalTheme() {
-  const style = getComputedStyle(document.documentElement)
-  const color = (name: string) => style.getPropertyValue(name).trim()
-  const dark = style.colorScheme.includes("dark")
-  return {
-    background: color("--theme-canvas"), foreground: color("--theme-text"), cursor: color("--theme-accent"), cursorAccent: color("--theme-canvas"),
-    selectionBackground: color("--theme-accent-soft"), selectionForeground: color("--theme-text"), selectionInactiveBackground: color("--theme-overlay-medium"),
-    black: color(dark ? "--theme-text-muted" : "--theme-text"), red: color("--theme-danger"), green: color("--theme-success"), yellow: color("--theme-warning"),
-    blue: color("--theme-info"), magenta: color("--theme-special"), cyan: color("--theme-syntax-type"), white: color(dark ? "--theme-text" : "--theme-text-muted"),
-    brightBlack: color("--theme-text-subtle"), brightRed: color("--theme-danger"), brightGreen: color("--theme-success"), brightYellow: color("--theme-warning"),
-    brightBlue: color("--theme-info"), brightMagenta: color("--theme-special"), brightCyan: color("--theme-syntax-type"), brightWhite: color("--theme-text"),
-  }
-}
-
-function attach(id: string, host: HTMLElement, write: (id: string, data: string) => void) {
-  const view = ensure(id, write)
+function attach(
+  id: string,
+  host: HTMLElement,
+  write: (id: string, data: string) => void,
+  openURL?: (url: string) => void,
+  persistent = false,
+  focus = true,
+) {
+  const view = ensure(id, write, openURL, persistent)
   if (view.terminal.element) host.append(view.terminal.element)
   else view.terminal.open(host)
   view.resizeObserver?.disconnect()
   view.resizeObserver = new ResizeObserver(() => fit(id))
   view.resizeObserver.observe(host)
+  // Panes re-attach on reorder; only the focused one may claim the keyboard.
   queueMicrotask(() => {
     fit(id)
-    view.terminal.focus()
+    if (focus) view.terminal.focus()
   })
   return () => {
     view.resizeObserver?.disconnect()

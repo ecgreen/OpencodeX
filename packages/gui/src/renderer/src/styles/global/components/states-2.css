@@ -102,23 +102,6 @@
   animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
 }
 
-.part.text [data-component=markdown] pre {
-  margin: 0 0 12px;
-  padding: 12px;
-  overflow: visible;
-  max-height: none;
-  white-space: pre-wrap;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0;
-  background: var(--element);
-}
-
-.part.text [data-component=markdown] code {
-  padding: 2px 4px;
-  border-radius: 0;
-  background: var(--element);
-}
-
 .variant-trigger:before {
   content: "";
   flex: 0 0 auto;

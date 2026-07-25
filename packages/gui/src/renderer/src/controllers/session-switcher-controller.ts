@@ -1,19 +1,26 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
+import type { createNavigationController } from "./navigation-controller"
 import type { createSessionActionsController } from "./session-actions-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
 import { displayMessageText } from "../lib/message-text"
+import { isTerminalSessionRecordID } from "./claude-terminal-controller"
 import { initialMruCursor, loadMruSessions, moveMruCursor, mruSessionCandidates, pruneMruSessions, saveMruSessions, touchMruSession } from "../lib/mru-sessions"
 import { textPart } from "../lib/session-composer-helpers"
 import type { MessageBundle } from "../lib/store-types"
 
 export type SwitcherPreviewRow = { role: string; text: string }
+export type SwitcherSessionItem =
+  | { kind: "session"; id: string; title: string; projectID?: string; directory: string; time: { updated: number }; timeUpdated: number; session: Session }
+  | { kind: "terminal"; id: string; title: string; projectID?: string; directory: string; time: { updated: number }; timeUpdated: number; terminalSession: OpencodeXTerminalSession }
 
 const PREVIEW_MESSAGE_LIMIT = 4
 const PREVIEW_TEXT_LIMIT = 280
 
 export function createSessionSwitcherController(input: {
   authoritative: ReturnType<typeof createAuthoritativeStateController>
+  navigation: ReturnType<typeof createNavigationController>
   selection: ReturnType<typeof createSessionSelectionController>
   sessionActions: ReturnType<typeof createSessionActionsController>
 }) {
@@ -24,7 +31,8 @@ export function createSessionSwitcherController(input: {
   const [sticky, setSticky] = createSignal(false)
 
   createEffect(() => {
-    const sessionID = input.selection.activeSessionID()
+    const route = input.navigation.route()
+    const sessionID = route.name === "terminal-session" ? route.terminalSessionID : input.selection.activeSessionID()
     if (!sessionID || sessionID.startsWith("pending:")) return
     setMru((list) => persist(touchMruSession(list, sessionID)))
   })
@@ -33,27 +41,59 @@ export function createSessionSwitcherController(input: {
     const state = input.authoritative.state()
     if (!state) return
     const missing = state.tombstones.sessions
+    const terminalSessionIDs = new Set(input.authoritative.snapshot()?.terminalSessions.map((session) => session.id) ?? [])
     setMru((list) => {
-      const validIDs = new Set(list.filter((sessionID) => !missing[sessionID]))
+      const validIDs = new Set(list.filter((sessionID) => isTerminalSessionRecordID(sessionID) ? terminalSessionIDs.has(sessionID) : !missing[sessionID]))
       const next = pruneMruSessions(list, validIDs)
       return next === list ? list : persist(next)
     })
   })
 
   const sessions = createMemo(() => mruSessionCandidates(mru(), input.authoritative.snapshot()?.sessions ?? []))
+  const items = createMemo<SwitcherSessionItem[]>(() => {
+    const normal = sessions().map((session): SwitcherSessionItem => ({
+      kind: "session",
+      id: session.id,
+      title: session.title,
+      projectID: session.projectID,
+      directory: session.directory,
+      time: { updated: session.time.updated },
+      timeUpdated: session.time.updated,
+      session,
+    }))
+    const terminal = (input.authoritative.snapshot()?.terminalSessions ?? []).map((terminalSession): SwitcherSessionItem => ({
+      kind: "terminal",
+      id: terminalSession.id,
+      title: terminalSession.title,
+      projectID: terminalSession.projectID,
+      directory: terminalSession.directory,
+      time: { updated: Number(terminalSession.timeOpened ?? terminalSession.timeUpdated) },
+      timeUpdated: Number(terminalSession.timeOpened ?? terminalSession.timeUpdated),
+      terminalSession,
+    }))
+    const byID = new Map([...normal, ...terminal].map((item) => [item.id, item]))
+    const recent = mru().flatMap((id) => byID.get(id) ?? [])
+    const included = new Set(recent.map((item) => item.id))
+    return [...recent, ...[...normal, ...terminal].filter((item) => !included.has(item.id))]
+  })
 
   const rows = createMemo(() => {
     const needle = query().trim().toLowerCase()
-    if (!needle) return sessions()
-    return sessions().filter((session) => session.title.toLowerCase().includes(needle))
+    if (!needle) return items()
+    return items().filter((session) => [session.title, session.directory, session.kind === "terminal" ? "claude code" : "opencode"].some((value) => value.toLowerCase().includes(needle)))
   })
+
+  const activeSessionID = () => {
+    const route = input.navigation.route()
+    return route.name === "terminal-session" ? route.terminalSessionID : input.selection.activeSessionID()
+  }
 
   function cycle(direction: 1 | -1) {
     if (!open()) {
       setOpen(true)
       setSticky(false)
       setQuery("")
-      setCursor(initialMruCursor(input.selection.activeSessionID(), rows().map((session) => session.id), direction))
+      setCursor(initialMruCursor(activeSessionID(), rows().map((session) => session.id), direction))
       return
     }
     setCursor((current) => moveMruCursor(current, direction, rows().length))
@@ -63,7 +103,11 @@ export function createSessionSwitcherController(input: {
     const session = rows()[index]
     setOpen(false)
     setSticky(false)
-    if (!session || session.id === input.selection.activeSessionID()) return
+    if (!session || session.id === activeSessionID()) return
+    if (session.kind === "terminal") {
+      input.navigation.setRoute({ name: "terminal-session", terminalSessionID: session.id })
+      return
+    }
     input.sessionActions.open(session.id)
   }
 
@@ -72,8 +116,12 @@ export function createSessionSwitcherController(input: {
   }
 
   function jumpToIndex(index: number) {
-    const session = sessions()[index]
-    if (!session || session.id === input.selection.activeSessionID()) return
+    const session = items()[index]
+    if (!session || session.id === activeSessionID()) return
+    if (session.kind === "terminal") {
+      input.navigation.setRoute({ name: "terminal-session", terminalSessionID: session.id })
+      return
+    }
     input.sessionActions.open(session.id)
   }
 
@@ -91,6 +139,7 @@ export function createSessionSwitcherController(input: {
   }
 
   function preview(sessionID: string): SwitcherPreviewRow[] {
+    if (isTerminalSessionRecordID(sessionID)) return []
     const data = input.authoritative.selectedSessionDataCache()[sessionID]?.data
     if (!data) return []
     return data.messages
@@ -117,6 +166,7 @@ export function createSessionSwitcherController(input: {
     filter,
     rows,
     sessions,
+    items,
     cycle,
     openSearch,
     move,

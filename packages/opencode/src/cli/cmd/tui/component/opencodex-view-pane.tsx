@@ -34,6 +34,7 @@ function ViewPane(props: {
   const themeState = useTheme()
   const [ref, setRef] = createSignal<PromptRef>()
   const session = createMemo(() => (props.item.kind === "session" ? props.item.session : undefined))
+  const terminal = createMemo(() => (props.item.kind === "terminal" ? props.item.terminal : undefined))
   const pending = createMemo(() => (props.item.kind === "pending" ? props.item.slot : undefined))
   const id = createMemo(() => viewItemID(props.item))
   const messages = createMemo(() => (session() ? (sync.data.message[session()!.id] ?? []) : []))
@@ -98,65 +99,80 @@ function ViewPane(props: {
           attributes={props.focused() ? TextAttributes.BOLD : undefined}
           fg={props.focused() ? themeState.theme.primary : themeState.theme.text}
         >
-          {truncateViewText(session()?.title ?? "New session", 42)}
+          {truncateViewText(session()?.title ?? terminal()?.title ?? "New session", 42)}
         </text>
-        <text fg={statusColor(status())}>{statusLabel(status())}</text>
+        <text fg={terminal() ? themeState.theme.textMuted : statusColor(status())}>
+          {terminal() ? "CLAUDE CODE" : statusLabel(status())}
+        </text>
       </box>
       <scrollbox flexGrow={1} minHeight={0} paddingLeft={1} paddingRight={1} stickyScroll={true} stickyStart="bottom">
         <Show
-          when={recent().length}
+          when={terminal()}
           fallback={
-            <text fg={themeState.theme.textMuted}>
-              {pending() ? "This pane will create a session when you send a prompt." : "No messages yet."}
-            </text>
+            <Show
+              when={recent().length}
+              fallback={
+                <text fg={themeState.theme.textMuted}>
+                  {pending() ? "This pane will create a session when you send a prompt." : "No messages yet."}
+                </text>
+              }
+            >
+              <For each={recent()}>
+                {(message) => {
+                  const text = createMemo(() => viewMessageText(message, sync.data.part[message.id] ?? []))
+                  return (
+                    <Show when={text()}>
+                      <box flexShrink={0} flexDirection="column" paddingBottom={1}>
+                        <text fg={message.role === "user" ? themeState.theme.primary : themeState.theme.textMuted}>
+                          {message.role === "user" ? "You" : "Assistant"}
+                        </text>
+                        <text fg={themeState.theme.text}>{truncateViewText(text(), 800)}</text>
+                      </box>
+                    </Show>
+                  )
+                }}
+              </For>
+            </Show>
           }
         >
-          <For each={recent()}>
-            {(message) => {
-              const text = createMemo(() => viewMessageText(message, sync.data.part[message.id] ?? []))
-              return (
-                <Show when={text()}>
-                  <box flexShrink={0} flexDirection="column" paddingBottom={1}>
-                    <text fg={message.role === "user" ? themeState.theme.primary : themeState.theme.textMuted}>
-                      {message.role === "user" ? "You" : "Assistant"}
-                    </text>
-                    <text fg={themeState.theme.text}>{truncateViewText(text(), 800)}</text>
-                  </box>
-                </Show>
-              )
-            }}
-          </For>
+          <box flexDirection="column" gap={1}>
+            <text fg={themeState.theme.text}>Claude Code session</text>
+            <text fg={themeState.theme.textMuted}>Open this pane in OpencodeX Desktop to use its terminal.</text>
+            <text fg={themeState.theme.textMuted}>Claude Code owns authentication and conversation history.</text>
+          </box>
         </Show>
       </scrollbox>
-      <box flexShrink={0} paddingLeft={1} paddingRight={1}>
-        <Show when={props.focused() && permissions().length}>
-          <PermissionPrompt request={permissions()[0]} />
-        </Show>
-        <Show when={props.focused() && !permissions().length && questions().length}>
-          <QuestionPrompt request={questions()[0]} />
-        </Show>
-        <Prompt
-          ref={setRef}
-          sessionID={session()?.id}
-          disabled={!props.focused()}
-          useSessionContext={props.item.kind === "session"}
-          draftKey={`opencodex-view:${props.viewID}:${id()}`}
-          createSession={pending() ? createSession : undefined}
-          onSessionCreated={
-            pending()
-              ? async (created) => {
-                  const slot = pending()
-                  if (slot) await props.onSessionCreated(slot, created)
-                }
-              : undefined
-          }
-          stayOnSessionCreated={props.item.kind === "pending"}
-          showPlaceholder={props.focused()}
-        />
-      </box>
+      <Show when={!terminal()}>
+        <box flexShrink={0} paddingLeft={1} paddingRight={1}>
+          <Show when={props.focused() && permissions().length}>
+            <PermissionPrompt request={permissions()[0]} />
+          </Show>
+          <Show when={props.focused() && !permissions().length && questions().length}>
+            <QuestionPrompt request={questions()[0]} />
+          </Show>
+          <Prompt
+            ref={setRef}
+            sessionID={session()?.id}
+            disabled={!props.focused()}
+            useSessionContext={props.item.kind === "session"}
+            draftKey={`opencodex-view:${props.viewID}:${id()}`}
+            createSession={pending() ? createSession : undefined}
+            onSessionCreated={
+              pending()
+                ? async (created) => {
+                    const slot = pending()
+                    if (slot) await props.onSessionCreated(slot, created)
+                  }
+                : undefined
+            }
+            stayOnSessionCreated={props.item.kind === "pending"}
+            showPlaceholder={props.focused()}
+          />
+        </box>
+      </Show>
       <box flexShrink={0} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="space-between">
         <text fg={themeState.theme.textMuted}>
-          {truncateViewText(session()?.directory ?? pending()?.directory ?? "No project", 52)}
+          {truncateViewText(session()?.directory ?? terminal()?.directory ?? pending()?.directory ?? "No project", 52)}
         </text>
         <Show when={session()}>
           {(current) => (

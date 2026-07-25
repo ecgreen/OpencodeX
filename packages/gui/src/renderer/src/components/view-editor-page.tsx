@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, OpencodeXViewMember, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { JSX } from "solid-js"
 import { For, Show, createMemo, createSignal } from "solid-js"
@@ -9,18 +9,20 @@ import {
   groupViewSessionsByProject,
   initialViewSelection,
   metadataWithViewSelection,
-  selectedViewSessionIDs,
+  selectedViewMembers,
   viewTitle,
   type ViewSelection,
 } from "../lib/view-actions"
 import { Icon } from "./icon"
-import { Button, Checkbox, IconButton, InlineNotice, SearchField, TextField } from "./ui"
+import { Button, Checkbox, IconButton, InlineNotice, SearchField, StatusBadge, TextField } from "./ui"
 
 export function ViewEditorPage(props: {
   view?: ClientCatalogView
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   projects: GuiSnapshot["projects"]
-  save: (input: { viewID?: string; title: string; sessionIDs: string[]; metadata?: Record<string, unknown> }) => void | Promise<void>
+  createTerminalSession: () => Promise<OpencodeXTerminalSession | undefined>
+  save: (input: { viewID?: string; title: string; members: OpencodeXViewMember[]; metadata?: Record<string, unknown> }) => void | Promise<void>
   cancel: () => void
 }) {
   const [viewName, setViewName] = createSignal(props.view?.title ?? "")
@@ -28,16 +30,18 @@ export function ViewEditorPage(props: {
   const [error, setError] = createSignal("")
   const [saving, setSaving] = createSignal(false)
   const [sessionQuery, setSessionQuery] = createSignal("")
-  const selectedIDs = createMemo(() => new Set(selectedViewSessionIDs(selection())))
+  const selectedIDs = createMemo(() => new Set(selectedViewMembers(selection()).map((member) => member.id)))
   const atPaneLimit = createMemo(() => selection().length >= 8)
   const editing = createMemo(() => props.view !== undefined)
   const [collapsedSessionGroups, setCollapsedSessionGroups] = createSignal<Record<string, boolean>>({})
   const groupedSessions = createMemo(() => groupViewSessionsByProject({ sessions: props.sessions, projects: props.projects }))
   const filteredGroups = createMemo(() => filterSessionGroups(groupedSessions(), sessionQuery()))
-  const hasAvailableSessions = createMemo(() => filteredGroups().projects.length > 0 || filteredGroups().unprojected.length > 0)
+  const filteredTerminalSessions = createMemo(() => props.terminalSessions.filter((session) => terminalSessionMatchesQuery(session, sessionQuery())))
+  const hasAvailableSessions = createMemo(() => filteredGroups().projects.length > 0 || filteredGroups().unprojected.length > 0 || filteredTerminalSessions().length > 0)
   const selectedPanes = createMemo(() => selection().map((item) => ({
     item,
     session: item.kind === "existing" ? props.sessions.find((session) => session.id === item.sessionID) : undefined,
+    terminalSession: item.kind === "terminal" ? props.terminalSessions.find((session) => session.id === item.terminalSessionID) : undefined,
   })))
 
   function toggleSession(sessionID: string) {
@@ -51,6 +55,31 @@ export function ViewEditorPage(props: {
       return
     }
     setSelection((current) => [...current, { kind: "existing", sessionID }])
+  }
+
+  function toggleTerminalSession(terminalSessionID: string) {
+    setError("")
+    if (selectedIDs().has(terminalSessionID)) {
+      setSelection((current) => current.filter((item) => item.kind !== "terminal" || item.terminalSessionID !== terminalSessionID))
+      return
+    }
+    if (selection().length >= 8) {
+      setError("A view can include at most eight panes.")
+      return
+    }
+    setSelection((current) => [...current, { kind: "terminal", terminalSessionID }])
+  }
+
+  async function createTerminalSession() {
+    if (selection().length >= 8) {
+      setError("A view can include at most eight panes.")
+      return
+    }
+    const terminalSession = await props.createTerminalSession()
+    if (!terminalSession) return
+    setSelection((current) => current.length >= 8
+      ? current
+      : [...current, { kind: "terminal", terminalSessionID: terminalSession.id }])
   }
 
   function addPending(projectID?: string) {
@@ -77,6 +106,10 @@ export function ViewEditorPage(props: {
     setSelection((current) => current.filter((item) => item.kind !== "existing" || item.sessionID !== sessionID))
   }
 
+  function removeTerminal(terminalSessionID: string) {
+    setSelection((current) => current.filter((item) => item.kind !== "terminal" || item.terminalSessionID !== terminalSessionID))
+  }
+
   function movePane(index: number, offset: number) {
     const target = index + offset
     if (target < 0 || target >= selection().length) return
@@ -98,8 +131,8 @@ export function ViewEditorPage(props: {
     try {
       await props.save({
         viewID: props.view?.id,
-        title: viewTitle({ title: viewName(), selection: selection(), sessions: props.sessions }),
-        sessionIDs: selectedViewSessionIDs(selection()),
+        title: viewTitle({ title: viewName(), selection: selection(), sessions: props.sessions, terminalSessions: props.terminalSessions }),
+        members: selectedViewMembers(selection()),
         metadata: metadataWithViewSelection(props.view?.metadata, selection()),
       })
     } catch (cause) {
@@ -133,8 +166,11 @@ export function ViewEditorPage(props: {
                 <article class="selected-pane-row">
                   <span>{index() + 1}</span>
                   <div>
-                    <strong>{pane.item.kind === "existing" ? title(pane.session?.title) : "New session"}</strong>
-                    <small>{pane.item.kind === "existing" ? compactPath(pane.session?.directory) : pane.item.slot.projectLabel ?? "No project"}</small>
+                    <span class="selected-pane-title">
+                      <strong>{pane.item.kind === "existing" ? title(pane.session?.title) : pane.item.kind === "terminal" ? title(pane.terminalSession?.title) : "New session"}</strong>
+                      <Show when={pane.item.kind === "terminal"}><StatusBadge status="info">Claude Code</StatusBadge></Show>
+                    </span>
+                    <small>{pane.item.kind === "existing" ? compactPath(pane.session?.directory) : pane.item.kind === "terminal" ? compactPath(pane.terminalSession?.directory) : pane.item.slot.projectLabel ?? "No project"}</small>
                   </div>
                   <div class="selected-pane-actions">
                     <IconButton appearance="ghost" size="compact" icon="arrowUp" label={`Move pane ${index() + 1} up`} disabled={index() === 0} onClick={() => movePane(index(), -1)} />
@@ -145,7 +181,7 @@ export function ViewEditorPage(props: {
                       tone="danger"
                       icon="trash"
                       label={`Remove pane ${index() + 1}`}
-                      onClick={() => pane.item.kind === "existing" ? removeExisting(pane.item.sessionID) : removePending(pane.item.slot.id)}
+                      onClick={() => pane.item.kind === "existing" ? removeExisting(pane.item.sessionID) : pane.item.kind === "terminal" ? removeTerminal(pane.item.terminalSessionID) : removePending(pane.item.slot.id)}
                     />
                   </div>
                 </article>
@@ -159,6 +195,7 @@ export function ViewEditorPage(props: {
               <For each={props.projects.slice(0, 3)}>
                 {(project) => <Button size="compact" icon="plus" disabled={atPaneLimit()} onClick={() => addPending(project.id)}><span class="pending-pane-button-label">{title(project.name ?? project.project.name)}</span></Button>}
               </For>
+              <Button size="compact" appearance="outline" disabled={atPaneLimit()} onClick={() => void createTerminalSession()}>New Claude Code session</Button>
             </div>
           </section>
           <section class="view-editor-submit-panel">
@@ -180,6 +217,22 @@ export function ViewEditorPage(props: {
           </header>
           <Show when={hasAvailableSessions()} fallback={<div class="empty">No sessions available.</div>}>
             <div class="view-session-groups">
+              <Show when={filteredTerminalSessions().length > 0}>
+                <ViewSessionGroup
+                  id="terminal"
+                  title="Claude Code"
+                  count={filteredTerminalSessions().length}
+                  collapsed={collapsedSessionGroups().terminal}
+                  toggle={toggleSessionGroup}
+                >
+                  <ViewTerminalSessionGrid
+                    sessions={filteredTerminalSessions()}
+                    selectedIDs={selectedIDs()}
+                    limitReached={atPaneLimit()}
+                    toggleSession={toggleTerminalSession}
+                  />
+                </ViewSessionGroup>
+              </Show>
               <For each={filteredGroups().projects}>
                 {(group) => {
                   const groupID = () => `project:${group.project.id}`
@@ -234,6 +287,12 @@ function sessionMatchesQuery(session: Session, query: string) {
   ].some((item) => (item ?? "").toLowerCase().includes(query))
 }
 
+function terminalSessionMatchesQuery(session: OpencodeXTerminalSession, query: string) {
+  const value = query.trim().toLowerCase()
+  if (!value) return true
+  return [session.title, session.directory, session.id, "claude code"].some((item) => item.toLowerCase().includes(value))
+}
+
 function ViewSessionGroup(props: {
   id: string
   title: string
@@ -280,6 +339,39 @@ function ViewSessionGrid(props: {
                 <span class="view-session-card-copy">
                   <strong>{title(session.title)}</strong>
                   <small>{compactPath(session.directory)} - {formatRelative(session.time.updated)}</small>
+                </span>
+                <Show when={selected()}><small class="view-session-selected">selected</small></Show>
+              </>}
+            />
+          )
+        }}
+      </For>
+    </div>
+  )
+}
+
+function ViewTerminalSessionGrid(props: {
+  sessions: OpencodeXTerminalSession[]
+  selectedIDs: Set<string>
+  limitReached: boolean
+  toggleSession: (terminalSessionID: string) => void
+}) {
+  return (
+    <div class="view-session-grid">
+      <For each={props.sessions}>
+        {(session) => {
+          const selected = createMemo(() => props.selectedIDs.has(session.id))
+          const disabled = createMemo(() => props.limitReached && !selected())
+          return (
+            <Checkbox
+              class="view-session-card view-session-row"
+              checked={selected()}
+              disabled={disabled()}
+              onChange={() => props.toggleSession(session.id)}
+              label={<>
+                <span class="view-session-card-copy">
+                  <span class="selected-pane-title"><strong>{title(session.title)}</strong><StatusBadge status="info">Claude Code</StatusBadge></span>
+                  <small>{compactPath(session.directory)} - {formatRelative(Number(session.timeUpdated))}</small>
                 </span>
                 <Show when={selected()}><small class="view-session-selected">selected</small></Show>
               </>}

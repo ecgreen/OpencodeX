@@ -1,26 +1,23 @@
 import { Button } from "./ui"
-import { CodeBlock } from "@opencode-ai/ui/code-block"
-import { File as FileDiffView } from "@opencode-ai/ui/file"
-import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput, type ToolOutputPreviewLimits } from "@opencode-ai/ui/tool-output-preview"
+import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import {
   arrayValue,
   collapseDiffOutput,
   collapseLineOutput,
+  COPY_FULL_LABEL,
   copyFullToolText,
   field,
-  formatTodoStatus,
   formatToolValue,
   isRecordValue,
   languageFromPath,
-  NESTED_TRANSCRIPT_DIFF_OPTIONS,
   numberValue,
-  patchContents,
   stringValue,
-  todoStatusIcon,
-  toolPatchTitle,
 } from "../lib/tool-display"
-import { DisclosureChevron, Icon } from "./icon"
+import { Icon } from "./icon"
+import { ToolDiffs } from "./session-tool-diff"
+import { ToolCodeBlock, ToolPreviewText } from "./session-tool-text"
+import { TodoList } from "./session-todo-list"
 
 export function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string; showGenericOutput: boolean; patchPending?: boolean }) {
   const diagnostics = createMemo(() => arrayValue(props.metadata.diagnostics))
@@ -34,7 +31,7 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
           <ToolOutput output={props.output} maxLines={15} compact />
         </Match>
         <Match when={props.tool === "read"}>
-          <></>
+          <ToolReadPreview input={props.input} metadata={props.metadata} />
         </Match>
         <Match when={props.tool === "write"}>
           <Show when={stringValue(props.input.content)}>
@@ -72,9 +69,39 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
         </Match>
       </Switch>
       <Show when={props.error}>
-        {(error) => <ToolPreviewText text={error()} class="tool-error" copyLabel="Copy full error" />}
+        {(error) => <ToolPreviewText text={error()} class="tool-error" />}
       </Show>
     </div>
+  )
+}
+
+/**
+ * The server already ships a short head-of-file preview; showing it is what
+ * makes a read row worth expanding instead of opening onto nothing.
+ */
+function ToolReadPreview(props: { input: Record<string, unknown>; metadata: Record<string, unknown> }) {
+  const preview = createMemo(() => stringValue(props.metadata.preview)?.trimEnd() ?? "")
+  const range = createMemo(() => {
+    const offset = numberValue(props.input.offset)
+    const limit = numberValue(props.input.limit)
+    if (offset === undefined && limit === undefined) return ""
+    const start = (offset ?? 0) + 1
+    return limit === undefined ? `from line ${start}` : `lines ${start}-${start + limit - 1}`
+  })
+  return (
+    <Show when={preview()}>
+      {(code) => (
+        <>
+          <Show when={range()}>
+            {(caption) => <p class="tool-read-range">{caption()}</p>}
+          </Show>
+          <ToolCodeBlock class="tool-code" language={languageFromPath(stringValue(props.input.filePath))} code={code()} />
+          <Show when={props.metadata.truncated === true}>
+            <p class="tool-read-range">Preview truncated</p>
+          </Show>
+        </>
+      )}
+    </Show>
   )
 }
 
@@ -144,10 +171,10 @@ function ToolOutput(props: { output: string; maxLines?: number; compact?: boolea
           </For>
         </pre>
         <Show when={collapsed().overflow}>
-          <Button appearance="ghost" type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? "Click to collapse" : "Click to expand"}</Button>
+          <Button appearance="ghost" type="button" aria-expanded={expanded()} onClick={() => setExpanded((value) => !value)}>{expanded() ? "Show less" : "Show more"}</Button>
         </Show>
         <Show when={expandedPreview().truncated}>
-          <Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>Copy full output</Button>
+          <Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>{COPY_FULL_LABEL}</Button>
         </Show>
       </div>
     </Show>
@@ -172,144 +199,6 @@ function linkToolOutput(value: string) {
   return parts
 }
 
-export function ToolCodeBlock(props: { code: string; language?: string; class?: string }) {
-  const preview = createMemo(() => previewToolOutput(props.code, TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
-  return <><CodeBlock class={props.class} language={props.language || "text"} code={preview().text} /><Show when={preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.code)}>Copy full content</Button></Show></>
-}
-
-export function ToolPreviewText(props: { text: string; class?: string; copyLabel?: string; limits?: ToolOutputPreviewLimits }) {
-  const preview = createMemo(() => previewToolOutput(props.text, props.limits ?? TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
-  return <><pre class={props.class}>{preview().text}</pre><Show when={preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.text)}>{props.copyLabel ?? "Copy full content"}</Button></Show></>
-}
-
-function ToolDiffs(props: { input: Record<string, unknown>; metadata: Record<string, unknown>; collapsibleFiles?: boolean }) {
-  const files = createMemo(() => arrayValue(props.metadata.files).filter(isRecordValue))
-  const collapsible = createMemo(() => props.collapsibleFiles === true && files().length > 1)
-  return (
-    <>
-      <Show when={files().length === 0 ? stringValue(props.metadata.diff) : undefined}>
-        {(diff) => <ToolDiff title={stringValue(props.input.filePath) ?? "patch"} diff={diff()} filePath={stringValue(props.input.filePath)} />}
-      </Show>
-      <For each={files()}>
-        {(file) => {
-          const patch = stringValue(file.patch)
-          const name = stringValue(file.relativePath) ?? stringValue(file.filePath) ?? stringValue(file.movePath) ?? "file"
-          const filePath = stringValue(file.filePath) ?? stringValue(file.movePath) ?? name
-          const type = stringValue(file.type)
-          return (
-            <Show when={patch || type === "delete"}>
-              <Show when={patch} fallback={<ToolDeletedLines title={toolPatchTitle(type, name, file)} filePath={filePath} deletions={numberValue(file.deletions) ?? 0} collapsible={collapsible()} />}>
-                {(diff) => <ToolDiff title={toolPatchTitle(type, name, file)} diff={diff()} filePath={filePath} collapsible={collapsible()} />}
-              </Show>
-            </Show>
-          )
-        }}
-      </For>
-    </>
-  )
-}
-
-function ToolDiff(props: { title: string; diff: string; filePath?: string; collapsible?: boolean }) {
-  const preview = createMemo(() => previewToolOutput(props.diff, TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
-  const contents = createMemo(() => patchContents(preview().text, props.filePath ?? props.title))
-  const [expanded, setExpanded] = createSignal(true)
-  const body = () => (
-    <div class="tool-unified-patch">
-      <Show when={contents()} fallback={<ToolCodeBlock language="diff" code={props.diff} />}>
-        {(value) => (
-          <>
-            <FileDiffView
-              mode="diff"
-              before={value().before}
-              after={value().after}
-              diffStyle="unified"
-              overflow="scroll"
-              hunkSeparators="simple"
-              {...NESTED_TRANSCRIPT_DIFF_OPTIONS}
-            />
-            <Show when={preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.diff)}>Copy full patch</Button></Show>
-          </>
-        )}
-      </Show>
-    </div>
-  )
-  return (
-    <section class="tool-diff">
-      <Show when={props.collapsible} fallback={<><ToolDiffHeader title={props.title} filePath={props.filePath} />{body()}</>}>
-        <details class="tool-file-diff-collapse" open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-          <summary class="tool-file-diff-header">
-            <ToolDiffHeaderContent title={props.title} filePath={props.filePath} disclosure />
-          </summary>
-          <Show when={expanded()}>
-            {body()}
-          </Show>
-        </details>
-      </Show>
-    </section>
-  )
-}
-
-function ToolDeletedLines(props: { title: string; filePath?: string; deletions: number; collapsible?: boolean }) {
-  const [expanded, setExpanded] = createSignal(true)
-  const body = () => <p class="tool-deleted-lines">-{props.deletions} line{props.deletions === 1 ? "" : "s"}</p>
-  return (
-    <section class="tool-diff">
-      <Show when={props.collapsible} fallback={<div class="tool-file-diff"><ToolDiffHeader title={props.title} filePath={props.filePath} />{body()}</div>}>
-        <details class="tool-file-diff-collapse" open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-          <summary class="tool-file-diff-header">
-            <ToolDiffHeaderContent title={props.title} filePath={props.filePath} disclosure />
-          </summary>
-          <Show when={expanded()}>
-            {body()}
-          </Show>
-        </details>
-      </Show>
-    </section>
-  )
-}
-
-function ToolDiffHeader(props: { title: string; filePath?: string }) {
-  return <header class="tool-file-diff-header"><ToolDiffHeaderContent title={props.title} filePath={props.filePath} /></header>
-}
-
-function ToolDiffHeaderContent(props: { title: string; filePath?: string; disclosure?: boolean }) {
-  const path = createMemo(() => props.filePath ?? props.title)
-  const filename = createMemo(() => fileBasename(path()))
-  return (
-    <>
-      <Show when={props.disclosure}>
-        <DisclosureChevron />
-      </Show>
-      <strong>{filename()}</strong>
-      <Show when={path() !== filename()}>
-        <span class="tool-file-diff-separator">|</span>
-        <span class="tool-file-diff-path">{path()}</span>
-      </Show>
-      <div class="tool-file-diff-actions" aria-label={`Open ${filename()}`}>
-        <Button appearance="ghost"
-          type="button"
-          class="tool-file-diff-action git"
-          title={`Open ${filename()} in Git`}
-          aria-label={`Open ${filename()} in Git`}
-          data-side-panel-git-file={path()}
-          onClick={(event) => event.preventDefault()}
-        >
-          <Icon name="branch" />
-        </Button>
-        <Button appearance="ghost"
-          type="button"
-          class="tool-file-diff-action file"
-          title={`Open ${filename()} as file`}
-          aria-label={`Open ${filename()} as file`}
-          data-side-panel-open-file={path()}
-          onClick={(event) => event.preventDefault()}
-        >
-          <Icon name="file" />
-        </Button>
-      </div>
-    </>
-  )
-}
 
 function ToolDiagnostics(props: { diagnostics: unknown[] }) {
   return (
@@ -322,29 +211,13 @@ function ToolDiagnostics(props: { diagnostics: unknown[] }) {
 }
 
 function ToolTodos(props: { input: Record<string, unknown>; metadata: Record<string, unknown> }) {
-  const todos = createMemo(() => arrayValue(props.metadata.todos).length > 0 ? arrayValue(props.metadata.todos) : arrayValue(props.input.todos))
-  return (
-    <Show when={todos().length > 0}>
-      <div class="tool-todos">
-        <For each={todos().filter(isRecordValue)}>
-          {(todo) => {
-            const status = stringValue(todo.status) ?? "pending"
-            return (
-              <div class={`tool-todo ${status}`}>
-                <span class="tool-todo-status" title={formatTodoStatus(status)} aria-label={formatTodoStatus(status)}>
-                  <Show when={todoStatusIcon(status)}>
-                    {(icon) => <Icon name={icon()} />}
-                  </Show>
-                </span>
-                <strong>{stringValue(todo.content) ?? "Todo"}</strong>
-                <small>{stringValue(todo.priority) ?? ""}</small>
-              </div>
-            )
-          }}
-        </For>
-      </div>
-    </Show>
-  )
+  const source = createMemo(() => arrayValue(props.metadata.todos).length > 0 ? arrayValue(props.metadata.todos) : arrayValue(props.input.todos))
+  const todos = createMemo(() => source().filter(isRecordValue).map((todo) => ({
+    content: stringValue(todo.content) ?? "Todo",
+    status: stringValue(todo.status) ?? "pending",
+    priority: stringValue(todo.priority),
+  })))
+  return <TodoList todos={todos()} />
 }
 
 function ToolQuestions(props: { input: Record<string, unknown>; metadata: Record<string, unknown> }) {
@@ -359,8 +232,4 @@ function ToolQuestions(props: { input: Record<string, unknown>; metadata: Record
       </div>
     </Show>
   )
-}
-
-export function fileBasename(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 }

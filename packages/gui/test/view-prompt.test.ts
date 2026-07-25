@@ -42,9 +42,34 @@ describe("GUI view prompt decisions", () => {
     } as unknown as OpencodeXView
 
     expect(replacePendingViewPane(current, "pending-1", "session-2", [])).toEqual({
-      sessionIDs: ["session-2", "session-1"],
+      members: [{ kind: "session", id: "session-2" }, { kind: "session", id: "session-1" }],
       metadata: { opencodex: { paneOrder: [{ kind: "session", id: "session-2" }, { kind: "session", id: "session-1" }] } },
     })
+  })
+
+  test("keeps members a stale pane order does not mention", () => {
+    // Another client added session-3 and a terminal without rewriting paneOrder;
+    // promoting the pending pane must not delete them from the view.
+    const current = {
+      id: "view-1",
+      sessionIDs: ["session-1", "session-3"],
+      members: [
+        { kind: "session", id: "session-1" },
+        { kind: "session", id: "session-3" },
+        { kind: "terminal", id: "oxts_1" },
+      ],
+      metadata: { opencodex: {
+        pendingSessions: [{ id: "pending-1" }],
+        paneOrder: [{ kind: "pending", id: "pending-1" }, { kind: "session", id: "session-1" }],
+      } },
+    } as unknown as OpencodeXView
+
+    expect(replacePendingViewPane(current, "pending-1", "session-2", []).members).toEqual([
+      { kind: "session", id: "session-2" },
+      { kind: "session", id: "session-1" },
+      { kind: "session", id: "session-3" },
+      { kind: "terminal", id: "oxts_1" },
+    ])
   })
 
   test("prepares existing session targets without creating a session", async () => {

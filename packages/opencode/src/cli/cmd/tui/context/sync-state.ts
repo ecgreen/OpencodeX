@@ -46,6 +46,12 @@ export function projectTuiClientState(
       return {
         ...view,
         sessions: view.sessions.filter((session) => sessionIDs.has(session.id)),
+        // Scope renderable terminal panes to the directory like sessions.
+        // `members` stays complete: it is persisted membership, and pruning it
+        // here would let a scoped client write member deletions it never saw.
+        terminalSessions: (view.terminalSessions ?? []).filter(
+          (terminal) => !matchesDirectory || matchesDirectory(terminal),
+        ),
         focusedSessionID:
           view.focusedSessionID && view.sessionIDs.includes(view.focusedSessionID)
             ? view.focusedSessionID
@@ -124,6 +130,7 @@ export function tuiClientStateChanges(current: ClientStateSyncState | undefined,
       phase ||
       current.projects !== next.projects ||
       current.sessions !== next.sessions ||
+      current.terminalSessions !== next.terminalSessions ||
       current.views !== next.views ||
       current.permissions !== next.permissions ||
       current.questions !== next.questions ||

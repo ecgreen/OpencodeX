@@ -71,6 +71,32 @@ export const OpencodeXSessionStateTable = sqliteTable(
   (table) => [index("opencodex_session_state_updated_idx").on(table.time_updated)],
 )
 
+export const OpencodeXTerminalSessionTable = sqliteTable(
+  "opencodex_terminal_session",
+  {
+    id: text().primaryKey(),
+    driver: text().$type<"claude-code">().notNull(),
+    title: text().notNull(),
+    project_id: text().references(() => OpencodeXProjectTable.id, { onDelete: "set null" }),
+    directory: text().notNull(),
+    resume_id: text().notNull(),
+    installation_id: text().notNull(),
+    // The mirrored OpencodeX session this Claude conversation writes into.
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
+    time_launched: integer(),
+    time_opened: integer(),
+    ...Timestamps,
+  },
+  (table) => [
+    index("opencodex_terminal_session_project_idx").on(table.project_id),
+    index("opencodex_terminal_session_installation_idx").on(table.installation_id),
+    index("opencodex_terminal_session_session_idx").on(table.session_id),
+    index("opencodex_terminal_session_updated_idx").on(table.time_updated),
+  ],
+)
+
 export const OpencodeXStateEventTable = sqliteTable(
   "opencodex_state_event",
   {
@@ -136,6 +162,7 @@ export const OpencodeXViewTable = sqliteTable(
     focused_session_id: text()
       .$type<SessionSchema.ID>()
       .references(() => SessionTable.id, { onDelete: "set null" }),
+    focused_item_id: text(),
     layout: text().notNull().default("auto"),
     sort_order: integer().notNull().default(0),
     metadata_json: text(),
@@ -143,7 +170,27 @@ export const OpencodeXViewTable = sqliteTable(
   },
   (table) => [
     index("opencodex_view_focused_session_idx").on(table.focused_session_id),
+    index("opencodex_view_focused_item_idx").on(table.focused_item_id),
     index("opencodex_view_updated_idx").on(table.time_updated),
+  ],
+)
+
+export const OpencodeXViewTerminalSessionTable = sqliteTable(
+  "opencodex_view_terminal_session",
+  {
+    view_id: text()
+      .notNull()
+      .references(() => OpencodeXViewTable.id, { onDelete: "cascade" }),
+    terminal_session_id: text()
+      .notNull()
+      .references(() => OpencodeXTerminalSessionTable.id, { onDelete: "cascade" }),
+    sort_order: integer().notNull().default(0),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.view_id, table.terminal_session_id] }),
+    index("opencodex_view_terminal_session_view_idx").on(table.view_id),
+    index("opencodex_view_terminal_session_terminal_idx").on(table.terminal_session_id),
   ],
 )
 

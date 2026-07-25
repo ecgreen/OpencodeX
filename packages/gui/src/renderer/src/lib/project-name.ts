@@ -1,4 +1,3 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "./store"
 
 export function projectNameForID(projects: GuiSnapshot["projects"], projectID?: string) {
@@ -6,10 +5,12 @@ export function projectNameForID(projects: GuiSnapshot["projects"], projectID?: 
   return project?.name ?? project?.project.name
 }
 
-export function projectNameForSession(projects: GuiSnapshot["projects"], session?: Session) {
+export function projectNameForSession(projects: GuiSnapshot["projects"], session?: { id: string; projectID?: string }) {
   if (!session) return
   const project = projects.find(
-    (item) => item.id === session.projectID || item.sessions.some((candidate) => candidate.id === session.id),
+    (item) => item.id === session.projectID
+      || item.sessions.some((candidate) => candidate.id === session.id)
+      || item.terminalSessions.some((candidate) => candidate.id === session.id),
   )
   return project?.name ?? project?.project.name
 }

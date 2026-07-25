@@ -1,18 +1,20 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { For, createMemo } from "solid-js"
 import { title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
 import { RailSection } from "./rail-section"
 import { sectionDrag } from "./rail-sidebar-drag"
-import { SidebarSessionLink, SidebarViewLink } from "./rail-sidebar-links"
+import { SidebarSessionLink, SidebarTerminalSessionLink, SidebarViewLink } from "./rail-sidebar-links"
 import type { RailDragTarget, RailDropTarget, RailSectionName } from "./rail-sidebar-types"
 
 export function RailPinnedSection(props: {
   snapshot?: GuiSnapshot
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   views: GuiSnapshot["views"]
   collapsed: boolean
   activeSessionID: string
+  activeTerminalSessionID: string
   activeViewID?: string
   activeViewRoute: boolean
   dragTarget?: RailDragTarget
@@ -20,11 +22,15 @@ export function RailPinnedSection(props: {
   toggle: () => void
   createSession: () => void
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   openView: (viewID: string) => void
   toggleSessionPinned: (sessionID: string) => void
   toggleViewPinned: (viewID: string) => void
   renameSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  terminalStatus: (terminalSession: OpencodeXTerminalSession) => string
   editView: (viewID: string) => void
   deleteView: (viewID: string, name: string) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
@@ -35,7 +41,7 @@ export function RailPinnedSection(props: {
   dropSection: (targetID: string, placement: "before" | "after") => void
   moveSection: (offset: number) => void
 }) {
-  const count = createMemo(() => props.sessions.length + props.views.length)
+  const count = createMemo(() => props.sessions.length + props.terminalSessions.length + props.views.length)
   return (
     <RailSection
       title="Pinned"
@@ -56,6 +62,20 @@ export function RailPinnedSection(props: {
             togglePinned={() => props.toggleSessionPinned(session.id)}
             renameSession={() => props.renameSession(session)}
             deleteSession={() => props.deleteSession(session)}
+          />
+        )}
+      </For>
+      <For each={props.terminalSessions}>
+        {(session) => (
+          <SidebarTerminalSessionLink
+            terminalSession={session}
+            status={props.terminalStatus(session)}
+            active={props.activeTerminalSessionID === session.id}
+            pinned
+            onClick={() => props.openTerminalSession(session.id)}
+            togglePinned={() => props.toggleSessionPinned(session.id)}
+            renameSession={() => props.renameTerminalSession(session)}
+            removeSession={() => props.removeTerminalSession(session)}
           />
         )}
       </For>

@@ -1,5 +1,5 @@
 import { Button, IconButton } from "./ui"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { projectSessionPreviewItems, sessionOrderBucket } from "../lib/app-session-lists"
 import { title } from "../lib/format"
@@ -9,7 +9,7 @@ import { Icon } from "./icon"
 import { ProjectDragPreview, type ProjectDragPreviewState } from "./rail-project-drag-preview"
 import { RailSection } from "./rail-section"
 import { dropPlacement, sectionDrag, suppressNextPointerClick } from "./rail-sidebar-drag"
-import { SidebarSessionLink } from "./rail-sidebar-links"
+import { SidebarSessionLink, SidebarTerminalSessionLink } from "./rail-sidebar-links"
 import { animateLayoutRows } from "./rail-sidebar-motion"
 import type { RailDragTarget, RailDropTarget, RailSectionName } from "./rail-sidebar-types"
 
@@ -21,6 +21,7 @@ export function RailProjectsSection(props: {
   snapshot?: GuiSnapshot
   collapsed: boolean
   activeSessionID: string
+  activeTerminalSessionID: string
   dragTarget?: RailDragTarget
   dropTarget?: RailDropTarget
   projectVisualOrder: readonly string[]
@@ -31,10 +32,15 @@ export function RailProjectsSection(props: {
   toggleProject: (projectID: string) => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
+  createTerminalSession: (projectID?: string, directory?: string) => void
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void
   renameSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  renameTerminalSession: (session: OpencodeXTerminalSession) => void
+  removeTerminalSession: (session: OpencodeXTerminalSession) => void
+  terminalStatus: (session: OpencodeXTerminalSession) => string
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
@@ -150,26 +156,47 @@ export function RailProjectsSection(props: {
             <div class="project-sessions" classList={{ collapsed: !props.projectExpanded(row.project.id) }}>
               <div>
                 <Show when={props.projectExpanded(row.project.id)}>
-                  <For each={recentProjectSessions(props.projectSessions(row.project), props.snapshot)} fallback={(
-                    <div class="project-empty">
-                      <span>No sessions in this project yet.</span>
-                      <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</Button>
-                    </div>
-                  )}>
-                    {(session) => (
-                      <SidebarSessionLink
-                        session={session}
-                        snapshot={props.snapshot}
-                        active={props.activeSessionID === session.id}
-                        nested
-                        pinned={props.sessionPinned(session.id)}
-                        onClick={() => props.openSession(session.id)}
-                        togglePinned={() => props.toggleSessionPinned(session.id)}
-                        renameSession={() => props.renameSession(session)}
-                        deleteSession={() => props.deleteSession(session)}
-                      />
+                  <Show
+                    when={recentProjectSessions(props.projectSessions(row.project), props.snapshot).length + row.project.terminalSessions.length > 0}
+                    fallback={(
+                      <div class="project-empty">
+                        <span>No sessions in this project yet.</span>
+                        <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</Button>
+                        <Button appearance="ghost" onClick={() => props.createTerminalSession(row.project.id, row.project.folders[0]?.path)}>Start Claude Code</Button>
+                      </div>
                     )}
-                  </For>
+                  >
+                    <For each={recentProjectSessions(props.projectSessions(row.project), props.snapshot)}>
+                      {(session) => (
+                        <SidebarSessionLink
+                          session={session}
+                          snapshot={props.snapshot}
+                          active={props.activeSessionID === session.id}
+                          nested
+                          pinned={props.sessionPinned(session.id)}
+                          onClick={() => props.openSession(session.id)}
+                          togglePinned={() => props.toggleSessionPinned(session.id)}
+                          renameSession={() => props.renameSession(session)}
+                          deleteSession={() => props.deleteSession(session)}
+                        />
+                      )}
+                    </For>
+                    <For each={row.project.terminalSessions.toSorted((a, b) => Number(b.timeUpdated) - Number(a.timeUpdated))}>
+                      {(terminalSession) => (
+                        <SidebarTerminalSessionLink
+                          terminalSession={terminalSession}
+                          status={props.terminalStatus(terminalSession)}
+                          active={props.activeTerminalSessionID === terminalSession.id}
+                          nested
+                          pinned={props.sessionPinned(terminalSession.id)}
+                          onClick={() => props.openTerminalSession(terminalSession.id)}
+                          togglePinned={() => props.toggleSessionPinned(terminalSession.id)}
+                          renameSession={() => props.renameTerminalSession(terminalSession)}
+                          removeSession={() => props.removeTerminalSession(terminalSession)}
+                        />
+                      )}
+                    </For>
+                  </Show>
                 </Show>
               </div>
             </div>

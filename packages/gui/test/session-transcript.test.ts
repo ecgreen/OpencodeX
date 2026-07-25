@@ -7,6 +7,7 @@ mock.module("@opencode-ai/ui/file", () => ({ File: () => null }))
 mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
 
 const { activeTranscriptStreamingPartID, groupTranscriptParts } = await import("../src/renderer/src/components/session-transcript")
+const { toolGroupSummary, toolGroupTitle } = await import("../src/renderer/src/lib/transcript-grouping")
 
 describe("GUI session transcript parts", () => {
   test("assigns stable keys to parts and growing groups", () => {
@@ -20,6 +21,20 @@ describe("GUI session transcript parts", () => {
     const reasoningKey = groupTranscriptParts([reasoningPart("reasoning-1", "first"), reasoningPart("reasoning-2", "second")])[0]?.key
     expect(reasoningKey).toBe("reasoning-group:reasoning-1")
     expect(groupTranscriptParts([reasoningPart("reasoning-1", "updated"), reasoningPart("reasoning-2", "second"), reasoningPart("reasoning-3", "third")])[0]?.key).toBe(reasoningKey)
+  })
+
+  test("groups a lone reasoning part so thinking has one renderer", () => {
+    const items = groupTranscriptParts([reasoningPart("reasoning-1", "first")])
+    expect(items.map((item) => item.type)).toEqual(["reasoning-group"])
+    // The key must not change as the run grows, or the block remounts mid-stream.
+    expect(items[0]?.key).toBe(groupTranscriptParts([reasoningPart("reasoning-1", "first"), reasoningPart("reasoning-2", "second")])[0]?.key)
+  })
+
+  test("summarizes grouped tools by what they touched", () => {
+    expect(toolGroupTitle("read", [readPart("a", "src/app.ts"), readPart("b", "src/store.ts")])).toBe("Read 2 files")
+    expect(toolGroupTitle("skill", [readPart("a", "x")])).toBe("Load 1 skill")
+    expect(toolGroupSummary("read", [readPart("a", "src/app.ts"), readPart("b", "src/store.ts")])).toBe("app.ts, store.ts")
+    expect(toolGroupSummary("read", ["a", "b", "c", "d"].map((id, index) => readPart(id, `src/file${index}.ts`), ), 2)).toBe("file0.ts, file1.ts, +2 more")
   })
 
   test("selects only the active unfinished transcript tail", () => {
@@ -81,6 +96,18 @@ function toolPart(id: string, status: "pending" | "running" | "completed" = "com
     tool: "read",
     callID: id,
     state: status === "running" ? { status, input: {}, title: "Read", metadata: {}, time: { start: 1 } } : { status, input: {}, raw: "" },
+  }
+}
+
+function readPart(id: string, filePath: string): Extract<Part, { type: "tool" }> {
+  return {
+    id,
+    sessionID: "session",
+    messageID: "message",
+    type: "tool",
+    tool: "read",
+    callID: id,
+    state: { status: "completed", input: { filePath, name: filePath }, output: "", title: "Read", metadata: {}, time: { start: 1, end: 2 } },
   }
 }
 

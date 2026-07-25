@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { isRecentClientSessionUpdate } from "@opencode-ai/sdk/v2/session-order"
 import { For, Show, createMemo } from "solid-js"
 import { sessionOrderBucket } from "../lib/app-session-lists"
@@ -6,24 +6,31 @@ import { title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/store"
 import { RailSection } from "./rail-section"
 import { dropPlacement, sectionDrag } from "./rail-sidebar-drag"
-import { SidebarSessionLink, SidebarViewLink } from "./rail-sidebar-links"
+import { SidebarSessionLink, SidebarTerminalSessionLink, SidebarViewLink } from "./rail-sidebar-links"
 import type { RailDragTarget, RailDropTarget, RailSectionName } from "./rail-sidebar-types"
 import { Button } from "./ui"
 
 export function RailRecentSessionsSection(props: {
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   snapshot?: GuiSnapshot
   collapsed: boolean
   activeSessionID: string
+  activeTerminalSessionID: string
   dragTarget?: RailDragTarget
   dropTarget?: RailDropTarget
   sessionPinned: (sessionID: string) => boolean
   toggle: () => void
   createSession: () => void
+  createTerminalSession: () => void
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void
   renameSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  terminalStatus: (terminalSession: OpencodeXTerminalSession) => string
   startDrag: (event: DragEvent, target: RailDragTarget) => void
   dragOver: (event: DragEvent, target: RailDragTarget) => void
   clearDragTarget: () => void
@@ -33,10 +40,13 @@ export function RailRecentSessionsSection(props: {
   moveSection: (offset: number) => void
 }) {
   const recentSessions = createMemo(() => props.sessions.filter((session) => !props.sessionPinned(session.id) && (sessionOrderBucket(props.snapshot, session) !== "inactive" || isRecentClientSessionUpdate(session.time.updated))))
+  const terminalSessions = createMemo(() => props.terminalSessions
+    .filter((session) => !props.sessionPinned(session.id))
+    .sort((a, b) => Number(b.timeUpdated) - Number(a.timeUpdated)))
   return (
     <RailSection
       title="Recent Sessions"
-      count={recentSessions().length}
+      count={recentSessions().length + terminalSessions().length}
       collapsed={props.collapsed}
       toggle={props.toggle}
       action={props.createSession}
@@ -56,6 +66,21 @@ export function RailRecentSessionsSection(props: {
           />
         )}
       </For>
+      <For each={terminalSessions()}>
+        {(session) => (
+          <SidebarTerminalSessionLink
+            terminalSession={session}
+            status={props.terminalStatus(session)}
+            active={props.activeTerminalSessionID === session.id}
+            pinned={props.sessionPinned(session.id)}
+            onClick={() => props.openTerminalSession(session.id)}
+            togglePinned={() => props.toggleSessionPinned(session.id)}
+            renameSession={() => props.renameTerminalSession(session)}
+            removeSession={() => props.removeTerminalSession(session)}
+          />
+        )}
+      </For>
+      <Button appearance="ghost" class="rail-show-all" onClick={props.createTerminalSession}>New Claude Code session</Button>
     </RailSection>
   )
 }

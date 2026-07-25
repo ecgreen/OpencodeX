@@ -101,13 +101,6 @@
   color: var(--muted);
 }
 
-.part.muted {
-  scrollbar-width: thin;
-  scrollbar-color: var(--theme-overlay-strong) transparent;
-  overflow: auto;
-  color: var(--muted);
-}
-
 @keyframes composer-spinner {
   to {
     transform: rotate(360deg);

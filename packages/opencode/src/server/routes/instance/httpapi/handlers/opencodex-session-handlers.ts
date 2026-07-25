@@ -1,5 +1,6 @@
 import { OpencodeXProject } from "@/opencodex/project"
 import { OpencodeXSessionState } from "@/opencodex/session-state"
+import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
 import { OpencodeXView } from "@/opencodex/view"
 import { Permission } from "@/permission"
 import { Project } from "@/project/project"
@@ -24,6 +25,7 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
   const permissions = yield* Permission.Service
   const questions = yield* Question.Service
   const sessionState = yield* OpencodeXSessionState.Service
+  const terminalSessions = yield* OpencodeXTerminalSession.Service
   const views = yield* OpencodeXView.Service
 
   const listProjects = Effect.fn("OpencodeXHttpApi.listProjects")(function* () {
@@ -64,7 +66,7 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
   const sessionSync = Effect.fn("OpencodeXHttpApi.sessionSync")(function* (ctx: {
     query: typeof SessionSyncQuery.Type
   }) {
-    const [projectList, listed, viewList, statusMap, permissionList, questionList] = yield* Effect.all(
+    const [projectList, listed, terminalSessionList, viewList, statusMap, permissionList, questionList] = yield* Effect.all(
       [
         projects.list(),
         sessions.list({
@@ -76,6 +78,7 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
           search: ctx.query.search,
           limit: ctx.query.limit,
         }),
+        terminalSessions.list(),
         views.list(),
         statuses.list(),
         permissions.list(),
@@ -99,6 +102,7 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
     const snapshot = {
       projects: lightProjects,
       sessions: lightSessions,
+      terminalSessions: terminalSessionList,
       views: lightViews,
       sessionStatus,
       permissions: permissionList.toSorted((left, right) => String(left.id).localeCompare(String(right.id))),

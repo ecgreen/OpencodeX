@@ -32,6 +32,8 @@ import { OpencodeXSessionState } from "@/opencodex/session-state"
 import { OpencodeXState } from "@/opencodex/state"
 import { OpencodeXSettings } from "@/opencodex/settings"
 import { OpencodeXView } from "@/opencodex/view"
+import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
+import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { GuiBridge } from "@/opencodex/gui-bridge"
 import { Installation } from "@/installation"
 import { InstanceLayer } from "@/project/instance-layer"
@@ -222,6 +224,8 @@ export function createRoutes(
       OpencodeXState.defaultLayer,
       OpencodeXSettings.defaultLayer,
       OpencodeXSwarm.defaultLayer,
+      OpencodeXTerminalSession.defaultLayer,
+      OpencodeXClaudeDriver.defaultLayer,
       OpencodeXView.defaultLayer,
       GuiBridge.defaultLayer,
       Permission.defaultLayer,

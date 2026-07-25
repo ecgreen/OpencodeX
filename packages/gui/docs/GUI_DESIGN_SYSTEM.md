@@ -100,6 +100,48 @@ and `bridges`.
 - A selector has exactly one owner within an equivalent at-rule context. Raw colors, theme-token overrides,
   duplicate selector owners, and unauthorized `!important` declarations are zero-baseline CI failures.
 
+## Transcript visual language
+
+Every transcript part - tool call, tool group, thinking block - shares one anatomy so header rules are written
+once and apply everywhere:
+
+```
+.part[data-kind][data-status]      <details> or <div>, identical classes either way
+  .part-header                     <summary>, or <div> with .part-header-static
+    .part-chevron .part-icon .part-title .part-meta .part-status
+  .part-body                       tool details, thinking segments, group list
+```
+
+Parts render in one of two tiers. Routine evidence is a **quiet row**: one line, no border or fill, chevron in
+the assistant gutter. Deliverables and attention states are an **accent card**: hairline border, three-pixel
+left accent stripe, raised surface, card radius. Errors are always a card regardless of tool, because a failure
+is never routine. This split keeps a turn containing thirty greps scannable while letting a plan or a diff
+carry weight.
+
+| `data-kind` | Tools | Accent token | Tier |
+| --- | --- | --- | --- |
+| `search` | read, grep, glob, list | none | row |
+| `web` | webfetch, websearch, browser_* | none | row |
+| `exec` | bash, shell | `--ds-accent-exec` | row |
+| `file` | edit, write, apply_patch | `--ds-accent-file` | card |
+| `plan` | todowrite, question, plan_exit | `--ds-accent-plan` | card |
+| `agent` | task, skill, swarm create | `--ds-accent-agent` | row |
+| `thinking` | reasoning | `--ds-accent-thinking` | card |
+| any, `data-status="error"` | - | `--ds-danger` | card |
+
+Categories and tiers are resolved once in `lib/tool-display.ts` (`toolCategory`, `toolTier`); CSS selects on the
+resulting attributes and never re-derives them from tool names or `:has()`.
+
+Titles use one grammar: **verb, then object, then an optional count** - `Read src/app.ts`, `Patch 3 files`,
+`Grep "needle" in src (2 matches)`. A title resolves from the registry first, then the server-streamed progress
+title, then a humanized tool id, so MCP and plugin tools stay readable. Interaction instructions are never
+titles or status text, and every "there is more than we showed" control uses the single `COPY_FULL_LABEL`.
+
+Disclosure follows the work. A part opens automatically while it is running and whenever it failed; a completed
+part collapses to a one-line receipt, except todo writes and patches, which are the deliverable. An explicit
+user toggle always wins over the automatic state and persists for the session. Nothing auto-collapses while the
+reader has scrolled away from the bottom.
+
 ## Accessibility and motion
 
 Meet WCAG 2.2 AA. Every workflow is keyboard-operable with visible two-pixel focus, correct labels, non-color

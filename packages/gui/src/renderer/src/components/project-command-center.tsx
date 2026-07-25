@@ -4,7 +4,7 @@ import { compactPath, formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
 import { projectSwarms, projectViewSessionCount, projectViews } from "../lib/project-summary"
 import type { GuiSnapshot } from "../lib/store"
-import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard } from "./session-card-list"
+import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard, TerminalSessionStatusCard } from "./session-card-list"
 import { Button } from "./ui"
 import { projectLabel } from "./project-directory"
 import { CardActionMenu } from "./card-action-menu"
@@ -18,14 +18,17 @@ export function ProjectCommandCenter(props: {
   sessionOrderState?: SessionOrderState
   back: () => void
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
+  createTerminalSession: (projectID?: string, directory?: string) => void
   createSwarm: (projectID: string) => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
+  terminalStatus: (terminalSessionID: string) => string
 }) {
   const [sessionBucketsCollapsed, setSessionBucketsCollapsed] = createSignal<Record<string, boolean>>({ prior: true })
   const sessions = createMemo(() => projectSessions(props.project, props.snapshot, props.sessionOrderState))
@@ -41,6 +44,7 @@ export function ProjectCommandCenter(props: {
   const swarms = createMemo(() => projectSwarms(props.project, props.snapshot))
   const views = createMemo(() => projectViews(props.project, props.snapshot))
   const primaryFolder = createMemo(() => props.project.folders[0]?.path)
+  const terminalSessions = createMemo(() => [...props.project.terminalSessions].sort((a, b) => Number(b.timeUpdated) - Number(a.timeUpdated)))
   const projectName = () => projectLabel(props.project)
   const projectActions = () => [
     { label: "Create swarm", icon: "swarm" as const, onSelect: () => props.createSwarm(props.project.id) },
@@ -64,6 +68,7 @@ export function ProjectCommandCenter(props: {
         </div>
         <div class="project-home-actions">
           <Button appearance="solid" tone="accent" icon="session" onClick={() => props.createSession(props.project.id, primaryFolder())}>New session</Button>
+          <Button appearance="outline" onClick={() => props.createTerminalSession(props.project.id, primaryFolder())}>Claude Code</Button>
           <CardActionMenu label={projectName()} actions={projectActions()} />
         </div>
       </header>
@@ -95,6 +100,20 @@ export function ProjectCommandCenter(props: {
                     snapshot={props.snapshot}
                     openSession={props.openSession}
                     compact
+                    pinned={props.sessionPinned(session.id)}
+                    togglePinned={() => props.toggleSessionPinned(session.id)}
+                  />
+                )}
+              </For>
+            </SessionCardBucket>
+
+            <SessionCardBucket title="Claude Code" count={terminalSessions().length} empty="No Claude Code sessions." collapsed={sessionBucketsCollapsed().terminal} onToggle={() => toggleSessionBucket("terminal")}>
+              <For each={terminalSessions()}>
+                {(session) => (
+                  <TerminalSessionStatusCard
+                    terminalSession={session}
+                    status={props.terminalStatus(session.id)}
+                    openSession={props.openTerminalSession}
                     pinned={props.sessionPinned(session.id)}
                     togglePinned={() => props.toggleSessionPinned(session.id)}
                   />

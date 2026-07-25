@@ -159,6 +159,7 @@ export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCar
     ...snapshot,
     projects: stableValue(snapshot.projects, next.projects),
     sessions: stableValue(snapshot.sessions, next.sessions),
+    terminalSessions: stableValue(snapshot.terminalSessions, next.terminalSessions),
     views: stableValue(snapshot.views, next.views),
     sessionStatus: stableValue(snapshot.sessionStatus, next.sessionStatus),
     sessionUiState: stableValue(snapshot.sessionUiState, next.sessionUiState),
@@ -168,6 +169,7 @@ export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCar
   }
   return snapshot.projects === merged.projects &&
     snapshot.sessions === merged.sessions &&
+    snapshot.terminalSessions === merged.terminalSessions &&
     snapshot.views === merged.views &&
     snapshot.sessionStatus === merged.sessionStatus &&
     snapshot.sessionUiState === merged.sessionUiState &&

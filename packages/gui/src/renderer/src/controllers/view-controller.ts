@@ -38,6 +38,7 @@ export function createViewController(input: {
   alert: (message: string) => void
 }) {
   const [focusedSessionID, setFocusedSessionID] = createSignal("")
+  const [autoStartTerminalID, setAutoStartTerminalID] = createSignal("")
   const [composerFocusRequest, setComposerFocusRequest] = createSignal({ sessionID: "", token: 0 })
   const [sidePanelOpenByViewID, setSidePanelOpenByViewID] = createSignal<Record<string, boolean>>({})
   const [sidePanelWidthRatio, setSidePanelWidthRatio] = createSignal(readViewSidePanelWidthRatio())
@@ -61,42 +62,65 @@ export function createViewController(input: {
   })
   const membershipKey = createMemo(() => viewItemsMembershipKey(activeView()?.id, items()))
   const focusedSession = createMemo(() =>
-    focusedViewItemID({ localID: focusedSessionID(), persistedID: activeView()?.focusedSessionID, items: items() }),
+    focusedViewItemID({
+      localID: focusedSessionID(),
+      persistedID: activeView()?.focusedItemID ?? activeView()?.focusedSessionID,
+      items: items(),
+    }),
   )
   const sidePanelOpen = createMemo(() => {
     const id = activeView()?.id
     return id ? (sidePanelOpenByViewID()[id] ?? false) : false
   })
   const sidePanelContextOptions = createMemo<SessionSidePanelContextOption[]>(() =>
-    sessions().map((session) => ({
-      id: session.id,
-      label: title(session.title),
-      description: compactPath(session.directory),
-    })),
+    items().map((item) => {
+      if (item.kind === "session") return { id: item.session.id, label: title(item.session.title), description: compactPath(item.session.directory) }
+      if (item.kind === "terminal") return { id: item.terminalSession.id, label: title(item.terminalSession.title), description: `Claude Code · ${compactPath(item.terminalSession.directory)}` }
+      return { id: item.slot.id, label: "New session", description: item.slot.projectLabel ?? compactPath(item.slot.directory) }
+    }),
   )
-  const sidePanelSession = createMemo(() => {
-    const available = sessions()
+  const sidePanelItem = createMemo(() => {
+    const available = items()
     if (available.length === 0) return
     return (
-      available.find((session) => session.id === sidePanelSessionID()) ??
-      available.find((session) => session.id === focusedSession()) ??
+      available.find((item) => viewItemID(item) === sidePanelSessionID()) ??
+      available.find((item) => viewItemID(item) === focusedSession()) ??
       available[0]
     )
+  })
+  const sidePanelSession = createMemo(() => {
+    const item = sidePanelItem()
+    return item?.kind === "session" ? item.session : undefined
   })
   let lastMembershipKey = ""
   let composerFocusToken = 0
   let focusPersistTimer: ReturnType<typeof setTimeout> | undefined
+  let openedViewID = ""
   const sidePanelResizeCleanups = new Set<() => void>()
 
   createEffect(
     on(
       () => {
         const view = activeView()
-        return view ? `${view.id}:${view.timeUpdated}:${view.focusedSessionID ?? ""}` : ""
+        return view ? `${view.id}:${view.timeUpdated}:${view.focusedItemID ?? view.focusedSessionID ?? ""}` : ""
       },
       () => setFocusedSessionID(""),
     ),
   )
+
+  createEffect(() => {
+    const route = input.navigation.route()
+    const view = activeView()
+    if (route.name !== "views" || !view) {
+      openedViewID = ""
+      setAutoStartTerminalID("")
+      return
+    }
+    if (openedViewID === view.id) return
+    openedViewID = view.id
+    const focusedID = view.focusedItemID ?? view.focusedSessionID ?? view.members[0]?.id
+    setAutoStartTerminalID(view.members.some((member) => member.kind === "terminal" && member.id === focusedID) ? (focusedID ?? "") : "")
+  })
 
   createEffect(() => {
     const route = input.navigation.route()
@@ -125,8 +149,8 @@ export function createViewController(input: {
 
   createEffect(() => {
     if (input.navigation.route().name !== "views") return
-    const session = sidePanelSession()
-    if (session && sidePanelSessionID() !== session.id) setSidePanelSessionID(session.id)
+    const item = sidePanelItem()
+    if (item && sidePanelSessionID() !== viewItemID(item)) setSidePanelSessionID(viewItemID(item))
   })
 
   createEffect(
@@ -219,8 +243,8 @@ export function createViewController(input: {
   }
 
   function openSidePanel(sessionID = focusedSession(), target?: SessionSidePanelTarget) {
-    const session = sessions().find((item) => item.id === sessionID) ?? sidePanelSession()
-    if (session) setSidePanelSessionID(session.id)
+    const item = items().find((item) => viewItemID(item) === sessionID) ?? sidePanelItem()
+    if (item) setSidePanelSessionID(viewItemID(item))
     setSidePanelOpen(true)
     if (target) setSidePanelRequest({ ...target, token: Date.now() } as SessionSidePanelRequest)
   }
@@ -299,7 +323,7 @@ export function createViewController(input: {
   }
 
   function scheduleFocusPersistence(view: ClientCatalogView, sessionID: string) {
-    if (!sessions().some((session) => session.id === sessionID)) return
+    if (!items().some((item) => viewItemID(item) === sessionID)) return
     if (focusPersistTimer) clearTimeout(focusPersistTimer)
     focusPersistTimer = setTimeout(() => {
       focusPersistTimer = undefined
@@ -323,6 +347,7 @@ export function createViewController(input: {
     sessions,
     items,
     focusedSessionID: focusedSession,
+    autoStartTerminalID,
     composerFocusRequest,
     sidePanelOpen,
     sidePanelWidthRatio,
@@ -330,6 +355,7 @@ export function createViewController(input: {
     setSidePanelSessionID,
     sidePanelRequest,
     sidePanelContextOptions,
+    sidePanelItem,
     sidePanelSession,
     submitPrompt,
     agentValue,

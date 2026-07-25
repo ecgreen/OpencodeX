@@ -1,12 +1,10 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
-import { Mark } from "@opencode-ai/ui/logo"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Match, Show, Switch, createEffect, createMemo } from "solid-js"
-import { title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/store"
-import { Icon } from "./icon"
-import { Button, IconButton } from "./ui"
+import { IconButton } from "./ui"
 import { RailResizeHandle } from "./rail-resize-handle"
+import { RailBrand, RailNav } from "./rail-sidebar-header"
 import {
   RailPinnedSection,
   RailPriorSessionsSection,
@@ -21,15 +19,18 @@ export type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSe
 export function RailSidebar(props: {
   snapshot?: GuiSnapshot
   sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
   hasMoreSessions: boolean
   loadingMoreSessions: boolean
   loadMoreSessions: () => void
   pinnedSessions: Session[]
+  pinnedTerminalSessions: OpencodeXTerminalSession[]
   pinnedViews: GuiSnapshot["views"]
   navItems: readonly RailNavItem[]
   navBadges: Record<string, number>
   activeRouteName: string
   activeSessionID: string
+  activeTerminalSessionID: string
   activeViewID?: string
   railCollapsed: boolean
   railWidth: number
@@ -51,16 +52,21 @@ export function RailSidebar(props: {
   openSettings: () => void
   openRoute: (name: RailRouteName) => void
   openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
   openView: (viewID: string) => void
   openAllViews: () => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
+  createTerminalSession: (projectID?: string, directory?: string) => void
   createPinnedSession: () => void
   createView: () => void
   toggleSessionPinned: (sessionID: string) => void
   toggleViewPinned: (viewID: string) => void
   renameSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  terminalStatus: (terminalSession: OpencodeXTerminalSession) => string
   editView: (viewID: string) => void
   deleteView: (viewID: string, name: string) => void
   startDrag: (event: DragEvent, target: RailDragTarget) => void
@@ -121,9 +127,11 @@ export function RailSidebar(props: {
                 <RailPinnedSection
                   snapshot={props.snapshot}
                   sessions={props.pinnedSessions}
+                  terminalSessions={props.pinnedTerminalSessions}
                   views={props.pinnedViews}
                   collapsed={props.railSections.pinned}
                   activeSessionID={props.activeSessionID}
+                  activeTerminalSessionID={props.activeTerminalSessionID}
                   activeViewID={props.activeViewID}
                   activeViewRoute={props.activeRouteName === "views"}
                   dragTarget={props.dragTarget}
@@ -131,11 +139,15 @@ export function RailSidebar(props: {
                   toggle={() => props.toggleRailSection("pinned")}
                   createSession={props.createPinnedSession}
                   openSession={props.openSession}
+                  openTerminalSession={props.openTerminalSession}
                   openView={props.openView}
                   toggleSessionPinned={props.toggleSessionPinned}
                   toggleViewPinned={props.toggleViewPinned}
                   renameSession={props.renameSession}
                   deleteSession={props.deleteSession}
+                  renameTerminalSession={props.renameTerminalSession}
+                  removeTerminalSession={props.removeTerminalSession}
+                  terminalStatus={props.terminalStatus}
                   editView={props.editView}
                   deleteView={props.deleteView}
                   startDrag={props.startDrag}
@@ -152,6 +164,7 @@ export function RailSidebar(props: {
                   snapshot={props.snapshot}
                   collapsed={props.railSections.projects}
                   activeSessionID={props.activeSessionID}
+                  activeTerminalSessionID={props.activeTerminalSessionID}
                   dragTarget={props.dragTarget}
                   dropTarget={props.dropTarget}
                   projectVisualOrder={props.projectVisualOrder}
@@ -162,10 +175,15 @@ export function RailSidebar(props: {
                   toggleProject={props.toggleProject}
                   createProject={props.createProject}
                   createSession={props.createSession}
+                  createTerminalSession={props.createTerminalSession}
                   openSession={props.openSession}
+                  openTerminalSession={props.openTerminalSession}
                   toggleSessionPinned={props.toggleSessionPinned}
                   renameSession={props.renameSession}
                   deleteSession={props.deleteSession}
+                  renameTerminalSession={props.renameTerminalSession}
+                  removeTerminalSession={props.removeTerminalSession}
+                  terminalStatus={props.terminalStatus}
                   startDrag={props.startDrag}
                   dragOver={props.dragOver}
                   clearDragTarget={props.clearDragTarget}
@@ -182,18 +200,25 @@ export function RailSidebar(props: {
               <Match when={section === "recent"}>
                 <RailRecentSessionsSection
                   sessions={props.sessions}
+                  terminalSessions={props.terminalSessions}
                   snapshot={props.snapshot}
                   collapsed={props.railSections.recent}
                   activeSessionID={props.activeSessionID}
+                  activeTerminalSessionID={props.activeTerminalSessionID}
                   dragTarget={props.dragTarget}
                   dropTarget={props.dropTarget}
                   sessionPinned={props.sessionPinned}
                   toggle={() => props.toggleRailSection("recent")}
                   createSession={() => props.createSession()}
+                  createTerminalSession={() => props.createTerminalSession()}
                   openSession={props.openSession}
+                  openTerminalSession={props.openTerminalSession}
                   toggleSessionPinned={props.toggleSessionPinned}
                   renameSession={props.renameSession}
                   deleteSession={props.deleteSession}
+                  renameTerminalSession={props.renameTerminalSession}
+                  removeTerminalSession={props.removeTerminalSession}
+                  terminalStatus={props.terminalStatus}
                   startDrag={props.startDrag}
                   dragOver={props.dragOver}
                   clearDragTarget={props.clearDragTarget}
@@ -299,90 +324,4 @@ function animateSectionRows(previous: Map<string, DOMRect>, enabled: boolean) {
     })
   }
   return next
-}
-
-function RailBrand(props: {
-  snapshot?: GuiSnapshot
-  railCollapsed: boolean
-  openDashboard: () => void
-  toggleRail: () => void
-  createSession: () => void
-}) {
-  return (
-    <div class="brand" onClick={props.openDashboard}>
-      <span class="brand-mark">
-        <Mark />
-      </span>
-      <div class="brand-copy">
-        <strong>OpencodeX</strong>
-        <span>
-          {props.snapshot?.projects[0]
-            ? title(props.snapshot.projects[0].name ?? props.snapshot.projects[0].project.name)
-            : "Command center"}
-        </span>
-      </div>
-      <div class="brand-actions">
-        <IconButton
-          appearance="ghost"
-          icon="panel"
-          label="Toggle sidebar"
-          class="rail-toggle"
-          title={`${props.railCollapsed ? "Expand" : "Collapse"} sidebar (Ctrl+B)`}
-          aria-expanded={!props.railCollapsed}
-          onClick={(event) => {
-            event.stopPropagation()
-            props.toggleRail()
-          }}
-        />
-        <Show when={props.railCollapsed}>
-          <IconButton
-            appearance="ghost"
-            icon="plus"
-            label="New session"
-            class="new-button"
-            title="New session (Ctrl+N)"
-            onClick={(event) => {
-              event.stopPropagation()
-              props.createSession()
-            }}
-          />
-        </Show>
-      </div>
-    </div>
-  )
-}
-
-function RailNav(props: {
-  items: readonly RailNavItem[]
-  badges: Record<string, number>
-  activeRouteName: string
-  collapsed: boolean
-  openRoute: (name: RailRouteName) => void
-}) {
-  return (
-    <nav class="nav" classList={{ "nav-collapsed": props.collapsed }}>
-      <For each={props.items}>
-        {(item) => {
-          const badge = () => props.badges[item.name] ?? 0
-          return (
-            <Button
-              appearance="ghost"
-              aria-label={`${item.label}: ${item.description}${badge() > 0 ? `, ${badge()} need attention` : ""}`}
-              title={`${item.label}: ${item.description} (${item.shortcut})`}
-              classList={{ active: props.activeRouteName === item.name }}
-              onClick={() => props.openRoute(item.name)}
-            >
-              <Icon name={item.icon} />
-              <span class="nav-label">{item.label}</span>
-              <Show when={badge() > 0}>
-                <span class="nav-badge" aria-hidden="true">
-                  {badge()}
-                </span>
-              </Show>
-            </Button>
-          )
-        }}
-      </For>
-    </nav>
-  )
 }

@@ -58,6 +58,9 @@ export function createCommandController(input: {
       actions: {
         switchSession: input.switcher.openSearch,
         createSession: () => input.management.createSession(),
+        createClaudeSession: async () => {
+          await input.management.createClaudeSession()
+        },
         openRoute: (name) => input.navigation.setRoute({ name }),
         createProject: input.management.createProject,
         createProjectSession: input.management.createProjectSession,
@@ -151,11 +154,16 @@ export function createCommandController(input: {
   }
 
   function toggleWorkspace() {
-    if (input.navigation.route().name === "views") {
+    const route = input.navigation.route()
+    if (route.name === "views") {
       input.view.toggleSidePanel()
       return
     }
-    if (input.navigation.route().name === "session") {
+    if (route.name === "terminal-session") {
+      window.dispatchEvent(new CustomEvent("opencodex:terminal-workspace-toggle"))
+      return
+    }
+    if (route.name === "session") {
       window.dispatchEvent(new CustomEvent("opencodex:workspace-toggle"))
       return
     }
@@ -173,11 +181,18 @@ export function createCommandController(input: {
         : target === "terminal"
           ? { tab: "open", value: "opencodex://terminal" } as const
           : { tab: "open", value: "https://" } as const
-    if (input.navigation.route().name === "views") {
+    const route = input.navigation.route()
+    if (route.name === "views") {
       input.view.openSidePanel(undefined, panelTarget)
       return
     }
-    if (input.navigation.route().name === "session") {
+    if (route.name === "terminal-session") {
+      window.dispatchEvent(new CustomEvent("opencodex:terminal-workspace-open", {
+        detail: target === "context" ? { tab: "open", value: "opencodex://files" } : panelTarget,
+      }))
+      return
+    }
+    if (route.name === "session") {
       window.dispatchEvent(new CustomEvent("opencodex:workspace-open", { detail: panelTarget }))
       return
     }

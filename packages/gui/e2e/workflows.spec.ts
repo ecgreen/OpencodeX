@@ -36,6 +36,15 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   await page.getByTitle("Choose model").click()
   await expect(page.locator(".model-picker-modal")).toBeVisible()
   await expect(page.locator('.model-picker-section-toggle[aria-expanded="true"]')).toHaveCount(0)
+  // Searching auto-expands the leading sections, but an explicit collapse has to
+  // survive it: the toggle used to be overruled while any query was present.
+  const modelSearch = page.getByPlaceholder("Search models or providers")
+  await modelSearch.fill("claude")
+  const firstProviderToggle = page.locator(".model-picker-section-toggle").first()
+  await expect(firstProviderToggle).toHaveAttribute("aria-expanded", "true")
+  await firstProviderToggle.click()
+  await expect(firstProviderToggle).toHaveAttribute("aria-expanded", "false")
+  await modelSearch.fill("")
   const closeModelPicker = page.getByRole("button", { name: "Close Select model", exact: true })
   expect(await closeModelPicker.boundingBox()).toMatchObject({ width: 36, height: 36 })
   await closeModelPicker.click()

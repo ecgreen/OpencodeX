@@ -1,0 +1,318 @@
+/*
+ * Transcript part anatomy. Every part - tool, group, thinking - uses the same
+ * header markup, so these rules are written once and selected by data-kind and
+ * data-tier rather than by per-tool classes. See docs/GUI_DESIGN_SYSTEM.md.
+ */
+
+.part {
+  border-color: var(--ds-border-subtle);
+}
+
+.part.tool {
+  display: block;
+  margin: var(--ds-space-1) 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ds-text);
+}
+
+/* Quiet row: routine evidence, no chrome, chevron hangs in the gutter. */
+.part.tool[data-tier="row"] {
+  padding: 0;
+  background: transparent;
+}
+
+/*
+ * Accent card: deliverables and anything that failed. The left edge stays
+ * square so the accent reads as a flat rail against the gutter; only the
+ * trailing corners are rounded.
+ */
+.part.tool[data-tier="card"] {
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-left: 3px solid var(--part-accent, var(--ds-border-strong));
+  border-radius: 0 var(--ds-radius-card) var(--ds-radius-card) 0;
+  background: var(--ds-surface);
+}
+
+.part[data-kind="exec"] {
+  --part-accent: var(--ds-accent-exec);
+}
+
+.part[data-kind="file"] {
+  --part-accent: var(--ds-accent-file);
+}
+
+.part[data-kind="plan"] {
+  --part-accent: var(--ds-accent-plan);
+}
+
+.part[data-kind="agent"] {
+  --part-accent: var(--ds-accent-agent);
+}
+
+.part[data-kind="thinking"] {
+  --part-accent: var(--ds-accent-thinking);
+}
+
+.part[data-status="error"] {
+  --part-accent: var(--ds-danger);
+}
+
+.part-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 24px;
+  padding: 1px 0;
+  border: 0;
+  list-style: none;
+  cursor: pointer;
+  color: var(--ds-text-muted);
+  background: transparent;
+}
+
+/* Trailing slots hug the right edge; the first one present claims the gap. */
+.part-meta, .part-status {
+  margin-left: auto;
+}
+
+.part-meta + .part-status {
+  margin-left: 0;
+}
+
+.part-header-static {
+  cursor: default;
+}
+
+.part-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--ds-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.part-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--part-accent, var(--ds-text-muted));
+  opacity: .85;
+}
+
+/*
+ * Card headers carry their category in a tinted chip: a bare 13px outline is
+ * too fine to read, so the glyph gets a 16px canvas and a soft accent field
+ * behind it. Chip glyphs must be single-shape icons - no interior detail.
+ */
+.part[data-tier="card"]>.part-header .part-icon, .part.thinking-block>.part-header .part-icon {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border-radius: var(--ds-radius-control);
+  color: var(--part-accent, var(--ds-text-muted));
+  background: color-mix(in srgb, var(--part-accent, var(--ds-text-muted)) 14%, transparent);
+  opacity: 1;
+}
+
+.part-chevron-spacer {
+  width: 13px;
+  height: 13px;
+}
+
+.part-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--ds-text-muted);
+  font-size: 11px;
+}
+
+.part-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  white-space: nowrap;
+}
+
+.part-status-label {
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.part-status-label.error {
+  color: var(--ds-danger);
+}
+
+.part-duration {
+  color: var(--ds-text-muted);
+  font-family: var(--ds-font-technical);
+  font-size: 10px;
+}
+
+/* Always drops to its own line under the title, never between header slots. */
+.part-error-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 0 100%;
+  min-width: 0;
+  margin-left: 0;
+  padding-left: 21px;
+  color: var(--ds-danger);
+  font-size: 11px;
+}
+
+.part-body {
+  display: grid;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-2);
+}
+
+.part.tool[data-tier="row"] .part-body {
+  margin-left: 21px;
+}
+
+.part-spinner {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid color-mix(in srgb, var(--ds-info) 30%, transparent);
+  border-top-color: var(--ds-info);
+  border-radius: 999px;
+  animation: part-spin 700ms linear infinite;
+}
+
+@keyframes part-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tool-group-list {
+  display: grid;
+  gap: 0;
+}
+
+.tool-group-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 3px 0;
+  color: var(--ds-text);
+  font-size: 12px;
+}
+
+.tool-group-item>span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-group-item[data-status="error"]>span {
+  color: var(--ds-danger);
+}
+
+.tool-group-item .part-error-preview {
+  padding-left: 0;
+}
+
+/* A retry reads as a log line: the request recovered, nothing to act on. */
+.part.retry-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-2);
+  margin: var(--ds-space-1) 0;
+  padding: var(--ds-space-1) 0;
+  color: var(--ds-warning);
+  font-size: 12px;
+}
+
+.part.retry-notice .part-title {
+  color: var(--ds-warning);
+}
+
+.part.retry-notice .part-error-preview {
+  padding-left: 21px;
+  color: var(--ds-text-muted);
+}
+
+.part.file {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  margin: var(--ds-space-2) 0;
+  padding: 6px 10px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.part.file .icon {
+  width: 13px;
+  height: 13px;
+  color: var(--ds-text-muted);
+}
+
+.part.file>span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.part.file .part-file-chevron {
+  opacity: 0;
+}
+
+.part.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  margin: var(--ds-space-2) 0;
+  padding: 6px 9px;
+  border-radius: 0;
+  color: var(--part-accent, var(--theme-special));
+  background: transparent;
+  font-size: 12px;
+}
+
+.part.badge .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.part.text {
+  margin: var(--ds-space-1) 0 6px;
+  line-height: 1.6;
+}
+
+.part.muted {
+  overflow: auto;
+  max-height: 220px;
+  margin: var(--ds-space-1) 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-card);
+  color: var(--ds-text-muted);
+  background: var(--ds-canvas);
+  font-size: 11px;
+}

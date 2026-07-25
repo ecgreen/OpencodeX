@@ -66,6 +66,9 @@ export type Event =
   | EventCommandExecuted
   | EventProjectUpdated
   | EventVcsBranchUpdated
+  | EventOpencodexTerminalSessionCreated
+  | EventOpencodexTerminalSessionUpdated
+  | EventOpencodexTerminalSessionDeleted
   | EventOpencodexProjectCreated
   | EventOpencodexProjectUpdated
   | EventOpencodexProjectReordered
@@ -1395,6 +1398,27 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.terminal_session.created"
+        properties: {
+          terminalSessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.terminal_session.updated"
+        properties: {
+          terminalSessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.terminal_session.deleted"
+        properties: {
+          terminalSessionID: string
+        }
+      }
+    | {
+        id: string
         type: "opencodex.project.created"
         properties: {
           projectID: string
@@ -1686,6 +1710,9 @@ export type GlobalEvent = {
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
     | SyncEventSessionStatus
+    | SyncEventOpencodexTerminalSessionCreated
+    | SyncEventOpencodexTerminalSessionUpdated
+    | SyncEventOpencodexTerminalSessionDeleted
     | SyncEventOpencodexProjectCreated
     | SyncEventOpencodexProjectUpdated
     | SyncEventOpencodexProjectReordered
@@ -2560,12 +2587,28 @@ export type OpencodeXProjectFolder = {
   path: string
 }
 
+export type OpencodeXTerminalSession = {
+  id: string
+  driver: "claude-code"
+  title: string
+  projectID?: string
+  directory: string
+  resumeID: string
+  installationID: string
+  sessionID?: string
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeLaunched?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeOpened?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type OpencodeXProject = {
   id: string
   name?: string
   project: Project
   folders: Array<OpencodeXProjectFolder>
   sessions: Array<GlobalSession>
+  terminalSessions: Array<OpencodeXTerminalSession>
 }
 
 export type NotFoundError = {
@@ -2627,13 +2670,26 @@ export type OpencodeXSessionCreateInput = {
   hidden?: boolean
 }
 
+export type OpencodeXViewMember =
+  | {
+      kind: "session"
+      id: string
+    }
+  | {
+      kind: "terminal"
+      id: string
+    }
+
 export type OpencodeXView = {
   id: string
   title: string
   focusedSessionID?: string
+  focusedItemID?: string
   layout: string
   sessions: Array<GlobalSession>
+  terminalSessions: Array<OpencodeXTerminalSession>
   sessionIDs: Array<string>
+  members: Array<OpencodeXViewMember>
   metadata?: {
     [key: string]: unknown
   }
@@ -2680,6 +2736,7 @@ export type OpencodeXSessionUiState = {
 export type OpencodeXSessionSyncSnapshot = {
   projects: Array<OpencodeXProject>
   sessions: Array<Session>
+  terminalSessions: Array<OpencodeXTerminalSession>
   views: Array<OpencodeXView>
   sessionStatus: {
     [key: string]: SessionStatus
@@ -2716,6 +2773,7 @@ export type OpencodeXCatalogProject = {
   project: Project
   folders: Array<OpencodeXProjectFolder>
   sessionIDs: Array<string>
+  terminalSessionIDs: Array<string>
 }
 
 export type OpencodeXSessionCard = {
@@ -2776,8 +2834,10 @@ export type OpencodeXCatalogView = {
   id: string
   title: string
   focusedSessionID?: string
+  focusedItemID?: string
   layout: string
   sessionIDs: Array<string>
+  members: Array<OpencodeXViewMember>
   metadata?: {
     [key: string]: unknown
   }
@@ -2788,6 +2848,7 @@ export type OpencodeXCatalogView = {
 export type OpencodeXCatalogSnapshot = {
   projects: Array<OpencodeXCatalogProject>
   sessionCards: OpencodeXSessionCardPage
+  terminalSessions: Array<OpencodeXTerminalSession>
   views: Array<OpencodeXCatalogView>
   sessionStatus: {
     [key: string]: SessionStatus
@@ -3176,11 +3237,20 @@ export type OpencodeXSwarmUpdateRoleInput = {
   }
 }
 
+export type OpencodeXTerminalSessionCreateInput = {
+  title?: string
+  projectID?: string
+  directory: string
+  installationID: string
+}
+
 export type OpencodeXViewCreateInput = {
   id?: string
   title?: string
-  sessionIDs: Array<string>
+  sessionIDs?: Array<string>
+  members?: Array<OpencodeXViewMember>
   focusedSessionID?: string
+  focusedItemID?: string
   layout?: string
   metadata?: {
     [key: string]: unknown
@@ -4191,6 +4261,39 @@ export type SyncEventSessionStatus = {
   data: {
     sessionID: string
     status: SessionStatus
+  }
+}
+
+export type SyncEventOpencodexTerminalSessionCreated = {
+  type: "sync"
+  name: "opencodex.terminal_session.created.1"
+  id: string
+  seq: number
+  aggregateID: "terminalSessionID"
+  data: {
+    terminalSessionID: string
+  }
+}
+
+export type SyncEventOpencodexTerminalSessionUpdated = {
+  type: "sync"
+  name: "opencodex.terminal_session.updated.1"
+  id: string
+  seq: number
+  aggregateID: "terminalSessionID"
+  data: {
+    terminalSessionID: string
+  }
+}
+
+export type SyncEventOpencodexTerminalSessionDeleted = {
+  type: "sync"
+  name: "opencodex.terminal_session.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "terminalSessionID"
+  data: {
+    terminalSessionID: string
   }
 }
 
@@ -5407,6 +5510,30 @@ export type EventVcsBranchUpdated = {
   type: "vcs.branch.updated"
   properties: {
     branch?: string
+  }
+}
+
+export type EventOpencodexTerminalSessionCreated = {
+  id: string
+  type: "opencodex.terminal_session.created"
+  properties: {
+    terminalSessionID: string
+  }
+}
+
+export type EventOpencodexTerminalSessionUpdated = {
+  id: string
+  type: "opencodex.terminal_session.updated"
+  properties: {
+    terminalSessionID: string
+  }
+}
+
+export type EventOpencodexTerminalSessionDeleted = {
+  id: string
+  type: "opencodex.terminal_session.deleted"
+  properties: {
+    terminalSessionID: string
   }
 }
 
@@ -10215,6 +10342,200 @@ export type OpencodexSwarmRoleUpdateResponses = {
 export type OpencodexSwarmRoleUpdateResponse =
   OpencodexSwarmRoleUpdateResponses[keyof OpencodexSwarmRoleUpdateResponses]
 
+export type OpencodexTerminalSessionListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/terminal-session"
+}
+
+export type OpencodexTerminalSessionListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexTerminalSessionListError =
+  OpencodexTerminalSessionListErrors[keyof OpencodexTerminalSessionListErrors]
+
+export type OpencodexTerminalSessionListResponses = {
+  /**
+   * List OpencodeX terminal sessions
+   */
+  200: Array<OpencodeXTerminalSession>
+}
+
+export type OpencodexTerminalSessionListResponse =
+  OpencodexTerminalSessionListResponses[keyof OpencodexTerminalSessionListResponses]
+
+export type OpencodexTerminalSessionCreateData = {
+  body?: OpencodeXTerminalSessionCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/terminal-session"
+}
+
+export type OpencodexTerminalSessionCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexTerminalSessionCreateError =
+  OpencodexTerminalSessionCreateErrors[keyof OpencodexTerminalSessionCreateErrors]
+
+export type OpencodexTerminalSessionCreateResponses = {
+  /**
+   * Created OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionCreateResponse =
+  OpencodexTerminalSessionCreateResponses[keyof OpencodexTerminalSessionCreateResponses]
+
+export type OpencodexTerminalSessionDeleteData = {
+  body?: never
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}"
+}
+
+export type OpencodexTerminalSessionDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexTerminalSessionDeleteError =
+  OpencodexTerminalSessionDeleteErrors[keyof OpencodexTerminalSessionDeleteErrors]
+
+export type OpencodexTerminalSessionDeleteResponses = {
+  /**
+   * Deleted OpencodeX terminal session
+   */
+  200: boolean
+}
+
+export type OpencodexTerminalSessionDeleteResponse =
+  OpencodexTerminalSessionDeleteResponses[keyof OpencodexTerminalSessionDeleteResponses]
+
+export type OpencodexTerminalSessionGetData = {
+  body?: never
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}"
+}
+
+export type OpencodexTerminalSessionGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexTerminalSessionGetError =
+  OpencodexTerminalSessionGetErrors[keyof OpencodexTerminalSessionGetErrors]
+
+export type OpencodexTerminalSessionGetResponses = {
+  /**
+   * OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionGetResponse =
+  OpencodexTerminalSessionGetResponses[keyof OpencodexTerminalSessionGetResponses]
+
+export type OpencodexTerminalSessionUpdateData = {
+  body?: {
+    expectedTimeUpdated: number
+    title?: string
+    projectID?: string
+  }
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}"
+}
+
+export type OpencodexTerminalSessionUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexTerminalSessionUpdateError =
+  OpencodexTerminalSessionUpdateErrors[keyof OpencodexTerminalSessionUpdateErrors]
+
+export type OpencodexTerminalSessionUpdateResponses = {
+  /**
+   * Updated OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionUpdateResponse =
+  OpencodexTerminalSessionUpdateResponses[keyof OpencodexTerminalSessionUpdateResponses]
+
+export type OpencodexTerminalSessionOpenedData = {
+  body?: never
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}/opened"
+}
+
+export type OpencodexTerminalSessionOpenedErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexTerminalSessionOpenedError =
+  OpencodexTerminalSessionOpenedErrors[keyof OpencodexTerminalSessionOpenedErrors]
+
+export type OpencodexTerminalSessionOpenedResponses = {
+  /**
+   * Opened OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionOpenedResponse =
+  OpencodexTerminalSessionOpenedResponses[keyof OpencodexTerminalSessionOpenedResponses]
+
 export type OpencodexViewListData = {
   body?: never
   path?: never
@@ -10357,7 +10678,9 @@ export type OpencodexViewUpdateData = {
     expectedTimeUpdated: number
     title?: string
     sessionIDs?: Array<string>
+    members?: Array<OpencodeXViewMember>
     focusedSessionID?: string
+    focusedItemID?: string
     layout?: string
     metadata?: {
       [key: string]: unknown

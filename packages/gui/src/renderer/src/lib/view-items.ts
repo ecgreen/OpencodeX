@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXTerminalSession, OpencodeXViewMember, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 
 const PENDING_SESSION_ID = "pending:new-session"
@@ -10,8 +10,11 @@ export type PendingViewSession = {
   directory?: string
 }
 
-export type ViewItem = { kind: "session"; session: Session } | { kind: "pending"; slot: PendingViewSession }
-export type ViewPaneOrderItem = { kind: "session" | "pending"; id: string }
+export type ViewItem =
+  | { kind: "session"; session: Session }
+  | { kind: "terminal"; terminalSession: OpencodeXTerminalSession }
+  | { kind: "pending"; slot: PendingViewSession }
+export type ViewPaneOrderItem = { kind: "session" | "terminal" | "pending"; id: string }
 
 export function pendingSession(directory: string): Session {
   const now = Date.now()
@@ -27,7 +30,7 @@ export function pendingSession(directory: string): Session {
   }
 }
 
-export function viewItemSession(item: ViewItem, fallbackDirectory?: string): Session {
+export function viewItemSession(item: Exclude<ViewItem, { kind: "terminal" }>, fallbackDirectory?: string): Session {
   if (item.kind === "session") return item.session
   return pendingSession(item.slot.directory ?? fallbackDirectory ?? "")
 }
@@ -39,9 +42,9 @@ export function pendingViewSessions(view?: Pick<ClientCatalogView, "metadata">):
     if (!isRecord(item) || typeof item.id !== "string") return []
     return [{
       id: item.id,
-      projectID: typeof item.projectID === "string" ? item.projectID : undefined,
-      projectLabel: typeof item.projectLabel === "string" ? item.projectLabel : undefined,
-      directory: typeof item.directory === "string" ? item.directory : undefined,
+      ...(typeof item.projectID === "string" ? { projectID: item.projectID } : {}),
+      ...(typeof item.projectLabel === "string" ? { projectLabel: item.projectLabel } : {}),
+      ...(typeof item.directory === "string" ? { directory: item.directory } : {}),
     }]
   })
 }
@@ -50,7 +53,7 @@ export function viewPaneOrder(view?: Pick<ClientCatalogView, "metadata">): ViewP
   const opencodex = view?.metadata?.opencodex
   if (!isRecord(opencodex) || !Array.isArray(opencodex.paneOrder)) return []
   return opencodex.paneOrder.flatMap((item): ViewPaneOrderItem[] =>
-    isRecord(item) && (item.kind === "session" || item.kind === "pending") && typeof item.id === "string" ? [{ kind: item.kind, id: item.id }] : [],
+    isRecord(item) && (item.kind === "session" || item.kind === "terminal" || item.kind === "pending") && typeof item.id === "string" ? [{ kind: item.kind, id: item.id }] : [],
   )
 }
 
@@ -85,10 +88,18 @@ export function metadataWithViewPaneOrder(metadata: Record<string, unknown> | un
 export function orderedViewItems(view: ClientCatalogView | undefined, sessions: Session[]) {
   const items: ViewItem[] = [
     ...sessions.map((session): ViewItem => ({ kind: "session", session })),
+    ...(view?.terminalSessions ?? []).map((terminalSession): ViewItem => ({ kind: "terminal", terminalSession })),
     ...pendingViewSessions(view).map((slot): ViewItem => ({ kind: "pending", slot })),
   ]
   const byKey = new Map(items.map((item) => [`${item.kind}:${viewItemID(item)}`, item]))
-  const ordered = viewPaneOrder(view).flatMap((item) => byKey.get(`${item.kind}:${item.id}`) ?? [])
+  const persisted = viewPaneOrder(view)
+  const order = persisted.length > 0
+    ? persisted
+    : [
+        ...persistedViewMembers(view),
+        ...pendingViewSessions(view).map((slot): ViewPaneOrderItem => ({ kind: "pending", id: slot.id })),
+      ]
+  const ordered = order.flatMap((item) => byKey.get(`${item.kind}:${item.id}`) ?? [])
   const included = new Set(ordered.map(viewItemID))
   return [...ordered, ...items.filter((item) => !included.has(viewItemID(item)))].slice(0, 8)
 }
@@ -96,20 +107,31 @@ export function orderedViewItems(view: ClientCatalogView | undefined, sessions: 
 export function replacePendingViewPane(view: ClientCatalogView, pendingID: string, sessionID: string, pending: PendingViewSession[]) {
   const persisted = viewPaneOrder(view)
   const current = persisted.length > 0 ? persisted : [
-    ...view.sessionIDs.map((id): ViewPaneOrderItem => ({ kind: "session", id })),
+    ...persistedViewMembers(view),
     ...pendingViewSessions(view).map((slot): ViewPaneOrderItem => ({ kind: "pending", id: slot.id })),
   ]
   const order = current.map((item): ViewPaneOrderItem => item.kind === "pending" && item.id === pendingID ? { kind: "session", id: sessionID } : item)
-  const orderedSessionIDs = order.filter((item) => item.kind === "session").map((item) => item.id)
-  const included = new Set(orderedSessionIDs)
+  const members = order.filter((item): item is OpencodeXViewMember => item.kind !== "pending")
+  // A stale pane order (written by another client) must never shrink the view:
+  // append any persisted member the order does not mention, mirroring the
+  // tolerance in orderedViewItems.
+  const known = new Set(members.map((member) => `${member.kind}:${member.id}`))
+  for (const member of persistedViewMembers(view)) {
+    const key = `${member.kind}:${member.id}`
+    if (known.has(key)) continue
+    known.add(key)
+    members.push(member)
+  }
   return {
-    sessionIDs: [...orderedSessionIDs, ...view.sessionIDs.filter((id) => !included.has(id) && id !== sessionID)],
+    members,
     metadata: metadataWithViewPaneOrder(metadataWithPendingSessions(view.metadata, pending), order),
   }
 }
 
 export function viewItemID(item: ViewItem) {
-  return item.kind === "session" ? item.session.id : item.slot.id
+  if (item.kind === "session") return item.session.id
+  if (item.kind === "terminal") return item.terminalSession.id
+  return item.slot.id
 }
 
 export function viewItemsMembershipKey(viewID: string | undefined, items: ViewItem[]) {
@@ -120,6 +142,10 @@ export function viewItemsMembershipKey(viewID: string | undefined, items: ViewIt
 export function viewSessionsSyncKey(viewID: string | undefined, sessions: Session[]) {
   if (!viewID) return ""
   return [viewID, ...sessions.map((session) => `${session.id}:${session.directory ?? ""}:${session.time.updated}`)].join("\n")
+}
+
+function persistedViewMembers(view?: ClientCatalogView): OpencodeXViewMember[] {
+  return view?.members ?? (view?.sessionIDs ?? []).map((id) => ({ kind: "session", id }))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

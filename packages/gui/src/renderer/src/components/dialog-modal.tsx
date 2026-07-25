@@ -1,10 +1,13 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import type { GuiTranscriptExportOptions } from "../lib/transcript-export"
+import { ClaudeInstallPanel } from "./claude-install-panel"
+import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
-import { Button, Checkbox, CommandRow, IconButton, TextArea, TextInput } from "./ui"
+import { Button, Checkbox, CommandRow, IconButton, Select, TextArea, TextField, TextInput } from "./ui"
 
 export type ChoiceOption = { value: string; title: string; description?: string; meta?: string }
 export type ProjectDialogValue = { name: string; folders: string[] }
+export type TerminalSessionDialogValue = { title?: string; projectID?: string; directory: string }
 
 export type DialogState =
   | { type: "text"; title: string; message?: string; value?: string; multiline?: boolean; resolve: (value: string | undefined) => void }
@@ -12,11 +15,25 @@ export type DialogState =
   | { type: "choice"; title: string; message?: string; options: ChoiceOption[]; resolve: (value: string | undefined) => void }
   | { type: "export"; title: string; message?: string; defaults: GuiTranscriptExportOptions; resolve: (value: GuiTranscriptExportOptions | undefined) => void }
   | { type: "project"; title: string; message?: string; name: string; folders: string[]; resolve: (value: ProjectDialogValue | undefined) => void }
+  | {
+      type: "terminal-session"
+      title: string
+      message?: string
+      name?: string
+      directory: string
+      projectID?: string
+      projects: ChoiceOption[]
+      cliVersion?: string
+      resolve: (value: TerminalSessionDialogValue | undefined) => void
+    }
+  | { type: "claude-install"; title: string; message?: string; resolve: (installed: boolean) => void }
 
 export function DialogModal(props: { dialog?: DialogState; close: () => void }) {
   const [value, setValue] = createSignal("")
   const [folders, setFolders] = createSignal<string[]>([])
   const [manualFolder, setManualFolder] = createSignal("")
+  const [terminalDirectory, setTerminalDirectory] = createSignal("")
+  const [terminalProjectID, setTerminalProjectID] = createSignal("")
   const [thinking, setThinking] = createSignal(true)
   const [toolDetails, setToolDetails] = createSignal(true)
   const [assistantMetadata, setAssistantMetadata] = createSignal(true)
@@ -53,6 +70,12 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
       setManualFolder("")
       return
     }
+    if (current?.type === "terminal-session") {
+      setValue(current.name ?? "")
+      setTerminalDirectory(current.directory)
+      setTerminalProjectID(current.projectID ?? "")
+      return
+    }
     setValue("")
     setFolders([])
     setManualFolder("")
@@ -61,13 +84,27 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
     const current = props.dialog
     props.close()
     if (!current) return
-    if (current.type === "confirm") current.resolve(false)
+    if (current.type === "confirm" || current.type === "claude-install") current.resolve(false)
     else current.resolve(undefined)
+  }
+  function finishInstall(installed: boolean) {
+    const current = props.dialog
+    props.close()
+    if (current?.type === "claude-install") current.resolve(installed)
   }
   function projectValue() {
     const name = value().trim()
     const currentFolders = uniqueFolders(folders())
     return name && currentFolders.length > 0 ? { name, folders: currentFolders } : undefined
+  }
+  function terminalSessionValue() {
+    const directory = terminalDirectory().trim()
+    if (!directory) return undefined
+    return {
+      ...(value().trim() ? { title: value().trim() } : {}),
+      ...(terminalProjectID() ? { projectID: terminalProjectID() } : {}),
+      directory,
+    }
   }
   async function addSelectedFolders() {
     const current = props.dialog
@@ -76,6 +113,10 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
       ?? await window.opencodex?.folder(folders()[0] ?? undefined).then((folder) => folder ? [folder] : undefined)
     if (!selected?.length) return
     setFolders((currentFolders) => uniqueFolders([...currentFolders, ...selected]))
+  }
+  async function chooseTerminalDirectory() {
+    const directory = await window.opencodex?.folder(terminalDirectory() || undefined)
+    if (directory) setTerminalDirectory(directory)
   }
   function addManualFolder() {
     const next = manualFolder().trim()
@@ -94,12 +135,14 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
   function submit(event: SubmitEvent) {
     event.preventDefault()
     const current = props.dialog
-    const choice = current?.type === "choice" ? choiceOptions()[0]?.value : undefined
+    // The install panel owns its own actions; a stray Enter must not close it.
+    if (!current || current.type === "claude-install") return
+    const choice = current.type === "choice" ? choiceOptions()[0]?.value : undefined
     props.close()
-    if (!current) return
     if (current.type === "text") current.resolve(value())
     else if (current.type === "confirm") current.resolve(true)
     else if (current.type === "project") current.resolve(projectValue())
+    else if (current.type === "terminal-session") current.resolve(terminalSessionValue())
     else if (current.type === "export") current.resolve({
       filename: value(),
       thinking: thinking(),
@@ -115,16 +158,16 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
         <ModalFrame
           title={current().title}
           description={current().message}
-          class={current().type === "project" ? "dialog-card project-editor-modal" : current().type === "text" ? `dialog-card text-dialog-card${current().title === "Edit Session" ? " session-edit-modal" : ""}` : "dialog-card"}
+          class={current().type === "project" ? "dialog-card project-editor-modal" : current().type === "terminal-session" ? "dialog-card terminal-session-modal" : current().type === "claude-install" ? "dialog-card claude-install-modal" : current().type === "text" ? `dialog-card text-dialog-card${current().title === "Edit Session" ? " session-edit-modal" : ""}` : "dialog-card"}
           close={cancel}
           mount={mount()}
           backdropClass={mount() ? "dialog-backdrop session-dialog-backdrop" : undefined}
           showClose={current().type !== "confirm"}
           onSubmit={submit}
-          footer={(
+          footer={current().type === "claude-install" ? undefined : (
             <div class="dialog-actions">
               <Button onClick={cancel}>Cancel</Button>
-              <Button type="submit" appearance="solid" tone="accent" disabled={current().type === "project" && !projectValue()}>{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : "Save"}</Button>
+              <Button type="submit" appearance="solid" tone="accent" disabled={(current().type === "project" && !projectValue()) || (current().type === "terminal-session" && !terminalSessionValue())}>{current().type === "confirm" ? (current() as Extract<DialogState, { type: "confirm" }>).confirm ?? "Confirm" : current().type === "choice" ? "Select" : current().type === "export" ? "Export" : current().type === "terminal-session" ? "Create" : "Save"}</Button>
             </div>
           )}
         >
@@ -193,6 +236,54 @@ export function DialogModal(props: { dialog?: DialogState; close: () => void }) 
                   <p class="project-editor-error">Project name and at least one folder are required.</p>
                 </Show>
               </div>
+            </Show>
+            <Show when={current().type === "terminal-session"}>
+              <div class="terminal-session-form">
+                <TextField
+                  label="Display name"
+                  description="Optional label shown in OpencodeX."
+                  value={value()}
+                  placeholder="Claude Code"
+                  onInput={(event) => setValue(event.currentTarget.value)}
+                  autofocus
+                />
+                <TextField
+                  label="Working directory"
+                  description="Claude runs and resumes from this folder. Fixed after creation."
+                  required
+                  technical
+                  value={terminalDirectory()}
+                  onInput={(event) => setTerminalDirectory(event.currentTarget.value)}
+                  error={terminalDirectory().trim() ? undefined : "Choose a working directory."}
+                  suffix={<IconButton appearance="ghost" size="compact" icon="folder-open" label="Browse for folder" onClick={() => void chooseTerminalDirectory()} />}
+                />
+                <Select<ChoiceOption>
+                  label="Project"
+                  description="Optional grouping in OpencodeX."
+                  options={[
+                    { value: "", title: "No project", description: "Keep this session in the global catalog" },
+                    ...(current() as Extract<DialogState, { type: "terminal-session" }>).projects,
+                  ]}
+                  current={[
+                    { value: "", title: "No project", description: "Keep this session in the global catalog" },
+                    ...(current() as Extract<DialogState, { type: "terminal-session" }>).projects,
+                  ].find((option) => option.value === terminalProjectID())}
+                  optionValue={(option) => option.value}
+                  optionLabel={(option) => option.title}
+                  onSelect={(option) => setTerminalProjectID(option?.value ?? "")}
+                />
+                <Show when={(current() as Extract<DialogState, { type: "terminal-session" }>).cliVersion}>
+                  {(cliVersion) => (
+                    <div class="terminal-session-cli" role="status">
+                      <Icon name="check" />
+                      <span>Claude Code {cliVersion()} detected</span>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            </Show>
+            <Show when={current().type === "claude-install"}>
+              <ClaudeInstallPanel finish={finishInstall} />
             </Show>
           </>
         </ModalFrame>

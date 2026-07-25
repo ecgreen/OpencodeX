@@ -28,9 +28,12 @@
   background: transparent;
 }
 
-.text-dialog-card {
+/* Edge-to-edge card: the header, body and action bar each carry their own
+   inset, so the shared .dialog-card padding has to be cleared here. */
+.dialog-card.text-dialog-card {
   gap: 0;
   width: min(520px,calc(100vw - 36px));
+  padding: 0;
   overflow: hidden;
   border-color: color-mix(in srgb,var(--primary) 34%,var(--border-active));
   border-radius: 10px;
@@ -38,16 +41,16 @@
   box-shadow: 0 24px 80px var(--theme-backdrop);
 }
 
-.session-edit-modal>header {
+.dialog-card.session-edit-modal>header {
   box-shadow: inset 3px 0 0 var(--primary);
 }
 
-.session-edit-modal>input {
+.dialog-card.session-edit-modal>input {
   min-height: 44px;
   padding-inline: 13px;
 }
 
-.text-dialog-card .dialog-actions {
+.dialog-card.text-dialog-card .dialog-actions {
   align-items: center;
   justify-content: flex-end;
   gap: 9px;
@@ -91,7 +94,9 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.dialog-card input {
+/* Legacy styling for bare dialog inputs only. Field-embedded inputs draw their
+   chrome on .ui-field-control; restyling them here doubles every border. */
+.dialog-card input:not([data-embedded="true"]) {
   width: 100%;
   padding: 10px 12px;
   outline: none;
@@ -149,7 +154,7 @@
   box-shadow: none;
 }
 
-.text-dialog-card>input {
+.dialog-card.text-dialog-card>input {
   margin: 18px 20px 0;
   width: calc(100% - 40px);
   border-color: color-mix(in srgb,var(--primary) 28%,var(--border-subtle));
@@ -158,7 +163,7 @@
   font-size: 14px;
 }
 
-.text-dialog-card>textarea {
+.dialog-card.text-dialog-card>textarea {
   margin: 18px 20px 0;
   width: calc(100% - 40px);
   border-color: color-mix(in srgb,var(--primary) 28%,var(--border-subtle));

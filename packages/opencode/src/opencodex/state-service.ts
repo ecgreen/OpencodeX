@@ -13,6 +13,7 @@ import { makeStateReader } from "./state-reader"
 import { Service } from "./state-schema"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
+import { OpencodeXTerminalSession } from "./terminal-session"
 import { OpencodeXView } from "./view"
 
 export const layer = Layer.effect(
@@ -43,6 +44,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(OpencodeXJob.defaultLayer),
   Layer.provide(Session.defaultLayer),
   Layer.provide(OpencodeXSwarm.readLayer.pipe(Layer.provide(Database.defaultLayer))),
+  Layer.provide(OpencodeXTerminalSession.defaultLayer),
   Layer.provide(OpencodeXView.defaultLayer),
   Layer.provide(SessionStatus.defaultLayer),
   Layer.provide(Permission.defaultLayer),

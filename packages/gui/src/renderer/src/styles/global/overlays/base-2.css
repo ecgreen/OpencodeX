@@ -129,23 +129,6 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-.tool-questions {
-  display: grid;
-  gap: 7px;
-}
-
-.tool-questions p {
-  margin: 0;
-  color: var(--muted);
-}
-
-.tool-questions>div {
-  display: grid;
-  gap: 4px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--theme-border);
-}
-
 .plugin-safety-note {
   display: grid;
   gap: 4px;

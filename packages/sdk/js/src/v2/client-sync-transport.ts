@@ -88,6 +88,9 @@ export function clientEventInvalidation(event: Event): "capabilities" | "catalog
     event.type === "opencodex.project.reordered" ||
     event.type === "opencodex.project.deleted" ||
     event.type === "opencodex.project.session_assigned" ||
+    event.type === "opencodex.terminal_session.created" ||
+    event.type === "opencodex.terminal_session.updated" ||
+    event.type === "opencodex.terminal_session.deleted" ||
     event.type === "opencodex.view.created" ||
     event.type === "opencodex.view.updated" ||
     event.type === "opencodex.view.reordered" ||

@@ -53,6 +53,12 @@
 @import "./styles/pages/sessions/base-5.css" layer(features);
 @import "./styles/pages/sessions/base-6.css" layer(features);
 @import "./styles/pages/sessions/base-7.css" layer(features);
+@import "./styles/pages/sessions/provider-states.css" layer(features);
+@import "./styles/pages/sessions/transcript-part.css" layer(features);
+@import "./styles/pages/sessions/transcript-thinking.css" layer(features);
+@import "./styles/pages/sessions/transcript-output.css" layer(features);
+@import "./styles/pages/sessions/transcript-diff.css" layer(features);
+@import "./styles/pages/sessions/transcript-states.css" layer(features);
 @import "./styles/pages/sessions/responsive.css" layer(features);
 @import "./styles/pages/sessions/states.css" layer(features);
 @import "./styles/pages/sessions/states-2.css" layer(features);

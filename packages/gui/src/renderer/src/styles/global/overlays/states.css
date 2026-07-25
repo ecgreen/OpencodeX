@@ -170,10 +170,6 @@
   background: var(--theme-surface-raised);
 }
 
-.tool-questions>div:last-child {
-  border-bottom: 0;
-}
-
 .workbench-menu>summary:hover {
   background: var(--workbench-row-hover);
   color: var(--workbench-text);
@@ -238,7 +234,7 @@
   box-shadow: none;
 }
 
-.dialog-card input:focus {
+.dialog-card input:not([data-embedded="true"]):focus {
   border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
   box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
 }

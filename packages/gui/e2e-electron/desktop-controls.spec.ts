@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test"
+import type { WebPreferences } from "electron"
 import { packagedExecutable } from "../scripts/packaged-executable"
 
 const gui = path.resolve(import.meta.dirname, "..")
@@ -14,11 +15,12 @@ const readme = path.join(workspace, "README.md")
 const run = promisify(execFile)
 const packaged = process.env.OPENCODEX_GUI_E2E_PACKAGED === "1"
 const backgrounded = process.env.OPENCODEX_GUI_E2E_BACKGROUND === "1"
+const skipHardwareAssertion = backgrounded || process.env.OPENCODEX_GUI_E2E_SKIP_GPU === "1"
 
 test.beforeAll(async () => {
   await rm(runtime, { recursive: true, force: true })
   await Promise.all(
-    ["config", "data", "home", "state", "user-data", "workspace"].map((directory) =>
+    ["bin", "config", "data", "home", "state", "user-data", "workspace"].map((directory) =>
       mkdir(path.join(runtime, directory), { recursive: true }),
     ),
   )
@@ -28,6 +30,7 @@ test.beforeAll(async () => {
   await git("config", "user.email", "acceptance@opencodex.local")
   await git("add", "README.md")
   await git("commit", "-m", "test: seed disposable workspace")
+  await createFakeClaude()
 })
 
 test("drives native desktop controls and session workspace tools", async () => {
@@ -35,13 +38,20 @@ test("drives native desktop controls and session workspace tools", async () => {
   try {
     const executablePath = packaged ? packagedExecutable(gui) : electronExecutable()
     if (!executablePath) throw new Error("Packaged OpencodeX executable was not found.")
-    const graphicsArgs = [
-      "--enable-gpu",
-      "--enable-gpu-rasterization",
-      "--enable-zero-copy",
-      ...(backgrounded ? ["--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"] : []),
-      ...(process.platform === "win32" ? ["--use-angle=d3d11"] : []),
-    ]
+    const graphicsArgs = skipHardwareAssertion
+      ? ["--disable-gpu"]
+      : [
+          "--enable-gpu",
+          "--enable-gpu-rasterization",
+          "--enable-zero-copy",
+          ...(process.platform === "win32" ? ["--use-angle=d3d11"] : []),
+        ]
+    if (backgrounded)
+      graphicsArgs.push(
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-backgrounding-occluded-windows",
+      )
     application = await electron.launch({
       executablePath,
       args: packaged
@@ -60,6 +70,7 @@ test("drives native desktop controls and session workspace tools", async () => {
         OPENCODE_PURE: "1",
         OPENCODE_TEST_HOME: path.join(runtime, "home"),
         OPENCODEX_GUI_DIRECTORY: workspace,
+        PATH: `${path.join(runtime, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
         ...(packaged ? {} : { OPENCODEX_GUI_RENDERER_URL: "http://127.0.0.1:4174" }),
         XDG_CONFIG_HOME: path.join(runtime, "config"),
         XDG_DATA_HOME: path.join(runtime, "data"),
@@ -68,7 +79,7 @@ test("drives native desktop controls and session workspace tools", async () => {
     })
 
     const page = await application.firstWindow()
-    if (!backgrounded) await expectElectronHardwareAcceleration(application)
+    if (!skipHardwareAssertion) await expectElectronHardwareAcceleration(application)
     const failures = collectRendererFailures(page)
     await page.emulateMedia({ reducedMotion: "reduce" })
     await expect.poll(() => page.evaluate(() => Boolean(window.opencodex))).toBe(true)
@@ -78,6 +89,7 @@ test("drives native desktop controls and session workspace tools", async () => {
     await createProjectWithNativePicker(page)
     if (!backgrounded) await exerciseWindowControls(application, page)
     await exerciseSessionDesktopTools(application, page)
+    await exerciseClaudeCode(application, page)
     await exerciseSessionPromptStream(page)
 
     expect(failures).toEqual([])
@@ -171,6 +183,68 @@ async function exerciseSessionPromptStream(page: Page) {
   })
 }
 
+async function exerciseClaudeCode(application: ElectronApplication, page: Page) {
+  await openTitlebarMenu(page, "File")
+  await clickTitlebarMenuItem(page, "New Claude Code Session")
+  await page.getByLabel("Display name").fill("Electron Claude Session")
+  await page.getByLabel("Working directory").fill(workspace)
+  await page.getByRole("button", { name: "Create", exact: true }).click()
+
+  const terminal = page.locator('section[aria-label="Electron Claude Session terminal"]')
+  await expect(terminal).toBeVisible()
+  await expect(terminal).toContainText("FAKE_CLAUDE_ARGS --session-id")
+  await page.keyboard.type("FIRST_INPUT")
+  await page.keyboard.press("Enter")
+  await expect(terminal).toContainText("FAKE_CLAUDE_ECHO FIRST_INPUT")
+
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click()
+  await expect(page.locator(".dashboard-page:not(.app-loading-skeleton)")).toBeVisible()
+  await openTerminalSessionInOwner(application)
+  await expect(terminal).toBeVisible()
+  await page.keyboard.type("AFTER_NAVIGATION")
+  await page.keyboard.press("Enter")
+  await expect(terminal).toContainText("FAKE_CLAUDE_ECHO AFTER_NAVIGATION")
+
+  await page.getByRole("button", { name: "Stop", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Resume", exact: true }).click()
+  await expect(terminal).toContainText("FAKE_CLAUDE_ARGS --resume")
+
+  const record = await terminalSessionRecord(page)
+  const duplicate = await application.evaluate(async ({ BrowserWindow }, input) => {
+    const owner = BrowserWindow.getAllWindows()[0]
+    if (!owner) throw new Error("Owning window was not available.")
+    const webContents = owner.webContents as typeof owner.webContents & { getLastWebPreferences(): WebPreferences }
+    const duplicateWindow = new BrowserWindow({ show: false, webPreferences: webContents.getLastWebPreferences() })
+    try {
+      await duplicateWindow.loadURL(owner.webContents.getURL())
+      return await duplicateWindow.webContents.executeJavaScript(
+        `window.opencodex.terminal.create(${JSON.stringify(input)})`,
+      )
+    } finally {
+      duplicateWindow.destroy()
+    }
+  }, {
+    id: `terminal-session:${record.id}`,
+    cwd: record.directory,
+    cols: 80,
+    rows: 24,
+    profile: {
+      kind: "claude-code",
+      mode: "resume",
+      resumeID: record.resumeID,
+      installationID: record.installationID,
+    },
+  })
+  expect(duplicate).toMatchObject({ ok: false, code: "duplicate-window" })
+
+  await createMixedViewInOwner(application, record.id)
+  await openMixedViewInOwner(application)
+  await expect(page.getByText("Electron View Session", { exact: true })).toBeVisible()
+  await expect(page.getByText("Electron Claude Session", { exact: true }).first()).toBeVisible()
+  await expect(page.locator('section[aria-label="Electron Claude Session terminal"]')).toBeVisible()
+}
+
 async function stubNativeDialogs(application: ElectronApplication) {
   await application.evaluate(({ dialog }, fixture) => {
     Object.defineProperty(dialog, "showOpenDialog", {
@@ -237,6 +311,75 @@ async function openSessionInOwner(application: ElectronApplication) {
   })
 }
 
+async function openTerminalSessionInOwner(application: ElectronApplication) {
+  await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
+    const owner = BrowserWindow.getAllWindows()[0]?.webContents
+    if (!owner) return false
+    return owner.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.includes('Electron Claude Session'))`)
+  })).toBe(true)
+  await application.evaluate(({ BrowserWindow }) => {
+    const owner = BrowserWindow.getAllWindows()[0]?.webContents
+    if (!owner) throw new Error("Owning renderer was not available.")
+    return owner.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Electron Claude Session'))?.click()`)
+  })
+}
+
+async function terminalSessionRecord(page: Page) {
+  return await page.evaluate(async () => {
+    const connection = await window.opencodex!.connection()
+    const records = await fetch(new URL("/experimental/opencodex/terminal-session", connection.url)).then((response) => response.json()) as Array<{
+      id: string
+      title: string
+      directory: string
+      resumeID: string
+      installationID: string
+    }>
+    const record = records.find((item) => item.title === "Electron Claude Session")
+    if (!record) throw new Error("Claude terminal session record was not available.")
+    return record
+  })
+}
+
+async function createMixedViewInOwner(application: ElectronApplication, terminalSessionID: string) {
+  await application.evaluate(({ BrowserWindow }, input) => {
+    const owner = BrowserWindow.getAllWindows()[0]?.webContents
+    if (!owner) throw new Error("Owning renderer was not available.")
+    return owner.executeJavaScript(`(async () => {
+      const connection = await window.opencodex.connection()
+      const sessionResponse = await fetch(new URL('/session', connection.url), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Electron View Session' }),
+      })
+      if (!sessionResponse.ok) throw new Error(await sessionResponse.text())
+      const session = await sessionResponse.json()
+      const viewResponse = await fetch(new URL('/experimental/opencodex/view', connection.url), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Electron Mixed View',
+          members: [{ kind: 'session', id: session.id }, { kind: 'terminal', id: ${JSON.stringify(input.terminalSessionID)} }],
+          focusedItemID: ${JSON.stringify(input.terminalSessionID)},
+        }),
+      })
+      if (!viewResponse.ok) throw new Error(await viewResponse.text())
+    })()`)
+  }, { terminalSessionID })
+}
+
+async function openMixedViewInOwner(application: ElectronApplication) {
+  await expect.poll(() => application.evaluate(({ BrowserWindow }) => {
+    const owner = BrowserWindow.getAllWindows()[0]?.webContents
+    if (!owner) return false
+    return owner.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.includes('Electron Mixed View'))`)
+  })).toBe(true)
+  await application.evaluate(({ BrowserWindow }) => {
+    const owner = BrowserWindow.getAllWindows()[0]?.webContents
+    if (!owner) throw new Error("Owning renderer was not available.")
+    return owner.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Electron Mixed View'))?.click()`)
+  })
+}
+
 async function openTitlebarMenu(page: Page, label: string) {
   const trigger = page.locator(".titlebar-menu-trigger").filter({ hasText: label })
   await trigger.focus()
@@ -256,6 +399,49 @@ function electronExecutable() {
     path.join(gui, "node_modules", "electron", "dist", executable),
     path.join(root, "node_modules", "electron", "dist", executable),
   ].find(existsSync) ?? executable
+}
+
+async function createFakeClaude() {
+  const directory = path.join(runtime, "bin")
+  if (process.platform === "win32") {
+    const executable = path.join(directory, "claude.exe")
+    const source = [
+      "using System;",
+      "public static class FakeClaude {",
+      "  public static void Main(string[] args) {",
+      "    if (Array.IndexOf(args, \"--version\") >= 0) { Console.WriteLine(\"fake-claude 1.0\"); return; }",
+      "    Console.WriteLine(\"FAKE_CLAUDE_ARGS \" + String.Join(\" \", args));",
+      "    string line;",
+      "    while ((line = Console.ReadLine()) != null) Console.WriteLine(\"FAKE_CLAUDE_ECHO \" + line);",
+      "  }",
+      "}",
+    ].join("\n")
+    const sourceFile = path.join(directory, "fake-claude.cs")
+    const compileScript = path.join(directory, "compile-fake-claude.ps1")
+    await writeFile(sourceFile, source)
+    await writeFile(
+      compileScript,
+      'param([string]$Source, [string]$Output)\n$ErrorActionPreference = "Stop"\nAdd-Type -Path $Source -OutputAssembly $Output -OutputType ConsoleApplication\n',
+    )
+    await run("powershell.exe", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      compileScript,
+      "-Source",
+      sourceFile,
+      "-Output",
+      executable,
+    ])
+    return
+  }
+  const executable = path.join(directory, "claude")
+  await writeFile(
+    executable,
+    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "fake-claude 1.0"; exit 0; fi\nprintf "FAKE_CLAUDE_ARGS %s\\n" "$*"\nwhile IFS= read -r line; do printf "FAKE_CLAUDE_ECHO %s\\n" "$line"; done\n',
+  )
+  await chmod(executable, 0o755)
 }
 
 function git(...args: string[]) {

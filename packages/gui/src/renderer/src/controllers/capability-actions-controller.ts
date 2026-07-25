@@ -121,12 +121,13 @@ export function createCapabilityActionsController(input: {
     input.alert(`Switched to ${org.orgName}.`)
   }
 
-  async function connectProvider() {
+  async function connectProvider(preselectedProviderID?: string) {
     const client = input.client()
     if (!client) return
     const providers = (await listProviders(client)).data
     const authMethods = (await listProviderAuthMethods(client)).data ?? {}
-    const providerValue = await input.dialogs.askChoice({
+    // Entering from a specific provider (the model picker) skips the chooser.
+    const providerValue = preselectedProviderID ?? await input.dialogs.askChoice({
       title: "Connect Provider",
       options: [
         ...(providers?.all ?? []).map((provider) => ({

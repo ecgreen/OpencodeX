@@ -1,4 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
+import type {
+  ClaudeCodeStatus,
+  TerminalCreateInput,
+  TerminalLaunchProfile,
+  TerminalResult,
+} from "../shared/terminal.js"
+
+export type { ClaudeCodeStatus, TerminalCreateInput, TerminalLaunchProfile, TerminalResult }
 
 export type GuiConnection = {
   url: string
@@ -39,12 +47,6 @@ export type BrowserCapture = {
   dataURL: string
 }
 
-export type TerminalResult = {
-  ok: boolean
-  message?: string
-  pid?: number
-}
-
 export type TerminalDataEvent = {
   id: string
   data: string
@@ -54,6 +56,7 @@ export type TerminalExitEvent = {
   id: string
   exitCode?: number
   signal?: number | string
+  message?: string
 }
 
 export type ContextPath = {
@@ -63,6 +66,10 @@ export type ContextPath = {
 
 contextBridge.exposeInMainWorld("opencodex", {
   connection: () => ipcRenderer.invoke("opencodex:connection") as Promise<GuiConnection>,
+  installationID: () => ipcRenderer.invoke("opencodex:installation-id") as Promise<string>,
+  claude: {
+    status: () => ipcRenderer.invoke("opencodex:claude:status") as Promise<ClaudeCodeStatus>,
+  },
   folder: (defaultPath?: string) => ipcRenderer.invoke("opencodex:folder", defaultPath) as Promise<string | undefined>,
   folders: (defaultPath?: string) => ipcRenderer.invoke("opencodex:folders", defaultPath) as Promise<string[] | undefined>,
   file: (defaultPath?: string) => ipcRenderer.invoke("opencodex:file", defaultPath) as Promise<string | undefined>,
@@ -70,7 +77,7 @@ contextBridge.exposeInMainWorld("opencodex", {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   editor: (input: { value: string; cwd?: string }) => ipcRenderer.invoke("opencodex:editor", input) as Promise<string | undefined>,
   terminal: {
-    create: (input: { id: string; cwd?: string; cols?: number; rows?: number }) => ipcRenderer.invoke("opencodex:terminal:create", input) as Promise<TerminalResult>,
+    create: (input: TerminalCreateInput) => ipcRenderer.invoke("opencodex:terminal:create", input) as Promise<TerminalResult>,
     write: (input: { id: string; data: string }) => ipcRenderer.send("opencodex:terminal:write", input),
     resize: (input: { id: string; cols: number; rows: number }) => ipcRenderer.send("opencodex:terminal:resize", input),
     destroy: (id: string) => ipcRenderer.invoke("opencodex:terminal:destroy", id) as Promise<boolean>,

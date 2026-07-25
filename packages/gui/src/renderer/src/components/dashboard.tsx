@@ -105,7 +105,7 @@ function DashboardProjectCard(props: {
           <Button appearance="ghost" class="dashboard-card-open" onClick={props.openProject}>
             <strong>{title(props.project.name ?? props.project.project.name)}</strong>
             <small>
-              <span>{projectDashboardMeta(props.project, props.snapshot, sessions().length)}</span>
+              <span>{projectDashboardMeta(props.project, props.snapshot, sessions().length + props.project.terminalSessions.length)}</span>
             </small>
           </Button>
           <CardActionMenu label={title(props.project.name ?? props.project.project.name)} actions={actions()} />

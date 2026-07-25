@@ -65,6 +65,8 @@ import { Todo } from "./todo"
 import { BackgroundJob } from "@/background/job"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionPromptRecovery } from "./prompt-recovery"
+import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
+import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -165,6 +167,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const status = yield* SessionStatus.Service
     const sessions = yield* Session.Service
+    const claudeDriver = yield* OpencodeXClaudeDriver.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
     const processor = yield* SessionProcessor.Service
@@ -1650,9 +1653,61 @@ export const layer = Layer.effect(
 
     const loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts> = Effect.fn("SessionPrompt.loop")(
       function* (input: LoopInput) {
-        return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+        // Every prompt entry point funnels through here, so this is the one
+        // place that has to know a turn may belong to an external driver.
+        const work = (yield* claudeCodeTurn(input.sessionID)) ?? runLoop(input.sessionID)
+        return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
       },
     )
+
+    /**
+     * Sessions on the "Claude subscription" model are answered by the local
+     * Claude Code CLI instead of a provider API. Returns the work effect for
+     * such a turn, or undefined for an ordinary session.
+     */
+    const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      const last = yield* lastUserMessage(sessionID)
+      const model = last?.info.role === "user" ? last.info.model : session.model
+      const providerID = model?.providerID
+      if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
+      if (!last || last.info.role !== "user") return undefined
+      const text = last.parts
+        .flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text] : []))
+        .join("\n")
+        .trim()
+      if (!text) return undefined
+      yield* ensureClaudeTitle(session, text)
+      return claudeDriver.runTurn({
+        sessionID,
+        parentMessageID: last.info.id,
+        text,
+        directory: session.directory,
+        providerID,
+        modelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+        // "default" is the sentinel for "no variant" everywhere else in the loop.
+        ...(model?.variant && model.variant !== "default" ? { variant: model.variant } : {}),
+      })
+    })
+
+    /** User messages carry `modelID`; the session record carries `id`. */
+    const modelIdentifier = (model?: { modelID?: string; id?: string }) => model?.modelID ?? model?.id
+
+    /**
+     * Claude Code has no small model to summarize with, so a session takes its
+     * name from the opening request instead of an extra LLM call.
+     */
+    const ensureClaudeTitle = Effect.fnUntraced(function* (session: Session.Info, text: string) {
+      if (session.title && !Session.isDefaultTitle(session.title)) return
+      const line = text.split("\n").find((value) => value.trim())?.trim() ?? text.trim()
+      const title = line.length > 60 ? `${line.slice(0, 60)}…` : line
+      if (title) yield* sessions.setTitle({ sessionID: session.id, title }).pipe(Effect.ignore)
+    })
+
+    const lastUserMessage = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const match = yield* sessions.findMessage(sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
+      return Option.getOrUndefined(match)
+    })
 
     const claimCommandTurn = Effect.fn("SessionPrompt.claimCommandTurn")(function* (commandID: string) {
       const now = Date.now()
@@ -2137,6 +2192,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Session.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
+    Layer.provide(OpencodeXClaudeDriver.defaultLayer),
   ).pipe(
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(Image.defaultLayer),

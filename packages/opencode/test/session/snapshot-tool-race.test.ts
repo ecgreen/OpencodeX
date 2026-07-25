@@ -12,6 +12,7 @@
  * tools internally during multi-step processing before emitting events.
  */
 import { expect } from "bun:test"
+import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import fs from "fs/promises"
@@ -172,6 +173,7 @@ function makeHttp() {
     TestLLMServer.layer,
     SessionSummary.defaultLayer,
     SessionPrompt.layer.pipe(
+      Layer.provide(OpencodeXClaudeDriver.defaultLayer),
       Layer.provide(SessionRevert.defaultLayer),
       Layer.provide(Image.defaultLayer),
       Layer.provide(Reference.defaultLayer),

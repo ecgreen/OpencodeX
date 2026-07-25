@@ -35,6 +35,7 @@ import type {
   OpencodeXView,
 } from "./opencodex-operations-types"
 import { deriveStatus } from "./opencodex-session-status"
+import { viewMemberCount, viewSessionMemberIDs } from "./opencodex-view-model"
 
 export function createOpencodeXDashboardData(input: {
   sync: ReturnType<typeof useSync>
@@ -98,13 +99,14 @@ export function createOpencodeXDashboardData(input: {
       }
     })
     const viewRows = input.views().map((view) => {
-      const project = input.projects().find((item) => item.sessionIDs.some((sessionID) => view.sessionIDs.includes(sessionID)))
+      const memberSessionIDs = viewSessionMemberIDs(view)
+      const project = input.projects().find((item) => item.sessionIDs.some((sessionID) => memberSessionIDs.includes(sessionID)))
       const status = dashboardViewStatus(view, sessionByID, input.sync)
       return {
         id: `view:${view.id}`,
         kind: "view" as const,
         title: view.title,
-        subtitle: `${view.sessionIDs.length} session${view.sessionIDs.length === 1 ? "" : "s"}`,
+        subtitle: `${viewMemberCount(view)} session${viewMemberCount(view) === 1 ? "" : "s"}`,
         projectID: project?.id,
         status,
         dashboardStatus: status,

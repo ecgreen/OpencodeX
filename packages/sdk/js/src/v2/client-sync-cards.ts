@@ -25,12 +25,20 @@ export function applyClientSessionCardPage(
   })
   const views = mapEntities(current.views, (view) => {
     const sessionIDs = view.sessionIDs.filter((sessionID) => !missing.has(sessionID))
-    if (sessionIDs.length === view.sessionIDs.length) return view
+    // members must be pruned in the same pass: a view holding evicted session
+    // ids in members would 400 on the next membership PATCH built from it.
+    const members = (view.members ?? []).filter((member) => member.kind !== "session" || !missing.has(member.id))
+    if (sessionIDs.length === view.sessionIDs.length && members.length === (view.members ?? []).length) return view
     return {
       ...view,
       sessionIDs,
+      members,
       focusedSessionID:
         view.focusedSessionID && sessionIDs.includes(view.focusedSessionID) ? view.focusedSessionID : sessionIDs[0],
+      focusedItemID:
+        view.focusedItemID && members.some((member) => member.id === view.focusedItemID)
+          ? view.focusedItemID
+          : members[0]?.id,
     }
   })
   const messageIDs = Object.keys(current.tombstones.messageSessions).filter((messageID) =>

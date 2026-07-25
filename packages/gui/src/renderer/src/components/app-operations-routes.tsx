@@ -1,6 +1,7 @@
 import { lazy, Show, Suspense } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { EMPTY_SESSION_DATA } from "../controllers/authoritative-state-controller"
+import type { ViewItem } from "../lib/view-items"
 import { AppViewPane } from "./app-view-pane"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 
@@ -74,31 +75,12 @@ export function ViewsRoute(props: { model: GuiAppModel }) {
       items={model.view.items()}
       renderItem={(item) => <AppViewPane model={model} item={item} />}
       sidePanelOpen={model.view.sidePanelOpen()}
-      toggleSidePanel={model.view.sessions().length > 0 ? model.view.toggleSidePanel : undefined}
+      toggleSidePanel={model.view.items().length > 0 ? model.view.toggleSidePanel : undefined}
       sidePanel={
-        <Show when={model.view.sidePanelSession()}>
-          {(session) => (
+        <Show when={model.view.sidePanelItem()}>
+          {(item) => (
             <Suspense fallback={<SessionSidePanelLoading open={model.view.sidePanelOpen()} widthRatio={model.view.sidePanelWidthRatio()} />}>
-              <SessionSidePanel
-                open={model.view.sidePanelOpen()}
-                widthRatio={model.view.sidePanelWidthRatio()}
-                session={session()}
-                data={model.authoritative.viewSessionData()[session().id] ?? EMPTY_SESSION_DATA}
-                providers={model.authoritative.snapshot()?.providers ?? []}
-                mcp={model.authoritative.snapshot()?.mcp ?? {}}
-                lsp={model.authoritative.snapshot()?.lsp ?? []}
-                config={model.authoritative.snapshot()?.config}
-                gui={model.authoritative.client()}
-                subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}
-                directory={model.sessionActions.sidePanelDirectory(session())}
-                request={model.view.sidePanelRequest()}
-                contextOptions={model.view.sidePanelContextOptions()}
-                selectedContextID={session().id}
-                selectContext={model.view.setSidePanelSessionID}
-                startResize={model.view.startSidePanelResize}
-                toggleMaximized={model.view.toggleSidePanelMaximized}
-                resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
-              />
+              <ViewWorkspacePanel model={model} item={item()} />
             </Suspense>
           )}
         </Show>
@@ -115,13 +97,58 @@ export function ViewsRoute(props: { model: GuiAppModel }) {
   )
 }
 
+function ViewWorkspacePanel(props: { model: GuiAppModel; item: ViewItem }) {
+  const model = props.model
+  if (props.item.kind === "session") return (
+    <SessionSidePanel
+      open={model.view.sidePanelOpen()}
+      widthRatio={model.view.sidePanelWidthRatio()}
+      session={props.item.session}
+      data={model.authoritative.viewSessionData()[props.item.session.id] ?? EMPTY_SESSION_DATA}
+      providers={model.authoritative.snapshot()?.providers ?? []}
+      mcp={model.authoritative.snapshot()?.mcp ?? {}}
+      lsp={model.authoritative.snapshot()?.lsp ?? []}
+      config={model.authoritative.snapshot()?.config}
+      gui={model.authoritative.client()}
+      subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}
+      directory={model.sessionActions.sidePanelDirectory(props.item.session)}
+      request={model.view.sidePanelRequest()}
+      contextOptions={model.view.sidePanelContextOptions()}
+      selectedContextID={props.item.session.id}
+      selectContext={model.view.setSidePanelSessionID}
+      startResize={model.view.startSidePanelResize}
+      toggleMaximized={model.view.toggleSidePanelMaximized}
+      resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
+    />
+  )
+  return (
+    <SessionSidePanel
+      open={model.view.sidePanelOpen()}
+      widthRatio={model.view.sidePanelWidthRatio()}
+      sessionID={props.item.kind === "terminal" ? props.item.terminalSession.id : props.item.slot.id}
+      directory={props.item.kind === "terminal" ? props.item.terminalSession.directory : props.item.slot.directory}
+      directoryOnly
+      gui={model.authoritative.client()}
+      subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}
+      lsp={model.authoritative.snapshot()?.lsp ?? []}
+      config={model.authoritative.snapshot()?.config}
+      request={model.view.sidePanelRequest()}
+      startResize={model.view.startSidePanelResize}
+      toggleMaximized={model.view.toggleSidePanelMaximized}
+      resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
+    />
+  )
+}
+
 export function ViewEditorRoute(props: { model: GuiAppModel }) {
   const view = () => props.model.view.editingView()
   return (
     <ViewEditorPage
       view={view()}
       sessions={props.model.sessionSelection.visibleSessions()}
+      terminalSessions={props.model.authoritative.snapshot()?.terminalSessions ?? []}
       projects={props.model.authoritative.snapshot()?.projects ?? []}
+      createTerminalSession={() => props.model.management.createClaudeSession(undefined, undefined, { open: false })}
       save={props.model.management.saveView}
       cancel={() =>
         props.model.navigation.setRoute(view() ? { name: "views", viewID: view()!.id } : { name: "views" })

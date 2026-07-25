@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test"
-import type { Message, OpencodeXSessionSnapshot, OpencodeXStateSnapshot, Part, Session } from "@opencode-ai/sdk/v2"
+import type {
+  Message,
+  OpencodeXSessionSnapshot,
+  OpencodeXStateSnapshot,
+  OpencodeXTerminalSession,
+  Part,
+  Session,
+} from "@opencode-ai/sdk/v2"
 import {
   applyClientSessionSnapshot,
   applyClientStateSnapshot,
@@ -7,6 +14,7 @@ import {
   type ClientStateSyncTransport,
 } from "@opencode-ai/sdk/v2"
 import { projectTuiClientState } from "@tui/context/sync-state"
+import { viewItemID } from "@tui/component/opencodex-view-model"
 
 test("projects authoritative catalog, interactions, and loaded session details for the TUI adapter", () => {
   const controller = createClientStateSync({ transport: unusedTransport() })
@@ -49,6 +57,33 @@ test("projects authoritative catalog, interactions, and loaded session details f
   })
 })
 
+test("preserves terminal members as non-conversation View items", () => {
+  const root = rootSnapshot()
+  const terminal = terminalSession()
+  root.payloads.catalog.terminalSessions = [terminal]
+  root.payloads.catalog.views = [
+    {
+      id: "view-1",
+      title: "Claude workspace",
+      layout: "list",
+      sessionIDs: [],
+      members: [{ kind: "terminal", id: terminal.id }],
+      focusedItemID: terminal.id,
+      timeCreated: 1,
+      timeUpdated: 2,
+    },
+  ]
+  const controller = createClientStateSync({ transport: unusedTransport() })
+  const projection = projectTuiClientState(applyClientStateSnapshot(controller.getState(), root))
+
+  expect(projection?.views[0]?.members).toEqual([{ kind: "terminal", id: terminal.id }])
+  expect(projection?.views[0]?.focusedItemID).toBe(terminal.id)
+  expect(projection?.views[0]?.sessions).toEqual([])
+  expect(projection?.views[0]?.terminalSessions).toEqual([terminal])
+  expect(projection?.details[terminal.id]).toBeUndefined()
+  expect(viewItemID({ kind: "terminal", terminal })).toBe(terminal.id)
+})
+
 function rootSnapshot(): OpencodeXStateSnapshot {
   return {
     scope: scope(),
@@ -62,6 +97,7 @@ function rootSnapshot(): OpencodeXStateSnapshot {
     payloads: {
       catalog: {
         projects: [],
+        terminalSessions: [],
         sessionCards: {
           items: [session()],
           hasMore: false,
@@ -126,6 +162,19 @@ function session(): Session {
     title: "First",
     version: "test",
     time: { created: 1, updated: 2 },
+  }
+}
+
+function terminalSession(): OpencodeXTerminalSession {
+  return {
+    id: "oxts_terminal",
+    driver: "claude-code",
+    title: "Claude workspace",
+    directory: "C:/Work/OpencodeX",
+    resumeID: "11111111-1111-4111-8111-111111111111",
+    installationID: "22222222-2222-4222-8222-222222222222",
+    timeCreated: 1,
+    timeUpdated: 2,
   }
 }
 

@@ -7,6 +7,7 @@ import { openTabFileIdentity } from "./session-side-open-state"
 import type { OpenFileTarget, OpenTab } from "./session-side-open-types"
 
 export function createSessionSideAgentController(input: {
+  enabled?: Accessor<boolean>
   sessionID: Accessor<string>
   directory: Accessor<string>
   tabs: Accessor<OpenTab[]>
@@ -19,9 +20,10 @@ export function createSessionSideAgentController(input: {
   capture: (id: string, expectedURL: string) => Promise<{ url: string; dataURL: string } | undefined> | undefined
   snapshot: (id: string) => Promise<{ url: string; title: string; bodyText: string; items: unknown[] } | undefined> | undefined
 }) {
-  const active = () => input.activeTab()?.kind === "web" && input.activeTab()?.agentControlled === true
+  const active = () => (input.enabled?.() ?? true) && input.activeTab()?.kind === "web" && input.activeTab()?.agentControlled === true
 
   createEffect(() => {
+    if (input.enabled && !input.enabled()) return
     const sessionID = input.sessionID()
     if (!sessionID) return
     const unregister = registerSessionWorkspaceRequestHandler(sessionID, handle)

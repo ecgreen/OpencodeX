@@ -6,6 +6,7 @@ export type Route =
   | { name: "new-session"; projectID?: string; directory?: string }
   | { name: "projects"; projectID?: string }
   | { name: "session"; sessionID: string }
+  | { name: "terminal-session"; terminalSessionID: string }
   | { name: "swarms"; swarmID?: string }
   | { name: "swarm-create"; swarmID?: string; projectID?: string }
   | { name: "views"; viewID?: string }
@@ -17,7 +18,7 @@ export type Route =
 
 export type RouteLayoutMode = "scroll-page" | "full-bleed"
 
-const fullBleedRoutes = new Set<Route["name"]>(["new-session", "session", "views", "diff"])
+const fullBleedRoutes = new Set<Route["name"]>(["new-session", "session", "terminal-session", "views", "diff"])
 
 export function routeLayoutMode(route: Route): RouteLayoutMode {
   return fullBleedRoutes.has(route.name) ? "full-bleed" : "scroll-page"

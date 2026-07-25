@@ -209,6 +209,19 @@ import type {
   OpencodeXSwarmUpdateInput,
   OpencodexSwarmUpdateResponses,
   OpencodeXSwarmUpdateRoleInput,
+  OpencodexTerminalSessionCreateErrors,
+  OpencodeXTerminalSessionCreateInput,
+  OpencodexTerminalSessionCreateResponses,
+  OpencodexTerminalSessionDeleteErrors,
+  OpencodexTerminalSessionDeleteResponses,
+  OpencodexTerminalSessionGetErrors,
+  OpencodexTerminalSessionGetResponses,
+  OpencodexTerminalSessionListErrors,
+  OpencodexTerminalSessionListResponses,
+  OpencodexTerminalSessionOpenedErrors,
+  OpencodexTerminalSessionOpenedResponses,
+  OpencodexTerminalSessionUpdateErrors,
+  OpencodexTerminalSessionUpdateResponses,
   OpencodexViewCreateErrors,
   OpencodeXViewCreateInput,
   OpencodexViewCreateResponses,
@@ -218,6 +231,7 @@ import type {
   OpencodexViewGetResponses,
   OpencodexViewListErrors,
   OpencodexViewListResponses,
+  OpencodeXViewMember,
   OpencodexViewReorderErrors,
   OpencodeXViewReorderInput,
   OpencodexViewReorderResponses,
@@ -5008,6 +5022,152 @@ export class Swarm extends HeyApiClient {
   }
 }
 
+export class TerminalSession extends HeyApiClient {
+  /**
+   * List OpencodeX terminal sessions
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexTerminalSessionListResponses,
+      OpencodexTerminalSessionListErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/terminal-session", ...options })
+  }
+
+  /**
+   * Create an OpencodeX terminal session
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXTerminalSessionCreateInput?: OpencodeXTerminalSessionCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ key: "opencodeXTerminalSessionCreateInput", map: "body" }] }],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexTerminalSessionCreateResponses,
+      OpencodexTerminalSessionCreateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete an OpencodeX terminal session
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "terminalSessionID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexTerminalSessionDeleteResponses,
+      OpencodexTerminalSessionDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get an OpencodeX terminal session
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "terminalSessionID" }] }])
+    return (options?.client ?? this.client).get<
+      OpencodexTerminalSessionGetResponses,
+      OpencodexTerminalSessionGetErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update an OpencodeX terminal session
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+      expectedTimeUpdated?: number
+      title?: string
+      projectID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "terminalSessionID" },
+            { in: "body", key: "expectedTimeUpdated" },
+            { in: "body", key: "title" },
+            { in: "body", key: "projectID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexTerminalSessionUpdateResponses,
+      OpencodexTerminalSessionUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Record an OpencodeX terminal session launch
+   */
+  public opened<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "terminalSessionID" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexTerminalSessionOpenedResponses,
+      OpencodexTerminalSessionOpenedErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}/opened",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class View extends HeyApiClient {
   /**
    * List OpencodeX views
@@ -5116,7 +5276,9 @@ export class View extends HeyApiClient {
       expectedTimeUpdated?: number
       title?: string
       sessionIDs?: Array<string>
+      members?: Array<OpencodeXViewMember>
       focusedSessionID?: string
+      focusedItemID?: string
       layout?: string
       metadata?: {
         [key: string]: unknown
@@ -5133,7 +5295,9 @@ export class View extends HeyApiClient {
             { in: "body", key: "expectedTimeUpdated" },
             { in: "body", key: "title" },
             { in: "body", key: "sessionIDs" },
+            { in: "body", key: "members" },
             { in: "body", key: "focusedSessionID" },
+            { in: "body", key: "focusedItemID" },
             { in: "body", key: "layout" },
             { in: "body", key: "metadata" },
           ],
@@ -5201,6 +5365,11 @@ export class Opencodex extends HeyApiClient {
   private _swarm?: Swarm
   get swarm(): Swarm {
     return (this._swarm ??= new Swarm({ client: this.client }))
+  }
+
+  private _terminalSession?: TerminalSession
+  get terminalSession(): TerminalSession {
+    return (this._terminalSession ??= new TerminalSession({ client: this.client }))
   }
 
   private _view?: View

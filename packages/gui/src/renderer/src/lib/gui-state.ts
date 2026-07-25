@@ -13,6 +13,7 @@ export function emptyGuiSnapshot(): GuiSnapshot {
   return {
     projects: [],
     sessions: [],
+    terminalSessions: [],
     sessionStatus: {},
     sessionUiState: {},
     permissions: [],

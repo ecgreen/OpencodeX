@@ -253,74 +253,6 @@
   white-space: pre;
 }
 
-.tool-diff pre {
-  overflow: visible;
-  max-height: none;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--theme-border);
-  border-radius: 7px;
-  background: var(--theme-canvas);
-  white-space: pre-wrap;
-  color: var(--theme-text);
-}
-
-.tool-file-diff {
-  overflow: hidden;
-  border: 1px solid var(--theme-border);
-  border-radius: 7px;
-  background: var(--theme-canvas);
-  --background-stronger: var(--theme-canvas);
-  --border-warning-base: color-mix(in srgb, var(--theme-accent) 58%, transparent);
-  --diffs-dark: var(--text);
-  --diffs-dark-bg: var(--theme-canvas);
-  --diffs-light: var(--text);
-  --diffs-light-bg: var(--theme-canvas);
-  --diffs-mixer: var(--theme-surface);
-  --diffs-bg-addition-override: color-mix(in srgb, var(--theme-success) 12%, transparent);
-  --diffs-bg-addition-number-override: color-mix(in srgb, var(--theme-success) 18%, transparent);
-  --diffs-bg-deletion-override: color-mix(in srgb, var(--theme-danger) 12%, transparent);
-  --diffs-bg-deletion-number-override: color-mix(in srgb, var(--theme-danger) 18%, transparent);
-  --diffs-bg-context-override: var(--theme-canvas);
-  --diffs-bg-separator-override: var(--theme-surface);
-  --solaris-dark-6: var(--theme-surface-raised);
-  --surface-warning-base: color-mix(in srgb, var(--theme-accent) 55%, transparent);
-  --surface-warning-strong: color-mix(in srgb, var(--theme-accent) 80%, transparent);
-  --syntax-diff-add: var(--theme-success);
-  --syntax-diff-delete: var(--theme-danger);
-  --syntax-unknown: var(--muted) ;
-}
-
-.tool-file-diff-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--theme-border);
-  color: var(--text);
-  background: var(--theme-surface);
-}
-
-.tool-file-diff-header strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.tool-file-diff-header span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 0 1 auto;
-  max-width: 46%;
-  color: var(--muted);
-  font-size: 10px;
-}
-
 .workbench-diff-panel>header {
   display: flex;
   align-items: center;
@@ -355,14 +287,6 @@
 .workbench-diff-refreshing {
   position: relative;
   min-height: 0;
-}
-
-.tool-diff {
-  display: grid;
-  gap: 7px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0;
-  background: var(--element);
 }
 
 .diff-file-list {

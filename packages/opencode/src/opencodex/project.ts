@@ -9,8 +9,9 @@ import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionTable } from "@opencode-ai/core/session/sql"
+import { OpencodeXTerminalSessionTable } from "@opencode-ai/core/opencodex/sql"
 import { Context, Effect, Layer, Option, Schema, Semaphore, Struct } from "effect"
-import { inArray } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { Permission } from "@/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceBootstrap } from "@/project/bootstrap"
@@ -20,6 +21,7 @@ import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { SessionShare } from "@/share/session"
 import { OpencodeXProjectFolder } from "./project-folder"
+import { OpencodeXTerminalSession } from "./terminal-session"
 
 export const Folder = Schema.Struct({
   path: Schema.String,
@@ -32,12 +34,14 @@ export const Info = Schema.Struct({
   project: Project.Info,
   folders: Schema.Array(Folder),
   sessions: Schema.Array(Session.GlobalInfo),
+  terminalSessions: Schema.Array(OpencodeXTerminalSession.Info),
 }).annotate({ identifier: "OpencodeXProject" })
 export type Info = Schema.Schema.Type<typeof Info>
 
 export const CatalogInfo = Schema.Struct({
-  ...Struct.omit(Info.fields, ["sessions"]),
+  ...Struct.omit(Info.fields, ["sessions", "terminalSessions"]),
   sessionIDs: Schema.Array(SessionID),
+  terminalSessionIDs: Schema.Array(Schema.String),
 }).annotate({ identifier: "OpencodeXCatalogProject" })
 export type CatalogInfo = Schema.Schema.Type<typeof CatalogInfo>
 
@@ -155,7 +159,10 @@ export class InvalidFolderError extends Schema.TaggedErrorClass<InvalidFolderErr
 }) {}
 
 export interface Interface {
-  readonly list: (input?: { sessions?: Session.GlobalInfo[] }) => Effect.Effect<Info[]>
+  readonly list: (input?: {
+    sessions?: Session.GlobalInfo[]
+    terminalSessions?: OpencodeXTerminalSession.Info[]
+  }) => Effect.Effect<Info[]>
   readonly listCatalog: () => Effect.Effect<CatalogInfo[]>
   readonly get: (projectID: string) => Effect.Effect<Info, Project.NotFoundError>
   readonly validate: (input: ValidateInput) => Effect.Effect<Validation>
@@ -260,25 +267,38 @@ export const layer = Layer.effect(
       const trackedIDs = new Set(
         tracked.filter((session) => existingIDs.has(session.session_id)).map((session) => session.session_id),
       )
+      const terminals = (yield* db
+        .select()
+        .from(OpencodeXTerminalSessionTable)
+        .where(eq(OpencodeXTerminalSessionTable.project_id, row.id))
+        .all()
+        .pipe(Effect.orDie)).map(OpencodeXTerminalSession.fromRow)
       return {
         id: row.id,
         name: row.name ?? undefined,
         project: item,
         folders: folders.map((folder) => ({ path: folder.path })),
         sessions: (yield* sessions.listGlobalByIDs([...trackedIDs])).filter((session) => !session.parentID),
+        terminalSessions: terminals,
       }
     })
 
-    const list = Effect.fn("OpencodeXProject.list")(function* (input?: { sessions?: Session.GlobalInfo[] }) {
+    const list = Effect.fn("OpencodeXProject.list")(function* (input?: {
+      sessions?: Session.GlobalInfo[]
+      terminalSessions?: OpencodeXTerminalSession.Info[]
+    }) {
       const rows = yield* OpencodeXProjectFolder.listProjects(db)
       if (rows.length === 0) return []
-      const [upstream, folders, tracked] = yield* Effect.all(
+      const [upstream, folders, tracked, terminalList] = yield* Effect.all(
         [
           project.list(),
           OpencodeXProjectFolder.listFoldersForOpencodeProjects(db, [
             ...new Set(rows.map((row) => ProjectV2.ID.make(row.project_id))),
           ]),
           OpencodeXProjectFolder.listAllSessionIDs(db),
+          input?.terminalSessions
+            ? Effect.succeed(input.terminalSessions)
+            : db.select().from(OpencodeXTerminalSessionTable).all().pipe(Effect.orDie, Effect.map((rows) => rows.map(OpencodeXTerminalSession.fromRow))),
         ],
         { concurrency: "unbounded" },
       )
@@ -312,6 +332,10 @@ export const layer = Layer.effect(
         tracked.filter((item) => existingIDs.has(item.session_id)),
         (item) => item.opencodex_project_id,
       )
+      const terminalsByProject = Map.groupBy(
+        terminalList.filter((terminalSession) => terminalSession.projectID !== undefined),
+        (terminalSession) => terminalSession.projectID!,
+      )
       return rows.flatMap((row) => {
         const item = upstreamByID.get(row.project_id)
         if (!item) return []
@@ -322,6 +346,7 @@ export const layer = Layer.effect(
             project: item,
             folders: (foldersByProject.get(row.id) ?? []).map((folder) => ({ path: folder.path })),
             sessions: (sessionsByProject.get(row.id) ?? []).flatMap((entry) => sessionByID.get(entry.session_id) ?? []),
+            terminalSessions: terminalsByProject.get(row.id) ?? [],
           },
         ]
       })
@@ -330,19 +355,24 @@ export const layer = Layer.effect(
     const listCatalog = Effect.fn("OpencodeXProject.listCatalog")(function* () {
       const rows = yield* OpencodeXProjectFolder.listProjects(db)
       if (rows.length === 0) return []
-      const [upstream, folders, tracked] = yield* Effect.all(
+      const [upstream, folders, tracked, terminalList] = yield* Effect.all(
         [
           project.list(),
           OpencodeXProjectFolder.listFoldersForOpencodeProjects(db, [
             ...new Set(rows.map((row) => ProjectV2.ID.make(row.project_id))),
           ]),
           OpencodeXProjectFolder.listAllSessionIDs(db),
+          db.select().from(OpencodeXTerminalSessionTable).all().pipe(Effect.orDie, Effect.map((rows) => rows.map(OpencodeXTerminalSession.fromRow))),
         ],
         { concurrency: "unbounded" },
       )
       const upstreamByID = new Map(upstream.map((item) => [item.id, item]))
       const foldersByProject = Map.groupBy(folders, (folder) => folder.opencodex_project_id)
       const sessionsByProject = Map.groupBy(tracked, (item) => item.opencodex_project_id)
+      const terminalsByProject = Map.groupBy(
+        terminalList.filter((terminalSession) => terminalSession.projectID !== undefined),
+        (terminalSession) => terminalSession.projectID!,
+      )
       return rows.flatMap((row) => {
         const item = upstreamByID.get(row.project_id)
         if (!item) return []
@@ -353,6 +383,7 @@ export const layer = Layer.effect(
             project: item,
             folders: (foldersByProject.get(row.id) ?? []).map((folder) => ({ path: folder.path })),
             sessionIDs: (sessionsByProject.get(row.id) ?? []).map((entry) => entry.session_id),
+            terminalSessionIDs: (terminalsByProject.get(row.id) ?? []).map((terminalSession) => terminalSession.id),
           },
         ]
       })

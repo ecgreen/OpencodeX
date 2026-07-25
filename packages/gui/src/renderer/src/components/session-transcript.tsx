@@ -1,70 +1,40 @@
 import type { Part } from "@opencode-ai/sdk/v2/client"
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Match, Show, Switch, createMemo } from "solid-js"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import type { MessageBundle } from "../lib/store"
+import { autoOpenForStatus, createDisclosure, createMountedOnce } from "../lib/disclosure"
+import type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
+import { toolGroupStatus, toolGroupSummary, toolGroupTitle } from "../lib/transcript-grouping"
 import {
+  COPY_FULL_LABEL,
   arrayValue,
+  fileBasename,
   isRecordValue,
   shouldShowRawToolData,
   stringValue,
+  toolCategory,
   toolDisplayTitle,
   toolError,
   toolHasVisibleDetails,
   toolMetadata,
   toolStateInput,
+  toolStateTitle,
+  toolTier,
   toolVisibleOutput,
 } from "../lib/tool-display"
-import { DisclosureChevron, Icon } from "./icon"
-import { ToolCodeBlock, ToolDetails, ToolPreviewText, fileBasename } from "./session-tool-details"
+import { isStructuralPart } from "../lib/transcript-visibility"
+import { Icon } from "./icon"
+import { PartErrorPreview, PartHeader, ToolStatusIndicator, partIconName, useTranscriptChrome } from "./session-part-chrome"
+import { ThinkingGroupView } from "./session-thinking"
+import { ToolDetails } from "./session-tool-details"
+import { ToolCodeBlock, ToolPreviewText } from "./session-tool-text"
 import { Button } from "./ui"
 
-export type ToolPart = Extract<Part, { type: "tool" }>
-type ReasoningPart = Extract<Part, { type: "reasoning" }>
-export type DisplayPart =
-  | { key: string; type: "part"; part: Part }
-  | { key: string; type: "tool-group"; tool: string; parts: ToolPart[] }
-  | { key: string; type: "reasoning-group"; parts: ReasoningPart[] }
+export type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
+export { groupTranscriptParts } from "../lib/transcript-grouping"
 
-export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
-  const result: DisplayPart[] = []
-  let pendingTools: ToolPart[] = []
-  let pendingReasoning: ReasoningPart[] = []
-
-  function flushTools() {
-    if (pendingTools.length === 0) return
-    if (pendingTools.length === 1) result.push({ key: `part:${pendingTools[0].id}`, type: "part", part: pendingTools[0] })
-    else result.push({ key: `tool-group:${pendingTools[0].tool}:${pendingTools[0].id}`, type: "tool-group", tool: pendingTools[0].tool, parts: pendingTools })
-    pendingTools = []
-  }
-
-  function flushReasoning() {
-    if (pendingReasoning.length === 0) return
-    if (pendingReasoning.length === 1) result.push({ key: `part:${pendingReasoning[0].id}`, type: "part", part: pendingReasoning[0] })
-    else result.push({ key: `reasoning-group:${pendingReasoning[0].id}`, type: "reasoning-group", parts: pendingReasoning })
-    pendingReasoning = []
-  }
-
-  for (const part of parts) {
-    if (part.type === "tool" && isGroupableTool(part.tool)) {
-      flushReasoning()
-      if (pendingTools.length === 0 || pendingTools[0].tool === part.tool) {
-        pendingTools.push(part)
-        continue
-      }
-    }
-    if (part.type === "reasoning") {
-      flushTools()
-      pendingReasoning.push(part)
-      continue
-    }
-    flushTools()
-    flushReasoning()
-    result.push({ key: `part:${part.id}`, type: "part", part })
-  }
-  flushTools()
-  flushReasoning()
-  return result
-}
+/** Tools whose completed output is the deliverable, not a step along the way. */
+const KEEP_OPEN_WHEN_COMPLETE = new Set(["todowrite", "apply_patch"])
 
 export function activeTranscriptStreamingPartID(messages: MessageBundle[], running: boolean) {
   if (!running) return
@@ -89,7 +59,6 @@ export function DisplayPartView(props: { item: DisplayPart; showThinking: boolea
       <Match when={props.item.type === "part"}>
         <PartView
           part={(props.item as Extract<DisplayPart, { type: "part" }>).part}
-          showThinking={props.showThinking}
           showToolDetails={props.showToolDetails}
           showGenericToolOutput={props.showGenericToolOutput}
           streaming={props.streamingPartID === (props.item as Extract<DisplayPart, { type: "part" }>).part.id}
@@ -99,81 +68,45 @@ export function DisplayPartView(props: { item: DisplayPart; showThinking: boolea
   )
 }
 
-function isGroupableTool(tool: string) {
-  return tool === "read" || tool === "grep" || tool === "glob" || tool === "webfetch" || tool === "websearch" || tool === "skill"
-}
-
-function ThinkingGroupView(props: { item: Extract<DisplayPart, { type: "reasoning-group" }>; showThinking: boolean; streamingPartID?: string }) {
-  const visibleParts = createMemo(() => props.item.parts.filter((part) => part.text.trim()))
-  const visiblePartMap = createMemo(() => new Map(visibleParts().map((part) => [part.id, part])))
-  return (
-    <Show when={visibleParts().length > 0}>
-      <div class="part text reasoning">
-        <details class="thinking-block" open>
-          <summary>
-            <DisclosureChevron />
-            <span>Thinking</span>
-          </summary>
-          <Show when={props.showThinking}>
-            <div class="thinking-segments">
-              <For each={visibleParts().map((part) => part.id)}>
-                {(partID, index) => {
-                  const part = createMemo(() => visiblePartMap().get(partID))
-                  return <Show when={part()}>
-                    {(current) => (
-                      <section class="thinking-segment">
-                        <header>Thinking {index() + 1}</header>
-                        <Markdown text={current().text.trim()} cacheKey={partID} streaming={props.streamingPartID === partID} />
-                      </section>
-                    )}
-                  </Show>
-                }}
-              </For>
-            </div>
-          </Show>
-        </details>
-      </div>
-    </Show>
-  )
-}
-
 function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" }> }) {
+  const chrome = useTranscriptChrome()
   const status = createMemo(() => toolGroupStatus(props.item.parts))
   const partMap = createMemo(() => new Map(props.item.parts.map((part) => [part.id, part])))
-  const startCollapsed = createMemo(() => props.item.tool === "read" && props.item.parts.length > 10)
-  const [expanded, setExpanded] = createSignal(!startCollapsed())
-  const statusLabel = createMemo(() => startCollapsed() && !expanded() ? "Click to expand" : status() === "completed" ? "" : status())
-  const errorPreview = createMemo(() => {
-    if (status() !== "error") return ""
-    const failed = props.item.parts.find((part) => part.state.status === "error")
-    if (!failed) return ""
-    const message = (toolError(failed.state) ?? "").replace(/\s+/g, " ").trim()
-    return message.length > 96 ? `${message.slice(0, 96)}…` : message
+  const failed = createMemo(() => props.item.parts.find((part) => part.state.status === "error"))
+  const disclosure = createDisclosure({
+    id: () => `group:${props.item.parts[0]?.id ?? ""}`,
+    auto: () => autoOpenForStatus(status()),
+    following: chrome.following,
+    store: chrome.disclosure,
   })
+  const bodyMounted = createMountedOnce(disclosure.open)
   return (
-    <details class={`part tool tool-group ${status()}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary>
-        <DisclosureChevron />
-        <strong>{toolGroupTitle(props.item.tool, props.item.parts)}</strong>
-        <Show when={statusLabel()}>
-          {(label) => <span class="tool-status">{label()}</span>}
-        </Show>
-        <Show when={errorPreview() && !expanded()}>
-          <small class="tool-group-error">{errorPreview()}</small>
-        </Show>
-      </summary>
-      <Show when={expanded()}>
-        <div class="tool-group-list">
+    <details
+      class="part tool tool-group"
+      data-kind={toolCategory(props.item.tool)}
+      data-status={status()}
+      data-tier="row"
+      open={disclosure.open()}
+      onToggle={disclosure.handleToggle}
+    >
+      <PartHeader
+        icon={partIconName(props.item.tool)}
+        title={toolGroupTitle(props.item.tool, props.item.parts)}
+        meta={toolGroupSummary(props.item.tool, props.item.parts)}
+        status={<Show when={status() === "running"}><span class="part-spinner" aria-hidden="true" /><span class="part-status-label">Running</span></Show>}
+        trailing={<Show when={failed()}>{(part) => <PartErrorPreview state={part().state} when={!disclosure.open()} />}</Show>}
+      />
+      <Show when={bodyMounted()}>
+        <div class="part-body tool-group-list">
           <For each={props.item.parts.map((part) => part.id)}>
             {(partID) => {
               const part = createMemo(() => partMap().get(partID))
               return <Show when={part()}>
                 {(current) => (
-                  <div class="tool-group-item">
-                    <span>{toolDisplayTitle(current().tool, toolStateInput(current().state), toolMetadata(current().state) ?? {}, current().state.status)}</span>
-                    <Show when={current().state.status !== "completed"}>
-                      <small>{current().state.status}</small>
-                    </Show>
+                  <div class="tool-group-item" data-status={current().state.status}>
+                    <span>{toolDisplayTitle(current().tool, toolStateInput(current().state), toolMetadata(current().state) ?? {}, current().state.status, toolStateTitle(current().state))}</span>
+                    <ToolStatusIndicator state={current().state} />
+                    <PartErrorPreview state={current().state} when={true} />
                   </div>
                 )}
               </Show>
@@ -185,38 +118,23 @@ function ToolGroupView(props: { item: Extract<DisplayPart, { type: "tool-group" 
   )
 }
 
-function toolGroupStatus(parts: ToolPart[]) {
-  if (parts.some((part) => part.state.status === "error")) return "error"
-  if (parts.some((part) => part.state.status === "running")) return "running"
-  if (parts.every((part) => part.state.status === "completed")) return "completed"
-  return parts.at(-1)?.state.status ?? "pending"
-}
-
-function toolGroupTitle(tool: string, parts: ToolPart[]) {
-  if (tool === "read") return `Read ${parts.length} files`
-  if (tool === "grep") return `Grep ${parts.length} searches`
-  if (tool === "glob") return `Glob ${parts.length} searches`
-  if (tool === "webfetch") return `WebFetch ${parts.length} URLs`
-  if (tool === "websearch") return `WebSearch ${parts.length} queries`
-  if (tool === "skill") return `Loaded ${parts.length} skills`
-  return `${tool} x${parts.length}`
-}
-
-function PartView(props: { part: MessageBundle["parts"][number]; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean; streaming: boolean }) {
+function PartView(props: { part: MessageBundle["parts"][number]; showToolDetails: boolean; showGenericToolOutput: boolean; streaming: boolean }) {
   return (
-    <Switch fallback={<ToolPreviewText class="part muted" text={JSON.stringify(props.part, null, 2)} copyLabel="Copy full data" />}>
+    <Switch fallback={<ToolPreviewText class="part muted" text={JSON.stringify(props.part, null, 2)} />}>
       <Match when={isStructuralPart(props.part)}>
         <></>
       </Match>
-      <Match when={props.part.type === "text" || props.part.type === "reasoning"}>
-        <TextPartView
-          part={props.part as Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>}
-          showThinking={props.showThinking}
-          streaming={props.streaming}
-        />
+      <Match when={props.part.type === "text"}>
+        <TextPartView part={props.part as Extract<Part, { type: "text" }>} streaming={props.streaming} />
       </Match>
       <Match when={props.part.type === "tool"}>
         <ToolPartView part={props.part as ToolPart} showDetails={props.showToolDetails} showGenericOutput={props.showGenericToolOutput} />
+      </Match>
+      <Match when={props.part.type === "retry"}>
+        <RetryPartView part={props.part as Extract<Part, { type: "retry" }>} />
+      </Match>
+      <Match when={props.part.type === "subtask"}>
+        <SubtaskPartView part={props.part as Extract<Part, { type: "subtask" }>} />
       </Match>
       <Match when={props.part.type === "file"}>
         <Button appearance="ghost" class="part file" data-side-panel-file={props.part.type === "file" ? props.part.filename ?? props.part.url : ""} title="Open in side panel">
@@ -238,96 +156,123 @@ function PartView(props: { part: MessageBundle["parts"][number]; showThinking: b
   )
 }
 
-function isStructuralPart(part: MessageBundle["parts"][number]) {
-  return part.type === "step-start" || part.type === "step-finish" || part.type === "snapshot" || part.type === "retry" || part.type === "subtask"
-}
-
-function TextPartView(props: { part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>; showThinking: boolean; streaming: boolean }) {
-  const text = createMemo(() => {
-    if ("synthetic" in props.part && props.part.synthetic) return ""
-    if ("ignored" in props.part && props.part.ignored) return ""
-    return props.part.text.trim()
-  })
+function TextPartView(props: { part: Extract<Part, { type: "text" }>; streaming: boolean }) {
+  const text = createMemo(() => props.part.synthetic || props.part.ignored ? "" : props.part.text.trim())
   return (
     <Show when={text()}>
-      <div class={`part text ${props.part.type}`}>
-        <Show when={props.part.type === "reasoning"} fallback={<Markdown text={text()} cacheKey={props.part.id} streaming={props.streaming} />}>
-          <details class="thinking-block" open>
-            <summary>
-              <DisclosureChevron />
-              <span>Thinking</span>
-            </summary>
-            <Show when={props.showThinking}>
-              <Markdown text={text()} cacheKey={props.part.id} streaming={props.streaming} />
-            </Show>
-          </details>
-        </Show>
+      <div class="part text">
+        <Markdown text={text()} cacheKey={props.part.id} streaming={props.streaming} />
       </div>
     </Show>
   )
 }
 
+/**
+ * A retry used to be dropped entirely, which made an aborted turn look like it
+ * never happened. It reads as a log line, not an alarm - the request recovered.
+ */
+function RetryPartView(props: { part: Extract<Part, { type: "retry" }> }) {
+  const message = createMemo(() => retryMessage(props.part.error))
+  return (
+    <div class="part retry-notice" data-kind="retry">
+      <Icon name="refresh" class="part-icon" />
+      <span class="part-title">Retry attempt {props.part.attempt}</span>
+      <Show when={message()}>
+        {(text) => <small class="part-error-preview">{text()}</small>}
+      </Show>
+    </div>
+  )
+}
+
+function retryMessage(error: unknown) {
+  if (!isRecordValue(error)) return ""
+  const data = isRecordValue(error.data) ? error.data : undefined
+  return stringValue(data?.message) ?? stringValue(error.name) ?? ""
+}
+
+function SubtaskPartView(props: { part: Extract<Part, { type: "subtask" }> }) {
+  return (
+    <div class="part badge" data-kind="agent">
+      <Icon name="swarm" />
+      <span>{props.part.agent} — {props.part.description}</span>
+    </div>
+  )
+}
+
 function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGenericOutput: boolean }) {
+  const chrome = useTranscriptChrome()
   const state = () => props.part.state
-  const toolClass = () => props.part.tool === "todowrite" ? "todo-update" : props.part.tool === "apply_patch" ? "patch-update" : ""
   const input = createMemo(() => toolStateInput(state()))
   const metadata = createMemo(() => toolMetadata(state()) ?? {})
   const error = createMemo(() => toolError(state()))
   const output = createMemo(() => toolVisibleOutput(props.part.tool, state(), metadata()))
-  const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata(), state().status))
+  const title = createMemo(() => toolDisplayTitle(props.part.tool, input(), metadata(), state().status, toolStateTitle(state())))
   const patchSummary = createMemo(() => props.part.tool === "apply_patch" ? patchSummaryFiles(metadata()) : "")
   const patchPending = createMemo(() => props.part.tool === "apply_patch" && state().status !== "completed" && state().status !== "error" && !patchHasDiff(metadata()))
-  const statusLabel = createMemo(() => state().status === "completed" ? "" : state().status)
   const hasDetails = createMemo(() => patchPending() || toolHasVisibleDetails(props.part.tool, input(), metadata(), output(), error()))
   const visibleDetails = createMemo(() => props.showDetails && hasDetails())
-  const defaultOpen = createMemo(() => visibleDetails() && (props.part.tool === "todowrite" || props.part.tool === "apply_patch" || state().status === "running" || state().status === "error"))
-  const [expanded, setExpanded] = createSignal(defaultOpen())
-  const [rawExpanded, setRawExpanded] = createSignal(false)
-  createEffect(() => {
-    if (defaultOpen()) setExpanded(true)
+  const disclosure = createDisclosure({
+    id: () => props.part.id,
+    auto: () => visibleDetails() && autoOpenForStatus(state().status, KEEP_OPEN_WHEN_COMPLETE.has(props.part.tool)),
+    following: chrome.following,
+    store: chrome.disclosure,
   })
+  const raw = createDisclosure({
+    id: () => `${props.part.id}:raw`,
+    auto: () => false,
+    store: chrome.disclosure,
+  })
+  const bodyMounted = createMountedOnce(disclosure.open)
+  const rawMounted = createMountedOnce(raw.open)
+  const header = (isStatic: boolean) => (
+    <PartHeader
+      static={isStatic}
+      icon={partIconName(props.part.tool)}
+      title={title()}
+      meta={patchSummary()}
+      status={<ToolStatusIndicator state={state()} />}
+      trailing={<PartErrorPreview state={state()} when={!disclosure.open()} />}
+    />
+  )
   return (
     <Show when={visibleDetails()} fallback={
-      <div class={`part tool ${state().status} ${toolClass()} no-details`}>
-        <div class="tool-summary">
-          <strong>{title()}</strong>
-          <Show when={statusLabel()}>
-            {(label) => <span class="tool-status">{label()}</span>}
-          </Show>
-        </div>
+      <div
+        class="part tool"
+        data-kind={toolCategory(props.part.tool)}
+        data-status={state().status}
+        data-tier={toolTier(props.part.tool, state().status)}
+      >
+        {header(true)}
       </div>
     }>
-      <details class={`part tool ${state().status} ${toolClass()}`} open={expanded()} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-        <summary>
-          <DisclosureChevron />
-          <strong>{title()}</strong>
-          <Show when={patchSummary()}>
-            {(summary) => <span class="tool-patch-files">{summary()}</span>}
-          </Show>
-          <Show when={statusLabel()}>
-            {(label) => <span class="tool-status">{label()}</span>}
-          </Show>
-        </summary>
-        <Show when={expanded()}>
-          <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} showGenericOutput={props.showGenericOutput} patchPending={patchPending()} />
-          <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
-            <details class="tool-raw" open={rawExpanded()} onToggle={(event) => setRawExpanded(event.currentTarget.open)}>
-              <summary>
-                <DisclosureChevron />
-                <span>Raw tool data</span>
-              </summary>
-              <Show when={rawExpanded()}>
-                <Show when={Object.keys(input()).length > 0}>
-                  <label>Input</label>
-                  <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
+      <details
+        class="part tool"
+        data-kind={toolCategory(props.part.tool)}
+        data-status={state().status}
+        data-tier={toolTier(props.part.tool, state().status)}
+        open={disclosure.open()}
+        onToggle={disclosure.handleToggle}
+      >
+        {header(false)}
+        <Show when={bodyMounted()}>
+          <div class="part-body">
+            <ToolDetails tool={props.part.tool} input={input()} metadata={metadata()} output={output()} error={error()} showGenericOutput={props.showGenericOutput} patchPending={patchPending()} />
+            <Show when={shouldShowRawToolData(props.part.tool, input(), metadata())}>
+              <details class="tool-raw" open={raw.open()} onToggle={raw.handleToggle}>
+                <PartHeader title="Raw tool data" />
+                <Show when={rawMounted()}>
+                  <Show when={Object.keys(input()).length > 0}>
+                    <label>Input</label>
+                    <ToolCodeBlock language="json" code={JSON.stringify(input(), null, 2)} />
+                  </Show>
+                  <Show when={Object.keys(metadata()).length > 0}>
+                    <label>Metadata</label>
+                    <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
+                  </Show>
                 </Show>
-                <Show when={Object.keys(metadata()).length > 0}>
-                  <label>Metadata</label>
-                  <ToolCodeBlock language="json" code={JSON.stringify(metadata(), null, 2)} />
-                </Show>
-              </Show>
-            </details>
-          </Show>
+              </details>
+            </Show>
+          </div>
         </Show>
       </details>
     </Show>

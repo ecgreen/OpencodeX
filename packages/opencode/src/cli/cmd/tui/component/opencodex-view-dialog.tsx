@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2"
+import type { OpencodeXTerminalSession, OpencodeXViewMember, Session } from "@opencode-ai/sdk/v2"
 import { createMemo, createResource, createSignal, onMount } from "solid-js"
 import { useLocal } from "@tui/context/local"
 import { useRoute } from "@tui/context/route"
@@ -12,11 +12,14 @@ import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { deriveStatus, statusColor } from "./opencodex-session-status"
 import { refreshOpencodeXSidebar } from "./opencodex-refresh"
+import { viewMemberCount } from "./opencodex-view-model"
 
 type OpencodeXView = {
   id: string
   title?: string
   sessionIDs?: string[]
+  members?: OpencodeXViewMember[]
+  terminalSessions?: OpencodeXTerminalSession[]
   metadata?: Record<string, unknown>
   timeUpdated?: number
 }
@@ -42,7 +45,14 @@ type NewSessionSelection = {
   directory?: string
 }
 
-type ViewSelection = { kind: "existing"; sessionID: string } | NewSessionSelection
+type TerminalSelection = {
+  kind: "terminal"
+  terminalSessionID: string
+  title: string
+  directory: string
+}
+
+type ViewSelection = { kind: "existing"; sessionID: string } | TerminalSelection | NewSessionSelection
 
 type PendingViewSession = NewSessionSelection
 
@@ -144,7 +154,7 @@ function OpencodeXViewSelector(
       title: view.title ?? "Multi-session view",
       value: view.id,
       category: "Views",
-      description: `${view.sessionIDs?.length ?? 0} session${view.sessionIDs?.length === 1 ? "" : "s"}`,
+      description: `${viewMemberCount(view)} session${viewMemberCount(view) === 1 ? "" : "s"}`,
       gutter: () => <text fg={props.mode === "delete" ? theme.error : theme.primary}>{props.mode === "open" ? ">" : props.mode === "edit" ? "~" : "x"}</text>,
       onSelect: async () => {
         if (props.mode === "open") {
@@ -193,13 +203,7 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
   const { theme } = useTheme()
   const [title, setTitle] = createSignal(props.title ?? props.view?.title ?? "")
   const [selection, setSelection] = createSignal<ViewSelection[]>(
-    (
-      props.selection
-        ?? [...(props.sessionIDs ?? props.view?.sessionIDs ?? [])].map((sessionID): ViewSelection => ({
-          kind: "existing",
-          sessionID,
-        })).concat(pendingViewSessions(props.view))
-    ).slice(0, 8),
+    (props.selection ?? initialViewSelection(props.view, props.sessionIDs)).slice(0, 8),
   )
   const projects = createMemo(() => sync.data.opencodex_project as OpencodeXProjectInfo[])
   const selectedSessionIDs = createMemo(() =>
@@ -209,6 +213,9 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
   )
   const selectedNewSessions = createMemo(() =>
     selection().filter((item): item is NewSessionSelection => item.kind === "new"),
+  )
+  const selectedTerminalSessions = createMemo(() =>
+    selection().filter((item): item is TerminalSelection => item.kind === "terminal"),
   )
   const selectedCount = createMemo(() => selection().length)
   const remainingCount = createMemo(() => Math.max(0, 8 - selectedCount()))
@@ -283,7 +290,28 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
     }
   }
 
+  // Deliberately remove-only: terminals can only be attached from OpencodeX
+  // Desktop (the TUI cannot host a pane), so the dialog lists members already
+  // on the view for removal but offers no picker to add new ones.
+  function buildTerminalOption(terminal: TerminalSelection) {
+    return {
+      title: terminal.title,
+      value: terminal.terminalSessionID,
+      category: "Claude Code",
+      description: `${terminal.directory} · Open in OpencodeX Desktop`,
+      footer: "desktop only",
+      gutter: () => <text fg={theme.primary}>[x]</text>,
+      onSelect: () =>
+        setSelection((current) =>
+          current.filter(
+            (item) => item.kind !== "terminal" || item.terminalSessionID !== terminal.terminalSessionID,
+          ),
+        ),
+    }
+  }
+
   const options = createMemo(() => [
+    ...selectedTerminalSessions().map(buildTerminalOption),
     ...selectedNewSessions().map(buildNewSessionOption),
     ...pinned().map((session) => buildOption(session, "Pinned", projectLabelBySessionID().get(session.id))),
     ...projectSessionEntries()
@@ -428,19 +456,24 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       return
     }
     const currentSelection = selection()
-    const sessionIDs = currentSelection
-      .filter((item): item is { kind: "existing"; sessionID: string } => item.kind === "existing")
-      .map((item) => item.sessionID)
     const pending = currentSelection.filter((item): item is PendingViewSession => item.kind === "new")
     const first = selectedSessions()[0]
-    const viewTitle = title() || (first && selectedCount() === 1 ? first.title : `${selectedCount()} session view`)
+    const firstTerminal = selectedTerminalSessions()[0]
+    const viewTitle =
+      title() ||
+      (selectedCount() === 1 ? (first?.title ?? firstTerminal?.title) : undefined) ||
+      `${selectedCount()} session view`
     const view = await props.sdk
       .request<OpencodeXView>(props.view ? `/experimental/opencodex/view/${props.view.id}` : "/experimental/opencodex/view", {
         method: props.view ? "PATCH" : "POST",
         body: JSON.stringify({
           ...(props.view ? { expectedTimeUpdated: props.view.timeUpdated } : {}),
           title: viewTitle,
-          sessionIDs,
+          members: currentSelection.flatMap((item): OpencodeXViewMember[] => {
+            if (item.kind === "existing") return [{ kind: "session", id: item.sessionID }]
+            if (item.kind === "terminal") return [{ kind: "terminal", id: item.terminalSessionID }]
+            return []
+          }),
           metadata: metadataWithPendingSessions(props.view?.metadata, pending),
         }),
       })
@@ -468,4 +501,26 @@ function OpencodeXViewSessionPicker(props: OpencodeXViewDialogContext) {
       bindings={[{ key: "ctrl+return", desc: props.view ? "Save view" : "Create view", group: "Dialog", cmd: () => void saveView() }]}
     />
   )
+}
+
+function initialViewSelection(view: OpencodeXView | undefined, sessionIDs: string[] | undefined): ViewSelection[] {
+  const terminals = new Map(view?.terminalSessions?.map((terminal) => [terminal.id, terminal]) ?? [])
+  const members = view?.members
+  const selected = members
+    ? members.flatMap((member): ViewSelection[] => {
+        if (member.kind === "session") return [{ kind: "existing", sessionID: member.id }]
+        const terminal = terminals.get(member.id)
+        return [
+          {
+            kind: "terminal",
+            terminalSessionID: member.id,
+            title: terminal?.title ?? "Claude Code session",
+            directory: terminal?.directory ?? "Original working directory",
+          },
+        ]
+      })
+    : [...(sessionIDs ?? view?.sessionIDs ?? [])].map(
+        (sessionID): ViewSelection => ({ kind: "existing", sessionID }),
+      )
+  return selected.concat(pendingViewSessions(view))
 }

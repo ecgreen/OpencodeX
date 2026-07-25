@@ -1,4 +1,5 @@
 import type { useSync } from "@tui/context/sync"
+import type { OpencodeXTerminalSession, OpencodeXViewMember } from "@opencode-ai/sdk/v2"
 
 export type SyncContext = ReturnType<typeof useSync>
 export type SyncSession = SyncContext["data"]["session"][number]
@@ -9,9 +10,12 @@ export type OpencodeXView = {
   id: string
   title: string
   focusedSessionID?: string
+  focusedItemID?: string
   layout: string
   sessions: SyncSession[]
+  terminalSessions: OpencodeXTerminalSession[]
   sessionIDs: string[]
+  members: OpencodeXViewMember[]
   metadata?: Record<string, unknown>
   timeUpdated: number
 }
@@ -23,8 +27,24 @@ export type PendingViewSession = {
   directory?: string
 }
 
-export type ViewItem = { kind: "session"; session: SyncSession } | { kind: "pending"; slot: PendingViewSession }
+export type ViewItem =
+  | { kind: "session"; session: SyncSession }
+  | { kind: "terminal"; terminal: OpencodeXTerminalSession }
+  | { kind: "pending"; slot: PendingViewSession }
 export type LayoutNode = number | { direction: "row" | "column"; children: LayoutNode[] }
+
+type ViewMembership = { members?: OpencodeXViewMember[]; sessionIDs?: string[] }
+
+/** Pane count including terminal members; legacy rows only carry sessionIDs. */
+export function viewMemberCount(view: ViewMembership) {
+  return view.members?.length ?? view.sessionIDs?.length ?? 0
+}
+
+/** Session-kind member ids, however the row is stored. */
+export function viewSessionMemberIDs(view: ViewMembership) {
+  if (view.members) return view.members.filter((member) => member.kind === "session").map((member) => member.id)
+  return view.sessionIDs ?? []
+}
 
 export function viewLayout(count: number): LayoutNode {
   if (count <= 1) return 0
@@ -81,7 +101,9 @@ export function truncateViewText(input: string, length: number) {
 }
 
 export function viewItemID(item: ViewItem) {
-  return item.kind === "session" ? item.session.id : item.slot.id
+  if (item.kind === "session") return item.session.id
+  if (item.kind === "terminal") return item.terminal.id
+  return item.slot.id
 }
 
 export function pendingViewSessions(view?: Pick<OpencodeXView, "metadata">): PendingViewSession[] {

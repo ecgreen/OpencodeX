@@ -1,5 +1,6 @@
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
 import { OpencodeXView } from "@/opencodex/view"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiError, OpenApi } from "effect/unstable/httpapi"
@@ -15,6 +16,7 @@ import {
   OPENCODEX_ROOT,
   StartJobPayload,
   UpdateJobPayload,
+  UpdateTerminalSessionPayload,
   UpdateViewPayload,
 } from "./opencodex-schema"
 import { opencodexWorkbenchGroup } from "./opencodex-workbench-group"
@@ -136,6 +138,66 @@ export const opencodexGroup = opencodexWorkbenchGroup
       success: described(OpencodeXSwarm.Info, "Updated OpencodeX swarm"),
       error: [HttpApiError.BadRequest, ApiNotFoundError],
     }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.swarm.role.update", summary: "Update OpencodeX swarm role" })),
+    HttpApiEndpoint.get("listTerminalSessions", `${OPENCODEX_ROOT}/terminal-session`, {
+      success: described(Schema.Array(OpencodeXTerminalSession.Info), "List OpencodeX terminal sessions"),
+      error: HttpApiError.BadRequest,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "opencodex.terminal_session.list",
+        summary: "List OpencodeX terminal sessions",
+      }),
+    ),
+    HttpApiEndpoint.post("createTerminalSession", `${OPENCODEX_ROOT}/terminal-session`, {
+      payload: OpencodeXTerminalSession.CreateInput,
+      success: described(OpencodeXTerminalSession.Info, "Created OpencodeX terminal session"),
+      error: HttpApiError.BadRequest,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "opencodex.terminal_session.create",
+        summary: "Create an OpencodeX terminal session",
+      }),
+    ),
+    HttpApiEndpoint.get("getTerminalSession", `${OPENCODEX_ROOT}/terminal-session/:terminalSessionID`, {
+      params: { terminalSessionID: Schema.String },
+      success: described(OpencodeXTerminalSession.Info, "OpencodeX terminal session"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "opencodex.terminal_session.get",
+        summary: "Get an OpencodeX terminal session",
+      }),
+    ),
+    HttpApiEndpoint.patch("updateTerminalSession", `${OPENCODEX_ROOT}/terminal-session/:terminalSessionID`, {
+      params: { terminalSessionID: Schema.String },
+      payload: UpdateTerminalSessionPayload,
+      success: described(OpencodeXTerminalSession.Info, "Updated OpencodeX terminal session"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "opencodex.terminal_session.update",
+        summary: "Update an OpencodeX terminal session",
+      }),
+    ),
+    HttpApiEndpoint.post("openTerminalSession", `${OPENCODEX_ROOT}/terminal-session/:terminalSessionID/opened`, {
+      params: { terminalSessionID: Schema.String },
+      success: described(OpencodeXTerminalSession.Info, "Opened OpencodeX terminal session"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "opencodex.terminal_session.opened",
+        summary: "Record an OpencodeX terminal session launch",
+      }),
+    ),
+    HttpApiEndpoint.delete("removeTerminalSession", `${OPENCODEX_ROOT}/terminal-session/:terminalSessionID`, {
+      params: { terminalSessionID: Schema.String },
+      success: described(Schema.Boolean, "Deleted OpencodeX terminal session"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "opencodex.terminal_session.delete",
+        summary: "Delete an OpencodeX terminal session",
+      }),
+    ),
     HttpApiEndpoint.get("listViews", `${OPENCODEX_ROOT}/view`, {
       success: described(Schema.Array(OpencodeXView.Info), "List OpencodeX views"),
       error: HttpApiError.BadRequest,

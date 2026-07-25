@@ -7,6 +7,7 @@ import { For, Show } from "solid-js"
 export function SessionSideEmptyState(props: {
   directory?: string
   openContext: () => void
+  showContext?: boolean
   openGit: () => void
   openFiles: () => void
   openChangedFile: (path: string) => void
@@ -42,11 +43,13 @@ export function SessionSideEmptyState(props: {
           <strong>Terminal</strong>
           <span>Run commands from {props.directory ? compactPath(props.directory) : "the workspace"}.</span>
         </Button>
-        <Button appearance="ghost" type="button" data-empty-tone="context" onClick={props.openContext}>
-          <Icon name="context" />
-          <strong>Context</strong>
-          <span>Inspect session state, tools, LSP, and related metadata.</span>
-        </Button>
+        <Show when={props.showContext !== false}>
+          <Button appearance="ghost" type="button" data-empty-tone="context" onClick={props.openContext}>
+            <Icon name="context" />
+            <strong>Context</strong>
+            <span>Inspect session state, tools, LSP, and related metadata.</span>
+          </Button>
+        </Show>
         <Button appearance="ghost" type="button" data-empty-tone="web" onClick={props.addWebTab}>
           <Icon name="browser" />
           <strong>Webpage</strong>

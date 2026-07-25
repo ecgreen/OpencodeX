@@ -5,6 +5,7 @@ import {
   ProjectsRoute,
   SessionRoute,
   SessionsRoute,
+  TerminalSessionRoute,
 } from "./app-session-routes"
 import {
   PluginsRoute,
@@ -41,6 +42,9 @@ export function AppRoutes(props: { model: GuiAppModel }) {
       </Match>
       <Match when={props.model.navigation.route().name === "sessions"}>
         <SessionsRoute model={props.model} />
+      </Match>
+      <Match when={props.model.navigation.route().name === "terminal-session"}>
+        <TerminalSessionRoute model={props.model} />
       </Match>
       <Match when={props.model.navigation.route().name === "projects"}>
         <ProjectsRoute model={props.model} />

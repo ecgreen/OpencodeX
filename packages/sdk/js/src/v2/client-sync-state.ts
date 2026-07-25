@@ -40,8 +40,13 @@ export function applyClientStateSnapshot(
   const previous = reset ? emptyClientStateSyncState() : current
   const catalog = snapshot.payloads.catalog
   const projects = reconcileEntities(previous.projects, catalog.projects, (item) => item.id)
+  const terminalSessions = reconcileEntities(
+    previous.terminalSessions,
+    catalog.terminalSessions ?? [],
+    (item) => item.id,
+  )
   const views = reconcileEntities(previous.views, catalog.views, (item) => item.id)
-  const paged = applyClientSessionCardPage({ ...previous, projects, views }, catalog.sessionCards, {
+  const paged = applyClientSessionCardPage({ ...previous, projects, terminalSessions, views }, catalog.sessionCards, {
     root: true,
   })
   const permissions = reconcileEntities(previous.permissions, catalog.permissions, (item) => item.id)
@@ -57,6 +62,7 @@ export function applyClientStateSnapshot(
     cursor: previous.cursor ?? snapshot.cursor,
     digest: snapshot.digest,
     projects: paged.projects,
+    terminalSessions: paged.terminalSessions,
     views: paged.views,
     permissions,
     questions,
@@ -344,6 +350,7 @@ export function selectClientStateSyncSnapshot(
 ): ClientCatalogSnapshot | undefined {
   if (state.phase !== "ready") return undefined
   const sessionByID = state.sessions.records
+  const terminalSessionByID = state.terminalSessions.records
   const projects = state.projects.ids.flatMap((id) => {
     const project = state.projects.records[id]
     if (!project) return []
@@ -353,6 +360,9 @@ export function selectClientStateSyncSnapshot(
         sessions: project.sessionIDs
           .flatMap((sessionID) => sessionByID[sessionID] ?? [])
           .filter((session) => filterSession?.(session) ?? true),
+        terminalSessions: (project.terminalSessionIDs ?? []).flatMap(
+          (terminalSessionID) => terminalSessionByID[terminalSessionID] ?? [],
+        ),
       },
     ]
   })
@@ -365,6 +375,9 @@ export function selectClientStateSyncSnapshot(
             sessions: view.sessionIDs
               .flatMap((sessionID) => sessionByID[sessionID] ?? [])
               .filter((session) => filterSession?.(session) ?? true),
+            terminalSessions: (view.members ?? []).flatMap((member) =>
+              member.kind === "terminal" ? (terminalSessionByID[member.id] ?? []) : [],
+            ),
           },
         ]
       : []
@@ -374,6 +387,7 @@ export function selectClientStateSyncSnapshot(
     sessions: state.sessions.ids
       .flatMap((id) => state.sessions.records[id] ?? [])
       .filter((session) => filterSession?.(session) ?? true),
+    terminalSessions: state.terminalSessions.ids.flatMap((id) => state.terminalSessions.records[id] ?? []),
     views,
     permissions: state.permissions.ids.flatMap((id) => state.permissions.records[id] ?? []),
     questions: state.questions.ids.flatMap((id) => state.questions.records[id] ?? []),
@@ -400,6 +414,7 @@ export function emptyClientStateSyncState(): ClientStateSyncState {
     lifecycle: { status: "idle", data: "empty", attempt: 0 },
     projects: emptyEntities(),
     sessions: emptyEntities(),
+    terminalSessions: emptyEntities(),
     views: emptyEntities(),
     sessionCards: { hasMore: false, pages: 0, loading: false },
     permissions: emptyEntities(),

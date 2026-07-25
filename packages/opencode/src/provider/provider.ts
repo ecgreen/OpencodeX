@@ -1,5 +1,6 @@
 import os from "os"
 import fuzzysort from "fuzzysort"
+import { CLAUDE_CODE_PROVIDER_ID, claudeCodeProviderInfo, refreshClaudeCodeModels } from "./claude-code-provider"
 import { Config } from "@/config/config"
 import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
@@ -1007,6 +1008,24 @@ function addLocalProviders(database: Record<ProviderV2.ID, Info>) {
   for (const item of LOCAL_MODEL_PROVIDERS) {
     database[item.id] = localProviderInfo(item, database[item.id])
   }
+  database[CLAUDE_CODE_PROVIDER_ID] = claudeCodeProviderInfo() as Info
+}
+
+/**
+ * The Claude Code menu depends on the signed-in account, so it is discovered
+ * from the CLI rather than declared. Discovery is cached behind a TTL because
+ * this runs on every provider refresh.
+ */
+async function refreshClaudeCodeProvider(state: State, config: Config.Info) {
+  const disabled = new Set(config.disabled_providers ?? [])
+  const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
+  if (disabled.has(CLAUDE_CODE_PROVIDER_ID) || (enabled && !enabled.has(CLAUDE_CODE_PROVIDER_ID))) {
+    delete state.providers[CLAUDE_CODE_PROVIDER_ID]
+    return
+  }
+  const provider = claudeCodeProviderInfo(await refreshClaudeCodeModels()) as Info
+  state.providers[CLAUDE_CODE_PROVIDER_ID] = provider
+  state.catalog[CLAUDE_CODE_PROVIDER_ID] = provider
 }
 
 function localProviderAPI(provider: Info, fallback: LocalModelProvider) {
@@ -1023,6 +1042,7 @@ async function refreshLocalProviders(input: {
   const disabled = new Set(input.config.disabled_providers ?? [])
   const enabled = input.config.enabled_providers ? new Set(input.config.enabled_providers) : undefined
 
+  await refreshClaudeCodeProvider(input.state, input.config)
   await Promise.all(
     LOCAL_MODEL_PROVIDERS.map(async (item) => {
       if (disabled.has(item.id) || (enabled && !enabled.has(item.id))) {
@@ -1632,6 +1652,10 @@ export const layer = Layer.effect(
             mergeProvider(providerID, patch)
           }
         }
+
+        // Claude Code authenticates through its own CLI, so it is always
+        // available rather than waiting on an env key or stored credential.
+        mergeProvider(CLAUDE_CODE_PROVIDER_ID, {})
 
         // load config - re-apply with updated data
         for (const [id, provider] of configProviders) {

@@ -4,10 +4,14 @@ import { For, Show, createEffect, createSignal, createUniqueId } from "solid-js"
 import type { PromptPart } from "../lib/store"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
+import { partIcon, partLabel, partPreviewURL, partTitle, promptWithoutPart } from "../lib/composer-parts"
 import { Icon } from "./icon"
 
 export function SessionComposer(props: {
   blocked: boolean
+  /** Set when the selected model's provider has no credentials on the server. */
+  disconnectedProviderName?: string
+  connectProvider?: () => void
   running: boolean
   mode: "plan" | "build" | "goal"
   draftPrompt: string
@@ -74,6 +78,17 @@ export function SessionComposer(props: {
   })
   return (
     <form class="composer" onSubmit={props.submit} onDragOver={handleComposerDragOver} onDrop={props.dropContext}>
+      <Show when={props.disconnectedProviderName}>
+        {(name) => (
+          <div class="composer-provider-warning" role="status">
+            <Icon name="warning" />
+            <span><strong>{name()}</strong> is not connected. Add credentials to send with this model, or pick another one.</span>
+            <Show when={props.connectProvider}>
+              {(connect) => <Button appearance="outline" type="button" onClick={() => connect()()}>Connect</Button>}
+            </Show>
+          </div>
+        )}
+      </Show>
       <div class={`composer-input ${props.mode}`}>
         <Show when={props.slashMenuVisible}>
           <div id={`${menuID}-slash`} class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
@@ -222,7 +237,7 @@ export function SessionComposer(props: {
               </div>
             </Show>
           </div>
-          <Button appearance="ghost" class="send-button" type="submit" title="Send message" aria-label="Send message" disabled={props.blocked || (props.draftText.length === 0 && props.draftParts.length === 0)}>
+          <Button appearance="ghost" class="send-button" type="submit" title={props.disconnectedProviderName ? `Connect ${props.disconnectedProviderName} to send` : "Send message"} aria-label="Send message" disabled={props.blocked || Boolean(props.disconnectedProviderName) || (props.draftText.length === 0 && props.draftParts.length === 0)}>
             <Icon name="arrowUp" />
           </Button>
         </div>
@@ -256,48 +271,7 @@ function handleComposerDragOver(event: DragEvent) {
 
 function removePart(part: PromptPart, props: Parameters<typeof SessionComposer>[0]) {
   props.setDraftParts((current) => current.filter((item) => item !== part))
-  props.setDraftPrompt(partRemovalLabels(part).reduce((input, label) => input.replace(`@${label}`, ""), props.draftPrompt).replace(/\n{3,}/g, "\n\n").trim())
-}
-
-function partLabel(part: PromptPart) {
-  if (part.type === "agent") return part.name
-  if (part.type === "file") {
-    if (part.filename) return fileBasename(part.filename)
-    if (part.source?.type === "file") return fileBasename(part.source.path)
-    if (part.source?.type === "resource") return fileBasename(part.source.uri)
-    return "File"
-  }
-  return part.text.slice(0, 48) || "Text"
-}
-
-function partIcon(part: PromptPart) {
-  return part.type === "file" && part.mime === "application/x-directory" ? "folder" : "file"
-}
-
-function partPreviewURL(part: PromptPart) {
-  if (part.type !== "file" || !part.mime.startsWith("image/")) return
-  return part.url
-}
-
-function partTitle(part: PromptPart) {
-  if (part.type !== "file") return partLabel(part)
-  return part.source?.type === "file" ? part.source.path : part.source?.type === "resource" ? part.source.uri : part.filename ?? "File"
-}
-function partRemovalLabels(part: PromptPart) {
-  if (part.type === "agent") return [part.name]
-  if (part.type !== "file") return []
-  return [
-    part.filename,
-    part.filename ? fileBasename(part.filename) : undefined,
-    part.source?.type === "file" ? part.source.path : undefined,
-    part.source?.type === "file" ? fileBasename(part.source.path) : undefined,
-    part.source?.type === "resource" ? part.source.uri : undefined,
-    part.source?.type === "resource" ? fileBasename(part.source.uri) : undefined,
-  ].filter((item, index, labels): item is string => Boolean(item) && labels.indexOf(item) === index)
-}
-
-function fileBasename(value: string) {
-  return value.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).at(-1) ?? value
+  props.setDraftPrompt(promptWithoutPart(props.draftPrompt, part))
 }
 
 function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }, props: Parameters<typeof SessionComposer>[0], mention: { visible: boolean; selected: number; select: (offset: number) => void; dismiss: () => void }) {

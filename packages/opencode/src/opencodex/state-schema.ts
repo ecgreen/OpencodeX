@@ -15,10 +15,11 @@ import { OpencodeXProject } from "./project"
 import { OpencodeXSessionCard } from "./session-card"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
+import { OpencodeXTerminalSession } from "./terminal-session"
 import { OpencodeXView } from "./view"
 import { SessionStatus } from "@/session/status"
 
-export const EPOCH = "2026-07-20.1"
+export const EPOCH = "2026-07-24.1"
 
 export const OpencodeXStateScope = Schema.Struct({
   projectID: ProjectV2.ID,
@@ -54,6 +55,7 @@ const OperationsPayload = Schema.Struct({
 export const OpencodeXCatalogSnapshot = Schema.Struct({
   projects: Schema.Array(OpencodeXProject.CatalogInfo),
   sessionCards: OpencodeXSessionCard.Page,
+  terminalSessions: Schema.Array(OpencodeXTerminalSession.Info),
   views: Schema.Array(OpencodeXView.CatalogInfo),
   sessionStatus: Schema.Record(Schema.String, SessionStatus.Info),
   permissions: Schema.Array(Permission.Request),

@@ -11,6 +11,7 @@ import { SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { OpencodeXProject } from "./project"
+import { OpencodeXTerminalSession } from "./terminal-session"
 import { OpencodeXView } from "./view"
 
 export const Info = Schema.Struct({
@@ -49,6 +50,7 @@ export type UiState = Schema.Schema.Type<typeof UiState>
 export const SyncSnapshot = Schema.Struct({
   projects: Schema.Array(OpencodeXProject.Info),
   sessions: Schema.Array(Session.Info),
+  terminalSessions: Schema.Array(OpencodeXTerminalSession.Info),
   views: Schema.Array(OpencodeXView.Info),
   sessionStatus: Schema.Record(Schema.String, SessionStatus.Info),
   permissions: Schema.Array(Permission.Request),

@@ -3,13 +3,14 @@ import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js"
 import { Portal } from "solid-js/web"
-import { NESTED_TRANSCRIPT_DIFF_OPTIONS, collapseOutput, copyFullToolText, patchContents, toolError, toolInput, toolOutput } from "../lib/tool-display"
+import { COPY_FULL_LABEL, NESTED_TRANSCRIPT_DIFF_OPTIONS, collapseOutput, copyFullToolText, patchContents, toolError, toolInput, toolOutput } from "../lib/tool-display"
 import { describePermission } from "../lib/safety-present"
 import { isKeyboardEditingTarget } from "../lib/keyboard-shortcuts"
 import type { ToolPart } from "./session-transcript"
+import { DisclosureChevron } from "./icon"
 import { ModalFrame } from "./modal-frame"
 import { SafetyCardHeader, type SafetyQueuePosition } from "./session-safety-card"
-import { ToolPreviewText } from "./session-tool-details"
+import { ToolPreviewText } from "./session-tool-text"
 import { Button, Menu, SurfaceCard } from "./ui"
 
 type PermissionReply = "once" | "always" | "reject"
@@ -92,10 +93,11 @@ export function SessionPermissionCard(props: {
         </Show>
 
         <Show when={hasDetails(props.request, input(), props.tool)}>
-          <div class="permission-details">
-            <Button appearance="ghost" size="compact" trailingIcon={detailsOpen() ? "chevronDown" : "chevronRight"} onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen()}>
-              Technical details
-            </Button>
+          <details class="permission-details" open={detailsOpen()} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
+            <summary class="part-header">
+              <DisclosureChevron />
+              <span class="part-title">Technical details</span>
+            </summary>
             <Show when={detailsOpen()}>
               <div class="permission-details-content">
                 <Show when={Object.keys(input()).length > 0}>
@@ -108,11 +110,11 @@ export function SessionPermissionCard(props: {
                   {(output) => <PermissionOutput output={output()} />}
                 </Show>
                 <Show when={props.tool ? toolError(props.tool.state) : undefined}>
-                  {(error) => <section><h3>Tool error</h3><ToolPreviewText text={error()} copyLabel="Copy full error" /></section>}
+                  {(error) => <section><h3>Tool error</h3><ToolPreviewText text={error()} /></section>}
                 </Show>
               </div>
             </Show>
-          </div>
+          </details>
         </Show>
       </div>
 
@@ -155,11 +157,11 @@ function PermissionDiff(props: { diff: string; filePath?: string; split?: boolea
   const preview = createMemo(() => previewToolOutput(props.diff, limits()))
   const contents = createMemo(() => patchContents(preview().text, props.filePath ?? "diff"))
   return (
-    <Show when={contents()} fallback={<ToolPreviewText text={props.diff} limits={limits()} copyLabel="Copy full patch" />}>
+    <Show when={contents()} fallback={<ToolPreviewText text={props.diff} limits={limits()} />}>
       {(value) => (
         <div class="permission-diff">
           <FileDiffView mode="diff" before={value().before} after={value().after} diffStyle={props.split ? "split" : "unified"} hunkSeparators="simple" {...NESTED_TRANSCRIPT_DIFF_OPTIONS} />
-          <Show when={props.split && preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.diff)}>Copy full patch</Button></Show>
+          <Show when={props.split && preview().truncated}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.diff)}>{COPY_FULL_LABEL}</Button></Show>
         </div>
       )}
     </Show>
@@ -168,7 +170,7 @@ function PermissionDiff(props: { diff: string; filePath?: string; split?: boolea
 
 function PermissionOutput(props: { output: string }) {
   const preview = createMemo(() => collapseOutput(props.output))
-  return <section><h3>Tool output</h3><pre>{preview().output}</pre><Show when={preview().overflow}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>Copy full output</Button></Show></section>
+  return <section><h3>Tool output</h3><pre>{preview().output}</pre><Show when={preview().overflow}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>{COPY_FULL_LABEL}</Button></Show></section>
 }
 
 function hasDetails(request: PermissionRequest, input: Record<string, unknown>, tool?: ToolPart) {

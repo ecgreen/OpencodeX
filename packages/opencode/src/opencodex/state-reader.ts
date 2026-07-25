@@ -16,6 +16,7 @@ import { EPOCH, type OpencodeXStateScope } from "./state-schema"
 import type { StateLog } from "./state-log"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
+import { OpencodeXTerminalSession } from "./terminal-session"
 import { OpencodeXView } from "./view"
 
 type SessionCardPage = {
@@ -34,6 +35,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
   const jobs = yield* OpencodeXJob.Service
   const sessions = yield* Session.Service
   const swarms = yield* OpencodeXSwarm.ReadService
+  const terminalSessions = yield* OpencodeXTerminalSession.Service
   const views = yield* OpencodeXView.Service
   const statuses = yield* SessionStatus.Service
   const permissions = yield* Permission.Service
@@ -76,10 +78,20 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
   const readRootPayloads = Effect.fn("OpencodeXState.readRootPayloads")(function* (scope: OpencodeXStateScope) {
     while (true) {
       const before = yield* log.revisionVector(scope)
-      const [projectList, viewList, statusList, permissionList, questionList, operations, unseenReviewSessionIDs] =
+      const [
+        projectList,
+        terminalSessionList,
+        viewList,
+        statusList,
+        permissionList,
+        questionList,
+        operations,
+        unseenReviewSessionIDs,
+      ] =
         yield* Effect.all(
           [
             projects.listCatalog(),
+            terminalSessions.list(),
             views.listCatalog(),
             statuses.list(),
             permissions.list(),
@@ -108,6 +120,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
       const catalog = {
         projects: projectList,
         sessionCards: cardPage,
+        terminalSessions: terminalSessionList,
         views: viewList,
         sessionStatus: Object.fromEntries(statusList),
         permissions: permissionList,
