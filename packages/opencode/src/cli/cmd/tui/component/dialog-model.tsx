@@ -64,8 +64,34 @@ export function DialogModel(props: { providerID?: string; current?: ModelSelecti
       "Recent",
     )
 
+    // Swarms lead the picker: an agent team is selected exactly like a model.
+    const swarmOptions = pipe(
+      sync.data.provider.filter((provider) => provider.id === "swarm"),
+      flatMap((provider) =>
+        pipe(
+          provider.models,
+          entries(),
+          filter(() => !props.providerID || props.providerID === "swarm"),
+          map(([model, info]) => ({
+            value: { providerID: provider.id, modelID: model },
+            title: info.name ?? model,
+            releaseDate: info.release_date ?? "",
+            description: undefined as string | undefined,
+            category: "Swarms",
+            disabled: false,
+            footer: "Agent team",
+            onSelect() {
+              onSelect(provider.id, model)
+            },
+          })),
+          sortBy((option) => option.title),
+        ),
+      ),
+    )
+
     const providerOptions = pipe(
       sync.data.provider,
+      filter((provider) => provider.id !== "swarm"),
       sortBy(
         (provider) => provider.id !== "opencode",
         (provider) => provider.name,
@@ -116,12 +142,13 @@ export function DialogModel(props: { providerID?: string; current?: ModelSelecti
 
     if (needle) {
       return [
+        ...fuzzysort.go(needle, swarmOptions, { keys: ["title", "category"] }).map((x) => x.obj),
         ...fuzzysort.go(needle, providerOptions, { keys: ["title", "category"] }).map((x) => x.obj),
         ...fuzzysort.go(needle, popularProviders, { keys: ["title"] }).map((x) => x.obj),
       ]
     }
 
-    return [...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders]
+    return [...swarmOptions, ...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders]
   })
 
   const provider = createMemo(() =>

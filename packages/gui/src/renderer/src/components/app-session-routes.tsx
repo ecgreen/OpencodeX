@@ -24,6 +24,7 @@ export function DashboardRoute(props: { model: GuiAppModel }) {
       logo={<OpencodeXLogo active={false} />}
       openProject={(projectID) => model.navigation.setRoute({ name: "projects", projectID })}
       openSession={model.sessionActions.open}
+      openSwarm={(swarmID) => model.navigation.setRoute({ name: "swarm-create", swarmID })}
       openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
       viewPinned={(viewID) => model.rail.pinnedViewIDSet().has(viewID)}
       createProject={() => void model.notices.run(model.management.createProject)}
@@ -61,6 +62,12 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       composerFocusToken={model.sessionState.composerFocusToken}
       providers={model.authoritative.snapshot()?.providers ?? []}
       connectedProviderIDs={model.authoritative.snapshot()?.connectedProviderIDs ?? []}
+      swarms={model.authoritative.snapshot()?.swarms ?? []}
+      team={model.swarmTeam.team()}
+      teamMemberSessionID={model.swarmTeam.memberSessionID()}
+      selectTeamMember={model.swarmTeam.setMemberSessionID}
+      teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}
+      teamMemberLoading={model.authoritative.viewPaneState(model.swarmTeam.memberSessionID()).loading}
       connectProvider={(providerID) => void model.notices.run(() => model.capabilities.connectProvider(providerID))}
       mcp={model.authoritative.snapshot()?.mcp ?? {}}
       mcpResources={model.authoritative.snapshot()?.mcpResources ?? {}}
@@ -211,7 +218,7 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       openSession={model.sessionActions.open}
       openTerminalSession={(terminalSessionID) => model.navigation.setRoute(terminalSessionRoute(model.authoritative.snapshot()?.terminalSessions.find((record) => record.id === terminalSessionID), terminalSessionID))}
       openView={(viewID) => model.navigation.setRoute({ name: "views", viewID })}
-      openSwarm={(swarmID) => model.navigation.setRoute({ name: "swarms", swarmID })}
+      openSwarm={(swarmID) => model.navigation.setRoute({ name: "swarm-create", swarmID })}
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
       }

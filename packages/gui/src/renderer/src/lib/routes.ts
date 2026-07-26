@@ -7,7 +7,7 @@ export type Route =
   | { name: "projects"; projectID?: string }
   | { name: "session"; sessionID: string }
   | { name: "terminal-session"; terminalSessionID: string }
-  | { name: "swarms"; swarmID?: string }
+  | { name: "swarms" }
   | { name: "swarm-create"; swarmID?: string; projectID?: string }
   | { name: "views"; viewID?: string }
   | { name: "view-edit"; viewID?: string }

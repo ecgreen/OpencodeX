@@ -87,6 +87,7 @@ function OpenCodeViewPane(props: {
       composerFocusRequest={props.model.view.composerFocusRequest()}
       providers={props.model.authoritative.snapshot()?.providers ?? []}
       connectedProviderIDs={props.model.authoritative.snapshot()?.connectedProviderIDs ?? []}
+      swarms={props.model.authoritative.snapshot()?.swarms ?? []}
       connectProvider={(providerID) => void props.model.notices.run(() => props.model.capabilities.connectProvider(providerID))}
       mcp={props.model.authoritative.snapshot()?.mcp ?? {}}
       mcpResources={props.model.authoritative.snapshot()?.mcpResources ?? {}}

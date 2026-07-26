@@ -21,7 +21,7 @@ import { refreshOpencodeXSidebar } from "./opencodex-refresh"
 import { setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
 import { deriveStatus } from "./opencodex-session-status"
 import { useOxSidebar } from "./opencodex-sidebar"
-import { opencodeXSwarmExecutionMode } from "./opencodex-swarm-role-model"
+import { sendPromptToSession } from "@tui/component/prompt/submit-session"
 
 export function createOpencodeXSwarmsController() {
   const sdk = useSDK()
@@ -109,14 +109,37 @@ export function createOpencodeXSwarmsController() {
     }
     const runPrompt = prompt.input.trim()
     if (!runPrompt) return false
-    const updated = await sdk.request<OpencodeXSwarm>(`/experimental/opencodex/swarm/${swarm.id}/task`, {
+    // A swarm task is an ordinary session on the swarm model: the orchestrator
+    // answers and delegates specialists inside that session.
+    const project = projects().find((item) => item.id === swarm.projectID)
+    const directory = project?.folders?.[0]?.path ?? project?.project.worktree
+    const model = { providerID: "swarm", modelID: swarm.id }
+    const session = await sdk.request<{ id: string }>("/experimental/opencodex/session", {
       method: "POST",
-      body: JSON.stringify({ prompt: runPrompt, agent: local.agent.current()?.name, mode: opencodeXSwarmExecutionMode(local.agent.current()?.name), variant: local.model.variant.current() }),
+      body: JSON.stringify({
+        projectID: swarm.projectID,
+        directory,
+        agent: local.agent.current()?.name,
+        model: { providerID: model.providerID, id: model.modelID },
+      }),
     }).catch((error: Error) => void DialogAlert.show(dialog, "Assign Task", error.message))
-    if (!updated) return false
-    void sync.session.refresh()
+    if (!session) return false
+    await sync.session.sync(session.id)
+    sendPromptToSession({
+      sdk,
+      sync,
+      sessionID: session.id,
+      agent: local.agent.current()?.name ?? "build",
+      model,
+      variant: undefined,
+      mode: "normal",
+      text: runPrompt,
+      parts: [],
+      editorSelectionPending: false,
+    })
+    local.model.set(model, { recent: true })
     refreshOpencodeXSidebar()
-    route.navigate({ type: "opencodex-swarms", swarmID: updated.id })
+    route.navigate({ type: "session", sessionID: session.id })
     return true
   }
 

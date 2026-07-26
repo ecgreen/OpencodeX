@@ -1,6 +1,7 @@
 import { lazy, Show, Suspense } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { EMPTY_SESSION_DATA } from "../controllers/authoritative-state-controller"
+import { swarmModelValue } from "../lib/model-selection"
 import type { ViewItem } from "../lib/view-items"
 import { AppViewPane } from "./app-view-pane"
 import { SessionSidePanelLoading } from "./panel-loading-state"
@@ -18,47 +19,49 @@ const ViewsManagerPage = lazy(() =>
   import("./views-manager-page-entry").then((module) => ({ default: module.ViewsManagerPageEntry })),
 )
 
+/** Opens a fresh session with the swarm selected as the model. */
+export function startSwarmSession(model: GuiAppModel, swarm: { id: string; projectID: string }) {
+  const project = model.authoritative.snapshot()?.projects.find((item) => item.id === swarm.projectID)
+  model.sessionState.setSelectedModel(swarmModelValue(swarm.id))
+  model.sessionState.setSelectedVariant("")
+  model.navigation.setRoute({ name: "new-session", projectID: swarm.projectID, directory: project?.folders[0]?.path })
+  model.sessionState.requestComposerFocus()
+}
+
 export function SwarmsRoute(props: { model: GuiAppModel }) {
-  const route = props.model.navigation.route()
   return (
     <SwarmsPage
       snapshot={props.model.authoritative.snapshot()}
-      swarmID={route.name === "swarms" ? route.swarmID : undefined}
-      openSwarm={(swarmID) => props.model.navigation.setRoute({ name: "swarms", swarmID })}
+      openSwarm={(swarmID) => props.model.navigation.setRoute({ name: "swarm-create", swarmID })}
       createSwarm={() => void props.model.notices.run(() => props.model.management.createSwarm())}
-      editSwarm={(swarmID) => props.model.navigation.setRoute({ name: "swarm-create", swarmID })}
-      openSession={props.model.sessionActions.open}
-      assignTask={(swarmID, prompt) =>
-        void props.model.notices.run(() => props.model.management.assignSwarmTask(swarmID, prompt))
-      }
-      cancelSwarm={(swarmID) => void props.model.notices.run(() => props.model.management.cancelSwarm(swarmID))}
-      deleteSwarm={(swarmID, name) =>
-        void props.model.notices.run(() => props.model.management.deleteSwarm(swarmID, name))
-      }
-      refresh={() => void props.model.notices.run(props.model.authoritative.refresh)}
+      startSession={(swarm) => startSwarmSession(props.model, swarm)}
     />
   )
 }
 
 export function SwarmEditorRoute(props: { model: GuiAppModel }) {
-  const route = props.model.navigation.route()
-  const swarm =
-    route.name === "swarm-create" && route.swarmID
-      ? props.model.authoritative.snapshot()?.swarms.find((item) => item.id === route.swarmID)
+  const route = () => props.model.navigation.route()
+  const swarm = () => {
+    const current = route()
+    return current.name === "swarm-create" && current.swarmID
+      ? props.model.authoritative.snapshot()?.swarms.find((item) => item.id === current.swarmID)
       : undefined
+  }
   return (
     <SwarmEditorPage
       projects={props.model.authoritative.snapshot()?.projects ?? []}
       providers={props.model.authoritative.snapshot()?.providers ?? []}
       connectedProviderIDs={props.model.authoritative.snapshot()?.connectedProviderIDs ?? []}
-      agents={props.model.authoritative.snapshot()?.agents ?? []}
-      swarm={swarm}
-      initialProjectID={route.name === "swarm-create" ? route.projectID : undefined}
-      selectedModel={props.model.sessionState.selectedModel()}
+      connectProvider={(providerID) => void props.model.notices.run(() => props.model.capabilities.connectProvider(providerID))}
+      swarm={swarm()}
+      initialProjectID={route().name === "swarm-create" ? (route() as { projectID?: string }).projectID : undefined}
+      recentModels={props.model.sessionState.recentModels()}
       save={(input) => void props.model.notices.run(() => props.model.management.saveSwarm(input))}
-      cancel={() =>
-        props.model.navigation.setRoute(swarm ? { name: "swarms", swarmID: swarm.id } : { name: "swarms" })
+      cancel={() => props.model.navigation.setRoute({ name: "swarms" })}
+      deleteSwarm={(swarmID, name) =>
+        void props.model.notices.run(() => props.model.management.deleteSwarm(swarmID, name))
       }
+      startSession={(swarm) => startSwarmSession(props.model, swarm)}
     />
   )
 }

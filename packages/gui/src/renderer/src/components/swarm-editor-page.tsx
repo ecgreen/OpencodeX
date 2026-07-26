@@ -1,36 +1,36 @@
-import type { Agent, OpencodeXSwarm, OpencodeXSwarmRoleInput, Provider } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createMemo, createSignal } from "solid-js"
-import { modelPickerOptions, modelPickerProviders, parseModelValue } from "../lib/model-selection"
+import type { OpencodeXSwarm, OpencodeXSwarmRoleInput, Provider } from "@opencode-ai/sdk/v2/client"
+import { Show, createMemo, createSignal } from "solid-js"
 import {
+  SWARM_ROLE_PRESETS,
   defaultSwarmRoles,
-  nextSwarmRolePreset,
   presetRoleInput,
   projectLabel,
-  projectLabelByID,
   roleInput,
-  swarmProviderSelectionKey,
   swarmRolePresetBySkill,
-  SWARM_ROLE_PRESET_OPTIONS,
 } from "../lib/swarm-actions"
 import type { GuiSnapshot } from "../lib/store"
-import { Icon } from "./icon"
+import { SwarmEditorTeam } from "./swarm-editor-team"
 import { SwarmPageHeader } from "./swarm-page-header"
-import { Button, IconButton, Select, TextArea, TextInput } from "./ui"
+import { SwarmRoleModelPicker } from "./swarm-role-model-picker"
+import { Button, Select, TextInput } from "./ui"
 
-type EditorChoice = { id: string; label: string }
-
+/**
+ * The one swarm surface: creating, viewing, and editing are the same page.
+ * A roster on the left selects a role; the detail pane edits it.
+ */
 export function SwarmEditorPage(props: {
   projects: GuiSnapshot["projects"]
   providers: Provider[]
   connectedProviderIDs: string[]
-  agents: Agent[]
+  connectProvider?: (providerID?: string) => void
   swarm?: OpencodeXSwarm
   initialProjectID?: string
-  selectedModel: string
+  recentModels: string[]
   save: (input: { projectID: string; title?: string; roles: OpencodeXSwarmRoleInput[]; swarmID?: string }) => void | Promise<void>
   cancel: () => void
+  deleteSwarm?: (swarmID: string, title: string) => void | Promise<void>
+  startSession?: (swarm: OpencodeXSwarm) => void
 }) {
-  const initialModel = createMemo(() => parseModelValue(props.selectedModel))
   const [projectID, setProjectID] = createSignal(props.swarm?.projectID ?? props.initialProjectID ?? props.projects[0]?.id ?? "")
   const [swarmTitle, setSwarmTitle] = createSignal(props.swarm?.title ?? "")
   const [roles, setRoles] = createSignal<OpencodeXSwarmRoleInput[]>(
@@ -45,25 +45,19 @@ export function SwarmEditorPage(props: {
         instructions: role.instructions,
         metadata: role.metadata,
       }))
-      : defaultSwarmRoles({
-        agents: props.agents,
-        providerID: initialModel()?.providerID,
-        modelID: initialModel()?.modelID,
-      }),
+      : defaultSwarmRoles(),
   )
+  const [selectedIndex, setSelectedIndex] = createSignal(0)
+  const [modelPickerIndex, setModelPickerIndex] = createSignal<number>()
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal("")
-  const selectedProviderKey = createMemo(() => swarmProviderSelectionKey(roles()))
-  const modelProviders = createMemo(() =>
-    modelPickerProviders(
-      props.providers,
-      props.connectedProviderIDs,
-      selectedProviderKey() ? selectedProviderKey().split("\0") : [],
-    ),
-  )
   const editing = createMemo(() => props.swarm !== undefined)
-  const selectedProjectName = createMemo(() => projectLabelByID(props.projects, projectID()))
   const configuredRoleCount = createMemo(() => roles().filter((role) => role.providerID && role.modelID).length)
+  const ready = createMemo(() => roles().length >= 2 && configuredRoleCount() === roles().length && Boolean(projectID()))
+  const unusedPresets = createMemo(() => {
+    const used = new Set(roles().map((role) => role.skill ?? role.name.trim().toLowerCase().replace(/\s+/g, "-")))
+    return SWARM_ROLE_PRESETS.filter((preset) => !used.has(preset.skill))
+  })
 
   async function save(event: SubmitEvent) {
     event.preventDefault()
@@ -74,11 +68,11 @@ export function SwarmEditorPage(props: {
     }
     const normalizedRoles = roles().map(roleInput)
     if (normalizedRoles.length < 2) {
-      setError("Add an orchestrator and at least one specialist role.")
+      setError("Add at least one specialist beside the orchestrator.")
       return
     }
     if (normalizedRoles.some((role) => !role.providerID || !role.modelID)) {
-      setError("Select a model for every role.")
+      setError("Every role needs a model. Roles marked \"Needs model\" are missing one.")
       return
     }
     setSaving(true)
@@ -95,194 +89,109 @@ export function SwarmEditorPage(props: {
     setRoles((current) => current.map((role, roleIndex) => roleIndex === index ? update(role) : role))
   }
 
-  function addRole() {
-    const preset = nextSwarmRolePreset(roles())
+  function addPreset(skill?: string) {
+    const preset = skill ? swarmRolePresetBySkill(skill) : undefined
     setRoles((current) => [
       ...current,
-      preset
-        ? presetRoleInput(preset, {
-          providerID: initialModel()?.providerID,
-          modelID: initialModel()?.modelID,
-        })
-        : roleInput({
-          name: `Specialist ${current.length}`,
-          skill: "specialist",
-          providerID: initialModel()?.providerID,
-          modelID: initialModel()?.modelID,
-        }),
+      preset ? presetRoleInput(preset) : roleInput({ name: `Specialist ${current.length}`, skill: "specialist" }),
     ])
+    // The new role still needs a model, so it becomes the roster selection.
+    setSelectedIndex(roles().length - 1)
   }
 
   function removeRole(index: number) {
     if (index === 0) return
+    setSelectedIndex((current) => (current >= index ? Math.max(0, current - 1) : current))
     setRoles((current) => current.filter((_, roleIndex) => roleIndex !== index))
-  }
-
-  function updateRoleSkill(index: number, skill: string) {
-    const preset = swarmRolePresetBySkill(skill)
-    updateRole(index, (current) => roleInput({
-      ...current,
-      name: preset?.name ?? current.name,
-      skill: skill || undefined,
-      instructions: current.instructions,
-    }))
-  }
-
-  function roleModels(providerID?: string) {
-    if (!providerID) return []
-    return modelPickerOptions(modelProviders().filter((provider) => provider.id === providerID))
-  }
-
-  function skillChoices(skill?: string): EditorChoice[] {
-    const choices = SWARM_ROLE_PRESET_OPTIONS.map((preset) => ({ id: preset.skill, label: preset.name }))
-    if (!skill || choices.some((choice) => choice.id === skill)) return choices
-    return [{ id: skill, label: skill }, ...choices]
-  }
-
-  function providerChoices(): EditorChoice[] {
-    return modelProviders().map((provider) => ({ id: provider.id, label: provider.name }))
-  }
-
-  function modelChoices(providerID?: string, modelID?: string): EditorChoice[] {
-    const choices = roleModels(providerID).map((option) => ({ id: option.model.id, label: option.model.name ?? option.model.id }))
-    if (!modelID || choices.some((choice) => choice.id === modelID)) return choices
-    return [{ id: modelID, label: `${modelID} (unavailable)` }, ...choices]
   }
 
   return (
     <form class="page swarm-editor-page" onSubmit={save}>
       <SwarmPageHeader
-        eyebrow={editing() ? "Edit swarm" : "Create swarm"}
-        title={editing() ? props.swarm?.title ?? "Edit swarm" : "Create swarm"}
-        description="Experimental: configure the orchestrator first, then add specialist roles with their own skills, models, and optional custom instructions."
-        actions={[{ label: "Cancel", icon: "x", onClick: props.cancel }]}
+        title={editing() ? "Edit Swarm" : "Create Swarm"}
+        description="A swarm is an agent team you use like a model: pick it in the composer's model selector and the orchestrator runs your session, delegating specialists you can follow from the session's team view."
+        actions={[
+          ...(editing() && props.startSession
+            ? [{ label: "New session", icon: "send", onClick: () => props.startSession!(props.swarm!) }]
+            : []),
+          ...(editing() && props.deleteSwarm
+            ? [{ label: "Delete", icon: "trash", danger: true, onClick: () => props.deleteSwarm!(props.swarm!.id, props.swarm!.title) }]
+            : []),
+        ]}
       />
       <Show when={props.projects.length > 0} fallback={<div class="empty">Create an OpencodeX project before starting a swarm.</div>}>
-        <div class="swarm-editor-layout">
-          <aside class="swarm-editor-sidebar">
-            <section class="swarm-editor-panel">
-              <header>
-                <span><Icon name="swarm" /></span>
-                <div>
-                  <strong>Basics</strong>
-                  <small>{editing() ? "Existing swarm" : "New swarm"}</small>
-                </div>
-              </header>
-              <div class="swarm-editor-fields">
-                <Select<(typeof props.projects)[number]>
-                  label="Project"
-                  options={props.projects}
-                  current={props.projects.find((project) => project.id === projectID())}
-                  optionValue={(project) => project.id}
-                  optionLabel={projectLabel}
-                  disabled={editing()}
-                  onSelect={(project) => project && setProjectID(project.id)}
-                />
-                <label>
-                  <span>Title</span>
-                  <TextInput value={swarmTitle()} onInput={(event) => setSwarmTitle(event.currentTarget.value)} placeholder="Optional; first task can name the swarm later" />
-                </label>
-              </div>
-            </section>
-            <section class="swarm-editor-panel swarm-editor-summary">
-              <header>
-                <span><Icon name="activity" /></span>
-                <div>
-                  <strong>Summary</strong>
-                  <small>{configuredRoleCount()} of {roles().length} roles configured</small>
-                </div>
-              </header>
-              <dl>
-                <div>
-                  <dt>Project</dt>
-                  <dd>{selectedProjectName()}</dd>
-                </div>
-                <div>
-                  <dt>Roles</dt>
-                  <dd>{roles().length}</dd>
-                </div>
-                <div>
-                  <dt>Models</dt>
-                  <dd>{configuredRoleCount()} ready</dd>
-                </div>
-              </dl>
-            </section>
-          </aside>
-          <section class="swarm-editor-team">
-            <header>
-              <div>
-                <strong>Team setup</strong>
-                <span>{roles().length} roles</span>
-              </div>
-              <Button size="compact" icon="plus" onClick={addRole}>Add role</Button>
-            </header>
-            <div class="role-editor-list">
-              <For each={roles()}>
-                {(role, index) => (
-                  <article class="role-editor-card swarm-role-card">
-                    <header>
-                      <div>
-                        <span class="swarm-role-index">{index() + 1}</span>
-                        <div>
-                          <strong>{role.name || (index() === 0 ? "Orchestrator" : `Specialist ${index()}`)}</strong>
-                          <span>{index() === 0 ? "Orchestrator" : "Specialist"} - {role.skill ?? "No skill"} - {role.providerID && role.modelID ? "Model selected" : "Needs model"}</span>
-                        </div>
-                      </div>
-                      <Show when={index() > 0}>
-                        <IconButton appearance="ghost" tone="danger" icon="trash" label={`Remove role ${index()}`} onClick={() => removeRole(index())} />
-                      </Show>
-                    </header>
-                    <div class="swarm-role-fields">
-                      <label>
-                        <span>Name</span>
-                        <TextInput value={role.name} onInput={(event) => updateRole(index(), (current) => ({ ...current, name: event.currentTarget.value }))} />
-                      </label>
-                      <Select<EditorChoice>
-                        label="Skill"
-                        options={skillChoices(role.skill)}
-                        current={skillChoices(role.skill).find((choice) => choice.id === role.skill)}
-                        optionValue={(choice) => choice.id}
-                        optionLabel={(choice) => choice.label}
-                        onSelect={(choice) => choice && updateRoleSkill(index(), choice.id)}
-                      />
-                      <Select<EditorChoice>
-                        label="Provider"
-                        placeholder="Select provider"
-                        options={providerChoices()}
-                        current={providerChoices().find((choice) => choice.id === role.providerID)}
-                        optionValue={(choice) => choice.id}
-                        optionLabel={(choice) => choice.label}
-                        onSelect={(choice) => updateRole(index(), (current) => ({ ...current, providerID: choice?.id, modelID: undefined }))}
-                      />
-                      <Select<EditorChoice>
-                        label="Model"
-                        placeholder="Select model"
-                        disabled={!role.providerID}
-                        options={modelChoices(role.providerID, role.modelID)}
-                        current={modelChoices(role.providerID, role.modelID).find((choice) => choice.id === role.modelID)}
-                        optionValue={(choice) => choice.id}
-                        optionLabel={(choice) => choice.label}
-                        onSelect={(choice) => updateRole(index(), (current) => ({ ...current, modelID: choice?.id }))}
-                      />
-                      <label class="swarm-role-instructions">
-                        <span>Instructions</span>
-                        <TextArea value={role.instructions ?? ""} onInput={(event) => updateRole(index(), (current) => ({ ...current, instructions: event.currentTarget.value }))} />
-                      </label>
-                    </div>
-                  </article>
-                )}
-              </For>
-            </div>
-          </section>
+        <div class="swarm-editor-basics">
+          <label class="swarm-editor-field swarm-editor-title">
+            <span>Name</span>
+            <TextInput value={swarmTitle()} onInput={(event) => setSwarmTitle(event.currentTarget.value)} placeholder="e.g. Feature Team, Bug Triage, Release Crew" />
+          </label>
+          <div class="swarm-editor-field">
+            <Select<(typeof props.projects)[number]>
+              label="Project"
+              options={props.projects}
+              current={props.projects.find((project) => project.id === projectID())}
+              optionValue={(project) => project.id}
+              optionLabel={projectLabel}
+              disabled={editing()}
+              onSelect={(project) => project && setProjectID(project.id)}
+            />
+          </div>
         </div>
+        <SwarmEditorTeam
+          roles={roles()}
+          providers={props.providers}
+          connectedProviderIDs={props.connectedProviderIDs}
+          selectedIndex={Math.min(selectedIndex(), roles().length - 1)}
+          select={setSelectedIndex}
+          update={updateRole}
+          remove={removeRole}
+          addPreset={addPreset}
+          unusedPresets={unusedPresets()}
+          openModelPicker={setModelPickerIndex}
+        />
         <Show when={error()}>
           <div class="notice error">{error()}</div>
         </Show>
-        <div class="form-actions swarm-editor-actions">
-          <Button icon="x" onClick={props.cancel}>Cancel</Button>
-          <Button type="submit" appearance="solid" tone="accent" icon="check" disabled={saving()}>{saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}</Button>
-        </div>
+        <footer class="swarm-editor-actions">
+          <Show when={!ready()} fallback={<span />}>
+            <span class="swarm-editor-status">
+              {roles().length < 2
+                ? "Add at least one specialist"
+                : configuredRoleCount() < roles().length
+                  ? `${configuredRoleCount()} of ${roles().length} roles have a model`
+                  : "Select an OpencodeX project"}
+            </span>
+          </Show>
+          <div>
+            <Button icon="x" type="button" onClick={props.cancel}>{editing() ? "Close" : "Cancel"}</Button>
+            <Button
+              type="submit"
+              appearance="solid"
+              tone="accent"
+              icon="check"
+              disabled={saving() || !ready()}
+              title={ready() ? undefined : "Every role needs a model before the swarm can be saved"}
+            >
+              {saving() ? "Saving..." : editing() ? "Save swarm" : "Create swarm"}
+            </Button>
+          </div>
+        </footer>
+      </Show>
+      <Show when={modelPickerIndex() !== undefined}>
+        <SwarmRoleModelPicker
+          providers={props.providers}
+          connectedProviderIDs={props.connectedProviderIDs}
+          recentModels={props.recentModels}
+          selectedModel={roleModelValue(roles()[modelPickerIndex()!])}
+          select={(providerID, modelID) => updateRole(modelPickerIndex()!, (current) => ({ ...current, providerID, modelID }))}
+          close={() => setModelPickerIndex(undefined)}
+          connectProvider={props.connectProvider}
+        />
       </Show>
     </form>
   )
+}
+
+function roleModelValue(role?: OpencodeXSwarmRoleInput) {
+  return role?.providerID && role.modelID ? `${role.providerID}/${role.modelID}` : ""
 }

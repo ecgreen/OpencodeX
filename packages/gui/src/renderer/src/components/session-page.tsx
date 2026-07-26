@@ -18,6 +18,7 @@ import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
+import { SessionSwarmTeam } from "./swarm-team-strip"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
 import { SessionPageToolbar } from "./session-page-toolbar"
@@ -208,6 +209,11 @@ export function SessionPage(props: SessionPageProps) {
     if (composerWasBlocked && !next) requestAnimationFrame(() => composerInput.textarea()?.focus({ preventScroll: true }))
     composerWasBlocked = next
   })
+  // A permission or question needs an answer; snap back to the orchestrator
+  // view so the safety dock is never hidden behind a team-member pane.
+  createEffect(() => {
+    if (blocked() && props.teamMemberSessionID) props.selectTeamMember?.("")
+  })
   createEffect(() => {
     const id = props.session?.id ?? ""
     const key = `${id}:${props.session?.directory ?? ""}:${props.pending ? "pending" : "ready"}`
@@ -256,6 +262,8 @@ export function SessionPage(props: SessionPageProps) {
       </Show>
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
         <div class="session-workspace">
+          <SessionSwarmTeam page={props} />
+          <Show when={!(props.team && props.teamMemberSessionID)}>
           <TranscriptPanel
             sessionID={transcriptSessionID()}
             data={props.data}
@@ -325,6 +333,7 @@ export function SessionPage(props: SessionPageProps) {
             setMode={models.setMode}
             selectVariant={models.selectVariant}
           />
+          </Show>
         </div>
         <Show when={sidePanel.mounted() ? sidePanel.session() : undefined}>
           {(selected) => (
@@ -354,6 +363,7 @@ export function SessionPage(props: SessionPageProps) {
         <SessionModelPicker
           query={models.query()}
           searching={models.searching()}
+          swarmOptions={models.filteredSwarmOptions()}
           favorites={models.favorites()}
           selectedModel={props.selectedModel}
           favoriteOptions={models.filteredFavoriteOptions()}

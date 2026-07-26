@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
+import * as transport from "../../src/opencodex/claude-transport"
 
 const listSupportedModels = mock(async () => [{ value: "sonnet", displayName: "Sonnet" }])
 
+// `mock.module` is process-wide, so the real module has to be preserved:
+// replacing it wholesale strips exports other suites in the same run depend on
+// (the driver's executable resolution, for one).
 mock.module("../../src/opencodex/claude-transport", () => ({
-  DEFAULT_MODEL_VALUE: "default",
-  ClaudeTransport: { listSupportedModels: (...args: unknown[]) => listSupportedModels(...(args as [])) },
+  ...transport,
+  ClaudeTransport: {
+    ...transport.ClaudeTransport,
+    listSupportedModels: (...args: unknown[]) => listSupportedModels(...(args as [])),
+  },
 }))
 
 const { refreshClaudeCodeModels, resetClaudeCodeModels } = await import("../../src/provider/claude-code-provider")

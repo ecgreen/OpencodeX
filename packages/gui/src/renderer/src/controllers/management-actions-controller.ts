@@ -22,11 +22,8 @@ import {
 } from "../lib/project-actions"
 import { activeSessionRouteKey } from "../lib/route-selection"
 import { runPermissionAction, sessionDirectoryForRequest } from "../lib/session-actions"
-import { opencodeXSwarmExecutionMode } from "../lib/swarm-actions"
 import { createClaudeManagementActions } from "./management-claude-actions"
 import {
-  assignSwarmTask,
-  cancelSwarm,
   createProject,
   createSwarm,
   createView,
@@ -57,8 +54,6 @@ export function createManagementActionsController(input: {
   setPrompt: Setter<string>
   requestComposerFocus: () => void
   setPendingPinnedSessionRouteKey: Setter<string>
-  selectedAgent: Accessor<string>
-  selectedVariant: Accessor<string>
 }) {
   const claude = createClaudeManagementActions(input)
   async function permission(request: PermissionRequest, reply: "once" | "always" | "reject") {
@@ -190,27 +185,9 @@ export function createManagementActionsController(input: {
           (result) => result.data,
         )
     await input.refresh()
-    input.navigation.setRoute({ name: "swarms", swarmID: swarm?.id ?? value.swarmID })
-  }
-
-  async function assignTask(swarmID: string, prompt: string) {
-    const client = input.client()
-    if (!client) return
-    await assignSwarmTask(client, swarmID, {
-      prompt,
-      agent: input.selectedAgent() || undefined,
-      mode: opencodeXSwarmExecutionMode(input.selectedAgent() || undefined),
-      variant: input.selectedVariant() || undefined,
-    })
-    await input.refresh()
-    input.navigation.setRoute({ name: "swarms", swarmID })
-  }
-
-  async function cancelSwarmAction(swarmID: string) {
-    const client = input.client()
-    if (!client) return
-    await cancelSwarm(client, swarmID)
-    await input.refresh()
+    // Swarms are models: refresh capabilities so the picker shows them at once.
+    await input.refreshCapabilities().catch(() => undefined)
+    input.navigation.setRoute({ name: "swarms" })
   }
 
   async function deleteSwarmAction(swarmID: string, name: string) {
@@ -226,6 +203,8 @@ export function createManagementActionsController(input: {
       return
     await deleteSwarm(client, swarmID)
     await input.refresh()
+    // Drop the swarm's model-picker entry along with it.
+    await input.refreshCapabilities().catch(() => undefined)
     input.navigation.setRoute({ name: "swarms" })
   }
 
@@ -325,8 +304,6 @@ export function createManagementActionsController(input: {
     moveClaudeSession: claude.moveClaudeSession,
     removeClaudeSession: claude.removeClaudeSession,
     saveSwarm,
-    assignSwarmTask: assignTask,
-    cancelSwarm: cancelSwarmAction,
     deleteSwarm: deleteSwarmAction,
     createView: async () => input.navigation.setRoute({ name: "view-edit" }),
     createProjectView,

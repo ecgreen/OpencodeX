@@ -24,7 +24,7 @@ test("renders through authoritative state and capabilities without legacy or idl
   expect(sectionTitles.map((value) => value.replace(/\s*\(\d+\)\s*$/, ""))).toEqual([
     "Active sessions",
     "Views",
-    "Swarms - Experimental",
+    "Swarms",
     "Projects",
   ])
   const createButtons = page.locator(".dashboard-section>header .ui-button", { hasText: "New" })

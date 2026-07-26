@@ -14,7 +14,9 @@ export function pruneMruSessions(list: readonly string[], validIDs: ReadonlySet<
 }
 
 export function mruSessionCandidates(list: readonly string[], sessions: readonly Session[]) {
-  const available = sessions.filter(isRenderableSession)
+  // Subagent children (swarm team members included) are internal to their
+  // parent session; the switcher only ever offers top-level sessions.
+  const available = sessions.filter((session) => !session.parentID && isRenderableSession(session))
   const byID = new Map(available.map((session) => [session.id, session]))
   const recent = list.flatMap((sessionID) => {
     const session = byID.get(sessionID)

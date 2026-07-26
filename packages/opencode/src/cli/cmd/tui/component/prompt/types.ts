@@ -62,6 +62,7 @@ export type OpencodeXPromptProject = {
 export type OpencodeXPromptSwarm = {
   id: string
   title: string
+  projectID?: string
   synthesisSessionID?: string
   runs?: {
     id: string

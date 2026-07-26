@@ -293,11 +293,11 @@ export function createSessionSlashController(input: {
         openSwarms: () => input.navigation.setRoute({ name: "swarms" }),
         openSwarm: () => input.navigation.setRoute({ name: "swarms" }),
         createSwarm: () => input.management.createSwarm(),
-        createSwarmTask: () =>
-          input.capabilityActions.createSwarmTask({
-            selectedAgent: options.selectedAgent ?? input.selectedAgent(),
-            selectedVariant: options.selectedVariant ?? input.selectedVariant(),
-          }),
+        // The picker's Swarms section is the swarm entry point for a session.
+        useSwarm: (context) => {
+          if (context?.openModelPicker) return context.openModelPicker()
+          return (options.switchModel ?? input.sessionActions.switchModel)()
+        },
         openView: () => input.navigation.setRoute({ name: "views" }),
         createView: input.management.createView,
         editView: input.capabilityActions.editView,

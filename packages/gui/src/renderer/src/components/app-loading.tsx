@@ -8,7 +8,7 @@ export function AppLoadingSkeleton() {
       <section class="dashboard-sections app-loading-sections">
         <SessionsPanel />
         <CardPanel title="Views" kind="views" />
-        <CardPanel title="Swarms - Experimental" kind="swarms" />
+        <CardPanel title="Swarms" kind="swarms" />
         <CardPanel title="Projects" kind="projects" />
       </section>
     </div>

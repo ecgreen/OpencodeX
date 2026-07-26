@@ -1,0 +1,391 @@
+/* --- Swarm editor (create, view, and edit are the same page) --- */
+
+.swarm-editor-page {
+  align-content: start;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  overflow: auto;
+}
+
+.swarm-editor-basics {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.swarm-editor-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.swarm-editor-title input {
+  height: 40px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* --- Roster + detail layout --- */
+
+.swarm-editor-team {
+  display: grid;
+  gap: 12px;
+}
+
+.swarm-editor-team-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.swarm-editor-team-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+.swarm-editor-team-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.swarm-editor-team-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.swarm-roster {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.swarm-roster-list {
+  display: grid;
+  gap: 6px;
+}
+
+.swarm-roster-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+
+.swarm-roster-row.selected {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
+.swarm-roster-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.swarm-roster-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.swarm-roster-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.swarm-roster-row.unconfigured {
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--border-subtle));
+}
+
+.swarm-roster-row.unconfigured .swarm-roster-copy small {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.swarm-roster-warning {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.swarm-role-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--secondary);
+  background: var(--bg);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.swarm-role-index .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.swarm-roster-row:first-child .swarm-role-index {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.swarm-roster-add {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 10px;
+}
+
+.swarm-roster-add>span {
+  padding: 2px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.swarm-roster-add-list {
+  display: grid;
+  gap: 2px;
+}
+
+.swarm-roster-add-row {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  transition: background-color .15s ease;
+}
+
+.swarm-roster-add-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.swarm-roster-add-copy strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.swarm-roster-add-copy strong .icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+}
+
+.swarm-roster-add-copy small {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  padding-left: 19px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* --- Role detail --- */
+
+.swarm-role-detail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.swarm-role-detail.orchestrator {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-subtle));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 40%), var(--panel);
+}
+
+.swarm-role-detail>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.swarm-role-detail>header>div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.swarm-role-detail>header strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.swarm-role-detail>header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.swarm-role-fields {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.swarm-role-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.swarm-role-fields label em {
+  font-style: normal;
+  font-weight: 600;
+  opacity: .7;
+}
+
+.swarm-role-fields textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.swarm-role-instructions {
+  grid-column: 1 / -1;
+}
+
+/* --- Model field --- */
+
+.swarm-role-model {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.swarm-model-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease;
+}
+
+.swarm-model-button strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.swarm-model-button small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.swarm-model-button .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.swarm-model-button.empty strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.swarm-model-warning {
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* --- Footer --- */
+
+.swarm-editor-actions {
+  display: flex;
+  position: sticky;
+  bottom: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.swarm-editor-actions>div {
+  display: flex;
+  gap: 8px;
+}
+
+.swarm-editor-status {
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 700;
+}

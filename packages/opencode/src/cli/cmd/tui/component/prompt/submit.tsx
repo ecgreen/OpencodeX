@@ -20,7 +20,8 @@ import { refreshOpencodeXSidebar } from "../opencodex-sidebar"
 import { errorMessage } from "@/util/error"
 import { usePromptDrafts } from "./drafts"
 import { expandPromptText } from "./extmarks"
-import { latestSwarmSessionID, matchOpencodeXSwarm, opencodeXSwarmExecutionMode, promptSlash } from "./helpers"
+import { matchOpencodeXSwarm, opencodeXSwarmExecutionMode, promptSlash } from "./helpers"
+import { useLocal } from "@tui/context/local"
 import { usePromptHistory } from "./history"
 import type { createPromptEditorContext } from "./editor-context"
 import type { createPromptOpencodeXContext } from "./opencodex"
@@ -55,6 +56,7 @@ export function createPromptSubmit(input: {
   const slashes = useCommandSlashes()
   const sync = useSync()
   const toast = useToast()
+  const local = useLocal()
   let submitting = false
 
   async function submit() {
@@ -187,26 +189,20 @@ export function createPromptSubmit(input: {
 
     const pending = input.opencodex.pendingSwarmTask()
     if (input.props.sessionID || !pending) return undefined
-    const swarm = await sdk
-      .request<OpencodeXPromptSwarm>(`/experimental/opencodex/swarm/${pending.swarmID}/task`, {
-        method: "POST",
-        body: JSON.stringify({
-          prompt: trimmed,
-          agent: input.session.effectiveAgent()?.name,
-          mode: opencodeXSwarmExecutionMode(input.session.effectiveAgent()?.name),
-          variant: input.session.variant(),
-        }),
-      })
-      .catch((error: Error) => {
-        toast.show({ message: `Assigning swarm task failed: ${errorMessage(error)}`, variant: "error" })
-      })
-    if (!swarm) return true
-    const sessionID = latestSwarmSessionID(swarm)
-    finish(unwrap(input.state.prompt), false)
+    // A swarm task is an ordinary session on the swarm model: select it and
+    // fall through to the normal submit, which creates the session in the
+    // swarm's project and prompts the orchestrator.
+    local.model.set({ providerID: "swarm", modelID: pending.swarmID }, { recent: true })
+    const swarms = input.opencodex.swarms() ?? (await loadSwarms())
+    const swarm = swarms?.find((item) => item.id === pending.swarmID)
+    const project = swarm?.projectID
+      ? (input.opencodex.projects() ?? []).find((item) => item.id === swarm.projectID)
+      : undefined
+    if (project) {
+      setPendingOpencodeXProjectSession({ projectID: project.id, directory: project.project.worktree })
+    }
     setPendingOpencodeXSwarmTask(undefined)
-    refreshOpencodeXSidebar()
-    if (sessionID) route.navigate({ type: "session", sessionID })
-    return true
+    return undefined
   }
 
   async function loadSwarms() {

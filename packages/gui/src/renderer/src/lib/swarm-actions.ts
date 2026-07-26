@@ -1,52 +1,19 @@
-import type { Agent, OpencodeXSwarm, OpencodeXSwarmRoleInput, OpencodeXSwarmRun, Session } from "@opencode-ai/sdk/v2/client"
-import {
-  clientSwarmDisplayStatus,
-  clientSwarmRunSessionID,
-  clientSwarmRunUpdated,
-  clientSwarmRuns,
-  currentClientSwarmRun,
-  isActiveSwarmStatus,
-} from "@opencode-ai/sdk/v2/swarm-presentation"
+import type { OpencodeXSwarm, OpencodeXSwarmRoleInput, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "./store"
 
-export { isActiveSwarmStatus } from "@opencode-ai/sdk/v2/swarm-presentation"
-
-export type SwarmExecutionMode = "build" | "plan"
-
-export function opencodeXSwarmExecutionMode(agentName?: string): SwarmExecutionMode {
-  return agentName === "plan" ? "plan" : "build"
-}
-
-export function swarmRunUpdated(run: Pick<OpencodeXSwarmRun, "timeUpdated" | "completedAt" | "startedAt">) {
-  return clientSwarmRunUpdated(run)
-}
-
-export function swarmRuns(swarm: Pick<OpencodeXSwarm, "runs">) {
-  return clientSwarmRuns(swarm)
-}
-
-export function currentSwarmRun(swarm: OpencodeXSwarm) {
-  return currentClientSwarmRun(swarm)
-}
-
-export function swarmRunSessionID(run: OpencodeXSwarmRun) {
-  return clientSwarmRunSessionID(run)
-}
-
-export function swarmDisplayStatus(swarm: OpencodeXSwarm, snapshot?: GuiSnapshot) {
-  const run = currentSwarmRun(swarm)
-  const sessionID = run ? swarmRunSessionID(run) : undefined
-  const sessionStatus = sessionID ? snapshot?.sessionStatus[sessionID]?.type : undefined
-  if (sessionStatus && sessionStatus !== "idle") return sessionStatus
-  return clientSwarmDisplayStatus(swarm)
-}
-
-export function swarmDisplayPrompt(swarm: OpencodeXSwarm) {
-  return currentSwarmRun(swarm)?.prompt ?? swarm.prompt
+/**
+ * A swarm is used like a model, so its live status is simply whether any
+ * session currently running on it is busy.
+ */
+export function swarmIsWorking(swarm: Pick<OpencodeXSwarm, "id">, snapshot?: GuiSnapshot) {
+  return swarmSessions(snapshot?.sessions ?? [], swarm.id).some((session) => {
+    const status = snapshot?.sessionStatus[session.id]?.type
+    return status === "busy" || status === "retry"
+  })
 }
 
 export function swarmDisplayTimeUpdated(swarm: OpencodeXSwarm) {
-  return swarmRunUpdated(currentSwarmRun(swarm) ?? swarm)
+  return numericTime(swarm.timeUpdated)
 }
 
 export function projectLabel(project: GuiSnapshot["projects"][number]) {
@@ -64,12 +31,18 @@ export function sessionSwarmID(session: Session) {
   return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
 }
 
-export function isSwarmSession(session: Session) {
-  return sessionSwarmID(session) !== undefined
+/**
+ * Sessions running on a swarm, newest first. A swarm is selected like a model,
+ * so its sessions are simply the ones whose model routes to `swarm/<id>`.
+ */
+export function swarmSessions(sessions: Session[], swarmID: string) {
+  return sessions
+    .filter((session) => session.model?.providerID === "swarm" && session.model.id === swarmID && !session.parentID)
+    .toSorted((a, b) => b.time.updated - a.time.updated)
 }
 
-export function primaryAgents(agents: Agent[]) {
-  return agents.filter((agent) => agent.mode === "primary" || agent.mode === "all")
+export function isSwarmSession(session: Session) {
+  return sessionSwarmID(session) !== undefined
 }
 
 export type SwarmRolePreset = {
@@ -142,15 +115,12 @@ export const SWARM_ROLE_PRESETS: SwarmRolePreset[] = [
 
 export const SWARM_ROLE_PRESET_OPTIONS = [ORCHESTRATOR_SWARM_ROLE_PRESET, ...SWARM_ROLE_PRESETS]
 
-export function defaultSwarmRoles(input: { agents: Agent[]; providerID?: string; modelID?: string }): OpencodeXSwarmRoleInput[] {
-  const agents = primaryAgents(input.agents)
-  const orchestrator = agents.find((agent) => agent.name === "orchestrator")
-  return [
-    presetRoleInput(ORCHESTRATOR_SWARM_ROLE_PRESET, {
-      providerID: input.providerID ?? orchestrator?.model?.providerID,
-      modelID: input.modelID ?? orchestrator?.model?.modelID,
-    }),
-  ]
+/**
+ * A new swarm starts with an unconfigured orchestrator: every role's model is
+ * an explicit choice, never inherited from the session or an agent default.
+ */
+export function defaultSwarmRoles(): OpencodeXSwarmRoleInput[] {
+  return [presetRoleInput(ORCHESTRATOR_SWARM_ROLE_PRESET)]
 }
 
 export function nextSwarmRolePreset(roles: readonly Pick<OpencodeXSwarmRoleInput, "skill" | "name">[]) {

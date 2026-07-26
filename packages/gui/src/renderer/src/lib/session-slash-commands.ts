@@ -63,10 +63,10 @@ export function buildSessionSlashCommands(input: {
     },
     {
       name: "swarm",
-      title: "New swarm task",
-      detail: "Assign work to an existing swarm",
+      title: "Use a swarm",
+      detail: "Switch this session's model to an agent team",
       category: "Swarms",
-      run: input.actions.createSwarmTask,
+      run: input.actions.useSwarm,
     },
     {
       name: "view",

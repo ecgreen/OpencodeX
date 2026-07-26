@@ -1,221 +1,115 @@
 import type { OpencodeXSwarm } from "@opencode-ai/sdk/v2/client"
-import { clientSwarmStatusLabel } from "@opencode-ai/sdk/v2/swarm-presentation"
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { formatRelative, title } from "../lib/format"
-import {
-  isActiveSwarmStatus,
-  numericTime,
-  projectLabelByID,
-  swarmDisplayPrompt,
-  swarmDisplayStatus,
-  swarmDisplayTimeUpdated,
-  swarmRunSessionID,
-  swarmRuns,
-} from "../lib/swarm-actions"
+import { projectLabelByID, swarmDisplayTimeUpdated, swarmIsWorking, swarmSessions } from "../lib/swarm-actions"
 import type { GuiSnapshot } from "../lib/store"
+import { Icon } from "./icon"
 import { SwarmPageHeader } from "./swarm-page-header"
-import { Button, TextArea } from "./ui"
+import { Button } from "./ui"
 
 export { SwarmEditorPage } from "./swarm-editor-page"
 
+/**
+ * The swarm catalog. A swarm behaves like a model - the real "detail" view is
+ * the editor, so opening a card goes straight there.
+ */
 export function SwarmsPage(props: {
   snapshot?: GuiSnapshot
-  swarmID?: string
   openSwarm: (swarmID: string) => void
   createSwarm: () => void
-  editSwarm: (swarmID: string) => void
-  openSession: (sessionID: string) => void
-  assignTask: (swarmID: string, prompt: string) => void | Promise<void>
-  cancelSwarm: (swarmID: string) => void | Promise<void>
-  deleteSwarm: (swarmID: string, title: string) => void | Promise<void>
-  refresh: () => void | Promise<void>
+  startSession: (swarm: OpencodeXSwarm) => void
 }) {
-  const swarms = createMemo(() => props.snapshot?.swarms ?? [])
-  const selected = createMemo(() => (props.snapshot?.swarms ?? []).find((swarm) => swarm.id === props.swarmID))
-  const active = createMemo(() => swarms()
-    .filter((swarm) => isActiveSwarmStatus(swarmDisplayStatus(swarm, props.snapshot)))
-    .toSorted((a, b) => swarmDisplayTimeUpdated(b) - swarmDisplayTimeUpdated(a)))
-  const inactive = createMemo(() => swarms()
-    .filter((swarm) => !isActiveSwarmStatus(swarmDisplayStatus(swarm, props.snapshot)))
-    .toSorted((a, b) => swarmDisplayTimeUpdated(b) - swarmDisplayTimeUpdated(a)))
-
+  const swarms = createMemo(() =>
+    (props.snapshot?.swarms ?? []).toSorted((a, b) => swarmDisplayTimeUpdated(b) - swarmDisplayTimeUpdated(a)),
+  )
   return (
     <div class="page swarms-page">
-      <Show
-        when={selected()}
-        fallback={
-          <>
-            <SwarmPageHeader
-              eyebrow="Swarms"
-              title="Swarm workspace"
-              description="Experimental: create reusable agent teams, assign tasks, and inspect active or completed runs."
-              actions={[
-                { label: "Refresh", icon: "activity", onClick: props.refresh },
-                { label: "Create", icon: "plus", onClick: props.createSwarm },
-              ]}
-            />
-            <Show
-              when={swarms().length > 0}
-              fallback={<EmptySwarmCard createSwarm={props.createSwarm} />}
-            >
-              <SwarmListSection title="Active swarms" swarms={active()} snapshot={props.snapshot} openSwarm={props.openSwarm} />
-              <SwarmListSection title="Inactive swarms" swarms={inactive()} snapshot={props.snapshot} openSwarm={props.openSwarm} />
-            </Show>
-          </>
-        }
-      >
-        {(swarm) => (
-          <SwarmDetail
-            swarm={swarm()}
-            snapshot={props.snapshot}
-            editSwarm={props.editSwarm}
-            openSession={props.openSession}
-            assignTask={props.assignTask}
-            cancelSwarm={props.cancelSwarm}
-            deleteSwarm={props.deleteSwarm}
-            refresh={props.refresh}
-          />
-        )}
+      <SwarmPageHeader
+        eyebrow="Swarms"
+        title="Agent teams"
+        description="Build a reusable team, then use it like a model: pick it in any session's model selector and the orchestrator coordinates the specialists for you."
+        actions={[{ label: "New swarm", icon: "plus", onClick: props.createSwarm }]}
+      />
+      <Show when={swarms().length > 0} fallback={<SwarmEmptyState createSwarm={props.createSwarm} />}>
+        <div class="swarm-card-grid">
+          <For each={swarms()}>
+            {(swarm) => (
+              <SwarmCard
+                swarm={swarm}
+                snapshot={props.snapshot}
+                openSwarm={props.openSwarm}
+                startSession={props.startSession}
+              />
+            )}
+          </For>
+          <Button appearance="ghost" class="swarm-create-card" onClick={props.createSwarm}>
+            <Icon name="plus" />
+            <strong>New swarm</strong>
+            <span>Assemble another agent team</span>
+          </Button>
+        </div>
       </Show>
     </div>
   )
 }
 
-function SwarmDetail(props: {
+function SwarmCard(props: {
   swarm: OpencodeXSwarm
   snapshot?: GuiSnapshot
-  editSwarm: (swarmID: string) => void
-  openSession: (sessionID: string) => void
-  assignTask: (swarmID: string, prompt: string) => void | Promise<void>
-  cancelSwarm: (swarmID: string) => void | Promise<void>
-  deleteSwarm: (swarmID: string, title: string) => void | Promise<void>
-  refresh: () => void | Promise<void>
-}) {
-  const [taskPrompt, setTaskPrompt] = createSignal("")
-  const status = createMemo(() => swarmDisplayStatus(props.swarm, props.snapshot))
-  const runs = createMemo(() => swarmRuns(props.swarm))
-  async function submitTask(event: SubmitEvent) {
-    event.preventDefault()
-    const prompt = taskPrompt().trim()
-    if (!prompt) return
-    await props.assignTask(props.swarm.id, prompt)
-    setTaskPrompt("")
-  }
-  return (
-    <>
-      <SwarmPageHeader
-        eyebrow="Swarm"
-        title={props.swarm.title}
-        description={`Experimental - ${projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID)} - ${props.swarm.roles.length} roles - ${runs().length} tasks`}
-        actions={[
-          { label: "Refresh", icon: "activity", onClick: props.refresh },
-          { label: "Edit", icon: "settings", onClick: () => props.editSwarm(props.swarm.id) },
-          ...(isActiveSwarmStatus(status()) && status() !== "cancelling"
-            ? [{ label: "Cancel", icon: "stop", onClick: () => props.cancelSwarm(props.swarm.id) }]
-            : []),
-          { label: "Delete", icon: "trash", danger: true, onClick: () => props.deleteSwarm(props.swarm.id, props.swarm.title) },
-        ]}
-      />
-      <section class="swarm-detail-grid">
-        <article class={`dashboard-item-card dashboard-status-card status-${status().replaceAll("_", "-")}`}>
-          <div>
-            <strong>{clientSwarmStatusLabel(status())}</strong>
-            <span>{swarmDisplayPrompt(props.swarm) || "No tasks yet."}</span>
-          </div>
-          <footer><small>{formatRelative(swarmDisplayTimeUpdated(props.swarm))}</small></footer>
-        </article>
-        <form class="dashboard-item-card swarm-task-card" onSubmit={submitTask}>
-          <strong>New task</strong>
-          <TextArea value={taskPrompt()} onInput={(event) => setTaskPrompt(event.currentTarget.value)} placeholder="Describe the next task for this swarm" />
-          <Button type="submit" appearance="solid" tone="accent" icon="send">Assign task</Button>
-        </form>
-      </section>
-      <section class="manager-section">
-        <header>
-          <strong>Team</strong>
-          <span>{props.swarm.roles.length} roles</span>
-        </header>
-        <div class="dashboard-card-grid">
-          <For each={props.swarm.roles} fallback={<div class="empty">No roles assigned to this swarm.</div>}>
-            {(role, index) => (
-              <article class="dashboard-item-card">
-                <div>
-                  <strong>{role.name}</strong>
-                  <span>{index() === 0 ? "Orchestrator" : role.skill ?? role.agent ?? "Specialist"}</span>
-                </div>
-                <footer>
-                  <small>{[role.providerID, role.modelID].filter(Boolean).join("/") || "No model"}</small>
-                </footer>
-              </article>
-            )}
-          </For>
-        </div>
-      </section>
-      <section class="manager-section">
-        <header>
-          <strong>Tasks</strong>
-          <span>{runs().length} runs</span>
-        </header>
-        <div class="dashboard-card-grid">
-          <For each={runs()} fallback={<div class="empty">No tasks assigned yet.</div>}>
-            {(run) => {
-              const sessionID = createMemo(() => swarmRunSessionID(run))
-              return (
-                <Button appearance="ghost" class="dashboard-item-card interactive" disabled={!sessionID()} onClick={() => sessionID() ? props.openSession(sessionID()!) : undefined}>
-                  <div>
-                    <strong>{title(run.title || run.prompt || "Swarm task")}</strong>
-                    <span>{clientSwarmStatusLabel(run.status)}</span>
-                  </div>
-                  <footer>
-                    <small>{formatRelative(numericTime(run.timeUpdated))} - {run.agents.length} agents</small>
-                  </footer>
-                </Button>
-              )
-            }}
-          </For>
-        </div>
-      </section>
-    </>
-  )
-}
-
-function SwarmListSection(props: {
-  title: string
-  swarms: OpencodeXSwarm[]
-  snapshot?: GuiSnapshot
   openSwarm: (swarmID: string) => void
+  startSession: (swarm: OpencodeXSwarm) => void
 }) {
+  const working = createMemo(() => swarmIsWorking(props.swarm, props.snapshot))
+  const sessions = createMemo(() => swarmSessions(props.snapshot?.sessions ?? [], props.swarm.id))
+  const orchestrator = () => props.swarm.roles[0]
   return (
-    <section class="manager-section">
-      <header>
-        <strong>{props.title}</strong>
-        <span>{props.swarms.length}</span>
-      </header>
-      <div class="dashboard-card-grid">
-        <For each={props.swarms} fallback={<div class="empty">No {props.title.toLowerCase()}.</div>}>
-          {(swarm) => (
-            <Button appearance="ghost" class={`dashboard-item-card dashboard-status-card interactive status-${swarmDisplayStatus(swarm, props.snapshot).replaceAll("_", "-")}`} onClick={() => props.openSwarm(swarm.id)}>
-              <div>
-                <strong>{title(swarm.title)}</strong>
-                <span>{projectLabelByID(props.snapshot?.projects ?? [], swarm.projectID)} - {swarm.roles.length} roles - {swarm.runs.length} runs</span>
-              </div>
-              <footer>
-                <small>{clientSwarmStatusLabel(swarmDisplayStatus(swarm, props.snapshot))} - {formatRelative(swarmDisplayTimeUpdated(swarm))}</small>
-              </footer>
-            </Button>
-          )}
-        </For>
-      </div>
-    </section>
+    <article class="swarm-card" classList={{ working: working() }}>
+      <Button appearance="ghost" class="swarm-card-open" onClick={() => props.openSwarm(props.swarm.id)}>
+        <header>
+          <span class="swarm-option-icon"><Icon name="swarm" /></span>
+          <strong>{title(props.swarm.title)}</strong>
+          <span class="swarm-status-dot" title={working() ? "Working" : "Idle"} />
+        </header>
+        <div class="swarm-card-roles">
+          <For each={props.swarm.roles.slice(0, 5)}>
+            {(role, index) => <span classList={{ orchestrator: index() === 0 }}>{role.name}</span>}
+          </For>
+          <Show when={props.swarm.roles.length > 5}>
+            <span>+{props.swarm.roles.length - 5}</span>
+          </Show>
+        </div>
+        <div class="swarm-card-meta">
+          <small>{projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID)}</small>
+          <small>
+            {orchestrator()?.providerID && orchestrator()?.modelID
+              ? `Led by ${orchestrator()!.modelID}`
+              : "Orchestrator needs a model"}
+            {" · "}
+            {sessions().length > 0 ? `${sessions().length} session${sessions().length === 1 ? "" : "s"}` : "No sessions yet"}
+            {" · "}
+            {formatRelative(swarmDisplayTimeUpdated(props.swarm))}
+          </small>
+        </div>
+      </Button>
+      <footer>
+        <Button appearance="outline" size="compact" icon="send" onClick={() => props.startSession(props.swarm)}>
+          New session
+        </Button>
+        <Button appearance="ghost" size="compact" icon="settings" onClick={() => props.openSwarm(props.swarm.id)}>
+          Configure
+        </Button>
+      </footer>
+    </article>
   )
 }
 
-function EmptySwarmCard(props: { createSwarm: () => void }) {
+function SwarmEmptyState(props: { createSwarm: () => void }) {
   return (
-    <Button appearance="ghost" class="dashboard-item-card empty-create interactive" onClick={props.createSwarm}>
-      <strong>+ Create swarm</strong>
-      <span>Build a reusable agent team.</span>
-      <small>create</small>
-    </Button>
+    <div class="swarm-empty-state">
+      <span class="swarm-option-icon"><Icon name="swarm" /></span>
+      <h3>Build your first agent team</h3>
+      <p>A swarm pairs an orchestrator with specialist roles, each on its own model. Once created, it shows up in the model selector like any other model.</p>
+      <Button appearance="solid" tone="accent" icon="plus" onClick={props.createSwarm}>Create swarm</Button>
+    </div>
   )
 }

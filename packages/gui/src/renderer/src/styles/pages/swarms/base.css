@@ -1,141 +1,169 @@
-.swarm-detail-grid {
-  display: grid;
-  grid-template-columns: minmax(260px,1fr) minmax(320px,1fr);
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.swarm-task-card {
-  gap: 10px;
-}
-
-.swarm-task-card textarea {
-  min-height: 96px;
-  resize: vertical;
-}
-
 .swarms-page {
   overflow: auto;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
   background: var(--bg);
 }
 
-.dashboard-action-card.swarm {
-  --action-color: var(--accent);
-  color: var(--text);
-}
+/* --- Swarm catalog cards --- */
 
-.swarm-role-index {
+.swarm-card-grid {
   display: grid;
-  place-items: center;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  border: 1px solid var(--border-subtle);
-  color: var(--secondary);
-  background: var(--bg);
-  font-size: 11px;
-  font-weight: 900;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
 }
 
-.swarm-role-card>header>div>div {
+.swarm-card {
   display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.swarm-role-card strong {
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 45%), var(--panel);
+  transition: border-color .15s ease;
+}
+
+.swarm-card-open {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 0;
+  text-align: left;
+}
+
+.swarm-card-open>header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.swarm-card-open>header strong {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.swarm-status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.swarm-card.working .swarm-status-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.swarm-card-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.swarm-card-roles span {
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.swarm-card-roles span.orchestrator {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-subtle));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.swarm-card-meta {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.swarm-card-meta small {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.swarm-role-card>header span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 760;
+.swarm-card>footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.swarm-role-fields label {
+/* Creation stays in the flow of the grid, not only in the far header. */
+.swarm-create-card {
   display: grid;
-  min-width: 0;
-  gap: 5px;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  min-height: 160px;
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
+  border-radius: 12px;
   color: var(--muted);
-  font-size: 11px;
+  text-align: center;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+
+.swarm-create-card .icon {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.swarm-create-card strong {
+  color: var(--text);
+  font-size: 13px;
   font-weight: 800;
 }
 
-.swarm-role-fields input {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  background: var(--element);
-  font-size: 12px;
-  height: 34px;
-  padding: 7px 9px;
+.swarm-create-card span {
+  font-size: 11px;
 }
 
-.swarm-role-fields select {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  background: var(--element);
-  font-size: 12px;
-  height: 34px;
-  padding: 7px 9px;
-}
+/* --- Empty state --- */
 
-.swarm-role-fields textarea {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  background: var(--element);
-  font-size: 12px;
-  min-height: 92px;
-  padding: 9px;
-  resize: vertical;
-}
-
-.swarm-role-card {
-  gap: 12px;
-  padding: 12px;
-  border-color: color-mix(in srgb,var(--border) 78%,transparent);
-  border-left-color: var(--secondary);
-  border-radius: 0;
-  background: var(--bg);
-}
-
-.swarm-role-card>header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.swarm-role-card>header>div {
+.swarm-empty-state {
   display: grid;
-  grid-template-columns: 28px minmax(0,1fr);
-  align-items: center;
+  justify-items: center;
   gap: 10px;
-  min-width: 0;
+  max-width: 420px;
+  margin: 48px auto;
+  text-align: center;
 }
 
-.swarm-role-fields {
-  display: grid;
-  min-width: 0;
-  gap: 10px;
-  grid-template-columns: repeat(2,minmax(180px,1fr));
+.swarm-empty-state .swarm-option-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
 }
 
-.swarm-role-instructions {
-  grid-column: 1 / -1;
+.swarm-empty-state h3 {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.swarm-empty-state p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }

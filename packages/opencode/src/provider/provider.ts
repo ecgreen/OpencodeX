@@ -1,6 +1,10 @@
 import os from "os"
 import fuzzysort from "fuzzysort"
 import { CLAUDE_CODE_PROVIDER_ID, claudeCodeProviderInfo, refreshClaudeCodeModels } from "./claude-code-provider"
+import { SWARM_PROVIDER_ID, isSwarmProvider, swarmModelRoute, swarmProviderInfo, swarmRoutes } from "./swarm-provider"
+import { Database } from "@opencode-ai/core/database/database"
+import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
+import { asc } from "drizzle-orm"
 import { Config } from "@/config/config"
 import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
@@ -1404,6 +1408,7 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
+    const database = yield* Database.Service
 
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
@@ -1754,6 +1759,46 @@ export const layer = Layer.effect(
       }),
     )
 
+    /**
+     * Swarms are user data, so the "swarm" provider is rebuilt from the
+     * database on refresh - creating or deleting a swarm shows up in the
+     * picker on the next capabilities read with no invalidation machinery.
+     */
+    const refreshSwarmProvider = Effect.fn("Provider.refreshSwarmProvider")(function* (s: State) {
+      const cfg = yield* config.get()
+      const disabled = new Set(cfg.disabled_providers ?? [])
+      const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : undefined
+      const routes =
+        disabled.has(SWARM_PROVIDER_ID) || (enabled && !enabled.has(SWARM_PROVIDER_ID))
+          ? []
+          : swarmRoutes(
+              yield* database.db
+                .select({ id: OpencodeXSwarmTable.id, title: OpencodeXSwarmTable.title })
+                .from(OpencodeXSwarmTable)
+                .orderBy(asc(OpencodeXSwarmTable.time_created))
+                .all()
+                .pipe(Effect.orElseSucceed(() => [])),
+              yield* database.db
+                .select({
+                  swarm_id: OpencodeXSwarmRoleTable.swarm_id,
+                  provider_id: OpencodeXSwarmRoleTable.provider_id,
+                  model_id: OpencodeXSwarmRoleTable.model_id,
+                })
+                .from(OpencodeXSwarmRoleTable)
+                .orderBy(asc(OpencodeXSwarmRoleTable.swarm_id), asc(OpencodeXSwarmRoleTable.sort_order))
+                .all()
+                .pipe(Effect.orElseSucceed(() => [])),
+            )
+      if (routes.length === 0) {
+        delete s.providers[SWARM_PROVIDER_ID]
+        delete s.catalog[SWARM_PROVIDER_ID]
+        return
+      }
+      const provider = swarmProviderInfo(routes) as Info
+      s.providers[SWARM_PROVIDER_ID] = provider
+      s.catalog[SWARM_PROVIDER_ID] = provider
+    })
+
     const list = Effect.fn("Provider.list")(function* () {
       const s = yield* InstanceState.get(state)
       const cfg = yield* config.get()
@@ -1766,6 +1811,7 @@ export const layer = Layer.effect(
           enableExperimentalModels: runtimeFlags.enableExperimentalModels,
         }),
       )
+      yield* refreshSwarmProvider(s)
       return s.providers
     })
 
@@ -1935,6 +1981,19 @@ export const layer = Layer.effect(
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ProviderV2.ModelID) {
       const s = yield* InstanceState.get(state)
+      // A swarm model is a facade: resolve it to the orchestrator's real model
+      // so SDK auth, pricing, and limits all come from the actual provider.
+      // Rewrites the ids in place instead of recursing so the rest of the
+      // resolution (local-provider refresh, suggestions) applies to the target.
+      if (isSwarmProvider(providerID)) {
+        if (!s.providers[SWARM_PROVIDER_ID]?.models[modelID]) yield* refreshSwarmProvider(s)
+        const route = swarmModelRoute(s.providers[SWARM_PROVIDER_ID]?.models[modelID])
+        if (!route || isSwarmProvider(route.providerID)) {
+          return yield* new ModelNotFoundError({ providerID, modelID })
+        }
+        providerID = ProviderV2.ID.make(route.providerID)
+        modelID = ProviderV2.ModelID.make(route.modelID)
+      }
       const localProvider = LOCAL_MODEL_PROVIDERS.find((item) => item.id === providerID)
       if (localProvider && !s.providers[providerID]?.models[modelID]) {
         const cfg = yield* config.get()
@@ -2113,6 +2172,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(ModelsDev.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
+    Layer.provide(Database.defaultLayer),
   ),
 )
 

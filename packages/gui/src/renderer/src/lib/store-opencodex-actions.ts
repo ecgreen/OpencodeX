@@ -92,28 +92,8 @@ export async function updateSwarm(gui: GuiClient, swarmID: string, input: { titl
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function startSwarm(gui: GuiClient, swarmID: string) {
-  return gui.client.opencodex.swarm.start({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function cancelSwarm(gui: GuiClient, swarmID: string) {
-  return gui.client.opencodex.swarm.cancel({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
 export async function deleteSwarm(gui: GuiClient, swarmID: string) {
   return gui.client.opencodex.swarm.delete({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function assignSwarmTask(gui: GuiClient, swarmID: string, input: { prompt: string; agent?: string; mode?: "build" | "plan"; variant?: string }) {
-  return gui.client.opencodex.swarm.task.assign({
-    swarmID,
-    opencodeXSwarmAssignTaskInput: {
-      prompt: input.prompt,
-      agent: input.agent,
-      mode: input.mode,
-      variant: input.variant,
-    },
-  }, { headers: authHeaders(gui), throwOnError: true })
 }
 
 export async function createView(gui: GuiClient, input: { title?: string; sessionIDs?: string[]; members?: OpencodeXViewMember[]; metadata?: Record<string, unknown> }) {

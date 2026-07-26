@@ -5,9 +5,7 @@ import type { createDialogController } from "./dialog-controller"
 import type { createNavigationController } from "./navigation-controller"
 import type { GuiClient } from "../lib/client"
 import { restorePromptPartsFromEditedText } from "../lib/prompt-autocomplete"
-import { opencodeXSwarmExecutionMode } from "../lib/swarm-actions"
 import {
-  assignSwarmTask,
   authorizeProviderOauth,
   completeProviderOauth,
   connectMcp,
@@ -36,7 +34,6 @@ export function createCapabilityActionsController(input: {
   refreshCapabilities: () => Promise<void>
   refreshAll: () => Promise<void>
   alert: (message: string) => void
-  selectedAgent: Accessor<string>
 }) {
   async function skills(context?: SessionSlashCommandContext) {
     const client = input.client()
@@ -203,34 +200,6 @@ export function createCapabilityActionsController(input: {
     input.alert(`Connected ${providerID}.`)
   }
 
-  async function createSwarmTask(value: { selectedAgent?: string; selectedVariant?: string } = {}) {
-    const client = input.client()
-    if (!client) return
-    const swarms = (input.snapshot()?.swarms ?? []).filter((swarm) => swarm.status !== "cancelled")
-    if (swarms.length === 0) return input.alert("Create an active swarm before assigning a task.")
-    const swarmID = await input.dialogs.askChoice({
-      title: "New Swarm Task",
-      options: swarms.map((swarm) => ({
-        value: swarm.id,
-        title: swarm.title,
-        meta: swarm.status,
-        description: swarm.prompt || `${swarm.roles.length} roles`,
-      })),
-    })
-    if (!swarmID) return
-    const prompt = (await input.dialogs.askText({ title: "New Swarm Task", multiline: true }))?.trim()
-    if (!prompt) return
-    await assignSwarmTask(client, swarmID, {
-      prompt,
-      agent: value.selectedAgent || undefined,
-      mode: opencodeXSwarmExecutionMode(value.selectedAgent || input.selectedAgent() || undefined),
-      variant: value.selectedVariant || undefined,
-    })
-    await input.refresh()
-    input.navigation.setRoute({ name: "swarms", swarmID })
-    input.alert("Swarm task assigned.")
-  }
-
   async function chooseView(title: string) {
     const views = input.snapshot()?.views ?? []
     if (views.length === 0) {
@@ -271,7 +240,6 @@ export function createCapabilityActionsController(input: {
     toggleMcp,
     switchOrg,
     connectProvider,
-    createSwarmTask,
     editView: async () => {
       const view = await chooseView("Edit View")
       if (view) input.navigation.setRoute({ name: "view-edit", viewID: view.id })

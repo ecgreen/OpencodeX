@@ -55,7 +55,10 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { AgentAttachment, FileAttachment, ReferenceAttachment, Source } from "@opencode-ai/core/session/prompt"
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
+import { and, asc, eq, inArray, isNull, lt, or } from "drizzle-orm"
+import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
+import { SwarmBriefing } from "@/opencodex/swarm-briefing"
+import { isSwarmProvider } from "@/provider/swarm-provider"
 import { SessionCommandTable, SessionExecutionTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
@@ -85,6 +88,16 @@ IMPORTANT:
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
 const log = Log.create({ service: "session.prompt" })
+
+/** One swarm role as the loop reads it, ordered by `sort_order`. */
+type SwarmRoleRow = {
+  name: string
+  agent: string | null
+  skill: string | null
+  instructions: string
+  provider_id: string | null
+  model_id: string | null
+}
 const elog = EffectLogger.create({ service: "session.prompt" })
 
 function isOrphanedInterruptedTool(part: SessionLegacy.ToolPart) {
@@ -1655,10 +1668,134 @@ export const layer = Layer.effect(
       function* (input: LoopInput) {
         // Every prompt entry point funnels through here, so this is the one
         // place that has to know a turn may belong to an external driver.
+        yield* ensureSwarmBriefing(input.sessionID).pipe(Effect.ignore)
         const work = (yield* claudeCodeTurn(input.sessionID)) ?? runLoop(input.sessionID)
         return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
       },
     )
+
+    /**
+     * Sessions on a swarm model run in place: the model resolves to the
+     * orchestrator's real model (Provider.getModel handles that), and this
+     * hidden part of the user message hands the orchestrator its team so it
+     * delegates specialists as subagents inside the same session.
+     */
+    const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const context = yield* swarmContext(sessionID)
+      if (!context) return
+      const briefed = context.last.parts.some(
+        (part) => part.type === "text" && part.synthetic === true && part.text.startsWith(SwarmBriefing.SWARM_BRIEFING_MARK),
+      )
+      if (briefed) return
+      const briefing = SwarmBriefing.buildSwarmBriefing({
+        swarmID: context.swarmID,
+        title: context.title,
+        delegation: context.orchestratorIsClaudeCode ? "delegate-tool" : "task-tool",
+        roles: context.roles.map((role) => ({
+          name: role.name,
+          agent: role.agent ?? undefined,
+          skill: role.skill ?? undefined,
+          instructions: role.instructions ?? undefined,
+          providerID: role.provider_id ?? undefined,
+          modelID: role.model_id ?? undefined,
+        })),
+      })
+      if (!briefing) return
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: context.last.info.id,
+        sessionID,
+        type: "text",
+        text: briefing,
+        synthetic: true,
+      })
+    })
+
+    /** The swarm behind a session's model, or undefined for an ordinary route. */
+    const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const last = yield* lastUserMessage(sessionID)
+      if (!last || last.info.role !== "user") return undefined
+      if (!isSwarmProvider(last.info.model.providerID)) return undefined
+      const swarmID = last.info.model.modelID
+      const swarm = yield* db
+        .select({ id: OpencodeXSwarmTable.id, title: OpencodeXSwarmTable.title })
+        .from(OpencodeXSwarmTable)
+        .where(eq(OpencodeXSwarmTable.id, swarmID))
+        .get()
+        .pipe(Effect.orElseSucceed(() => undefined))
+      if (!swarm) return undefined
+      const roles = yield* db
+        .select({
+          name: OpencodeXSwarmRoleTable.name,
+          agent: OpencodeXSwarmRoleTable.agent,
+          skill: OpencodeXSwarmRoleTable.skill,
+          instructions: OpencodeXSwarmRoleTable.instructions,
+          provider_id: OpencodeXSwarmRoleTable.provider_id,
+          model_id: OpencodeXSwarmRoleTable.model_id,
+        })
+        .from(OpencodeXSwarmRoleTable)
+        .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
+        .orderBy(asc(OpencodeXSwarmRoleTable.sort_order))
+        .all()
+        .pipe(Effect.orElseSucceed(() => []))
+      const orchestrator = roles[0]
+      return {
+        last,
+        swarmID,
+        title: swarm.title,
+        roles,
+        orchestrator,
+        orchestratorIsClaudeCode: Boolean(orchestrator?.provider_id && isClaudeCodeProvider(orchestrator.provider_id)),
+      }
+    })
+
+    /**
+     * Runs one specialist role as its own OpencodeX session on the model
+     * configured for it, and returns its report. This is what the Claude Code
+     * orchestrator's delegation tool calls, so specialists stay OpencodeX
+     * sessions instead of becoming Claude's internal subagents.
+     */
+    const runSwarmRole = Effect.fnUntraced(function* (input: {
+      sessionID: SessionID
+      swarmID: string
+      roles: SwarmRoleRow[]
+      role: string
+      prompt: string
+    }) {
+      const role = SwarmBriefing.matchSwarmRole(input.roles, input.role)
+      if (!role) {
+        return `Unknown role "${input.role}". Available roles: ${input.roles.map((item) => item.name).join(", ")}.`
+      }
+      if (!role.provider_id || !role.model_id) return `Role "${role.name}" has no model configured.`
+      const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const child = yield* sessions
+        .create({
+          parentID: input.sessionID,
+          title: `${role.name} (swarm role)`,
+          // The GUI's team view groups a swarm session's children by role, so
+          // each delegation records which role it ran as.
+          metadata: { opencodex: { swarmID: input.swarmID, swarmRole: role.name } },
+          ...(parent.permission ? { permission: parent.permission } : {}),
+        })
+        .pipe(Effect.orDie)
+      const text = [role.instructions?.trim(), input.prompt.trim()].filter(Boolean).join("\n\n")
+      const result = yield* prompt({
+        sessionID: child.id,
+        model: {
+          providerID: ProviderV2.ID.make(role.provider_id),
+          modelID: ProviderV2.ModelID.make(role.model_id),
+        },
+        ...(role.agent ? { agent: role.agent } : {}),
+        parts: [{ type: "text", text }],
+      }).pipe(Effect.catch(Effect.die))
+      if (result.info.role === "assistant" && result.info.error) {
+        return `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}`
+      }
+      const report = result.parts
+        .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
+        .join("\n")
+      return report || `Role "${role.name}" produced no output.`
+    })
 
     /**
      * Sessions on the "Claude subscription" model are answered by the local
@@ -1668,7 +1805,14 @@ export const layer = Layer.effect(
     const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID) {
       const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
       const last = yield* lastUserMessage(sessionID)
-      const model = last?.info.role === "user" ? last.info.model : session.model
+      const selected = last?.info.role === "user" ? last.info.model : session.model
+      // A swarm is a facade over its orchestrator, so a swarm whose
+      // orchestrator is the Claude subscription takes the driver path too -
+      // with a delegation tool that keeps specialists on their own models.
+      const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID) : undefined
+      const model = swarm?.orchestratorIsClaudeCode
+        ? { providerID: swarm.orchestrator!.provider_id!, modelID: swarm.orchestrator!.model_id! }
+        : selected
       const providerID = model?.providerID
       if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
       if (!last || last.info.role !== "user") return undefined
@@ -1678,15 +1822,37 @@ export const layer = Layer.effect(
         .trim()
       if (!text) return undefined
       yield* ensureClaudeTitle(session, text)
+      const specialists = swarm?.roles.slice(1) ?? []
       return claudeDriver.runTurn({
         sessionID,
         parentMessageID: last.info.id,
         text,
         directory: session.directory,
-        providerID,
-        modelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+        // Attribute the turn to the route the reader picked, so a swarm session
+        // stays labelled with the team rather than the orchestrator's model.
+        providerID: selected?.providerID ?? providerID,
+        modelID: (swarm ? swarm.swarmID : modelIdentifier(model)) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+        claudeModelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
         // "default" is the sentinel for "no variant" everywhere else in the loop.
-        ...(model?.variant && model.variant !== "default" ? { variant: model.variant } : {}),
+        ...(selected?.variant && selected.variant !== "default" ? { variant: selected.variant } : {}),
+        ...(specialists.length > 0
+          ? {
+              delegate: {
+                roles: specialists.map((role) => ({
+                  name: role.name,
+                  description: role.skill ?? role.agent ?? undefined,
+                })),
+                run: (delegated) =>
+                  runSwarmRole({
+                    sessionID,
+                    swarmID: swarm!.swarmID,
+                    roles: swarm!.roles,
+                    role: delegated.role,
+                    prompt: delegated.prompt,
+                  }),
+              },
+            }
+          : {}),
       })
     })
 

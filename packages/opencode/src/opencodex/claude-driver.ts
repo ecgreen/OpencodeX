@@ -9,7 +9,12 @@ import { ClaudeDriverMetadata } from "./claude-driver-metadata"
 import { ClaudeHandoff } from "./claude-handoff"
 import { ClaudeMapper, type ClaudeEvent, type MapperContext } from "./claude-mapper"
 import { ClaudePermission } from "./claude-permission"
-import { ClaudeTransport, createSdkTransport, type ClaudeTransport as Transport } from "./claude-transport"
+import {
+  ClaudeTransport,
+  createSdkTransport,
+  type ClaudeTransport as Transport,
+  type DelegateCapability,
+} from "./claude-transport"
 
 type SessionID = typeof SessionSchema.ID.Type
 
@@ -22,17 +27,38 @@ type SessionID = typeof SessionSchema.ID.Type
  * `runTurn` as its work effect. Keeping those out also keeps the import graph
  * acyclic, since SessionPrompt is what branches here.
  */
+/**
+ * Swarm delegation as the session loop supplies it: Effect-returning, so the
+ * caller stays in Effect-land. The driver bridges it to the Promise the CLI's
+ * in-process tool needs, on the same captured bridge as permission prompts.
+ */
+export type SwarmDelegate = {
+  roles: Array<{ name: string; description?: string }>
+  run: (input: { role: string; prompt: string }) => Effect.Effect<string>
+}
+
 export interface Interface {
   readonly runTurn: (input: {
     sessionID: SessionID
     parentMessageID: typeof SessionLegacy.MessageID.Type
     text: string
     directory: string
-    /** The catalog route the turn was started on, e.g. `claude-code/sonnet`. */
+    /**
+     * The catalog route the reader picked, used for transcript attribution.
+     * For a swarm that is `swarm/<id>`, which is deliberately not the value the
+     * CLI runs - see `claudeModelID`.
+     */
     providerID: string
     modelID: string
+    /** The model value handed to the CLI; defaults to `modelID`. */
+    claudeModelID?: string
     /** The selected variant, which for this provider is the effort level. */
     variant?: string
+    /**
+     * Present when the turn is a swarm orchestrator: gives the CLI a tool that
+     * runs specialist roles back inside OpencodeX on their own models.
+     */
+    delegate?: SwarmDelegate
   }) => Effect.Effect<SessionLegacy.WithParts>
 }
 
@@ -54,7 +80,9 @@ export const layer = Layer.effect(
       directory: string
       providerID: string
       modelID: string
+      claudeModelID?: string
       variant?: string
+      delegate?: SwarmDelegate
     }) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       const conversation = ClaudeDriverMetadata.readConversation(session.metadata)
@@ -99,8 +127,21 @@ export const layer = Layer.effect(
         cwd: input.directory,
         ...(resumeID ? { resumeID } : {}),
         executable,
-        model: input.modelID,
+        model: input.claudeModelID ?? input.modelID,
         ...(input.variant ? { effort: input.variant } : {}),
+        ...(input.delegate
+          ? {
+              delegate: {
+                roles: input.delegate.roles,
+                run: (delegated) =>
+                  bridge
+                    .promise(input.delegate!.run(delegated))
+                    .catch((cause: unknown) =>
+                      `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+                    ),
+              } satisfies DelegateCapability,
+            }
+          : {}),
         canUseTool: (toolName, toolInput, toolUseID) =>
           bridge
             .promise(

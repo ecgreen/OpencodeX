@@ -38,7 +38,7 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   await expect(page.locator('.model-picker-section-toggle[aria-expanded="true"]')).toHaveCount(0)
   // Searching auto-expands the leading sections, but an explicit collapse has to
   // survive it: the toggle used to be overruled while any query was present.
-  const modelSearch = page.getByPlaceholder("Search models or providers")
+  const modelSearch = page.getByPlaceholder("Search models, providers, or swarms")
   await modelSearch.fill("claude")
   const firstProviderToggle = page.locator(".model-picker-section-toggle").first()
   await expect(firstProviderToggle).toHaveAttribute("aria-expanded", "true")
@@ -50,15 +50,43 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   await closeModelPicker.click()
 
   await page.getByRole("button", { name: "Swarms: Create, manage, and run agent swarms", exact: true }).click()
-  await page.getByRole("button", { name: "Create", exact: true }).click()
-  await expect(page.getByRole("heading", { name: "Create swarm" })).toBeVisible()
+  await page.getByRole("button", { name: "New swarm", exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Create Swarm" })).toBeVisible()
   expect(await page.locator(".swarm-editor-page option").count()).toBeLessThan(100)
-  await page.getByRole("button", { name: "Add role", exact: true }).click()
+  // Models are an explicit choice per role: a fresh team reports what is
+  // missing, saving stays disabled, and adding a preset selects it in the
+  // roster so it can be configured immediately.
+  await page.getByRole("button", { name: /^Product Manager/ }).click()
   expect(await page.locator(".swarm-editor-page option").count()).toBeLessThan(100)
-  await page.getByRole("textbox", { name: "Title", exact: true }).fill("GUI Acceptance Swarm")
+  await expect(page.locator(".swarm-roster-row").nth(1)).toHaveClass(/selected/)
+  await expect(page.locator(".swarm-editor-status")).toHaveText("0 of 2 roles have a model")
+  await expect(page.getByRole("button", { name: "Create swarm", exact: true })).toBeDisabled()
+  for (const roleIndex of [0, 1]) {
+    await page.locator(".swarm-roster-row").nth(roleIndex).click()
+    await page.locator(".swarm-model-button").click()
+    await expect(page.locator(".model-picker-modal")).toBeVisible()
+    await page.locator(".model-picker-section-toggle").first().click()
+    await page.locator(".model-option-select").first().click()
+    await expect(page.locator(".model-picker-modal")).toHaveCount(0)
+  }
+  await expect(page.locator(".swarm-editor-status")).toHaveCount(0)
+  await page.getByRole("textbox", { name: "Name", exact: true }).first().fill("GUI Acceptance Swarm")
   await page.getByRole("button", { name: "Create swarm", exact: true }).click()
-  await expect(page.getByRole("heading", { name: "GUI Acceptance Swarm" })).toBeVisible()
-  await expect(page.getByText(/2 roles - 0 tasks/)).toBeVisible()
+  // Creating lands back on the catalog; the new team is a card that opens the
+  // editor (viewing and editing are the same page).
+  const swarmCard = page.locator(".swarm-card", { hasText: "GUI Acceptance Swarm" })
+  await expect(swarmCard).toBeVisible()
+  await swarmCard.locator(".swarm-card-open").click()
+  await expect(page.getByRole("heading", { name: "Edit Swarm" })).toBeVisible()
+  await expect(page.getByRole("textbox", { name: "Name", exact: true }).first()).toHaveValue("GUI Acceptance Swarm")
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible()
+  await expect(page.locator(".swarm-roster-row")).toHaveCount(2)
+  await page.locator(".swarm-editor-actions").getByRole("button", { name: "Close", exact: true }).click()
+  // Swarms are models now: the picker's Swarms section lists the new team.
+  await page.getByRole("button", { name: /GUI Acceptance Session/ }).first().click()
+  await page.getByTitle("Choose model").click()
+  await expect(page.locator(".swarm-option-card", { hasText: "GUI Acceptance Swarm" })).toBeVisible()
+  await page.getByRole("button", { name: "Close Select model", exact: true }).click()
 
   await page.getByRole("button", { name: "Views: Create and manage multi-session views", exact: true }).click()
   await page.getByRole("button", { name: "Create view", exact: true }).click()

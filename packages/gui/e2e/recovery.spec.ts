@@ -19,7 +19,7 @@ test("keeps manager pages aligned and shared controls usable", async ({ page }, 
   const headingTops = {
     projects: await managerHeadingTop(page, "Projects", "Workspace directory"),
     views: await managerHeadingTop(page, "Views", "Views"),
-    swarms: await managerHeadingTop(page, "Swarms", "Swarm workspace"),
+    swarms: await managerHeadingTop(page, "Swarms", "Agent teams"),
   }
   const topValues = Object.values(headingTops)
   expect(
@@ -32,8 +32,30 @@ test("keeps manager pages aligned and shared controls usable", async ({ page }, 
   await expectSharedInput(page.locator('input[placeholder="Search views or sessions"]'))
 
   await openRoute(page, "Swarms")
-  await expectPaddedCreateCard(page, "Create swarm")
+  await expectSwarmCreateAffordance(page)
 })
+
+/**
+ * Creation stays reachable in the page flow: the empty state offers a
+ * "Create swarm" button; once swarms exist a padded create tile joins the grid.
+ */
+async function expectSwarmCreateAffordance(page: Page) {
+  const tile = page.locator(".swarm-create-card")
+  const emptyCreate = page.locator(".swarm-empty-state").getByRole("button", { name: "Create swarm" })
+  await expect(tile.or(emptyCreate)).toBeVisible()
+  if ((await tile.count()) === 0) return
+  const geometry = await tile.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      paddingLeft: Number.parseFloat(style.paddingLeft),
+      paddingTop: Number.parseFloat(style.paddingTop),
+      height: element.getBoundingClientRect().height,
+    }
+  })
+  expect(geometry.paddingLeft).toBeGreaterThanOrEqual(12)
+  expect(geometry.paddingTop).toBeGreaterThanOrEqual(12)
+  expect(geometry.height).toBeGreaterThanOrEqual(72)
+}
 
 test("reserves dashboard navigation geometry by omitting dynamic counters", async ({ page }) => {
   await page.goto("/")

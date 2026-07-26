@@ -17,6 +17,7 @@ import type { createSessionSlashController } from "./session-slash-controller"
 import type { createSessionState } from "./session-state"
 import type { createSessionSwitcherController } from "./session-switcher-controller"
 import type { createSettingsController } from "./settings-controller"
+import type { createSwarmTeamController } from "./swarm-team-controller"
 import type { createTranscriptPreferences } from "./transcript-preferences"
 import type { createViewController } from "./view-controller"
 
@@ -40,6 +41,7 @@ export type GuiAppModel = {
   sessionState: ReturnType<typeof createSessionState>
   sessionSwitcher: ReturnType<typeof createSessionSwitcherController>
   settings: ReturnType<typeof createSettingsController>
+  swarmTeam: ReturnType<typeof createSwarmTeamController>
   transcriptPreferences: ReturnType<typeof createTranscriptPreferences>
   view: ReturnType<typeof createViewController>
 }

@@ -15,7 +15,7 @@ export type PaletteCommandActions = {
   toggleWorkspace: () => void
   openWorkspace: (target: "context" | "files" | "git" | "terminal" | "web") => void
   createSwarm: () => void | Promise<void>
-  createSwarmTask: () => void | Promise<void>
+  startSwarmSession: () => void | Promise<void>
   createView: () => void | Promise<void>
   editView: () => void | Promise<void>
   deleteView: () => void | Promise<void>
@@ -144,15 +144,8 @@ export function buildPaletteCommands(input: {
       run: () => input.actions.openWorkspace(target),
     })),
     {
-      name: "opencodex.swarm.list",
-      title: "Show swarms on dashboard",
-      category: "Swarms",
-      suggested: true,
-      run: () => input.actions.openRoute("swarms"),
-    },
-    {
       name: "opencodex.swarm.open",
-      title: "Open swarm",
+      title: "Open swarms",
       category: "Swarms",
       suggested: true,
       run: () => input.actions.openRoute("swarms"),
@@ -165,11 +158,11 @@ export function buildPaletteCommands(input: {
       run: input.actions.createSwarm,
     },
     {
-      name: "opencodex.swarm.task",
-      title: "New swarm task",
+      name: "opencodex.swarm.session",
+      title: "Start swarm session",
       category: "Swarms",
       suggested: true,
-      run: input.actions.createSwarmTask,
+      run: input.actions.startSwarmSession,
     },
     {
       name: "opencodex.view.open",

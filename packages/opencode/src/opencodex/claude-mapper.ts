@@ -109,6 +109,10 @@ const TOOL_NAMES: Record<string, string> = {
   task: "task",
   exitplanmode: "plan_exit",
   askuserquestion: "question",
+  // The swarm delegation tool (`mcp__opencodex_swarm__delegate`) is a task in
+  // everything but name, so it renders with the normal subtask card. A test
+  // pins this against the transport's constant.
+  mcpopencodexswarmdelegate: "task",
 }
 
 export function normalizeToolName(name: string) {

@@ -8,12 +8,14 @@ import { ModalFrame } from "./modal-frame"
 import { Button, TextInput } from "./ui"
 
 export type ModelPickerProviderGroup = { provider: Provider; models: Provider["models"][string][] }
+export type ModelPickerSwarmOption = { id: string; title: string; roleCount: number }
 
 export function SessionModelPicker(props: {
   query: string
   searching: boolean
   favorites: string[]
   selectedModel: string
+  swarmOptions: ModelPickerSwarmOption[]
   favoriteOptions: ModelPickerOption[]
   recentOptions: ModelPickerOption[]
   providerGroups: ModelPickerProviderGroup[]
@@ -28,7 +30,8 @@ export function SessionModelPicker(props: {
   const [showAll, setShowAll] = createSignal<Record<string, boolean>>({})
   const groupIDs = createMemo(() => props.providerGroups.map((group) => group.provider.id))
   const groupByID = createMemo(() => new Map(props.providerGroups.map((group) => [group.provider.id, group])))
-  const empty = () => props.favoriteOptions.length === 0 && props.recentOptions.length === 0 && props.providerGroups.length === 0
+  const empty = () =>
+    props.swarmOptions.length === 0 && props.favoriteOptions.length === 0 && props.recentOptions.length === 0 && props.providerGroups.length === 0
   const expanded = (providerID: string, index: number) =>
     providerSectionExpanded({ override: overrides()[providerID], searching: props.searching, index })
   const toggle = (providerID: string, index: number) => {
@@ -45,8 +48,32 @@ export function SessionModelPicker(props: {
       class="model-picker-modal"
     >
       <>
-        <TextInput value={props.query} onInput={(event) => props.setQuery(event.currentTarget.value)} placeholder="Search models or providers" autofocus />
+        <TextInput value={props.query} onInput={(event) => props.setQuery(event.currentTarget.value)} placeholder="Search models, providers, or swarms" autofocus />
         <div class="model-picker-list">
+          <Show when={props.swarmOptions.length > 0}>
+            <section class="model-picker-section model-picker-swarms">
+              <h3 class="model-picker-section-heading">Swarms</h3>
+              <div>
+                <For each={props.swarmOptions}>
+                  {(swarm) => (
+                    <Button
+                      appearance="ghost"
+                      type="button"
+                      class="swarm-option-card"
+                      classList={{ selected: props.selectedModel === modelValue("swarm", swarm.id) }}
+                      onClick={() => props.select("swarm", swarm.id)}
+                    >
+                      <span class="swarm-option-icon"><Icon name="swarm" /></span>
+                      <span class="swarm-option-copy">
+                        <span class="model-option-name">{swarm.title}</span>
+                        <small>{swarm.roleCount > 0 ? `${swarm.roleCount} role${swarm.roleCount === 1 ? "" : "s"} · one session` : "Agent team"}</small>
+                      </span>
+                    </Button>
+                  )}
+                </For>
+              </div>
+            </section>
+          </Show>
           <Show when={props.favoriteOptions.length > 0}>
             <ModelPickerSection title="Favorites" selectedModel={props.selectedModel} favorites={props.favorites} options={props.favoriteOptions} select={props.select} toggleFavorite={props.toggleFavorite} />
           </Show>

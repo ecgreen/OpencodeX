@@ -1,4 +1,4 @@
-import type { Agent, Config, FileNode, LspStatus, McpStatus, McpResource, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, FileNode, LspStatus, McpStatus, McpResource, OpencodeXSwarm, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
@@ -22,6 +22,7 @@ export function ViewPane(props: {
   providers: Provider[]
   connectedProviderIDs?: string[]
   connectProvider?: (providerID?: string) => void
+  swarms?: OpencodeXSwarm[]
   mcp: Record<string, McpStatus>
   mcpResources?: Record<string, McpResource>
   lsp: LspStatus[]
@@ -78,6 +79,7 @@ export function ViewPane(props: {
         providers={props.providers}
         connectedProviderIDs={props.connectedProviderIDs}
         connectProvider={props.connectProvider}
+        swarms={props.swarms}
         mcp={props.mcp}
         mcpResources={props.mcpResources}
         lsp={props.lsp}

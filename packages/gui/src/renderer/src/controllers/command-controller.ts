@@ -20,7 +20,7 @@ import type { createViewController } from "./view-controller"
 import { createAbortConfirmGate } from "../lib/abort-confirm"
 import { guiPluginCommands } from "../lib/gui-plugins"
 import { guiShortcutAction, isKeyboardEditingTarget, runGuiShortcutAction } from "../lib/keyboard-shortcuts"
-import { selectedModelVariants } from "../lib/model-selection"
+import { selectedModelVariants, swarmModelValue } from "../lib/model-selection"
 import { buildPaletteCommands } from "../lib/palette-commands"
 import { abortSessionIDForRoute } from "../lib/route-selection"
 import { openSessionWorkspace } from "../lib/session-workspace-bridge"
@@ -72,11 +72,7 @@ export function createCommandController(input: {
         toggleWorkspace,
         openWorkspace,
         createSwarm: () => input.management.createSwarm(),
-        createSwarmTask: () =>
-          input.capabilityActions.createSwarmTask({
-            selectedAgent: input.state.selectedAgent(),
-            selectedVariant: input.state.selectedVariant(),
-          }),
+        startSwarmSession,
         createView: input.management.createView,
         editView: input.capabilityActions.editView,
         deleteView: input.capabilityActions.deleteView,
@@ -151,6 +147,32 @@ export function createCommandController(input: {
   function openKeyboardHelp() {
     input.switcher.cancel()
     input.overlays.setKeyboardHelpOpen(true)
+  }
+
+  /** A swarm task is just a session with the swarm selected as the model. */
+  async function startSwarmSession() {
+    const swarms = input.authoritative.snapshot()?.swarms ?? []
+    if (swarms.length === 0) {
+      input.navigation.setRoute({ name: "swarms" })
+      return
+    }
+    const swarmID = swarms.length === 1
+      ? swarms[0].id
+      : await input.dialogs.askChoice({
+          title: "Start Swarm Session",
+          options: swarms.map((swarm) => ({
+            value: swarm.id,
+            title: swarm.title,
+            description: `${swarm.roles.length} roles`,
+          })),
+        })
+    const swarm = swarms.find((item) => item.id === swarmID)
+    if (!swarm) return
+    const project = input.authoritative.snapshot()?.projects.find((item) => item.id === swarm.projectID)
+    input.state.setSelectedModel(swarmModelValue(swarm.id))
+    input.state.setSelectedVariant("")
+    input.navigation.setRoute({ name: "new-session", projectID: swarm.projectID, directory: project?.folders[0]?.path })
+    input.state.requestComposerFocus()
   }
 
   function toggleWorkspace() {

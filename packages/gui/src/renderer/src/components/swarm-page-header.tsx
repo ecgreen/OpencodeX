@@ -2,7 +2,7 @@ import { For } from "solid-js"
 import { Button } from "./ui"
 
 export function SwarmPageHeader(props: {
-  eyebrow: string
+  eyebrow?: string
   title: string
   description: string
   actions: Array<{ label: string; icon: string; danger?: boolean; onClick: () => void | Promise<void> }>
@@ -10,7 +10,7 @@ export function SwarmPageHeader(props: {
   return (
     <header class="manager-page-header">
       <div>
-        <p class="eyebrow">{props.eyebrow}</p>
+        {props.eyebrow ? <p class="eyebrow">{props.eyebrow}</p> : undefined}
         <h1>{props.title}</h1>
         <p>{props.description}</p>
       </div>

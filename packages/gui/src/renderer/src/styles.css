@@ -54,6 +54,7 @@
 @import "./styles/pages/sessions/base-6.css" layer(features);
 @import "./styles/pages/sessions/base-7.css" layer(features);
 @import "./styles/pages/sessions/provider-states.css" layer(features);
+@import "./styles/pages/sessions/swarm-team.css" layer(features);
 @import "./styles/pages/sessions/transcript-part.css" layer(features);
 @import "./styles/pages/sessions/transcript-thinking.css" layer(features);
 @import "./styles/pages/sessions/transcript-output.css" layer(features);
@@ -71,6 +72,7 @@
 @import "./styles/global/shell/responsive.css" layer(layout);
 @import "./styles/global/shell/states.css" layer(layout);
 @import "./styles/pages/swarms/base.css" layer(features);
+@import "./styles/pages/swarms/editor.css" layer(features);
 @import "./styles/pages/swarms/responsive.css" layer(features);
 @import "./styles/pages/swarms/states.css" layer(features);
 @import "./styles/pages/views/base.css" layer(features);

@@ -1,31 +1,54 @@
-.swarm-role-card:hover {
-  border-color: color-mix(in srgb,var(--secondary) 30%,var(--border));
-  border-left-color: var(--secondary);
-  background: color-mix(in srgb,var(--bg) 88%,var(--element) 12%);
-  box-shadow: inset 2px 0 0 var(--secondary);
+.swarm-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-subtle));
 }
 
-.swarm-role-card:focus-within {
-  border-color: color-mix(in srgb,var(--secondary) 30%,var(--border));
-  border-left-color: var(--secondary);
-  background: color-mix(in srgb,var(--bg) 88%,var(--element) 12%);
-  box-shadow: inset 2px 0 0 var(--secondary);
+.swarm-card-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-.swarm-role-card:hover :is(span,small) {
-  color: var(--muted);
+.swarm-roster-row:hover {
+  border-color: color-mix(in srgb, var(--secondary) 30%, var(--border));
 }
 
-.swarm-role-card:focus-within :is(span,small) {
-  color: var(--muted);
+.swarm-roster-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.swarm-role-card:hover strong {
-  color: var(--text);
+.swarm-roster-row.selected:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border-subtle));
 }
 
-.swarm-role-card:focus-within strong {
-  color: var(--text);
+.swarm-model-button:hover {
+  border-color: color-mix(in srgb, var(--secondary) 34%, var(--border));
+}
+
+.swarm-roster-add-row:hover {
+  background: color-mix(in srgb, var(--secondary) 10%, transparent);
+}
+
+.swarm-create-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.swarm-create-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swarm-model-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swarm-role-detail:focus-within {
+  border-color: color-mix(in srgb, var(--secondary) 30%, var(--border));
+}
+
+.swarm-role-detail.orchestrator:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border-subtle));
 }
 
 .stage-content.scroll-page>:is(.placeholder-page,.swarms-page,.plugins-page) {

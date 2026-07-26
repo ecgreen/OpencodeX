@@ -18,6 +18,7 @@ export function Dashboard(props: {
   logo: JSX.Element
   openProject: (projectID: string) => void
   openSession: (sessionID: string) => void
+  openSwarm: (swarmID: string) => void
   openView: (viewID: string) => void
   viewPinned: (viewID: string) => boolean
   createProject: () => void
@@ -40,7 +41,7 @@ export function Dashboard(props: {
       <section class="dashboard-sections">
         <DashboardSessionsSection sessions={activeSessions()} snapshot={props.snapshot} openSession={props.openSession} createSession={() => props.createSession()} renameSession={props.renameSession} deleteSession={props.deleteSession} />
         <DashboardViewsSection snapshot={props.snapshot} openView={props.openView} createView={props.createView} viewPinned={props.viewPinned} toggleViewPinned={props.toggleViewPinned} editView={props.editView} deleteView={props.deleteView} />
-        <DashboardSwarmsSection snapshot={props.snapshot} createSwarm={props.createSwarm} />
+        <DashboardSwarmsSection snapshot={props.snapshot} createSwarm={props.createSwarm} openSwarm={props.openSwarm} />
         <DashboardProjectsSection snapshot={props.snapshot} sessionOrderState={props.sessionOrderState} openProject={props.openProject} createProject={props.createProject} createSession={props.createSession} editProject={props.editProject} deleteProject={props.deleteProject} />
       </section>
     </div>
@@ -115,20 +116,23 @@ function DashboardProjectCard(props: {
   )
 }
 
-function DashboardSwarmsSection(props: { snapshot?: GuiSnapshot; createSwarm: () => void }) {
+function DashboardSwarmsSection(props: { snapshot?: GuiSnapshot; createSwarm: () => void; openSwarm: (swarmID: string) => void }) {
   return (
-    <DashboardSection title="Swarms - Experimental" count={props.snapshot?.swarms.length ?? 0} action="New" actionLabel="New swarm" onAction={props.createSwarm}>
+    <DashboardSection title="Swarms" count={props.snapshot?.swarms.length ?? 0} action="New" actionLabel="New swarm" onAction={props.createSwarm}>
       <div class="dashboard-card-grid">
-        <For each={(props.snapshot?.swarms ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create swarm" description="Experimental durable agent-team automation." onClick={props.createSwarm} />}>
+        <For each={(props.snapshot?.swarms ?? []).slice(0, 8)} fallback={<EmptyCreateDashboardCard title="Create swarm" description="Build an agent team and pick it in the model selector like any model." onClick={props.createSwarm} />}>
           {(swarm) => (
-            <article class="dashboard-item-card dashboard-summary-card dashboard-swarm-card">
+            <Button appearance="ghost" class="dashboard-item-card dashboard-summary-card dashboard-swarm-card interactive" onClick={() => props.openSwarm(swarm.id)}>
               <div class="dashboard-card-copy">
                 <strong>{title(swarm.title)}</strong>
                 <small>
-                  <span>{swarm.roles.length} roles · {swarm.runs.length} runs · {formatRelative(swarm.timeUpdated)}</span>
+                  <span>{swarm.roles.slice(0, 4).map((role) => role.name).join(" · ")}{swarm.roles.length > 4 ? ` +${swarm.roles.length - 4}` : ""}</span>
                 </small>
               </div>
-            </article>
+              <footer>
+                <small>{swarm.roles.length} roles · {formatRelative(swarm.timeUpdated)}</small>
+              </footer>
+            </Button>
           )}
         </For>
       </div>

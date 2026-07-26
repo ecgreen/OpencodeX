@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises"
 import path from "node:path"
+import z from "zod"
 import type { ClaudeEvent } from "./claude-mapper"
 
 /**
@@ -28,8 +29,24 @@ export type TransportOptions = {
   /** Reasoning effort, surfaced in OpencodeX as the model's variant chip. */
   effort?: string
   canUseTool: (toolName: string, input: Record<string, unknown>, toolUseID?: string) => Promise<PermissionDecision>
+  /**
+   * Swarm delegation. When present the CLI is given an in-process tool that
+   * hands work back to OpencodeX, so specialists run as OpencodeX sessions on
+   * their configured models instead of as Claude's own internal subagents.
+   */
+  delegate?: DelegateCapability
   signal?: AbortSignal
 }
+
+export type DelegateCapability = {
+  roles: Array<{ name: string; description?: string }>
+  run: (input: { role: string; prompt: string }) => Promise<string>
+}
+
+/** Namespaced by the CLI as `mcp__<server>__<tool>`. */
+export const DELEGATE_SERVER = "opencodex_swarm"
+export const DELEGATE_TOOL = "delegate"
+export const DELEGATE_TOOL_NAME = `mcp__${DELEGATE_SERVER}__${DELEGATE_TOOL}`
 
 /** One row of the CLI's own model menu, as reported by `supportedModels()`. */
 export type ClaudeModelInfo = {
@@ -116,6 +133,7 @@ export function createSdkTransport(): ClaudeTransport {
         const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
         if (!sdk?.query) throw new ClaudeNotInstalledError("The Claude Code SDK is unavailable.")
         const executable = options.executable ?? (await resolveClaudeExecutable())
+        const delegation = options.delegate ? delegateServer(sdk, options.delegate) : undefined
         const running = sdk.query({
           prompt,
           options: {
@@ -125,6 +143,15 @@ export function createSdkTransport(): ClaudeTransport {
             // decision to canUseTool, which bridges to OpencodeX permission cards.
             permissionMode: "default",
             canUseTool: async (toolName, input, extra) => {
+              // Claude's own subagents would run inside the CLI on its models,
+              // bypassing the swarm's per-role routing. Redirect to the tool
+              // that hands work back to OpencodeX.
+              if (options.delegate && toolName === "Task") {
+                return {
+                  behavior: "deny" as const,
+                  message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
+                }
+              }
               const decision = await options.canUseTool(toolName, input, extra?.toolUseID)
               return decision.allow
                 ? { behavior: "allow", updatedInput: decision.input ?? input }
@@ -134,6 +161,7 @@ export function createSdkTransport(): ClaudeTransport {
             ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
             ...(options.model && options.model !== DEFAULT_MODEL_VALUE ? { model: options.model } : {}),
             ...(options.effort && EFFORT_LEVELS.includes(options.effort) ? { effort: options.effort } : {}),
+            ...(delegation ? { mcpServers: { [DELEGATE_SERVER]: delegation } } : {}),
           },
         } as Parameters<typeof sdk.query>[0])
         query = running as { interrupt?: () => Promise<void> }
@@ -149,6 +177,58 @@ export function createSdkTransport(): ClaudeTransport {
       }
     },
   }
+}
+
+/**
+ * An in-process MCP server carrying the one tool a swarm orchestrator needs.
+ * The handler runs inside OpencodeX, so a delegated role becomes an OpencodeX
+ * subagent session on its configured model - visible in the transcript and
+ * governed by OpencodeX permissions - rather than a Claude-internal subagent.
+ */
+function delegateServer(
+  sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
+  delegate: DelegateCapability,
+) {
+  const roster = delegate.roles
+    .map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`)
+    .join("\n")
+  return sdk.createSdkMcpServer({
+    name: DELEGATE_SERVER,
+    version: "1.0.0",
+    instructions: `Delegate swarm roles back to OpencodeX. Available roles:\n${roster}`,
+    alwaysLoad: true,
+    tools: [
+      sdk.tool(
+        DELEGATE_TOOL,
+        [
+          "Delegate a task to one of this swarm's specialist roles.",
+          "The role runs as its own OpencodeX session on the model configured for it,",
+          "and its final report is returned to you. Prefer several calls in one turn",
+          "for independent roles.",
+          "",
+          "Roles:",
+          roster,
+        ].join("\n"),
+        {
+          role: z.string().describe("Exact role name from the roster."),
+          prompt: z
+            .string()
+            .describe("Self-contained instructions: scope, expected output, and whether files may be edited."),
+        },
+        async (args) => {
+          try {
+            const text = await delegate.run({ role: args.role, prompt: args.prompt })
+            return { content: [{ type: "text" as const, text }] }
+          } catch (cause) {
+            return {
+              isError: true,
+              content: [{ type: "text" as const, text: cause instanceof Error ? cause.message : String(cause) }],
+            }
+          }
+        },
+      ),
+    ],
+  })
 }
 
 /**

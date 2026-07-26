@@ -1,13 +1,31 @@
+import type { OpencodeXSwarm, Provider } from "@opencode-ai/sdk/v2/client"
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { createDebouncedTask } from "../lib/deferred-work"
-import { isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
+import { SWARM_PROVIDER_ID, isFreeOpencodeModel, modelValue, parseModelValue, type ModelPickerOption } from "../lib/model-selection"
 import { readFavoriteModels, writeFavoriteModels } from "../lib/session-composer-helpers"
-import type { SessionPageProps } from "./session-page-types"
 
 /** Long enough that a fast typist filters the catalog once, not once per key. */
 const SEARCH_DEBOUNCE_MS = 90
 
-export function createSessionModelController(props: SessionPageProps) {
+/**
+ * The slice of session-page props the picker actually needs, so other surfaces
+ * (the swarm editor's per-role model field, view panes) can drive the same
+ * picker without pretending to be a session page.
+ */
+export type SessionModelControllerInput = {
+  providers: Provider[]
+  connectedProviderIDs?: string[]
+  swarms?: OpencodeXSwarm[]
+  recentModels: string[]
+  selectedModel: string
+  selectedAgent: string
+  selectedVariant: string
+  setSelectedAgent: (value: string) => void
+  setSelectedModel: (value: string) => void
+  setSelectedVariant: (value: string) => void
+}
+
+export function createSessionModelController(props: SessionModelControllerInput) {
   const [pickerOpen, setPickerOpen] = createSignal(false)
   const [variantPickerOpen, setVariantPickerOpen] = createSignal(false)
   // `query` drives the input so typing stays instant; `search` drives filtering.
@@ -35,12 +53,28 @@ export function createSessionModelController(props: SessionPageProps) {
       return option ? [option] : []
     }),
   )
+  // Swarms are their own picker section, listed before everything else.
+  const swarmOptions = createMemo(() => {
+    const provider = props.providers.find((item) => item.id === SWARM_PROVIDER_ID)
+    if (!provider) return []
+    return Object.values(provider.models).map((model) => ({
+      id: model.id,
+      title: model.name ?? model.id,
+      roleCount: props.swarms?.find((swarm) => swarm.id === model.id)?.roles.length ?? 0,
+    }))
+  })
+  const filteredSwarmOptions = createMemo(() => {
+    const needle = search().trim().toLowerCase()
+    if (!needle) return swarmOptions()
+    return swarmOptions().filter((swarm) => swarm.title.toLowerCase().includes(needle))
+  })
   // Connected providers first: those are the only ones that can answer a prompt,
   // and it keeps the auto-expanded search results on models the user can send to.
   const providerGroups = createMemo(() => {
     const recents = new Set([...recentOptions(), ...favoriteOptions()].map((item) => modelValue(item.provider.id, item.model.id)))
     const connected = new Set(props.connectedProviderIDs ?? [])
     return props.providers
+      .filter((provider) => provider.id !== SWARM_PROVIDER_ID)
       .toSorted((a, b) => Number(!connected.has(a.id)) - Number(!connected.has(b.id)) || Number(a.id !== "opencode") - Number(b.id !== "opencode") || a.name.localeCompare(b.name))
       .map((provider) => ({
         provider,
@@ -138,6 +172,7 @@ export function createSessionModelController(props: SessionPageProps) {
     filteredFavoriteOptions,
     filteredRecentOptions,
     filteredProviderGroups,
+    filteredSwarmOptions,
     disconnectedProvider,
     variants,
     mode,
@@ -162,7 +197,7 @@ function filterModelOptions(options: ModelPickerOption[], query: string) {
  * Returns the provider's own model objects rather than fresh `{provider, model}`
  * pairs so `<For>` keeps the rendered rows it already has when a search narrows.
  */
-function filterProviderModels(provider: SessionPageProps["providers"][number], models: ModelPickerOption["model"][], query: string) {
+function filterProviderModels(provider: Provider, models: ModelPickerOption["model"][], query: string) {
   const needle = query.trim().toLowerCase()
   if (!needle) return models
   return models.filter((model) => matchesModel(provider, model, needle))

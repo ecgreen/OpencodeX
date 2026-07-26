@@ -21,6 +21,7 @@ import { createSessionSlashController } from "./controllers/session-slash-contro
 import { createSessionState } from "./controllers/session-state"
 import { createSessionSwitcherController } from "./controllers/session-switcher-controller"
 import { createSettingsController } from "./controllers/settings-controller"
+import { createSwarmTeamController } from "./controllers/swarm-team-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
 import { createViewController } from "./controllers/view-controller"
 import { AppShell } from "./components/app-shell"
@@ -61,6 +62,7 @@ export function App() {
     refresh: authoritative.refresh,
   })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
+  const swarmTeam = createSwarmTeamController({ authoritative, selection: sessionSelection })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
   const rail = createRailController({
     client: authoritative.client,
@@ -83,8 +85,6 @@ export function App() {
     setPrompt: sessionState.setPrompt,
     requestComposerFocus: sessionState.requestComposerFocus,
     setPendingPinnedSessionRouteKey: sessionState.setPendingPinnedRouteKey,
-    selectedAgent: sessionState.selectedAgent,
-    selectedVariant: sessionState.selectedVariant,
   })
   const sessionActions = createSessionActionsController({
     client: authoritative.client,
@@ -141,7 +141,6 @@ export function App() {
     refreshCapabilities: authoritative.refreshCapabilities,
     refreshAll: authoritative.refreshAll,
     alert: notices.alert,
-    selectedAgent: sessionState.selectedAgent,
   })
   const sessionSlash = createSessionSlashController({
     authoritative,
@@ -180,13 +179,17 @@ export function App() {
 
   createEffect(() => {
     const route = navigation.route()
+    // A swarm session's team view rides the view-session hydration: the
+    // selected member stays visible so its transcript loads and live-patches.
+    const member = route.name === "session" ? swarmTeam.memberSession() : undefined
     authoritative.setVisibleSessionIDs(
       route.name === "views"
         ? view.sessions().map((session) => session.id)
         : sessionSelection.activeSessionID()
-          ? [sessionSelection.activeSessionID()]
+          ? [sessionSelection.activeSessionID(), ...(member ? [member.id] : [])]
           : [],
     )
+    if (member) void authoritative.syncViewSession(member)
   })
 
   createEffect(
@@ -223,6 +226,7 @@ export function App() {
     sessionState,
     sessionSwitcher,
     settings,
+    swarmTeam,
     transcriptPreferences,
     view,
   }

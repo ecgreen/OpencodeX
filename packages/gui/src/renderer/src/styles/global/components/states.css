@@ -224,6 +224,26 @@ summary:focus-visible {
   box-shadow: inset 0 1px var(--theme-overlay-subtle);
 }
 
+/* Page-header actions signal hover with color, never with movement - a lift
+   at the top edge reads as the button escaping the viewport. */
+.manager-page-header .row-actions button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--text);
+}
+
+.manager-page-header .row-actions button[data-tone="danger"]:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  color: var(--danger);
+}
+
+.manager-page-header .row-actions button:active:not(:disabled) {
+  transform: none;
+}
+
 .mode-chip:active:not(:disabled) {
   transform: translateY(0);
   background: var(--surface-active);

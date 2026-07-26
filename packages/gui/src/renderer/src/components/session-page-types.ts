@@ -1,9 +1,10 @@
-import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, OpencodeXSwarm, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/store"
 import type { GuiClient } from "../lib/client"
+import type { SwarmTeamView } from "../lib/swarm-team"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
 
@@ -16,6 +17,15 @@ export type SessionPageProps = {
   setPrompt: (value: string) => void
   providers: Provider[]
   connectedProviderIDs?: string[]
+  /** Swarm catalog, used to enrich the model picker's Swarms section. */
+  swarms?: OpencodeXSwarm[]
+  /** Team view for sessions running on a swarm model. */
+  team?: SwarmTeamView
+  /** Child session the reader has toggled into, "" for the orchestrator. */
+  teamMemberSessionID?: string
+  selectTeamMember?: (sessionID: string) => void
+  teamMemberData?: SessionData
+  teamMemberLoading?: boolean
   /** Opens the credential flow, optionally pre-selecting a provider. */
   connectProvider?: (providerID?: string) => void
   mcp: Record<string, McpStatus>

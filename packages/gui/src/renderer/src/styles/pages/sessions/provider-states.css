@@ -2,6 +2,66 @@
   color: var(--muted);
 }
 
+/* Swarms lead the picker: an agent team is selected exactly like a model. */
+.model-picker-swarms>div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.swarm-option-card {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle));
+  border-radius: 9px;
+  text-align: left;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 55%);
+}
+
+.swarm-option-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 65%);
+}
+
+.swarm-option-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.swarm-option-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.swarm-option-icon .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.swarm-option-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.swarm-option-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
 .provider-auth-warning {
   flex: none;
   padding: 1px 6px;

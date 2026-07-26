@@ -64,6 +64,7 @@ import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { OpencodeXProject } from "@/opencodex/project"
+import { OpencodeXProjectTable, OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 
 void Log.init({ print: false })
 
@@ -350,6 +351,27 @@ const waitForBusy = (sessionID: SessionID, duration: Duration.Input = "2 seconds
   )
 
 const hasBash = Effect.sync(() => Bun.which("bash") !== null)
+
+/** Runs `fx` with the Claude Code CLI unresolvable, so the driver fails fast. */
+function withoutClaudeCli<A, E, R>(fx: () => Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = { PATH: process.env.PATH, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+      process.env.PATH = ""
+      process.env.HOME = path.join(process.cwd(), "does-not-exist")
+      process.env.USERPROFILE = process.env.HOME
+      return previous
+    }),
+    fx,
+    (previous) =>
+      Effect.sync(() => {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key]
+          else process.env[key] = value
+        }
+      }),
+  )
+}
 
 const deferredAsPromise = <A>(deferred: Deferred.Deferred<A>): PromiseLike<A> => ({
   then: (onfulfilled, onrejected) => {
@@ -2585,4 +2607,223 @@ noLLMServer.instance(
       }
     }),
   30_000,
+)
+
+it.instance("swarm models run in-session on the orchestrator's model with a team briefing", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const provider = yield* ProviderSvc.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .transaction(
+        (transaction) =>
+          Effect.gen(function* () {
+            yield* transaction
+              .insert(OpencodeXProjectTable)
+              .values({ id: "opx_swarm_test", project_id: session.project_id, time_created: now, time_updated: now })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmTable)
+              .values({
+                id: "swm_test",
+                opencodex_project_id: "opx_swarm_test",
+                title: "Test Team",
+                prompt: "",
+                status: "draft",
+                source: "user",
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmRoleTable)
+              .values([
+                {
+                  id: "swr_orch",
+                  swarm_id: "swm_test",
+                  name: "Orchestrator",
+                  skill: "orchestrator",
+                  provider_id: "test",
+                  model_id: "test-model",
+                  status: "pending",
+                  instructions: "Coordinate the team.",
+                  sort_order: 0,
+                  time_created: now,
+                  time_updated: now,
+                },
+                {
+                  id: "swr_spec",
+                  swarm_id: "swm_test",
+                  name: "Reviewer",
+                  skill: "code-reviewer",
+                  provider_id: "test",
+                  model_id: "test-model",
+                  status: "pending",
+                  instructions: "Review carefully.",
+                  sort_order: 1,
+                  time_created: now,
+                  time_updated: now,
+                },
+              ])
+              .run()
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+
+    // The facade resolves to the orchestrator's real model, so auth, pricing,
+    // and limits all come from the actual provider.
+    const resolved = yield* provider.getModel(ProviderV2.ID.make("swarm"), ProviderV2.ModelID.make("swm_test"))
+    expect(`${resolved.providerID}/${resolved.id}`).toBe("test/test-model")
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: { providerID: ProviderV2.ID.make("swarm"), modelID: ProviderV2.ModelID.make("swm_test") },
+      noReply: true,
+      parts: [{ type: "text", text: "hello team" }],
+    })
+    yield* llm.text("orchestrator reporting in")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error).toBeUndefined()
+    expect(result.parts.some((part) => part.type === "text" && part.text === "orchestrator reporting in")).toBe(true)
+
+    // The turn hands the orchestrator its team as a hidden part of the user
+    // message: roster, per-role models, and task-tool delegation rules.
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const user = messages.find((message) => message.info.role === "user")
+    const briefing = user?.parts.find(
+      (part) => part.type === "text" && part.synthetic === true && part.text.startsWith("<swarm-briefing"),
+    )
+    expect(Boolean(briefing)).toBe(true)
+    const briefingText = briefing?.type === "text" ? briefing.text : ""
+    expect(briefingText).toContain("Test Team")
+    expect(briefingText).toContain("Reviewer")
+    expect(briefingText).toContain('model="test/test-model"')
+    expect(briefingText).toContain("task tool")
+
+    // The session keeps the swarm as its selected model, so the composer's
+    // picker stays on the team while turns run on the orchestrator's model.
+    const stored = yield* db
+      .select({ model: SessionTable.model })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, chat.id))
+      .get()
+      .pipe(Effect.orDie)
+    expect(stored?.model).toMatchObject({ providerID: "swarm", id: "swm_test" })
+  }),
+)
+
+it.instance("a swarm with a Claude Code orchestrator routes to the CLI driver, not the AI SDK", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .transaction(
+        (transaction) =>
+          Effect.gen(function* () {
+            yield* transaction
+              .insert(OpencodeXProjectTable)
+              .values({ id: "opx_cc_swarm", project_id: session.project_id, time_created: now, time_updated: now })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmTable)
+              .values({
+                id: "swm_cc",
+                opencodex_project_id: "opx_cc_swarm",
+                title: "Claude Team",
+                prompt: "",
+                status: "draft",
+                source: "user",
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmRoleTable)
+              .values([
+                {
+                  id: "swr_cc_orch",
+                  swarm_id: "swm_cc",
+                  name: "Orchestrator",
+                  skill: "orchestrator",
+                  provider_id: "claude-code",
+                  model_id: "opus[1m]",
+                  status: "pending",
+                  instructions: "Lead the team.",
+                  sort_order: 0,
+                  time_created: now,
+                  time_updated: now,
+                },
+                {
+                  id: "swr_cc_spec",
+                  swarm_id: "swm_cc",
+                  name: "Designer",
+                  skill: "designer",
+                  provider_id: "test",
+                  model_id: "test-model",
+                  status: "pending",
+                  instructions: "Review the UI.",
+                  sort_order: 1,
+                  time_created: now,
+                  time_updated: now,
+                },
+              ])
+              .run()
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: { providerID: ProviderV2.ID.make("swarm"), modelID: ProviderV2.ModelID.make("swm_cc") },
+      noReply: true,
+      parts: [{ type: "text", text: "lead the work" }],
+    })
+    // Hide the CLI so the driver reports a missing binary instead of spawning a
+    // real Claude turn. Routing is what this test is about; a live CLI run
+    // would make it slow, networked, and dependent on the developer's machine.
+    const result = yield* withoutClaudeCli(() => prompt.loop({ sessionID: chat.id }))
+
+    // The AI SDK was never used: the turn went to the Claude driver, which in
+    // this environment reports the CLI outcome rather than streaming a model.
+    expect(yield* llm.hits).toHaveLength(0)
+    expect(result.info.role).toBe("assistant")
+    // Attribution stays on the team the reader picked, not the orchestrator's
+    // underlying Claude model.
+    if (result.info.role === "assistant") {
+      expect(String(result.info.providerID)).toBe("swarm")
+      expect(String(result.info.modelID)).toBe("swm_cc")
+    }
+
+    // The briefing tells it to delegate through OpencodeX rather than spawning
+    // Claude's own subagents on Claude's models.
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const user = messages.find((message) => message.info.role === "user")
+    const briefing = user?.parts.find(
+      (part) => part.type === "text" && part.synthetic === true && part.text.startsWith("<swarm-briefing"),
+    )
+    const briefingText = briefing?.type === "text" ? briefing.text : ""
+    expect(briefingText).toContain("mcp__opencodex_swarm__delegate")
+    expect(briefingText).toContain("Do not use the built-in Task tool")
+    expect(briefingText).toContain("Designer")
+  }),
 )
