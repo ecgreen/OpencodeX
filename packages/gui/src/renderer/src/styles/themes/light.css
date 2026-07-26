@@ -9,15 +9,18 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --theme-canvas: #e8ebef;
-  --theme-surface: #f4f6f8;
-  --theme-surface-raised: #ffffff;
-  --theme-surface-hover: #e4e9ef;
-  --theme-surface-selected: #d7dee7;
-  --theme-surface-strong: #c2ccd7;
+  /* Paper, not paper-white. A bright canvas with white cards is fatiguing on a
+     surface people stare at all day, so the whole ladder is pulled down and
+     nothing is pure white. */
+  --theme-canvas: #d9dee5;
+  --theme-surface: #e7ebf0;
+  --theme-surface-raised: #f4f6f9;
+  --theme-surface-hover: #dce2ea;
+  --theme-surface-selected: #cbd3dd;
+  --theme-surface-strong: #b3bec9;
   --theme-text: #0f1319;
-  --theme-text-muted: #4d5764;
-  --theme-text-subtle: #5a6472;
+  --theme-text-muted: #414b58;
+  --theme-text-subtle: #4f5967;
   --theme-text-inverse: #ffffff;
   --theme-white: #ffffff;
   --theme-black: #000000;

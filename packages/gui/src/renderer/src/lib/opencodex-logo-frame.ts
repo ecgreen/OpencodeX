@@ -7,6 +7,19 @@ export type LogoTheme = {
   peak: LogoRgb
   muted: LogoRgb
   text: LogoRgb
+  /**
+   * Colour the shimmer crest travels toward. On a dark canvas `peak` is nearly
+   * white, so the crest reads as light sweeping across the wordmark. On a light
+   * canvas `peak` is nearly black and that same crest turns into a dark bruise,
+   * so light themes point the crest at the accent instead. Defaults to `peak`.
+   */
+  glow?: LogoRgb
+  /**
+   * Scales the ambient shadow behind the glyphs. The halo is subtle when it
+   * lightens a dark canvas and heavy-handed when it darkens a light one, so
+   * light themes dial it back. Defaults to 1.
+   */
+  shadowScale?: number
 }
 
 type LogoPointGeometry = {
@@ -116,9 +129,10 @@ export function logoCellFrame(cell: LogoCellGeometry, time: number, geometry: Lo
   const inkTop = logoPeakTint(charInk, top, theme)
   const inkBottom = logoPeakTint(charInk, bottom, theme)
   const inkTinted = logoPeakTint(charInk, pulse, theme)
-  const shadowTop = tint(theme.background, theme.peak, Math.min(1, top.peak * LOGO_SHIMMER.shadowMix))
-  const shadowBottom = tint(theme.background, theme.peak, Math.min(1, bottom.peak * LOGO_SHIMMER.shadowMix))
-  const shadowTinted = tint(theme.background, theme.peak, Math.min(1, pulse.peak * LOGO_SHIMMER.shadowMix))
+  const shadowMix = LOGO_SHIMMER.shadowMix * (theme.shadowScale ?? 1)
+  const shadowTop = tint(theme.background, theme.peak, Math.min(1, top.peak * shadowMix))
+  const shadowBottom = tint(theme.background, theme.peak, Math.min(1, bottom.peak * shadowMix))
+  const shadowTinted = tint(theme.background, theme.peak, Math.min(1, pulse.peak * shadowMix))
   const shimmer = logoShimmer(cell.shimmerDistance, time, geometry.span)
 
   if (cell.char === "_") return { color: rgbToCss(inkTinted), backgroundColor: rgbToCss(shade(shadowTinted, ghost(shimmer, 0.06), theme)) }
@@ -219,7 +233,7 @@ function logoPeakTint(base: LogoRgb, pulse: { peak: number; primary: number }, t
 function shade(base: LogoRgb, amount: number, theme: LogoTheme) {
   if (amount >= 0) {
     const middle = tint(base, theme.primary, 0.84)
-    const top = tint(theme.primary, theme.peak, 0.96)
+    const top = tint(theme.primary, theme.glow ?? theme.peak, 0.96)
     if (amount <= 1) return tint(base, middle, Math.min(1, Math.sqrt(Math.max(0, amount)) * 1.14))
     return tint(middle, top, Math.min(1, 1 - Math.exp(-2.4 * (amount - 1))))
   }

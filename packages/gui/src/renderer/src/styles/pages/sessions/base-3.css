@@ -193,28 +193,29 @@
   text-transform: uppercase;
 }
 
+/* Icon-only star, so the row keeps its geometry whether or not it is starred. */
 .model-favorite-toggle {
   display: inline-flex;
   grid-column: 2;
   grid-row: 1 / -1;
   align-self: stretch;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   min-height: 0;
-  padding: 3px 8px;
-  border: 1px solid transparent;
-  border-left-color: var(--border-subtle);
+  padding: 0 var(--ds-space-4);
+  border: 0;
   border-radius: 0;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
+  color: var(--ds-text-subtle);
 }
 
 .model-favorite-toggle .icon {
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
 }
+
+/* A starred model reads at a glance: the outline fills with the warm accent. */
+.model-favorite-toggle.active { color: var(--ds-control-accent); }
+.model-favorite-toggle.active .icon { fill: currentColor; }
 
 .model-picker-empty {
   color: var(--muted);

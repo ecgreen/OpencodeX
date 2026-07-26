@@ -88,6 +88,7 @@ export function RailPriorSessionsSection(props: {
   snapshot?: GuiSnapshot
   collapsed: boolean
   activeSessionID: string
+  createSession: () => void
   dragTarget?: RailDragTarget
   dropTarget?: RailDropTarget
   sessionPinned: (sessionID: string) => boolean
@@ -114,6 +115,7 @@ export function RailPriorSessionsSection(props: {
       count={priorSessions().length}
       collapsed={props.collapsed}
       toggle={props.toggle}
+      action={props.createSession}
       drag={sectionDrag("prior", props)}
     >
       <For each={priorSessions()}>

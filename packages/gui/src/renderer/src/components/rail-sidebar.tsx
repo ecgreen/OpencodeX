@@ -231,6 +231,7 @@ export function RailSidebar(props: {
                   snapshot={props.snapshot}
                   collapsed={props.railSections.prior}
                   activeSessionID={props.activeSessionID}
+                  createSession={() => props.createSession()}
                   dragTarget={props.dragTarget}
                   dropTarget={props.dropTarget}
                   sessionPinned={props.sessionPinned}
