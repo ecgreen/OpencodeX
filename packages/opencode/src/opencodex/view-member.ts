@@ -40,6 +40,7 @@ export function memberValidationMessage(members: readonly Member[], metadata: Re
   const pending = pendingMemberCount(metadata)
   if (members.length === 0 && pending === 0) return "A view needs at least one member."
   if (members.length + pending > 8) return "A view can include at most eight persisted and pending members."
+  return undefined
 }
 
 export function resolveFocus(

@@ -7,7 +7,7 @@ import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { ClaudeDriverMetadata } from "./claude-driver-metadata"
 import { ClaudeHandoff } from "./claude-handoff"
-import { ClaudeMapper, type ClaudeEvent, type MapperContext } from "./claude-mapper"
+import { ClaudeMapper, type MapperContext } from "./claude-mapper"
 import { ClaudePermission } from "./claude-permission"
 import {
   ClaudeTransport,
@@ -174,14 +174,17 @@ export const layer = Layer.effect(
           break
         }
         if (next.done) break
-        const mapped = ClaudeMapper.mapEvent(next.value as ClaudeEvent, live, context)
+        const mapped = ClaudeMapper.mapEvent(next.value, live, context)
         live = mapped.state
         yield* applyWrites(mapped.writes, input.sessionID)
         if (live.finished) break
       }
 
       if (failure) {
-        const message = failure instanceof Error ? failure.message : String(failure)
+        // `failure` is whatever the SDK iterator threw; String() on an object
+        // would surface a useless "[object Object]" in the transcript.
+        const message =
+          failure instanceof Error ? failure.message : typeof failure === "string" ? failure : JSON.stringify(failure)
         yield* finalize("error", message)
       } else if (!live.finished) {
         yield* finalize("stop")

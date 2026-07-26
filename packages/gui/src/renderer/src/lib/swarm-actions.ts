@@ -27,7 +27,7 @@ export function projectLabelByID(projects: GuiSnapshot["projects"], projectID: s
 
 export function sessionSwarmID(session: Session) {
   const opencodex = session.metadata?.opencodex
-  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return
+  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
   return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
 }
 

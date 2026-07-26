@@ -6,7 +6,7 @@ const listSupportedModels = mock(async () => [{ value: "sonnet", displayName: "S
 // `mock.module` is process-wide, so the real module has to be preserved:
 // replacing it wholesale strips exports other suites in the same run depend on
 // (the driver's executable resolution, for one).
-mock.module("../../src/opencodex/claude-transport", () => ({
+void mock.module("../../src/opencodex/claude-transport", () => ({
   ...transport,
   ClaudeTransport: {
     ...transport.ClaudeTransport,

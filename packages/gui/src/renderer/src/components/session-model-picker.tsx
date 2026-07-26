@@ -86,7 +86,7 @@ export function SessionModelPicker(props: {
                 group={groupByID().get(providerID)}
                 connected={props.connectedProviderIDs.includes(providerID)}
                 expanded={expanded(providerID, index())}
-                limit={providerSectionLimit(showAll()[providerID] === true)}
+                limit={providerSectionLimit(Boolean(showAll()[providerID]))}
                 selectedModel={props.selectedModel}
                 favorites={props.favorites}
                 select={props.select}

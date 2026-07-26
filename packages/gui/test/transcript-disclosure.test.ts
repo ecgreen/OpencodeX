@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 
-mock.module("@opencode-ai/ui/file", () => ({ File: () => null }))
-mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
+void mock.module("@opencode-ai/ui/file", () => ({ File: () => null }))
+void mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
 
 const { autoOpenForStatus, createDisclosure, createDisclosureStore, createMountedOnce, sessionDisclosureStore, clearSessionDisclosureStore } =
   await import("../src/renderer/src/lib/disclosure")

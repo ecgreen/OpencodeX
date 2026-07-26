@@ -127,7 +127,8 @@ export function createSdkTransport(): ClaudeTransport {
         if (options.signal.aborted) controller.abort()
         else options.signal.addEventListener("abort", () => controller.abort(), { once: true })
       }
-      let query: { interrupt?: () => Promise<void> } | undefined
+      // Only `interrupt` is used here, and its result is discarded.
+      let query: { interrupt?: () => Promise<unknown> } | undefined
 
       async function* events(): AsyncIterable<ClaudeEvent> {
         const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
@@ -164,7 +165,7 @@ export function createSdkTransport(): ClaudeTransport {
             ...(delegation ? { mcpServers: { [DELEGATE_SERVER]: delegation } } : {}),
           },
         } as Parameters<typeof sdk.query>[0])
-        query = running as { interrupt?: () => Promise<void> }
+        query = running
         for await (const message of running) yield message as ClaudeEvent
       }
 
@@ -248,7 +249,7 @@ export async function resolveClaudeExecutable(input?: { path?: string; home?: st
       ? [path.join(home, ".local", "bin", "claude.exe")]
       : [path.join(home, ".local", "bin", "claude"), "/usr/local/bin/claude", "/opt/homebrew/bin/claude"]
     : []
-  for (const candidate of [...new Set([...fromPath, ...native])]) {
+  for (const candidate of new Set([...fromPath, ...native])) {
     const info = await stat(candidate).catch(() => undefined)
     if (!info?.isFile()) continue
     if (platform === "win32" || (info.mode & 0o111) !== 0) return candidate

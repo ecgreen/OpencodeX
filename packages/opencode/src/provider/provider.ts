@@ -525,7 +525,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           },
         },
         async getModel(sdk: any, modelID: string) {
-          const id = String(modelID).trim()
+          const id = modelID.trim()
           return sdk.languageModel(id)
         },
       }
@@ -545,7 +545,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           ...(baseURL && { baseURL }),
         },
         async getModel(sdk: any, modelID) {
-          const id = String(modelID).trim()
+          const id = modelID.trim()
           return sdk.languageModel(id)
         },
       }

@@ -154,6 +154,7 @@ export function createOpencodeXSwarmsController() {
       const column = ids.indexOf(selectedRunID())
       if (column >= 0) return { row, column }
     }
+    return undefined
   }
   const selectDetail = (id: string) => detailItems().includes(id) && setSelectedRunID(id)
   const moveDetailLinear = (offset: -1 | 1) => {
@@ -168,17 +169,17 @@ export function createOpencodeXSwarmsController() {
     if (!position || rows.length === 0) return moveDetailLinear(offset)
     const currentRow = rows[position.row]
     if (!currentRow) return
-    if (offset < 0 && position.column > 0) return selectDetail(currentRow[position.column - 1]!)
-    if (offset > 0 && position.column < currentRow.length - 1) return selectDetail(currentRow[position.column + 1]!)
+    if (offset < 0 && position.column > 0) return selectDetail(currentRow[position.column - 1])
+    if (offset > 0 && position.column < currentRow.length - 1) return selectDetail(currentRow[position.column + 1])
     const target = rows[(position.row + offset + rows.length) % rows.length]
-    if (target) selectDetail(offset < 0 ? target[target.length - 1]! : target[0]!)
+    if (target) selectDetail(offset < 0 ? target[target.length - 1] : target[0])
   }
   const moveDetailVertical = (offset: -1 | 1) => {
     const rows = detailRows()
     const position = detailPosition()
     if (!position || rows.length === 0) return moveDetailLinear(offset)
     const target = rows[(position.row + offset + rows.length) % rows.length]
-    if (target) selectDetail(target[Math.min(position.column, target.length - 1)]!)
+    if (target) selectDetail(target[Math.min(position.column, target.length - 1)])
   }
   function select(offset: number) {
     if (route.data.type === "opencodex-swarms" && route.data.swarmID) return moveDetailVertical(offset < 0 ? -1 : 1)

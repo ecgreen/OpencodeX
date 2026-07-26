@@ -81,9 +81,7 @@ function SwarmCard(props: {
         <div class="swarm-card-meta">
           <small>{projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID)}</small>
           <small>
-            {orchestrator()?.providerID && orchestrator()?.modelID
-              ? `Led by ${orchestrator()!.modelID}`
-              : "Orchestrator needs a model"}
+            {orchestrator()?.modelID ? `Led by ${orchestrator()?.modelID}` : "Orchestrator needs a model"}
             {" · "}
             {sessions().length > 0 ? `${sessions().length} session${sessions().length === 1 ? "" : "s"}` : "No sessions yet"}
             {" · "}

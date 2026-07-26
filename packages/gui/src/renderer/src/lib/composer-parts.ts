@@ -17,7 +17,7 @@ export function partIcon(part: PromptPart) {
 }
 
 export function partPreviewURL(part: PromptPart) {
-  if (part.type !== "file" || !part.mime.startsWith("image/")) return
+  if (part.type !== "file" || !part.mime.startsWith("image/")) return undefined
   return part.url
 }
 

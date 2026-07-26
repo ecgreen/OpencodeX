@@ -94,12 +94,12 @@ export function createSessionModelController(props: SessionModelControllerInput)
   )
   const activeProvider = createMemo(() => {
     const selection = parseModelValue(props.selectedModel)
-    if (!selection) return
+    if (!selection) return undefined
     return props.providers.find((provider) => provider.id === selection.providerID)
   })
   const activeModel = createMemo(() => {
     const selection = parseModelValue(props.selectedModel)
-    if (!selection) return
+    if (!selection) return undefined
     return props.providers.find((provider) => provider.id === selection.providerID)?.models[selection.modelID]
   })
   // `connectedProviderIDs` mirrors the server's live provider registry, and a

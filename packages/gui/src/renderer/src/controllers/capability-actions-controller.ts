@@ -204,7 +204,7 @@ export function createCapabilityActionsController(input: {
     const views = input.snapshot()?.views ?? []
     if (views.length === 0) {
       input.alert("No views are available.")
-      return
+      return undefined
     }
     const viewID = await input.dialogs.askChoice({
       title,
@@ -280,7 +280,7 @@ export function createCapabilityActionsController(input: {
               })),
             })
           : await input.dialogs.askText({ title: prompt.message, message: prompt.placeholder })
-      if (value === undefined) return
+      if (value === undefined) return undefined
       inputs[prompt.key] = value
     }
     return inputs

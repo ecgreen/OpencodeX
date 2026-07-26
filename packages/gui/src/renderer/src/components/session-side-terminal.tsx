@@ -250,9 +250,9 @@ export const terminalSurface = {
     return ensure(id, write, openURL, persistent)
   },
   fit,
-  focus: sessionTerminal.focus,
-  markClosed: sessionTerminal.markClosed,
-  markOpen: sessionTerminal.markOpen,
+  focus: (id: string) => sessionTerminal.focus(id),
+  markClosed: (id: string) => sessionTerminal.markClosed(id),
+  markOpen: (id: string) => sessionTerminal.markOpen(id),
 }
 
 function cancelRestart(id: string) {

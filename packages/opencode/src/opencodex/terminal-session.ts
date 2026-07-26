@@ -117,7 +117,7 @@ export const layer = Layer.effect(
     const requireProject = Effect.fn("OpencodeXTerminalSession.requireProject")(function* (projectID?: string | null) {
       if (!projectID) return
       if (yield* OpencodeXProjectFolder.getProject(db, projectID)) return
-      return yield* new ValidationError({ message: `Project not found: ${projectID}` })
+      yield* new ValidationError({ message: `Project not found: ${projectID}` })
     })
 
     const list = Effect.fn("OpencodeXTerminalSession.list")(function* () {
@@ -278,7 +278,7 @@ export const layer = Layer.effect(
               if (!current) return yield* new NotFoundError({ terminalSessionID })
               // Linking is idempotent: a record keeps the first mirror session
               // it was given so a restarted driver reattaches instead of forking.
-              if (current.session_id) return
+              if (current.session_id) return undefined
               const now = Math.max(Date.now(), current.time_updated + 1)
               yield* transaction
                 .update(OpencodeXTerminalSessionTable)

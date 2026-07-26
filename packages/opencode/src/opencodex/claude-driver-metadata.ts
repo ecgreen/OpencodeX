@@ -23,10 +23,13 @@ export type Conversation = {
   billed?: { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
 }
 
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 export function readConversation(metadata: Record<string, unknown> | undefined): Conversation | undefined {
-  const raw = metadata?.[METADATA_KEY]
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
-  const value = raw as Record<string, unknown>
+  const value = metadata?.[METADATA_KEY]
+  if (!record(value)) return undefined
   if (value.launched !== true && typeof value.conversationID !== "string") return undefined
   return {
     ...(typeof value.conversationID === "string" ? { conversationID: value.conversationID } : {}),
@@ -41,7 +44,7 @@ export function withConversation(
   metadata: Record<string, unknown> | undefined,
   conversation: Conversation,
 ): Record<string, unknown> {
-  return { ...(metadata ?? {}), [METADATA_KEY]: conversation }
+  return { ...metadata, [METADATA_KEY]: conversation }
 }
 
 export function authState(metadata: Record<string, unknown> | undefined) {
@@ -49,9 +52,8 @@ export function authState(metadata: Record<string, unknown> | undefined) {
 }
 
 function isBilled(value: unknown): value is Conversation["billed"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  const billed = value as Record<string, unknown>
-  return ["cost", "input", "output", "cacheRead", "cacheWrite"].every((key) => typeof billed[key] === "number")
+  if (!record(value)) return false
+  return ["cost", "input", "output", "cacheRead", "cacheWrite"].every((key) => typeof value[key] === "number")
 }
 
 export * as ClaudeDriverMetadata from "./claude-driver-metadata"
