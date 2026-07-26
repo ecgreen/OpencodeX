@@ -156,7 +156,6 @@ export function SessionsRoute(props: { model: GuiAppModel }) {
       sessionPinned={(sessionID) => model.rail.pinnedSessionIDSet().has(sessionID)}
       toggleSessionPinned={model.rail.toggleSessionPinned}
       createSession={() => void model.notices.run(() => model.management.createSession())}
-      createTerminalSession={() => void model.notices.run(async () => { await model.management.createClaudeSession() })}
     />
   )
 }
@@ -221,9 +220,6 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       openSwarm={(swarmID) => model.navigation.setRoute({ name: "swarm-create", swarmID })}
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
-      }
-      createTerminalSession={(projectID, directory) =>
-        void model.notices.run(async () => { await model.management.createClaudeSession(projectID, directory) })
       }
       createSwarm={(projectID) => void model.notices.run(() => model.management.createSwarm(projectID))}
       createProjectView={(projectID, sessionIDs) =>

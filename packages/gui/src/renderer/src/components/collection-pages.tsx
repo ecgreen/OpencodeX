@@ -28,7 +28,6 @@ export function SessionCollectionPage(props: {
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
   createSession: () => void
-  createTerminalSession: () => void
 }) {
   const projectBySessionID = createMemo(() => new Map(props.projects.flatMap((project) => [
     ...project.sessionIDs,
@@ -52,7 +51,6 @@ export function SessionCollectionPage(props: {
         </div>
         <div class="row-actions">
           <Button appearance="solid" tone="accent" icon="plus" onClick={props.createSession}>New session</Button>
-          <Button appearance="outline" onClick={props.createTerminalSession}>Claude Code</Button>
         </div>
       </div>
       <For each={sessions()} fallback={<Empty text="No sessions" />}>
@@ -162,7 +160,6 @@ export function ProjectCollectionPage(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
-  createTerminalSession: (projectID?: string, directory?: string) => void
   createSwarm: (projectID: string) => void
   createProjectView: (projectID: string, sessionIDs: string[]) => void
   createProject: () => void
@@ -225,7 +222,6 @@ export function ProjectCollectionPage(props: {
           openView={props.openView}
           openSwarm={props.openSwarm}
           createSession={props.createSession}
-          createTerminalSession={props.createTerminalSession}
           createSwarm={props.createSwarm}
           editProject={props.editProject}
           deleteProject={props.deleteProject}

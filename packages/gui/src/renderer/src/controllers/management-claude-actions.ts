@@ -16,69 +16,6 @@ export function createClaudeManagementActions(input: {
   refresh: () => Promise<void>
   alert: (message: string) => void
 }) {
-  async function createClaudeSession(projectID?: string, directory?: string, options: { open?: boolean } = {}) {
-    const client = input.client()
-    if (!client) return
-    if (!window.opencodex?.terminal || !window.opencodex.installationID) {
-      input.alert("Claude Code sessions require OpencodeX Desktop.")
-      return
-    }
-    // Gate on the CLI before asking for any details: a missing binary is an
-    // installation problem, and it gets a guided install rather than a create
-    // form that cannot succeed.
-    let status = await input.claudeTerminals.checkCLI()
-    if (!status.available) {
-      const installed = await input.dialogs.askClaudeInstall()
-      if (!installed) return
-      status = await input.claudeTerminals.checkCLI()
-      if (!status.available) {
-        input.alert(status.message ?? "Claude Code is still not available. Restart OpencodeX after installing and try again.")
-        return
-      }
-    }
-    const projects = input.snapshot()?.projects ?? []
-    const project = projects.find((item) => item.id === projectID)
-    const value = await input.dialogs.askTerminalSession({
-      title: "New Claude Code Session",
-      message: "Claude Code owns authentication, permissions, and its transcript. OpencodeX keeps only this catalog entry.",
-      directory: directory ?? project?.folders[0]?.path ?? client.directory,
-      projectID,
-      cliVersion: "version" in status ? status.version : undefined,
-      projects: projects.map((item) => ({
-        value: item.id,
-        title: title(item.name ?? item.project.name),
-        description: item.folders.map((folder) => compactPath(folder.path)).join(", "),
-      })),
-    })
-    if (!value) return
-    try {
-      const installationID = await window.opencodex.installationID()
-      const result = await client.client.opencodex.terminalSession.create(
-        {
-          opencodeXTerminalSessionCreateInput: {
-            title: value.title,
-            projectID: value.projectID,
-            directory: value.directory,
-            installationID,
-          },
-        },
-        { throwOnError: true },
-      )
-      const record = result.data
-      if (!record) throw new Error("The terminal session was created without a catalog record.")
-      await input.refresh()
-      if (options.open !== false) input.navigation.setRoute({ name: "terminal-session", terminalSessionID: record.id })
-      return record
-    } catch (error) {
-      input.alert(
-        error instanceof Error && error.message
-          ? `Could not create the Claude Code session: ${error.message}`
-          : "Could not create the Claude Code session.",
-      )
-      return
-    }
-  }
-
   async function renameClaudeSession(record: OpencodeXTerminalSession) {
     const client = input.client()
     if (!client) return
@@ -139,7 +76,7 @@ export function createClaudeManagementActions(input: {
     input.navigation.setRoute({ name: "sessions" })
   }
 
-  return { createClaudeSession, renameClaudeSession, moveClaudeSession, removeClaudeSession }
+  return { renameClaudeSession, moveClaudeSession, removeClaudeSession }
 }
 
 async function updateTerminalSessionProject(

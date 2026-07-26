@@ -32,7 +32,6 @@ export function RailProjectsSection(props: {
   toggleProject: (projectID: string) => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
-  createTerminalSession: (projectID?: string, directory?: string) => void
   openSession: (sessionID: string) => void
   openTerminalSession: (terminalSessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void

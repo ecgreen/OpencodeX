@@ -58,9 +58,6 @@ export function createCommandController(input: {
       actions: {
         switchSession: input.switcher.openSearch,
         createSession: () => input.management.createSession(),
-        createClaudeSession: async () => {
-          await input.management.createClaudeSession()
-        },
         openRoute: (name) => input.navigation.setRoute({ name }),
         createProject: input.management.createProject,
         createProjectSession: input.management.createProjectSession,

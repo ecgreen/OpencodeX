@@ -40,10 +40,13 @@ export function SwarmsRoute(props: { model: GuiAppModel }) {
 }
 
 export function SwarmEditorRoute(props: { model: GuiAppModel }) {
-  const route = () => props.model.navigation.route()
+  const route = () => {
+    const current = props.model.navigation.route()
+    return current.name === "swarm-create" ? current : undefined
+  }
   const swarm = () => {
     const current = route()
-    return current.name === "swarm-create" && current.swarmID
+    return current?.swarmID
       ? props.model.authoritative.snapshot()?.swarms.find((item) => item.id === current.swarmID)
       : undefined
   }
@@ -54,7 +57,7 @@ export function SwarmEditorRoute(props: { model: GuiAppModel }) {
       connectedProviderIDs={props.model.authoritative.snapshot()?.connectedProviderIDs ?? []}
       connectProvider={(providerID) => void props.model.notices.run(() => props.model.capabilities.connectProvider(providerID))}
       swarm={swarm()}
-      initialProjectID={route().name === "swarm-create" ? (route() as { projectID?: string }).projectID : undefined}
+      initialProjectID={route()?.projectID}
       recentModels={props.model.sessionState.recentModels()}
       save={(input) => void props.model.notices.run(() => props.model.management.saveSwarm(input))}
       cancel={() => props.model.navigation.setRoute({ name: "swarms" })}
@@ -151,7 +154,6 @@ export function ViewEditorRoute(props: { model: GuiAppModel }) {
       sessions={props.model.sessionSelection.visibleSessions()}
       terminalSessions={props.model.authoritative.snapshot()?.terminalSessions ?? []}
       projects={props.model.authoritative.snapshot()?.projects ?? []}
-      createTerminalSession={() => props.model.management.createClaudeSession(undefined, undefined, { open: false })}
       save={props.model.management.saveView}
       cancel={() =>
         props.model.navigation.setRoute(view() ? { name: "views", viewID: view()!.id } : { name: "views" })

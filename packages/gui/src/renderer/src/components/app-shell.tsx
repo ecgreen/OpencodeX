@@ -37,11 +37,6 @@ export function AppShell(props: { model: GuiAppModel }) {
       RENDERER_PERFORMANCE_MARKS.bootstrap,
       RENDERER_PERFORMANCE_MARKS.appShellMounted,
     )
-    // Deep components (e.g. the terminal surface) request the guided CLI
-    // install without threading dialog access through every layer.
-    const installClaude = () => void model.dialogs.askClaudeInstall()
-    window.addEventListener("opencodex:claude-install", installClaude)
-    onCleanup(() => window.removeEventListener("opencodex:claude-install", installClaude))
   })
   createEffect(() => {
     const ready = !model.authoritative.loading() && !model.authoritative.error()
@@ -192,11 +187,6 @@ export function AppShell(props: { model: GuiAppModel }) {
         goForward={model.navigation.goForward}
         breadcrumb={breadcrumb()}
         newSession={() => void model.notices.run(() => model.management.createSession())}
-        newClaudeSession={() =>
-          void model.notices.run(async () => {
-            await model.management.createClaudeSession()
-          })
-        }
         newProject={() => void model.notices.run(model.management.createProject)}
         newView={() => void model.notices.run(model.management.createView)}
         newSwarm={() => void model.notices.run(() => model.management.createSwarm())}
@@ -257,9 +247,6 @@ export function AppShell(props: { model: GuiAppModel }) {
         createProject={() => void model.notices.run(model.management.createProject)}
         createSession={(projectID, directory) =>
           void model.notices.run(() => model.management.createSession(projectID, directory))
-        }
-        createTerminalSession={(projectID, directory) =>
-          void model.notices.run(async () => { await model.management.createClaudeSession(projectID, directory) })
         }
         createPinnedSession={() => void model.notices.run(model.management.createPinnedSession)}
         createView={() => void model.notices.run(model.management.createView)}

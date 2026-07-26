@@ -17,7 +17,6 @@ export function Titlebar(props: {
   goBack: () => void
   goForward: () => void
   newSession: () => void
-  newClaudeSession: () => void
   newProject: () => void
   newView: () => void
   newSwarm: () => void
@@ -48,7 +47,6 @@ export function Titlebar(props: {
         </div>
         <TitlebarMenu label="File">
           <Menu.Item shortcut="Ctrl+N" onSelect={props.newSession}>New Session</Menu.Item>
-          <Menu.Item onSelect={props.newClaudeSession}>New Claude Code Session</Menu.Item>
           <Menu.Item onSelect={props.newProject}>New Project</Menu.Item>
           <Menu.Item onSelect={props.newView}>New View</Menu.Item>
           <Menu.Item onSelect={props.newSwarm}>New Swarm</Menu.Item>

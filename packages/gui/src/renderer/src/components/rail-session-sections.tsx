@@ -22,7 +22,6 @@ export function RailRecentSessionsSection(props: {
   sessionPinned: (sessionID: string) => boolean
   toggle: () => void
   createSession: () => void
-  createTerminalSession: () => void
   openSession: (sessionID: string) => void
   openTerminalSession: (terminalSessionID: string) => void
   toggleSessionPinned: (sessionID: string) => void
@@ -80,7 +79,6 @@ export function RailRecentSessionsSection(props: {
           />
         )}
       </For>
-      <Button appearance="ghost" class="rail-show-all" onClick={props.createTerminalSession}>New Claude Code session</Button>
     </RailSection>
   )
 }
