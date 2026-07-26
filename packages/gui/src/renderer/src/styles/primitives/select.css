@@ -69,16 +69,22 @@
 .ui-select-content {
   z-index: 82;
   overflow: hidden;
-  /* Exactly the trigger width, so the shared vertical edges line up rather
-     than landing a fraction of a pixel apart. */
-  width: var(--kb-popper-anchor-width);
+  /* Exactly the trigger's measured width and horizontal offset, so the shared
+     vertical edges continue rather than landing a fraction of a pixel apart.
+     Both are set from Select's align(); the popper values are the fallback
+     until that first measurement lands. */
+  width: var(--ui-select-width, var(--kb-popper-anchor-width));
+  transform: translateX(var(--ui-select-shift, 0px));
   padding: 0;
   border: 1px solid var(--ds-border);
   border-top: 0;
   border-radius: 0 0 var(--ds-radius-control) var(--ds-radius-control);
   background: var(--ds-surface-raised);
   box-shadow: var(--ds-elevation-overlay);
-  animation: ui-select-in var(--ds-motion-control) var(--ds-ease-enter);
+  /* Unfolds from the seam it shares with the trigger. Panel timing (220ms), not
+     control timing: at 160ms the unfold read as an instant pop. */
+  transform-origin: top center;
+  animation: ui-select-in var(--ds-motion-route) var(--ds-ease-enter);
 }
 
 /* Flipped above the trigger: mirror the seam to the other edge. */
@@ -88,7 +94,8 @@
   border-radius: var(--ds-radius-control) var(--ds-radius-control) 0 0;
 }
 
-.ui-select-content[data-closed] { animation: ui-select-out var(--ds-motion-hover) ease-in forwards; }
+/* Exits are faster than entrances, so dismissing never feels sluggish. */
+.ui-select-content[data-closed] { animation: ui-select-out var(--ds-motion-control) var(--ds-ease-smooth) forwards; }
 
 .ui-select-listbox {
   display: grid;
@@ -134,8 +141,11 @@
    treatment covers both and they can never disagree. The tint is the accent
    rather than a grey wash, which keeps the open panel feeling live. */
 .ui-select-item[data-highlighted] { color: var(--ds-text); background: var(--ds-selection); }
-.ui-select-item[data-selected] { color: var(--ds-control-accent); font-weight: var(--ds-weight-medium); }
-.ui-select-item[data-selected][data-highlighted] { background: color-mix(in srgb, var(--ds-control-accent) 20%, transparent); }
+/* The label stays full-strength text on every row. Accent-on-accent-tint was
+   orange on orange and hard to read; the check indicator carries the accent,
+   which is the part that actually means "selected". */
+.ui-select-item[data-selected] { color: var(--ds-text); font-weight: var(--ds-weight-semibold); }
+.ui-select-item[data-selected][data-highlighted] { background: color-mix(in srgb, var(--ds-control-accent) 22%, transparent); }
 .ui-select-item[data-disabled] { color: var(--ds-text-subtle); cursor: not-allowed; opacity: 0.55; }
 
 .ui-select-item-body { display: grid; flex: 1 1 auto; gap: var(--ds-space-0); min-width: 0; }
@@ -148,5 +158,18 @@
 .ui-select-item-check { display: inline-flex; flex: none; align-items: center; color: var(--ds-control-accent); }
 .ui-select-item:not([data-selected]) .ui-select-item-check { visibility: hidden; }
 
-@keyframes ui-select-in { from { opacity: 0; transform: translateY(calc(var(--ds-space-1) * -1)); } }
-@keyframes ui-select-out { to { opacity: 0; transform: translateY(calc(var(--ds-space-1) * -1)); } }
+/*
+ * `transform` carries the alignment correction, so the motion uses the
+ * standalone `translate` and `scale` properties instead. They compose with
+ * transform rather than replacing it, so the panel can unfold without losing
+ * its sub-pixel alignment to the trigger.
+ */
+@keyframes ui-select-in {
+  from { opacity: 0; translate: 0 -8px; scale: 1 0.92; }
+  to { opacity: 1; translate: 0 0; scale: 1 1; }
+}
+
+@keyframes ui-select-out {
+  from { opacity: 1; translate: 0 0; scale: 1 1; }
+  to { opacity: 0; translate: 0 -6px; scale: 1 0.95; }
+}

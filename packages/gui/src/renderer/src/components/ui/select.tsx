@@ -1,6 +1,6 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import type { JSX } from "solid-js"
-import { Show, createMemo, splitProps } from "solid-js"
+import { Show, createMemo, onCleanup, splitProps } from "solid-js"
 import { Icon } from "../icon"
 import { classes, type ControlSize } from "./shared"
 
@@ -57,6 +57,41 @@ export function Select<T>(props: SelectProps<T>) {
     "disabled", "class",
   ])
 
+  let triggerRef: HTMLElement | undefined
+  let contentRef: HTMLElement | undefined
+
+  /*
+   * The popper positions the panel on whole pixels and reports the anchor width
+   * rounded, but a trigger inside a fractional grid track is not on whole
+   * pixels. Left to itself the panel lands up to a pixel off, which is obvious
+   * when its side borders are meant to continue the trigger's. Measuring the
+   * trigger and correcting closes that gap exactly.
+   */
+  const align = () => {
+    if (!triggerRef || !contentRef) return
+    const trigger = triggerRef.getBoundingClientRect()
+    contentRef.style.setProperty("--ui-select-width", `${trigger.width}px`)
+    // Clear the previous correction first, or it is counted twice.
+    contentRef.style.setProperty("--ui-select-shift", "0px")
+    contentRef.style.setProperty("--ui-select-shift", `${trigger.left - contentRef.getBoundingClientRect().left}px`)
+  }
+
+  const track = (open: boolean) => {
+    if (!open) {
+      window.removeEventListener("scroll", align, true)
+      window.removeEventListener("resize", align)
+      return
+    }
+    // The popper positions after mount. Correct on the next frame, and again on
+    // a timer because animation frames do not run in a backgrounded window.
+    requestAnimationFrame(align)
+    setTimeout(align, 0)
+    window.addEventListener("scroll", align, true)
+    window.addEventListener("resize", align)
+  }
+
+  onCleanup(() => track(false))
+
   const groups = createMemo(() => group(local.options, local.groupBy))
   const labelOf = (option: T) => (local.optionLabel ? local.optionLabel(option) : String(option))
   const valueOf = (option: T) => (local.optionValue ? local.optionValue(option) : String(option))
@@ -84,6 +119,7 @@ export function Select<T>(props: SelectProps<T>) {
         sameWidth
         placement="bottom-start"
         onChange={(next) => local.onSelect?.((next ?? null) as T | null)}
+        onOpenChange={track}
         sectionComponent={(section) => (
           <Show when={section.section.rawValue.category}>
             <Kobalte.Section class="ui-select-group">{section.section.rawValue.category}</Kobalte.Section>
@@ -106,7 +142,7 @@ export function Select<T>(props: SelectProps<T>) {
           </Kobalte.Item>
         )}
       >
-        <Kobalte.Trigger class="ui-select" data-size={local.size ?? "default"} data-invalid={local.error ? "true" : undefined}>
+        <Kobalte.Trigger ref={triggerRef} class="ui-select" data-size={local.size ?? "default"} data-invalid={local.error ? "true" : undefined}>
           <Kobalte.Value<T> class="ui-select-value ds-truncate">
             {(state) => {
               // Guard the empty selection: callers' optionLabel assumes an option.
@@ -118,7 +154,7 @@ export function Select<T>(props: SelectProps<T>) {
           <Kobalte.Icon class="ui-select-chevron"><Icon name="chevronDown" /></Kobalte.Icon>
         </Kobalte.Trigger>
         <Kobalte.Portal>
-          <Kobalte.Content class="ui-select-content">
+          <Kobalte.Content ref={contentRef} class="ui-select-content">
             <Kobalte.Listbox class="ui-select-listbox" data-detailed={detailed() ? "true" : undefined} />
           </Kobalte.Content>
         </Kobalte.Portal>

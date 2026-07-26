@@ -161,8 +161,7 @@ export function RailProjectsSection(props: {
                     fallback={(
                       <div class="project-empty">
                         <span>No sessions in this project yet.</span>
-                        <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>Create session</Button>
-                        <Button appearance="ghost" onClick={() => props.createTerminalSession(row.project.id, row.project.folders[0]?.path)}>Start Claude Code</Button>
+                        <Button appearance="ghost" onClick={() => props.createSession(row.project.id, row.project.folders[0]?.path)}>New session</Button>
                       </div>
                     )}
                   >

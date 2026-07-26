@@ -84,11 +84,14 @@
 .ui-field-label { color: var(--ds-text); font-size: var(--ds-text-sm); line-height: var(--ds-leading-sm); font-weight: var(--ds-weight-semibold); }
 .ui-field-control { display: flex; min-width: 0; height: var(--ds-control-height-default); align-items: center; gap: var(--ds-space-2); padding: 0 var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); background: var(--ds-surface-raised); transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, box-shadow var(--ds-motion-hover) ease; }
 .ui-field-control[data-size="compact"] { height: var(--ds-control-height-compact); }
-.ui-field-control:focus-within { border-color: var(--ds-focus); box-shadow: 0 0 0 3px var(--ds-selection); }
+/* Focus is carried by the border alone: it goes from a subtle hairline to the
+   full accent, which is a clear indicator for pointer and keyboard alike. No
+   ring or glow, which made dense forms look smeared. */
+.ui-field-control:focus-within { border-color: var(--ds-focus); }
 [data-ui="field"][data-invalid="true"] .ui-field-control { border-color: var(--ds-danger); }
 .ui-input { width: 100%; min-width: 0; height: var(--ds-control-height-default); padding: 0 var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); outline: 0; color: var(--ds-text); background: var(--ds-surface-raised); font-size: var(--ds-text-base); transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, box-shadow var(--ds-motion-hover) ease; }
 .ui-input[data-size="compact"] { height: var(--ds-control-height-compact); }
-.ui-input:focus { border-color: var(--ds-focus); box-shadow: 0 0 0 3px var(--ds-selection); }
+.ui-input:focus { border-color: var(--ds-focus); }
 .ui-input[data-embedded="true"] { height: 100%; padding: 0; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; }
 .ui-input[data-technical="true"] { font-family: var(--ds-font-technical); }
 .ui-input::placeholder,
@@ -101,7 +104,7 @@
 .ui-field-message { min-height: var(--ds-leading-xs); color: var(--ds-text-muted); font-size: var(--ds-text-xs); line-height: var(--ds-leading-xs); }
 [data-ui="field"][data-invalid="true"] .ui-field-message { color: var(--ds-danger); }
 .ui-textarea { width: 100%; min-width: 0; min-height: 76px; padding: var(--ds-space-2) var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); outline: 0; color: var(--ds-text); background: var(--ds-surface-raised); font-size: var(--ds-text-base); line-height: var(--ds-leading-prose); resize: vertical; }
-.ui-textarea:focus { border-color: var(--ds-focus); box-shadow: 0 0 0 3px var(--ds-selection); }
+.ui-textarea:focus { border-color: var(--ds-focus); }
 [data-slot="checkbox-v2-control"],
 [data-slot="switch-control"] { border-color: var(--ds-border); background: var(--ds-surface-raised); }
 [data-slot="checkbox-v2"][data-checked] [data-slot="checkbox-v2-control"],
