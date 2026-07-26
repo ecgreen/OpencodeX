@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import { For, Show, splitProps } from "solid-js"
-import { statusPresentation } from "../../lib/status-system"
+import { statusPresentation, statusShortLabel } from "../../lib/status-system"
 import { StatusBadge } from "./feedback"
 import { AgentGlyph, ModelBadge } from "./identity"
 import { classes } from "./shared"
@@ -51,6 +51,7 @@ export function SessionCard(props: SessionCardProps) {
       data-ui="session-card"
       data-density={density()}
       data-tone={presentation().tone}
+      data-active={presentation().active ? "true" : undefined}
       data-selected={local.selected ? "true" : undefined}
       class={classes("ui-session-card", local.class)}
       classList={local.classList}
@@ -64,14 +65,23 @@ export function SessionCard(props: SessionCardProps) {
       <div class="ui-session-card-body">
         <div class="ui-session-card-head">
           <span class="ui-session-card-title ds-truncate">{local.title}</span>
-          <StatusBadge status={local.status} appearance={density() === "rail" ? "bare" : "soft"} />
+          {/* Rail rows are too narrow to carry the status beside the title, so
+              it moves to the trailing edge of the row below. */}
+          <Show when={density() !== "rail"}>
+            <StatusBadge status={local.status} appearance="soft" />
+          </Show>
         </div>
-        <Show when={local.model || local.project}>
+        <Show when={local.model || local.project || density() === "rail"}>
           <div class="ui-session-card-sub">
             <Show when={local.model}>
               {(model) => <ModelBadge model={model()} provider={local.provider} variant={local.variant} />}
             </Show>
             <Show when={local.project}>{(project) => <span class="ui-session-card-project ds-truncate">{project()}</span>}</Show>
+            <Show when={density() === "rail"}>
+              <StatusBadge class="ui-session-card-rail-status" status={local.status} appearance="bare">
+                {statusShortLabel(local.status)}
+              </StatusBadge>
+            </Show>
           </div>
         </Show>
         <Show when={local.meta && local.meta.length > 0}>

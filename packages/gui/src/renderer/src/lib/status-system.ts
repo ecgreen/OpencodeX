@@ -17,6 +17,8 @@ export type StatusPresentation = {
   glyph: string
   /** Sentence-case label used when a surface does not supply its own. */
   label: string
+  /** Condensed label for narrow surfaces such as rail rows. Defaults to `label`. */
+  short?: string
   /** Genuine ongoing activity animates its dot. Nothing else does. */
   active?: boolean
 }
@@ -29,10 +31,10 @@ const STATUS: Record<string, StatusPresentation> = {
   running: { tone: "info", glyph: "activity", label: "Running", active: true },
   busy: { tone: "info", glyph: "activity", label: "Running", active: true },
   streaming: { tone: "info", glyph: "activity", label: "Streaming", active: true },
-  "input-needed": { tone: "warning", glyph: "help", label: "Needs input" },
+  "input-needed": { tone: "warning", glyph: "help", label: "Needs input", short: "Input" },
   blocked: { tone: "warning", glyph: "lock", label: "Blocked" },
-  "ready-for-review": { tone: "success", glyph: "squareCheck", label: "Ready for review" },
-  "needs-review": { tone: "success", glyph: "squareCheck", label: "Ready for review" },
+  "ready-for-review": { tone: "success", glyph: "squareCheck", label: "Ready for review", short: "Review" },
+  "needs-review": { tone: "success", glyph: "squareCheck", label: "Ready for review", short: "Review" },
   dormant: { tone: "neutral", glyph: "circle", label: "Idle" },
   idle: { tone: "neutral", glyph: "circle", label: "Idle" },
   queued: { tone: "neutral", glyph: "circle", label: "Queued" },
@@ -55,8 +57,8 @@ const STATUS: Record<string, StatusPresentation> = {
   installing: { tone: "info", glyph: "activity", label: "Installing", active: true },
   connected: { tone: "success", glyph: "check", label: "Connected" },
   disconnected: { tone: "danger", glyph: "warning", label: "Disconnected" },
-  "missing-cli": { tone: "warning", glyph: "warning", label: "Not installed" },
-  "not-installed": { tone: "warning", glyph: "warning", label: "Not installed" },
+  "missing-cli": { tone: "warning", glyph: "warning", label: "Not installed", short: "Missing" },
+  "not-installed": { tone: "warning", glyph: "warning", label: "Not installed", short: "Missing" },
 
   // Informational chips.
   info: { tone: "info", glyph: "circle", label: "Info" },
@@ -83,6 +85,12 @@ export function statusLabel(status: string): string {
   return statusPresentation(status).label
 }
 
+/** Condensed label for narrow surfaces. Falls back to the full label. */
+export function statusShortLabel(status: string): string {
+  const presentation = statusPresentation(status)
+  return presentation.short ?? presentation.label
+}
+
 export function statusGlyph(status: string): string {
   return statusPresentation(status).glyph
 }
@@ -95,4 +103,27 @@ export function statusIsActive(status: string): boolean {
 /** Every status key this table knows, for the component lab and tests. */
 export function knownStatuses(): string[] {
   return Object.keys(STATUS)
+}
+
+/**
+ * Agent mode colors, matching the TUI's mode chips so a mode reads the same in
+ * both clients: build is informational, plan carries the primary accent, goal
+ * is the special hue.
+ */
+const VARIANT_TONES: Record<string, StatusTone> = {
+  build: "info",
+  plan: "accent",
+  goal: "special",
+  review: "success",
+  chat: "neutral",
+  general: "neutral",
+}
+
+export function variantTone(variant: string): StatusTone {
+  return VARIANT_TONES[normalizeStatus(variant)] ?? "neutral"
+}
+
+/** Every agent mode this table knows, for the component lab and tests. */
+export function knownVariants(): string[] {
+  return Object.keys(VARIANT_TONES)
 }

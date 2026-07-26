@@ -1,0 +1,152 @@
+/*
+ * Select: trigger and listbox. Owned by the design system, built on Kobalte.
+ *
+ * Open, the trigger and the panel are one surface. They share an outline in the
+ * focus color, sit flush (gutter 0), and the trigger's bottom border is the only
+ * seam between them. Nothing else draws a line there.
+ */
+
+.ui-select {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: var(--ds-control-height-default);
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 0 var(--ds-space-2) 0 var(--ds-space-3);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-control-shadow);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  text-align: left;
+  cursor: pointer;
+  /* Border color and radius are deliberately not transitioned: the panel opens
+     instantly, and an animated trigger edge would disagree with it mid-fade. */
+  transition: background var(--ds-motion-hover) ease, box-shadow var(--ds-motion-hover) ease;
+}
+
+.ui-select[data-size="compact"] { height: var(--ds-control-height-compact); }
+/* Hover lifts the edge only. Repainting the whole field on hover reads heavy
+   for a control whose job is to stay quiet until it is opened. */
+.ui-select:hover:not([data-disabled], [data-expanded]) { border-color: var(--ds-border-strong); }
+.ui-select:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 1px; }
+.ui-select[data-invalid] { border-color: var(--ds-danger); }
+.ui-select[data-disabled] { cursor: not-allowed; opacity: 0.45; box-shadow: none; }
+
+/*
+ * Open, the trigger keeps its resting border color. The popper rounds the
+ * anchor width to a whole pixel while the trigger itself can be fractional, so
+ * the two halves can sit a fraction of a pixel apart; a bright accent hairline
+ * makes that visible, a subtle one does not. Open-ness is signalled by the
+ * panel and the chevron, which do not depend on pixel geometry.
+ */
+.ui-select[data-expanded] {
+  border-color: var(--ds-border);
+  border-bottom-color: var(--ds-border-subtle);
+  border-radius: var(--ds-radius-control) var(--ds-radius-control) 0 0;
+  background: var(--ds-surface-raised);
+  box-shadow: none;
+}
+
+.ui-select-value { flex: 1 1 auto; min-width: 0; }
+.ui-select-value[data-placeholder-shown] { color: var(--ds-text-subtle); }
+
+.ui-select-chevron {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--ds-text-subtle);
+  transition: transform var(--ds-motion-control) var(--ds-ease-smooth), color var(--ds-motion-hover) ease;
+}
+
+.ui-select:hover:not([data-disabled]) .ui-select-chevron { color: var(--ds-text-muted); }
+.ui-select[data-expanded] .ui-select-chevron { color: var(--ds-text); transform: rotate(180deg); }
+
+.ui-select-content {
+  z-index: 82;
+  overflow: hidden;
+  /* Exactly the trigger width, so the shared vertical edges line up rather
+     than landing a fraction of a pixel apart. */
+  width: var(--kb-popper-anchor-width);
+  padding: 0;
+  border: 1px solid var(--ds-border);
+  border-top: 0;
+  border-radius: 0 0 var(--ds-radius-control) var(--ds-radius-control);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-elevation-overlay);
+  animation: ui-select-in var(--ds-motion-control) var(--ds-ease-enter);
+}
+
+/* Flipped above the trigger: mirror the seam to the other edge. */
+.ui-select-content[data-placement^="top"] {
+  border-top: 1px solid var(--ds-border);
+  border-bottom: 0;
+  border-radius: var(--ds-radius-control) var(--ds-radius-control) 0 0;
+}
+
+.ui-select-content[data-closed] { animation: ui-select-out var(--ds-motion-hover) ease-in forwards; }
+
+.ui-select-listbox {
+  display: grid;
+  gap: 0;
+  max-height: min(340px, 60vh);
+  margin: 0;
+  padding: var(--ds-space-1);
+  overflow-y: auto;
+  outline: 0;
+  list-style: none;
+}
+
+.ui-select-content:has([data-detailed="true"]) { width: auto; min-width: var(--kb-popper-anchor-width); }
+.ui-select-listbox[data-detailed="true"] { min-width: min(420px, calc(100vw - var(--ds-space-8))); }
+
+.ui-select-group {
+  padding: var(--ds-space-2) var(--ds-space-2) var(--ds-space-1);
+  color: var(--ds-text-subtle);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase;
+}
+
+.ui-select-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: var(--ds-control-height-compact);
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--ds-motion-hover) ease, color var(--ds-motion-hover) ease;
+}
+
+.ui-select-item[data-detailed="true"] { min-height: auto; align-items: flex-start; padding: var(--ds-space-2); }
+/* Kobalte marks the keyboard and pointer cursor with data-highlighted, so one
+   treatment covers both and they can never disagree. The tint is the accent
+   rather than a grey wash, which keeps the open panel feeling live. */
+.ui-select-item[data-highlighted] { color: var(--ds-text); background: var(--ds-selection); }
+.ui-select-item[data-selected] { color: var(--ds-control-accent); font-weight: var(--ds-weight-medium); }
+.ui-select-item[data-selected][data-highlighted] { background: color-mix(in srgb, var(--ds-control-accent) 20%, transparent); }
+.ui-select-item[data-disabled] { color: var(--ds-text-subtle); cursor: not-allowed; opacity: 0.55; }
+
+.ui-select-item-body { display: grid; flex: 1 1 auto; gap: var(--ds-space-0); min-width: 0; }
+.ui-select-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ds-space-4); min-width: 0; }
+.ui-select-item-label { min-width: 0; }
+.ui-select-item-meta { flex: none; color: var(--ds-text-subtle); font-size: var(--ds-text-xs); white-space: nowrap; }
+.ui-select-item-description { color: var(--ds-text-muted); font-size: var(--ds-text-xs); line-height: var(--ds-leading-prose); font-weight: var(--ds-weight-regular); }
+
+/* Reserve the check column so selecting a row never shifts its label. */
+.ui-select-item-check { display: inline-flex; flex: none; align-items: center; color: var(--ds-control-accent); }
+.ui-select-item:not([data-selected]) .ui-select-item-check { visibility: hidden; }
+
+@keyframes ui-select-in { from { opacity: 0; transform: translateY(calc(var(--ds-space-1) * -1)); } }
+@keyframes ui-select-out { to { opacity: 0; transform: translateY(calc(var(--ds-space-1) * -1)); } }

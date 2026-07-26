@@ -1,5 +1,5 @@
 import { For, createSignal } from "solid-js"
-import { knownStatuses, statusPresentation } from "../../lib/status-system"
+import { knownStatuses, knownVariants, statusPresentation } from "../../lib/status-system"
 import { AgentGlyph, IconButton, ModelBadge, SessionCard, StatusBadge } from "../ui"
 import { Grid, Row, Section, Specimen } from "./lab-shared"
 import styles from "./lab.module.css"
@@ -139,6 +139,14 @@ export function LabSignature() {
           <ModelBadge model="gpt-5.5" provider="openai" />
           <ModelBadge model="minimax-m3-free" provider="opencode zen" variant="plan" />
           <ModelBadge model="qwen3-coder:30b" provider="ollama" />
+        </Row>
+      </Section>
+
+      <Section title="Agent modes" detail="Mode colors match the TUI's mode chips, so a mode reads the same in both clients.">
+        <Row>
+          <For each={knownVariants()}>
+            {(variant) => <ModelBadge model="claude-fable-5" variant={variant} />}
+          </For>
         </Row>
       </Section>
     </>

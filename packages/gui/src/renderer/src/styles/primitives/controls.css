@@ -27,21 +27,56 @@
 .ui-button[data-icon-only="true"][data-control-size="default"] { width: var(--ds-control-height-default); min-width: var(--ds-control-height-default); height: var(--ds-control-height-default); min-height: var(--ds-control-height-default); }
 .ui-button[data-icon-only="true"][data-control-size="prominent"] { width: var(--ds-control-height-prominent); min-width: var(--ds-control-height-prominent); height: var(--ds-control-height-prominent); min-height: var(--ds-control-height-prominent); }
 .ui-button[data-full-width="true"] { width: 100%; }
-.ui-button[data-appearance="outline"] { border-color: var(--ds-border); background: var(--ds-surface-raised); }
-.ui-button[data-appearance="soft"] { color: var(--ui-tone); background: color-mix(in srgb, var(--ui-tone) 13%, transparent); }
-.ui-button[data-appearance="solid"] { color: var(--ui-tone-text); background: var(--ui-tone); }
-.ui-button[data-appearance="ghost"] { color: var(--ui-tone); background: transparent; }
+/* Tone carriers. --ui-tone-text must stay legible on a solid --ui-tone fill. */
 .ui-button[data-tone="neutral"] { --ui-tone: var(--ds-text); --ui-tone-text: var(--ds-canvas); }
 .ui-button[data-tone="accent"] { --ui-tone: var(--ds-control-accent); --ui-tone-text: var(--ds-control-accent-text); }
 .ui-button[data-tone="danger"] { --ui-tone: var(--ds-danger); --ui-tone-text: var(--ds-canvas); }
 .ui-button[data-tone="success"] { --ui-tone: var(--ds-success); --ui-tone-text: var(--ds-canvas); }
 .ui-button[data-tone="warning"] { --ui-tone: var(--ds-warning); --ui-tone-text: var(--ds-canvas); }
 .ui-button[data-tone="info"] { --ui-tone: var(--ds-info); --ui-tone-text: var(--ds-canvas); }
-.ui-button:hover:not(:disabled) { border-color: var(--ds-border-strong); filter: brightness(1.08); }
+
+/*
+ * Hover and press mix the tone toward --ds-text: that lightens in dark mode and
+ * darkens in light mode, which is correct in both, and it holds the hue where a
+ * brightness() filter washed the color out.
+ */
+.ui-button[data-appearance="solid"] {
+  color: var(--ui-tone-text);
+  border-color: color-mix(in srgb, var(--ds-canvas) 24%, var(--ui-tone));
+  background: var(--ui-tone);
+  box-shadow: var(--ds-control-bevel), var(--ds-control-shadow);
+}
+
+.ui-button[data-appearance="solid"]:hover:not(:disabled) { background: color-mix(in srgb, var(--ui-tone) 90%, var(--ds-text)); box-shadow: var(--ds-control-bevel), var(--ds-control-shadow-hover); }
+.ui-button[data-appearance="solid"]:active:not(:disabled) { background: color-mix(in srgb, var(--ui-tone) 82%, var(--ds-text)); box-shadow: none; }
+
+.ui-button[data-appearance="outline"] {
+  color: var(--ui-tone);
+  border-color: var(--ds-border);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-control-shadow);
+}
+
+.ui-button[data-appearance="outline"]:hover:not(:disabled) { border-color: var(--ds-border-strong); background: var(--ds-surface-hover); }
+.ui-button[data-appearance="outline"]:active:not(:disabled) { background: var(--ds-surface-selected); box-shadow: none; }
+
+.ui-button[data-appearance="soft"] {
+  color: var(--ui-tone);
+  border-color: color-mix(in srgb, var(--ui-tone) 20%, transparent);
+  background: color-mix(in srgb, var(--ui-tone) 14%, transparent);
+}
+
+.ui-button[data-appearance="soft"]:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ui-tone) 34%, transparent); background: color-mix(in srgb, var(--ui-tone) 22%, transparent); }
+.ui-button[data-appearance="soft"]:active:not(:disabled) { background: color-mix(in srgb, var(--ui-tone) 28%, transparent); }
+
+.ui-button[data-appearance="ghost"] { color: var(--ui-tone); background: transparent; }
 .ui-button[data-appearance="ghost"]:hover:not(:disabled) { background: var(--ds-surface-hover); }
+.ui-button[data-appearance="ghost"]:active:not(:disabled) { background: var(--ds-surface-selected); }
+
 .ui-button:active:not(:disabled) { transform: translateY(1px); }
-.ui-button:disabled { cursor: not-allowed; opacity: 0.5; }
-.ui-button[data-selected="true"] { box-shadow: inset 0 0 0 1px var(--ds-focus); }
+.ui-button:disabled { cursor: not-allowed; opacity: 0.45; box-shadow: none; }
+.ui-button[data-selected="true"] { color: var(--ds-control-accent); border-color: color-mix(in srgb, var(--ds-control-accent) 55%, transparent); background: var(--ds-selection); }
+.ui-button[data-loading="true"] { cursor: progress; }
 .ui-button-spinner,
 .ui-field-spinner { width: var(--ds-space-3); height: var(--ds-space-3); border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--ds-radius-full); animation: ui-spin 700ms linear infinite; }
 
@@ -67,8 +102,6 @@
 [data-ui="field"][data-invalid="true"] .ui-field-message { color: var(--ds-danger); }
 .ui-textarea { width: 100%; min-width: 0; min-height: 76px; padding: var(--ds-space-2) var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); outline: 0; color: var(--ds-text); background: var(--ds-surface-raised); font-size: var(--ds-text-base); line-height: var(--ds-leading-prose); resize: vertical; }
 .ui-textarea:focus { border-color: var(--ds-focus); box-shadow: 0 0 0 3px var(--ds-selection); }
-.ui-select[data-component="select-v2"] { width: 100%; border-color: var(--ds-border); border-radius: var(--ds-radius-control); color: var(--ds-text); background: var(--ds-surface-raised); }
-
 [data-slot="checkbox-v2-control"],
 [data-slot="switch-control"] { border-color: var(--ds-border); background: var(--ds-surface-raised); }
 [data-slot="checkbox-v2"][data-checked] [data-slot="checkbox-v2-control"],

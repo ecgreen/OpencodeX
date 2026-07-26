@@ -13,6 +13,7 @@ import {
   useToast,
   type ToastTone,
 } from "../ui"
+import { RouteLoadingSkeleton } from "../route-loading"
 import { Grid, Row, Section, Specimen } from "./lab-shared"
 import styles from "./lab.module.css"
 
@@ -78,6 +79,21 @@ export function LabFeedback() {
               <Skeleton shape="block" />
             </div>
           </div>
+        </Grid>
+      </Section>
+
+      <Section title="Route loading" detail="Shown while a route's lazy chunk loads. The shape matches the route being opened, and the fade-in is delayed so fast navigations show nothing at all.">
+        <Grid columns={2}>
+          <Specimen label="manager page" wide={false}>
+            <div class={styles.panel} style={{ padding: "0", overflow: "hidden", width: "100%" }}>
+              <RouteLoadingSkeleton route={{ name: "swarms" }} />
+            </div>
+          </Specimen>
+          <Specimen label="workspace">
+            <div class={styles.panel} style={{ padding: "0", overflow: "hidden", width: "100%", height: "260px" }}>
+              <RouteLoadingSkeleton route={{ name: "session", sessionID: "demo" }} />
+            </div>
+          </Specimen>
         </Grid>
       </Section>
 

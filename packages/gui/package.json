@@ -63,6 +63,7 @@
     "@codemirror/view": "6.43.1",
     "@lezer/highlight": "1.2.3",
     "@electron/asar": "3.4.1",
+    "@kobalte/core": "catalog:",
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@tailwindcss/vite": "catalog:",

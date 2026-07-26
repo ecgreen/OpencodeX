@@ -24,21 +24,25 @@
   --ds-font-ui: "Geist", "Segoe UI", sans-serif;
   --ds-font-technical: "Geist Mono", "Cascadia Code", monospace;
 
-  /* Type ramp. Every size is paired with a line height; use them together. */
-  --ds-text-2xs: 10px;
-  --ds-leading-2xs: 14px;
-  --ds-text-xs: 11px;
+  /*
+   * Type ramp. Every size is paired with a line height; use them together.
+   * The small end bottoms out at 11px: below that, muted text on a dark canvas
+   * stops being readable no matter how much contrast the color carries.
+   */
+  --ds-text-2xs: 11px;
+  --ds-leading-2xs: 15px;
+  --ds-text-xs: 12px;
   --ds-leading-xs: 16px;
-  --ds-text-sm: 12px;
-  --ds-leading-sm: 17px;
-  --ds-text-base: 13px;
-  --ds-leading-base: 19px;
-  --ds-text-md: 14px;
-  --ds-leading-md: 21px;
-  --ds-text-lg: 16px;
-  --ds-leading-lg: 23px;
+  --ds-text-sm: 13px;
+  --ds-leading-sm: 18px;
+  --ds-text-base: 14px;
+  --ds-leading-base: 20px;
+  --ds-text-md: 15px;
+  --ds-leading-md: 22px;
+  --ds-text-lg: 17px;
+  --ds-leading-lg: 24px;
   --ds-text-xl: 20px;
-  --ds-leading-xl: 27px;
+  --ds-leading-xl: 28px;
   --ds-text-2xl: 28px;
   --ds-leading-2xl: 34px;
 

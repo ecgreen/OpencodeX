@@ -16,6 +16,7 @@ import { shouldShowConnectionWarning } from "../lib/connection-warning"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
 import { AppLoadingSkeleton } from "./app-loading"
 import { AppRoutes } from "./app-routes"
+import { RouteLoadingSkeleton } from "./route-loading"
 import { Titlebar } from "./chrome"
 import type { TitlebarBreadcrumb } from "./titlebar"
 import { CommandPaletteModal, type PaletteTarget } from "./command-palette"
@@ -323,7 +324,7 @@ export function AppShell(props: { model: GuiAppModel }) {
             </div>
           </Show>
           <Show when={!model.authoritative.loading() && !model.authoritative.error()}>
-            <Suspense fallback={<AppLoadingSkeleton />}>
+            <Suspense fallback={<RouteLoadingSkeleton route={model.navigation.route()} />}>
               <AppRoutes model={model} />
             </Suspense>
           </Show>

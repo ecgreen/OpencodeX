@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js"
 import { Show, splitProps } from "solid-js"
+import { variantTone } from "../../lib/status-system"
 import { classes } from "./shared"
 
 /** Palette slots an identity glyph can land in. Deterministic, never random. */
@@ -60,7 +61,9 @@ export function ModelBadge(props: ModelBadgeProps) {
     <span {...rest} data-ui="model" class={classes("ui-model", local.class)} classList={local.classList}>
       <Show when={local.provider}>{(provider) => <span class="ui-model-provider">{provider()}</span>}</Show>
       <span class="ui-model-name ds-truncate">{local.model}</span>
-      <Show when={local.variant}>{(variant) => <span class="ui-model-variant">{variant()}</span>}</Show>
+      <Show when={local.variant}>
+        {(variant) => <span class="ui-model-variant" data-tone={variantTone(variant())}>{variant()}</span>}
+      </Show>
     </span>
   )
 }

@@ -6,6 +6,7 @@
 @import "./styles/themes/light.css" layer(tokens);
 @import "./styles/design-base.css" layer(base);
 @import "./styles/primitives/controls.css" layer(primitives);
+@import "./styles/primitives/select.css" layer(primitives);
 @import "./styles/primitives/feedback.css" layer(primitives);
 @import "./styles/primitives/navigation.css" layer(primitives);
 @import "./styles/primitives/identity.css" layer(primitives);
@@ -76,6 +77,7 @@
 @import "./styles/global/shell/base-3.css" layer(layout);
 @import "./styles/global/shell/responsive.css" layer(layout);
 @import "./styles/global/shell/states.css" layer(layout);
+@import "./styles/global/shell/route-loading.css" layer(layout);
 @import "./styles/pages/swarms/base.css" layer(features);
 @import "./styles/pages/swarms/editor.css" layer(features);
 @import "./styles/pages/swarms/responsive.css" layer(features);

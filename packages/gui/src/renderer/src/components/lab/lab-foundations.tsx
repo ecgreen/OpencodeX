@@ -4,13 +4,13 @@ import styles from "./lab.module.css"
 
 const TYPE_RAMP = [
   { token: "2xl", size: "28 / 34", role: "Hero moments only: onboarding, splash, empty states." },
-  { token: "xl", size: "20 / 27", role: "Page titles on manager pages." },
-  { token: "lg", size: "16 / 23", role: "Section, dialog, and panel titles." },
-  { token: "md", size: "14 / 21", role: "Reading prose: transcript markdown, descriptions." },
-  { token: "base", size: "13 / 19", role: "Default UI text. Buttons, inputs, menus, cards." },
-  { token: "sm", size: "12 / 17", role: "Secondary content, dense lists, field labels." },
-  { token: "xs", size: "11 / 16", role: "Meta rows, timestamps, captions, table headers." },
-  { token: "2xs", size: "10 / 14", role: "Micro labels and badges. Uppercase at this size only." },
+  { token: "xl", size: "20 / 28", role: "Page titles on manager pages." },
+  { token: "lg", size: "17 / 24", role: "Section, dialog, and panel titles." },
+  { token: "md", size: "15 / 22", role: "Reading prose: transcript markdown, descriptions." },
+  { token: "base", size: "14 / 20", role: "Default UI text. Buttons, inputs, menus, cards." },
+  { token: "sm", size: "13 / 18", role: "Secondary content, dense lists, field labels." },
+  { token: "xs", size: "12 / 16", role: "Meta rows, timestamps, captions, table headers." },
+  { token: "2xs", size: "11 / 15", role: "Micro labels and badges. Uppercase at this size only." },
 ]
 
 const WEIGHTS = [
