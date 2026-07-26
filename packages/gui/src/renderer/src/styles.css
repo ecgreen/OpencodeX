@@ -5,7 +5,12 @@
 @import "./styles/themes/dark.css" layer(tokens);
 @import "./styles/themes/light.css" layer(tokens);
 @import "./styles/design-base.css" layer(base);
-@import "./styles/design-primitives.css" layer(primitives);
+@import "./styles/primitives/controls.css" layer(primitives);
+@import "./styles/primitives/feedback.css" layer(primitives);
+@import "./styles/primitives/navigation.css" layer(primitives);
+@import "./styles/primitives/identity.css" layer(primitives);
+@import "./styles/primitives/overlays.css" layer(primitives);
+@import "./styles/design-utilities.css" layer(utilities);
 
 @import "./styles/global/components/base.css" layer(features);
 @import "./styles/global/components/base-2.css" layer(features);

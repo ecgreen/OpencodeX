@@ -2,6 +2,7 @@ import type { JSX } from "solid-js"
 import { Show, splitProps } from "solid-js"
 import { Icon } from "../icon"
 import { classes, type ControlAppearance, type ControlSize, type ControlTone } from "./shared"
+import { Tooltip } from "./tooltip"
 
 export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
   appearance?: ControlAppearance
@@ -61,26 +62,35 @@ export function Button(props: ButtonProps) {
 export type IconButtonProps = Omit<ButtonProps, "children" | "size" | "leadingIcon" | "trailingIcon"> & {
   icon: string
   label: string
+  /** Renders the design-system tooltip. Prefer this over the native title attribute. */
   tooltip?: string
+  /** Shortcut binding shown as keycaps inside the tooltip, e.g. "mod+k". */
+  shortcut?: string
   size?: ControlSize
   pressed?: boolean
 }
 
 export function IconButton(props: IconButtonProps) {
-  const [local, rest] = splitProps(props, ["icon", "label", "tooltip", "size", "pressed", "class", "classList"])
+  const [local, rest] = splitProps(props, ["icon", "label", "tooltip", "shortcut", "size", "pressed", "class", "classList"])
   const size = () => local.size ?? "default"
-  return (
+  const control = (
     <Button
       {...rest}
       size={size()}
       iconOnly
       icon={local.icon}
       aria-label={local.label}
-      title={local.tooltip ?? rest.title ?? local.label}
+      // Native titles are a fallback only, and never alongside a real tooltip.
+      title={local.tooltip ? undefined : (rest.title ?? local.label)}
       selected={local.pressed}
       class={classes("ui-icon-button", local.class)}
       classList={local.classList}
       data-control-size={size()}
     />
+  )
+  return (
+    <Show when={local.tooltip} fallback={control}>
+      {(tooltip) => <Tooltip label={tooltip()} shortcut={local.shortcut}>{control}</Tooltip>}
+    </Show>
   )
 }

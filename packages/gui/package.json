@@ -8,6 +8,9 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "vite --configLoader runner --host 127.0.0.1",
+    "dev:lab": "vite --configLoader runner --host 127.0.0.1 --open /lab.html",
+    "build:lab": "vite --configLoader runner build --mode lab",
+    "preview:lab": "vite --configLoader runner preview --mode lab --host 127.0.0.1",
     "onlook:preview": "vite --configLoader runner --host 127.0.0.1",
     "dev:electron": "bun run scripts/dev-electron.ts",
     "build:renderer": "vite --configLoader runner build",

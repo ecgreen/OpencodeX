@@ -45,30 +45,17 @@
   --theme-syntax-property: #6ca8e8;
   --theme-syntax-type: #70c6d0;
 
-  --ds-space-1: 4px;
-    --ds-space-2: 8px;
-    --ds-space-3: 12px;
-    --ds-space-4: 16px;
-    --ds-space-5: 20px;
-    --ds-space-6: 24px;
-    --ds-radius-control: 6px;
-    --ds-radius-card: 8px;
-    --ds-radius-overlay: 10px;
-    --ds-motion-hover: 120ms;
-    --ds-motion-control: 160ms;
-    --ds-motion-route: 220ms;
-    --ds-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
-    /* Even-tempered curve for size changes; ease-enter front-loads too hard. */
-    --ds-ease-smooth: cubic-bezier(0.45, 0, 0.25, 1);
-    --ds-font-ui: "Geist", "Segoe UI", sans-serif;
-    --ds-font-technical: "Geist Mono", "Cascadia Code", monospace;
+  /* Foundation tokens (type, spacing, shape, motion) live in foundation.css. */
 
   --ds-canvas: var(--theme-canvas);
     --ds-surface: var(--theme-surface);
     --ds-surface-raised: var(--theme-surface-raised);
     --ds-surface-hover: var(--theme-surface-hover);
+    --ds-surface-selected: var(--theme-surface-selected);
     --ds-text: var(--theme-text);
     --ds-text-muted: var(--theme-text-muted);
+    --ds-text-subtle: var(--theme-text-subtle);
+    --ds-text-inverse: var(--theme-text-inverse);
     --ds-border: var(--theme-border);
     --ds-border-subtle: var(--theme-border-subtle);
     --ds-border-strong: var(--theme-border-strong);
@@ -77,10 +64,17 @@
     --ds-control-accent: var(--theme-accent);
     --ds-control-accent-text: var(--theme-text-inverse);
     --ds-danger: var(--theme-danger);
+    --ds-danger-soft: var(--theme-danger-soft);
     --ds-warning: var(--theme-warning);
+    --ds-warning-soft: var(--theme-warning-soft);
     --ds-success: var(--theme-success);
+    --ds-success-soft: var(--theme-success-soft);
     --ds-info: var(--theme-info);
-    --ds-shadow-overlay: 0 18px 48px var(--theme-shadow-medium);
+    --ds-info-soft: var(--theme-info-soft);
+    --ds-special: var(--theme-special);
+    --ds-special-soft: var(--theme-special-soft);
+    --ds-neutral-soft: var(--theme-overlay-soft);
+    --ds-shadow-overlay: var(--ds-elevation-overlay);
 
     /* Transcript part accents, keyed to what a tool did. See GUI_DESIGN_SYSTEM.md. */
     --ds-accent-exec: var(--theme-success);
