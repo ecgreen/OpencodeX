@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { TOOL_OUTPUT_PREVIEW_LIMITS } from "@opencode-ai/ui/tool-output-preview"
+import { COPY_FULL_LABEL } from "../src/renderer/src/lib/tool-display"
 import { PERFORMANCE_BUDGETS, environmentCeiling } from "./performance-budgets"
 import {
   attachPerformanceReport,
@@ -178,8 +179,11 @@ test("production heavy transcript enforces window, anchor, and preview DOM budge
 
   await messages.last().locator("details.part.tool > summary").click()
   await expect(page.locator(".tool-output pre")).toBeVisible()
-  await expect(page.getByRole("button", { name: "Copy full output", exact: true })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Copy full patch", exact: true })).toBeVisible()
+  // The output and the patch each offer their own copy-full control, and both
+  // now carry the single COPY_FULL_LABEL, so each assertion is scoped to its
+  // own region rather than matching the label globally.
+  await expect(page.locator(".tool-output").getByRole("button", { name: COPY_FULL_LABEL, exact: true })).toBeVisible()
+  await expect(page.locator(".tool-unified-patch").getByRole("button", { name: COPY_FULL_LABEL, exact: true })).toBeVisible()
   const preview = await page.evaluate(() => {
     const output = document.querySelector(".tool-output pre")?.textContent ?? ""
     const patch = document.querySelector(".tool-unified-patch")
