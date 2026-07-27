@@ -38,6 +38,7 @@ import { type Scenario } from "./types"
 import { guiBridgeScenarios } from "./gui-bridge-scenarios"
 import { opencodexOperationScenarios } from "./opencodex-operation-scenarios"
 import { opencodexProjectStateScenarios } from "./opencodex-project-state-scenarios"
+import { opencodexTerminalSessionScenarios } from "./opencodex-terminal-session-scenarios"
 import { opencodexWorkbenchFileScenarios } from "./opencodex-workbench-file-scenarios"
 import { opencodexWorkbenchGitScenarios } from "./opencodex-workbench-git-scenarios"
 
@@ -51,6 +52,7 @@ const scenarios: Scenario[] = [
   ...guiBridgeScenarios,
   ...opencodexProjectStateScenarios,
   ...opencodexOperationScenarios,
+  ...opencodexTerminalSessionScenarios,
   ...opencodexWorkbenchFileScenarios,
   ...opencodexWorkbenchGitScenarios,
   http.protected
