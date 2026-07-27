@@ -112,6 +112,34 @@ jobs:
           retention-days: 7
           path: packages/**/.artifacts/unit/junit.xml
 
+  cli-subprocess:
+    # Split out of `unit` deliberately: these suites spawn the real CLI and are
+    # sensitive to what the rest of the job has already done to the machine. The
+    # same four run-process cases take 3.5-18.4s here and 10.1-48.5s at the tail
+    # of the full unit job on comparable Windows hardware. Running them apart
+    # also takes them off the unit job's critical path rather than adding to it.
+    name: cli subprocess (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: windows
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - name: Run CLI subprocess suites
+        working-directory: packages/opencode
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+        run: bun run test:ci:cli
+
   gui-e2e:
     name: gui e2e (chromium)
     needs: changes

@@ -1,14 +1,12 @@
 name: CLI subprocess diagnostic
 
-# Temporary. Mirrors the CI unit job for Windows so the full run can be timed
-# and read on a branch, because CI itself only builds main and pull requests
-# and there is no PR to attach to yet. Delete once the Windows subprocess
-# coverage is settled.
+# Temporary. Mirrors the CI unit and cli-subprocess jobs for Windows so the
+# split can be validated and timed on a branch, because CI itself only builds
+# main and pull requests and there is no PR to attach to yet. Delete once this
+# lands.
 
 on:
   workflow_dispatch:
-  # Push-triggered so it can run before it exists on the default branch, which
-  # workflow_dispatch would otherwise require.
   push:
     branches: ["diagnostic/**"]
 
@@ -18,14 +16,8 @@ permissions:
 
 jobs:
   unit:
-    name: full unit (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows
-            runner: windows-latest
-    runs-on: ${{ matrix.runner }}
+    name: full unit (windows)
+    runs-on: windows-latest
     defaults:
       run:
         shell: bash
@@ -37,7 +29,22 @@ jobs:
           set -o pipefail
           bun run test:ci 2>&1 | tee "${RUNNER_TEMP//\\//}/unit.log"
         env:
-          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
       - name: Surface unit failures
         if: failure()
         run: bun run script/annotate-unit-failures.ts "${RUNNER_TEMP//\\//}/unit.log"
+
+  cli-subprocess:
+    name: cli subprocess (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-bun
+      - name: Run CLI subprocess suites
+        working-directory: packages/opencode
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+        run: bun run test:ci:cli

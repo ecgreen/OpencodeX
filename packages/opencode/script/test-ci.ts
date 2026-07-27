@@ -1,26 +1,15 @@
 import { mkdir, rm } from "node:fs/promises"
 import { closeSync, openSync } from "node:fs"
 import path from "node:path"
+import { cliSubprocessSuites } from "./cli-subprocess-suites"
 
 const output = path.join(import.meta.dir, "../.artifacts/unit")
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
 
-/*
- * Bundle the CLI once, up front, and hand the path to every test process.
- *
- * test/lib/cli-process spawns the real binary. From source that means
- * `bun run --conditions=browser src/index.ts` re-transpiling the whole CLI
- * graph per child - the dominant cost in the subprocess suites, and one that
- * every per-test budget was unwittingly measuring. Building here rather than
- * inside the harness keeps it to a single build for the whole run, with no
- * lock or cache-invalidation dance between the parallel shards.
- */
-const bundle = await Bun.$`bun run ${path.join(import.meta.dir, "test-cli-bundle.ts")}`.text()
-process.env["OPENCODE_TEST_CLI_BUNDLE"] = bundle.trim()
-console.log(`[test:ci] CLI bundle ${process.env["OPENCODE_TEST_CLI_BUNDLE"]}`)
-
-const excluded = new Set<string>()
+// Handled by test:ci:cli, in its own job. See cli-subprocess-suites.ts.
+const excluded = new Set(cliSubprocessSuites)
+console.log(`[test:ci] ${excluded.size} CLI subprocess suites run separately via test:ci:cli`)
 
 const parallel = [...new Bun.Glob("**/*.test.{ts,tsx}").scanSync({ cwd: path.join(import.meta.dir, "../test") })]
   .map((file) => `test/${file.replaceAll("\\", "/")}`)

@@ -28,6 +28,11 @@
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
+    "opencode#test:ci:cli": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "passThroughEnv": ["*"]
+    },
     "@opencode-ai/ui#test": {
       "dependsOn": ["^build"],
       "outputs": []
