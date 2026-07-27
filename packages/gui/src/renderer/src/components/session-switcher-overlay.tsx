@@ -39,10 +39,28 @@ export function SessionSwitcherOverlay(props: {
       if (dialog?.contains(event.target as Node)) return
       focusInput()
     }
+    /*
+     * focusin only fires when something new takes focus, so it cannot see the
+     * case where a row is removed mid-keystroke - filtering re-renders the
+     * list - and focus falls back to <body>. Nothing re-arms, and the dialog
+     * is left containing no focus at all. Watch the departure too, and pull
+     * focus back once the browser has settled on its replacement.
+     */
+    const releaseFocus = (event: FocusEvent) => {
+      const next = event.relatedTarget as Node | null
+      if (next && dialog?.contains(next)) return
+      queueMicrotask(() => {
+        if (!props.open || !dialog) return
+        if (dialog.contains(document.activeElement)) return
+        focusInput()
+      })
+    }
     document.addEventListener("focusin", containFocus)
+    document.addEventListener("focusout", releaseFocus)
     onCleanup(() => {
       cancelAnimationFrame(frame)
       document.removeEventListener("focusin", containFocus)
+      document.removeEventListener("focusout", releaseFocus)
     })
   })
 
