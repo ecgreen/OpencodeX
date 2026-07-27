@@ -453,9 +453,20 @@ export const cliIt = {
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
   ) => it.live(name, () => withCliFixture(body), opts),
+  /*
+   * Running these together is a measured win (see perf/test-suite.md, 11.87s
+   * to 4.13s), but each one boots the whole CLI in a subprocess. Four of those
+   * at once on the Windows runner pushed every case that waits on a real LLM
+   * round-trip past the 30s spawn ceiling, while the one that exits early
+   * still finished in six seconds. Keep the win where it was measured and go
+   * serial on Windows, where the contention is what costs.
+   */
   concurrent: <A, E>(
     name: string,
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
-  ) => test.concurrent(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
+  ) =>
+    process.platform === "win32"
+      ? it.live(name, () => withCliFixture(body), opts)
+      : test.concurrent(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
 }
