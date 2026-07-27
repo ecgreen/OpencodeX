@@ -1955,14 +1955,33 @@ unix(
 
       const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* llm.wait(1)
-      yield* Effect.sleep(150)
+      /*
+       * The case is about what cancel does to output that already overflowed,
+       * so the shell has to get through all 4000 lines first. Sleeping 150ms
+       * only guessed that it had: on a loaded runner the cancel landed early,
+       * nothing had overflowed, and `truncated` came back false. Wait for the
+       * last line the loop prints instead of for a duration.
+       */
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const assistant = msgs.find((item) => item.info.role === "assistant")
+          const running = assistant ? toolPart(assistant.parts) : undefined
+          if (running?.state.status === "running" && running.state.metadata?.output.includes("03999")) return true
+        }),
+        "bash never printed enough output to overflow the truncation limit",
+        "20 seconds",
+      )
       yield* prompt.cancel(chat.id)
 
       const exit = yield* Fiber.await(run)
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isFailure(exit)) return
 
+      /* Was a silent `if (!tool) return`, so the case passed without ever
+         checking truncation whenever the tool did not finalize. */
       const tool = completedTool(exit.value.parts)
+      expect(tool).toBeDefined()
       if (!tool) return
 
       expect(tool.state.metadata.truncated).toBe(true)
