@@ -12,7 +12,7 @@ export async function readInstallationID(userData: string): Promise<string> {
     // the loser re-reads whatever the winner persisted.
     await writeFile(file, `${id}\n`, { encoding: "utf8", mode: 0o600, flag: current === undefined ? "wx" : "w" })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return readInstallationID(userData)
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") return readInstallationID(userData)
     throw error
   }
   return id

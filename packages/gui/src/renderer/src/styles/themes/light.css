@@ -1,47 +1,62 @@
+/*
+ * Light mode. Only tier-1 source colors are overridden; every --ds-* semantic
+ * alias in dark.css inherits automatically.
+ *
+ * The canvas is a true light grey rather than near-white, so raised surfaces
+ * read as raised. The ladder inverts in light mode: canvas is the darkest step
+ * and raised surfaces move toward white.
+ */
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --theme-canvas: #f6f7f8;
-  --theme-surface: #ffffff;
-  --theme-surface-raised: #f0f2f4;
-  --theme-surface-hover: #e7eaed;
-  --theme-surface-selected: #dde2e7;
-  --theme-surface-strong: #cbd2d9;
-  --theme-text: #171a1f;
-  --theme-text-muted: #68717d;
-  --theme-text-subtle: #7e8792;
+  /* Paper, not paper-white. A bright canvas with white cards is fatiguing on a
+     surface people stare at all day, so the whole ladder is pulled down and
+     nothing is pure white. */
+  --theme-canvas: #d9dee5;
+  --theme-surface: #e7ebf0;
+  --theme-surface-raised: #f4f6f9;
+  --theme-surface-hover: #dce2ea;
+  --theme-surface-selected: #cbd3dd;
+  --theme-surface-strong: #b3bec9;
+  --theme-text: #0f1319;
+  --theme-text-muted: #414b58;
+  --theme-text-subtle: #4f5967;
   --theme-text-inverse: #ffffff;
   --theme-white: #ffffff;
   --theme-black: #000000;
-  --theme-border-subtle: rgba(23, 26, 31, 0.09);
-  --theme-border: rgba(23, 26, 31, 0.18);
-  --theme-border-strong: rgba(23, 26, 31, 0.28);
-  --theme-overlay-subtle: rgba(23, 26, 31, 0.035);
-  --theme-overlay-soft: rgba(23, 26, 31, 0.06);
-  --theme-overlay-medium: rgba(23, 26, 31, 0.1);
-  --theme-overlay-strong: rgba(23, 26, 31, 0.18);
-  --theme-shadow-soft: rgba(23, 26, 31, 0.16);
-  --theme-shadow-medium: rgba(23, 26, 31, 0.24);
-  --theme-shadow-strong: rgba(23, 26, 31, 0.34);
-  --theme-backdrop: rgba(23, 26, 31, 0.56);
-  --theme-accent: #a94f24;
-  --theme-accent-hover: #8f3f1b;
-  --theme-accent-soft: rgba(169, 79, 36, 0.1);
-  --theme-danger: #b3261e;
-  --theme-danger-soft: rgba(179, 38, 30, 0.1);
-  --theme-warning: #8a5d00;
-  --theme-warning-soft: rgba(138, 93, 0, 0.1);
-  --theme-success: #207a43;
-  --theme-success-soft: rgba(32, 122, 67, 0.1);
-  --theme-info: #1f6fc7;
-  --theme-info-soft: rgba(31, 111, 199, 0.1);
-  --theme-special: #6d4ab5;
-  --theme-special-soft: rgba(109, 74, 181, 0.1);
-  --theme-syntax-comment: #69727d;
-  --theme-syntax-string: #207a43;
-  --theme-syntax-keyword: #8050a8;
-  --theme-syntax-number: #8a5d00;
-  --theme-syntax-operator: #52606d;
-  --theme-syntax-property: #1f6fc7;
-  --theme-syntax-type: #087b83;
+  --theme-border-subtle: rgba(15, 19, 25, 0.13);
+  --theme-border: rgba(15, 19, 25, 0.22);
+  --theme-border-strong: rgba(15, 19, 25, 0.34);
+  --theme-overlay-subtle: rgba(15, 19, 25, 0.04);
+  --theme-overlay-soft: rgba(15, 19, 25, 0.07);
+  --theme-overlay-medium: rgba(15, 19, 25, 0.12);
+  --theme-overlay-strong: rgba(15, 19, 25, 0.2);
+  --theme-shadow-soft: rgba(15, 19, 25, 0.1);
+  --theme-shadow-medium: rgba(15, 19, 25, 0.16);
+  --theme-shadow-strong: rgba(15, 19, 25, 0.24);
+  --theme-backdrop: rgba(15, 19, 25, 0.48);
+  --theme-accent: #9c4418;
+  --theme-accent-hover: #83380f;
+  --theme-accent-soft: rgba(156, 68, 24, 0.13);
+  --theme-danger: #a81f18;
+  --theme-danger-soft: rgba(168, 31, 24, 0.13);
+  --theme-warning: #7d5300;
+  --theme-warning-soft: rgba(125, 83, 0, 0.14);
+  --theme-success: #1a6d3a;
+  --theme-success-soft: rgba(26, 109, 58, 0.13);
+  --theme-info: #1a63b4;
+  --theme-info-soft: rgba(26, 99, 180, 0.13);
+  --theme-special: #61409f;
+  --theme-special-soft: rgba(97, 64, 159, 0.13);
+  --theme-syntax-comment: #5c6673;
+  --theme-syntax-string: #1a6d3a;
+  --theme-syntax-keyword: #71449a;
+  --theme-syntax-number: #7d5300;
+  --theme-syntax-operator: #47535f;
+  --theme-syntax-property: #1a63b4;
+  --theme-syntax-type: #04666e;
+  --theme-control-highlight: rgba(255, 255, 255, 0.22);
+  --theme-control-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --theme-control-shadow: 0 1px 2px rgba(15, 19, 25, 0.14);
+  --theme-control-shadow-hover: 0 2px 6px rgba(15, 19, 25, 0.18);
 }

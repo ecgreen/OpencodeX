@@ -69,16 +69,21 @@ textarea:disabled {
 
 .pin-toggle:hover {
   color: var(--primary);
-  background: var(--theme-surface-raised);
+  background: transparent;
   opacity: 1;
   outline: none;
 }
 
 .pin-toggle:focus-visible {
   color: var(--primary);
-  background: var(--theme-surface-raised);
+  background: transparent;
   opacity: 1;
   outline: none;
+}
+
+.pin-toggle[data-selected="true"] {
+  border-color: transparent;
+  background: transparent;
 }
 
 .card-row.interactive:hover {

@@ -6,7 +6,6 @@ type PaletteRouteName = "dashboard" | "sessions" | "projects" | "swarms" | "view
 export type PaletteCommandActions = {
   switchSession: () => void | Promise<void>
   createSession: () => void | Promise<void>
-  createClaudeSession: () => void | Promise<void>
   openRoute: (name: PaletteRouteName) => void
   createProject: () => void | Promise<void>
   createProjectSession: () => void | Promise<void>
@@ -73,14 +72,6 @@ export function buildPaletteCommands(input: {
       category: "Session",
       suggested: input.currentRouteName === "session",
       run: input.actions.createSession,
-    },
-    {
-      name: "opencodex.terminal_session.new",
-      title: "New Claude Code session",
-      category: "Session",
-      description: "Open the official Claude Code CLI in an embedded terminal",
-      suggested: true,
-      run: input.actions.createClaudeSession,
     },
     {
       name: "opencodex.dashboard.open",

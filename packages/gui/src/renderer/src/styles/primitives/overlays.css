@@ -1,0 +1,71 @@
+/* Overlay primitives: menu, tooltip, dialog, popover. Detached surfaces carry shadow. */
+
+[data-component="menu-v2-content"] { border-color: var(--ds-border); border-radius: var(--ds-radius-overlay); color: var(--ds-text); background: var(--ds-surface-raised); box-shadow: var(--ds-elevation-overlay); }
+[data-component="menu-v2-item"]:focus { background: var(--ds-selection); }
+[data-component="tooltip-v2-content"],
+[data-component="popover-content"],
+[data-component="dialog"] [data-slot="dialog-content"] { border-color: var(--ds-border); border-radius: var(--ds-radius-overlay); color: var(--ds-text); background: var(--ds-surface-raised); box-shadow: var(--ds-elevation-overlay); }
+
+.ui-tooltip {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  max-width: 280px;
+  padding: var(--ds-space-1) var(--ds-space-2);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-elevation-overlay);
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
+  animation: ui-overlay-in var(--ds-motion-hover) var(--ds-ease-enter);
+}
+
+.ui-tooltip-label { min-width: 0; }
+.ui-tooltip-trigger { display: inline-flex; min-width: 0; }
+
+.ui-scrim {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  background: var(--ds-scrim);
+  animation: ui-fade-in var(--ds-motion-control) var(--ds-ease-enter);
+}
+
+.ui-dialog {
+  position: fixed;
+  z-index: 81;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(var(--ui-dialog-width, 560px), calc(100vw - var(--ds-space-8)));
+  max-height: calc(100vh - var(--ds-space-9));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-overlay);
+  color: var(--ds-text);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-elevation-modal);
+  transform: translate(-50%, -50%);
+  animation: ui-dialog-in var(--ds-motion-route) var(--ds-ease-enter);
+}
+
+.ui-dialog[data-size="sm"] { --ui-dialog-width: 400px; }
+.ui-dialog[data-size="md"] { --ui-dialog-width: 560px; }
+.ui-dialog[data-size="lg"] { --ui-dialog-width: 760px; }
+.ui-dialog[data-size="full"] { --ui-dialog-width: calc(100vw - var(--ds-space-9)); max-height: calc(100vh - var(--ds-space-9)); }
+
+/* The optional form wrapper must not become a grid row of its own. */
+.ui-dialog-form { display: contents; }
+.ui-dialog-header { display: flex; align-items: start; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-4); border-bottom: 1px solid var(--ds-border-subtle); }
+.ui-dialog-heading { display: grid; gap: var(--ds-space-0); min-width: 0; }
+.ui-dialog-title { font-size: var(--ds-text-lg); line-height: var(--ds-leading-lg); font-weight: var(--ds-weight-bold); }
+.ui-dialog-description { color: var(--ds-text-muted); font-size: var(--ds-text-sm); line-height: var(--ds-leading-prose); }
+.ui-dialog-body { overflow: auto; padding: var(--ds-space-4); }
+.ui-dialog-footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--ds-space-2); padding: var(--ds-space-3) var(--ds-space-4); border-top: 1px solid var(--ds-border-subtle); }
+.ui-dialog-footer[data-align="between"] { justify-content: space-between; }
+
+@keyframes ui-fade-in { from { opacity: 0; } }
+@keyframes ui-overlay-in { from { opacity: 0; transform: translateY(calc(var(--ds-space-0) * -1)); } }
+@keyframes ui-dialog-in { from { opacity: 0; transform: translate(-50%, calc(-50% + var(--ds-space-2))) scale(0.98); } }

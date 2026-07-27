@@ -48,14 +48,19 @@ runs:
 
     - name: Install dependencies
       run: |
-        # Workaround for patched peer variants
+        # Hoisted on every runner, for two reasons.
+        #
+        # Patched peer variants need it:
         # e.g. ./patches/ for standard-openapi
         # https://github.com/oven-sh/bun/issues/28147
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          bun install --frozen-lockfile --linker hoisted ${{ inputs.install-flags }}
-        else
-          bun install --frozen-lockfile ${{ inputs.install-flags }}
-        fi
+        #
+        # And the isolated store breaks the Electron bundle on Linux. Every one
+        # of cross-spawn's dependencies is reached through a sibling symlink in
+        # node_modules/.bun, and Bun's bundler fails to read all three - only
+        # those three, never cross-spawn itself - while the resolved paths stat
+        # and read back intact. Hoisting removes the indirection entirely and
+        # keeps both runners on one layout.
+        bun install --frozen-lockfile --linker hoisted ${{ inputs.install-flags }}
       shell: bash
 
     - name: Save Bun dependencies

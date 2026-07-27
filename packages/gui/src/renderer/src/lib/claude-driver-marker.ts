@@ -10,11 +10,14 @@ export type ClaudeDriverMarker = {
  * Mirrors `packages/opencode/src/opencodex/claude-driver-metadata.ts`; kept as
  * a plain reader so the renderer needs no server imports.
  */
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 export function readClaudeDriverMarker(metadata: unknown): ClaudeDriverMarker | undefined {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined
-  const raw = (metadata as Record<string, unknown>).claudeDriver
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
-  const value = raw as Record<string, unknown>
+  if (!record(metadata)) return undefined
+  const value = metadata.claudeDriver
+  if (!record(value)) return undefined
   if (value.driver !== "claude-code") return undefined
   if (typeof value.terminalSessionID !== "string" || typeof value.installationID !== "string") return undefined
   return {

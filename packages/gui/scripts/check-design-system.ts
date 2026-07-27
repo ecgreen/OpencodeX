@@ -1,6 +1,6 @@
 import path from "node:path"
 
-type FindingKind = "rawControls" | "legacyControls" | "rawColors" | "themeOverrides" | "important" | "duplicateGlobalSelectors" | "modulePrimitiveOverrides" | "oversized"
+type FindingKind = "rawControls" | "legacyControls" | "rawColors" | "themeOverrides" | "important" | "duplicateGlobalSelectors" | "modulePrimitiveOverrides" | "oversized" | "rawTypeSize" | "rawTypeWeight" | "rawSpacing" | "rawRadius" | "rawShadow"
 type Finding = { kind: FindingKind; file: string; line: number; text: string }
 
 const packageRoot = path.resolve(import.meta.dirname, "..")
@@ -9,10 +9,18 @@ const staged = process.argv.includes("--staged")
 const report = process.argv.includes("--report")
 const strict = process.argv.includes("--strict")
 const rawControl = /<(button|input|textarea|select)\b/
-const legacyControl = /\bvariant=|<Button\b[^>]*\bclass=["'][^"']*\b(?:primary|secondary|danger)\b/
+// `variant` is a legacy control-style prop. It stays legal as a domain word
+// (a model or agent variant), so only flag it on an actual control.
+const legacyControl = /<(?:Button|IconButton|Select|TextField|TextInput|TextArea|Textarea|Input|SearchField)\b[^>]*\bvariant=|<Button\b[^>]*\bclass=["'][^"']*\b(?:primary|secondary|danger)\b/
 const rawColor = /(?:#[0-9a-f]{3,8}\b|\brgba?\s*\(\s*[\d.]|\bhsla?\s*\(\s*[\d.])/i
 const themeOverride = /--theme-[a-z0-9-]+\s*:/i
 const important = /!important\b/i
+// Foundation tokens own these values. A literal outside the theme sheets is debt.
+const rawTypeSize = /font-size\s*:\s*[^;}]*?\d*\.?\d+(?:px|rem|em)\b/i
+const rawTypeWeight = /font-weight\s*:\s*\d{3}\b/i
+const rawSpacing = /\b(?:padding|margin|gap|row-gap|column-gap)(?:-(?:top|right|bottom|left|inline|block))?\s*:\s*[^;}]*?\d*\.?\d+px\b/i
+const rawRadius = /border-radius\s*:\s*[^;}]*?\d*\.?\d+px\b/i
+const rawShadow = /box-shadow\s*:\s*[^;}]*?\d*\.?\d+px\b/i
 
 const normalized = (value: string) => value.replaceAll("\\", "/")
 const relative = (value: string) => normalized(path.relative(packageRoot, value))
@@ -21,6 +29,8 @@ const lineNumber = (text: string, index: number) => text.slice(0, index).split(/
 function allowed(kind: FindingKind, file: string, line: string) {
   if (kind === "rawControls") {
     if (file.includes("/components/ui/")) return true
+    // The component lab is a development surface, not shipped product chrome.
+    if (file.includes("/components/lab/")) return true
     if (/<input\b[^>]*type=["']file["']/i.test(line)) return true
   }
   if (kind === "rawColors") {
@@ -29,6 +39,17 @@ function allowed(kind: FindingKind, file: string, line: string) {
     if (/(code-editor|session-side-terminal|gui-plugins)/i.test(file)) return true
   }
   if (kind === "themeOverrides" && file.includes("/styles/themes/")) return true
+  if (kind === "rawTypeSize" || kind === "rawTypeWeight" || kind === "rawSpacing" || kind === "rawRadius" || kind === "rawShadow") {
+    // The theme sheets define the tokens these rules protect.
+    if (file.includes("/styles/themes/")) return true
+    // The component lab is a development surface, not shipped product chrome.
+    if (file.includes("/components/lab/") || file.includes("design-system-lab")) return true
+    // Editor, terminal, and plugin theming pass values to library APIs.
+    if (/(code-editor|session-side-terminal|gui-plugins|terminal-presentation)/i.test(file)) return true
+  }
+  // A spread-only ring (`0 0 0 Npx`) is focus or selection geometry, not
+  // elevation, so it is not something an elevation token should own.
+  if (kind === "rawShadow" && /box-shadow\s*:\s*(?:inset\s+)?0\s+0\s+0\s+[\d.]+px/i.test(line)) return true
   if (kind === "important") {
     if (file.endsWith("/styles/design-base.css")) return true
     if (file.includes("/styles/bridges/")) return true
@@ -45,6 +66,11 @@ function inspect(file: string, text: string) {
     ["rawColors", rawColor],
     ["themeOverrides", themeOverride],
     ["important", important],
+    ["rawTypeSize", rawTypeSize],
+    ["rawTypeWeight", rawTypeWeight],
+    ["rawSpacing", rawSpacing],
+    ["rawRadius", rawRadius],
+    ["rawShadow", rawShadow],
   ]
   for (const [kind, pattern] of patterns) {
     for (const [index, line] of text.split(/\r?\n/).entries()) {
@@ -85,7 +111,7 @@ function stagedAddedLines() {
 function summarize(findings: Finding[]) {
   return findings.reduce<Record<FindingKind, number>>(
     (counts, finding) => ({ ...counts, [finding.kind]: counts[finding.kind] + 1 }),
-    { rawControls: 0, legacyControls: 0, rawColors: 0, themeOverrides: 0, important: 0, duplicateGlobalSelectors: 0, modulePrimitiveOverrides: 0, oversized: 0 },
+    { rawControls: 0, legacyControls: 0, rawColors: 0, themeOverrides: 0, important: 0, duplicateGlobalSelectors: 0, modulePrimitiveOverrides: 0, oversized: 0, rawTypeSize: 0, rawTypeWeight: 0, rawSpacing: 0, rawRadius: 0, rawShadow: 0 },
   )
 }
 
@@ -106,8 +132,11 @@ async function duplicateSelectors(files: string[]) {
       if (selector) {
         const key = `${context.filter((item) => item.kind === "at").map((item) => item.value).join("|")}::${selector}`
         const owner = owners.get(key)
+        // The theme sheets split :root by concern: foundation owns type, space,
+        // shape, and motion; dark and light own the palette.
+        const sharedTokenRoot = selector === ":root" && normalized(file).includes("/styles/themes/")
         if (!owner) owners.set(key, { file: relative(file), line: index + 1 })
-        else findings.push({ kind: "duplicateGlobalSelectors", file: relative(file), line: index + 1, text: `${selector} also owned by ${owner.file}:${owner.line}` })
+        else if (!sharedTokenRoot) findings.push({ kind: "duplicateGlobalSelectors", file: relative(file), line: index + 1, text: `${selector} also owned by ${owner.file}:${owner.line}` })
         context.push({ kind: "rule", value: selector })
         continue
       }

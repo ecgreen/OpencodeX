@@ -25,6 +25,23 @@ samp,
   font-variant-ligatures: none;
 }
 
+/* Element resets belong in the base layer. Anything above `primitives` here
+   would override the design system's own control styling. */
+button {
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: var(--ds-radius-control);
+  box-shadow: none;
+}
+
+textarea,
+input {
+  font: inherit;
+  border-radius: var(--ds-radius-control);
+  box-shadow: none;
+}
+
 .page {
   display: grid;
   gap: var(--ds-space-3);

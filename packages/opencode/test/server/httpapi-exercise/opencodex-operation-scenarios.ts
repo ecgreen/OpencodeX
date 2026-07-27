@@ -428,7 +428,7 @@ export const opencodexOperationScenarios: Scenario[] = [
     .status(400),
 ]
 
-function seedRequest(ctx: ScenarioContext, method: Method, path: string, body?: unknown) {
+export function seedRequest(ctx: ScenarioContext, method: Method, path: string, body?: unknown) {
   const scenario: ActiveScenario = {
     kind: "active",
     method,

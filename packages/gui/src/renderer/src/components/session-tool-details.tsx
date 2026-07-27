@@ -14,7 +14,6 @@ import {
   numberValue,
   stringValue,
 } from "../lib/tool-display"
-import { Icon } from "./icon"
 import { ToolDiffs } from "./session-tool-diff"
 import { ToolCodeBlock, ToolPreviewText } from "./session-tool-text"
 import { TodoList } from "./session-todo-list"

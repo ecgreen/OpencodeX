@@ -331,6 +331,10 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "description": "A short (3-5 words) description of the task",
       "type": "string",
     },
+    "model": {
+      "description": "Optional model override in "providerID/modelID" form. Only use when explicitly instructed to run this task on a specific model (e.g. by a swarm briefing); omit to use the agent default.",
+      "type": "string",
+    },
     "prompt": {
       "description": "The task for the agent to perform",
       "type": "string",

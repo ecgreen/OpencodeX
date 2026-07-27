@@ -1,6 +1,5 @@
 import type {
   OpencodeXSwarmRoleInput,
-  OpencodeXTerminalSession,
   OpencodeXViewMember,
   PermissionRequest,
   QuestionAnswer,
@@ -179,11 +178,8 @@ export function createManagementActionsController(input: {
   }) {
     const client = input.client()
     if (!client) return
-    const swarm = value.swarmID
-      ? await updateSwarm(client, value.swarmID, { title: value.title, roles: value.roles }).then((result) => result.data)
-      : await createSwarm(client, { projectID: value.projectID, title: value.title, roles: value.roles }).then(
-          (result) => result.data,
-        )
+    if (value.swarmID) await updateSwarm(client, value.swarmID, { title: value.title, roles: value.roles })
+    else await createSwarm(client, { projectID: value.projectID, title: value.title, roles: value.roles })
     await input.refresh()
     // Swarms are models: refresh capabilities so the picker shows them at once.
     await input.refreshCapabilities().catch(() => undefined)
@@ -299,7 +295,6 @@ export function createManagementActionsController(input: {
     },
     createPinnedSession,
     createSwarm: createSwarmAction,
-    createClaudeSession: claude.createClaudeSession,
     renameClaudeSession: claude.renameClaudeSession,
     moveClaudeSession: claude.moveClaudeSession,
     removeClaudeSession: claude.removeClaudeSession,

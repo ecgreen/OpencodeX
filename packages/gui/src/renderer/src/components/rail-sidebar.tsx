@@ -57,7 +57,6 @@ export function RailSidebar(props: {
   openAllViews: () => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
-  createTerminalSession: (projectID?: string, directory?: string) => void
   createPinnedSession: () => void
   createView: () => void
   toggleSessionPinned: (sessionID: string) => void
@@ -175,7 +174,6 @@ export function RailSidebar(props: {
                   toggleProject={props.toggleProject}
                   createProject={props.createProject}
                   createSession={props.createSession}
-                  createTerminalSession={props.createTerminalSession}
                   openSession={props.openSession}
                   openTerminalSession={props.openTerminalSession}
                   toggleSessionPinned={props.toggleSessionPinned}
@@ -210,7 +208,6 @@ export function RailSidebar(props: {
                   sessionPinned={props.sessionPinned}
                   toggle={() => props.toggleRailSection("recent")}
                   createSession={() => props.createSession()}
-                  createTerminalSession={() => props.createTerminalSession()}
                   openSession={props.openSession}
                   openTerminalSession={props.openTerminalSession}
                   toggleSessionPinned={props.toggleSessionPinned}
@@ -234,6 +231,7 @@ export function RailSidebar(props: {
                   snapshot={props.snapshot}
                   collapsed={props.railSections.prior}
                   activeSessionID={props.activeSessionID}
+                  createSession={() => props.createSession()}
                   dragTarget={props.dragTarget}
                   dropTarget={props.dropTarget}
                   sessionPinned={props.sessionPinned}

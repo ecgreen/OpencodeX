@@ -86,9 +86,18 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: ./.github/actions/setup-bun
-      - run: bun run test:ci
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          bun run test:ci 2>&1 | tee "${RUNNER_TEMP//\\//}/unit.log"
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+      # Bun does not annotate module-resolution errors, and turbo's task prefix
+      # hides the ::error:: lines it does emit, so a failure here reads as a
+      # bare exit code. Replay the log into annotations.
+      - name: Surface unit failures
+        if: failure()
+        run: bun run script/annotate-unit-failures.ts "${RUNNER_TEMP//\\//}/unit.log"
       - name: Run HttpApi contract gates
         if: runner.os == 'Linux'
         working-directory: packages/opencode

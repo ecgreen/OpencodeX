@@ -34,9 +34,10 @@ export async function resolveClaudeExecutable(input?: {
       ? [path.join(home, ".local", "bin", "claude.exe")]
       : [path.join(home, ".local", "bin", "claude"), "/usr/local/bin/claude", "/opt/homebrew/bin/claude"]
     : []
-  for (const candidate of [...new Set([...fromPath, ...native])]) {
+  for (const candidate of new Set([...fromPath, ...native])) {
     if (await isExecutableFile(candidate, platform)) return candidate
   }
+  return undefined
 }
 
 async function isExecutableFile(candidate: string, platform: NodeJS.Platform) {
@@ -57,7 +58,7 @@ export async function probeClaudeCode(home: string): Promise<ClaudeCodeStatus> {
         resolve({ available: false, executable, message: "Claude Code was found but did not respond. Check the installation, then try again." })
         return
       }
-      resolve({ available: true, executable, version: `${stdout || stderr}`.trim() || undefined })
+      resolve({ available: true, executable, version: (stdout || stderr).trim() || undefined })
     })
   })
 }

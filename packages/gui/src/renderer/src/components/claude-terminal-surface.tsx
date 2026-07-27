@@ -65,14 +65,9 @@ export function ClaudeTerminalSurface(props: {
             </Match>
             <Match when={runtime().status === "missing-cli"}>
               <ErrorState compact class={styles.stateCard} title={stateTitle(runtime().status, runtime().code)} description={description()} action={
-                <>
-                  <Button appearance="solid" tone="accent" onClick={() => window.dispatchEvent(new CustomEvent("opencodex:claude-install"))}>
-                    Install Claude Code
-                  </Button>
-                  <Button appearance="outline" onClick={() => void props.controller.start(props.terminalSession)}>
-                    Check again
-                  </Button>
-                </>
+                <Button appearance="outline" onClick={() => void props.controller.start(props.terminalSession)}>
+                  Check again
+                </Button>
               } />
             </Match>
           </Switch>
@@ -255,14 +250,6 @@ function stateMessage(status: ReturnType<Controller["runtime"]>["status"], resum
   if (status === "wrong-device") return "This catalog record remains visible, but only its creating installation can launch it."
   if (status === "error") return `The saved Claude UUID is ${resumeID}. Retrying never creates a replacement conversation.`
   return "Authentication, permissions, models, and transcript storage remain owned by Claude Code."
-}
-
-function openExternal(url: string) {
-  if (window.opencodex?.browser?.external) {
-    void window.opencodex.browser.external(url)
-    return
-  }
-  window.open(url, "_blank", "noopener,noreferrer")
 }
 
 function readSidePanelWidth() {

@@ -23,7 +23,7 @@ export function modelValue(providerID: string, modelID: string) {
 
 export function parseModelValue(value: string) {
   const index = value.indexOf("/")
-  if (index === -1) return
+  if (index === -1) return undefined
   return { providerID: value.slice(0, index), modelID: value.slice(index + 1) }
 }
 

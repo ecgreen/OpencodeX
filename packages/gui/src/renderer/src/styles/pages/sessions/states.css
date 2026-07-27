@@ -316,8 +316,7 @@
 }
 
 .model-favorite-toggle:hover {
-  border-color: color-mix(in srgb,var(--theme-accent) 35%,transparent);
-  color: var(--primary);
+  color: var(--ds-control-accent);
   outline: none;
 }
 

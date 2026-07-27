@@ -57,9 +57,9 @@ export function swarmProviderInfo(routes: SwarmRoute[]) {
 
 /** Reads the orchestrator route back off a facade model row. */
 export function swarmModelRoute(model: { options?: Record<string, unknown> } | undefined) {
-  const route = model?.options?.route
-  if (!route || typeof route !== "object") return undefined
-  const { providerID, modelID } = route as Record<string, unknown>
+  const route: unknown = model?.options?.route
+  if (typeof route !== "object" || route === null) return undefined
+  const { providerID, modelID } = route as { providerID?: unknown; modelID?: unknown }
   if (typeof providerID !== "string" || typeof modelID !== "string") return undefined
   return { providerID, modelID }
 }

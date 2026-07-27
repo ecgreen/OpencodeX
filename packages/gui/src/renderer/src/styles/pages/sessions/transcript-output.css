@@ -26,6 +26,22 @@
   line-height: 1.5;
 }
 
+/*
+ * Grep, read, and error output is full of long paths and unbroken tokens.
+ * pre-wrap alone only breaks at spaces, so a single long match used to push the
+ * whole transcript sideways. These fold instead.
+ */
+.tool-output pre, .tool-command, .tool-error {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Code keeps its line structure, so it scrolls inside its own box instead. */
+.tool-code pre {
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+
 .tool-output.compact pre {
   padding: var(--ds-space-2) 10px;
   color: var(--ds-text-muted);

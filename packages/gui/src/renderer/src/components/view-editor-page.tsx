@@ -21,7 +21,6 @@ export function ViewEditorPage(props: {
   sessions: Session[]
   terminalSessions: OpencodeXTerminalSession[]
   projects: GuiSnapshot["projects"]
-  createTerminalSession: () => Promise<OpencodeXTerminalSession | undefined>
   save: (input: { viewID?: string; title: string; members: OpencodeXViewMember[]; metadata?: Record<string, unknown> }) => void | Promise<void>
   cancel: () => void
 }) {
@@ -68,18 +67,6 @@ export function ViewEditorPage(props: {
       return
     }
     setSelection((current) => [...current, { kind: "terminal", terminalSessionID }])
-  }
-
-  async function createTerminalSession() {
-    if (selection().length >= 8) {
-      setError("A view can include at most eight panes.")
-      return
-    }
-    const terminalSession = await props.createTerminalSession()
-    if (!terminalSession) return
-    setSelection((current) => current.length >= 8
-      ? current
-      : [...current, { kind: "terminal", terminalSessionID: terminalSession.id }])
   }
 
   function addPending(projectID?: string) {
@@ -195,7 +182,6 @@ export function ViewEditorPage(props: {
               <For each={props.projects.slice(0, 3)}>
                 {(project) => <Button size="compact" icon="plus" disabled={atPaneLimit()} onClick={() => addPending(project.id)}><span class="pending-pane-button-label">{title(project.name ?? project.project.name)}</span></Button>}
               </For>
-              <Button size="compact" appearance="outline" disabled={atPaneLimit()} onClick={() => void createTerminalSession()}>New Claude Code session</Button>
             </div>
           </section>
           <section class="view-editor-submit-panel">

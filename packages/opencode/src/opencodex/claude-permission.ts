@@ -1,4 +1,6 @@
 import { Effect } from "effect"
+import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import type { SessionSchema } from "@opencode-ai/core/session/schema"
 import { Permission } from "@/permission"
 import type { PermissionDecision } from "./claude-transport"
 import { normalizeToolName } from "./claude-mapper"
@@ -16,24 +18,25 @@ import { normalizeToolName } from "./claude-mapper"
  */
 export const decideWith = (permission: Permission.Interface) =>
   Effect.fn("OpencodeXClaudeDriver.permission")(function* (input: {
-  sessionID: string
+  // Branded ids, so the driver's values pass straight through to `ask`.
+  sessionID: typeof SessionSchema.ID.Type
   toolName: string
   toolInput: Record<string, unknown>
-  messageID?: string
+  messageID?: typeof SessionLegacy.MessageID.Type
   callID?: string
 }) {
   const tool = normalizeToolName(input.toolName)
   const patterns = permissionPatterns(tool, input.toolInput)
   return yield* permission
     .ask({
-      sessionID: input.sessionID as never,
+      sessionID: input.sessionID,
       permission: tool,
       patterns,
       // The card shows the real Claude tool name alongside its full input.
       metadata: { ...input.toolInput, claudeTool: input.toolName },
       always: patterns,
       ...(input.messageID && input.callID
-        ? { tool: { messageID: input.messageID as never, callID: input.callID } }
+        ? { tool: { messageID: input.messageID, callID: input.callID } }
         : {}),
       ruleset: [],
     })

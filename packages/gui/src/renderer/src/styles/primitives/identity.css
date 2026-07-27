@@ -1,0 +1,135 @@
+/* Identity and session primitives: agent glyph, model badge, session card. */
+
+.ui-glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ui-tone) 34%, transparent);
+  border-radius: var(--ds-radius-control);
+  color: var(--ui-tone);
+  background: var(--ui-tone-soft);
+  font-size: var(--ds-text-2xs);
+  line-height: 1;
+  font-weight: var(--ds-weight-bold);
+  letter-spacing: var(--ds-tracking-caps);
+}
+
+.ui-glyph[data-size="compact"] { width: var(--ds-space-4); height: var(--ds-space-4); }
+.ui-glyph[data-size="default"] { width: var(--ds-space-5); height: var(--ds-space-5); }
+.ui-glyph[data-size="prominent"] { width: var(--ds-space-7); height: var(--ds-space-7); font-size: var(--ds-text-xs); }
+
+.ui-model {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-width: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
+}
+
+.ui-model-provider { color: var(--ds-text-subtle); }
+.ui-model-provider::after { color: var(--ds-text-subtle); content: "/"; margin-left: var(--ds-space-1); }
+.ui-model-name { color: var(--ds-text-muted); font-weight: var(--ds-weight-medium); }
+/* Tone comes from the agent mode, matching the TUI's mode chips. */
+.ui-model-variant {
+  padding: 0 var(--ds-space-1);
+  border-radius: var(--ds-radius-control);
+  color: var(--ui-tone);
+  background: var(--ui-tone-soft);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  text-transform: capitalize;
+}
+
+.ui-session-card {
+  position: relative;
+  display: grid;
+  align-items: start;
+  gap: var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-left: 3px solid var(--ui-tone);
+  /* The status stripe reads as a true edge marker, so the left side stays square. */
+  border-radius: 0 var(--ds-radius-card) var(--ds-radius-card) 0;
+  background: var(--ds-surface);
+  transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease;
+}
+
+.ui-session-card[data-density="card"] { grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--ds-space-4); }
+.ui-session-card[data-density="row"] { grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--ds-space-3); }
+.ui-session-card[data-density="rail"] { grid-template-columns: minmax(0, 1fr) auto; gap: var(--ds-space-2); padding: var(--ds-space-2) var(--ds-space-3); border-radius: 0 var(--ds-radius-control) var(--ds-radius-control) 0; background: transparent; }
+.ui-session-card:hover { border-color: var(--ds-border); background: var(--ds-surface-raised); }
+.ui-session-card[data-selected="true"] { border-color: var(--ds-border-strong); background: var(--ds-surface-selected); }
+
+/*
+ * Work in flight reads as live: the tone washes across the card and a shine
+ * sweeps it. Only genuinely active statuses get this, so motion on screen
+ * always means something is actually running.
+ */
+.ui-session-card[data-active="true"],
+.ui-session-card[data-active="true"]:hover {
+  border-color: color-mix(in srgb, var(--ui-tone) 30%, var(--ds-border-subtle));
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--ui-tone) 20%, var(--ds-surface)) 0%,
+      color-mix(in srgb, var(--ui-tone) 9%, var(--ds-surface)) 46%,
+      var(--ds-surface) 100%
+    );
+}
+
+.ui-session-card[data-active="true"]::after {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 34%,
+    color-mix(in srgb, var(--ui-tone) 26%, transparent) 50%,
+    transparent 66%
+  );
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  animation: ui-session-shine 2.8s var(--ds-ease-smooth) infinite;
+  pointer-events: none;
+  content: "";
+}
+
+.ui-session-card[data-density="rail"][data-active="true"] { background: linear-gradient(100deg, color-mix(in srgb, var(--ui-tone) 18%, transparent) 0%, transparent 62%); }
+
+@keyframes ui-session-shine {
+  from { background-position: 140% 0; }
+  to { background-position: -60% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-session-card[data-active="true"]::after { animation: none; opacity: 0.5; }
+}
+
+/* Covers the card so the whole surface is the primary action. Utilities sit above it. */
+.ui-session-card-action { position: absolute; z-index: 0; inset: 0; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.ui-session-card-action:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: -2px; }
+.ui-session-card-glyph { z-index: 1; }
+.ui-session-card-body { z-index: 1; display: grid; gap: var(--ds-space-1); min-width: 0; pointer-events: none; }
+.ui-session-card-head { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; }
+.ui-session-card-title { min-width: 0; color: var(--ds-text); font-size: var(--ds-text-base); line-height: var(--ds-leading-base); font-weight: var(--ds-weight-semibold); }
+.ui-session-card[data-density="rail"] .ui-session-card-title { font-size: var(--ds-text-sm); line-height: var(--ds-leading-sm); font-weight: var(--ds-weight-medium); }
+.ui-session-card-sub { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; }
+.ui-session-card-rail-status { margin-left: auto; }
+.ui-session-card-project { color: var(--ds-text-subtle); font-size: var(--ds-text-xs); line-height: var(--ds-leading-xs); }
+
+.ui-session-card-meta { display: flex; flex-wrap: wrap; gap: var(--ds-space-1) var(--ds-space-4); margin: var(--ds-space-1) 0 0; }
+.ui-session-card-metric { display: flex; align-items: baseline; gap: var(--ds-space-1); }
+.ui-session-card-metric dt { color: var(--ds-text-subtle); font-size: var(--ds-text-2xs); line-height: var(--ds-leading-2xs); font-weight: var(--ds-weight-semibold); letter-spacing: var(--ds-tracking-caps); text-transform: uppercase; }
+.ui-session-card-metric dd { margin: 0; color: var(--ds-text-muted); font-size: var(--ds-text-xs); line-height: var(--ds-leading-xs); font-weight: var(--ds-weight-medium); }
+
+/* Utilities stay reachable by keyboard, so opacity is the only thing that changes. */
+.ui-session-card-actions { z-index: 1; display: inline-flex; align-items: center; gap: var(--ds-space-1); opacity: 0; transition: opacity var(--ds-motion-hover) ease; }
+.ui-session-card:hover .ui-session-card-actions,
+.ui-session-card:focus-within .ui-session-card-actions { opacity: 1; }
+
+@media (hover: none) {
+  .ui-session-card-actions { opacity: 1; }
+}

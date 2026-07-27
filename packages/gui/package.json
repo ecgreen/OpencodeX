@@ -8,6 +8,9 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "vite --configLoader runner --host 127.0.0.1",
+    "dev:lab": "vite --configLoader runner --host 127.0.0.1 --open /lab.html",
+    "build:lab": "vite --configLoader runner build --mode lab",
+    "preview:lab": "vite --configLoader runner preview --mode lab --host 127.0.0.1",
     "onlook:preview": "vite --configLoader runner --host 127.0.0.1",
     "dev:electron": "bun run scripts/dev-electron.ts",
     "build:renderer": "vite --configLoader runner build",
@@ -60,6 +63,7 @@
     "@codemirror/view": "6.43.1",
     "@lezer/highlight": "1.2.3",
     "@electron/asar": "3.4.1",
+    "@kobalte/core": "catalog:",
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@tailwindcss/vite": "catalog:",

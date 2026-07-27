@@ -1,5 +1,5 @@
 import { builtinModules } from "node:module"
-import { mkdir, readdir, rm } from "node:fs/promises"
+import { lstat, mkdir, readdir, readlink, rm } from "node:fs/promises"
 import path from "node:path"
 
 const root = path.resolve(import.meta.dirname, "..")
@@ -103,9 +103,40 @@ async function bundle(input: {
     throw: false,
   })
   if (!result.success || !result.metafile) {
+    /* Bun's reporter prints an AggregateError's contents, never its message,
+       so the description has to reach stderr on its own. */
+    const details = await describeBlamedFiles(result.logs)
+    if (details.length > 0) console.error(`Files blamed while bundling ${input.entrypoint}:\n${details.join("\n")}`)
     throw new AggregateError(result.logs, `Failed to bundle ${input.entrypoint}`)
   }
   return { metafile: result.metafile }
+}
+
+/*
+ * Bun reports read failures as `<errno> reading file: "<path>"` and falls back
+ * to "Unexpected" for anything it does not map, which on its own says nothing
+ * about why a dependency became unreadable. Describe each blamed path so the
+ * failure is actionable from a CI log alone.
+ */
+async function describeBlamedFiles(logs: readonly unknown[]) {
+  const paths = new Set<string>()
+  for (const log of logs) {
+    const message = String((log as { message?: string })?.message ?? log)
+    for (const match of message.matchAll(/"((?:[A-Za-z]:)?[\\/][^"]+)"/g)) paths.add(match[1]!)
+  }
+  return Promise.all([...paths].map(describeFile))
+}
+
+async function describeFile(file: string) {
+  const link = await lstat(file).catch((error: NodeJS.ErrnoException) => error)
+  if (link instanceof Error) return `${file}: lstat failed (${link.code ?? link.message})`
+  const target = link.isSymbolicLink() ? ` -> ${await readlink(file).catch(() => "unreadable")}` : ""
+  const kind = link.isSymbolicLink() ? "symlink" : link.isDirectory() ? "directory" : link.isFile() ? "file" : "special"
+  const read = await Bun.file(file).arrayBuffer().then(
+    (buffer) => `read ${buffer.byteLength} bytes`,
+    (error: NodeJS.ErrnoException) => `read failed (${error.code ?? error.message})`,
+  )
+  return `${file}: ${kind}${target}, size ${link.size}, mode ${(link.mode & 0o777).toString(8)}, links ${link.nlink}, ${read}`
 }
 
 async function assertOutput(directory: string, filename: string) {

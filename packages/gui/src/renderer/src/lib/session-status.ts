@@ -1,5 +1,6 @@
 import type { OpencodeXSessionUiState, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
+import { statusLabel, statusTone } from "./status-system"
 import type { GuiSnapshot } from "./store"
 
 export type DerivedSessionStatus = "dormant" | "in_progress" | "input_needed" | "ready_for_review" | "failed"
@@ -66,20 +67,15 @@ export function deriveSessionUiState(snapshot: GuiSnapshot, session: Session): O
   }
 }
 
+/** Lowercase presentation of the canonical label, for inline sentence use. */
 export function sessionStatusLabel(status: string) {
-  if (status === "in_progress") return "running"
-  if (status === "input_needed") return "needs input"
-  if (status === "ready_for_review") return "ready for review"
-  if (status === "failed") return "failed"
-  return "idle"
+  return statusLabel(status).toLowerCase()
 }
 
+/** Delegates to the canonical status table so the GUI has one status mapping. */
 export function sessionStatusTone(status: DerivedSessionStatus): "info" | "warning" | "success" | "danger" | "neutral" {
-  if (status === "input_needed") return "warning"
-  if (status === "in_progress") return "info"
-  if (status === "ready_for_review") return "success"
-  if (status === "failed") return "danger"
-  return "neutral"
+  const tone = statusTone(status)
+  return tone === "accent" || tone === "special" ? "info" : tone
 }
 
 function isRunningBackendStatus(status: string | undefined) {

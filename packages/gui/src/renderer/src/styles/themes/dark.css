@@ -1,25 +1,27 @@
 :root {
   color-scheme: dark;
 
-  --theme-canvas: #0b0d10;
-  --theme-surface: #111419;
-  --theme-surface-raised: #171b21;
-  --theme-surface-hover: #1d222a;
-  --theme-surface-selected: #242a33;
-  --theme-surface-strong: #303844;
-  --theme-text: #f3f5f7;
-  --theme-text-muted: #929aa5;
-  --theme-text-subtle: #68717d;
-  --theme-text-inverse: #171b21;
+  /* The canvas sits well above black so raised surfaces have room to separate,
+     and each step up the ladder is a clearly visible notch. */
+  --theme-canvas: #14171c;
+  --theme-surface: #1c2027;
+  --theme-surface-raised: #242932;
+  --theme-surface-hover: #2d333e;
+  --theme-surface-selected: #373f4c;
+  --theme-surface-strong: #47515f;
+  --theme-text: #f5f7fa;
+  --theme-text-muted: #a8b1bd;
+  --theme-text-subtle: #8b95a3;
+  --theme-text-inverse: #14171c;
   --theme-white: #ffffff;
   --theme-black: #000000;
-  --theme-border-subtle: rgba(243, 245, 247, 0.09);
-  --theme-border: rgba(243, 245, 247, 0.18);
-  --theme-border-strong: rgba(243, 245, 247, 0.28);
-  --theme-overlay-subtle: rgba(243, 245, 247, 0.035);
-  --theme-overlay-soft: rgba(243, 245, 247, 0.06);
-  --theme-overlay-medium: rgba(243, 245, 247, 0.1);
-  --theme-overlay-strong: rgba(243, 245, 247, 0.18);
+  --theme-border-subtle: rgba(245, 247, 250, 0.1);
+  --theme-border: rgba(245, 247, 250, 0.2);
+  --theme-border-strong: rgba(245, 247, 250, 0.32);
+  --theme-overlay-subtle: rgba(245, 247, 250, 0.04);
+  --theme-overlay-soft: rgba(245, 247, 250, 0.07);
+  --theme-overlay-medium: rgba(245, 247, 250, 0.12);
+  --theme-overlay-strong: rgba(245, 247, 250, 0.2);
   --theme-shadow-soft: rgba(0, 0, 0, 0.22);
   --theme-shadow-medium: rgba(0, 0, 0, 0.34);
   --theme-shadow-strong: rgba(0, 0, 0, 0.5);
@@ -44,31 +46,23 @@
   --theme-syntax-operator: #c5cbd3;
   --theme-syntax-property: #6ca8e8;
   --theme-syntax-type: #70c6d0;
+  /* Control depth: a top inner highlight and a grounding shadow. */
+  --theme-control-highlight: rgba(255, 255, 255, 0.14);
+  --theme-control-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --theme-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --theme-control-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.36);
 
-  --ds-space-1: 4px;
-    --ds-space-2: 8px;
-    --ds-space-3: 12px;
-    --ds-space-4: 16px;
-    --ds-space-5: 20px;
-    --ds-space-6: 24px;
-    --ds-radius-control: 6px;
-    --ds-radius-card: 8px;
-    --ds-radius-overlay: 10px;
-    --ds-motion-hover: 120ms;
-    --ds-motion-control: 160ms;
-    --ds-motion-route: 220ms;
-    --ds-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
-    /* Even-tempered curve for size changes; ease-enter front-loads too hard. */
-    --ds-ease-smooth: cubic-bezier(0.45, 0, 0.25, 1);
-    --ds-font-ui: "Geist", "Segoe UI", sans-serif;
-    --ds-font-technical: "Geist Mono", "Cascadia Code", monospace;
+  /* Foundation tokens (type, spacing, shape, motion) live in foundation.css. */
 
   --ds-canvas: var(--theme-canvas);
     --ds-surface: var(--theme-surface);
     --ds-surface-raised: var(--theme-surface-raised);
     --ds-surface-hover: var(--theme-surface-hover);
+    --ds-surface-selected: var(--theme-surface-selected);
     --ds-text: var(--theme-text);
     --ds-text-muted: var(--theme-text-muted);
+    --ds-text-subtle: var(--theme-text-subtle);
+    --ds-text-inverse: var(--theme-text-inverse);
     --ds-border: var(--theme-border);
     --ds-border-subtle: var(--theme-border-subtle);
     --ds-border-strong: var(--theme-border-strong);
@@ -77,10 +71,21 @@
     --ds-control-accent: var(--theme-accent);
     --ds-control-accent-text: var(--theme-text-inverse);
     --ds-danger: var(--theme-danger);
+    --ds-danger-soft: var(--theme-danger-soft);
     --ds-warning: var(--theme-warning);
+    --ds-warning-soft: var(--theme-warning-soft);
     --ds-success: var(--theme-success);
+    --ds-success-soft: var(--theme-success-soft);
     --ds-info: var(--theme-info);
-    --ds-shadow-overlay: 0 18px 48px var(--theme-shadow-medium);
+    --ds-info-soft: var(--theme-info-soft);
+    --ds-special: var(--theme-special);
+    --ds-special-soft: var(--theme-special-soft);
+    --ds-neutral-soft: var(--theme-overlay-soft);
+    --ds-control-highlight: var(--theme-control-highlight);
+    --ds-control-bevel: var(--theme-control-bevel);
+    --ds-control-shadow: var(--theme-control-shadow);
+    --ds-control-shadow-hover: var(--theme-control-shadow-hover);
+    --ds-shadow-overlay: var(--ds-elevation-overlay);
 
     /* Transcript part accents, keyed to what a tool did. See GUI_DESIGN_SYSTEM.md. */
     --ds-accent-exec: var(--theme-success);

@@ -51,25 +51,9 @@ body {
   background: var(--bg);
 }
 
-button {
-  cursor: pointer;
-  font: inherit;
-  -webkit-tap-highlight-color: transparent;
-  border-radius: var(--radius-control);
-  box-shadow: none;
-}
-
-textarea {
-  font: inherit;
-  border-radius: var(--radius-control);
-  box-shadow: none;
-}
-
-input {
-  font: inherit;
-  border-radius: var(--radius-control);
-  box-shadow: none;
-}
+/* Element resets for button, textarea, and input moved to design-base.css.
+   In this layer they outranked the primitives layer and clobbered every
+   control's typography. */
 
 .loading-card {
   padding: 18px;

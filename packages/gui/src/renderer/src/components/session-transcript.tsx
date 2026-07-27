@@ -6,7 +6,6 @@ import { autoOpenForStatus, createDisclosure, createMountedOnce } from "../lib/d
 import type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
 import { toolGroupStatus, toolGroupSummary, toolGroupTitle } from "../lib/transcript-grouping"
 import {
-  COPY_FULL_LABEL,
   arrayValue,
   fileBasename,
   isRecordValue,
@@ -47,22 +46,33 @@ export function activeTranscriptStreamingPartID(messages: MessageBundle[], runni
   return part.id
 }
 
+/** Narrows the union through `when` so each branch is typed, not asserted. */
+function displayPartOf<T extends DisplayPart["type"]>(item: DisplayPart, type: T) {
+  return item.type === type ? (item as Extract<DisplayPart, { type: T }>) : undefined
+}
+
+function partOf<T extends Part["type"]>(part: MessageBundle["parts"][number], type: T) {
+  return part.type === type ? (part as Extract<Part, { type: T }>) : undefined
+}
+
 export function DisplayPartView(props: { item: DisplayPart; showThinking: boolean; showToolDetails: boolean; showGenericToolOutput: boolean; streamingPartID?: string }) {
   return (
     <Switch>
-      <Match when={props.item.type === "tool-group"}>
-        <ToolGroupView item={props.item as Extract<DisplayPart, { type: "tool-group" }>} />
+      <Match when={displayPartOf(props.item, "tool-group")}>
+        {(item) => <ToolGroupView item={item()} />}
       </Match>
-      <Match when={props.item.type === "reasoning-group"}>
-        <ThinkingGroupView item={props.item as Extract<DisplayPart, { type: "reasoning-group" }>} showThinking={props.showThinking} streamingPartID={props.streamingPartID} />
+      <Match when={displayPartOf(props.item, "reasoning-group")}>
+        {(item) => <ThinkingGroupView item={item()} showThinking={props.showThinking} streamingPartID={props.streamingPartID} />}
       </Match>
-      <Match when={props.item.type === "part"}>
-        <PartView
-          part={(props.item as Extract<DisplayPart, { type: "part" }>).part}
-          showToolDetails={props.showToolDetails}
-          showGenericToolOutput={props.showGenericToolOutput}
-          streaming={props.streamingPartID === (props.item as Extract<DisplayPart, { type: "part" }>).part.id}
-        />
+      <Match when={displayPartOf(props.item, "part")}>
+        {(item) => (
+          <PartView
+            part={item().part}
+            showToolDetails={props.showToolDetails}
+            showGenericToolOutput={props.showGenericToolOutput}
+            streaming={props.streamingPartID === item().part.id}
+          />
+        )}
       </Match>
     </Switch>
   )
@@ -124,33 +134,35 @@ function PartView(props: { part: MessageBundle["parts"][number]; showToolDetails
       <Match when={isStructuralPart(props.part)}>
         <></>
       </Match>
-      <Match when={props.part.type === "text"}>
-        <TextPartView part={props.part as Extract<Part, { type: "text" }>} streaming={props.streaming} />
+      <Match when={partOf(props.part, "text")}>
+        {(part) => <TextPartView part={part()} streaming={props.streaming} />}
       </Match>
-      <Match when={props.part.type === "tool"}>
-        <ToolPartView part={props.part as ToolPart} showDetails={props.showToolDetails} showGenericOutput={props.showGenericToolOutput} />
+      <Match when={partOf(props.part, "tool")}>
+        {(part) => <ToolPartView part={part()} showDetails={props.showToolDetails} showGenericOutput={props.showGenericToolOutput} />}
       </Match>
-      <Match when={props.part.type === "retry"}>
-        <RetryPartView part={props.part as Extract<Part, { type: "retry" }>} />
+      <Match when={partOf(props.part, "retry")}>
+        {(part) => <RetryPartView part={part()} />}
       </Match>
-      <Match when={props.part.type === "subtask"}>
-        <SubtaskPartView part={props.part as Extract<Part, { type: "subtask" }>} />
+      <Match when={partOf(props.part, "subtask")}>
+        {(part) => <SubtaskPartView part={part()} />}
       </Match>
-      <Match when={props.part.type === "file"}>
-        <Button appearance="ghost" class="part file" data-side-panel-file={props.part.type === "file" ? props.part.filename ?? props.part.url : ""} title="Open in side panel">
-          <Icon name="file" />
-          <span>{props.part.type === "file" ? props.part.filename ?? props.part.url : ""}</span>
-          <Icon name="chevronRight" class="part-file-chevron" />
-        </Button>
+      <Match when={partOf(props.part, "file")}>
+        {(part) => (
+          <Button appearance="ghost" class="part file" data-side-panel-file={part().filename ?? part().url} title="Open in side panel">
+            <Icon name="file" />
+            <span>{part().filename ?? part().url}</span>
+            <Icon name="chevronRight" class="part-file-chevron" />
+          </Button>
+        )}
       </Match>
-      <Match when={props.part.type === "agent"}>
-        <div class="part badge"><Icon name="swarm" /><span>Agent: {props.part.type === "agent" ? props.part.name : ""}</span></div>
+      <Match when={partOf(props.part, "agent")}>
+        {(part) => <div class="part badge"><Icon name="swarm" /><span>Agent: {part().name}</span></div>}
       </Match>
-      <Match when={props.part.type === "patch"}>
-        <div class="part badge"><Icon name="pencil" /><span>Patch: {props.part.type === "patch" ? props.part.files.join(", ") : ""}</span></div>
+      <Match when={partOf(props.part, "patch")}>
+        {(part) => <div class="part badge"><Icon name="pencil" /><span>Patch: {part().files.join(", ")}</span></div>}
       </Match>
-      <Match when={props.part.type === "compaction"}>
-        <div class="part badge"><Icon name="context" /><span>Compaction {props.part.type === "compaction" && props.part.auto ? "auto" : "manual"}</span></div>
+      <Match when={partOf(props.part, "compaction")}>
+        {(part) => <div class="part badge"><Icon name="context" /><span>Compaction {part().auto ? "auto" : "manual"}</span></div>}
       </Match>
     </Switch>
   )

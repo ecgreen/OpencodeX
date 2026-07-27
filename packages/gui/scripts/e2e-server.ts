@@ -236,5 +236,5 @@ function stop() {
   if (stopping) return
   stopping = true
   children.forEach((child) => child.kill())
-  llm?.stop(true)
+  void llm?.stop(true)
 }

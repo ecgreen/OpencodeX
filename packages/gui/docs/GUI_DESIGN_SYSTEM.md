@@ -27,11 +27,26 @@ The theme sheets expose:
 
 - Palette: graphite, warm accent, and semantic status source colors.
 - Typography: locally bundled Geist Sans and Geist Mono.
-- Spacing: a 4px grid using 4, 8, 12, 16, 20, and 24px steps.
-- Shape: 6px controls, 8px cards, and 10px overlays.
+- Type ramp: eight sizes, each paired with a line height. `2xs` 10/14 for micro labels and badges,
+  `xs` 11/16 for meta rows and captions, `sm` 12/17 for secondary content and field labels,
+  `base` 13/19 as the default UI text, `md` 14/21 for reading prose, `lg` 16/23 for section and dialog
+  titles, `xl` 20/27 for page titles, and `2xl` 28/34 for hero moments only. Nothing outside this ramp ships.
+- Weight ramp: `regular` 400, `medium` 500, `semibold` 620, `bold` 700, and `display` 800. Geist is variable,
+  but only these five values are legal.
+- Letter-spacing: `--ds-tracking-caps` on uppercase `2xs` labels is the only sanctioned value.
+- Numerals: every metric, timer, count, and cost uses tabular numerals through `.ds-tabular`.
+- Spacing: a 4px grid using 4, 8, 12, 16, 20, 24, 32, 40, and 48px steps, plus a single 2px sub-grid step
+  (`--ds-space-0`) reserved for hairline gaps. Padding pairs come off the grid.
+- Shape: 6px controls, 8px cards, 10px overlays, and 999px pills.
+- Control geometry: 28px compact, 32px default, and 36px prominent, shared by every control primitive.
 - Motion: 120ms hover/press, 160ms control changes, 220ms panels/routes, with
   `cubic-bezier(0.16, 1, 0.3, 1)` for entrances.
 - Elevation: borders and tonal separation for attached surfaces; shadows only for detached overlays.
+  `--ds-elevation-overlay` for menus, popovers, and tooltips, `--ds-elevation-modal` for dialogs, and
+  `--ds-scrim` for modal backdrops.
+
+Surfaces step in one direction only: `canvas` to `surface` to `surface-raised` to `overlay`. Features never
+introduce a fifth background.
 
 Semantic tokens describe intent: canvas, surface, raised surface, text, muted text, border, focus, selection,
 control accent, danger, warning, success, and information. Components consume semantic tokens only. Raw
@@ -71,6 +86,24 @@ Cards, status labels, notices, skeletons, empty states, loading states, errors, 
 toasts use shared primitives. Empty and error states explain what happened, why it matters, and provide at most
 one primary recovery action.
 
+`Tooltip` is the only tooltip surface. The native `title` attribute is a fallback for controls that have not
+been migrated, never a choice for new code, and never present alongside a real tooltip. `Dialog` owns the
+scrim, focus trap, focus restoration, and Escape behavior; a scrim click dismisses only when the press began
+on the scrim. Destructive confirmations pass `dismissible={false}`.
+
+`Skeleton` replaces a spinner wherever the final geometry is known. `ProgressMeter` carries context-window,
+budget, and completion progress. `Kbd` renders every keyboard binding, adapting modifiers to the platform.
+`Tabs` is one engine with two skins: underline for panel and page navigation, segmented for exclusive value
+pickers.
+
+### Status
+
+`lib/status-system.ts` is the single status vocabulary. It maps any status string to a tone, a glyph, and a
+label, so one state reads identically in the rail, the dashboard, a list, a badge, and the palette. Status is
+never communicated by color alone. Adding a status means adding it to that table, not to a component.
+`SessionCard` is the one session surface, rendered at `rail`, `row`, or `card` density; `AgentGlyph` and
+`ModelBadge` are the one identity and model grammar.
+
 ## Layout contract
 
 Every route declares either a scrolling manager-page layout or a full-bleed workspace layout. A region has one
@@ -89,6 +122,9 @@ Production cascade order is explicit: `reset`, `tokens`, `base`, `primitives`, `
 and `bridges`.
 
 - Global CSS: tokens, reset/base, primitives, shell/layout contracts, accessibility utilities, and bridges.
+- Element resets (`button`, `input`, `textarea`) belong in the `base` layer. Placing them in any layer above
+  `primitives` silently overrides every control's typography, because layer order outranks specificity.
+- `styles/primitives`: control, feedback, navigation, identity, and overlay visuals, split by domain.
 - `styles/global`: shared component, shell, and overlay ownership.
 - `styles/pages`: route ownership divided by Dashboard, Sessions, Projects, Views, Swarms, Workbench, Plugins,
   and Diff.
@@ -99,6 +135,8 @@ and `bridges`.
 - Authored TS, TSX, and CSS stay below 500 lines and normally below 400.
 - A selector has exactly one owner within an equivalent at-rule context. Raw colors, theme-token overrides,
   duplicate selector owners, and unauthorized `!important` declarations are zero-baseline CI failures.
+- Raw font sizes, font weights, spacing, radii, and shadows are tracked against a recorded baseline that may
+  only decrease. New code uses tokens; migrations ratchet the count down and never up.
 
 ## Transcript visual language
 
@@ -154,6 +192,16 @@ animation is reserved for genuine activity indicators.
 The centralized session transcript scroll contract and existing Git comparison behavior are product contracts,
 not styling opportunities. GUI design work does not change server, SDK, persistence, route payloads, or TUI
 presentation unless separately authorized.
+
+## Component lab
+
+`bun run dev:lab` serves the component gallery at `/lab.html` in an ordinary browser, with no Electron process
+and no backend. It renders the real primitives from `components/ui` across six pages: foundations, controls,
+feedback, navigation, overlays, and signature components. Theme and page are encoded in the query string, so a
+specific state is linkable. `bun run build:lab` emits a standalone copy to `dist/lab`.
+
+Every new primitive lands with a lab specimen in the same change. The lab is a development surface: it is
+exempt from the raw-control and raw-value rules, and it is never part of the shipped renderer bundle.
 
 ## Validation policy
 

@@ -446,7 +446,7 @@ function readResultError(event: ClaudeEvent) {
 function readTodos(input: Record<string, unknown>) {
   const todos = Array.isArray(input.todos) ? input.todos : []
   return todos.filter(isRecord).map((todo) => ({
-    content: typeof todo.content === "string" ? todo.content : String(todo.activeForm ?? "Todo"),
+    content: typeof todo.content === "string" ? todo.content : typeof todo.activeForm === "string" ? todo.activeForm : "Todo",
     status: typeof todo.status === "string" ? todo.status : "pending",
     ...(typeof todo.priority === "string" ? { priority: todo.priority } : {}),
   }))

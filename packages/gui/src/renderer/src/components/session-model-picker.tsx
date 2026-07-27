@@ -86,7 +86,7 @@ export function SessionModelPicker(props: {
                 group={groupByID().get(providerID)}
                 connected={props.connectedProviderIDs.includes(providerID)}
                 expanded={expanded(providerID, index())}
-                limit={providerSectionLimit(showAll()[providerID] === true)}
+                limit={providerSectionLimit(Boolean(showAll()[providerID]))}
                 selectedModel={props.selectedModel}
                 favorites={props.favorites}
                 select={props.select}
@@ -219,9 +219,10 @@ function ModelOptionCard(props: {
         </span>
         <small>{props.provider.name}</small>
       </Button>
-      <Button appearance="ghost" type="button" class="model-favorite-toggle" classList={{ active: favorite() }} aria-label={favorite() ? "Remove favorite" : "Add favorite"} title={favorite() ? "Remove favorite" : "Add favorite"} onClick={() => props.toggleFavorite(value())}>
+      {/* Icon only: the old "Add"/"Favorite" labels were different widths, so
+          starring a model reflowed the row. The filled star carries the state. */}
+      <Button appearance="ghost" type="button" class="model-favorite-toggle" classList={{ active: favorite() }} aria-label={favorite() ? "Remove favorite" : "Add favorite"} aria-pressed={favorite()} title={favorite() ? "Remove favorite" : "Add favorite"} onClick={() => props.toggleFavorite(value())}>
         <Icon name="star" />
-        {favorite() ? "Favorite" : "Add"}
       </Button>
     </div>
   )

@@ -1,0 +1,27 @@
+/* Cross-cutting utilities. Type and numeral helpers the design system mandates. */
+
+.ds-tabular { font-variant-numeric: tabular-nums; }
+
+.ds-caps {
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase;
+}
+
+.ds-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ds-technical { font-family: var(--ds-font-technical); font-variant-ligatures: none; }
+
+.ds-visually-hidden {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

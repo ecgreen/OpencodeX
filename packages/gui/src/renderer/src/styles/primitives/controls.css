@@ -1,0 +1,117 @@
+/* Control primitives: button, icon button, field, input, textarea, select, toggles. */
+
+.ui-button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  font-weight: var(--ds-weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--ds-motion-hover) ease, color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, transform var(--ds-motion-hover) ease;
+}
+
+.ui-button[data-size="compact"] { min-height: var(--ds-control-height-compact); padding: 0 var(--ds-space-2); }
+.ui-button[data-size="default"] { min-height: var(--ds-control-height-default); padding: 0 var(--ds-space-3); }
+.ui-button[data-size="prominent"] { min-height: var(--ds-control-height-prominent); padding: 0 var(--ds-space-4); }
+.ui-button[data-icon-only="true"] { padding: 0; }
+.ui-button[data-icon-only="true"][data-control-size="compact"] { width: var(--ds-control-height-compact); min-width: var(--ds-control-height-compact); height: var(--ds-control-height-compact); min-height: var(--ds-control-height-compact); }
+.ui-button[data-icon-only="true"][data-control-size="default"] { width: var(--ds-control-height-default); min-width: var(--ds-control-height-default); height: var(--ds-control-height-default); min-height: var(--ds-control-height-default); }
+.ui-button[data-icon-only="true"][data-control-size="prominent"] { width: var(--ds-control-height-prominent); min-width: var(--ds-control-height-prominent); height: var(--ds-control-height-prominent); min-height: var(--ds-control-height-prominent); }
+.ui-button[data-full-width="true"] { width: 100%; }
+/* Tone carriers. --ui-tone-text must stay legible on a solid --ui-tone fill. */
+.ui-button[data-tone="neutral"] { --ui-tone: var(--ds-text); --ui-tone-text: var(--ds-canvas); }
+.ui-button[data-tone="accent"] { --ui-tone: var(--ds-control-accent); --ui-tone-text: var(--ds-control-accent-text); }
+.ui-button[data-tone="danger"] { --ui-tone: var(--ds-danger); --ui-tone-text: var(--ds-canvas); }
+.ui-button[data-tone="success"] { --ui-tone: var(--ds-success); --ui-tone-text: var(--ds-canvas); }
+.ui-button[data-tone="warning"] { --ui-tone: var(--ds-warning); --ui-tone-text: var(--ds-canvas); }
+.ui-button[data-tone="info"] { --ui-tone: var(--ds-info); --ui-tone-text: var(--ds-canvas); }
+
+/*
+ * Hover and press mix the tone toward --ds-text: that lightens in dark mode and
+ * darkens in light mode, which is correct in both, and it holds the hue where a
+ * brightness() filter washed the color out.
+ */
+.ui-button[data-appearance="solid"] {
+  color: var(--ui-tone-text);
+  border-color: color-mix(in srgb, var(--ds-canvas) 24%, var(--ui-tone));
+  background: var(--ui-tone);
+  box-shadow: var(--ds-control-bevel), var(--ds-control-shadow);
+}
+
+.ui-button[data-appearance="solid"]:hover:not(:disabled) { background: color-mix(in srgb, var(--ui-tone) 90%, var(--ds-text)); box-shadow: var(--ds-control-bevel), var(--ds-control-shadow-hover); }
+.ui-button[data-appearance="solid"]:active:not(:disabled) { background: color-mix(in srgb, var(--ui-tone) 82%, var(--ds-text)); box-shadow: none; }
+
+.ui-button[data-appearance="outline"] {
+  color: var(--ui-tone);
+  border-color: var(--ds-border);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-control-shadow);
+}
+
+.ui-button[data-appearance="outline"]:hover:not(:disabled) { border-color: var(--ds-border-strong); background: var(--ds-surface-hover); }
+.ui-button[data-appearance="outline"]:active:not(:disabled) { background: var(--ds-surface-selected); box-shadow: none; }
+
+.ui-button[data-appearance="soft"] {
+  color: var(--ui-tone);
+  border-color: color-mix(in srgb, var(--ui-tone) 20%, transparent);
+  background: color-mix(in srgb, var(--ui-tone) 14%, transparent);
+}
+
+.ui-button[data-appearance="soft"]:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ui-tone) 34%, transparent); background: color-mix(in srgb, var(--ui-tone) 22%, transparent); }
+.ui-button[data-appearance="soft"]:active:not(:disabled) { background: color-mix(in srgb, var(--ui-tone) 28%, transparent); }
+
+.ui-button[data-appearance="ghost"] { color: var(--ui-tone); background: transparent; }
+.ui-button[data-appearance="ghost"]:hover:not(:disabled) { background: var(--ds-surface-hover); }
+.ui-button[data-appearance="ghost"]:active:not(:disabled) { background: var(--ds-surface-selected); }
+
+.ui-button:active:not(:disabled) { transform: translateY(1px); }
+.ui-button:disabled { cursor: not-allowed; opacity: 0.45; box-shadow: none; }
+.ui-button[data-selected="true"] { color: var(--ds-control-accent); border-color: color-mix(in srgb, var(--ds-control-accent) 55%, transparent); background: var(--ds-selection); }
+.ui-button[data-loading="true"] { cursor: progress; }
+.ui-button-spinner,
+.ui-field-spinner { width: var(--ds-space-3); height: var(--ds-space-3); border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--ds-radius-full); animation: ui-spin 700ms linear infinite; }
+
+[data-ui="field"] { display: grid; min-width: 0; gap: var(--ds-space-1); }
+.ui-field-label { color: var(--ds-text); font-size: var(--ds-text-sm); line-height: var(--ds-leading-sm); font-weight: var(--ds-weight-semibold); }
+.ui-field-control { display: flex; min-width: 0; height: var(--ds-control-height-default); align-items: center; gap: var(--ds-space-2); padding: 0 var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); background: var(--ds-surface-raised); transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, box-shadow var(--ds-motion-hover) ease; }
+.ui-field-control[data-size="compact"] { height: var(--ds-control-height-compact); }
+/* Focus is carried by the border alone: it goes from a subtle hairline to the
+   full accent, which is a clear indicator for pointer and keyboard alike. No
+   ring or glow, which made dense forms look smeared. */
+.ui-field-control:focus-within { border-color: var(--ds-focus); }
+[data-ui="field"][data-invalid="true"] .ui-field-control { border-color: var(--ds-danger); }
+.ui-input { width: 100%; min-width: 0; height: var(--ds-control-height-default); padding: 0 var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); outline: 0; color: var(--ds-text); background: var(--ds-surface-raised); font-size: var(--ds-text-base); transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, box-shadow var(--ds-motion-hover) ease; }
+.ui-input[data-size="compact"] { height: var(--ds-control-height-compact); }
+.ui-input:focus { border-color: var(--ds-focus); }
+.ui-input[data-embedded="true"] { height: 100%; padding: 0; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; }
+.ui-input[data-technical="true"] { font-family: var(--ds-font-technical); }
+.ui-input::placeholder,
+.ui-textarea::placeholder { color: var(--ds-text-muted); opacity: 0.82; }
+.ui-input:disabled,
+.ui-textarea:disabled { cursor: not-allowed; opacity: 0.55; }
+.ui-field-control[data-technical="true"] .ui-input,
+.ui-textarea[data-technical="true"] { font-family: var(--ds-font-technical); }
+.ui-field-affix { display: inline-flex; flex: none; align-items: center; color: var(--ds-text-muted); }
+.ui-field-message { min-height: var(--ds-leading-xs); color: var(--ds-text-muted); font-size: var(--ds-text-xs); line-height: var(--ds-leading-xs); }
+[data-ui="field"][data-invalid="true"] .ui-field-message { color: var(--ds-danger); }
+.ui-textarea { width: 100%; min-width: 0; min-height: 76px; padding: var(--ds-space-2) var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); outline: 0; color: var(--ds-text); background: var(--ds-surface-raised); font-size: var(--ds-text-base); line-height: var(--ds-leading-prose); resize: vertical; }
+.ui-textarea:focus { border-color: var(--ds-focus); }
+[data-slot="checkbox-v2-control"],
+[data-slot="switch-control"] { border-color: var(--ds-border); background: var(--ds-surface-raised); }
+[data-slot="checkbox-v2"][data-checked] [data-slot="checkbox-v2-control"],
+[data-component="switch"][data-checked] [data-slot="switch-control"] { border-color: var(--ds-control-accent); background: var(--ds-control-accent); }
+
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button:active:not(:disabled) { transform: none; }
+}

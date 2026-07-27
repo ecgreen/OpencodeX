@@ -181,11 +181,14 @@ details[open]>summary .output-chevron {
   transition: transform .16s cubic-bezier(.16,1,.3,1),border-color .16s ease,background .16s ease,color .16s ease,box-shadow .16s ease,opacity .16s ease;
 }
 
+/* Chrome-free: the pin is an icon in a row, never a button-looking control,
+   so no border, fill, or selected-state ring survives here. */
 .pin-toggle {
   border: 0;
   border-radius: 6px;
   color: var(--muted);
   background: transparent;
+  box-shadow: none;
   opacity: .42;
   transition: opacity .14s ease,color .14s ease,background .14s ease;
   display: inline-grid;

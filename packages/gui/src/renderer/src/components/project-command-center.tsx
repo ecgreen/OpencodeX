@@ -22,7 +22,6 @@ export function ProjectCommandCenter(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
-  createTerminalSession: (projectID?: string, directory?: string) => void
   createSwarm: (projectID: string) => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
@@ -68,7 +67,6 @@ export function ProjectCommandCenter(props: {
         </div>
         <div class="project-home-actions">
           <Button appearance="solid" tone="accent" icon="session" onClick={() => props.createSession(props.project.id, primaryFolder())}>New session</Button>
-          <Button appearance="outline" onClick={() => props.createTerminalSession(props.project.id, primaryFolder())}>Claude Code</Button>
           <CardActionMenu label={projectName()} actions={projectActions()} />
         </div>
       </header>

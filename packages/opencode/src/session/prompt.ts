@@ -1810,9 +1810,11 @@ export const layer = Layer.effect(
       // orchestrator is the Claude subscription takes the driver path too -
       // with a delegation tool that keeps specialists on their own models.
       const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID) : undefined
-      const model = swarm?.orchestratorIsClaudeCode
-        ? { providerID: swarm.orchestrator!.provider_id!, modelID: swarm.orchestrator!.model_id! }
-        : selected
+      const orchestrator = swarm?.orchestrator
+      const model =
+        swarm?.orchestratorIsClaudeCode && orchestrator?.provider_id && orchestrator.model_id
+          ? { providerID: orchestrator.provider_id, modelID: orchestrator.model_id }
+          : selected
       const providerID = model?.providerID
       if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
       if (!last || last.info.role !== "user") return undefined

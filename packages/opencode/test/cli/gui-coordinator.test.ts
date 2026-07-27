@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { createHash, randomBytes } from "node:crypto"
+import { realpathSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -177,8 +178,8 @@ describe("GUI coordinator direct entry", () => {
           expect(winner.process.exitCode).toBeNull()
           expect((yield* readManifest(fixture))?.pid).toBe(manifest.pid)
           expect((yield* Effect.promise(() => fs.stat(fixture.ownerLock))).isDirectory()).toBe(true)
-          expect([normalizeDirectory(fixture.directory), normalizeDirectory(tuiDirectory)]).toContain(
-            normalizeDirectory(manifest.directory),
+          expect([realDirectory(fixture.directory), realDirectory(tuiDirectory)]).toContain(
+            realDirectory(manifest.directory),
           )
 
           const response = yield* Effect.promise(() =>
@@ -465,6 +466,23 @@ function databaseFixture(fixture: Pick<Fixture, "home" | "directory">, database:
 function normalizeDirectory(directory: string) {
   const resolved = path.resolve(directory)
   return process.platform === "win32" ? resolved.toLowerCase() : resolved
+}
+
+/*
+ * The coordinator publishes the directory it actually chdir'd into, and
+ * Filesystem.resolve puts that through realpathSync.native. On Windows that
+ * expands 8.3 short names, so os.tmpdir() under an account whose name exceeds
+ * eight characters (GitHub's runneradmin -> RUNNER~1) yields a fixture path
+ * that never string-matches the manifest. Compare on the coordinator's footing.
+ */
+function realDirectory(directory: string) {
+  const resolved = path.resolve(directory)
+  if (process.platform !== "win32") return resolved
+  try {
+    return realpathSync.native(resolved).toLowerCase()
+  } catch {
+    return resolved.toLowerCase()
+  }
 }
 
 function normalizeDatabase(database: string) {

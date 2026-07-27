@@ -365,7 +365,7 @@ export function createSessionSlashController(input: {
   }
 
   async function loadTranscript(session?: Session) {
-    if (!session) return
+    if (!session) return undefined
     const data = await input.authoritative.loadSessionTranscript(session.id)
     return formatSessionTranscript({
       session,

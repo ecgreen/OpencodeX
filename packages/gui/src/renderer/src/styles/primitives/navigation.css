@@ -1,0 +1,85 @@
+/* Navigation and inline primitives: tabs, segmented control, command row, separator, kbd. */
+
+.ui-tabs { display: flex; align-items: center; gap: var(--ds-space-1); min-width: 0; }
+.ui-tabs[data-appearance="underline"] { gap: var(--ds-space-4); border-bottom: 1px solid var(--ds-border-subtle); }
+.ui-tabs[data-appearance="segmented"] { padding: var(--ds-space-0); border: 1px solid var(--ds-border-subtle); border-radius: var(--ds-radius-control); background: var(--ds-surface-raised); }
+
+.ui-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: var(--ds-control-height-compact);
+  padding: 0 var(--ds-space-2);
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  background: transparent;
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  font-weight: var(--ds-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, border-color var(--ds-motion-hover) ease;
+}
+
+.ui-tab:hover:not(:disabled) { color: var(--ds-text); }
+.ui-tab:disabled { cursor: not-allowed; opacity: 0.5; }
+.ui-tab[aria-selected="true"] { color: var(--ds-text); font-weight: var(--ds-weight-semibold); }
+.ui-tabs[data-appearance="underline"] .ui-tab { position: relative; padding: 0 0 var(--ds-space-2); border-radius: 0; }
+.ui-tabs[data-appearance="underline"] .ui-tab::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: var(--ds-radius-full) var(--ds-radius-full) 0 0; background: var(--ds-control-accent); opacity: 0; transition: opacity var(--ds-motion-hover) ease; content: ""; }
+.ui-tabs[data-appearance="underline"] .ui-tab[aria-selected="true"]::after { opacity: 1; }
+.ui-tabs[data-appearance="segmented"] .ui-tab[aria-selected="true"] { background: var(--ds-surface-selected); }
+.ui-tab-count { color: var(--ds-text-subtle); font-variant-numeric: tabular-nums; }
+
+.ui-separator { width: 100%; height: 1px; margin: 0; border: 0; background: var(--ds-border-subtle); }
+.ui-separator[data-orientation="vertical"] { width: 1px; height: auto; align-self: stretch; }
+
+.ui-command-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  min-height: var(--ds-control-height-default);
+  padding: 0 var(--ds-space-3);
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text);
+  background: transparent;
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ds-motion-hover) ease;
+}
+
+.ui-command-row:hover:not(:disabled),
+.ui-command-row[aria-selected="true"] { background: var(--ds-surface-hover); }
+.ui-command-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-0);
+  min-width: var(--ds-space-5);
+  height: var(--ds-space-5);
+  padding: 0 var(--ds-space-1);
+  border: 1px solid var(--ds-border-subtle);
+  border-bottom-width: 2px;
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  background: var(--ds-surface-raised);
+  font-family: var(--ds-font-technical);
+  font-size: var(--ds-text-2xs);
+  line-height: 1;
+  font-weight: var(--ds-weight-medium);
+  white-space: nowrap;
+}
+
+.ui-kbd-group { display: inline-flex; align-items: center; gap: var(--ds-space-1); color: var(--ds-text-subtle); font-size: var(--ds-text-2xs); }
+
+.ui-breadcrumb { display: flex; align-items: center; gap: var(--ds-space-1); min-width: 0; color: var(--ds-text-muted); font-size: var(--ds-text-sm); line-height: var(--ds-leading-sm); }
+.ui-breadcrumb-item { overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; }
+.ui-breadcrumb-item[aria-current="page"] { color: var(--ds-text); font-weight: var(--ds-weight-medium); }
+.ui-breadcrumb-separator { flex: none; color: var(--ds-text-subtle); }

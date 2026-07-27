@@ -16,6 +16,7 @@ import { shouldShowConnectionWarning } from "../lib/connection-warning"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
 import { AppLoadingSkeleton } from "./app-loading"
 import { AppRoutes } from "./app-routes"
+import { RouteLoadingSkeleton } from "./route-loading"
 import { Titlebar } from "./chrome"
 import type { TitlebarBreadcrumb } from "./titlebar"
 import { CommandPaletteModal, type PaletteTarget } from "./command-palette"
@@ -36,11 +37,6 @@ export function AppShell(props: { model: GuiAppModel }) {
       RENDERER_PERFORMANCE_MARKS.bootstrap,
       RENDERER_PERFORMANCE_MARKS.appShellMounted,
     )
-    // Deep components (e.g. the terminal surface) request the guided CLI
-    // install without threading dialog access through every layer.
-    const installClaude = () => void model.dialogs.askClaudeInstall()
-    window.addEventListener("opencodex:claude-install", installClaude)
-    onCleanup(() => window.removeEventListener("opencodex:claude-install", installClaude))
   })
   createEffect(() => {
     const ready = !model.authoritative.loading() && !model.authoritative.error()
@@ -191,11 +187,6 @@ export function AppShell(props: { model: GuiAppModel }) {
         goForward={model.navigation.goForward}
         breadcrumb={breadcrumb()}
         newSession={() => void model.notices.run(() => model.management.createSession())}
-        newClaudeSession={() =>
-          void model.notices.run(async () => {
-            await model.management.createClaudeSession()
-          })
-        }
         newProject={() => void model.notices.run(model.management.createProject)}
         newView={() => void model.notices.run(model.management.createView)}
         newSwarm={() => void model.notices.run(() => model.management.createSwarm())}
@@ -256,9 +247,6 @@ export function AppShell(props: { model: GuiAppModel }) {
         createProject={() => void model.notices.run(model.management.createProject)}
         createSession={(projectID, directory) =>
           void model.notices.run(() => model.management.createSession(projectID, directory))
-        }
-        createTerminalSession={(projectID, directory) =>
-          void model.notices.run(async () => { await model.management.createClaudeSession(projectID, directory) })
         }
         createPinnedSession={() => void model.notices.run(model.management.createPinnedSession)}
         createView={() => void model.notices.run(model.management.createView)}
@@ -323,7 +311,7 @@ export function AppShell(props: { model: GuiAppModel }) {
             </div>
           </Show>
           <Show when={!model.authoritative.loading() && !model.authoritative.error()}>
-            <Suspense fallback={<AppLoadingSkeleton />}>
+            <Suspense fallback={<RouteLoadingSkeleton route={model.navigation.route()} />}>
               <AppRoutes model={model} />
             </Suspense>
           </Show>

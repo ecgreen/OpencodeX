@@ -129,12 +129,28 @@ export function OpencodeXLogo(props: { active?: boolean } = {}) {
 function logoTheme(): LogoTheme {
   const style = getComputedStyle(document.documentElement)
   const color = (name: string) => cssColorToRgb(style.getPropertyValue(name))
+  const background = color("--theme-canvas")
+  // Derived from the canvas rather than the theme name, so a future light
+  // palette gets the right treatment without being special-cased here.
+  const lightCanvas = relativeLuminance(background) > 0.45
   return {
-    background: color("--theme-canvas"),
+    background,
     primary: color("--theme-accent"),
     warning: color("--theme-warning"),
     peak: color("--theme-text"),
     muted: color("--theme-text-muted"),
     text: color("--theme-text"),
+    // Ink on paper: the crest warms toward the accent instead of driving to
+    // black, and the halo behind the glyphs stays a hint rather than a smudge.
+    glow: lightCanvas ? color("--theme-accent") : color("--theme-text"),
+    shadowScale: lightCanvas ? 0.3 : 1,
   }
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }) {
+  const channel = (value: number) => {
+    const ratio = value / 255
+    return ratio <= 0.03928 ? ratio / 12.92 : Math.pow((ratio + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
