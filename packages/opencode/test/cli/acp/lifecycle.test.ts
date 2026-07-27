@@ -5,8 +5,8 @@ import type {
   LoadSessionResponse,
   ResumeSessionResponse,
 } from "@agentclientprotocol/sdk"
-import { Duration, Effect } from "effect"
-import { cliIt } from "../../lib/cli-process"
+import { Effect } from "effect"
+import { cliBootBudget, cliIt } from "../../lib/cli-process"
 import { expectOk, selectConfigOption } from "./acp-test-client"
 import { createAcpClient, initialize, newSession, verifierConfig } from "./helpers"
 
@@ -18,7 +18,11 @@ describe("opencode acp lifecycle subprocess", () => {
         const acp = yield* opencode.acp()
         acp.close()
 
-        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(5)))
+        // Budgeted with cliBootBudget, not a shutdown-sized number: stdin is
+        // closed before the child has finished booting, so what this waits on
+        // is boot-then-exit. The old 5s covered the exit but not the boot, and
+        // missed by 319ms on the Windows runner.
+        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(cliBootBudget))
         if (code !== 0) throw new Error(`ACP exited with ${code}\n${acp.stderr().slice(-4000)}`)
         expect(code).toBe(0)
       }),

@@ -1718,7 +1718,10 @@ describe("workspace waitForSync", () => {
           `Timed out waiting for sync fence: {"${sessionID}":1}`,
         )
       }),
+    // No explicit budget. The wait under test is the 25ms fence above; the rest
+    // is fixture cost - `git: true` builds a repo and boots an instance - which
+    // a 7000ms budget did not cover on the Windows runner, failing at 7270ms.
+    // The sibling abort case takes 10.4s there on the suite default and is fine.
     { git: true },
-    7000,
   )
 })
