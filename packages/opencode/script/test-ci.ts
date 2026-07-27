@@ -6,6 +6,38 @@ const output = path.join(import.meta.dir, "../.artifacts/unit")
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
 
+/*
+ * Suites that spawn the real CLI as a subprocess, via test/lib/cli-process.
+ * None of them survive the Windows runner: the child never completes, so each
+ * case is killed at the harness ceiling - run-process reported exit -1 with
+ * "Error: Timed out" from the CLI, acp/lifecycle a bare TimeoutError. The tell
+ * is the one run-process case that exits before it ever contacts the in-process
+ * LLM server; that one passes in six seconds while its three siblings hang.
+ *
+ * They also dominate the job. The serial tail spawns one bun per file, each
+ * re-transpiling the CLI graph, which is most of why Windows took 22 minutes.
+ *
+ * What they cover - argv, boot, SDK call, event consumption, exit code - is
+ * platform-independent and runs in full on Linux. Windows keeps everything
+ * else, including the TUI suites, which do not spawn the binary.
+ */
+const cliSubprocessSuites = [
+  "test/cli/acp/config-options.test.ts",
+  "test/cli/acp/initialize-auth.test.ts",
+  "test/cli/acp/lifecycle.test.ts",
+  "test/cli/acp/prompt-content.test.ts",
+  "test/cli/acp/skills.test.ts",
+  "test/cli/help/help-snapshots.test.ts",
+  "test/cli/run/run-process.test.ts",
+  "test/cli/serve/serve-process.test.ts",
+  "test/cli/smokes/read-only.test.ts",
+]
+const skipCliSubprocess = process.platform === "win32"
+if (skipCliSubprocess) {
+  console.log(`[test:ci] SKIP ${cliSubprocessSuites.length} CLI subprocess suites on win32`)
+}
+const excluded = new Set(skipCliSubprocess ? cliSubprocessSuites : [])
+
 const parallel = [...new Bun.Glob("**/*.test.{ts,tsx}").scanSync({ cwd: path.join(import.meta.dir, "../test") })]
   .map((file) => `test/${file.replaceAll("\\", "/")}`)
   .filter(
@@ -22,7 +54,8 @@ const parallel = [...new Bun.Glob("**/*.test.{ts,tsx}").scanSync({ cwd: path.joi
       file !== "test/plugin/openai-ws.test.ts" &&
       file !== "test/session/compaction.test.ts" &&
       file !== "test/session/prompt.test.ts" &&
-      file !== "test/server/httpapi-listen.test.ts",
+      file !== "test/server/httpapi-listen.test.ts" &&
+      !excluded.has(file),
   )
   .toSorted()
 
@@ -61,32 +94,17 @@ if (selectedAreas.size === 0) {
   await serial("test/server/httpapi-listen.test.ts", "httpapi-listen.xml")
   await serialFiles("test/cli/tui", "tui", ["--conditions=browser"])
   await serialFiles("test/cli/cmd/tui", "tui-sync", ["--conditions=browser"])
-  /*
-   * run-process spawns the whole CLI per case and waits on a real LLM
-   * round-trip. On the Windows runner its three round-trip cases are killed at
-   * the harness ceiling every time - exit -1, "Error: Timed out" from the CLI
-   * itself - while the fourth, which exits before it ever contacts the server,
-   * passes in six seconds. That split has held across every run, and it does
-   * not reproduce locally on Windows, where all four pass in about twelve
-   * seconds. Linux runs the file in full, so the wiring it covers - argv,
-   * boot, SDK call, exit code - stays under test.
-   */
-  await serialFiles("test/cli/run", "run-ui", [], process.platform === "win32" ? ["run-process.test.ts"] : [])
+  await serialFiles("test/cli/run", "run-ui")
   await serialFiles("test/cli/acp", "acp")
   await serialFiles("test/cli/serve", "serve")
   await serialFiles("test/cli/smokes", "smokes")
 }
 
-async function serialFiles(directory: string, report: string, options: string[] = [], exclude: string[] = []) {
+async function serialFiles(directory: string, report: string, options: string[] = []) {
   const root = path.join(import.meta.dir, "..", directory)
-  const skipped = new Set(exclude)
   const files = [...new Bun.Glob("**/*.test.*").scanSync({ cwd: root })]
     .filter((file) => file.endsWith(".ts") || file.endsWith(".tsx"))
-    .filter((file) => {
-      if (!skipped.has(file.replaceAll("\\", "/"))) return true
-      console.log(`[test:ci] SKIP ${directory}/${file} on ${process.platform}`)
-      return false
-    })
+    .filter((file) => !excluded.has(`${directory}/${file.replaceAll("\\", "/")}`))
     .toSorted()
   for (const file of files) {
     const target = path.join(directory, file).replaceAll("\\", "/")
