@@ -1375,7 +1375,13 @@ it.instance(
       }
     }),
   { git: true },
-  3_000,
+  /*
+   * Two forked loops against a hanging provider on top of a git-backed
+   * fixture. On Windows that lands right at three seconds, so the old budget
+   * failed on the runner while passing on Linux. The neighbouring cancel
+   * tests already allow ten and thirty; a hang still trips this.
+   */
+  10_000,
 )
 
 // Queue semantics
