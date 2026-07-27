@@ -12,8 +12,6 @@ const builtins = new Set(
 
 export const electronExternals = ["electron", "@lydell/node-pty", "node:*", ...builtins].sort()
 
-const BUNDLE_ATTEMPTS = 2
-
 export function allowedElectronExternal(specifier: string) {
   return specifier === "electron" || specifier === "@lydell/node-pty" || specifier.startsWith("node:") || builtins.has(specifier)
 }
@@ -90,44 +88,28 @@ async function bundle(input: {
   naming: string
   format: "esm" | "cjs"
 }) {
-  for (let attempt = 1; ; attempt++) {
-    const result = await Bun.build({
-      entrypoints: [input.entrypoint],
-      outdir: input.outdir,
-      naming: input.naming,
-      target: "node",
-      format: input.format,
-      conditions: ["node"],
-      external: electronExternals,
-      minify: true,
-      splitting: false,
-      sourcemap: "none",
-      metafile: true,
-      throw: false,
-    })
-    if (result.success && result.metafile) return { metafile: result.metafile }
-
+  const result = await Bun.build({
+    entrypoints: [input.entrypoint],
+    outdir: input.outdir,
+    naming: input.naming,
+    target: "node",
+    format: input.format,
+    conditions: ["node"],
+    external: electronExternals,
+    minify: true,
+    splitting: false,
+    sourcemap: "none",
+    metafile: true,
+    throw: false,
+  })
+  if (!result.success || !result.metafile) {
     /* Bun's reporter prints an AggregateError's contents, never its message,
        so the description has to reach stderr on its own. */
     const details = await describeBlamedFiles(result.logs)
-    if (retryableRead(result.logs) && attempt < BUNDLE_ATTEMPTS) {
-      console.error(`Retrying ${input.entrypoint} after a transient read failure:\n${details.join("\n")}`)
-      continue
-    }
     if (details.length > 0) console.error(`Files blamed while bundling ${input.entrypoint}:\n${details.join("\n")}`)
     throw new AggregateError(result.logs, `Failed to bundle ${input.entrypoint}`)
   }
-}
-
-/*
- * Bun names the errno behind a read failure, and every cause worth acting on
- * gets its own message - EACCES, ELOOP, and a missing file all say so. Only
- * "Unexpected" is the unmapped fallback, which is what a loaded CI runner
- * produces for inputs that stat and read back intact microseconds later.
- * Retry that one case; anything with a real errno still fails on the spot.
- */
-function retryableRead(logs: readonly unknown[]) {
-  return logs.some((log) => /Unexpected reading file:/.test(String((log as { message?: string })?.message ?? log)))
+  return { metafile: result.metafile }
 }
 
 /*
