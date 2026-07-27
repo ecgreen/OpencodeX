@@ -7,36 +7,20 @@ await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
 
 /*
- * Suites that spawn the real CLI as a subprocess, via test/lib/cli-process.
- * None of them survive the Windows runner: the child never completes, so each
- * case is killed at the harness ceiling - run-process reported exit -1 with
- * "Error: Timed out" from the CLI, acp/lifecycle a bare TimeoutError. The tell
- * is the one run-process case that exits before it ever contacts the in-process
- * LLM server; that one passes in six seconds while its three siblings hang.
+ * Bundle the CLI once, up front, and hand the path to every test process.
  *
- * They also dominate the job. The serial tail spawns one bun per file, each
- * re-transpiling the CLI graph, which is most of why Windows took 22 minutes.
- *
- * What they cover - argv, boot, SDK call, event consumption, exit code - is
- * platform-independent and runs in full on Linux. Windows keeps everything
- * else, including the TUI suites, which do not spawn the binary.
+ * test/lib/cli-process spawns the real binary. From source that means
+ * `bun run --conditions=browser src/index.ts` re-transpiling the whole CLI
+ * graph per child - the dominant cost in the subprocess suites, and one that
+ * every per-test budget was unwittingly measuring. Building here rather than
+ * inside the harness keeps it to a single build for the whole run, with no
+ * lock or cache-invalidation dance between the parallel shards.
  */
-const cliSubprocessSuites = [
-  "test/cli/acp/config-options.test.ts",
-  "test/cli/acp/initialize-auth.test.ts",
-  "test/cli/acp/lifecycle.test.ts",
-  "test/cli/acp/prompt-content.test.ts",
-  "test/cli/acp/skills.test.ts",
-  "test/cli/help/help-snapshots.test.ts",
-  "test/cli/run/run-process.test.ts",
-  "test/cli/serve/serve-process.test.ts",
-  "test/cli/smokes/read-only.test.ts",
-]
-const skipCliSubprocess = process.platform === "win32"
-if (skipCliSubprocess) {
-  console.log(`[test:ci] SKIP ${cliSubprocessSuites.length} CLI subprocess suites on win32`)
-}
-const excluded = new Set(skipCliSubprocess ? cliSubprocessSuites : [])
+const bundle = await Bun.$`bun run ${path.join(import.meta.dir, "test-cli-bundle.ts")}`.text()
+process.env["OPENCODE_TEST_CLI_BUNDLE"] = bundle.trim()
+console.log(`[test:ci] CLI bundle ${process.env["OPENCODE_TEST_CLI_BUNDLE"]}`)
+
+const excluded = new Set<string>()
 
 const parallel = [...new Bun.Glob("**/*.test.{ts,tsx}").scanSync({ cwd: path.join(import.meta.dir, "../test") })]
   .map((file) => `test/${file.replaceAll("\\", "/")}`)

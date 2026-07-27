@@ -31,6 +31,49 @@ import { it } from "./effect"
 const opencodeRoot = path.resolve(import.meta.dir, "../../")
 const cliEntry = path.join(opencodeRoot, "src/index.ts")
 
+/*
+ * How the child CLI gets launched.
+ *
+ * From source, `bun run --conditions=browser src/index.ts` re-transpiles the
+ * entire CLI graph on every spawn. That is the single largest cost in these
+ * suites, and it is charged to every per-test budget, so on a slow runner the
+ * budgets end up measuring the transpiler rather than the behaviour under test.
+ *
+ * script/test-ci.ts bundles the CLI once up front and exports the path here.
+ * When it is set the child reads one file; when it is not - a bare `bun test`
+ * with no build step - we fall back to source so the suites still run.
+ */
+const cliBundle = process.env["OPENCODE_TEST_CLI_BUNDLE"]
+function cliArgv(args: string[]) {
+  return cliBundle ? [cliBundle, ...args] : ["run", "--conditions=browser", cliEntry, ...args]
+}
+
+/*
+ * Default ceiling for a single CLI invocation.
+ *
+ * This is a backstop against a genuinely wedged child, not an assertion about
+ * speed - no test here is trying to prove the CLI is fast. It was 30s, which
+ * the Windows runner overshot by 1-3% on the three run-process cases that make
+ * an LLM round trip, turning "slower machine" into a red build. Give it real
+ * headroom and let the per-test `timeoutMs` opt down when a test is
+ * specifically asserting promptness.
+ *
+ * Kept below the 60s bun per-test timeout these suites declare, deliberately:
+ * this path kills the child through the scope finalizer, whereas bun expiring
+ * first would fail the test and leak the subprocess.
+ */
+const defaultTimeoutMs = Number(process.env["OPENCODE_TEST_CLI_TIMEOUT_MS"] ?? 45_000)
+
+/*
+ * Budget for "the child got far enough to do the thing", where the thing is
+ * cheap and booting is not: printing the listening line, or noticing stdin
+ * closed and exiting. Boot dominates all of these, so they share one number
+ * rather than each guessing its own - the previous guesses were 15s for serve
+ * and 5s for ACP shutdown, and the 5s one failed on the Windows runner at
+ * 5319ms, having spent nearly all of it before the child read a byte.
+ */
+export const cliBootBudget = Duration.millis(Number(process.env["OPENCODE_TEST_CLI_BOOT_MS"] ?? 30_000))
+
 export const testModelID = "test/test-model"
 
 // Wrap a Bun subprocess pipe (or any ReadableStream<Uint8Array>) as a Stream.
@@ -104,8 +147,7 @@ export type ServeOpts = SpawnOpts & {
   readonly hostname?: string
   readonly extraArgs?: string[]
   // How long to wait for the "listening on http://..." line before failing.
-  // Default 15s — startup is dominated by bun's transpile + plugin init, not
-  // the actual listen() call.
+  // Defaults to cliBootBudget — startup dominates this, not the listen() call.
   readonly readyTimeoutMs?: number
 }
 
@@ -206,12 +248,12 @@ export function withCliFixture<A, E>(
 
     const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
-      const timeoutMs = opts?.timeoutMs ?? 30_000
+      const timeoutMs = opts?.timeoutMs ?? defaultTimeoutMs
       // stdin: "ignore" so the child doesn't see a piped stdin and block
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to
       // ignore; ChildProcess.make defaults to pipe, so we set it explicitly.
-      const command = ChildProcess.make("bun", ["run", "--conditions=browser", cliEntry, ...args], {
+      const command = ChildProcess.make("bun", cliArgv(args), {
         cwd: home,
         env: { ...env, ...opts?.env },
         extendEnv: true,
@@ -273,7 +315,7 @@ export function withCliFixture<A, E>(
       // as a finalizer error during test teardown.
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
-          Bun.spawn(["bun", "run", "--conditions=browser", cliEntry, ...argv], {
+          Bun.spawn(["bun", ...cliArgv(argv)], {
             cwd: home,
             env: { ...process.env, ...env, ...opts?.env },
             stdout: "pipe",
@@ -309,7 +351,7 @@ export function withCliFixture<A, E>(
         ),
       )
 
-      const readyTimeoutMs = opts?.readyTimeoutMs ?? 15_000
+      const readyTimeoutMs = opts?.readyTimeoutMs ?? Duration.toMillis(cliBootBudget)
       const match = yield* Deferred.await(readyDeferred).pipe(
         Effect.timeoutOrElse({
           duration: Duration.millis(readyTimeoutMs),
@@ -344,7 +386,7 @@ export function withCliFixture<A, E>(
       // Either way we await proc.exited so the test scope doesn't leak.
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
-          Bun.spawn(["bun", "run", "--conditions=browser", cliEntry, ...argv], {
+          Bun.spawn(["bun", ...cliArgv(argv)], {
             cwd: opts?.cwd ?? home,
             env: { ...process.env, ...env, ...opts?.env },
             stdin: "pipe",
