@@ -2028,29 +2028,35 @@ unixNoLLMServer(
       Effect.gen(function* () {
         const { prompt, chat } = yield* boot()
 
+        /*
+         * The command only has to outlive the busy check. It used to sleep 30
+         * seconds, which meant any step that failed to settle sat there until
+         * the harness gave up, reporting a bare timeout naming nothing - and
+         * raising the budget to 45s just moved where it stalled. Five seconds
+         * still covers the assertions, and bounds the damage when one does not
+         * settle: every wait below names itself instead.
+         */
         const a = yield* prompt
-          .shell({ sessionID: chat.id, agent: "build", command: "sleep 30" })
+          .shell({ sessionID: chat.id, agent: "build", command: "sleep 5" })
           .pipe(Effect.forkChild)
         yield* waitForBusy(chat.id)
 
-        const exit = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "echo hi" }).pipe(Effect.exit)
+        const exit = yield* awaitWithTimeout(
+          prompt.shell({ sessionID: chat.id, agent: "build", command: "echo hi" }).pipe(Effect.exit),
+          "second shell neither rejected nor ran while the first held the session",
+          "10 seconds",
+        )
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.squash(exit.cause)).toBeInstanceOf(Session.BusyError)
         }
 
-        yield* prompt.cancel(chat.id)
-        /*
-         * The command outlasts the budget on purpose, so if cancel does not
-         * reach it the fiber only settles when the sleep ends - which is
-         * exactly the whole budget, and reads as a bare harness timeout with
-         * nothing named. Bound the wait so that failure says what it was.
-         */
-        yield* awaitWithTimeout(Fiber.await(a), "shell did not stop after cancel", "15 seconds")
+        yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
+        yield* awaitWithTimeout(Fiber.await(a), "shell did not stop after cancel", "10 seconds")
       }),
     ),
   { git: true, config: cfg },
-  45_000,
+  30_000,
 )
 
 // Abort signal propagation tests for inline tool execution
