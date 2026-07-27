@@ -12,7 +12,7 @@
  */
 
 const MAX_ANNOTATIONS = 8
-const CONTEXT_BEFORE = 4
+const CONTEXT_BEFORE = 10
 const CONTEXT_AFTER = 12
 const TAIL_LINES = 60
 
