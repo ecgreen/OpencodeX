@@ -1855,19 +1855,21 @@ unixNoLLMServer(
       Effect.gen(function* () {
         const { prompt, run, chat } = yield* boot()
 
+        /* Outlives the busy check without outliving the budget - see the note
+           on the busy-rejection case below. */
         const sh = yield* prompt
-          .shell({ sessionID: chat.id, agent: "build", command: "sleep 30" })
+          .shell({ sessionID: chat.id, agent: "build", command: "sleep 5" })
           .pipe(Effect.forkChild)
         yield* waitForBusy(chat.id)
 
-        yield* prompt.cancel(chat.id)
+        yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
 
         const status = yield* SessionStatus.Service
         expect((yield* status.get(chat.id)).type).toBe("idle")
         const busy = yield* run.assertNotBusy(chat.id).pipe(Effect.exit)
         expect(Exit.isSuccess(busy)).toBe(true)
 
-        const exit = yield* Fiber.await(sh)
+        const exit = yield* awaitWithTimeout(Fiber.await(sh), "shell did not stop after cancel", "10 seconds")
         expect(Exit.isSuccess(exit)).toBe(true)
         if (Exit.isSuccess(exit)) {
           expect(exit.value.info.role).toBe("assistant")
@@ -2000,22 +2002,24 @@ unixNoLLMServer(
     Effect.gen(function* () {
       const { prompt, chat } = yield* boot()
 
-      const sh = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "sleep 30" }).pipe(Effect.forkChild)
+      /* Outlives the busy check without outliving the budget - see the note
+         on the busy-rejection case below. */
+      const sh = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "sleep 5" }).pipe(Effect.forkChild)
       yield* waitForBusy(chat.id)
 
       const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* Effect.sleep(50)
 
-      yield* prompt.cancel(chat.id)
+      yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
 
-      const exit = yield* Fiber.await(loop)
+      const exit = yield* awaitWithTimeout(Fiber.await(loop), "queued loop did not settle after cancel", "10 seconds")
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) {
         const tool = completedTool(exit.value.parts)
         expect(tool?.state.output).toContain("User aborted the command")
       }
 
-      yield* Fiber.await(sh)
+      yield* awaitWithTimeout(Fiber.await(sh), "shell did not stop after cancel", "10 seconds")
     }),
   { git: true, config: cfg },
   30_000,

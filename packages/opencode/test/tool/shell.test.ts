@@ -32,6 +32,15 @@ const shellLayer = Layer.mergeAll(
 )
 const it = testEffect(shellLayer)
 const timeoutCommand = process.platform === "win32" ? "Write-Output started; Start-Sleep -Seconds 60" : "echo started && sleep 60"
+/*
+ * Both timeout cases assert that output produced before the kill survives, so
+ * the shell has to actually start and flush "started" first. 500ms was shorter
+ * than PowerShell takes to boot on a loaded Windows runner, which is how the
+ * default-timeout case came to expect "started" and receive "(no output)".
+ * What either case proves is that the configured value is honoured, and 5s
+ * proves that just as well against a command that sleeps a minute.
+ */
+const SHELL_TIMEOUT_MS = 5_000
 type ShellTestServices =
   | (typeof shellLayer extends Layer.Layer<infer ROut, infer _E, infer _RIn> ? ROut : never)
   | InstanceStore.Service
@@ -1074,7 +1083,7 @@ describe("tool.shell abort", () => {
           const result = yield* run({
             command: timeoutCommand,
             description: "Timeout test",
-            timeout: 500,
+            timeout: SHELL_TIMEOUT_MS,
           })
           expect(result.output).toContain("started")
           expect(result.output).toContain("shell tool terminated command after exceeding timeout")
@@ -1091,7 +1100,7 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const tool = yield* initShell()
-          expect(tool.description).toContain("commands will time out after 500ms")
+          expect(tool.description).toContain(`commands will time out after ${SHELL_TIMEOUT_MS}ms`)
           const result = yield* tool.execute(
             {
               command: timeoutCommand,
@@ -1100,9 +1109,9 @@ describe("tool.shell abort", () => {
             ctx,
           )
           expect(result.output).toContain("started")
-          expect(result.output).toContain("exceeding timeout 500 ms")
+          expect(result.output).toContain(`exceeding timeout ${SHELL_TIMEOUT_MS} ms`)
         }),
-      ).pipe(Effect.provide(RuntimeFlags.layer({ bashDefaultTimeoutMs: 500 }))),
+      ).pipe(Effect.provide(RuntimeFlags.layer({ bashDefaultTimeoutMs: SHELL_TIMEOUT_MS }))),
     15_000,
   )
 
