@@ -2015,11 +2015,17 @@ unixNoLLMServer(
         }
 
         yield* prompt.cancel(chat.id)
-        yield* Fiber.await(a)
+        /*
+         * The command outlasts the budget on purpose, so if cancel does not
+         * reach it the fiber only settles when the sleep ends - which is
+         * exactly the whole budget, and reads as a bare harness timeout with
+         * nothing named. Bound the wait so that failure says what it was.
+         */
+        yield* awaitWithTimeout(Fiber.await(a), "shell did not stop after cancel", "15 seconds")
       }),
     ),
   { git: true, config: cfg },
-  30_000,
+  45_000,
 )
 
 // Abort signal propagation tests for inline tool execution

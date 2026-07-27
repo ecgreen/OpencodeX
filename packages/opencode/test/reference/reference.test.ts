@@ -68,11 +68,18 @@ const git = Effect.fn("ReferenceTest.git")(function* (cwd: string, args: string[
   })
 })
 
+/*
+ * Every caller is waiting on a git clone or fetch to land in the cache. Fifty
+ * attempts is five seconds, which holds on an idle machine and does not on a
+ * Windows runner, where spawning git is expensive enough that a clone alone
+ * outran the budget. Wait long enough for a slow clone; a reference that never
+ * materializes still fails, just later.
+ */
 const waitForContent = (
   fs: AppFileSystem.Interface,
   file: string,
   content: string,
-  attempts = 50,
+  attempts = 300,
 ): Effect.Effect<void, AppFileSystem.Error> =>
   Effect.gen(function* () {
     if ((yield* fs.readFileStringSafe(file)) === content) return
