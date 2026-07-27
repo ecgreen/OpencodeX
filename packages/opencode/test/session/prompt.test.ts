@@ -1767,7 +1767,12 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  /*
+   * A git fixture plus a spawned shell. Every 3_000 case that stays in memory
+   * passes on the Windows runner; the ones that spawn processes land just over
+   * the line, this one at 3_014ms. Budget for the spawn, not for an idle box.
+   */
+  10_000,
 )
 
 it.instance(
@@ -1806,7 +1811,8 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  /* Same shape as above: git fixture plus a spawned shell, 3_008ms observed. */
+  10_000,
 )
 
 unix(
