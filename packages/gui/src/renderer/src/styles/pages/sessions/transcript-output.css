@@ -1,0 +1,189 @@
+/* Tool bodies: command echoes, captured output, key-values, errors, raw data. */
+
+.tool-details {
+  display: grid;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.tool-output {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-output pre, .tool-code pre, .tool-command, .tool-error {
+  overflow: visible;
+  max-height: none;
+  margin: 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-canvas);
+  white-space: pre-wrap;
+  color: var(--ds-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/*
+ * Grep, read, and error output is full of long paths and unbroken tokens.
+ * pre-wrap alone only breaks at spaces, so a single long match used to push the
+ * whole transcript sideways. These fold instead.
+ */
+.tool-output pre, .tool-command, .tool-error {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Code keeps its line structure, so it scrolls inside its own box instead. */
+.tool-code pre {
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+
+.tool-output.compact pre {
+  padding: var(--ds-space-2) 10px;
+  color: var(--ds-text-muted);
+  line-height: 1.45;
+}
+
+.tool-output pre a {
+  color: var(--ds-info);
+  text-decoration: underline;
+}
+
+.tool-code code {
+  background: transparent;
+}
+
+.tool-command {
+  color: var(--ds-accent-exec);
+}
+
+.tool-error {
+  color: var(--ds-danger);
+  border-color: color-mix(in srgb, var(--ds-danger) 42%, transparent);
+}
+
+.tool-output button {
+  justify-self: start;
+  padding: 5px 8px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  background: var(--ds-surface);
+  font-size: 11px;
+}
+
+.tool-read-range {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: 11px;
+}
+
+.tool-kv {
+  display: grid;
+  gap: var(--ds-space-1);
+  margin: 0;
+}
+
+.tool-kv div {
+  display: grid;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
+  gap: var(--ds-space-2);
+  align-items: baseline;
+}
+
+.tool-kv dt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tool-kv dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--ds-text);
+  font-size: 12px;
+}
+
+.tool-raw {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-raw .part-title {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tool-raw label {
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.tool-raw pre {
+  margin: 0;
+}
+
+.tool-questions {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.tool-questions>div {
+  display: grid;
+  gap: var(--ds-space-1);
+  padding-bottom: var(--ds-space-2);
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.tool-questions>div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.tool-questions p {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: 12px;
+}
+
+.tool-diagnostics {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-diagnostics pre {
+  margin: 0;
+}
+
+.tool-pending-diff {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+}
+
+.tool-pending-text {
+  color: var(--ds-text-muted);
+  font-size: 12px;
+}
+
+.tool-list {
+  display: grid;
+  gap: var(--ds-space-1);
+}
+
+.tool-list p {
+  margin: 0;
+  color: var(--ds-text-muted);
+}

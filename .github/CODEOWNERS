@@ -1,4 +1,7 @@
-# OpencodeX TUI ownership
-# TUI code (sidebar, prompt, themes) lives under packages/opencode/src/cli/cmd/tui/
-# Default ownership: everyone with write access
-*                                              @opencodex/maintainers
+# Repository and fork-owned interface ownership
+* @ecgreen
+/packages/gui/ @ecgreen
+/packages/opencode/src/cli/cmd/tui/ @ecgreen
+/packages/opencode/src/opencodex/ @ecgreen
+/github/ @ecgreen
+/.github/ @ecgreen

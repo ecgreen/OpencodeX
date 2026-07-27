@@ -1,0 +1,68 @@
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--ds-font-ui);
+  font-variant-ligatures: common-ligatures;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+kbd,
+samp,
+.opencodex-logo,
+.terminal,
+.terminal-output,
+.workbench-codemirror,
+.cm-editor,
+.diff-line,
+.session-timestamp,
+.telemetry-value {
+  font-family: var(--ds-font-technical);
+  font-variant-ligatures: none;
+}
+
+/* Element resets belong in the base layer. Anything above `primitives` here
+   would override the design system's own control styling. */
+button {
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: var(--ds-radius-control);
+  box-shadow: none;
+}
+
+textarea,
+input {
+  font: inherit;
+  border-radius: var(--ds-radius-control);
+  box-shadow: none;
+}
+
+.page {
+  display: grid;
+  gap: var(--ds-space-3);
+  color: var(--ds-text);
+  background: var(--ds-canvas);
+}
+
+:where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  *:not(.mini-spinner, .composer-spinner, .session-loading-spinner) {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -29,15 +29,12 @@ export class Info extends Schema.Class<Info>("Project.Info")({
 }) {}
 
 export interface Interface {
-  readonly resolve: (input: AbsolutePath) => Effect.Effect<
-    {
-      previous?: ID
-      id: ID
-      directory: AbsolutePath
-      vcs?: Vcs
-    },
-    never
-  >
+  readonly resolve: (input: AbsolutePath) => Effect.Effect<{
+    previous?: ID
+    id: ID
+    directory: AbsolutePath
+    vcs?: Vcs
+  }>
   /**
    * Temporary bridge method for writing the resolved project ID to the repo-local cache.
    *
@@ -59,11 +56,10 @@ export const layer = Layer.effect(
     const git = yield* Git.Service
 
     const cached = Effect.fnUntraced(function* (dir: string) {
-      return yield* fs.readFileString(path.join(dir, "opencode")).pipe(
-        Effect.map((value) => value.trim()),
-        Effect.map((value) => (value ? ID.make(value) : undefined)),
-        Effect.catch(() => Effect.succeed(undefined)),
-      )
+      const file = Bun.file(path.join(dir, "opencode"))
+      if (!(yield* Effect.promise(() => file.exists()))) return undefined
+      const value = (yield* Effect.promise(() => file.text())).trim()
+      return value ? ID.make(value) : undefined
     })
 
     const remote = Effect.fnUntraced(function* (repo: Git.Repo) {
@@ -98,21 +94,16 @@ export const layer = Layer.effect(
       return `${host.toLowerCase()}/${pathname}`
     }
 
-    const root = Effect.fnUntraced(function* (repo: Git.Repo) {
-      const root = (yield* git.roots(repo))[0]
-      return root ? ID.make(root) : undefined
-    })
-
     const resolve = Effect.fn("Project.resolve")(function* (input: AbsolutePath) {
       const repo = yield* git.find(input)
       if (!repo) return { id: ID.global, directory: AbsolutePath.make(path.parse(input).root), vcs: undefined }
 
       const previous = yield* cached(repo.store)
-      const id = (yield* remote(repo)) ?? previous ?? (yield* root(repo))
+      const id = (yield* remote(repo)) ?? previous ?? ID.make((yield* git.root(repo)) ?? "global")
 
       return {
         previous,
-        id: id ?? ID.global,
+        id,
         directory: repo.directory,
         vcs: { type: "git" as const, store: repo.store },
       }

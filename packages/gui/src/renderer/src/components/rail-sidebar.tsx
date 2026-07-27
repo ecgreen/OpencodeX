@@ -1,0 +1,325 @@
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
+import { For, Match, Show, Switch, createEffect, createMemo } from "solid-js"
+import { moveRelative } from "../lib/reorder"
+import type { GuiSnapshot } from "../lib/store"
+import { IconButton } from "./ui"
+import { RailResizeHandle } from "./rail-resize-handle"
+import { RailBrand, RailNav } from "./rail-sidebar-header"
+import {
+  RailPinnedSection,
+  RailPriorSessionsSection,
+  RailProjectsSection,
+  RailRecentSessionsSection,
+  RailViewsSection,
+} from "./rail-sidebar-sections"
+import type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
+
+export type { RailDragTarget, RailDropTarget, RailNavItem, RailRouteName, RailSectionName } from "./rail-sidebar-types"
+
+export function RailSidebar(props: {
+  snapshot?: GuiSnapshot
+  sessions: Session[]
+  terminalSessions: OpencodeXTerminalSession[]
+  hasMoreSessions: boolean
+  loadingMoreSessions: boolean
+  loadMoreSessions: () => void
+  pinnedSessions: Session[]
+  pinnedTerminalSessions: OpencodeXTerminalSession[]
+  pinnedViews: GuiSnapshot["views"]
+  navItems: readonly RailNavItem[]
+  navBadges: Record<string, number>
+  activeRouteName: string
+  activeSessionID: string
+  activeTerminalSessionID: string
+  activeViewID?: string
+  railCollapsed: boolean
+  railWidth: number
+  resizeRail: (width: number) => void
+  setRailResizing: (resizing: boolean) => void
+  railSectionOrder: readonly RailSectionName[]
+  railSections: Record<RailSectionName, boolean>
+  dragTarget?: RailDragTarget
+  dropTarget?: RailDropTarget
+  projectVisualOrder: readonly string[]
+  projectSessions: (project: GuiSnapshot["projects"][number]) => Session[]
+  projectExpanded: (projectID: string) => boolean
+  sessionPinned: (sessionID: string) => boolean
+  viewPinned: (viewID: string) => boolean
+  toggleRail: () => void
+  toggleRailSection: (name: RailSectionName) => void
+  toggleProject: (projectID: string) => void
+  openDashboard: () => void
+  openSettings: () => void
+  openRoute: (name: RailRouteName) => void
+  openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
+  openView: (viewID: string) => void
+  openAllViews: () => void
+  createProject: () => void
+  createSession: (projectID?: string, directory?: string) => void
+  createPinnedSession: () => void
+  createView: () => void
+  toggleSessionPinned: (sessionID: string) => void
+  toggleViewPinned: (viewID: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  terminalStatus: (terminalSession: OpencodeXTerminalSession) => string
+  editView: (viewID: string) => void
+  deleteView: (viewID: string, name: string) => void
+  startDrag: (event: DragEvent, target: RailDragTarget) => void
+  dragOver: (event: DragEvent, target: RailDragTarget) => void
+  clearDragTarget: () => void
+  sectionPointerDrag: (sourceID: RailSectionName, targetID?: RailSectionName, placement?: "before" | "after") => void
+  reorderRailSection: (sourceID: RailSectionName, targetID: RailSectionName, placement: "before" | "after") => void
+  projectPointerDrag: (sourceID: string, targetID?: string, placement?: "before" | "after") => void
+  reorderProject: (sourceID: string, targetID: string, placement: "before" | "after") => void
+  dropRailSection: (targetID: string, placement: "before" | "after") => void
+  dropProject: (targetID: string, placement: "before" | "after") => void
+  dropView: (targetID: string, placement: "before" | "after") => void
+  moveRailSection: (section: RailSectionName, offset: number) => void
+  moveProject: (projectID: string, offset: number) => void
+  moveView: (viewID: string, offset: number) => void
+}) {
+  const sectionOrder = createMemo(() => {
+    const source = props.dragTarget?.type === "section" ? props.dragTarget.id : undefined
+    const target = props.dropTarget?.type === "section" ? props.dropTarget : undefined
+    if (!source || !target) return props.railSectionOrder
+    const ids = moveRelative([...props.railSectionOrder], source, target.id, target.placement)
+    return ids.length === 0 ? props.railSectionOrder : ids
+  })
+  let sectionRowRects = new Map<string, DOMRect>()
+  let sectionAnimationFrame = 0
+  createEffect(() => {
+    const signature = sectionOrder().join("\n")
+    const active = props.dragTarget?.type === "section"
+    cancelAnimationFrame(sectionAnimationFrame)
+    sectionAnimationFrame = requestAnimationFrame(() => {
+      sectionRowRects = animateSectionRows(sectionRowRects, active)
+      void signature
+    })
+  })
+
+  return (
+    <aside class="rail" aria-label="OpencodeX navigation">
+      <RailBrand
+        snapshot={props.snapshot}
+        railCollapsed={props.railCollapsed}
+        openDashboard={props.openDashboard}
+        toggleRail={props.toggleRail}
+        createSession={() => props.createSession()}
+      />
+      <RailNav
+        items={props.navItems}
+        badges={props.navBadges}
+        activeRouteName={props.activeRouteName}
+        collapsed={props.railCollapsed}
+        openRoute={props.openRoute}
+      />
+      <div class="rail-scroll">
+        <Show when={!props.railCollapsed}>
+          <For each={sectionOrder()}>
+            {(section) => (
+              <Switch>
+              <Match when={section === "pinned"}>
+                <RailPinnedSection
+                  snapshot={props.snapshot}
+                  sessions={props.pinnedSessions}
+                  terminalSessions={props.pinnedTerminalSessions}
+                  views={props.pinnedViews}
+                  collapsed={props.railSections.pinned}
+                  activeSessionID={props.activeSessionID}
+                  activeTerminalSessionID={props.activeTerminalSessionID}
+                  activeViewID={props.activeViewID}
+                  activeViewRoute={props.activeRouteName === "views"}
+                  dragTarget={props.dragTarget}
+                  dropTarget={props.dropTarget}
+                  toggle={() => props.toggleRailSection("pinned")}
+                  createSession={props.createPinnedSession}
+                  openSession={props.openSession}
+                  openTerminalSession={props.openTerminalSession}
+                  openView={props.openView}
+                  toggleSessionPinned={props.toggleSessionPinned}
+                  toggleViewPinned={props.toggleViewPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
+                  renameTerminalSession={props.renameTerminalSession}
+                  removeTerminalSession={props.removeTerminalSession}
+                  terminalStatus={props.terminalStatus}
+                  editView={props.editView}
+                  deleteView={props.deleteView}
+                  startDrag={props.startDrag}
+                  dragOver={props.dragOver}
+                  clearDragTarget={props.clearDragTarget}
+                  sectionPointerDrag={props.sectionPointerDrag}
+                  reorderSection={props.reorderRailSection}
+                  dropSection={props.dropRailSection}
+                  moveSection={(offset) => props.moveRailSection("pinned", offset)}
+                />
+              </Match>
+              <Match when={section === "projects"}>
+                <RailProjectsSection
+                  snapshot={props.snapshot}
+                  collapsed={props.railSections.projects}
+                  activeSessionID={props.activeSessionID}
+                  activeTerminalSessionID={props.activeTerminalSessionID}
+                  dragTarget={props.dragTarget}
+                  dropTarget={props.dropTarget}
+                  projectVisualOrder={props.projectVisualOrder}
+                  projectSessions={props.projectSessions}
+                  projectExpanded={props.projectExpanded}
+                  sessionPinned={props.sessionPinned}
+                  toggle={() => props.toggleRailSection("projects")}
+                  toggleProject={props.toggleProject}
+                  createProject={props.createProject}
+                  createSession={props.createSession}
+                  openSession={props.openSession}
+                  openTerminalSession={props.openTerminalSession}
+                  toggleSessionPinned={props.toggleSessionPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
+                  renameTerminalSession={props.renameTerminalSession}
+                  removeTerminalSession={props.removeTerminalSession}
+                  terminalStatus={props.terminalStatus}
+                  startDrag={props.startDrag}
+                  dragOver={props.dragOver}
+                  clearDragTarget={props.clearDragTarget}
+                  sectionPointerDrag={props.sectionPointerDrag}
+                  reorderSection={props.reorderRailSection}
+                  projectPointerDrag={props.projectPointerDrag}
+                  reorderProject={props.reorderProject}
+                  dropProject={props.dropProject}
+                  moveProject={props.moveProject}
+                  dropSection={props.dropRailSection}
+                  moveSection={(offset) => props.moveRailSection("projects", offset)}
+                />
+              </Match>
+              <Match when={section === "recent"}>
+                <RailRecentSessionsSection
+                  sessions={props.sessions}
+                  terminalSessions={props.terminalSessions}
+                  snapshot={props.snapshot}
+                  collapsed={props.railSections.recent}
+                  activeSessionID={props.activeSessionID}
+                  activeTerminalSessionID={props.activeTerminalSessionID}
+                  dragTarget={props.dragTarget}
+                  dropTarget={props.dropTarget}
+                  sessionPinned={props.sessionPinned}
+                  toggle={() => props.toggleRailSection("recent")}
+                  createSession={() => props.createSession()}
+                  openSession={props.openSession}
+                  openTerminalSession={props.openTerminalSession}
+                  toggleSessionPinned={props.toggleSessionPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
+                  renameTerminalSession={props.renameTerminalSession}
+                  removeTerminalSession={props.removeTerminalSession}
+                  terminalStatus={props.terminalStatus}
+                  startDrag={props.startDrag}
+                  dragOver={props.dragOver}
+                  clearDragTarget={props.clearDragTarget}
+                  sectionPointerDrag={props.sectionPointerDrag}
+                  reorderSection={props.reorderRailSection}
+                  dropSection={props.dropRailSection}
+                  moveSection={(offset) => props.moveRailSection("recent", offset)}
+                />
+              </Match>
+              <Match when={section === "prior"}>
+                <RailPriorSessionsSection
+                  sessions={props.sessions}
+                  snapshot={props.snapshot}
+                  collapsed={props.railSections.prior}
+                  activeSessionID={props.activeSessionID}
+                  createSession={() => props.createSession()}
+                  dragTarget={props.dragTarget}
+                  dropTarget={props.dropTarget}
+                  sessionPinned={props.sessionPinned}
+                  hasMore={props.hasMoreSessions}
+                  loadingMore={props.loadingMoreSessions}
+                  loadMore={props.loadMoreSessions}
+                  toggle={() => props.toggleRailSection("prior")}
+                  openSession={props.openSession}
+                  toggleSessionPinned={props.toggleSessionPinned}
+                  renameSession={props.renameSession}
+                  deleteSession={props.deleteSession}
+                  startDrag={props.startDrag}
+                  dragOver={props.dragOver}
+                  clearDragTarget={props.clearDragTarget}
+                  sectionPointerDrag={props.sectionPointerDrag}
+                  reorderSection={props.reorderRailSection}
+                  dropSection={props.dropRailSection}
+                  moveSection={(offset) => props.moveRailSection("prior", offset)}
+                />
+              </Match>
+              <Match when={section === "views"}>
+                <RailViewsSection
+                  snapshot={props.snapshot}
+                  collapsed={props.railSections.views}
+                  active={props.activeRouteName === "views"}
+                  activeViewID={props.activeViewID}
+                  dragTarget={props.dragTarget}
+                  dropTarget={props.dropTarget}
+                  viewPinned={props.viewPinned}
+                  toggle={() => props.toggleRailSection("views")}
+                  createView={props.createView}
+                  openView={props.openView}
+                  openAllViews={props.openAllViews}
+                  toggleViewPinned={props.toggleViewPinned}
+                  editView={props.editView}
+                  deleteView={props.deleteView}
+                  startDrag={props.startDrag}
+                  dragOver={props.dragOver}
+                  clearDragTarget={props.clearDragTarget}
+                  sectionPointerDrag={props.sectionPointerDrag}
+                  reorderSection={props.reorderRailSection}
+                  dropView={props.dropView}
+                  moveView={props.moveView}
+                  dropSection={props.dropRailSection}
+                  moveSection={(offset) => props.moveRailSection("views", offset)}
+                />
+              </Match>
+              </Switch>
+            )}
+          </For>
+        </Show>
+      </div>
+      <div class="rail-footer">
+        <IconButton
+          appearance="ghost"
+          icon="settings"
+          label="Open settings"
+          tooltip="Settings"
+          pressed={props.activeRouteName === "settings"}
+          data-testid="rail-settings"
+          onClick={props.openSettings}
+        />
+      </div>
+      <Show when={!props.railCollapsed}>
+        <RailResizeHandle width={() => props.railWidth} resize={props.resizeRail} setResizing={props.setRailResizing} />
+      </Show>
+    </aside>
+  )
+}
+
+function animateSectionRows(previous: Map<string, DOMRect>, enabled: boolean) {
+  const next = new Map<string, DOMRect>()
+  for (const element of document.querySelectorAll<HTMLElement>("[data-rail-section-row-id]")) {
+    const key = element.dataset.railSectionRowId
+    if (!key) continue
+    const animations = element.getAnimations()
+    const animatedRect = enabled && animations.length > 0 ? element.getBoundingClientRect() : undefined
+    animations.forEach((animation) => animation.cancel())
+    const rect = element.getBoundingClientRect()
+    next.set(key, rect)
+    const before = animatedRect ?? previous.get(key)
+    if (!enabled || !before) continue
+    const deltaY = before.top - rect.top
+    if (Math.abs(deltaY) < 1) continue
+    element.animate([{ transform: `translateY(${deltaY}px)` }, { transform: "translateY(0)" }], {
+      duration: 240,
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+    })
+  }
+  return next
+}

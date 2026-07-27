@@ -17,6 +17,7 @@ import { FileWatcher } from "../../src/file/watcher"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-edit-session"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",

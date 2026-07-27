@@ -108,6 +108,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "$TARGET" in
+  win32-x64|win32-x64-baseline|win32-arm64|linux-x64|linux-x64-baseline|darwin-arm64|darwin-x64) ;;
+  *) err "Unsupported target '$TARGET'. Run build.sh --help for the allowlist." ;;
+esac
+
 # ---------------------------------------------------------------------------
 # Step 1: Check prerequisites
 # ---------------------------------------------------------------------------
@@ -174,7 +179,8 @@ step "Installing dependencies"
 
 cd "$BUILD_DIR"
 log "Running bun install …"
-if ! bun install 2>&1; then
+if ! bun install --frozen-lockfile; then
+  exit 1
   warn "bun install exited non-zero — continuing anyway (some optional packages may 403)"
 fi
 
@@ -200,7 +206,8 @@ if [[ "$MINIFY" != "true" ]]; then
 fi
 
 log "Running: bun run ${BUILD_ARGS[*]}"
-if ! bun run "${BUILD_ARGS[@]}" 2>&1; then
+if ! bun run "${BUILD_ARGS[@]}"; then
+  exit 1
   warn "Build script exited non-zero — checking for output anyway …"
 fi
 
@@ -239,6 +246,7 @@ if [[ -f "$WIN_BIN" ]]; then
     if [[ "$MAGIC" == "4d5a" ]]; then
       ok "PE header validated (MZ magic)"
     else
+      err "Invalid Windows binary header: $MAGIC"
       warn "Binary does not have PE header — may be corrupt (got: $MAGIC)"
     fi
   fi

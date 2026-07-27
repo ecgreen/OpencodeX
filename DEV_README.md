@@ -79,7 +79,7 @@ The TUI is `packages/opencode`. The build scripts (`build.sh`, `build-and-instal
 ### Linux
 
 ```bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bun install
 bun dev
@@ -105,7 +105,7 @@ You can also `cd packages/opencode && bun run dev` if you prefer the workspace-l
 ### macOS
 
 ```bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bun install
 bun dev
@@ -132,7 +132,7 @@ Inside WSL, install Bun and clone:
 
 ```bash
 curl -fsSL https://bun.sh/install | bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bun install
 bun dev
@@ -407,13 +407,13 @@ To publish a release:
 Once the release is published, users can install with:
 
 ```bash
-curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
+curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash
 ```
 
 or on Windows:
 
 ```powershell
-irm https://github.com/opencodex/opencodex/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
+irm https://github.com/ecgreen/OpencodeX/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
 pwsh -File .\install-windows.ps1
 ```
 

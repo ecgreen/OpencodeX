@@ -1,0 +1,303 @@
+.session-loading-skeleton-message[data-kind=assistant] .session-loading-skeleton-line:nth-child(4) {
+  width: min(68%,760px);
+}
+
+.session-loading-skeleton-line:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--text) 16%,transparent),transparent);
+  transform: translate(-110%);
+  animation: transcript-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.session-loading-skeleton-message:nth-child(2) .session-loading-skeleton-line {
+  width: 74%;
+}
+
+.session-loading-skeleton-message:nth-child(2) .session-loading-skeleton-line.title {
+  width: 28%;
+}
+
+.session-loading-skeleton-message:nth-child(3) .session-loading-skeleton-line {
+  width: 92%;
+}
+
+.session-loading-skeleton-message:nth-child(3) .session-loading-skeleton-line.short {
+  width: 46%;
+}
+
+.session-loading-skeleton-message:nth-child(4) {
+  min-height: 108px;
+}
+
+.session-loading-skeleton-message:nth-child(5) {
+  min-height: 128px;
+}
+
+.session-loading-skeleton-message:nth-child(6) {
+  min-height: 92px;
+}
+
+.session-loading-skeleton-message:nth-child(7) {
+  min-height: 116px;
+}
+
+.transcript-window-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: none;
+}
+
+.session-header p:not(.eyebrow) {
+  max-width: 680px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.message.user [data-component=markdown] {
+  color: var(--text);
+}
+
+.composer-add-context:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.composer-add-context:focus-visible {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.model-option-card:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.model-option-card.selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.model-option-card:focus-within {
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
+.session-toolbar .session-side-panel-toggle[aria-pressed=true]:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--secondary) 78%,white 8%);
+  color: var(--theme-text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 24%,transparent),transparent),color-mix(in srgb,var(--surface-raised) 66%,var(--secondary) 26%);
+  box-shadow: 0 0 0 1px color-mix(in srgb,var(--secondary) 34%,transparent),0 12px 28px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-toolbar .session-side-panel-toggle[aria-pressed=true]:focus-visible {
+  border-color: color-mix(in srgb,var(--secondary) 78%,white 8%);
+  color: var(--theme-text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 24%,transparent),transparent),color-mix(in srgb,var(--surface-raised) 66%,var(--secondary) 26%);
+  box-shadow: 0 0 0 1px color-mix(in srgb,var(--secondary) 34%,transparent),0 12px 28px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-link.status-input-needed>span:first-child {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: linear-gradient(100deg,var(--session-state-color) 0%,var(--session-state-color) 42%,color-mix(in srgb,var(--session-state-color) 28%,white) 49%,var(--theme-surface) 53%,color-mix(in srgb,var(--session-state-color) 28%,white) 57%,var(--session-state-color) 64%,var(--session-state-color) 100%);
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: sidebar-title-shimmer 3.4s linear infinite;
+  text-shadow: 0 0 16px color-mix(in srgb,var(--session-state-color) 28%,transparent);
+  transition: none;
+}
+
+.session-link:hover>span:first-child {
+  color: color-mix(in srgb,var(--text) 86%,var(--session-state-color));
+}
+
+.session-link:focus-visible>span:first-child {
+  color: color-mix(in srgb,var(--text) 86%,var(--session-state-color));
+}
+
+.session-link:hover small {
+  color: color-mix(in srgb,var(--text) 86%,var(--session-state-color));
+}
+
+.session-link:focus-visible small {
+  color: color-mix(in srgb,var(--text) 86%,var(--session-state-color));
+}
+
+.session-link.status-input-needed:hover>span:first-child {
+  color: transparent;
+}
+
+.session-link.status-input-needed:focus-visible>span:first-child {
+  color: transparent;
+}
+
+.session-link.status-unviewed:hover>span:first-child {
+  color: transparent;
+}
+
+.session-link.status-unviewed:focus-visible>span:first-child {
+  color: transparent;
+}
+
+.session-link.status-needs-review:hover>span:first-child {
+  color: transparent;
+}
+
+.session-link.status-needs-review:focus-visible>span:first-child {
+  color: transparent;
+}
+
+.session-link:hover {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--session-state-color) 32%,var(--border-subtle));
+  border-left-color: var(--session-state-color);
+  color: var(--text);
+  background-color: var(--element);
+  box-shadow: none;
+}
+
+.session-link:focus-visible {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--session-state-color) 32%,var(--border-subtle));
+  border-left-color: var(--session-state-color);
+  color: var(--text);
+  background-color: var(--element);
+  box-shadow: none;
+}
+
+.session-link.active {
+  border-color: var(--border-subtle);
+  border-left-color: var(--brand);
+  color: var(--text);
+  background-color: var(--element);
+  box-shadow: none;
+}
+
+.session-link.status-ready-for-review::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(112deg,transparent 30%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 42%,color-mix(in srgb,var(--session-state-color) 6%,transparent) 50%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 58%,transparent 70%);
+  background-size: 240% 100%;
+  animation: ready-card-shine 8s cubic-bezier(.22,1,.36,1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-link.status-ready-for-review::before {
+    animation: none;
+  }
+}
+
+.session-link>span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 760;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.session-link.status-unviewed>span:first-child {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.session-link.status-ready-for-review>span:first-child {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.session-link.status-needs-review>span:first-child {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.session-collection-open>span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.session-collection-open:hover {
+  background: var(--surface-hover);
+}
+
+.session-collection-open:focus-visible {
+  background: var(--surface-hover);
+}
+
+.composer-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.composer .composer-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+:root[data-theme=light] .session-page .opencodex-logo {
+  opacity: 1;
+  filter: brightness(.3) saturate(1.4) contrast(1.3);
+}

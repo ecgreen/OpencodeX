@@ -15,7 +15,7 @@ import { NpmConfig } from "@opencode-ai/core/npm-config"
 
 const log = Log.create({ service: "installation" })
 const appName = "opencodex"
-const githubRepo = "opencodex/opencodex"
+const githubRepo = "ecgreen/OpencodeX"
 const installUrl = `https://github.com/${githubRepo}/releases/latest/download/install`
 const npmPackage = "opencodex-ai"
 const brewTapFormula = "opencodex/tap/opencodex"

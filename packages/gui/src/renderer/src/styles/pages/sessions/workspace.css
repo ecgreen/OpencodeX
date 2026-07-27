@@ -1,0 +1,154 @@
+.session-open-tab-marker {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.session-open-tab-marker[data-kind=dirty] {
+  background: var(--theme-warning);
+}
+
+.session-open-tab-marker[data-kind=session] {
+  border: 1px solid color-mix(in srgb,var(--theme-success) 82%,var(--text));
+  background: transparent;
+}
+
+.session-side-conflict {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid color-mix(in srgb,var(--theme-warning) 42%,var(--border-subtle));
+  background: color-mix(in srgb,var(--theme-warning) 10%,var(--theme-surface));
+  padding: 7px 9px;
+}
+
+.session-side-conflict>span {
+  min-width: 0;
+  flex: 1;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.session-open-empty-changes {
+  display: grid;
+  width: 100%;
+  max-width: 680px;
+  justify-self: center;
+  gap: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: color-mix(in srgb,var(--panel) 86%,var(--bg));
+  padding: 8px;
+}
+
+.session-open-empty-changes header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 7px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.session-open-empty-changes header strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.session-open-empty-changes>button {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 7px;
+  text-align: left;
+}
+
+.session-open-empty-changes>button span {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-empty-changes small {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.session-side-patch header>div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session-side-file-git-actions,
+.session-side-git-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.session-side-diff>header>.session-side-git-header-actions {
+  flex: 0 0 132px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  align-items: stretch;
+  gap: 6px;
+  width: 132px;
+}
+
+.session-side-git-header-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
+.session-side-file-git-actions {
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+
+.session-side-file-git-actions button {
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
+.session-side-git-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--muted);
+  background: var(--element);
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+.session-side-patch-pages {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.session-side-patch-pages .session-side-diff-patch {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.session-side-patch-progress {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--muted);
+  background: var(--panel);
+  padding: 6px 10px;
+  font-size: 11px;
+}

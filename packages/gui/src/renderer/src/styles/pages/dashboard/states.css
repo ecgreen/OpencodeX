@@ -1,0 +1,280 @@
+.dashboard-item-card.empty-create.interactive:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb,var(--brand) 46%,var(--line));
+  background: var(--surface-hover);
+}
+
+.dashboard-item-card.empty-create:before {
+  display: none;
+}
+
+.dashboard-card-open:hover {
+  background: transparent;
+  outline: none;
+}
+
+.dashboard-card-open:focus-visible {
+  background: transparent;
+  outline: none;
+}
+
+.dashboard-status-card:hover .pin-toggle {
+  opacity: 1;
+}
+
+.dashboard-status-card:focus-within .pin-toggle {
+  opacity: 1;
+}
+
+.dashboard-action-card.warning {
+  --action-color: var(--amber) ;
+}
+
+.dashboard-action-card:before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--action-color);
+  opacity: .82;
+  display: none;
+}
+
+.dashboard-action-card span:not(.action-plus) {
+  color: var(--muted);
+  line-height: 1.2;
+  font-weight: 680;
+  min-width: 0;
+  font-size: 11px;
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dashboard-bucket-toggle:hover {
+  color: var(--text);
+  background: transparent;
+  outline: none;
+}
+
+.dashboard-bucket-toggle:focus-visible {
+  color: var(--text);
+  background: transparent;
+  outline: none;
+}
+
+.dashboard-empty-action>span:first-child {
+  color: var(--primary);
+}
+
+.dashboard-empty-action:hover {
+  border-color: color-mix(in srgb,var(--primary) 62%,var(--border));
+  color: var(--text);
+  background: color-mix(in srgb,var(--bg) 80%,var(--primary) 8%);
+  outline: none;
+}
+
+.dashboard-empty-action:focus-visible {
+  border-color: color-mix(in srgb,var(--primary) 62%,var(--border));
+  color: var(--text);
+  background: color-mix(in srgb,var(--bg) 80%,var(--primary) 8%);
+  outline: none;
+}
+
+.dashboard-item-card.warning {
+  border-left-color: var(--warning);
+  --card-accent: var(--warning);
+  background: transparent;
+}
+
+.dashboard-action-card :is(span,small,strong) {
+  transition: border-color var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-action-card:hover {
+  transform: none;
+  border-color: color-mix(in srgb,var(--action-color) 46%,var(--border));
+  border-left-color: var(--action-color);
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--action-color) 16%,transparent),transparent 48%),color-mix(in srgb,var(--panel) 88%,var(--action-color) 12%);
+  box-shadow: inset 4px 0 0 var(--action-color),inset 0 0 0 1px color-mix(in srgb,var(--action-color) 24%,transparent);
+}
+
+.dashboard-action-card:focus-visible {
+  transform: none;
+  border-color: color-mix(in srgb,var(--action-color) 46%,var(--border));
+  border-left-color: var(--action-color);
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--action-color) 16%,transparent),transparent 48%),color-mix(in srgb,var(--panel) 88%,var(--action-color) 12%);
+  box-shadow: inset 4px 0 0 var(--action-color),inset 0 0 0 1px color-mix(in srgb,var(--action-color) 24%,transparent);
+}
+
+.dashboard-action-card:hover span:not(.action-plus) {
+  color: color-mix(in srgb,var(--text) 82%,var(--muted));
+}
+
+.dashboard-action-card:focus-visible span:not(.action-plus) {
+  color: color-mix(in srgb,var(--text) 82%,var(--muted));
+}
+
+.dashboard-action-card:hover small {
+  border-left-color: color-mix(in srgb,var(--action-color) 68%,var(--border));
+  color: color-mix(in srgb,var(--action-color) 82%,var(--text));
+}
+
+.dashboard-action-card:focus-visible small {
+  border-left-color: color-mix(in srgb,var(--action-color) 68%,var(--border));
+  color: color-mix(in srgb,var(--action-color) 82%,var(--text));
+}
+
+.dashboard-item-card.interactive :is(p,span,small,strong) {
+  transition: color .14s ease;
+}
+
+.dashboard-status-card.interactive :is(p,span,small,strong) {
+  transition: color .14s ease;
+}
+
+.dashboard-status-card.interactive:hover {
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 12%,transparent),transparent 46%),color-mix(in srgb,var(--panel) 90%,var(--card-accent, var(--primary)) 10%);
+  box-shadow: inset 4px 0 0 var(--card-accent, var(--primary)),inset 0 0 0 1px color-mix(in srgb,var(--card-accent, var(--primary)) 20%,transparent);
+}
+
+.dashboard-status-card.interactive:focus-within {
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 12%,transparent),transparent 46%),color-mix(in srgb,var(--panel) 90%,var(--card-accent, var(--primary)) 10%);
+  box-shadow: inset 4px 0 0 var(--card-accent, var(--primary)),inset 0 0 0 1px color-mix(in srgb,var(--card-accent, var(--primary)) 20%,transparent);
+}
+
+.dashboard-item-card.interactive:hover :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.dashboard-item-card.interactive:focus-within :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.dashboard-status-card.interactive:hover :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.dashboard-status-card.interactive:focus-within :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.dashboard-item-card.interactive:hover strong {
+  color: var(--text);
+}
+
+.dashboard-item-card.interactive:focus-within strong {
+  color: var(--text);
+}
+
+.dashboard-status-card.interactive:hover strong {
+  color: var(--text);
+}
+
+.dashboard-status-card.interactive:focus-within strong {
+  color: var(--text);
+}
+
+.dashboard-status-card.status-input-needed.interactive:hover strong {
+  color: transparent;
+}
+
+.dashboard-status-card.status-input-needed.interactive:focus-within strong {
+  color: transparent;
+}
+
+.dashboard-status-card.status-unviewed.interactive:hover strong {
+  color: transparent;
+}
+
+.dashboard-status-card.status-unviewed.interactive:focus-within strong {
+  color: transparent;
+}
+
+:is(.dashboard-status-card,.dashboard-view-card).status-ready-for-review {
+  overflow: hidden;
+}
+
+:is(.dashboard-status-card,.dashboard-view-card).status-ready-for-review::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(112deg,transparent 30%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 42%,color-mix(in srgb,var(--session-state-color) 7%,transparent) 50%,color-mix(in srgb,var(--session-state-color) 2%,transparent) 58%,transparent 70%);
+  background-size: 240% 100%;
+  animation: ready-card-shine 8s cubic-bezier(.22,1,.36,1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.dashboard-status-card,.dashboard-view-card).status-ready-for-review::after {
+    animation: none;
+  }
+}
+
+.dashboard-status-card.status-needs-review.interactive:hover strong {
+  color: transparent;
+}
+
+.dashboard-status-card.status-needs-review.interactive:focus-within strong {
+  color: transparent;
+}
+
+.dashboard-item-card:before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
+  background: var(--card-accent, var(--line-strong));
+  opacity: .8;
+  display: none;
+}
+
+.dashboard-status-card:before {
+  background: var(--session-state-color);
+  display: none;
+}
+
+.dashboard-item-card.interactive:hover {
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  border-color: var(--border-active);
+  background: var(--surface-raised);
+  box-shadow: none;
+  transform: none;
+}
+
+.dashboard-item-card.interactive:focus-within {
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  border-color: var(--border-active);
+  background: var(--surface-raised);
+  box-shadow: none;
+  transform: none;
+}
+
+:root[data-theme=light] .dashboard-page>.opencodex-logo {
+  opacity: 1;
+  filter: brightness(.3) saturate(1.4) contrast(1.3);
+}
+
+.dashboard-summary-card.interactive:hover,
+.dashboard-summary-card.interactive:focus-within {
+  border-color: color-mix(in srgb,var(--card-accent) 42%,var(--border));
+  border-left-color: var(--card-accent);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent) 11%,transparent),transparent 48%),var(--surface-raised);
+  box-shadow: inset 2px 0 0 var(--card-accent);
+}
+
+.dashboard-summary-card.interactive:hover :is(small,small>span),
+.dashboard-summary-card.interactive:focus-within :is(small,small>span) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}

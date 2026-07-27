@@ -1,0 +1,73 @@
+.project-directory-row:hover {
+  background: color-mix(in srgb,var(--element) 46%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.project-directory-row:focus-within {
+  background: color-mix(in srgb,var(--element) 46%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.project-directory-row.dragging {
+  opacity: .26;
+  background: color-mix(in srgb,var(--panel) 74%,var(--theme-canvas) 26%);
+  cursor: grabbing;
+}
+
+.project-directory-row.dropping {
+  box-shadow: inset 0 3px 0 var(--primary),inset 3px 0 0 var(--primary);
+}
+
+.project-directory-row.dropping.drop-after {
+  box-shadow: inset 0 -3px 0 var(--primary),inset 3px 0 0 var(--primary);
+}
+
+.project-home-folder-strip button:hover {
+  border-color: color-mix(in srgb,var(--primary) 58%,var(--border));
+  color: var(--text);
+  outline: none;
+}
+
+.project-home-folder-strip button:focus-visible {
+  border-color: color-mix(in srgb,var(--primary) 58%,var(--border));
+  color: var(--text);
+  outline: none;
+}
+
+.project-home-panel>div>.project-home-row:first-child {
+  border-top: 0;
+}
+
+button.project-home-row:hover {
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+button.project-home-row:focus-visible {
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+.project-home-row.warning {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 9%,transparent);
+}
+
+.project-home-row.failed {
+  box-shadow: inset 3px 0 0 var(--error);
+  background: color-mix(in srgb,var(--error) 9%,transparent);
+}
+
+.rail-project-row:hover {
+  color: var(--text);
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-project-row:focus-within {
+  color: var(--text);
+  background: var(--element);
+  box-shadow: none;
+}

@@ -1,0 +1,325 @@
+.workbench-panel>textarea {
+  margin-inline: 12px;
+}
+
+.workbench-panel>button {
+  margin-inline: 12px;
+}
+
+.workbench-panel>.empty {
+  margin-inline: 12px;
+}
+
+.workbench-panel textarea {
+  min-height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--element);
+  color: var(--text);
+  padding: 10px;
+  resize: vertical;
+}
+
+.workbench-branch-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.workbench-branch-row select {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--element);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.workbench-branch-row input {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--element);
+  color: var(--text);
+  padding: 8px 10px;
+  flex: 1 1 180px;
+}
+
+.workbench-change-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--element);
+  padding: 10px;
+}
+
+.workbench-browser-tabs {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--theme-border);
+  background: var(--theme-surface);
+  padding: 6px 8px 0;
+}
+
+.workbench-browser-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+  max-width: 220px;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: color-mix(in srgb,var(--workbench-panel) 84%,var(--theme-surface-raised));
+  color: var(--text-muted);
+  padding: 0 6px 0 11px;
+  cursor: pointer;
+}
+
+.workbench-browser-tab>span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-browser-tab>button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0;
+}
+
+.workbench-browser-tab-close {
+  opacity: .72;
+  pointer-events: auto;
+}
+
+.workbench-browser-new-tab {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.workbench-browser-bar {
+  align-items: center;
+  display: grid;
+  grid-template-columns: auto auto auto minmax(220px,1fr) auto auto auto;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--theme-surface-raised);
+  padding: 8px;
+}
+
+.workbench-browser-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 5px 9px;
+}
+
+.workbench-browser-bar input {
+  min-width: 0;
+  border: 1px solid var(--border);
+  color: var(--text);
+  flex: 1 1 180px;
+  border-radius: 999px;
+  background: var(--theme-surface);
+  padding: 7px 13px;
+}
+
+.workbench-artifacts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+
+.workbench-artifacts-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-artifact>header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-artifacts-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workbench-artifact {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--element);
+  overflow: hidden;
+}
+
+.workbench-artifact-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 9px 10px;
+}
+
+.workbench-artifact-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-artifact>img {
+  margin: 12px;
+  display: block;
+  max-height: min(560px,62vh);
+  object-fit: contain;
+}
+
+.workbench-artifact>pre {
+  margin: 12px;
+  max-height: min(520px,58vh);
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.browser-host-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--muted);
+  background: radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--secondary) 10%,transparent),transparent 32%),var(--theme-canvas);
+  text-align: center;
+}
+
+.browser-host-fallback svg {
+  width: 32px;
+  height: 32px;
+  color: var(--secondary);
+}
+
+.browser-host-fallback strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.browser-host-fallback span {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.workbench-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--workbench-border-soft);
+  background: var(--workbench-panel);
+  padding: 4px 8px;
+  min-height: 48px;
+  padding-inline: 12px;
+}
+
+.workbench-explorer-header span {
+  font-weight: 750;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.workbench-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 34px;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.workbench-filter-row .workbench-filter {
+  margin: 0;
+}
+
+.workbench-editor>header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.workbench-editor>header .row-actions {
+  gap: 6px;
+}
+
+.workbench-editor>header .row-actions>button[aria-pressed=true] {
+  color: var(--brand);
+  border-color: color-mix(in srgb,var(--brand) 45%,var(--line));
+  background: var(--brand-soft);
+}
+
+.workbench-files.assistant-closing .workbench-assistant-panel {
+  animation: workbench-assistant-out .18s cubic-bezier(.7,0,.84,0) both;
+}
+
+.workbench-open-file-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.workbench-open-file-results {
+  height: min(440px,calc(100vh - 286px));
+  min-height: 280px;
+  overflow: auto;
+  padding: 0 8px 10px;
+  scrollbar-gutter: stable;
+}
+
+.workbench-open-file-results .empty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}

@@ -1,0 +1,173 @@
+.model-picker-section.disconnected .model-picker-section-toggle>span {
+  color: var(--muted);
+}
+
+/* Swarms lead the picker: an agent team is selected exactly like a model. */
+.model-picker-swarms>div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.swarm-option-card {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle));
+  border-radius: 9px;
+  text-align: left;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 55%);
+}
+
+.swarm-option-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 65%);
+}
+
+.swarm-option-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.swarm-option-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.swarm-option-icon .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.swarm-option-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.swarm-option-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.provider-auth-warning {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 35%, transparent);
+  border-radius: 999px;
+  color: var(--warning);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  background: color-mix(in srgb, var(--theme-warning) 10%, transparent);
+}
+
+.provider-connect-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--theme-overlay-soft);
+}
+
+.provider-connect-hint span {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-picker-show-all {
+  justify-self: start;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.composer-provider-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 35%, transparent);
+  border-radius: 10px;
+  color: var(--primary);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--theme-warning) 9%, transparent);
+}
+
+.composer-provider-warning span {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-provider-warning .icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--warning);
+}
+
+.transcript-message-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 32%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theme-danger) 8%, transparent);
+}
+
+.transcript-message-error-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--danger);
+}
+
+.transcript-message-error-icon .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.transcript-message-error-body {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.transcript-message-error-body strong {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.transcript-message-error-body p {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transcript-message-error-body small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: .04em;
+}

@@ -1,10 +1,10 @@
-import {
+import type {
   AssistantMessage,
-  type SnapshotFileDiff,
+  SnapshotFileDiff,
   Message as MessageType,
   Part as PartType,
 } from "@opencode-ai/sdk/v2/client"
-import type { SessionStatus } from "@opencode-ai/sdk/v2"
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 

@@ -1,29 +1,23 @@
-### Issue for this PR
+## Intent
 
-Closes #
+What user or maintenance outcome does this PR deliver?
 
-### Type of change
+## Implementation
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor / code improvement
-- [ ] Documentation
+What changed, including important tradeoffs?
 
-### What does this PR do?
+## Validation
 
-Please provide a description of the issue, the changes you made to fix it, and why they work. It is expected that you understand why your changes work and if you do not understand why at least say as much so a maintainer knows how much to value the PR.
+List the commands and manual checks performed.
 
-**If you paste a large clearly AI generated description here your PR may be IGNORED or CLOSED!**
+## Screenshots
 
-### How did you verify your code works?
+Include before/after images for visible TUI or GUI changes.
 
-### Screenshots / recordings
+## Upstream impact
 
-_If this is a UI change, please include a screenshot or recording._
+Does this touch fork-owned paths, shared seams, backports, or the upstream lock?
 
-### Checklist
+## Migration impact
 
-- [ ] I have tested my changes locally
-- [ ] I have not included unrelated changes in this PR
-
-_If you do not follow this template your PR will be automatically rejected._
+Describe storage, configuration, SDK, or release migration effects. Write `None` when not applicable.

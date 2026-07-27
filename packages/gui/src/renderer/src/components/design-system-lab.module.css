@@ -1,0 +1,168 @@
+.lab {
+  min-height: 100%;
+  padding: 32px clamp(20px, 4vw, 64px) 72px;
+  color: var(--ds-text);
+  background: var(--ds-canvas);
+  font-family: var(--ds-font-ui);
+}
+
+.header,
+.section {
+  width: min(1320px, 100%);
+  margin-inline: auto;
+}
+
+.header {
+  display: flex;
+  margin-bottom: 24px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header h1 {
+  margin: 7px 0 4px;
+  font-size: clamp(26px, 3vw, 40px);
+  letter-spacing: -0.045em;
+}
+
+.header p,
+.sectionHeader p {
+  margin: 0;
+  color: var(--ds-text-muted);
+  line-height: 1.5;
+}
+
+.eyebrow,
+.sectionHeader span {
+  color: var(--ds-focus);
+  font: 700 10px/1 var(--ds-font-technical);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.headerActions,
+.inlineRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.section {
+  display: grid;
+  gap: 14px;
+  padding: 20px 0 24px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.sectionHeader h2 {
+  margin: 5px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+
+.sectionHeader p {
+  max-width: 52ch;
+  font-size: 12px;
+  text-align: right;
+}
+
+.buttonMatrix {
+  display: grid;
+  gap: 8px;
+}
+
+.matrixRow {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.matrixRow code {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+}
+
+.matrixRow > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px 16px;
+}
+
+.fullSpan {
+  grid-column: 1 / -1;
+}
+
+.controlGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+}
+
+.controlCard,
+.noticeStack {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.controlCard {
+  padding: 16px;
+}
+
+.stateGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .fieldGrid,
+  .stateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .controlGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .fullSpan {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .lab {
+    padding: 20px 14px 48px;
+  }
+
+  .header,
+  .sectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sectionHeader p {
+    text-align: left;
+  }
+
+  .matrixRow {
+    grid-template-columns: 1fr;
+  }
+}

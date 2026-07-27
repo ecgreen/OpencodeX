@@ -6,6 +6,7 @@ import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
+import type { WorkspaceV2 } from "@opencode-ai/core/workspace"
 
 interface Metadata {
   [key: string]: any
@@ -34,6 +35,8 @@ export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgume
 
 export type Context<M extends Metadata = Metadata> = {
   sessionID: SessionID
+  directory: string
+  workspaceID?: WorkspaceV2.ID
   messageID: MessageID
   agent: string
   abort: AbortSignal
@@ -59,7 +62,7 @@ export interface Def<
   description: string
   parameters: Parameters
   jsonSchema?: JSONSchema7
-  execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
+  execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>, unknown>
   formatValidationError?(error: unknown): string
 }
 export type DefWithoutID<
@@ -141,7 +144,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
               ...(truncated.truncated && { outputPath: truncated.outputPath }),
             },
           }
-        }).pipe(Effect.orDie, Effect.withSpan("Tool.execute", { attributes: attrs }))
+        }).pipe(Effect.withSpan("Tool.execute", { attributes: attrs }))
       }
       return toolInfo
     })

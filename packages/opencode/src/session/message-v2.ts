@@ -477,6 +477,115 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   }
 })
 
+const RENDER_BUDGET_CHUNK_SIZE = 32
+
+export const pageByRenderBudget = Effect.fn("MessageV2.pageByRenderBudget")(function* (input: {
+  sessionID: SessionID
+  renderBudget: number
+  limit: number
+  before?: string
+}) {
+  const { db } = yield* Database.Service
+  const firstBefore = input.before ? cursor.decode(input.before) : undefined
+  const selectedRows: (typeof MessageTable.$inferSelect)[] = []
+  const selectedItems: WithParts[] = []
+  let currentBefore = firstBefore
+  let weight = 0
+  let more = false
+
+  while (selectedRows.length < input.limit) {
+    const chunkLimit = Math.min(RENDER_BUDGET_CHUNK_SIZE, input.limit - selectedRows.length)
+    const where = currentBefore
+      ? and(eq(MessageTable.session_id, input.sessionID), older(currentBefore))
+      : eq(MessageTable.session_id, input.sessionID)
+    const rows = yield* db
+      .select()
+      .from(MessageTable)
+      .where(where)
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .limit(chunkLimit + 1)
+      .all()
+      .pipe(Effect.orDie)
+
+    if (rows.length === 0) break
+
+    const chunkRows = rows.slice(0, chunkLimit)
+    const chunkItems = yield* hydrate(db, chunkRows)
+    for (const [index, item] of chunkItems.entries()) {
+      const itemWeight = renderWeight(item)
+      if (selectedRows.length > 0 && weight + itemWeight > input.renderBudget) {
+        more = true
+        break
+      }
+      const row = chunkRows[index]
+      if (!row) continue
+      selectedRows.push(row)
+      selectedItems.push(item)
+      weight += itemWeight
+    }
+
+    if (more) break
+    const hasExtra = rows.length > chunkLimit
+    if (hasExtra && selectedRows.length >= input.limit) {
+      more = true
+      break
+    }
+    if (!hasExtra) break
+    const tail = chunkRows.at(-1)
+    if (!tail) break
+    currentBefore = { id: tail.id, time: tail.time_created }
+  }
+
+  if (selectedRows.length === 0) {
+    const row = yield* db
+      .select({ id: SessionTable.id })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, input.sessionID))
+      .get()
+      .pipe(Effect.orDie)
+    if (!row) return yield* new NotFoundError({ message: `Session not found: ${input.sessionID}` })
+    return {
+      items: [] as WithParts[],
+      more: false,
+    }
+  }
+
+  const items = selectedItems.toReversed()
+  const tail = selectedRows.at(-1)
+  return {
+    items,
+    more,
+    cursor: more && tail ? cursor.encode({ id: tail.id, time: tail.time_created }) : undefined,
+  }
+})
+
+function renderWeight(message: WithParts) {
+  return 600 + message.parts.reduce((total, part) => total + partWeight(part), 0)
+}
+
+function partWeight(part: Part) {
+  if (part.type === "text" || part.type === "reasoning") return textWeight(part.text, 10_000)
+  if (part.type === "tool") return 800 + valueWeight(part.state, 12_000)
+  if (part.type === "file" || part.type === "patch") return 1_800
+  return 400
+}
+
+function textWeight(value: string, cap: number) {
+  return Math.min(cap, value.length)
+}
+
+function valueWeight(value: unknown, cap: number): number {
+  if (typeof value === "string") return textWeight(value, cap)
+  if (typeof value === "number" || typeof value === "boolean") return 24
+  if (Array.isArray(value)) {
+    return Math.min(cap, value.reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
+  }
+  if (typeof value === "object" && value !== null) {
+    return Math.min(cap, Object.values(value as Record<string, unknown>).reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
+  }
+  return 8
+}
+
 export function stream(sessionID: SessionID) {
   const size = 50
   return Effect.gen(function* () {

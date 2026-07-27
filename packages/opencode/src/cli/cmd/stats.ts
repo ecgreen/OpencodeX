@@ -66,10 +66,10 @@ export const StatsCommand = effectCmd({
         describe: "filter by project (default: all projects, empty string: current project)",
         type: "string",
       }),
+  instance: (args) => args.project === "",
   handler: Effect.fn("Cli.stats")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return
-    const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project)
+    const currentProject = args.project === "" ? (yield* InstanceRef)?.project : undefined
+    const stats = yield* aggregateSessionStats(args.days, args.project, currentProject)
     let modelLimit: number | undefined
     if (args.models === true) {
       modelLimit = Infinity
@@ -105,7 +105,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
   })()
 
   const windowDays = (() => {
-    if (days === undefined) return
+    if (days === undefined) return undefined
     if (days === 0) return 1
     return days
   })()
@@ -166,7 +166,12 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
       Effect.gen(function* () {
         const messages = yield* svc
           .messages({ sessionID: session.id })
-          .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed([])))
+          .pipe(
+            Effect.catchIf(
+              (error): error is NotFoundError => NotFoundError.isInstance(error),
+              () => Effect.succeed([]),
+            ),
+          )
 
         const sessionCost = session.cost ?? 0
         const sessionTokens = session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }

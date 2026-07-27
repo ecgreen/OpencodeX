@@ -1,7 +1,7 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode acp --help 1`] = `
-"opencode acp
+"opencodex acp
 
 start ACP (Agent Client Protocol) server
 
@@ -22,16 +22,16 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp --help 1`] = `
-"opencode mcp
+"opencodex mcp
 
 manage MCP (Model Context Protocol) servers
 
 Commands:
-  opencode mcp add            add an MCP server
-  opencode mcp list           list MCP servers and their status                        [aliases: ls]
-  opencode mcp auth [name]    authenticate with an OAuth-enabled MCP server
-  opencode mcp logout [name]  remove OAuth credentials for an MCP server
-  opencode mcp debug <name>   debug OAuth connection for an MCP server
+  opencodex mcp add            add an MCP server
+  opencodex mcp list           list MCP servers and their status                       [aliases: ls]
+  opencodex mcp auth [name]    authenticate with an OAuth-enabled MCP server
+  opencodex mcp logout [name]  remove OAuth credentials for an MCP server
+  opencodex mcp debug <name>   debug OAuth connection for an MCP server
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -42,7 +42,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode attach --help 1`] = `
-"opencode attach <url>
+"opencodex attach <url>
 
 attach to a running opencode server
 
@@ -64,7 +64,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode run --help 1`] = `
-"opencode run [message..]
+"opencodex run [message..]
 
 run opencode with a message
 
@@ -116,24 +116,24 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode debug --help 1`] = `
-"opencode debug
+"opencodex debug
 
 debugging and troubleshooting tools
 
 Commands:
-  opencode debug config        show resolved configuration
-  opencode debug lsp           LSP debugging utilities
-  opencode debug rg            ripgrep debugging utilities
-  opencode debug file          file system debugging utilities
-  opencode debug scrap         list all known projects
-  opencode debug skill         list all available skills
-  opencode debug snapshot      snapshot debugging utilities
-  opencode debug startup       print startup timing
-  opencode debug agent <name>  show agent configuration details
-  opencode debug v2            debug v2 catalog and built-in plugins
-  opencode debug info          show debug information
-  opencode debug paths         show global paths (data, config, cache, state)
-  opencode debug wait          wait indefinitely (for debugging)
+  opencodex debug config        show resolved configuration
+  opencodex debug lsp           LSP debugging utilities
+  opencodex debug rg            ripgrep debugging utilities
+  opencodex debug file          file system debugging utilities
+  opencodex debug scrap         list all known projects
+  opencodex debug skill         list all available skills
+  opencodex debug snapshot      snapshot debugging utilities
+  opencodex debug startup       print startup timing
+  opencodex debug agent <name>  show agent configuration details
+  opencodex debug v2            debug v2 catalog and built-in plugins
+  opencodex debug info          show debug information
+  opencodex debug paths         show global paths (data, config, cache, state)
+  opencodex debug wait          wait indefinitely (for debugging)
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -144,14 +144,14 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers --help 1`] = `
-"opencode providers
+"opencodex providers
 
 manage AI providers and credentials
 
 Commands:
-  opencode providers list         list providers and credentials                       [aliases: ls]
-  opencode providers login [url]  log in to a provider
-  opencode providers logout       log out from a configured provider
+  opencodex providers list         list providers and credentials                      [aliases: ls]
+  opencodex providers login [url]  log in to a provider
+  opencodex providers logout       log out from a configured provider
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -162,13 +162,13 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent --help 1`] = `
-"opencode agent
+"opencodex agent
 
 manage agents
 
 Commands:
-  opencode agent create  create a new agent
-  opencode agent list    list all available agents
+  opencodex agent create  create a new agent
+  opencodex agent list    list all available agents
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -179,7 +179,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode upgrade --help 1`] = `
-"opencode upgrade [target]
+"opencodex upgrade [target]
 
 upgrade opencode to the latest or a specific version
 
@@ -197,7 +197,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode uninstall --help 1`] = `
-"opencode uninstall
+"opencodex uninstall
 
 uninstall opencode and remove all related files
 
@@ -214,7 +214,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode serve --help 1`] = `
-"opencode serve
+"opencodex serve
 
 starts a headless opencode server
 
@@ -234,7 +234,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode web --help 1`] = `
-"opencode web
+"opencodex web
 
 start opencode server and open web interface
 
@@ -254,7 +254,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode models --help 1`] = `
-"opencode models [provider]
+"opencodex models [provider]
 
 list all available models
 
@@ -272,7 +272,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode stats --help 1`] = `
-"opencode stats
+"opencodex stats
 
 show token usage and cost statistics
 
@@ -290,7 +290,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode export --help 1`] = `
-"opencode export [sessionID]
+"opencodex export [sessionID]
 
 export session data as JSON
 
@@ -307,7 +307,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode import --help 1`] = `
-"opencode import <file>
+"opencodex import <file>
 
 import session data from JSON file or URL
 
@@ -323,13 +323,13 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github --help 1`] = `
-"opencode github
+"opencodex github
 
 manage GitHub agent
 
 Commands:
-  opencode github install  install the GitHub agent
-  opencode github run      run the GitHub agent
+  opencodex github install  install the GitHub agent
+  opencodex github run      run the GitHub agent
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -340,7 +340,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode pr --help 1`] = `
-"opencode pr <number>
+"opencodex pr <number>
 
 fetch and checkout a GitHub PR branch, then run opencode
 
@@ -356,13 +356,13 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session --help 1`] = `
-"opencode session
+"opencodex session
 
 manage sessions
 
 Commands:
-  opencode session list                list sessions
-  opencode session delete <sessionID>  delete a session
+  opencodex session list                list sessions
+  opencodex session delete <sessionID>  delete a session
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -373,7 +373,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode plugin --help 1`] = `
-"opencode plugin <module>
+"opencodex plugin <module>
 
 install plugin and update config
 
@@ -391,13 +391,13 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db --help 1`] = `
-"opencode db
+"opencodex db
 
 database tools
 
 Commands:
-  opencode db [query]     open an interactive sqlite3 shell or run a query                 [default]
-  opencode db path        print the database path
+  opencodex db [query]     open an interactive sqlite3 shell or run a query                [default]
+  opencodex db path        print the database path
 
 Positionals:
   query  SQL query to execute                                                               [string]
@@ -412,7 +412,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp list --help 1`] = `
-"opencode mcp list
+"opencodex mcp list
 
 list MCP servers and their status
 
@@ -425,7 +425,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp add --help 1`] = `
-"opencode mcp add
+"opencodex mcp add
 
 add an MCP server
 
@@ -438,12 +438,12 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp auth --help 1`] = `
-"opencode mcp auth [name]
+"opencodex mcp auth [name]
 
 authenticate with an OAuth-enabled MCP server
 
 Commands:
-  opencode mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
+  opencodex mcp auth list  list OAuth-capable MCP servers and their auth status        [aliases: ls]
 
 Positionals:
   name  name of the MCP server                                                              [string]
@@ -457,7 +457,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp logout --help 1`] = `
-"opencode mcp logout [name]
+"opencodex mcp logout [name]
 
 remove OAuth credentials for an MCP server
 
@@ -473,7 +473,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers list --help 1`] = `
-"opencode providers list
+"opencodex providers list
 
 list providers and credentials
 
@@ -486,7 +486,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers login --help 1`] = `
-"opencode providers login [url]
+"opencodex providers login [url]
 
 log in to a provider
 
@@ -504,7 +504,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers logout --help 1`] = `
-"opencode providers logout
+"opencodex providers logout
 
 log out from a configured provider
 
@@ -517,7 +517,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent create --help 1`] = `
-"opencode agent create
+"opencodex agent create
 
 create a new agent
 
@@ -537,7 +537,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent list --help 1`] = `
-"opencode agent list
+"opencodex agent list
 
 list all available agents
 
@@ -550,7 +550,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session list --help 1`] = `
-"opencode session list
+"opencodex session list
 
 list sessions
 
@@ -565,7 +565,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session delete --help 1`] = `
-"opencode session delete <sessionID>
+"opencodex session delete <sessionID>
 
 delete a session
 
@@ -581,7 +581,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github install --help 1`] = `
-"opencode github install
+"opencodex github install
 
 install the GitHub agent
 
@@ -594,7 +594,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github run --help 1`] = `
-"opencode github run
+"opencodex github run
 
 run the GitHub agent
 
@@ -609,7 +609,7 @@ Options:
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db path --help 1`] = `
-"opencode db path
+"opencodex db path
 
 print the database path
 

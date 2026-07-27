@@ -15,7 +15,7 @@ import {
 import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
-import {
+import type {
   AgentPart,
   AssistantMessage,
   FilePart,
@@ -29,7 +29,7 @@ import {
   Todo,
   QuestionAnswer,
   QuestionInfo,
-} from "@opencode-ai/sdk/v2"
+} from "@opencode-ai/sdk/v2/client"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
@@ -58,6 +58,7 @@ import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
+import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "./tool-output-preview"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -826,6 +827,41 @@ function ExaOutput(props: { output?: string }) {
             )}
           </For>
         </div>
+      </div>
+    </Show>
+  )
+}
+
+function ToolOutput(props: { output?: string }) {
+  const preview = createMemo(() => previewToolOutput(props.output ?? "", TOOL_OUTPUT_PREVIEW_LIMITS.expanded))
+  const [copied, setCopied] = createSignal(false)
+
+  const handleCopy = async () => {
+    const output = props.output ?? ""
+    if (!output || !(await writeClipboard(output))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Show when={preview().text}>
+      <div data-component="tool-output" data-scrollable>
+        <Markdown text={preview().text} />
+        <Show when={preview().truncated}>
+          <div data-slot="tool-output-truncated" role="status" class="flex items-center gap-2 text-12-regular text-text-weak">
+            <span>Output truncated in this preview.</span>
+            <Tooltip value={copied() ? "Copied" : "Copy full output"} placement="top" gutter={4}>
+              <IconButton
+                icon={copied() ? "check" : "copy"}
+                size="small"
+                variant="secondary"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={handleCopy}
+                aria-label={copied() ? "Copied" : "Copy full output"}
+              />
+            </Tooltip>
+          </div>
+        </Show>
       </div>
     </Show>
   )
@@ -1647,11 +1683,7 @@ ToolRegistry.register({
         icon="bullet-list"
         trigger={{ title: i18n.t("ui.tool.list"), subtitle: getDirectory(props.input.path || "/") }}
       >
-        <Show when={props.output}>
-          <div data-component="tool-output" data-scrollable>
-            <Markdown text={props.output!} />
-          </div>
-        </Show>
+        <ToolOutput output={props.output} />
       </BasicTool>
     )
   },
@@ -1671,11 +1703,7 @@ ToolRegistry.register({
           args: props.input.pattern ? ["pattern=" + props.input.pattern] : [],
         }}
       >
-        <Show when={props.output}>
-          <div data-component="tool-output" data-scrollable>
-            <Markdown text={props.output!} />
-          </div>
-        </Show>
+        <ToolOutput output={props.output} />
       </BasicTool>
     )
   },
@@ -1698,11 +1726,7 @@ ToolRegistry.register({
           args,
         }}
       >
-        <Show when={props.output}>
-          <div data-component="tool-output" data-scrollable>
-            <Markdown text={props.output!} />
-          </div>
-        </Show>
+        <ToolOutput output={props.output} />
       </BasicTool>
     )
   },
@@ -1876,6 +1900,7 @@ ToolRegistry.register({
       const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
       return `$ ${cmd}${out ? "\n\n" + out : ""}`
     })
+    const preview = createMemo(() => previewToolOutput(text(), TOOL_OUTPUT_PREVIEW_LIMITS.expanded).text)
     const [copied, setCopied] = createSignal(false)
 
     const handleCopy = async () => {
@@ -1923,7 +1948,7 @@ ToolRegistry.register({
           </div>
           <div data-slot="bash-scroll" data-scrollable>
             <pre data-slot="bash-pre">
-              <code>{text()}</code>
+              <code>{preview()}</code>
             </pre>
           </div>
         </div>

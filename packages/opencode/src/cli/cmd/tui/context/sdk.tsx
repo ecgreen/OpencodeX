@@ -2,8 +2,9 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createSignal, onCleanup, onMount } from "solid-js"
+
+const SEEN_EVENT_ID_LIMIT = 2_000
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -20,6 +21,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
   }) => {
     const abort = new AbortController()
     let sse: AbortController | undefined
+    const [eventConnectionGeneration, setEventConnectionGeneration] = createSignal(0)
 
     function createSDK() {
       return createOpencodeClient({
@@ -33,16 +35,26 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     let sdk = createSDK()
 
+    const routedFetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const headers = new Headers(props.headers)
+        if (input instanceof Request) input.headers.forEach((value, key) => headers.set(key, value))
+        if (init?.headers) {
+          new Headers(init.headers).forEach((value, key) => headers.set(key, value))
+        }
+        if (props.directory && !headers.has("x-opencode-directory"))
+          headers.set("x-opencode-directory", props.directory)
+        return (props.fetch ?? fetch)(input, { ...init, headers, signal: init?.signal ?? abort.signal })
+      },
+      { preconnect: (props.fetch ?? fetch).preconnect },
+    )
+
     async function request<T>(path: string, init?: RequestInit) {
-      const headers = new Headers(props.headers)
-      if (init?.headers) {
-        new Headers(init.headers).forEach((value, key) => headers.set(key, value))
-      }
+      const headers = new Headers(init?.headers)
       if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json")
-      const response = await (props.fetch ?? fetch)(new URL(path, props.url), {
+      const response = await routedFetch(new URL(path, props.url), {
         ...init,
         headers,
-        signal: abort.signal,
       })
       if (!response.ok) throw new Error(await response.text())
       return (await response.json()) as T
@@ -50,22 +62,24 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     const emitter = createGlobalEmitter<{
       event: GlobalEvent
+      batch: GlobalEvent[]
     }>()
 
     let queue: GlobalEvent[] = []
     let timer: Timer | undefined
-    let last = 0
     const retryDelay = 1000
     const maxRetryDelay = 30000
+    const seenEventIDs = new Set<string>()
+    const seenEventIDOrder: string[] = []
 
     const flush = () => {
       if (queue.length === 0) return
       const events = queue
       queue = []
       timer = undefined
-      last = Date.now()
       // Batch all event emissions so all store updates result in a single render
       batch(() => {
+        emitter.emit("batch", events)
         for (const event of events) {
           emitter.emit("event", event)
         }
@@ -73,17 +87,31 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
 
     const handleEvent = (event: GlobalEvent) => {
+      if (!rememberGlobalEvent(event)) return
       queue.push(event)
-      const elapsed = Date.now() - last
-
       if (timer) return
-      // If we just flushed recently (within 16ms), batch this with future events
-      // Otherwise, process immediately to avoid latency
-      if (elapsed < 16) {
-        timer = setTimeout(flush, 16)
-        return
+      timer = setTimeout(flush, 16)
+    }
+
+    function rememberGlobalEvent(event: GlobalEvent) {
+      const id = globalEventID(event)
+      return id ? rememberEventID(id) : true
+    }
+
+    function rememberEventID(id: string) {
+      if (seenEventIDs.has(id)) return false
+      seenEventIDs.add(id)
+      seenEventIDOrder.push(id)
+      while (seenEventIDOrder.length > SEEN_EVENT_ID_LIMIT) {
+        const stale = seenEventIDOrder.shift()
+        if (stale) seenEventIDs.delete(stale)
       }
-      flush()
+      return true
+    }
+
+    function globalEventID(event: GlobalEvent) {
+      const id = (event.payload as { id?: string }).id
+      return typeof id === "string" ? id : undefined
     }
 
     function startSSE() {
@@ -94,21 +122,28 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         let attempt = 0
         while (true) {
           if (abort.signal.aborted || ctrl.signal.aborted) break
+          try {
+            const events = await sdk.global.event({
+              signal: ctrl.signal,
+              sseMaxRetryAttempts: 0,
+            })
+            const iterator = events.stream[Symbol.asyncIterator]()
+            const first = await iterator.next()
+            if (first.done) throw new Error("Global event stream ended before connecting")
 
-          const events = await sdk.global.event({
-            signal: ctrl.signal,
-            sseMaxRetryAttempts: 0,
-          })
+            // Pulling the first frame opens the lazy SSE request before projectors
+            // can emit events. The iterator buffers later frames during startup.
+            await sdk.sync.start()
+            attempt = 0
+            setEventConnectionGeneration((generation) => generation + 1)
+            handleEvent(first.value)
 
-          if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
-            // Start syncing workspaces, it's important to do this after
-            // we've started listening to events
-            await sdk.sync.start().catch(() => {})
-          }
-
-          for await (const event of events.stream) {
-            if (ctrl.signal.aborted) break
-            handleEvent(event)
+            for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
+              if (ctrl.signal.aborted) break
+              handleEvent(event)
+            }
+          } catch {
+            if (abort.signal.aborted || ctrl.signal.aborted) break
           }
 
           if (timer) clearTimeout(timer)
@@ -128,11 +163,9 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
         const unsub = await props.events.subscribe(handleEvent)
         onCleanup(unsub)
 
-        if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
-          // Start syncing workspaces, it's important to do this after
-          // we've started listening to events
-          await sdk.sync.start().catch(() => {})
-        }
+        // Start projectors after listening. The state controller owns replay.
+        await sdk.sync.start()
+        setEventConnectionGeneration((generation) => generation + 1)
       } else {
         startSSE()
       }
@@ -150,7 +183,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       },
       directory: props.directory,
       event: emitter,
-      fetch: props.fetch ?? fetch,
+      eventConnectionGeneration,
+      fetch: routedFetch,
       request,
       url: props.url,
     }

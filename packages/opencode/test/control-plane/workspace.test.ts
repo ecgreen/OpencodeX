@@ -766,6 +766,27 @@ describe("workspace CRUD", () => {
   )
 
   it.instance(
+    "remove rejects a workspace outside the active project scope",
+    () =>
+      Effect.gen(function* () {
+        const { directory: dir } = yield* TestInstance
+        const instance = yield* requireInstance
+        const workspace = yield* Workspace.Service
+        const type = unique("remove-project-scope")
+        const recorded = localAdapter(path.join(dir, "remove-project-scope"))
+        registerAdapter(instance.project.id, type, recorded.adapter)
+        const info = yield* workspace.create({ type, branch: null, projectID: instance.project.id, extra: null })
+
+        expect(yield* workspace.remove(info.id, ProjectV2.ID.make("different-project"))).toBeUndefined()
+        expect(yield* workspace.get(info.id)).toEqual(info)
+        expect(recorded.calls.remove).toEqual([])
+
+        yield* workspace.remove(info.id, instance.project.id)
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "remove deletes the workspace, associated sessions, adapter resources, and status",
     () => {
       return Effect.gen(function* () {

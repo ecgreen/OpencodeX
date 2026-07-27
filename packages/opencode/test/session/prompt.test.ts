@@ -1,4 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
+import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
@@ -25,7 +26,12 @@ import { Image } from "../../src/image/image"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "@opencode-ai/core/session/sql"
+import {
+  SessionCommandTable,
+  SessionExecutionTable,
+  SessionMessageTable,
+  SessionTable,
+} from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -44,6 +50,7 @@ import { SystemPrompt } from "../../src/session/system"
 import { Shell } from "../../src/shell/shell"
 import { Snapshot } from "../../src/snapshot"
 import { ToolRegistry } from "@/tool/registry"
+import { GuiBridge } from "@/opencodex/gui-bridge"
 import { Truncate } from "@/tool/truncate"
 import * as Log from "@opencode-ai/core/util/log"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -56,6 +63,8 @@ import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { OpencodeXProject } from "@/opencodex/project"
+import { OpencodeXProjectTable, OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 
 void Log.init({ print: false })
 
@@ -153,7 +162,10 @@ const lsp = Layer.succeed(
   }),
 )
 
-const status = SessionStatus.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer))
+const status = SessionStatus.layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provideMerge(EventV2Bridge.defaultLayer),
+)
 const run = SessionRunState.layer.pipe(Layer.provide(status))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
@@ -188,6 +200,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
   const registry = ToolRegistry.layer.pipe(
+    Layer.provide(GuiBridge.defaultLayer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),
@@ -197,6 +210,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(Layer.mock(OpencodeXProject.Service)({})),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
     Layer.provideMerge(deps),
@@ -217,6 +231,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(deps),
   )
   return SessionPrompt.layer.pipe(
+    Layer.provide(OpencodeXClaudeDriver.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
@@ -336,6 +351,27 @@ const waitForBusy = (sessionID: SessionID, duration: Duration.Input = "2 seconds
   )
 
 const hasBash = Effect.sync(() => Bun.which("bash") !== null)
+
+/** Runs `fx` with the Claude Code CLI unresolvable, so the driver fails fast. */
+function withoutClaudeCli<A, E, R>(fx: () => Effect.Effect<A, E, R>) {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = { PATH: process.env.PATH, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+      process.env.PATH = ""
+      process.env.HOME = path.join(process.cwd(), "does-not-exist")
+      process.env.USERPROFILE = process.env.HOME
+      return previous
+    }),
+    fx,
+    (previous) =>
+      Effect.sync(() => {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key]
+          else process.env[key] = value
+        }
+      }),
+  )
+}
 
 const deferredAsPromise = <A>(deferred: Deferred.Deferred<A>): PromiseLike<A> => ({
   then: (onfulfilled, onrejected) => {
@@ -457,6 +493,137 @@ noLLMServer.instance(
       if (result.info.role === "assistant") expect(result.info.finish).toBe("stop")
     }),
   { config: cfg },
+)
+
+it.instance("promptAsync persists its message and execution intent before returning", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "durable async" }],
+    })
+
+    const command = yield* db
+      .select()
+      .from(SessionCommandTable)
+      .where(eq(SessionCommandTable.session_id, chat.id))
+      .get()
+      .pipe(Effect.orDie)
+    expect(command?.status).toMatch(/queued|running/)
+    expect((yield* sessions.messages({ sessionID: chat.id })).some((message) => message.info.id === command?.message_id)).toBe(
+      true,
+    )
+
+    yield* llm.wait(1)
+    yield* prompt.cancel(chat.id)
+  }),
+)
+
+it.instance("cancel marks both active and queued prompt intents terminal", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "active async" }],
+    })
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "queued async" }],
+    })
+    yield* llm.wait(1)
+    yield* prompt.cancel(chat.id)
+
+    const commands = yield* db
+      .select({ status: SessionCommandTable.status })
+      .from(SessionCommandTable)
+      .where(eq(SessionCommandTable.session_id, chat.id))
+      .all()
+      .pipe(Effect.orDie)
+    expect(commands).toHaveLength(2)
+    expect(commands.every((command) => command.status === "cancelled")).toBe(true)
+    yield* Effect.sleep(100)
+    expect((yield* llm.inputs).length).toBe(1)
+  }),
+)
+
+it.instance("recover launches an accepted queued prompt intent", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+    const message = yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "recover async" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .transaction(
+        (transaction) =>
+          Effect.gen(function* () {
+            yield* transaction
+              .insert(SessionCommandTable)
+              .values({
+                id: "sec_recovery_test",
+                session_id: chat.id,
+                message_id: message.info.id,
+                project_id: session.project_id,
+                directory: session.directory,
+                status: "queued",
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+            yield* transaction
+              .insert(SessionExecutionTable)
+              .values({
+                session_id: chat.id,
+                project_id: session.project_id,
+                directory: session.directory,
+                state: "queued",
+                queued_at: now,
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+
+    yield* prompt.recover()
+    yield* llm.wait(1)
+    expect(
+      yield* db
+        .select({ status: SessionCommandTable.status })
+        .from(SessionCommandTable)
+        .where(eq(SessionCommandTable.id, "sec_recovery_test"))
+        .get()
+        .pipe(Effect.orDie),
+    ).toEqual({ status: "running" })
+    yield* prompt.cancel(chat.id)
+  }),
 )
 
 it.instance("loop exits without an LLM request for interrupted orphan tool calls", () =>
@@ -1208,7 +1375,13 @@ it.instance(
       }
     }),
   { git: true },
-  3_000,
+  /*
+   * Two forked loops against a hanging provider on top of a git-backed
+   * fixture. On Windows that lands right at three seconds, so the old budget
+   * failed on the runner while passing on Linux. The neighbouring cancel
+   * tests already allow ten and thirty; a hang still trips this.
+   */
+  10_000,
 )
 
 // Queue semantics
@@ -1594,7 +1767,12 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  /*
+   * A git fixture plus a spawned shell. Every 3_000 case that stays in memory
+   * passes on the Windows runner; the ones that spawn processes land just over
+   * the line, this one at 3_014ms. Budget for the spawn, not for an idle box.
+   */
+  10_000,
 )
 
 it.instance(
@@ -1633,7 +1811,8 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  /* Same shape as above: git fixture plus a spawned shell, 3_008ms observed. */
+  10_000,
 )
 
 unix(
@@ -1676,19 +1855,21 @@ unixNoLLMServer(
       Effect.gen(function* () {
         const { prompt, run, chat } = yield* boot()
 
+        /* Outlives the busy check without outliving the budget - see the note
+           on the busy-rejection case below. */
         const sh = yield* prompt
-          .shell({ sessionID: chat.id, agent: "build", command: "sleep 30" })
+          .shell({ sessionID: chat.id, agent: "build", command: "sleep 5" })
           .pipe(Effect.forkChild)
         yield* waitForBusy(chat.id)
 
-        yield* prompt.cancel(chat.id)
+        yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
 
         const status = yield* SessionStatus.Service
         expect((yield* status.get(chat.id)).type).toBe("idle")
         const busy = yield* run.assertNotBusy(chat.id).pipe(Effect.exit)
         expect(Exit.isSuccess(busy)).toBe(true)
 
-        const exit = yield* Fiber.await(sh)
+        const exit = yield* awaitWithTimeout(Fiber.await(sh), "shell did not stop after cancel", "10 seconds")
         expect(Exit.isSuccess(exit)).toBe(true)
         if (Exit.isSuccess(exit)) {
           expect(exit.value.info.role).toBe("assistant")
@@ -1776,14 +1957,33 @@ unix(
 
       const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* llm.wait(1)
-      yield* Effect.sleep(150)
+      /*
+       * The case is about what cancel does to output that already overflowed,
+       * so the shell has to get through all 4000 lines first. Sleeping 150ms
+       * only guessed that it had: on a loaded runner the cancel landed early,
+       * nothing had overflowed, and `truncated` came back false. Wait for the
+       * last line the loop prints instead of for a duration.
+       */
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const assistant = msgs.find((item) => item.info.role === "assistant")
+          const running = assistant ? toolPart(assistant.parts) : undefined
+          if (running?.state.status === "running" && running.state.metadata?.output.includes("03999")) return true
+        }),
+        "bash never printed enough output to overflow the truncation limit",
+        "20 seconds",
+      )
       yield* prompt.cancel(chat.id)
 
       const exit = yield* Fiber.await(run)
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isFailure(exit)) return
 
+      /* Was a silent `if (!tool) return`, so the case passed without ever
+         checking truncation whenever the tool did not finalize. */
       const tool = completedTool(exit.value.parts)
+      expect(tool).toBeDefined()
       if (!tool) return
 
       expect(tool.state.metadata.truncated).toBe(true)
@@ -1802,22 +2002,24 @@ unixNoLLMServer(
     Effect.gen(function* () {
       const { prompt, chat } = yield* boot()
 
-      const sh = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "sleep 30" }).pipe(Effect.forkChild)
+      /* Outlives the busy check without outliving the budget - see the note
+         on the busy-rejection case below. */
+      const sh = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "sleep 5" }).pipe(Effect.forkChild)
       yield* waitForBusy(chat.id)
 
       const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* Effect.sleep(50)
 
-      yield* prompt.cancel(chat.id)
+      yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
 
-      const exit = yield* Fiber.await(loop)
+      const exit = yield* awaitWithTimeout(Fiber.await(loop), "queued loop did not settle after cancel", "10 seconds")
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) {
         const tool = completedTool(exit.value.parts)
         expect(tool?.state.output).toContain("User aborted the command")
       }
 
-      yield* Fiber.await(sh)
+      yield* awaitWithTimeout(Fiber.await(sh), "shell did not stop after cancel", "10 seconds")
     }),
   { git: true, config: cfg },
   30_000,
@@ -1830,19 +2032,31 @@ unixNoLLMServer(
       Effect.gen(function* () {
         const { prompt, chat } = yield* boot()
 
+        /*
+         * The command only has to outlive the busy check. It used to sleep 30
+         * seconds, which meant any step that failed to settle sat there until
+         * the harness gave up, reporting a bare timeout naming nothing - and
+         * raising the budget to 45s just moved where it stalled. Five seconds
+         * still covers the assertions, and bounds the damage when one does not
+         * settle: every wait below names itself instead.
+         */
         const a = yield* prompt
-          .shell({ sessionID: chat.id, agent: "build", command: "sleep 30" })
+          .shell({ sessionID: chat.id, agent: "build", command: "sleep 5" })
           .pipe(Effect.forkChild)
         yield* waitForBusy(chat.id)
 
-        const exit = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "echo hi" }).pipe(Effect.exit)
+        const exit = yield* awaitWithTimeout(
+          prompt.shell({ sessionID: chat.id, agent: "build", command: "echo hi" }).pipe(Effect.exit),
+          "second shell neither rejected nor ran while the first held the session",
+          "10 seconds",
+        )
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.squash(exit.cause)).toBeInstanceOf(Session.BusyError)
         }
 
-        yield* prompt.cancel(chat.id)
-        yield* Fiber.await(a)
+        yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
+        yield* awaitWithTimeout(Fiber.await(a), "shell did not stop after cancel", "10 seconds")
       }),
     ),
   { git: true, config: cfg },
@@ -2440,4 +2654,223 @@ noLLMServer.instance(
       }
     }),
   30_000,
+)
+
+it.instance("swarm models run in-session on the orchestrator's model with a team briefing", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const provider = yield* ProviderSvc.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .transaction(
+        (transaction) =>
+          Effect.gen(function* () {
+            yield* transaction
+              .insert(OpencodeXProjectTable)
+              .values({ id: "opx_swarm_test", project_id: session.project_id, time_created: now, time_updated: now })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmTable)
+              .values({
+                id: "swm_test",
+                opencodex_project_id: "opx_swarm_test",
+                title: "Test Team",
+                prompt: "",
+                status: "draft",
+                source: "user",
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmRoleTable)
+              .values([
+                {
+                  id: "swr_orch",
+                  swarm_id: "swm_test",
+                  name: "Orchestrator",
+                  skill: "orchestrator",
+                  provider_id: "test",
+                  model_id: "test-model",
+                  status: "pending",
+                  instructions: "Coordinate the team.",
+                  sort_order: 0,
+                  time_created: now,
+                  time_updated: now,
+                },
+                {
+                  id: "swr_spec",
+                  swarm_id: "swm_test",
+                  name: "Reviewer",
+                  skill: "code-reviewer",
+                  provider_id: "test",
+                  model_id: "test-model",
+                  status: "pending",
+                  instructions: "Review carefully.",
+                  sort_order: 1,
+                  time_created: now,
+                  time_updated: now,
+                },
+              ])
+              .run()
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+
+    // The facade resolves to the orchestrator's real model, so auth, pricing,
+    // and limits all come from the actual provider.
+    const resolved = yield* provider.getModel(ProviderV2.ID.make("swarm"), ProviderV2.ModelID.make("swm_test"))
+    expect(`${resolved.providerID}/${resolved.id}`).toBe("test/test-model")
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: { providerID: ProviderV2.ID.make("swarm"), modelID: ProviderV2.ModelID.make("swm_test") },
+      noReply: true,
+      parts: [{ type: "text", text: "hello team" }],
+    })
+    yield* llm.text("orchestrator reporting in")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error).toBeUndefined()
+    expect(result.parts.some((part) => part.type === "text" && part.text === "orchestrator reporting in")).toBe(true)
+
+    // The turn hands the orchestrator its team as a hidden part of the user
+    // message: roster, per-role models, and task-tool delegation rules.
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const user = messages.find((message) => message.info.role === "user")
+    const briefing = user?.parts.find(
+      (part) => part.type === "text" && part.synthetic === true && part.text.startsWith("<swarm-briefing"),
+    )
+    expect(Boolean(briefing)).toBe(true)
+    const briefingText = briefing?.type === "text" ? briefing.text : ""
+    expect(briefingText).toContain("Test Team")
+    expect(briefingText).toContain("Reviewer")
+    expect(briefingText).toContain('model="test/test-model"')
+    expect(briefingText).toContain("task tool")
+
+    // The session keeps the swarm as its selected model, so the composer's
+    // picker stays on the team while turns run on the orchestrator's model.
+    const stored = yield* db
+      .select({ model: SessionTable.model })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, chat.id))
+      .get()
+      .pipe(Effect.orDie)
+    expect(stored?.model).toMatchObject({ providerID: "swarm", id: "swm_test" })
+  }),
+)
+
+it.instance("a swarm with a Claude Code orchestrator routes to the CLI driver, not the AI SDK", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .transaction(
+        (transaction) =>
+          Effect.gen(function* () {
+            yield* transaction
+              .insert(OpencodeXProjectTable)
+              .values({ id: "opx_cc_swarm", project_id: session.project_id, time_created: now, time_updated: now })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmTable)
+              .values({
+                id: "swm_cc",
+                opencodex_project_id: "opx_cc_swarm",
+                title: "Claude Team",
+                prompt: "",
+                status: "draft",
+                source: "user",
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
+            yield* transaction
+              .insert(OpencodeXSwarmRoleTable)
+              .values([
+                {
+                  id: "swr_cc_orch",
+                  swarm_id: "swm_cc",
+                  name: "Orchestrator",
+                  skill: "orchestrator",
+                  provider_id: "claude-code",
+                  model_id: "opus[1m]",
+                  status: "pending",
+                  instructions: "Lead the team.",
+                  sort_order: 0,
+                  time_created: now,
+                  time_updated: now,
+                },
+                {
+                  id: "swr_cc_spec",
+                  swarm_id: "swm_cc",
+                  name: "Designer",
+                  skill: "designer",
+                  provider_id: "test",
+                  model_id: "test-model",
+                  status: "pending",
+                  instructions: "Review the UI.",
+                  sort_order: 1,
+                  time_created: now,
+                  time_updated: now,
+                },
+              ])
+              .run()
+          }),
+        { behavior: "immediate" },
+      )
+      .pipe(Effect.orDie)
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: { providerID: ProviderV2.ID.make("swarm"), modelID: ProviderV2.ModelID.make("swm_cc") },
+      noReply: true,
+      parts: [{ type: "text", text: "lead the work" }],
+    })
+    // Hide the CLI so the driver reports a missing binary instead of spawning a
+    // real Claude turn. Routing is what this test is about; a live CLI run
+    // would make it slow, networked, and dependent on the developer's machine.
+    const result = yield* withoutClaudeCli(() => prompt.loop({ sessionID: chat.id }))
+
+    // The AI SDK was never used: the turn went to the Claude driver, which in
+    // this environment reports the CLI outcome rather than streaming a model.
+    expect(yield* llm.hits).toHaveLength(0)
+    expect(result.info.role).toBe("assistant")
+    // Attribution stays on the team the reader picked, not the orchestrator's
+    // underlying Claude model.
+    if (result.info.role === "assistant") {
+      expect(String(result.info.providerID)).toBe("swarm")
+      expect(String(result.info.modelID)).toBe("swm_cc")
+    }
+
+    // The briefing tells it to delegate through OpencodeX rather than spawning
+    // Claude's own subagents on Claude's models.
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const user = messages.find((message) => message.info.role === "user")
+    const briefing = user?.parts.find(
+      (part) => part.type === "text" && part.synthetic === true && part.text.startsWith("<swarm-briefing"),
+    )
+    const briefingText = briefing?.type === "text" ? briefing.text : ""
+    expect(briefingText).toContain("mcp__opencodex_swarm__delegate")
+    expect(briefingText).toContain("Do not use the built-in Task tool")
+    expect(briefingText).toContain("Designer")
+  }),
 )

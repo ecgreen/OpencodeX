@@ -111,6 +111,12 @@ describe("LSPClient interop", () => {
     const params = await client.connection.sendRequest<any>("test/get-initialize-params", {})
     expect(params.capabilities.workspace.diagnostics.refreshSupport).toBe(false)
     expect(params.capabilities.textDocument.publishDiagnostics.versionSupport).toBe(false)
+    expect(params.capabilities.textDocument.hover.contentFormat).toEqual(["markdown", "plaintext"])
+    expect(params.capabilities.textDocument.definition.linkSupport).toBe(true)
+    expect(params.capabilities.textDocument.completion.completionItem).toEqual({
+      documentationFormat: ["markdown", "plaintext"],
+      snippetSupport: true,
+    })
 
     await client.shutdown()
   })

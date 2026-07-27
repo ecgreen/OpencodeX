@@ -1,0 +1,221 @@
+.question-card-body {
+  gap: var(--ds-space-4);
+}
+
+.question-progress {
+  display: grid;
+  grid-template-columns: auto minmax(80px,160px);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.question-progress progress {
+  width: 100%;
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ds-border-subtle);
+}
+
+.question-progress progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--ds-border-subtle);
+}
+
+.question-progress progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--ds-info);
+}
+
+.question-step {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.question-step>p {
+  max-width: 78ch;
+  margin: 0;
+  color: var(--ds-text);
+  font-size: 14px;
+  font-weight: 520;
+  line-height: 20px;
+}
+
+.question-options {
+  display: grid;
+  gap: 2px;
+}
+
+.question-option {
+  height: auto;
+  min-height: 44px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--ds-space-3);
+  width: calc(100% + var(--ds-space-6));
+  margin-right: calc(var(--ds-space-3) * -1);
+  margin-left: calc(var(--ds-space-3) * -1);
+  text-align: left;
+  white-space: normal;
+}
+
+.question-option>kbd {
+  display: inline-grid;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  place-content: center;
+  padding: 0;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  background: transparent;
+  font-family: var(--ds-font-technical);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  transition: border-color var(--ds-motion-hover) ease, color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease;
+}
+
+.question-option:hover:not(:disabled)>kbd {
+  border-color: var(--ds-border-strong);
+  color: var(--ds-text);
+}
+
+.question-option.is-selected>kbd {
+  border-color: var(--ds-control-accent);
+  color: var(--ds-control-accent-text);
+  background: var(--ds-control-accent);
+}
+
+.question-option-copy {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 1px;
+  text-align: left;
+}
+
+.question-option-copy strong {
+  color: var(--ds-text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.question-option-copy small {
+  color: var(--ds-text-muted);
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 18px;
+}
+
+.question-custom-answer {
+  width: 100%;
+  margin-top: var(--ds-space-1);
+}
+
+.safety-diff-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  width: min(1080px,calc(100vw - 48px));
+  max-height: min(820px,calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-overlay);
+  color: var(--ds-text);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+}
+
+.safety-diff-dialog>header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ds-space-4);
+  padding: var(--ds-space-4);
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.safety-diff-dialog h2 {
+  margin: 0;
+  color: var(--ds-text);
+  font-size: 15px;
+}
+
+.safety-diff-dialog p {
+  margin: var(--ds-space-1) 0 0;
+  color: var(--ds-text-muted);
+  font-size: 12px;
+}
+
+.safety-diff-dialog-body {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ds-space-3);
+}
+
+.safety-diff-dialog .permission-diff {
+  max-height: none;
+  min-height: 100%;
+}
+
+@keyframes safety-dock-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width:720px) {
+  .safety-card {
+    max-height: min(56vh,520px);
+  }
+
+  .safety-card-header,
+  .safety-card-body {
+    padding-right: var(--ds-space-3);
+    padding-left: var(--ds-space-3);
+  }
+
+  .safety-card-actions {
+    flex-wrap: wrap;
+    padding-right: var(--ds-space-3);
+    padding-left: var(--ds-space-3);
+  }
+
+  .safety-card h2 {
+    white-space: normal;
+  }
+
+  .safety-queue>span {
+    min-width: 42px;
+  }
+
+  .permission-summary>div,
+  .permission-patterns {
+    grid-template-columns: minmax(0,1fr);
+    gap: var(--ds-space-1);
+  }
+
+  .safety-diff-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .safety-dock {
+    animation: none;
+  }
+}

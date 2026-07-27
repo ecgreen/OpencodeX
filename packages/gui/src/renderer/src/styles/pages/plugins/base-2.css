@@ -1,0 +1,59 @@
+.plugin-card small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-card-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-state {
+  padding: 4px 7px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.plugin-state.enabled {
+  color: var(--success);
+  border-color: color-mix(in srgb,var(--theme-success) 35%,transparent);
+}
+
+.plugin-state.disabled {
+  color: var(--error);
+  border-color: color-mix(in srgb,var(--theme-danger) 35%,transparent);
+}
+
+.plugin-state.inactive {
+  color: var(--error);
+  border-color: color-mix(in srgb,var(--theme-danger) 35%,transparent);
+}
+
+.plugin-state.low {
+  color: var(--success);
+  border-color: color-mix(in srgb,var(--theme-success) 35%,transparent);
+}
+
+.plugin-state.medium {
+  color: var(--warning);
+  border-color: color-mix(in srgb,var(--theme-accent) 35%,transparent);
+}
+
+.plugin-state.high {
+  color: var(--error);
+  border-color: color-mix(in srgb,var(--theme-danger) 35%,transparent);
+}
+
+.plugins-page {
+  gap: 18px;
+  background: var(--bg);
+}

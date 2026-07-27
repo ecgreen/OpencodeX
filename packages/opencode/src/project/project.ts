@@ -3,6 +3,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { PermissionTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { WorkspaceTable } from "@opencode-ai/core/control-plane/workspace.sql"
+import { OpencodeXProjectFolderTable, OpencodeXProjectTable } from "@opencode-ai/core/opencodex/sql"
 import * as Log from "@opencode-ai/core/util/log"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { GlobalBus } from "@/bus/global"
@@ -242,6 +243,16 @@ export const layer = Layer.effect(
                 .set({ project_id: newID })
                 .where(eq(WorkspaceTable.project_id, oldID))
                 .run()
+              yield* d
+                .update(OpencodeXProjectTable)
+                .set({ project_id: newID })
+                .where(eq(OpencodeXProjectTable.project_id, oldID))
+                .run()
+              yield* d
+                .update(OpencodeXProjectFolderTable)
+                .set({ project_id: newID })
+                .where(eq(OpencodeXProjectFolderTable.project_id, oldID))
+                .run()
 
               if (oldProject) yield* d.delete(ProjectTable).where(eq(ProjectTable.id, oldID)).run()
             }),
@@ -409,7 +420,10 @@ export const layer = Layer.effect(
     })
 
     const initGit = Effect.fn("Project.initGit")(function* (input: { directory: string; project: Info }) {
-      if (input.project.vcs === "git") return input.project
+      if (input.project.vcs === "git") {
+        const current = yield* git(["rev-parse", "--is-inside-work-tree"], { cwd: input.directory })
+        if (current.code === 0 && current.text.trim() === "true") return input.project
+      }
       if (!(yield* Effect.sync(() => which("git")))) throw new Error("Git is not installed")
       const result = yield* git(["init", "--quiet"], { cwd: input.directory })
       if (result.code !== 0) {

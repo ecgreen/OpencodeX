@@ -4,6 +4,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import * as Log from "@opencode-ai/core/util/log"
 import { Server } from "../../src/server/server"
 import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
+import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
@@ -289,17 +290,21 @@ describe("HttpApi Server.listen", () => {
     let output = ""
     // oxlint-disable-next-line typescript-eslint/unbound-method -- restored in finally after temporarily capturing stderr.
     const original = process.stderr.write
+    let status = 0
+    let body = ""
     process.stderr.write = ((chunk) => {
       output += String(chunk)
       return true
     }) as typeof process.stderr.write
     try {
-      const response = await Server.Default().app.request("/status")
-      expect(response.status).toBe(200)
+      const response = await Server.Default().app.request(GlobalPaths.health)
+      status = response.status
+      body = await response.text()
     } finally {
       process.stderr.write = original
     }
 
+    if (status !== 200) throw new Error(`Status endpoint returned ${status}: ${body}\n${output}`)
     expect(output).not.toContain("Sent HTTP response")
   })
 

@@ -5,6 +5,7 @@ import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
+import { canHighlightCode, escapedCodeBlock } from "../components/code-highlight"
 
 registerCustomTheme("OpenCode", () => {
   return Promise.resolve({
@@ -428,12 +429,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   const matches = [...html.matchAll(codeBlockRegex)]
   if (matches.length === 0) return html
 
-  const highlighter = await getSharedHighlighter({
-    themes: ["OpenCode"],
-    langs: [],
-    preferredHighlighter: "shiki-wasm",
-  })
-
+  let highlighter: Awaited<ReturnType<typeof getSharedHighlighter>> | undefined
   let result = html
   for (const match of matches) {
     const [fullMatch, lang, escapedCode] = match
@@ -443,6 +439,14 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&amp;/g, "&")
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
+
+    if (!canHighlightCode(code)) continue
+
+    highlighter ??= await getSharedHighlighter({
+      themes: ["OpenCode"],
+      langs: [],
+      preferredHighlighter: "shiki-wasm",
+    })
 
     let language = lang || "text"
     if (!(language in bundledLanguages)) {
@@ -483,6 +487,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }),
       markedShiki({
         async highlight(code, lang) {
+          if (!canHighlightCode(code)) return escapedCodeBlock(code)
           const highlighter = await getSharedHighlighter({
             themes: ["OpenCode"],
             langs: [],

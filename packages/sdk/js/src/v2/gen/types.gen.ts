@@ -48,6 +48,7 @@ export type Event =
   | EventPermissionReplied
   | EventSessionDiff
   | EventSessionError
+  | EventOpencodexSettingsUpdated
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
@@ -65,6 +66,15 @@ export type Event =
   | EventCommandExecuted
   | EventProjectUpdated
   | EventVcsBranchUpdated
+  | EventOpencodexTerminalSessionCreated
+  | EventOpencodexTerminalSessionUpdated
+  | EventOpencodexTerminalSessionDeleted
+  | EventOpencodexProjectCreated
+  | EventOpencodexProjectUpdated
+  | EventOpencodexProjectReordered
+  | EventOpencodexProjectDeleted
+  | EventOpencodexProjectSessionAssigned
+  | EventOpencodexGuiBridgeRequest
   | EventWorkspaceReady
   | EventWorkspaceFailed
   | EventWorkspaceStatus
@@ -76,8 +86,19 @@ export type Event =
   | EventPtyDeleted
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventOpencodexJobCreated
+  | EventOpencodexJobTransitioned
+  | EventOpencodexSwarmCreated
+  | EventOpencodexSwarmUpdated
+  | EventOpencodexSwarmDeleted
+  | EventOpencodexViewCreated
+  | EventOpencodexViewUpdated
+  | EventOpencodexViewReordered
+  | EventOpencodexViewDeleted
+  | EventOpencodexSessionStateUpdated
   | EventServerConnected
   | EventGlobalDisposed
+  | EventOpencodexPluginConfigUpdated
   | EventAccountAdded
   | EventAccountRemoved
   | EventAccountSwitched
@@ -93,6 +114,45 @@ export type QuestionRejected = {
   sessionID: string
   requestID: string
 }
+
+export type OpencodeXStateEvent = {
+  id: string
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  position: number
+  visibility: "global" | "instance"
+  aggregateSequence: number
+  domain: "capabilities" | "catalog" | "operations" | "session"
+  operation: "invalidate"
+  payload: {
+    aggregateID: string
+    eventType: string
+  }
+}
+
+export type OpencodeXStateStreamFrame =
+  | {
+      type: "ready"
+      scope: OpencodeXStateScope
+      epoch: string
+      cursor: OpencodeXStateCursor
+    }
+  | {
+      type: "event"
+      event: OpencodeXStateEvent
+    }
+  | {
+      type: "heartbeat"
+      epoch: string
+    }
+  | {
+      type: "reset_required"
+      scope: OpencodeXStateScope
+      epoch: string
+      cursor: OpencodeXStateCursor
+      reason: string
+    }
 
 export type OAuth = {
   type: "oauth"
@@ -690,6 +750,14 @@ export type Pty = {
   pid: number
 }
 
+export type OpencodeXSessionState = {
+  sessionID: string
+  seenAt?: number
+  reviewedAt?: number
+  reviewedFiles: Array<string>
+  timeUpdated: number
+}
+
 export type GlobalEvent = {
   directory: string
   project?: string
@@ -1146,6 +1214,13 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.settings.updated"
+        properties: {
+          revision: string
+        }
+      }
+    | {
+        id: string
         type: "question.asked"
         properties: {
           id: string
@@ -1323,6 +1398,87 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.terminal_session.created"
+        properties: {
+          terminalSessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.terminal_session.updated"
+        properties: {
+          terminalSessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.terminal_session.deleted"
+        properties: {
+          terminalSessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.project.created"
+        properties: {
+          projectID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.project.updated"
+        properties: {
+          projectID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.project.reordered"
+        properties: {
+          collectionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.project.deleted"
+        properties: {
+          projectID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.project.session_assigned"
+        properties: {
+          projectID: string
+          sessionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.gui_bridge.request"
+        properties: {
+          requestID: string
+          clientID: string
+          sessionID: string
+          operation: "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+          input:
+            | {
+                path: string
+              }
+            | {
+                url: string
+              }
+            | {
+                [key: string]: unknown
+              }
+            | Array<unknown>
+            | {
+                expectedURL: string
+              }
+        }
+      }
+    | {
+        id: string
         type: "workspace.ready"
         properties: {
           name: string
@@ -1403,6 +1559,79 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.job.created"
+        properties: {
+          jobID: string
+          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.job.transitioned"
+        properties: {
+          jobID: string
+          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.created"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.updated"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.deleted"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.view.created"
+        properties: {
+          viewID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.view.updated"
+        properties: {
+          viewID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.view.reordered"
+        properties: {
+          collectionID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.view.deleted"
+        properties: {
+          viewID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.session_state.updated"
+        properties: {
+          sessionID: string
+          state: OpencodeXSessionState
+        }
+      }
+    | {
+        id: string
         type: "server.connected"
         properties: {
           [key: string]: unknown
@@ -1413,6 +1642,14 @@ export type GlobalEvent = {
         type: "global.disposed"
         properties: {
           [key: string]: unknown
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.plugin_config.updated"
+        properties: {
+          global: boolean
+          spec: string
         }
       }
     | {
@@ -1472,6 +1709,25 @@ export type GlobalEvent = {
     | SyncEventMessageRemoved
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
+    | SyncEventSessionStatus
+    | SyncEventOpencodexTerminalSessionCreated
+    | SyncEventOpencodexTerminalSessionUpdated
+    | SyncEventOpencodexTerminalSessionDeleted
+    | SyncEventOpencodexProjectCreated
+    | SyncEventOpencodexProjectUpdated
+    | SyncEventOpencodexProjectReordered
+    | SyncEventOpencodexProjectDeleted
+    | SyncEventOpencodexProjectSessionAssigned
+    | SyncEventOpencodexJobCreated
+    | SyncEventOpencodexJobTransitioned
+    | SyncEventOpencodexSwarmCreated
+    | SyncEventOpencodexSwarmUpdated
+    | SyncEventOpencodexSwarmDeleted
+    | SyncEventOpencodexViewCreated
+    | SyncEventOpencodexViewUpdated
+    | SyncEventOpencodexViewReordered
+    | SyncEventOpencodexViewDeleted
+    | SyncEventOpencodexSessionStateUpdated
 }
 
 /**
@@ -1538,6 +1794,10 @@ export type PermissionConfig =
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
+      workspace_open?: PermissionRuleConfig
+      browser_navigate?: PermissionRuleConfig
+      browser_screenshot?: PermissionRuleConfig
+      browser_snapshot?: PermissionRuleConfig
       [key: string]: PermissionRuleConfig | PermissionActionConfig | undefined
     }
 
@@ -1876,6 +2136,17 @@ export type Config = {
   }
 }
 
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
 export type Model = {
   id: string
   providerID: string
@@ -2144,6 +2415,8 @@ export type FileContent = {
   }
   encoding?: "base64"
   mimeType?: string
+  bytes?: number
+  truncated?: boolean
 }
 
 export type File = {
@@ -2274,6 +2547,18 @@ export type McpServerNotFoundError = {
   message: string
 }
 
+export type OpencodeXPermissionMode = "strict" | "configured" | "auto" | "yolo"
+
+export type OpencodeXSettings = {
+  permission_mode?: OpencodeXPermissionMode
+  revision: string
+}
+
+export type OpencodeXSettingsUpdateInput = {
+  permission_mode: OpencodeXPermissionMode
+  expectedRevision: string
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -2298,37 +2583,118 @@ export type Project = {
   sandboxes: Array<string>
 }
 
+export type OpencodeXProjectFolder = {
+  path: string
+}
+
+export type OpencodeXTerminalSession = {
+  id: string
+  driver: "claude-code"
+  title: string
+  projectID?: string
+  directory: string
+  resumeID: string
+  installationID: string
+  sessionID?: string
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeLaunched?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeOpened?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXProject = {
+  id: string
+  name?: string
+  project: Project
+  folders: Array<OpencodeXProjectFolder>
+  sessions: Array<GlobalSession>
+  terminalSessions: Array<OpencodeXTerminalSession>
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
+
+export type OpencodeXProjectCreateInput = {
+  name?: string
+  directory?: string
+  folders?: Array<string>
+}
+
 export type ProjectNotFoundError = {
   _tag: "ProjectNotFoundError"
   projectID: string
   message: string
 }
 
-export type PtyNotFoundError = {
-  _tag: "PtyNotFoundError"
-  ptyID: string
-  message: string
+export type OpencodeXProjectValidateInput = {
+  projectID?: string
+  folders: Array<string>
 }
 
-export type PtyForbiddenError = {
-  _tag: "PtyForbiddenError"
-  message: string
+export type OpencodeXProjectFolderValidation = {
+  input: string
+  path: string
+  valid: boolean
+  message?: string
 }
 
-export type QuestionRequest = {
+export type OpencodeXProjectValidation = {
+  valid: boolean
+  folders: Array<OpencodeXProjectFolderValidation>
+}
+
+export type OpencodeXProjectReorderInput = {
+  projectIDs: Array<string>
+}
+
+export type OpencodeXSessionCreateInput = {
+  projectID: string
+  directory: string
+  sessionID?: string
+  title?: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  metadata?: {
+    [key: string]: unknown
+  }
+  permission?: PermissionRuleset
+  workspaceID?: string
+  hidden?: boolean
+}
+
+export type OpencodeXViewMember =
+  | {
+      kind: "session"
+      id: string
+    }
+  | {
+      kind: "terminal"
+      id: string
+    }
+
+export type OpencodeXView = {
   id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionInfo>
-  tool?: QuestionTool
-}
-
-export type QuestionNotFoundError = {
-  _tag: "QuestionNotFoundError"
-  requestID: string
-  message: string
+  title: string
+  focusedSessionID?: string
+  focusedItemID?: string
+  layout: string
+  sessions: Array<GlobalSession>
+  terminalSessions: Array<OpencodeXTerminalSession>
+  sessionIDs: Array<string>
+  members: Array<OpencodeXViewMember>
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type PermissionRequest = {
@@ -2344,6 +2710,572 @@ export type PermissionRequest = {
     messageID: string
     callID: string
   }
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  /**
+   * Questions to ask
+   */
+  questions: Array<QuestionInfo>
+  tool?: QuestionTool
+}
+
+export type OpencodeXSessionDisplayStatus = "idle" | "in_progress" | "input_needed" | "needs_review"
+
+export type OpencodeXSessionUiState = {
+  sessionID: string
+  seenAt?: number
+  reviewedAt?: number
+  reviewedFiles: Array<string>
+  displayStatus: OpencodeXSessionDisplayStatus
+  updated: boolean
+}
+
+export type OpencodeXSessionSyncSnapshot = {
+  projects: Array<OpencodeXProject>
+  sessions: Array<Session>
+  terminalSessions: Array<OpencodeXTerminalSession>
+  views: Array<OpencodeXView>
+  sessionStatus: {
+    [key: string]: SessionStatus
+  }
+  permissions: Array<PermissionRequest>
+  questions: Array<QuestionRequest>
+  sessionUiState: {
+    [key: string]: OpencodeXSessionUiState
+  }
+}
+
+export type OpencodeXSessionSyncResponse =
+  | {
+      changed: false
+      revision: string
+    }
+  | {
+      changed: true
+      revision: string
+      snapshot: OpencodeXSessionSyncSnapshot
+    }
+
+export type OpencodeXStateScope = {
+  projectID: string
+  workspaceID?: string
+  directory: string
+}
+
+export type OpencodeXStateCursor = string
+
+export type OpencodeXCatalogProject = {
+  id: string
+  name?: string
+  project: Project
+  folders: Array<OpencodeXProjectFolder>
+  sessionIDs: Array<string>
+  terminalSessionIDs: Array<string>
+}
+
+export type OpencodeXSessionCard = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+  }
+}
+
+export type OpencodeXSessionCardCursor = string
+
+export type OpencodeXSessionCardPage = {
+  items: Array<OpencodeXSessionCard>
+  hasMore: boolean
+  next?: OpencodeXSessionCardCursor
+  missing: Array<string>
+  sessionUiState: {
+    [key: string]: OpencodeXSessionUiState
+  }
+}
+
+export type OpencodeXCatalogView = {
+  id: string
+  title: string
+  focusedSessionID?: string
+  focusedItemID?: string
+  layout: string
+  sessionIDs: Array<string>
+  members: Array<OpencodeXViewMember>
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXCatalogSnapshot = {
+  projects: Array<OpencodeXCatalogProject>
+  sessionCards: OpencodeXSessionCardPage
+  terminalSessions: Array<OpencodeXTerminalSession>
+  views: Array<OpencodeXCatalogView>
+  sessionStatus: {
+    [key: string]: SessionStatus
+  }
+  permissions: Array<PermissionRequest>
+  questions: Array<QuestionRequest>
+  sessionUiState: {
+    [key: string]: OpencodeXSessionUiState
+  }
+}
+
+export type OpencodeXJobFailure = {
+  code: string
+  message: string
+  details?: unknown
+}
+
+export type OpencodeXJob = {
+  id: string
+  kind: string
+  title?: string
+  status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  projectID?: string
+  sessionID?: string
+  parentJobID?: string
+  swarmID?: string
+  roleID?: string
+  agent?: string
+  providerID?: string
+  modelID?: string
+  idempotencyKey?: string
+  attempt: number
+  maxAttempts: number
+  leaseOwner?: string
+  leaseExpiresAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  cancelRequestedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  statusReason?: string
+  result?: {
+    [key: string]: unknown
+  }
+  failure?: OpencodeXJobFailure
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmRole = {
+  id: string
+  swarmID: string
+  name: string
+  agent?: string
+  skill?: string
+  providerID?: string
+  modelID?: string
+  modelProfile?: string
+  status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
+  instructions: string
+  sortOrder: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  sessionID?: string
+  jobID?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmAgentRun = {
+  id: string
+  runID: string
+  swarmID: string
+  roleID?: string
+  status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
+  prompt: string
+  sessionID?: string
+  jobID?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmRun = {
+  id: string
+  swarmID: string
+  projectID?: string
+  title: string
+  prompt: string
+  status:
+    | "draft"
+    | "planned"
+    | "queued"
+    | "running"
+    | "cancelling"
+    | "approval_needed"
+    | "blocked"
+    | "failed"
+    | "partially_failed"
+    | "completed"
+    | "cancelled"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  orchestratorSessionID?: string
+  resultSessionID?: string
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  metadata?: {
+    [key: string]: unknown
+  }
+  agents: Array<OpencodeXSwarmAgentRun>
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarmEvent = {
+  id: string
+  swarmID: string
+  runID?: string
+  roleID?: string
+  sessionID?: string
+  kind: string
+  message: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXSwarm = {
+  id: string
+  projectID: string
+  title: string
+  prompt: string
+  status:
+    | "draft"
+    | "planned"
+    | "queued"
+    | "running"
+    | "cancelling"
+    | "approval_needed"
+    | "blocked"
+    | "failed"
+    | "partially_failed"
+    | "completed"
+    | "cancelled"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  createdBy?: string
+  synthesisSessionID?: string
+  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  metadata?: {
+    [key: string]: unknown
+  }
+  roles: Array<OpencodeXSwarmRole>
+  runs: Array<OpencodeXSwarmRun>
+  events: Array<OpencodeXSwarmEvent>
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXStateSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  digest: string
+  domains: {
+    catalog: {
+      revision: string
+      digest: string
+    }
+    operations: {
+      revision: string
+      digest: string
+    }
+  }
+  payloads: {
+    catalog: OpencodeXCatalogSnapshot
+    operations: {
+      jobs: Array<OpencodeXJob>
+      swarms: Array<OpencodeXSwarm>
+    }
+  }
+}
+
+export type OpencodeXOperationsSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  revision: string
+  digest: string
+  payload: {
+    jobs: Array<OpencodeXJob>
+    swarms: Array<OpencodeXSwarm>
+  }
+}
+
+export type OpencodeXPlugin = {
+  id: string
+  pluginID: string
+  kind: "server" | "tui"
+  spec: string
+  source: string
+  scope: "global" | "local" | "internal"
+  enabled: boolean
+  active: boolean
+  canToggle: boolean
+  target?: string
+  note?: string
+}
+
+export type OpencodeXCapabilitiesPayload = {
+  provider: {
+    all: Array<Provider>
+    default: {
+      [key: string]: string
+    }
+    connected: Array<string>
+  }
+  config: Config
+  agents: Array<Agent>
+  commands: Array<Command>
+  lsp: Array<LspStatus>
+  formatter: Array<FormatterStatus>
+  mcp: {
+    [key: string]: McpStatus
+  }
+  mcpResources: {
+    [key: string]: McpResource
+  }
+  plugins: Array<OpencodeXPlugin>
+}
+
+export type OpencodeXCapabilitiesSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  revision: string
+  digest: string
+  payload: OpencodeXCapabilitiesPayload
+}
+
+export type OpencodeXSessionSnapshot = {
+  scope: OpencodeXStateScope
+  epoch: string
+  cursor: OpencodeXStateCursor
+  digest: string
+  session: Session
+  messages: {
+    items: Array<{
+      info: Message
+      parts: Array<Part>
+    }>
+    coverage: {
+      firstMessageID?: string
+      lastMessageID?: string
+    }
+    boundary: {
+      hasMore: boolean
+      next?: string
+    }
+  }
+  todos: Array<Todo>
+  diff: Array<SnapshotFileDiff>
+  pendingInteractions: {
+    permissions: Array<PermissionRequest>
+    questions: Array<QuestionRequest>
+  }
+}
+
+export type OpencodeXSessionMoveInput = {
+  projectID: string
+  sessionID: string
+}
+
+export type OpencodeXPluginInstallInput = {
+  spec: string
+  global?: boolean
+  force?: boolean
+}
+
+export type OpencodeXPluginInstallItem = {
+  kind: "server" | "tui"
+  mode: "noop" | "add" | "replace"
+  file: string
+}
+
+export type OpencodeXPluginInstallResult = {
+  ok: boolean
+  spec?: string
+  message?: string
+  dir?: string
+  tui: boolean
+  server: boolean
+  items: Array<OpencodeXPluginInstallItem>
+}
+
+export type OpencodeXPluginToggleInput = {
+  id: string
+  enabled: boolean
+}
+
+export type OpencodeXJobCreateInput = {
+  id?: string
+  kind: string
+  title?: string
+  status?: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  projectID?: string
+  sessionID?: string
+  parentJobID?: string
+  swarmID?: string
+  roleID?: string
+  agent?: string
+  providerID?: string
+  modelID?: string
+  idempotencyKey?: string
+  maxAttempts?: number
+  timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmRoleInput = {
+  name: string
+  agent?: string
+  skill?: string
+  providerID?: string
+  modelID?: string
+  modelProfile?: string
+  instructions: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmCreateInput = {
+  projectID: string
+  title?: string
+  prompt?: string
+  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  createdBy?: string
+  roles?: Array<OpencodeXSwarmRoleInput>
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmUpdateInput = {
+  title?: string
+  roles?: Array<OpencodeXSwarmRoleInput>
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXSwarmAssignTaskInput = {
+  prompt: string
+  agent?: string
+  mode?: "build" | "plan"
+  variant?: string
+}
+
+export type OpencodeXSwarmAddRoleInput = {
+  role: OpencodeXSwarmRoleInput
+}
+
+export type OpencodeXSwarmUpdateRoleInput = {
+  name?: string
+  agent?: string
+  skill?: string
+  providerID?: string
+  modelID?: string
+  modelProfile?: string
+  instructions?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXTerminalSessionCreateInput = {
+  title?: string
+  projectID?: string
+  directory: string
+  installationID: string
+}
+
+export type OpencodeXViewCreateInput = {
+  id?: string
+  title?: string
+  sessionIDs?: Array<string>
+  members?: Array<OpencodeXViewMember>
+  focusedSessionID?: string
+  focusedItemID?: string
+  layout?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXViewReorderInput = {
+  viewIDs: Array<string>
+}
+
+export type PtyNotFoundError = {
+  _tag: "PtyNotFoundError"
+  ptyID: string
+  message: string
+}
+
+export type PtyForbiddenError = {
+  _tag: "PtyForbiddenError"
+  message: string
+}
+
+export type QuestionNotFoundError = {
+  _tag: "QuestionNotFoundError"
+  requestID: string
+  message: string
 }
 
 export type PermissionNotFoundError = {
@@ -2403,13 +3335,6 @@ export type ProviderAuthError1 = {
     field?: string
     message?: string
     kind?: string
-  }
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
   }
 }
 
@@ -3327,6 +4252,220 @@ export type SyncEventMessagePartRemoved = {
   }
 }
 
+export type SyncEventSessionStatus = {
+  type: "sync"
+  name: "session.status.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
+export type SyncEventOpencodexTerminalSessionCreated = {
+  type: "sync"
+  name: "opencodex.terminal_session.created.1"
+  id: string
+  seq: number
+  aggregateID: "terminalSessionID"
+  data: {
+    terminalSessionID: string
+  }
+}
+
+export type SyncEventOpencodexTerminalSessionUpdated = {
+  type: "sync"
+  name: "opencodex.terminal_session.updated.1"
+  id: string
+  seq: number
+  aggregateID: "terminalSessionID"
+  data: {
+    terminalSessionID: string
+  }
+}
+
+export type SyncEventOpencodexTerminalSessionDeleted = {
+  type: "sync"
+  name: "opencodex.terminal_session.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "terminalSessionID"
+  data: {
+    terminalSessionID: string
+  }
+}
+
+export type SyncEventOpencodexProjectCreated = {
+  type: "sync"
+  name: "opencodex.project.created.1"
+  id: string
+  seq: number
+  aggregateID: "projectID"
+  data: {
+    projectID: string
+  }
+}
+
+export type SyncEventOpencodexProjectUpdated = {
+  type: "sync"
+  name: "opencodex.project.updated.1"
+  id: string
+  seq: number
+  aggregateID: "projectID"
+  data: {
+    projectID: string
+  }
+}
+
+export type SyncEventOpencodexProjectReordered = {
+  type: "sync"
+  name: "opencodex.project.reordered.1"
+  id: string
+  seq: number
+  aggregateID: "collectionID"
+  data: {
+    collectionID: string
+  }
+}
+
+export type SyncEventOpencodexProjectDeleted = {
+  type: "sync"
+  name: "opencodex.project.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "projectID"
+  data: {
+    projectID: string
+  }
+}
+
+export type SyncEventOpencodexProjectSessionAssigned = {
+  type: "sync"
+  name: "opencodex.project.session_assigned.1"
+  id: string
+  seq: number
+  aggregateID: "projectID"
+  data: {
+    projectID: string
+    sessionID: string
+  }
+}
+
+export type SyncEventOpencodexJobCreated = {
+  type: "sync"
+  name: "opencodex.job.created.1"
+  id: string
+  seq: number
+  aggregateID: "jobID"
+  data: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type SyncEventOpencodexJobTransitioned = {
+  type: "sync"
+  name: "opencodex.job.transitioned.1"
+  id: string
+  seq: number
+  aggregateID: "jobID"
+  data: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type SyncEventOpencodexSwarmCreated = {
+  type: "sync"
+  name: "opencodex.swarm.created.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexSwarmUpdated = {
+  type: "sync"
+  name: "opencodex.swarm.updated.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexSwarmDeleted = {
+  type: "sync"
+  name: "opencodex.swarm.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexViewCreated = {
+  type: "sync"
+  name: "opencodex.view.created.1"
+  id: string
+  seq: number
+  aggregateID: "viewID"
+  data: {
+    viewID: string
+  }
+}
+
+export type SyncEventOpencodexViewUpdated = {
+  type: "sync"
+  name: "opencodex.view.updated.1"
+  id: string
+  seq: number
+  aggregateID: "viewID"
+  data: {
+    viewID: string
+  }
+}
+
+export type SyncEventOpencodexViewReordered = {
+  type: "sync"
+  name: "opencodex.view.reordered.1"
+  id: string
+  seq: number
+  aggregateID: "collectionID"
+  data: {
+    collectionID: string
+  }
+}
+
+export type SyncEventOpencodexViewDeleted = {
+  type: "sync"
+  name: "opencodex.view.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "viewID"
+  data: {
+    viewID: string
+  }
+}
+
+export type SyncEventOpencodexSessionStateUpdated = {
+  type: "sync"
+  name: "opencodex.session_state.updated.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    state: OpencodeXSessionState
+  }
+}
+
 export type PolicyEffect = "allow" | "deny"
 
 export type ConfigV2ExperimentalPolicy = {
@@ -4227,6 +5366,14 @@ export type EventSessionError = {
   }
 }
 
+export type EventOpencodexSettingsUpdated = {
+  id: string
+  type: "opencodex.settings.updated"
+  properties: {
+    revision: string
+  }
+}
+
 export type EventQuestionAsked = {
   id: string
   type: "question.asked"
@@ -4366,6 +5513,96 @@ export type EventVcsBranchUpdated = {
   }
 }
 
+export type EventOpencodexTerminalSessionCreated = {
+  id: string
+  type: "opencodex.terminal_session.created"
+  properties: {
+    terminalSessionID: string
+  }
+}
+
+export type EventOpencodexTerminalSessionUpdated = {
+  id: string
+  type: "opencodex.terminal_session.updated"
+  properties: {
+    terminalSessionID: string
+  }
+}
+
+export type EventOpencodexTerminalSessionDeleted = {
+  id: string
+  type: "opencodex.terminal_session.deleted"
+  properties: {
+    terminalSessionID: string
+  }
+}
+
+export type EventOpencodexProjectCreated = {
+  id: string
+  type: "opencodex.project.created"
+  properties: {
+    projectID: string
+  }
+}
+
+export type EventOpencodexProjectUpdated = {
+  id: string
+  type: "opencodex.project.updated"
+  properties: {
+    projectID: string
+  }
+}
+
+export type EventOpencodexProjectReordered = {
+  id: string
+  type: "opencodex.project.reordered"
+  properties: {
+    collectionID: string
+  }
+}
+
+export type EventOpencodexProjectDeleted = {
+  id: string
+  type: "opencodex.project.deleted"
+  properties: {
+    projectID: string
+  }
+}
+
+export type EventOpencodexProjectSessionAssigned = {
+  id: string
+  type: "opencodex.project.session_assigned"
+  properties: {
+    projectID: string
+    sessionID: string
+  }
+}
+
+export type EventOpencodexGuiBridgeRequest = {
+  id: string
+  type: "opencodex.gui_bridge.request"
+  properties: {
+    requestID: string
+    clientID: string
+    sessionID: string
+    operation: "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+    input:
+      | {
+          path: string
+        }
+      | {
+          url: string
+        }
+      | {
+          [key: string]: unknown
+        }
+      | Array<unknown>
+      | {
+          expectedURL: string
+        }
+  }
+}
+
 export type EventWorkspaceReady = {
   id: string
   type: "workspace.ready"
@@ -4457,6 +5694,89 @@ export type EventInstallationUpdateAvailable = {
   }
 }
 
+export type EventOpencodexJobCreated = {
+  id: string
+  type: "opencodex.job.created"
+  properties: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventOpencodexJobTransitioned = {
+  id: string
+  type: "opencodex.job.transitioned"
+  properties: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventOpencodexSwarmCreated = {
+  id: string
+  type: "opencodex.swarm.created"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexSwarmUpdated = {
+  id: string
+  type: "opencodex.swarm.updated"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexSwarmDeleted = {
+  id: string
+  type: "opencodex.swarm.deleted"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexViewCreated = {
+  id: string
+  type: "opencodex.view.created"
+  properties: {
+    viewID: string
+  }
+}
+
+export type EventOpencodexViewUpdated = {
+  id: string
+  type: "opencodex.view.updated"
+  properties: {
+    viewID: string
+  }
+}
+
+export type EventOpencodexViewReordered = {
+  id: string
+  type: "opencodex.view.reordered"
+  properties: {
+    collectionID: string
+  }
+}
+
+export type EventOpencodexViewDeleted = {
+  id: string
+  type: "opencodex.view.deleted"
+  properties: {
+    viewID: string
+  }
+}
+
+export type EventOpencodexSessionStateUpdated = {
+  id: string
+  type: "opencodex.session_state.updated"
+  properties: {
+    sessionID: string
+    state: OpencodeXSessionState
+  }
+}
+
 export type EventServerConnected = {
   id: string
   type: "server.connected"
@@ -4470,6 +5790,15 @@ export type EventGlobalDisposed = {
   type: "global.disposed"
   properties: {
     [key: string]: unknown
+  }
+}
+
+export type EventOpencodexPluginConfigUpdated = {
+  id: string
+  type: "opencodex.plugin_config.updated"
+  properties: {
+    global: boolean
+    spec: string
   }
 }
 
@@ -4628,6 +5957,7 @@ export type GlobalHealthResponses = {
   200: {
     healthy: true
     version: string
+    active: boolean
   }
 }
 
@@ -4767,6 +6097,217 @@ export type GlobalUpgradeResponses = {
 }
 
 export type GlobalUpgradeResponse = GlobalUpgradeResponses[keyof GlobalUpgradeResponses]
+
+export type GlobalGuiBridgeSyncData = {
+  body?: {
+    clientID: string
+    token: string
+    capabilities: Array<
+      "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+    >
+    scopes: Array<{
+      directory: string
+      workspaceID?: string
+    }>
+  }
+  path?: never
+  query?: never
+  url: "/global/gui-bridge/sync"
+}
+
+export type GlobalGuiBridgeSyncErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalGuiBridgeSyncError = GlobalGuiBridgeSyncErrors[keyof GlobalGuiBridgeSyncErrors]
+
+export type GlobalGuiBridgeSyncResponses = {
+  /**
+   * GUI bridge desired state synchronized
+   */
+  200: {
+    ok: true
+    generation: string
+    added: number
+    removed: number
+    unchanged: number
+  }
+}
+
+export type GlobalGuiBridgeSyncResponse = GlobalGuiBridgeSyncResponses[keyof GlobalGuiBridgeSyncResponses]
+
+export type GlobalGuiBridgeUnregisterData = {
+  body?: {
+    clientID: string
+    token: string
+    generation: string
+  }
+  path?: never
+  query?: never
+  url: "/global/gui-bridge/unregister"
+}
+
+export type GlobalGuiBridgeUnregisterErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalGuiBridgeUnregisterError = GlobalGuiBridgeUnregisterErrors[keyof GlobalGuiBridgeUnregisterErrors]
+
+export type GlobalGuiBridgeUnregisterResponses = {
+  /**
+   * GUI bridge unregistered
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type GlobalGuiBridgeUnregisterResponse =
+  GlobalGuiBridgeUnregisterResponses[keyof GlobalGuiBridgeUnregisterResponses]
+
+export type GlobalGuiBridgeRespondData = {
+  body?:
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "workspace.open"
+        result:
+          | {
+              status: "ok"
+              output: {
+                path: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.navigate"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.state"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.screenshot"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+                dataURL: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+    | {
+        clientID: string
+        token: string
+        requestID: string
+        operation: "browser.snapshot"
+        result:
+          | {
+              status: "ok"
+              output: {
+                url: string
+                text: string
+              }
+            }
+          | {
+              status: "error"
+              message: string
+            }
+      }
+  path?: never
+  query?: never
+  url: "/global/gui-bridge/respond"
+}
+
+export type GlobalGuiBridgeRespondErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type GlobalGuiBridgeRespondError = GlobalGuiBridgeRespondErrors[keyof GlobalGuiBridgeRespondErrors]
+
+export type GlobalGuiBridgeRespondResponses = {
+  /**
+   * GUI bridge response accepted
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type GlobalGuiBridgeRespondResponse = GlobalGuiBridgeRespondResponses[keyof GlobalGuiBridgeRespondResponses]
 
 export type EventSubscribeData = {
   body?: never
@@ -5351,6 +6892,7 @@ export type FileReadData = {
     directory?: string
     workspace?: string
     path: string
+    maxBytes?: string
   }
   url: "/file/content"
 }
@@ -6021,6 +7563,3161 @@ export type McpDisconnectResponses = {
 }
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
+
+export type OpencodexSettingsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/settings"
+}
+
+export type OpencodexSettingsGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSettingsGetError = OpencodexSettingsGetErrors[keyof OpencodexSettingsGetErrors]
+
+export type OpencodexSettingsGetResponses = {
+  /**
+   * OpenCodeX-only settings
+   */
+  200: OpencodeXSettings
+}
+
+export type OpencodexSettingsGetResponse = OpencodexSettingsGetResponses[keyof OpencodexSettingsGetResponses]
+
+export type OpencodexSettingsUpdateData = {
+  body?: OpencodeXSettingsUpdateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/settings"
+}
+
+export type OpencodexSettingsUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexSettingsUpdateError = OpencodexSettingsUpdateErrors[keyof OpencodexSettingsUpdateErrors]
+
+export type OpencodexSettingsUpdateResponses = {
+  /**
+   * Updated OpenCodeX-only settings
+   */
+  200: OpencodeXSettings
+}
+
+export type OpencodexSettingsUpdateResponse = OpencodexSettingsUpdateResponses[keyof OpencodexSettingsUpdateResponses]
+
+export type OpencodexProjectListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project"
+}
+
+export type OpencodexProjectListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexProjectListError = OpencodexProjectListErrors[keyof OpencodexProjectListErrors]
+
+export type OpencodexProjectListResponses = {
+  /**
+   * List of OpencodeX projects
+   */
+  200: Array<OpencodeXProject>
+}
+
+export type OpencodexProjectListResponse = OpencodexProjectListResponses[keyof OpencodexProjectListResponses]
+
+export type OpencodexProjectCreateData = {
+  body?: OpencodeXProjectCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project"
+}
+
+export type OpencodexProjectCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexProjectCreateError = OpencodexProjectCreateErrors[keyof OpencodexProjectCreateErrors]
+
+export type OpencodexProjectCreateResponses = {
+  /**
+   * Created OpencodeX project
+   */
+  200: OpencodeXProject
+}
+
+export type OpencodexProjectCreateResponse = OpencodexProjectCreateResponses[keyof OpencodexProjectCreateResponses]
+
+export type OpencodexProjectValidateData = {
+  body?: OpencodeXProjectValidateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project/validate"
+}
+
+export type OpencodexProjectValidateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectValidateError = OpencodexProjectValidateErrors[keyof OpencodexProjectValidateErrors]
+
+export type OpencodexProjectValidateResponses = {
+  /**
+   * Validated OpencodeX project folders
+   */
+  200: OpencodeXProjectValidation
+}
+
+export type OpencodexProjectValidateResponse =
+  OpencodexProjectValidateResponses[keyof OpencodexProjectValidateResponses]
+
+export type OpencodexProjectDeleteData = {
+  body?: never
+  path: {
+    projectID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/project/{projectID}"
+}
+
+export type OpencodexProjectDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectDeleteError = OpencodexProjectDeleteErrors[keyof OpencodexProjectDeleteErrors]
+
+export type OpencodexProjectDeleteResponses = {
+  /**
+   * Deleted OpencodeX project
+   */
+  200: boolean
+}
+
+export type OpencodexProjectDeleteResponse = OpencodexProjectDeleteResponses[keyof OpencodexProjectDeleteResponses]
+
+export type OpencodexProjectUpdateData = {
+  body?: {
+    name?: string
+    folders?: Array<string>
+  }
+  path: {
+    projectID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/project/{projectID}"
+}
+
+export type OpencodexProjectUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexProjectUpdateError = OpencodexProjectUpdateErrors[keyof OpencodexProjectUpdateErrors]
+
+export type OpencodexProjectUpdateResponses = {
+  /**
+   * Updated OpencodeX project
+   */
+  200: OpencodeXProject
+}
+
+export type OpencodexProjectUpdateResponse = OpencodexProjectUpdateResponses[keyof OpencodexProjectUpdateResponses]
+
+export type OpencodexProjectReorderData = {
+  body?: OpencodeXProjectReorderInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/project/reorder"
+}
+
+export type OpencodexProjectReorderErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexProjectReorderError = OpencodexProjectReorderErrors[keyof OpencodexProjectReorderErrors]
+
+export type OpencodexProjectReorderResponses = {
+  /**
+   * Reordered OpencodeX projects
+   */
+  200: Array<OpencodeXProject>
+}
+
+export type OpencodexProjectReorderResponse = OpencodexProjectReorderResponses[keyof OpencodexProjectReorderResponses]
+
+export type OpencodexSessionCreateData = {
+  body?: OpencodeXSessionCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/session"
+}
+
+export type OpencodexSessionCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError | NotFoundError
+   */
+  404: ProjectNotFoundError | NotFoundError
+}
+
+export type OpencodexSessionCreateError = OpencodexSessionCreateErrors[keyof OpencodexSessionCreateErrors]
+
+export type OpencodexSessionCreateResponses = {
+  /**
+   * Created session
+   */
+  200: Session
+}
+
+export type OpencodexSessionCreateResponse = OpencodexSessionCreateResponses[keyof OpencodexSessionCreateResponses]
+
+export type OpencodexSessionSyncData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scope?: "project"
+    path?: string
+    roots?: "true" | "false"
+    start?: string
+    search?: string
+    limit?: string
+    since?: string
+  }
+  url: "/experimental/opencodex/session-sync"
+}
+
+export type OpencodexSessionSyncErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSessionSyncError = OpencodexSessionSyncErrors[keyof OpencodexSessionSyncErrors]
+
+export type OpencodexSessionSyncResponses = {
+  /**
+   * OpencodeX session sync snapshot
+   */
+  200: OpencodeXSessionSyncResponse
+}
+
+export type OpencodexSessionSyncResponse = OpencodexSessionSyncResponses[keyof OpencodexSessionSyncResponses]
+
+export type OpencodexStateSnapshotData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/state"
+}
+
+export type OpencodexStateSnapshotErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateSnapshotError = OpencodexStateSnapshotErrors[keyof OpencodexStateSnapshotErrors]
+
+export type OpencodexStateSnapshotResponses = {
+  /**
+   * Server-authoritative OpencodeX state snapshot
+   */
+  200: OpencodeXStateSnapshot
+}
+
+export type OpencodexStateSnapshotResponse = OpencodexStateSnapshotResponses[keyof OpencodexStateSnapshotResponses]
+
+export type OpencodexStateOperationsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/state/operations"
+}
+
+export type OpencodexStateOperationsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateOperationsError = OpencodexStateOperationsErrors[keyof OpencodexStateOperationsErrors]
+
+export type OpencodexStateOperationsResponses = {
+  /**
+   * Atomic OpencodeX operations snapshot
+   */
+  200: OpencodeXOperationsSnapshot
+}
+
+export type OpencodexStateOperationsResponse =
+  OpencodexStateOperationsResponses[keyof OpencodexStateOperationsResponses]
+
+export type OpencodexStateCapabilitiesData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/state/capabilities"
+}
+
+export type OpencodexStateCapabilitiesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateCapabilitiesError = OpencodexStateCapabilitiesErrors[keyof OpencodexStateCapabilitiesErrors]
+
+export type OpencodexStateCapabilitiesResponses = {
+  /**
+   * Atomic OpencodeX capabilities snapshot
+   */
+  200: OpencodeXCapabilitiesSnapshot
+}
+
+export type OpencodexStateCapabilitiesResponse =
+  OpencodexStateCapabilitiesResponses[keyof OpencodexStateCapabilitiesResponses]
+
+export type OpencodexStateSessionCardsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    cursor?: string
+    limit?: string
+    ids?: string
+  }
+  url: "/experimental/opencodex/state/session-card"
+}
+
+export type OpencodexStateSessionCardsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexStateSessionCardsError = OpencodexStateSessionCardsErrors[keyof OpencodexStateSessionCardsErrors]
+
+export type OpencodexStateSessionCardsResponses = {
+  /**
+   * Bounded page of canonical OpencodeX session cards
+   */
+  200: OpencodeXSessionCardPage
+}
+
+export type OpencodexStateSessionCardsResponse =
+  OpencodexStateSessionCardsResponses[keyof OpencodexStateSessionCardsResponses]
+
+export type OpencodexStateSessionData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    limit?: string
+    before?: string
+  }
+  url: "/experimental/opencodex/state/session/{sessionID}"
+}
+
+export type OpencodexStateSessionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexStateSessionError = OpencodexStateSessionErrors[keyof OpencodexStateSessionErrors]
+
+export type OpencodexStateSessionResponses = {
+  /**
+   * Atomic OpencodeX session snapshot
+   */
+  200: OpencodeXSessionSnapshot
+}
+
+export type OpencodexStateSessionResponse = OpencodexStateSessionResponses[keyof OpencodexStateSessionResponses]
+
+export type OpencodexStateEventData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    after?: string
+  }
+  url: "/experimental/opencodex/state/event"
+}
+
+export type OpencodexStateEventErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type OpencodexStateEventError = OpencodexStateEventErrors[keyof OpencodexStateEventErrors]
+
+export type OpencodexStateEventResponses = {
+  /**
+   * Success
+   */
+  200: string
+}
+
+export type OpencodexStateEventResponse = OpencodexStateEventResponses[keyof OpencodexStateEventResponses]
+
+export type OpencodexSessionStateUpdateData = {
+  body?: {
+    expectedReviewedFiles?: Array<string>
+    seenAt?: number
+    reviewedAt?: number
+    reviewedFiles?: Array<string>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/session-state/{sessionID}"
+}
+
+export type OpencodexSessionStateUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexSessionStateUpdateError =
+  OpencodexSessionStateUpdateErrors[keyof OpencodexSessionStateUpdateErrors]
+
+export type OpencodexSessionStateUpdateResponses = {
+  /**
+   * Updated OpencodeX session UI state
+   */
+  200: OpencodeXSessionState
+}
+
+export type OpencodexSessionStateUpdateResponse =
+  OpencodexSessionStateUpdateResponses[keyof OpencodexSessionStateUpdateResponses]
+
+export type OpencodexSessionMoveData = {
+  body?: OpencodeXSessionMoveInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/session/move"
+}
+
+export type OpencodexSessionMoveErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError | NotFoundError
+   */
+  404: ProjectNotFoundError | NotFoundError
+}
+
+export type OpencodexSessionMoveError = OpencodexSessionMoveErrors[keyof OpencodexSessionMoveErrors]
+
+export type OpencodexSessionMoveResponses = {
+  /**
+   * Moved session
+   */
+  200: Session
+}
+
+export type OpencodexSessionMoveResponse = OpencodexSessionMoveResponses[keyof OpencodexSessionMoveResponses]
+
+export type OpencodexSessionDeleteData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/session/{sessionID}"
+}
+
+export type OpencodexSessionDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSessionDeleteError = OpencodexSessionDeleteErrors[keyof OpencodexSessionDeleteErrors]
+
+export type OpencodexSessionDeleteResponses = {
+  /**
+   * Deleted session
+   */
+  200: boolean
+}
+
+export type OpencodexSessionDeleteResponse = OpencodexSessionDeleteResponses[keyof OpencodexSessionDeleteResponses]
+
+export type OpencodexJobListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/job"
+}
+
+export type OpencodexJobListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexJobListError = OpencodexJobListErrors[keyof OpencodexJobListErrors]
+
+export type OpencodexJobListResponses = {
+  /**
+   * List OpencodeX jobs
+   */
+  200: Array<OpencodeXJob>
+}
+
+export type OpencodexJobListResponse = OpencodexJobListResponses[keyof OpencodexJobListResponses]
+
+export type OpencodexJobCreateData = {
+  body?: OpencodeXJobCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/job"
+}
+
+export type OpencodexJobCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexJobCreateError = OpencodexJobCreateErrors[keyof OpencodexJobCreateErrors]
+
+export type OpencodexJobCreateResponses = {
+  /**
+   * Created OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobCreateResponse = OpencodexJobCreateResponses[keyof OpencodexJobCreateResponses]
+
+export type OpencodexPluginListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/plugin"
+}
+
+export type OpencodexPluginListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexPluginListError = OpencodexPluginListErrors[keyof OpencodexPluginListErrors]
+
+export type OpencodexPluginListResponses = {
+  /**
+   * List configured OpencodeX plugins
+   */
+  200: Array<OpencodeXPlugin>
+}
+
+export type OpencodexPluginListResponse = OpencodexPluginListResponses[keyof OpencodexPluginListResponses]
+
+export type OpencodexPluginInstallData = {
+  body?: OpencodeXPluginInstallInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/plugin/install"
+}
+
+export type OpencodexPluginInstallErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexPluginInstallError = OpencodexPluginInstallErrors[keyof OpencodexPluginInstallErrors]
+
+export type OpencodexPluginInstallResponses = {
+  /**
+   * Installed OpencodeX plugin
+   */
+  200: OpencodeXPluginInstallResult
+}
+
+export type OpencodexPluginInstallResponse = OpencodexPluginInstallResponses[keyof OpencodexPluginInstallResponses]
+
+export type OpencodexPluginToggleData = {
+  body?: OpencodeXPluginToggleInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/plugin/toggle"
+}
+
+export type OpencodexPluginToggleErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexPluginToggleError = OpencodexPluginToggleErrors[keyof OpencodexPluginToggleErrors]
+
+export type OpencodexPluginToggleResponses = {
+  /**
+   * Updated OpencodeX plugin enabled state
+   */
+  200: OpencodeXPlugin
+}
+
+export type OpencodexPluginToggleResponse = OpencodexPluginToggleResponses[keyof OpencodexPluginToggleResponses]
+
+export type OpencodexWorkbenchFileReadData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+    root?: string
+    maxBytes?: string
+  }
+  url: "/experimental/opencodex/workbench/file/read"
+}
+
+export type OpencodexWorkbenchFileReadErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileReadError = OpencodexWorkbenchFileReadErrors[keyof OpencodexWorkbenchFileReadErrors]
+
+export type OpencodexWorkbenchFileReadResponses = {
+  /**
+   * Read exact text from the GUI workbench
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+    bytes?: number
+    truncated?: boolean
+  }
+}
+
+export type OpencodexWorkbenchFileReadResponse =
+  OpencodexWorkbenchFileReadResponses[keyof OpencodexWorkbenchFileReadResponses]
+
+export type OpencodexWorkbenchFileWriteData = {
+  body?: {
+    path: string
+    content: string
+    previousContent?: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/file/write"
+}
+
+export type OpencodexWorkbenchFileWriteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileWriteError =
+  OpencodexWorkbenchFileWriteErrors[keyof OpencodexWorkbenchFileWriteErrors]
+
+export type OpencodexWorkbenchFileWriteResponses = {
+  /**
+   * Write a text file from the GUI workbench
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchFileWriteResponse =
+  OpencodexWorkbenchFileWriteResponses[keyof OpencodexWorkbenchFileWriteResponses]
+
+export type OpencodexWorkbenchFileCreateData = {
+  body?: {
+    path: string
+    content?: string
+    directory?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/file/create"
+}
+
+export type OpencodexWorkbenchFileCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileCreateError =
+  OpencodexWorkbenchFileCreateErrors[keyof OpencodexWorkbenchFileCreateErrors]
+
+export type OpencodexWorkbenchFileCreateResponses = {
+  /**
+   * Create a text file from the GUI workbench
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchFileCreateResponse =
+  OpencodexWorkbenchFileCreateResponses[keyof OpencodexWorkbenchFileCreateResponses]
+
+export type OpencodexWorkbenchFileRenameData = {
+  body?: {
+    from: string
+    to: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/file/rename"
+}
+
+export type OpencodexWorkbenchFileRenameErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileRenameError =
+  OpencodexWorkbenchFileRenameErrors[keyof OpencodexWorkbenchFileRenameErrors]
+
+export type OpencodexWorkbenchFileRenameResponses = {
+  /**
+   * Rename a file from the GUI workbench
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchFileRenameResponse =
+  OpencodexWorkbenchFileRenameResponses[keyof OpencodexWorkbenchFileRenameResponses]
+
+export type OpencodexWorkbenchFileDeleteData = {
+  body?: {
+    path: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/file/delete"
+}
+
+export type OpencodexWorkbenchFileDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileDeleteError =
+  OpencodexWorkbenchFileDeleteErrors[keyof OpencodexWorkbenchFileDeleteErrors]
+
+export type OpencodexWorkbenchFileDeleteResponses = {
+  /**
+   * Delete a file from the GUI workbench
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchFileDeleteResponse =
+  OpencodexWorkbenchFileDeleteResponses[keyof OpencodexWorkbenchFileDeleteResponses]
+
+export type OpencodexWorkbenchFileDiagnosticsData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/diagnostics"
+}
+
+export type OpencodexWorkbenchFileDiagnosticsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileDiagnosticsError =
+  OpencodexWorkbenchFileDiagnosticsErrors[keyof OpencodexWorkbenchFileDiagnosticsErrors]
+
+export type OpencodexWorkbenchFileDiagnosticsResponses = {
+  /**
+   * Active-file diagnostics from the configured language server
+   */
+  200: {
+    ok: boolean
+    supported: boolean
+    reason?: string
+    message?: string
+    diagnostics: Array<{
+      path?: string
+      line?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      severity: "error" | "warning" | "info"
+      message: string
+    }>
+  }
+}
+
+export type OpencodexWorkbenchFileDiagnosticsResponse =
+  OpencodexWorkbenchFileDiagnosticsResponses[keyof OpencodexWorkbenchFileDiagnosticsResponses]
+
+export type OpencodexWorkbenchFileDefinitionData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/definition"
+}
+
+export type OpencodexWorkbenchFileDefinitionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileDefinitionError =
+  OpencodexWorkbenchFileDefinitionErrors[keyof OpencodexWorkbenchFileDefinitionErrors]
+
+export type OpencodexWorkbenchFileDefinitionResponses = {
+  /**
+   * Definition locations for a GUI workbench file position
+   */
+  200: Array<{
+    path: string
+    root?: string
+    readOnly?: true
+    line: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    column: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    endLine: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    endColumn: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type OpencodexWorkbenchFileDefinitionResponse =
+  OpencodexWorkbenchFileDefinitionResponses[keyof OpencodexWorkbenchFileDefinitionResponses]
+
+export type OpencodexWorkbenchFileHoverData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/hover"
+}
+
+export type OpencodexWorkbenchFileHoverErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileHoverError =
+  OpencodexWorkbenchFileHoverErrors[keyof OpencodexWorkbenchFileHoverErrors]
+
+export type OpencodexWorkbenchFileHoverResponses = {
+  /**
+   * Type and definition details for a GUI workbench file position
+   */
+  200: {
+    supported: boolean
+    message?: string
+    contents: Array<{
+      kind: "code" | "markdown" | "plaintext"
+      value: string
+      language?: string
+    }>
+    definitions: Array<{
+      path: string
+      root?: string
+      readOnly?: true
+      line: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+    range?: {
+      line: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  }
+}
+
+export type OpencodexWorkbenchFileHoverResponse =
+  OpencodexWorkbenchFileHoverResponses[keyof OpencodexWorkbenchFileHoverResponses]
+
+export type OpencodexWorkbenchFileCompletionData = {
+  body?: {
+    path: string
+    root?: string
+    content: string
+    line: number
+    column: number
+    triggerKind?: 1 | 2 | 3
+    triggerCharacter?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/opencodex/workbench/file/completion"
+}
+
+export type OpencodexWorkbenchFileCompletionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchFileCompletionError =
+  OpencodexWorkbenchFileCompletionErrors[keyof OpencodexWorkbenchFileCompletionErrors]
+
+export type OpencodexWorkbenchFileCompletionResponses = {
+  /**
+   * Completion items for a GUI workbench file position
+   */
+  200: {
+    supported: boolean
+    message?: string
+    items: Array<{
+      label: string
+      detail?: string
+      documentation?: string
+      insertText?: string
+      filterText?: string
+      sortText?: string
+      kind?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      insertTextFormat?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+  }
+}
+
+export type OpencodexWorkbenchFileCompletionResponse =
+  OpencodexWorkbenchFileCompletionResponses[keyof OpencodexWorkbenchFileCompletionResponses]
+
+export type OpencodexWorkbenchGitBranchesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/branches"
+}
+
+export type OpencodexWorkbenchGitBranchesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitBranchesError =
+  OpencodexWorkbenchGitBranchesErrors[keyof OpencodexWorkbenchGitBranchesErrors]
+
+export type OpencodexWorkbenchGitBranchesResponses = {
+  /**
+   * Workbench Git branches
+   */
+  200: {
+    ok: boolean
+    message?: string
+    current?: string
+    branches: Array<string>
+  }
+}
+
+export type OpencodexWorkbenchGitBranchesResponse =
+  OpencodexWorkbenchGitBranchesResponses[keyof OpencodexWorkbenchGitBranchesResponses]
+
+export type OpencodexWorkbenchChangesPageData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    path?: string
+    cursor?: string
+    revision?: string
+    limit?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/page"
+}
+
+export type OpencodexWorkbenchChangesPageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesPageError =
+  OpencodexWorkbenchChangesPageErrors[keyof OpencodexWorkbenchChangesPageErrors]
+
+export type OpencodexWorkbenchChangesPageResponses = {
+  /**
+   * Paged GUI workbench changes
+   */
+  200: {
+    ok: boolean
+    stale?: boolean
+    mode: "git" | "directory"
+    revision: string
+    path: string
+    items: Array<{
+      type: "file"
+      name: string
+      path: string
+      status: "added" | "deleted" | "modified"
+      staged: boolean
+      unstaged: boolean
+      untracked: boolean
+      openable: boolean
+      additions?: number
+      deletions?: number
+      binary?: boolean
+    }>
+    summary: {
+      fileCount: number
+      additions: number
+      deletions: number
+      metricsResolved: number
+      metricsTotal: number
+      metricsComplete: boolean
+    }
+    next?: string
+    message?: string
+    branch?: string
+    defaultBranch?: string
+    upstream?: string
+    ahead?: number
+    behind?: number
+    remoteUrl?: string
+    githubUrl?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesPageResponse =
+  OpencodexWorkbenchChangesPageResponses[keyof OpencodexWorkbenchChangesPageResponses]
+
+export type OpencodexWorkbenchChangesPatchData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+    revision?: string
+    context?: string
+    maxBytes?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/patch"
+}
+
+export type OpencodexWorkbenchChangesPatchErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesPatchError =
+  OpencodexWorkbenchChangesPatchErrors[keyof OpencodexWorkbenchChangesPatchErrors]
+
+export type OpencodexWorkbenchChangesPatchResponses = {
+  /**
+   * One bounded GUI workbench patch
+   */
+  200: {
+    ok: boolean
+    stale?: boolean
+    path: string
+    revision: string
+    status: "added" | "deleted" | "modified"
+    patch?: string
+    additions?: number
+    deletions?: number
+    binary: boolean
+    truncated: boolean
+    message?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesPatchResponse =
+  OpencodexWorkbenchChangesPatchResponses[keyof OpencodexWorkbenchChangesPatchResponses]
+
+export type OpencodexWorkbenchChangesMetricsPageData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    revision: string
+    path?: string
+    cursor?: string
+    limit?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/metrics/page"
+}
+
+export type OpencodexWorkbenchChangesMetricsPageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesMetricsPageError =
+  OpencodexWorkbenchChangesMetricsPageErrors[keyof OpencodexWorkbenchChangesMetricsPageErrors]
+
+export type OpencodexWorkbenchChangesMetricsPageResponses = {
+  /**
+   * Progressive GUI workbench change metrics
+   */
+  200: {
+    ok: boolean
+    stale: boolean
+    revision: string
+    items: Array<{
+      path: string
+      additions: number
+      deletions: number
+      binary: boolean
+    }>
+    next?: string
+    summary: {
+      fileCount: number
+      additions: number
+      deletions: number
+      metricsResolved: number
+      metricsTotal: number
+      metricsComplete: boolean
+    }
+    message?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesMetricsPageResponse =
+  OpencodexWorkbenchChangesMetricsPageResponses[keyof OpencodexWorkbenchChangesMetricsPageResponses]
+
+export type OpencodexWorkbenchChangesPatchPageData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+    revision: string
+    cursor?: string
+    context?: string
+  }
+  url: "/experimental/opencodex/workbench/changes/patch/page"
+}
+
+export type OpencodexWorkbenchChangesPatchPageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchChangesPatchPageError =
+  OpencodexWorkbenchChangesPatchPageErrors[keyof OpencodexWorkbenchChangesPatchPageErrors]
+
+export type OpencodexWorkbenchChangesPatchPageResponses = {
+  /**
+   * One page of a selected GUI workbench patch
+   */
+  200: {
+    ok: boolean
+    stale: boolean
+    path: string
+    revision: string
+    status: "added" | "deleted" | "modified"
+    patch?: string
+    additions?: number
+    deletions?: number
+    binary: boolean
+    complete: boolean
+    next?: string
+    message?: string
+  }
+}
+
+export type OpencodexWorkbenchChangesPatchPageResponse =
+  OpencodexWorkbenchChangesPatchPageResponses[keyof OpencodexWorkbenchChangesPatchPageResponses]
+
+export type OpencodexWorkbenchGitHistoryData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/history"
+}
+
+export type OpencodexWorkbenchGitHistoryErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitHistoryError =
+  OpencodexWorkbenchGitHistoryErrors[keyof OpencodexWorkbenchGitHistoryErrors]
+
+export type OpencodexWorkbenchGitHistoryResponses = {
+  /**
+   * Workbench Git history
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGitHistoryResponse =
+  OpencodexWorkbenchGitHistoryResponses[keyof OpencodexWorkbenchGitHistoryResponses]
+
+export type OpencodexWorkbenchDiagnosticsData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/diagnostics"
+}
+
+export type OpencodexWorkbenchDiagnosticsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchDiagnosticsError =
+  OpencodexWorkbenchDiagnosticsErrors[keyof OpencodexWorkbenchDiagnosticsErrors]
+
+export type OpencodexWorkbenchDiagnosticsResponses = {
+  /**
+   * Workbench project diagnostics
+   */
+  200: {
+    ok: boolean
+    command?: string
+    message?: string
+    output?: string
+    diagnostics: Array<{
+      path?: string
+      line?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      column?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endLine?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      endColumn?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      severity: "error" | "warning" | "info"
+      message: string
+    }>
+  }
+}
+
+export type OpencodexWorkbenchDiagnosticsResponse =
+  OpencodexWorkbenchDiagnosticsResponses[keyof OpencodexWorkbenchDiagnosticsResponses]
+
+export type OpencodexWorkbenchGitCheckoutData = {
+  body?: {
+    branch: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/checkout"
+}
+
+export type OpencodexWorkbenchGitCheckoutErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitCheckoutError =
+  OpencodexWorkbenchGitCheckoutErrors[keyof OpencodexWorkbenchGitCheckoutErrors]
+
+export type OpencodexWorkbenchGitCheckoutResponses = {
+  /**
+   * Checkout a Git branch
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitCheckoutResponse =
+  OpencodexWorkbenchGitCheckoutResponses[keyof OpencodexWorkbenchGitCheckoutResponses]
+
+export type OpencodexWorkbenchGitCreateBranchData = {
+  body?: {
+    branch: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/create-branch"
+}
+
+export type OpencodexWorkbenchGitCreateBranchErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitCreateBranchError =
+  OpencodexWorkbenchGitCreateBranchErrors[keyof OpencodexWorkbenchGitCreateBranchErrors]
+
+export type OpencodexWorkbenchGitCreateBranchResponses = {
+  /**
+   * Create and checkout a Git branch
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitCreateBranchResponse =
+  OpencodexWorkbenchGitCreateBranchResponses[keyof OpencodexWorkbenchGitCreateBranchResponses]
+
+export type OpencodexWorkbenchGitStageData = {
+  body?: {
+    paths?: Array<string>
+    all?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/stage"
+}
+
+export type OpencodexWorkbenchGitStageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitStageError = OpencodexWorkbenchGitStageErrors[keyof OpencodexWorkbenchGitStageErrors]
+
+export type OpencodexWorkbenchGitStageResponses = {
+  /**
+   * Stage Git files
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitStageResponse =
+  OpencodexWorkbenchGitStageResponses[keyof OpencodexWorkbenchGitStageResponses]
+
+export type OpencodexWorkbenchGitUnstageData = {
+  body?: {
+    paths?: Array<string>
+    all?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/unstage"
+}
+
+export type OpencodexWorkbenchGitUnstageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitUnstageError =
+  OpencodexWorkbenchGitUnstageErrors[keyof OpencodexWorkbenchGitUnstageErrors]
+
+export type OpencodexWorkbenchGitUnstageResponses = {
+  /**
+   * Unstage Git files
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitUnstageResponse =
+  OpencodexWorkbenchGitUnstageResponses[keyof OpencodexWorkbenchGitUnstageResponses]
+
+export type OpencodexWorkbenchGitDiscardData = {
+  body?: {
+    paths?: Array<string>
+    all?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/discard"
+}
+
+export type OpencodexWorkbenchGitDiscardErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitDiscardError =
+  OpencodexWorkbenchGitDiscardErrors[keyof OpencodexWorkbenchGitDiscardErrors]
+
+export type OpencodexWorkbenchGitDiscardResponses = {
+  /**
+   * Discard Git file changes
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitDiscardResponse =
+  OpencodexWorkbenchGitDiscardResponses[keyof OpencodexWorkbenchGitDiscardResponses]
+
+export type OpencodexWorkbenchGitCommitData = {
+  body?: {
+    message: string
+    body?: string
+    paths?: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/commit"
+}
+
+export type OpencodexWorkbenchGitCommitErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitCommitError =
+  OpencodexWorkbenchGitCommitErrors[keyof OpencodexWorkbenchGitCommitErrors]
+
+export type OpencodexWorkbenchGitCommitResponses = {
+  /**
+   * Commit staged Git changes
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitCommitResponse =
+  OpencodexWorkbenchGitCommitResponses[keyof OpencodexWorkbenchGitCommitResponses]
+
+export type OpencodexWorkbenchGitFetchData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/fetch"
+}
+
+export type OpencodexWorkbenchGitFetchErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitFetchError = OpencodexWorkbenchGitFetchErrors[keyof OpencodexWorkbenchGitFetchErrors]
+
+export type OpencodexWorkbenchGitFetchResponses = {
+  /**
+   * Fetch Git remotes
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitFetchResponse =
+  OpencodexWorkbenchGitFetchResponses[keyof OpencodexWorkbenchGitFetchResponses]
+
+export type OpencodexWorkbenchGitPullData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/pull"
+}
+
+export type OpencodexWorkbenchGitPullErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitPullError = OpencodexWorkbenchGitPullErrors[keyof OpencodexWorkbenchGitPullErrors]
+
+export type OpencodexWorkbenchGitPullResponses = {
+  /**
+   * Pull current Git branch
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitPullResponse =
+  OpencodexWorkbenchGitPullResponses[keyof OpencodexWorkbenchGitPullResponses]
+
+export type OpencodexWorkbenchGitPushData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/push"
+}
+
+export type OpencodexWorkbenchGitPushErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitPushError = OpencodexWorkbenchGitPushErrors[keyof OpencodexWorkbenchGitPushErrors]
+
+export type OpencodexWorkbenchGitPushResponses = {
+  /**
+   * Push current Git branch
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitPushResponse =
+  OpencodexWorkbenchGitPushResponses[keyof OpencodexWorkbenchGitPushResponses]
+
+export type OpencodexWorkbenchGitPublishData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/publish"
+}
+
+export type OpencodexWorkbenchGitPublishErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitPublishError =
+  OpencodexWorkbenchGitPublishErrors[keyof OpencodexWorkbenchGitPublishErrors]
+
+export type OpencodexWorkbenchGitPublishResponses = {
+  /**
+   * Publish current Git branch and set upstream
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitPublishResponse =
+  OpencodexWorkbenchGitPublishResponses[keyof OpencodexWorkbenchGitPublishResponses]
+
+export type OpencodexWorkbenchGitStashesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/stashes"
+}
+
+export type OpencodexWorkbenchGitStashesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitStashesError =
+  OpencodexWorkbenchGitStashesErrors[keyof OpencodexWorkbenchGitStashesErrors]
+
+export type OpencodexWorkbenchGitStashesResponses = {
+  /**
+   * List Git stashes
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGitStashesResponse =
+  OpencodexWorkbenchGitStashesResponses[keyof OpencodexWorkbenchGitStashesResponses]
+
+export type OpencodexWorkbenchGitStashData = {
+  body?: {
+    message?: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/stash"
+}
+
+export type OpencodexWorkbenchGitStashErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitStashError = OpencodexWorkbenchGitStashErrors[keyof OpencodexWorkbenchGitStashErrors]
+
+export type OpencodexWorkbenchGitStashResponses = {
+  /**
+   * Stash current Git changes
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitStashResponse =
+  OpencodexWorkbenchGitStashResponses[keyof OpencodexWorkbenchGitStashResponses]
+
+export type OpencodexWorkbenchGitStashApplyData = {
+  body?: {
+    ref: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/stash/apply"
+}
+
+export type OpencodexWorkbenchGitStashApplyErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitStashApplyError =
+  OpencodexWorkbenchGitStashApplyErrors[keyof OpencodexWorkbenchGitStashApplyErrors]
+
+export type OpencodexWorkbenchGitStashApplyResponses = {
+  /**
+   * Apply a Git stash
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitStashApplyResponse =
+  OpencodexWorkbenchGitStashApplyResponses[keyof OpencodexWorkbenchGitStashApplyResponses]
+
+export type OpencodexWorkbenchGitStashPopData = {
+  body?: {
+    ref: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/stash/pop"
+}
+
+export type OpencodexWorkbenchGitStashPopErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitStashPopError =
+  OpencodexWorkbenchGitStashPopErrors[keyof OpencodexWorkbenchGitStashPopErrors]
+
+export type OpencodexWorkbenchGitStashPopResponses = {
+  /**
+   * Pop a Git stash
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitStashPopResponse =
+  OpencodexWorkbenchGitStashPopResponses[keyof OpencodexWorkbenchGitStashPopResponses]
+
+export type OpencodexWorkbenchGitStashDropData = {
+  body?: {
+    ref: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/git/stash/drop"
+}
+
+export type OpencodexWorkbenchGitStashDropErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGitStashDropError =
+  OpencodexWorkbenchGitStashDropErrors[keyof OpencodexWorkbenchGitStashDropErrors]
+
+export type OpencodexWorkbenchGitStashDropResponses = {
+  /**
+   * Drop a Git stash
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGitStashDropResponse =
+  OpencodexWorkbenchGitStashDropResponses[keyof OpencodexWorkbenchGitStashDropResponses]
+
+export type OpencodexWorkbenchGithubAuthData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/auth"
+}
+
+export type OpencodexWorkbenchGithubAuthErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubAuthError =
+  OpencodexWorkbenchGithubAuthErrors[keyof OpencodexWorkbenchGithubAuthErrors]
+
+export type OpencodexWorkbenchGithubAuthResponses = {
+  /**
+   * GitHub remote status
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubAuthResponse =
+  OpencodexWorkbenchGithubAuthResponses[keyof OpencodexWorkbenchGithubAuthResponses]
+
+export type OpencodexWorkbenchGithubRepoData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/repo"
+}
+
+export type OpencodexWorkbenchGithubRepoErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubRepoError =
+  OpencodexWorkbenchGithubRepoErrors[keyof OpencodexWorkbenchGithubRepoErrors]
+
+export type OpencodexWorkbenchGithubRepoResponses = {
+  /**
+   * GitHub repository information
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubRepoResponse =
+  OpencodexWorkbenchGithubRepoResponses[keyof OpencodexWorkbenchGithubRepoResponses]
+
+export type OpencodexWorkbenchGithubIssuesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/issues"
+}
+
+export type OpencodexWorkbenchGithubIssuesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubIssuesError =
+  OpencodexWorkbenchGithubIssuesErrors[keyof OpencodexWorkbenchGithubIssuesErrors]
+
+export type OpencodexWorkbenchGithubIssuesResponses = {
+  /**
+   * GitHub issues
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubIssuesResponse =
+  OpencodexWorkbenchGithubIssuesResponses[keyof OpencodexWorkbenchGithubIssuesResponses]
+
+export type OpencodexWorkbenchGithubPullsData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/pulls"
+}
+
+export type OpencodexWorkbenchGithubPullsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubPullsError =
+  OpencodexWorkbenchGithubPullsErrors[keyof OpencodexWorkbenchGithubPullsErrors]
+
+export type OpencodexWorkbenchGithubPullsResponses = {
+  /**
+   * GitHub pull requests
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubPullsResponse =
+  OpencodexWorkbenchGithubPullsResponses[keyof OpencodexWorkbenchGithubPullsResponses]
+
+export type OpencodexWorkbenchGithubPullData = {
+  body?: {
+    number: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/pull"
+}
+
+export type OpencodexWorkbenchGithubPullErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubPullError =
+  OpencodexWorkbenchGithubPullErrors[keyof OpencodexWorkbenchGithubPullErrors]
+
+export type OpencodexWorkbenchGithubPullResponses = {
+  /**
+   * GitHub pull request detail
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubPullResponse =
+  OpencodexWorkbenchGithubPullResponses[keyof OpencodexWorkbenchGithubPullResponses]
+
+export type OpencodexWorkbenchGithubChecksData = {
+  body?: {
+    number: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/checks"
+}
+
+export type OpencodexWorkbenchGithubChecksErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubChecksError =
+  OpencodexWorkbenchGithubChecksErrors[keyof OpencodexWorkbenchGithubChecksErrors]
+
+export type OpencodexWorkbenchGithubChecksResponses = {
+  /**
+   * GitHub pull request checks
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubChecksResponse =
+  OpencodexWorkbenchGithubChecksResponses[keyof OpencodexWorkbenchGithubChecksResponses]
+
+export type OpencodexWorkbenchGithubCheckoutPullData = {
+  body?: {
+    number: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/checkout-pull"
+}
+
+export type OpencodexWorkbenchGithubCheckoutPullErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubCheckoutPullError =
+  OpencodexWorkbenchGithubCheckoutPullErrors[keyof OpencodexWorkbenchGithubCheckoutPullErrors]
+
+export type OpencodexWorkbenchGithubCheckoutPullResponses = {
+  /**
+   * Checkout a GitHub pull request
+   */
+  200: {
+    ok: boolean
+    reason?: string
+    message?: string
+    content?: string
+  }
+}
+
+export type OpencodexWorkbenchGithubCheckoutPullResponse =
+  OpencodexWorkbenchGithubCheckoutPullResponses[keyof OpencodexWorkbenchGithubCheckoutPullResponses]
+
+export type OpencodexWorkbenchGithubCreatePullData = {
+  body?: {
+    title: string
+    body?: string
+    base?: string
+    head?: string
+  }
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/workbench/github/create-pull"
+}
+
+export type OpencodexWorkbenchGithubCreatePullErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexWorkbenchGithubCreatePullError =
+  OpencodexWorkbenchGithubCreatePullErrors[keyof OpencodexWorkbenchGithubCreatePullErrors]
+
+export type OpencodexWorkbenchGithubCreatePullResponses = {
+  /**
+   * Created GitHub pull request
+   */
+  200: {
+    ok: boolean
+    message?: string
+    data?: unknown
+  }
+}
+
+export type OpencodexWorkbenchGithubCreatePullResponse =
+  OpencodexWorkbenchGithubCreatePullResponses[keyof OpencodexWorkbenchGithubCreatePullResponses]
+
+export type OpencodexJobGetData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}"
+}
+
+export type OpencodexJobGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobGetError = OpencodexJobGetErrors[keyof OpencodexJobGetErrors]
+
+export type OpencodexJobGetResponses = {
+  /**
+   * OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobGetResponse = OpencodexJobGetResponses[keyof OpencodexJobGetResponses]
+
+export type OpencodexJobUpdateData = {
+  body?: {
+    title?: string
+    status?: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+    sessionID?: string
+    timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    statusReason?: string
+    metadata?: {
+      [key: string]: unknown
+    }
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}"
+}
+
+export type OpencodexJobUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobUpdateError = OpencodexJobUpdateErrors[keyof OpencodexJobUpdateErrors]
+
+export type OpencodexJobUpdateResponses = {
+  /**
+   * Updated OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobUpdateResponse = OpencodexJobUpdateResponses[keyof OpencodexJobUpdateResponses]
+
+export type OpencodexJobCancelData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/cancel"
+}
+
+export type OpencodexJobCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobCancelError = OpencodexJobCancelErrors[keyof OpencodexJobCancelErrors]
+
+export type OpencodexJobCancelResponses = {
+  /**
+   * Cancelled OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobCancelResponse = OpencodexJobCancelResponses[keyof OpencodexJobCancelResponses]
+
+export type OpencodexJobClaimData = {
+  body?: {
+    owner: string
+    leaseMs: number
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/claim"
+}
+
+export type OpencodexJobClaimErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobClaimError = OpencodexJobClaimErrors[keyof OpencodexJobClaimErrors]
+
+export type OpencodexJobClaimResponses = {
+  /**
+   * Claimed OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobClaimResponse = OpencodexJobClaimResponses[keyof OpencodexJobClaimResponses]
+
+export type OpencodexJobStartData = {
+  body?: {
+    owner: string
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/start"
+}
+
+export type OpencodexJobStartErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobStartError = OpencodexJobStartErrors[keyof OpencodexJobStartErrors]
+
+export type OpencodexJobStartResponses = {
+  /**
+   * Running OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobStartResponse = OpencodexJobStartResponses[keyof OpencodexJobStartResponses]
+
+export type OpencodexJobRenewData = {
+  body?: {
+    owner: string
+    leaseMs: number
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/renew"
+}
+
+export type OpencodexJobRenewErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobRenewError = OpencodexJobRenewErrors[keyof OpencodexJobRenewErrors]
+
+export type OpencodexJobRenewResponses = {
+  /**
+   * Renewed OpencodeX job lease
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobRenewResponse = OpencodexJobRenewResponses[keyof OpencodexJobRenewResponses]
+
+export type OpencodexJobSucceedData = {
+  body?: {
+    owner: string
+    result?: {
+      [key: string]: unknown
+    }
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/succeed"
+}
+
+export type OpencodexJobSucceedErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobSucceedError = OpencodexJobSucceedErrors[keyof OpencodexJobSucceedErrors]
+
+export type OpencodexJobSucceedResponses = {
+  /**
+   * Succeeded OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobSucceedResponse = OpencodexJobSucceedResponses[keyof OpencodexJobSucceedResponses]
+
+export type OpencodexJobFailData = {
+  body?: {
+    owner: string
+    failure: OpencodeXJobFailure
+  }
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/fail"
+}
+
+export type OpencodexJobFailErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobFailError = OpencodexJobFailErrors[keyof OpencodexJobFailErrors]
+
+export type OpencodexJobFailResponses = {
+  /**
+   * Failed OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobFailResponse = OpencodexJobFailResponses[keyof OpencodexJobFailResponses]
+
+export type OpencodexJobRetryData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/job/{jobID}/retry"
+}
+
+export type OpencodexJobRetryErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexJobRetryError = OpencodexJobRetryErrors[keyof OpencodexJobRetryErrors]
+
+export type OpencodexJobRetryResponses = {
+  /**
+   * Requeued OpencodeX job
+   */
+  200: OpencodeXJob
+}
+
+export type OpencodexJobRetryResponse = OpencodexJobRetryResponses[keyof OpencodexJobRetryResponses]
+
+export type OpencodexSwarmListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/swarm"
+}
+
+export type OpencodexSwarmListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexSwarmListError = OpencodexSwarmListErrors[keyof OpencodexSwarmListErrors]
+
+export type OpencodexSwarmListResponses = {
+  /**
+   * List OpencodeX swarms
+   */
+  200: Array<OpencodeXSwarm>
+}
+
+export type OpencodexSwarmListResponse = OpencodexSwarmListResponses[keyof OpencodexSwarmListResponses]
+
+export type OpencodexSwarmCreateData = {
+  body?: OpencodeXSwarmCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/swarm"
+}
+
+export type OpencodexSwarmCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexSwarmCreateError = OpencodexSwarmCreateErrors[keyof OpencodexSwarmCreateErrors]
+
+export type OpencodexSwarmCreateResponses = {
+  /**
+   * Created OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmCreateResponse = OpencodexSwarmCreateResponses[keyof OpencodexSwarmCreateResponses]
+
+export type OpencodexSwarmDeleteData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}"
+}
+
+export type OpencodexSwarmDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmDeleteError = OpencodexSwarmDeleteErrors[keyof OpencodexSwarmDeleteErrors]
+
+export type OpencodexSwarmDeleteResponses = {
+  /**
+   * Deleted OpencodeX swarm
+   */
+  200: boolean
+}
+
+export type OpencodexSwarmDeleteResponse = OpencodexSwarmDeleteResponses[keyof OpencodexSwarmDeleteResponses]
+
+export type OpencodexSwarmGetData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}"
+}
+
+export type OpencodexSwarmGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmGetError = OpencodexSwarmGetErrors[keyof OpencodexSwarmGetErrors]
+
+export type OpencodexSwarmGetResponses = {
+  /**
+   * OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmGetResponse = OpencodexSwarmGetResponses[keyof OpencodexSwarmGetResponses]
+
+export type OpencodexSwarmUpdateData = {
+  body?: OpencodeXSwarmUpdateInput
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}"
+}
+
+export type OpencodexSwarmUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmUpdateError = OpencodexSwarmUpdateErrors[keyof OpencodexSwarmUpdateErrors]
+
+export type OpencodexSwarmUpdateResponses = {
+  /**
+   * Updated OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmUpdateResponse = OpencodexSwarmUpdateResponses[keyof OpencodexSwarmUpdateResponses]
+
+export type OpencodexSwarmStartData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/start"
+}
+
+export type OpencodexSwarmStartErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmStartError = OpencodexSwarmStartErrors[keyof OpencodexSwarmStartErrors]
+
+export type OpencodexSwarmStartResponses = {
+  /**
+   * Started OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmStartResponse = OpencodexSwarmStartResponses[keyof OpencodexSwarmStartResponses]
+
+export type OpencodexSwarmTaskAssignData = {
+  body?: OpencodeXSwarmAssignTaskInput
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/task"
+}
+
+export type OpencodexSwarmTaskAssignErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmTaskAssignError = OpencodexSwarmTaskAssignErrors[keyof OpencodexSwarmTaskAssignErrors]
+
+export type OpencodexSwarmTaskAssignResponses = {
+  /**
+   * Assigned task to OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmTaskAssignResponse =
+  OpencodexSwarmTaskAssignResponses[keyof OpencodexSwarmTaskAssignResponses]
+
+export type OpencodexSwarmCancelData = {
+  body?: never
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/cancel"
+}
+
+export type OpencodexSwarmCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmCancelError = OpencodexSwarmCancelErrors[keyof OpencodexSwarmCancelErrors]
+
+export type OpencodexSwarmCancelResponses = {
+  /**
+   * Cancelled OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmCancelResponse = OpencodexSwarmCancelResponses[keyof OpencodexSwarmCancelResponses]
+
+export type OpencodexSwarmRoleAddData = {
+  body?: OpencodeXSwarmAddRoleInput
+  path: {
+    swarmID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/role"
+}
+
+export type OpencodexSwarmRoleAddErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmRoleAddError = OpencodexSwarmRoleAddErrors[keyof OpencodexSwarmRoleAddErrors]
+
+export type OpencodexSwarmRoleAddResponses = {
+  /**
+   * Updated OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmRoleAddResponse = OpencodexSwarmRoleAddResponses[keyof OpencodexSwarmRoleAddResponses]
+
+export type OpencodexSwarmRoleUpdateData = {
+  body?: OpencodeXSwarmUpdateRoleInput
+  path: {
+    swarmID: string
+    roleID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/swarm/{swarmID}/role/{roleID}"
+}
+
+export type OpencodexSwarmRoleUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexSwarmRoleUpdateError = OpencodexSwarmRoleUpdateErrors[keyof OpencodexSwarmRoleUpdateErrors]
+
+export type OpencodexSwarmRoleUpdateResponses = {
+  /**
+   * Updated OpencodeX swarm
+   */
+  200: OpencodeXSwarm
+}
+
+export type OpencodexSwarmRoleUpdateResponse =
+  OpencodexSwarmRoleUpdateResponses[keyof OpencodexSwarmRoleUpdateResponses]
+
+export type OpencodexTerminalSessionListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/terminal-session"
+}
+
+export type OpencodexTerminalSessionListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexTerminalSessionListError =
+  OpencodexTerminalSessionListErrors[keyof OpencodexTerminalSessionListErrors]
+
+export type OpencodexTerminalSessionListResponses = {
+  /**
+   * List OpencodeX terminal sessions
+   */
+  200: Array<OpencodeXTerminalSession>
+}
+
+export type OpencodexTerminalSessionListResponse =
+  OpencodexTerminalSessionListResponses[keyof OpencodexTerminalSessionListResponses]
+
+export type OpencodexTerminalSessionCreateData = {
+  body?: OpencodeXTerminalSessionCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/terminal-session"
+}
+
+export type OpencodexTerminalSessionCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexTerminalSessionCreateError =
+  OpencodexTerminalSessionCreateErrors[keyof OpencodexTerminalSessionCreateErrors]
+
+export type OpencodexTerminalSessionCreateResponses = {
+  /**
+   * Created OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionCreateResponse =
+  OpencodexTerminalSessionCreateResponses[keyof OpencodexTerminalSessionCreateResponses]
+
+export type OpencodexTerminalSessionDeleteData = {
+  body?: never
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}"
+}
+
+export type OpencodexTerminalSessionDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexTerminalSessionDeleteError =
+  OpencodexTerminalSessionDeleteErrors[keyof OpencodexTerminalSessionDeleteErrors]
+
+export type OpencodexTerminalSessionDeleteResponses = {
+  /**
+   * Deleted OpencodeX terminal session
+   */
+  200: boolean
+}
+
+export type OpencodexTerminalSessionDeleteResponse =
+  OpencodexTerminalSessionDeleteResponses[keyof OpencodexTerminalSessionDeleteResponses]
+
+export type OpencodexTerminalSessionGetData = {
+  body?: never
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}"
+}
+
+export type OpencodexTerminalSessionGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexTerminalSessionGetError =
+  OpencodexTerminalSessionGetErrors[keyof OpencodexTerminalSessionGetErrors]
+
+export type OpencodexTerminalSessionGetResponses = {
+  /**
+   * OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionGetResponse =
+  OpencodexTerminalSessionGetResponses[keyof OpencodexTerminalSessionGetResponses]
+
+export type OpencodexTerminalSessionUpdateData = {
+  body?: {
+    expectedTimeUpdated: number
+    title?: string
+    projectID?: string
+  }
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}"
+}
+
+export type OpencodexTerminalSessionUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexTerminalSessionUpdateError =
+  OpencodexTerminalSessionUpdateErrors[keyof OpencodexTerminalSessionUpdateErrors]
+
+export type OpencodexTerminalSessionUpdateResponses = {
+  /**
+   * Updated OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionUpdateResponse =
+  OpencodexTerminalSessionUpdateResponses[keyof OpencodexTerminalSessionUpdateResponses]
+
+export type OpencodexTerminalSessionOpenedData = {
+  body?: never
+  path: {
+    terminalSessionID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/terminal-session/{terminalSessionID}/opened"
+}
+
+export type OpencodexTerminalSessionOpenedErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexTerminalSessionOpenedError =
+  OpencodexTerminalSessionOpenedErrors[keyof OpencodexTerminalSessionOpenedErrors]
+
+export type OpencodexTerminalSessionOpenedResponses = {
+  /**
+   * Opened OpencodeX terminal session
+   */
+  200: OpencodeXTerminalSession
+}
+
+export type OpencodexTerminalSessionOpenedResponse =
+  OpencodexTerminalSessionOpenedResponses[keyof OpencodexTerminalSessionOpenedResponses]
+
+export type OpencodexViewListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/view"
+}
+
+export type OpencodexViewListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexViewListError = OpencodexViewListErrors[keyof OpencodexViewListErrors]
+
+export type OpencodexViewListResponses = {
+  /**
+   * List OpencodeX views
+   */
+  200: Array<OpencodeXView>
+}
+
+export type OpencodexViewListResponse = OpencodexViewListResponses[keyof OpencodexViewListResponses]
+
+export type OpencodexViewCreateData = {
+  body?: OpencodeXViewCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/view"
+}
+
+export type OpencodexViewCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexViewCreateError = OpencodexViewCreateErrors[keyof OpencodexViewCreateErrors]
+
+export type OpencodexViewCreateResponses = {
+  /**
+   * Created OpencodeX view
+   */
+  200: OpencodeXView
+}
+
+export type OpencodexViewCreateResponse = OpencodexViewCreateResponses[keyof OpencodexViewCreateResponses]
+
+export type OpencodexViewReorderData = {
+  body?: OpencodeXViewReorderInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/view/reorder"
+}
+
+export type OpencodexViewReorderErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexViewReorderError = OpencodexViewReorderErrors[keyof OpencodexViewReorderErrors]
+
+export type OpencodexViewReorderResponses = {
+  /**
+   * Reordered OpencodeX views
+   */
+  200: Array<OpencodeXView>
+}
+
+export type OpencodexViewReorderResponse = OpencodexViewReorderResponses[keyof OpencodexViewReorderResponses]
+
+export type OpencodexViewDeleteData = {
+  body?: never
+  path: {
+    viewID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/view/{viewID}"
+}
+
+export type OpencodexViewDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexViewDeleteError = OpencodexViewDeleteErrors[keyof OpencodexViewDeleteErrors]
+
+export type OpencodexViewDeleteResponses = {
+  /**
+   * Deleted OpencodeX view
+   */
+  200: boolean
+}
+
+export type OpencodexViewDeleteResponse = OpencodexViewDeleteResponses[keyof OpencodexViewDeleteResponses]
+
+export type OpencodexViewGetData = {
+  body?: never
+  path: {
+    viewID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/view/{viewID}"
+}
+
+export type OpencodexViewGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexViewGetError = OpencodexViewGetErrors[keyof OpencodexViewGetErrors]
+
+export type OpencodexViewGetResponses = {
+  /**
+   * OpencodeX view
+   */
+  200: OpencodeXView
+}
+
+export type OpencodexViewGetResponse = OpencodexViewGetResponses[keyof OpencodexViewGetResponses]
+
+export type OpencodexViewUpdateData = {
+  body?: {
+    expectedTimeUpdated: number
+    title?: string
+    sessionIDs?: Array<string>
+    members?: Array<OpencodeXViewMember>
+    focusedSessionID?: string
+    focusedItemID?: string
+    layout?: string
+    metadata?: {
+      [key: string]: unknown
+    }
+  }
+  path: {
+    viewID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/view/{viewID}"
+}
+
+export type OpencodexViewUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type OpencodexViewUpdateError = OpencodexViewUpdateErrors[keyof OpencodexViewUpdateErrors]
+
+export type OpencodexViewUpdateResponses = {
+  /**
+   * Updated OpencodeX view
+   */
+  200: OpencodeXView
+}
+
+export type OpencodexViewUpdateResponse = OpencodexViewUpdateResponses[keyof OpencodexViewUpdateResponses]
 
 export type ProjectListData = {
   body?: never
@@ -6738,6 +11435,7 @@ export type SessionListResponse = SessionListResponses[keyof SessionListResponse
 
 export type SessionCreateData = {
   body?: {
+    id?: string
     parentID?: string
     title?: string
     agent?: string
@@ -6883,6 +11581,12 @@ export type SessionUpdateData = {
       [key: string]: unknown
     }
     permission?: PermissionRuleset
+    model?: {
+      id: string
+      providerID: string
+      variant?: string
+    }
+    agent?: string
     time?: {
       archived?: number
     }
@@ -7027,6 +11731,7 @@ export type SessionMessagesData = {
     directory?: string
     workspace?: string
     limit?: number
+    renderBudget?: number
     before?: string
   }
   url: "/session/{sessionID}/message"

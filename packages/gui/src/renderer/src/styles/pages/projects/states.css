@@ -1,0 +1,335 @@
+.project-empty button:hover {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.project-empty button:focus-visible {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.project-heading:active {
+  cursor: grabbing;
+}
+
+.project-group:hover .drag-handle {
+  opacity: 1;
+}
+
+.project-group.dropping.drop-after {
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.dashboard-item-card.project-card:hover .row-actions button {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dashboard-item-card.project-card:focus-within .row-actions button {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dashboard-project-open:hover strong {
+  color: var(--brand);
+}
+
+.dashboard-project-open:focus-visible strong {
+  color: var(--brand);
+}
+
+button.project-detail-row :is(p,span,small,strong) {
+  transition: color .14s ease;
+}
+
+button.project-detail-row:hover :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+button.project-detail-row:focus-visible :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+button.project-detail-row:hover strong {
+  color: var(--text);
+}
+
+button.project-detail-row:focus-visible strong {
+  color: var(--text);
+}
+
+.rail-section header[data-rail-section-id=projects] {
+  --project-row-color: var(--secondary) ;
+}
+
+.project-heading :is(.project-toggle,.project-title) {
+  color: var(--project-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle,.project-title):hover {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle,.project-title):focus-visible {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:hover :is(.project-toggle,.project-title) {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:focus-within :is(.project-toggle,.project-title) {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:hover {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--project-row-color) 34%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--project-row-color) 13%,transparent),transparent 52%),color-mix(in srgb,var(--panel) 91%,var(--project-row-color) 9%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--project-row-color) 16%,transparent);
+}
+
+.project-heading:focus-within {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--project-row-color) 34%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--project-row-color) 13%,transparent),transparent 52%),color-mix(in srgb,var(--panel) 91%,var(--project-row-color) 9%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--project-row-color) 16%,transparent);
+}
+
+.project-group.dropping {
+  box-shadow: inset 0 2px 0 var(--primary);
+  border-radius: 0;
+}
+
+.project-heading.dragging {
+  cursor: grabbing;
+  background: var(--theme-surface);
+  border-radius: 0;
+}
+
+.rail-section header[data-rail-section-id=projects] :is(.section-toggle,.section-chevron,strong):hover {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header[data-rail-section-id=projects] :is(.section-toggle,.section-chevron,strong):focus-visible {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header[data-rail-section-id=projects] :is(.section-toggle,.section-chevron,strong) {
+  color: var(--major-row-color);
+}
+
+.rail-section header[data-rail-section-id=projects]:hover {
+  border-color: color-mix(in srgb,var(--text) 20%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 6%,transparent),transparent 54%),var(--element-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
+}
+
+.rail-section header[data-rail-section-id=projects]:focus-within {
+  border-color: color-mix(in srgb,var(--text) 20%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 6%,transparent),transparent 54%),var(--element-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
+}
+
+.rail-section header[data-rail-section-id=projects]>.section-new {
+  border-left: 1px solid color-mix(in srgb,var(--major-row-accent) 28%,var(--border-subtle));
+  color: var(--major-row-muted);
+  box-shadow: none;
+  background: transparent;
+}
+
+.rail-section header[data-rail-section-id=projects]:hover>.section-new {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 42%,var(--border));
+  color: color-mix(in srgb,var(--text) 86%,var(--muted));
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header[data-rail-section-id=projects]:focus-within>.section-new {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 42%,var(--border));
+  color: color-mix(in srgb,var(--text) 86%,var(--muted));
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header[data-rail-section-id=projects]>.section-new:hover {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 58%,var(--border));
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header[data-rail-section-id=projects]>.section-new:focus-visible {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 58%,var(--border));
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-command-header p:not(.eyebrow) {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-command-detail-header p:not(.eyebrow) {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-metric:first-child {
+  border-left: 0;
+}
+
+.project-metric[data-tone=warning] {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 7%,transparent);
+}
+
+.project-metric:nth-child(1) {
+  border-top-color: var(--primary);
+}
+
+.project-metric:nth-child(2) {
+  border-top-color: var(--blue);
+}
+
+.project-metric:nth-child(3) {
+  border-top-color: var(--amber);
+}
+
+.project-metric:nth-child(4) {
+  border-top-color: var(--purple);
+}
+
+.project-metric:nth-child(5) {
+  border-top-color: var(--success);
+}
+
+.project-command-main .project-detail-list:nth-child(1) {
+  --project-section-accent: var(--amber) ;
+}
+
+.project-command-main .project-detail-list:nth-child(2) {
+  --project-section-accent: var(--blue) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(1) {
+  --project-section-accent: var(--success) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(2) {
+  --project-section-accent: var(--purple) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(3) {
+  --project-section-accent: var(--primary) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(4) {
+  --project-section-accent: var(--muted) ;
+}
+
+.project-detail-list>div>.project-detail-row:first-child {
+  border-top: 0;
+}
+
+button.project-detail-row:hover {
+  transform: none;
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+button.project-detail-row:focus-visible {
+  transform: none;
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+.project-detail-row.warning {
+  border-color: color-mix(in srgb,var(--amber) 28%,transparent);
+  --card-accent: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 8%,transparent);
+}
+
+.project-detail-row.failed {
+  box-shadow: inset 3px 0 0 var(--error);
+  background: color-mix(in srgb,var(--error) 8%,transparent);
+}
+
+.project-directory-header p:not(.eyebrow) {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-home-header p:not(.eyebrow) {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-summary-item[data-tone=warning] {
+  border-color: color-mix(in srgb,var(--warning) 42%,var(--border));
+  background: color-mix(in srgb,var(--warning) 8%,var(--theme-surface));
+}
+
+.project-home-session-panel>header button:hover {
+  color: var(--primary);
+  background: transparent;
+  outline: none;
+}
+
+.project-home-session-panel>header button:focus-visible {
+  color: var(--primary);
+  background: transparent;
+  outline: none;
+}
+
+.project-home-session-panel>header button:hover .icon {
+  color: var(--primary);
+}
+
+.project-home-session-panel>header button:focus-visible .icon {
+  color: var(--primary);
+}
+
+.project-directory-row:last-child {
+  border-bottom: 0;
+}

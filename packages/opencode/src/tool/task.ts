@@ -10,6 +10,7 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Cause, Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -37,6 +38,10 @@ const BaseParameterFields = {
   description: Schema.String.annotate({ description: "A short (3-5 words) description of the task" }),
   prompt: Schema.String.annotate({ description: "The task for the agent to perform" }),
   subagent_type: Schema.String.annotate({ description: "The type of specialized agent to use for this task" }),
+  model: Schema.optional(Schema.String).annotate({
+    description:
+      'Optional model override in "providerID/modelID" form. Only use when explicitly instructed to run this task on a specific model (e.g. by a swarm briefing); omit to use the agent default.',
+  }),
   task_id: Schema.optional(Schema.String).annotate({
     description:
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
@@ -95,6 +100,22 @@ function errorText(error: unknown) {
   return String(error)
 }
 
+/**
+ * Parses a "providerID/modelID" override. Malformed values fall back to the
+ * agent default rather than failing the delegation; a wrong-but-well-formed
+ * route surfaces downstream as a normal model-not-found error.
+ */
+function parseModelOverride(value: string | undefined) {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  const index = trimmed.indexOf("/")
+  if (index <= 0 || index === trimmed.length - 1) return undefined
+  return {
+    providerID: ProviderV2.ID.make(trimmed.slice(0, index)),
+    modelID: ProviderV2.ModelID.make(trimmed.slice(index + 1)),
+  }
+}
+
 export const TaskTool = Tool.define(
   id,
   Effect.gen(function* () {
@@ -147,6 +168,9 @@ export const TaskTool = Tool.define(
         (yield* sessions.create({
           parentID: ctx.sessionID,
           title: params.description + ` (@${next.name} subagent)`,
+          // A swarm session's subtasks are its team at work; tagging them lets
+          // the GUI group each child under the swarm's team view.
+          ...(parent.model?.providerID === "swarm" ? { metadata: { opencodex: { swarmID: parent.model.id } } } : {}),
           permission: [
             ...deriveSubagentSessionPermission({
               parentSessionPermission: parent.permission ?? [],
@@ -167,10 +191,13 @@ export const TaskTool = Tool.define(
       )
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 
-      const model = next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
+      // Explicit override first (a swarm briefing pins each role's model),
+      // then the agent's configured model, then the caller's model.
+      const model = parseModelOverride(params.model) ??
+        next.model ?? {
+          modelID: msg.info.modelID,
+          providerID: msg.info.providerID,
+        }
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,

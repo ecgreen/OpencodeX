@@ -35,6 +35,12 @@ import { coverageResult, parseOptions, routeKey, routeKeys, selectedScenarios } 
 import { runScenario } from "./runner"
 import { runtime } from "./runtime"
 import { type Scenario } from "./types"
+import { guiBridgeScenarios } from "./gui-bridge-scenarios"
+import { opencodexOperationScenarios } from "./opencodex-operation-scenarios"
+import { opencodexProjectStateScenarios } from "./opencodex-project-state-scenarios"
+import { opencodexTerminalSessionScenarios } from "./opencodex-terminal-session-scenarios"
+import { opencodexWorkbenchFileScenarios } from "./opencodex-workbench-file-scenarios"
+import { opencodexWorkbenchGitScenarios } from "./opencodex-workbench-git-scenarios"
 
 void (await import("@opencode-ai/core/util/log")).init({ print: false })
 
@@ -43,6 +49,12 @@ function cursor(input: Record<string, unknown>) {
 }
 
 const scenarios: Scenario[] = [
+  ...guiBridgeScenarios,
+  ...opencodexProjectStateScenarios,
+  ...opencodexOperationScenarios,
+  ...opencodexTerminalSessionScenarios,
+  ...opencodexWorkbenchFileScenarios,
+  ...opencodexWorkbenchGitScenarios,
   http.protected
     .get("/global/health", "global.health")
     .global()
@@ -380,7 +392,14 @@ const scenarios: Scenario[] = [
       (body, ctx) => {
         object(body)
         check(body.title === "HTTP API PTY", "PTY create should return requested title")
-        check(body.command === "/bin/sh", "PTY create should use controlled shell command")
+        const command = controlledPtyInput(undefined).command
+        check(
+          typeof body.command === "string" &&
+            (process.platform === "win32"
+              ? body.command.toLowerCase() === command.toLowerCase()
+              : body.command === command),
+          "PTY create should use controlled shell command",
+        )
         check(body.cwd === ctx.directory, "PTY create should default cwd to scenario directory")
       },
       "status",

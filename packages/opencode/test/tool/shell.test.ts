@@ -31,6 +31,16 @@ const shellLayer = Layer.mergeAll(
   testInstanceStoreLayer,
 )
 const it = testEffect(shellLayer)
+const timeoutCommand = process.platform === "win32" ? "Write-Output started; Start-Sleep -Seconds 60" : "echo started && sleep 60"
+/*
+ * Both timeout cases assert that output produced before the kill survives, so
+ * the shell has to actually start and flush "started" first. 500ms was shorter
+ * than PowerShell takes to boot on a loaded Windows runner, which is how the
+ * default-timeout case came to expect "started" and receive "(no output)".
+ * What either case proves is that the configured value is honoured, and 5s
+ * proves that just as well against a command that sleeps a minute.
+ */
+const SHELL_TIMEOUT_MS = 5_000
 type ShellTestServices =
   | (typeof shellLayer extends Layer.Layer<infer ROut, infer _E, infer _RIn> ? ROut : never)
   | InstanceStore.Service
@@ -67,6 +77,7 @@ const fail = Effect.fn("ShellToolTest.fail")(function* (
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",
@@ -1070,9 +1081,9 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const result = yield* run({
-            command: `echo started && sleep 60`,
+            command: timeoutCommand,
             description: "Timeout test",
-            timeout: 500,
+            timeout: SHELL_TIMEOUT_MS,
           })
           expect(result.output).toContain("started")
           expect(result.output).toContain("shell tool terminated command after exceeding timeout")
@@ -1089,18 +1100,18 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const tool = yield* initShell()
-          expect(tool.description).toContain("commands will time out after 500ms")
+          expect(tool.description).toContain(`commands will time out after ${SHELL_TIMEOUT_MS}ms`)
           const result = yield* tool.execute(
             {
-              command: `echo started && sleep 60`,
+              command: timeoutCommand,
               description: "Default timeout test",
             },
             ctx,
           )
           expect(result.output).toContain("started")
-          expect(result.output).toContain("exceeding timeout 500 ms")
+          expect(result.output).toContain(`exceeding timeout ${SHELL_TIMEOUT_MS} ms`)
         }),
-      ).pipe(Effect.provide(RuntimeFlags.layer({ bashDefaultTimeoutMs: 500 }))),
+      ).pipe(Effect.provide(RuntimeFlags.layer({ bashDefaultTimeoutMs: SHELL_TIMEOUT_MS }))),
     15_000,
   )
 
@@ -1135,29 +1146,45 @@ describe("tool.shell abort", () => {
   )
 
   it.live("streams metadata updates progressively", () =>
-    runIn(
-      projectRoot,
-      Effect.gen(function* () {
-        const updates: string[] = []
-        const result = yield* run(
-          {
-            command: `echo first && sleep 0.1 && echo second`,
-            description: "Streaming test",
-          },
-          {
-            ...ctx,
-            metadata: (input) =>
-              Effect.sync(() => {
-                const output = (input.metadata as { output?: string })?.output
-                if (output) updates.push(output)
-              }),
-          },
-        )
-        expect(result.output).toContain("first")
-        expect(result.output).toContain("second")
-        expect(updates.length).toBeGreaterThan(1)
-      }),
-    ),
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped()
+      const gate = path.join(directory, "metadata-ready")
+      // Keep this quote-free across bash, PowerShell, and cmd while the child waits for an observable callback.
+      const code =
+        "process.stdout.write(String.fromCharCode(102,105,114,115,116,10));" +
+        "while(!(await Bun.file(Bun.argv[1]).exists()))await Bun.sleep(10);" +
+        "process.stdout.write(String.fromCharCode(115,101,99,111,110,100,10))"
+      const command = `${PS.has(sh()) ? "& " : ""}${bin} -e ${evalarg(code)} ${quote(gate.replaceAll("\\", "/"))}`
+
+      yield* runIn(
+        directory,
+        Effect.gen(function* () {
+          const updates: string[] = []
+          const result = yield* run(
+            {
+              command,
+              description: "Streaming test",
+              timeout: 5_000,
+            },
+            {
+              ...ctx,
+              metadata: (input) =>
+                Effect.gen(function* () {
+                  const output = (input.metadata as { output?: string })?.output
+                  if (!output) return
+                  updates.push(output)
+                  if (output.includes("first") && !output.includes("second")) {
+                    yield* Effect.promise(() => Bun.write(gate, "ready"))
+                  }
+                }),
+            },
+          )
+          expect(result.output).toContain("first")
+          expect(result.output).toContain("second")
+          expect(updates.length).toBeGreaterThan(1)
+        }),
+      )
+    }),
   )
 })
 

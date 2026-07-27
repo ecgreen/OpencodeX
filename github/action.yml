@@ -1,5 +1,5 @@
-name: "opencode GitHub Action"
-description: "Run opencode in GitHub Actions workflows"
+name: "OpencodeX GitHub Action"
+description: "Run OpencodeX in GitHub Actions workflows"
 branding:
   icon: "code"
   color: "orange"
@@ -22,9 +22,9 @@ inputs:
     required: false
 
   use_github_token:
-    description: "Use GITHUB_TOKEN directly instead of OpenCode App token exchange. When true, skips OIDC and uses the GITHUB_TOKEN env var."
+    description: "Use GITHUB_TOKEN directly instead of an optional custom GitHub App token exchange."
     required: false
-    default: "false"
+    default: "true"
 
   mentions:
     description: "Comma-separated list of trigger phrases (case-insensitive). Defaults to '/opencode,/oc'"
@@ -41,34 +41,45 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Get opencode version
+    - name: Get OpencodeX version
       id: version
       shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
-        VERSION=$(curl -sf https://api.github.com/repos/anomalyco/opencode/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+        VERSION=$(curl -sf -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/ecgreen/OpencodeX/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
         echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
 
-    - name: Cache opencode
+    - name: Cache OpencodeX
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
-        path: ~/.opencode/bin
-        key: opencode-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+        path: ~/.opencodex/bin
+        key: opencodex-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
 
-    - name: Install opencode
+    - name: Install OpencodeX
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      run: curl -fsSL https://opencode.ai/install | bash
+      run: |
+        version="${{ steps.version.outputs.version }}"
+        url="https://github.com/ecgreen/OpencodeX/releases/latest/download/install"
+        args=(--no-modify-path)
+        if [[ "$version" != "latest" ]]; then
+          url="https://github.com/ecgreen/OpencodeX/releases/download/${version}/install"
+          args=(--version "$version" --no-modify-path)
+        fi
+        curl -fsSL "$url" | OPENCODEX_GITHUB_REPO=ecgreen/OpencodeX bash -s -- "${args[@]}"
 
-    - name: Add opencode to PATH
+    - name: Add OpencodeX to PATH
       shell: bash
-      run: echo "$HOME/.opencode/bin" >> $GITHUB_PATH
+      run: echo "$HOME/.opencodex/bin" >> $GITHUB_PATH
 
-    - name: Run opencode
+    - name: Run OpencodeX
       shell: bash
       id: run_opencode
-      run: opencode github run
+      run: opencodex github run
       env:
+        GITHUB_TOKEN: ${{ github.token }}
         MODEL: ${{ inputs.model }}
         AGENT: ${{ inputs.agent }}
         SHARE: ${{ inputs.share }}

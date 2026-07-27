@@ -1,0 +1,65 @@
+name: Provider or model issue
+description: Report model selection, provider auth, streaming, or tool-call behavior problems
+title: "[PROVIDER]: "
+labels:
+  - provider
+body:
+  - type: input
+    id: version
+    attributes:
+      label: OpencodeX version
+      placeholder: "1.15.13 or release tag"
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      placeholder: "Anthropic claude-sonnet-4-5, OpenAI gpt-5, OpenRouter ..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - CLI/TUI
+        - Desktop GUI
+        - Both
+        - headless API
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem
+    attributes:
+      label: Problem area
+      options:
+        - authentication
+        - model missing from picker
+        - streaming response
+        - tool calls
+        - reasoning or attachments
+        - cost or context display
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the smallest useful prompt and result. Do not paste API keys or provider tokens.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or diagnostics
+      description: Paste relevant logs with credentials removed.
+      render: shell
+    validations:
+      required: false

@@ -9,6 +9,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
+import { OpencodeXSwarmCreateTool } from "./opencodex_swarm"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
@@ -55,6 +56,15 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { OpencodeXProject } from "@/opencodex/project"
+import { GuiBridge } from "@/opencodex/gui-bridge"
+import {
+  BrowserNavigateTool,
+  BrowserScreenshotTool,
+  BrowserSnapshotTool,
+  WorkspaceOpenTool,
+} from "./gui-bridge"
+import { WorkspaceRef } from "@/effect/instance-ref"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -111,6 +121,8 @@ export const layer: Layer.Layer<
   | Truncate.Service
   | RuntimeFlags.Service
   | Database.Service
+  | OpencodeXProject.Service
+  | GuiBridge.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -120,6 +132,7 @@ export const layer: Layer.Layer<
     const skill = yield* Skill.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const guiBridge = yield* GuiBridge.Service
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
@@ -139,6 +152,12 @@ export const layer: Layer.Layer<
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const swarm = yield* Effect.promise(() => import("@/opencodex/swarm"))
+    const opencodexSwarmCreate = yield* OpencodeXSwarmCreateTool.pipe(Effect.provide(swarm.planLayer))
+    const workspaceOpen = yield* WorkspaceOpenTool
+    const browserNavigate = yield* BrowserNavigateTool
+    const browserScreenshot = yield* BrowserScreenshotTool
+    const browserSnapshot = yield* BrowserSnapshotTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -248,6 +267,11 @@ export const layer: Layer.Layer<
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          opencodex_swarm_create: Tool.init(opencodexSwarmCreate),
+          workspace_open: Tool.init(workspaceOpen),
+          browser_navigate: Tool.init(browserNavigate),
+          browser_screenshot: Tool.init(browserScreenshot),
+          browser_snapshot: Tool.init(browserSnapshot),
         })
 
         return {
@@ -265,6 +289,11 @@ export const layer: Layer.Layer<
             tool.fetch,
             tool.todo,
             tool.search,
+            tool.opencodex_swarm_create,
+            tool.workspace_open,
+            tool.browser_navigate,
+            tool.browser_screenshot,
+            tool.browser_snapshot,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
             tool.patch,
@@ -283,7 +312,11 @@ export const layer: Layer.Layer<
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
-      return (yield* all()).map((tool) => tool.id)
+      const ctx = yield* InstanceState.context
+      const capabilities = new Set(
+        yield* guiBridge.capabilities({ directory: ctx.directory, workspaceID: yield* WorkspaceRef }),
+      )
+      return (yield* all()).filter((tool) => guiToolAvailable(tool.id, capabilities)).map((tool) => tool.id)
     })
 
     const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
@@ -321,7 +354,12 @@ export const layer: Layer.Layer<
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const ctx = yield* InstanceState.context
+      const capabilities = new Set(
+        yield* guiBridge.capabilities({ directory: ctx.directory, workspaceID: yield* WorkspaceRef }),
+      )
       const filtered = (yield* all()).filter((tool) => {
+        if (!guiToolAvailable(tool.id, capabilities)) return false
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
@@ -396,12 +434,26 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
+    )
+    .pipe(
       Layer.provide(CrossSpawnSpawner.defaultLayer),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
+      Layer.provide(OpencodeXProject.defaultLayer),
+      Layer.provide(GuiBridge.defaultLayer),
     )
     .pipe(Layer.provide(Database.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer)),
 )
+
+function guiToolAvailable(id: string, capabilities: Set<GuiBridge.Operation>) {
+  if (id === WorkspaceOpenTool.id) return capabilities.has("workspace.open")
+  if (id === BrowserNavigateTool.id) return capabilities.has("browser.navigate")
+  if (id === BrowserScreenshotTool.id) {
+    return capabilities.has("browser.state") && capabilities.has("browser.screenshot")
+  }
+  if (id === BrowserSnapshotTool.id) return capabilities.has("browser.state") && capabilities.has("browser.snapshot")
+  return true
+}
 
 function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value

@@ -258,6 +258,18 @@ export async function create(input: {
             didOpen: true,
             didChange: true,
           },
+          hover: {
+            contentFormat: ["markdown", "plaintext"],
+          },
+          definition: {
+            linkSupport: true,
+          },
+          completion: {
+            completionItem: {
+              documentationFormat: ["markdown", "plaintext"],
+              snippetSupport: true,
+            },
+          },
           diagnostic: {
             dynamicRegistration: true,
             relatedDocumentSupport: true,
@@ -571,11 +583,11 @@ export async function create(input: {
       return connection
     },
     notify: {
-      async open(request: { path: string }) {
+      async open(request: { path: string; content?: string }) {
         request.path = Filesystem.normalizePath(
           path.isAbsolute(request.path) ? request.path : path.resolve(input.directory, request.path),
         )
-        const text = await Filesystem.readText(request.path)
+        const text = request.content ?? await Filesystem.readText(request.path)
         const extension = path.extname(request.path)
         const languageId = LANGUAGE_EXTENSIONS[extension] ?? "plaintext"
 

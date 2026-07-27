@@ -6,14 +6,18 @@ import { checksum } from "@opencode-ai/core/util/encode"
 import { ComponentProps, createEffect, createResource, createSignal, onCleanup, splitProps } from "solid-js"
 import { isServer } from "solid-js/web"
 import { stream } from "./markdown-stream"
+import { escapedCodeBlock, utf8ByteLength } from "./code-highlight"
 
 type Entry = {
   hash: string
   html: string
+  bytes: number
 }
 
-const max = 200
+const maxCacheBytes = 4 * 1024 * 1024
+const maxCacheEntryBytes = 256 * 1024
 const cache = new Map<string, Entry>()
+let cacheBytes = 0
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
@@ -228,14 +232,22 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
 }
 
 function touch(key: string, value: Entry) {
-  cache.delete(key)
+  const current = cache.get(key)
+  if (current) {
+    cache.delete(key)
+    cacheBytes -= current.bytes
+  }
+  if (value.bytes > maxCacheEntryBytes) return
   cache.set(key, value)
+  cacheBytes += value.bytes
 
-  if (cache.size <= max) return
-
-  const first = cache.keys().next().value
-  if (!first) return
-  cache.delete(first)
+  while (cacheBytes > maxCacheBytes) {
+    const first = cache.keys().next().value
+    if (!first) return
+    const entry = cache.get(first)
+    cache.delete(first)
+    cacheBytes -= entry?.bytes ?? 0
+  }
 }
 
 export function Markdown(
@@ -275,9 +287,15 @@ export function Markdown(
             }
           }
 
-          const next = await Promise.resolve(marked.parse(block.src))
+          const next =
+            block.mode === "open-fence" ? escapedCodeBlock(block.src) : await Promise.resolve(marked.parse(block.src))
           const safe = sanitize(next)
-          if (key && hash) touch(key, { hash, html: safe })
+          if (key && hash)
+            touch(key, {
+              hash,
+              html: safe,
+              bytes: 64 + utf8ByteLength(key) + utf8ByteLength(hash) + utf8ByteLength(safe),
+            })
           return safe
         }),
       )

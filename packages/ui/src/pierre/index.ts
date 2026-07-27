@@ -24,17 +24,19 @@ const unsafeCSS = `
   --diffs-bg-separator: var(--diffs-bg-separator-override, light-dark( color-mix(in lab, var(--diffs-bg) 96%, var(--diffs-mixer)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-mixer))));
   --diffs-fg: light-dark(var(--diffs-light), var(--diffs-dark));
   --diffs-fg-number: var(--diffs-fg-number-override, light-dark(color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg)), color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg))));
-  --diffs-deletion-base: var(--syntax-diff-delete);
-  --diffs-addition-base: var(--syntax-diff-add);
+  --diffs-deletion-base: #c93835;
+  --diffs-addition-base: #40c977;
   --diffs-modified-base: var(--syntax-diff-unknown);
-  --diffs-bg-deletion: var(--diffs-bg-deletion-override, light-dark( color-mix(in lab, var(--diffs-bg) 98%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 92%, var(--diffs-deletion-base))));
-  --diffs-bg-deletion-number: var(--diffs-bg-deletion-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-deletion-base))));
+  --diffs-bg-deletion: var(--diffs-bg-deletion-override, light-dark(#f7d8d5, #3b1f1a));
+  --diffs-bg-deletion-number: var(--diffs-bg-deletion-number-override, light-dark(#efc4c0, #28130e));
   --diffs-bg-deletion-hover: var(--diffs-bg-deletion-hover-override, light-dark( color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 75%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-emphasis: var(--diffs-bg-deletion-emphasis-override, light-dark(rgb(from var(--diffs-deletion-base) r g b / 0.7), rgb(from var(--diffs-deletion-base) r g b / 0.1)));
-  --diffs-bg-addition: var(--diffs-bg-addition-override, light-dark( color-mix(in lab, var(--diffs-bg) 98%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 92%, var(--diffs-addition-base))));
-  --diffs-bg-addition-number: var(--diffs-bg-addition-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-addition-base))));
+  --diffs-bg-addition: var(--diffs-bg-addition-override, light-dark(#d6f1df, #1f3124));
+  --diffs-bg-addition-number: var(--diffs-bg-addition-number-override, light-dark(#c0e9ce, #132017));
   --diffs-bg-addition-hover: var(--diffs-bg-addition-hover-override, light-dark( color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 70%, var(--diffs-addition-base))));
   --diffs-bg-addition-emphasis: var(--diffs-bg-addition-emphasis-override, light-dark(rgb(from var(--diffs-addition-base) r g b / 0.07), rgb(from var(--diffs-addition-base) r g b / 0.1)));
+  --diffs-changed-fg: light-dark(#151515, #f2f2ec);
+  --diffs-changed-text-shadow: light-dark(none, 0 1px 1px rgb(0 0 0 / 0.42));
   --diffs-selection-base: var(--surface-warning-strong);
   --diffs-selection-border: var(--border-warning-base);
   --diffs-selection-number-fg: #1c1917;
@@ -123,6 +125,48 @@ const unsafeCSS = `
   color: var(--diffs-selection-number-fg);
 }
 
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-addition'],
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-additions'] {
+  background-color: var(--diffs-bg-addition) !important;
+  box-shadow: inset 4px 0 0 var(--diffs-addition-base) !important;
+}
+
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-deletion'] {
+  background-color: var(--diffs-bg-deletion) !important;
+  box-shadow: inset 4px 0 0 var(--diffs-deletion-base) !important;
+}
+
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-addition'] [data-code],
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-additions'] [data-code],
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-addition'] [data-code] *,
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-additions'] [data-code] * {
+  background-color: var(--diffs-bg-addition) !important;
+  text-shadow: var(--diffs-changed-text-shadow);
+}
+
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-deletion'] [data-code],
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-deletion'] [data-code] * {
+  background-color: var(--diffs-bg-deletion) !important;
+  text-shadow: var(--diffs-changed-text-shadow);
+}
+
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-addition'] [data-code],
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-additions'] [data-code],
+[data-diff][data-diff-type='unified'] [data-line][data-line-type='change-deletion'] [data-code] {
+  color: var(--diffs-changed-fg);
+}
+
+[data-diff][data-diff-type='unified'] [data-column-number][data-line-type='change-addition'],
+[data-diff][data-diff-type='unified'] [data-column-number][data-line-type='change-additions'] {
+  background-color: var(--diffs-bg-addition-number) !important;
+  box-shadow: inset 4px 0 0 var(--diffs-addition-base) !important;
+}
+
+[data-diff][data-diff-type='unified'] [data-column-number][data-line-type='change-deletion'] {
+  background-color: var(--diffs-bg-deletion-number) !important;
+  box-shadow: inset 4px 0 0 var(--diffs-deletion-base) !important;
+}
+
 /* The deletion word-diff emphasis is stronger than additions; soften it while selected so the selection highlight reads consistently. */
 [data-diff] [data-line][data-line-type='change-deletion'][data-selected-line] {
   --diffs-bg-deletion-emphasis: light-dark(
@@ -152,6 +196,11 @@ const unsafeCSS = `
   [data-code] {
     overflow-x: auto !important;
     overflow-y: clip !important;
+  }
+
+  &[data-overflow='scroll'] [data-code],
+  &[data-overflow='scroll'] [data-code] * {
+    white-space: pre !important;
   }
 }
 

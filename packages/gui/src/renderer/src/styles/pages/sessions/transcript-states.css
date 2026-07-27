@@ -1,0 +1,197 @@
+/* Interaction states, markdown inside parts, and motion for the transcript. */
+
+/*
+ * Expand/collapse motion. `interpolate-size` lets block-size animate to auto,
+ * and `::details-content` is the browser's own wrapper around a details body,
+ * so open and close both glide instead of snapping. Bodies stay mounted after
+ * their first open (createMountedOnce) so the close animation has content.
+ */
+details.part, .tool-file-diff-collapse, .tool-raw {
+  interpolate-size: allow-keywords;
+}
+
+details.part::details-content, .tool-file-diff-collapse::details-content, .tool-raw::details-content {
+  block-size: 0;
+  overflow-y: clip;
+  opacity: 0;
+  transition:
+    block-size var(--ds-motion-route) var(--ds-ease-smooth),
+    opacity var(--ds-motion-route) var(--ds-ease-smooth),
+    content-visibility var(--ds-motion-route) allow-discrete;
+}
+
+details.part[open]::details-content, .tool-file-diff-collapse[open]::details-content, .tool-raw[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+.part-header::-webkit-details-marker, .tool-file-diff-header::-webkit-details-marker {
+  display: none;
+}
+
+.part-header .output-chevron {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  color: var(--ds-text-muted);
+  transition: transform var(--ds-motion-hover) var(--ds-ease-enter);
+}
+
+details[open]>.part-header .output-chevron, .tool-file-diff-collapse[open]>.tool-file-diff-header .output-chevron {
+  transform: rotate(90deg);
+}
+
+.part-header:hover .part-title {
+  color: var(--ds-text);
+}
+
+.part-header:hover .output-chevron {
+  color: var(--ds-text);
+}
+
+.part-header:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-control);
+}
+
+.part.file:hover {
+  border-color: var(--ds-border-strong);
+  background: var(--ds-surface-hover);
+}
+
+.part.file:hover .part-file-chevron {
+  opacity: 1;
+}
+
+.part.file:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+.tool-file-diff-header:hover .tool-file-diff-action, .tool-file-diff-header:focus-within .tool-file-diff-action {
+  opacity: 1;
+}
+
+.tool-file-diff-action:hover {
+  color: var(--ds-text);
+  background: var(--ds-surface-hover);
+}
+
+.tool-output button:hover {
+  color: var(--ds-text);
+  border-color: var(--ds-border-strong);
+  background: var(--ds-surface-hover);
+}
+
+.tool-details:empty {
+  display: none;
+}
+
+.part.muted::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.part.muted::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.part.muted::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--ds-border);
+}
+
+.part.muted::-webkit-scrollbar-thumb:hover {
+  background: var(--ds-border-strong);
+}
+
+.part.muted::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.part.text [data-component="markdown"]>:first-child {
+  margin-top: 0;
+}
+
+.part.text [data-component="markdown"]>:last-child {
+  margin-bottom: 0;
+}
+
+.part.text [data-component="markdown"] p {
+  margin: 0 0 var(--ds-space-2);
+  line-height: 1.6;
+}
+
+.part.text [data-component="markdown"] ul, .part.text [data-component="markdown"] ol {
+  margin: 0 0 var(--ds-space-2);
+  padding-left: var(--ds-space-5);
+}
+
+.part.text [data-component="markdown"] blockquote {
+  margin: 0 0 var(--ds-space-2);
+  padding-left: var(--ds-space-3);
+  border-left: 2px solid var(--ds-border);
+  color: var(--ds-text-muted);
+}
+
+.part.text [data-component="markdown"] code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--ds-surface-raised);
+  font-size: 12px;
+}
+
+.part.text [data-component="markdown"] pre {
+  overflow-x: auto;
+  margin: 0 0 var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-card);
+  background: var(--ds-canvas);
+}
+
+.part.text [data-component="markdown"] pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.part.text [data-component="markdown"] table {
+  display: block;
+  overflow-x: auto;
+  margin: 0 0 var(--ds-space-2);
+  border-collapse: collapse;
+}
+
+.part.text [data-component="markdown"] th, .part.text [data-component="markdown"] td {
+  padding: 6px var(--ds-space-2);
+  border: 1px solid var(--ds-border-subtle);
+  text-align: left;
+}
+
+.part.tool [data-component="code-block"] pre {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.part.tool [data-component="code-block"] pre code {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .part-spinner {
+    animation: none;
+    border-top-color: var(--ds-info);
+    opacity: .8;
+  }
+
+  .part-header .output-chevron {
+    transition: none;
+  }
+
+  details.part::details-content, .tool-file-diff-collapse::details-content, .tool-raw::details-content {
+    transition-duration: 1ms;
+  }
+}

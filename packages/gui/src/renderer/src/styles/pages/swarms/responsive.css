@@ -1,0 +1,21 @@
+@media (max-width:960px) {
+  .swarm-editor-team-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:860px) {
+  .swarm-editor-basics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .swarm-role-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .swarm-card>footer {
+    justify-content: stretch;
+  }
+}

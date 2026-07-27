@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["version", "retainedWorkspaces", "forkOwned", "upstreamOwned", "sharedSeams", "permanentlyPrunedPaths"],
+  "properties": {
+    "version": { "const": 1 },
+    "retainedWorkspaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "name"],
+        "properties": { "path": { "type": "string" }, "name": { "type": "string" } },
+        "additionalProperties": false
+      }
+    },
+    "forkOwned": { "$ref": "#/$defs/paths" },
+    "upstreamOwned": { "$ref": "#/$defs/paths" },
+    "sharedSeams": { "$ref": "#/$defs/paths" },
+    "permanentlyPrunedPaths": { "$ref": "#/$defs/paths" },
+    "ownedConfiguration": { "$ref": "#/$defs/paths" },
+    "forbiddenOwnedConfigurationText": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": { "paths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true } }
+}

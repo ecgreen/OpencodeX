@@ -23,7 +23,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionMessageTable, SessionTable, TodoTable } from "@opencode-ai/core/session/sql"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
@@ -47,6 +47,7 @@ const runtime = makeRuntime(Database.Service, Database.defaultLayer)
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
+const emptySessionCleanupAge = 4 * 60 * 60 * 1000
 
 function createDefaultTitle(isChild = false) {
   return (isChild ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString()
@@ -258,6 +259,7 @@ export type GlobalInfo = Types.DeepMutable<Schema.Schema.Type<typeof GlobalInfo>
 
 export const CreateInput = Schema.optional(
   Schema.Struct({
+    id: Schema.optional(SessionID),
     parentID: Schema.optional(SessionID),
     title: Schema.optional(Schema.String),
     agent: Schema.optional(Schema.String),
@@ -468,7 +470,9 @@ export type NotFound = NotFoundError
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
   readonly listGlobal: (input?: GlobalListInput) => Effect.Effect<GlobalInfo[]>
+  readonly listGlobalByIDs: (sessionIDs: readonly SessionID[]) => Effect.Effect<GlobalInfo[]>
   readonly create: (input?: {
+    id?: SessionID
     parentID?: SessionID
     title?: string
     agent?: string
@@ -615,8 +619,68 @@ export const layer: Layer.Layer<
       return fromRow(row)
     })
 
+    const cleanupEmpty = Effect.fn("Session.cleanupEmpty")(function* () {
+      const rows = yield* db
+        .select({ id: SessionTable.id, title: SessionTable.title })
+        .from(SessionTable)
+        .where(
+          and(
+            lt(SessionTable.time_updated, Date.now() - emptySessionCleanupAge),
+            isNull(SessionTable.time_archived),
+            or(
+              eq(SessionTable.title, "New session"),
+              like(SessionTable.title, `${parentTitlePrefix}%`),
+              like(SessionTable.title, `${childTitlePrefix}%`),
+            )!,
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+
+      yield* Effect.forEach(
+        rows.filter((row) => row.title === "New session" || isDefaultTitle(row.title)),
+        (row) =>
+          Effect.gen(function* () {
+            const [message, part, sessionMessage, todo, child] = yield* Effect.all(
+              [
+                db
+                  .select({ id: MessageTable.id })
+                  .from(MessageTable)
+                  .where(eq(MessageTable.session_id, row.id))
+                  .limit(1)
+                  .get(),
+                db.select({ id: PartTable.id }).from(PartTable).where(eq(PartTable.session_id, row.id)).limit(1).get(),
+                db
+                  .select({ id: SessionMessageTable.id })
+                  .from(SessionMessageTable)
+                  .where(eq(SessionMessageTable.session_id, row.id))
+                  .limit(1)
+                  .get(),
+                db
+                  .select({ sessionID: TodoTable.session_id })
+                  .from(TodoTable)
+                  .where(eq(TodoTable.session_id, row.id))
+                  .limit(1)
+                  .get(),
+                db
+                  .select({ id: SessionTable.id })
+                  .from(SessionTable)
+                  .where(eq(SessionTable.parent_id, row.id))
+                  .limit(1)
+                  .get(),
+              ],
+              { concurrency: "unbounded" },
+            ).pipe(Effect.orDie)
+            if (message || part || sessionMessage || todo || child) return
+            yield* remove(row.id).pipe(Effect.ignore)
+          }),
+        { concurrency: "unbounded", discard: true },
+      )
+    })
+
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
       const ctx = yield* InstanceState.context
+      yield* cleanupEmpty()
       return yield* listByProject(db, {
         projectID: ctx.project.id,
         experimentalWorkspaces: flags.experimentalWorkspaces,
@@ -624,7 +688,29 @@ export const layer: Layer.Layer<
       })
     })
 
+    const hydrateGlobal = Effect.fn("Session.hydrateGlobal")(function* (rows: SessionRow[]) {
+      const ids = [...new Set(rows.map((row) => row.project_id))]
+      const projects = new Map<string, ProjectInfo>()
+      if (ids.length > 0) {
+        const items = yield* db
+          .select({ id: ProjectTable.id, name: ProjectTable.name, worktree: ProjectTable.worktree })
+          .from(ProjectTable)
+          .where(inArray(ProjectTable.id, ids))
+          .all()
+          .pipe(Effect.orDie)
+        items.forEach((item) =>
+          projects.set(item.id, {
+            id: item.id,
+            name: item.name ?? undefined,
+            worktree: item.worktree,
+          }),
+        )
+      }
+      return rows.map((row) => ({ ...fromRow(row), project: projects.get(row.project_id) ?? null }))
+    })
+
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
+      yield* cleanupEmpty()
       const conditions: SQL[] = []
       if (input?.directory) conditions.push(eq(SessionTable.directory, input.directory))
       if (input?.projectID) conditions.push(eq(SessionTable.project_id, input.projectID))
@@ -646,24 +732,21 @@ export const layer: Layer.Layer<
         .limit(input?.limit ?? 100)
         .all()
         .pipe(Effect.orDie)
-      const ids = [...new Set(rows.map((row) => row.project_id))]
-      const projects = new Map<string, ProjectInfo>()
-      if (ids.length > 0) {
-        const items = yield* db
-          .select({ id: ProjectTable.id, name: ProjectTable.name, worktree: ProjectTable.worktree })
-          .from(ProjectTable)
-          .where(inArray(ProjectTable.id, ids))
+      return yield* hydrateGlobal(rows)
+    })
+
+    const listGlobalByIDs = Effect.fn("Session.listGlobalByIDs")(function* (sessionIDs: readonly SessionID[]) {
+      const ids = [...new Set(sessionIDs)]
+      if (ids.length === 0) return []
+      return yield* hydrateGlobal(
+        yield* db
+          .select()
+          .from(SessionTable)
+          .where(inArray(SessionTable.id, ids))
+          .orderBy(desc(SessionTable.time_updated), desc(SessionTable.id))
           .all()
-          .pipe(Effect.orDie)
-        for (const item of items) {
-          projects.set(item.id, {
-            id: item.id,
-            name: item.name ?? undefined,
-            worktree: item.worktree,
-          })
-        }
-      }
-      return rows.map((row) => ({ ...fromRow(row), project: projects.get(row.project_id) ?? null }))
+          .pipe(Effect.orDie),
+      )
     })
 
     const children = Effect.fn("Session.children")(function* (parentID: SessionID) {
@@ -678,29 +761,22 @@ export const layer: Layer.Layer<
 
     const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
       const session = yield* get(sessionID)
-      try {
-        // `remove` needs to work in all cases, such as broken sessions that
-        // run cleanup without instance state.
-        const hasInstance = yield* InstanceState.directory.pipe(
-          Effect.as(true),
-          Effect.catchCause(() => Effect.succeed(false)),
-        )
+      // `remove` needs to work in all cases, such as broken sessions that
+      // run cleanup without instance state.
+      const hasInstance = yield* InstanceState.directory.pipe(
+        Effect.as(true),
+        Effect.catchCause(() => Effect.succeed(false)),
+      )
 
-        if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
-        const kids = yield* children(sessionID)
-        for (const child of kids) {
-          yield* remove(child.id)
-        }
+      if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
+      const kids = yield* children(sessionID)
+      for (const child of kids) yield* remove(child.id)
 
-        yield* events.publish(
-          SessionLegacy.Event.Deleted,
-          { sessionID, info: session },
-          { location: eventLocation(session) },
-        )
-        yield* events.remove(sessionID)
-      } catch (e) {
-        log.error(e)
-      }
+      yield* events.publish(
+        SessionLegacy.Event.Deleted,
+        { sessionID, info: session },
+        { location: eventLocation(session) },
+      )
     })
 
     const updateMessage = <T extends SessionLegacy.Info>(msg: T): Effect.Effect<T> =>
@@ -748,6 +824,7 @@ export const layer: Layer.Layer<
     })
 
     const create = Effect.fn("Session.create")(function* (input?: {
+      id?: SessionID
       parentID?: SessionID
       title?: string
       agent?: string
@@ -759,6 +836,7 @@ export const layer: Layer.Layer<
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
       return yield* createNext({
+        id: input?.id,
         parentID: input?.parentID,
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
@@ -815,19 +893,33 @@ export const layer: Layer.Layer<
     })
 
     const patch = (sessionID: SessionID, info: Patch) =>
-      Effect.gen(function* () {
-        const current = yield* get(sessionID)
-        const next = {
-          ...current,
-          ...info,
-          time: info.time ? { ...current.time, ...info.time } : current.time,
-          share: info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
-          summary: info.summary === null ? undefined : (info.summary ?? current.summary),
-          revert: info.revert === null ? undefined : (info.revert ?? current.revert),
-          permission: info.permission === null ? undefined : (info.permission ?? current.permission),
-        } as Info
-        yield* events.publish(SessionLegacy.Event.Updated, { sessionID, info: next }, { location: eventLocation(next) })
-      })
+      events.barrier(
+        Effect.gen(function* () {
+          const event = yield* db.transaction(
+            () =>
+              Effect.gen(function* () {
+                const current = yield* get(sessionID)
+                const next = {
+                  ...current,
+                  ...info,
+                  time: info.time ? { ...current.time, ...info.time } : current.time,
+                  share:
+                    info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
+                  summary: info.summary === null ? undefined : (info.summary ?? current.summary),
+                  revert: info.revert === null ? undefined : (info.revert ?? current.revert),
+                  permission: info.permission === null ? undefined : (info.permission ?? current.permission),
+                } as Info
+                return yield* events.commit(
+                  SessionLegacy.Event.Updated,
+                  { sessionID, info: next },
+                  { location: eventLocation(next) },
+                )
+              }),
+            { behavior: "immediate" },
+          )
+          yield* events.broadcast(event)
+        }),
+      )
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
@@ -994,6 +1086,7 @@ export const layer: Layer.Layer<
     return Service.of({
       list,
       listGlobal,
+      listGlobalByIDs,
       create,
       fork,
       touch,

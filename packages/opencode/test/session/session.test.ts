@@ -14,6 +14,9 @@ import { Storage } from "@/storage/storage"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { EventV2 } from "@opencode-ai/core/event"
+import { EventTable } from "@opencode-ai/core/event/sql"
+import { eq } from "drizzle-orm"
 
 void Log.init({ print: false })
 
@@ -27,6 +30,8 @@ const it = testEffect(
       Layer.provide(RuntimeFlags.layer({ experimentalWorkspaces: false })),
       Layer.provide(BackgroundJob.defaultLayer),
     ),
+    Database.defaultLayer,
+    EventV2Bridge.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
     testInstanceStoreLayer,
   ),
@@ -99,6 +104,61 @@ describe("session.created event", () => {
       expect(receivedEvents.indexOf("created")).toBeLessThan(receivedEvents.indexOf("updated"))
 
       yield* session.remove(info.id)
+    }),
+  )
+})
+
+describe("session deletion", () => {
+  it.instance("retains the durable tombstone and ignores stale creation replay", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const events = yield* EventV2Bridge.Service
+      const { db } = yield* Database.Service
+      const info = yield* session.create({})
+      const created = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, info.id))
+        .get()
+        .pipe(Effect.orDie)
+      if (!created) return yield* Effect.die(new Error("missing session creation event"))
+
+      yield* session.remove(info.id)
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, info.id))
+        .all()
+        .pipe(Effect.orDie)
+      yield* events.replay({
+        id: created.id,
+        aggregateID: created.aggregate_id,
+        seq: created.seq,
+        type: created.type,
+        data: created.data,
+      })
+
+      expect(rows.map((row) => row.type)).toContain(EventV2.versionedType(SessionLegacy.Event.Deleted.type, 1))
+      expect((yield* session.get(info.id).pipe(Effect.flip))._tag).toBe("NotFoundError")
+    }),
+  )
+
+  it.instance("serializes independent session field updates", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({ title: "Original" })
+
+      yield* Effect.all(
+        [
+          session.setTitle({ sessionID: info.id, title: "Renamed" }),
+          session.setArchived({ sessionID: info.id, time: 123 }),
+        ],
+        { concurrency: "unbounded", discard: true },
+      )
+
+      const updated = yield* session.get(info.id)
+      expect(updated.title).toBe("Renamed")
+      expect(updated.time.archived).toBe(123)
     }),
   )
 })

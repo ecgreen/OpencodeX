@@ -20,6 +20,7 @@ afterEach(async () => {
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "scout",
@@ -88,7 +89,7 @@ describe("tool.repo_clone", () => {
       const remoteDir = path.join(remoteRoot, "owner")
       const remoteRepo = path.join(remoteDir, "repo.git")
 
-      yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v1\n"))
+      yield* fs.writeFileString(path.join(source, "README.md"), "v1\n").pipe(Effect.orDie)
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "add readme"])
       yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
@@ -116,7 +117,7 @@ describe("tool.repo_clone", () => {
       const remoteDir = path.join(remoteRoot, "owner")
       const remoteRepo = path.join(remoteDir, "repo.git")
 
-      yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v1\n"))
+      yield* fs.writeFileString(path.join(source, "README.md"), "v1\n").pipe(Effect.orDie)
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "add readme"])
       yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
@@ -129,7 +130,7 @@ describe("tool.repo_clone", () => {
       const tool = yield* init()
       const first = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository: "owner/repo" }, ctx))
 
-      yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v2\n"))
+      yield* fs.writeFileString(path.join(source, "README.md"), "v2\n").pipe(Effect.orDie)
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "update readme"])
       yield* git(source, ["push", "origin", `${branch}:${branch}`])
@@ -153,11 +154,11 @@ describe("tool.repo_clone", () => {
       const remoteDir = path.join(remoteRoot, "owner")
       const remoteRepo = path.join(remoteDir, "repo.git")
 
-      yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "main\n"))
+      yield* fs.writeFileString(path.join(source, "README.md"), "main\n").pipe(Effect.orDie)
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "add readme"])
       yield* git(source, ["checkout", "-b", "docs"])
-      yield* Effect.promise(() => Bun.write(path.join(source, "DOCS.md"), "docs\n"))
+      yield* fs.writeFileString(path.join(source, "DOCS.md"), "docs\n").pipe(Effect.orDie)
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "add docs"])
       yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)

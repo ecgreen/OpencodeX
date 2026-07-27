@@ -43,6 +43,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
+    directory: input.session.directory,
+    workspaceID: input.session.workspaceID,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
     callID: options.toolCallId,

@@ -1,4 +1,5 @@
 import { Config } from "@/config/config"
+import { OpencodeXSettings } from "@/opencodex/settings"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Provider } from "@/provider/provider"
 
@@ -89,6 +90,7 @@ export const layer = Layer.effect(
     const skill = yield* Skill.Service
     const provider = yield* Provider.Service
     const flags = yield* RuntimeFlags.Service
+    const opencodexSettings = yield* OpencodeXSettings.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Agent.state")(function* (ctx) {
@@ -116,6 +118,10 @@ export const layer = Layer.effect(
           plan_exit: "deny",
           repo_clone: "deny",
           repo_overview: "deny",
+          workspace_open: "ask",
+          browser_navigate: "ask",
+          browser_screenshot: "ask",
+          browser_snapshot: "ask",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -147,6 +153,33 @@ export const layer = Layer.effect(
             // cap total steps per turn here so a runaway model still produces
             // a final summary instead of looping forever. Power users can
             // override `agent.build.steps` in config.
+            steps: 100,
+          },
+          goal: {
+            name: "goal",
+            description:
+              "Long-horizon goal mode. Iterates autonomously toward the user's stated goal until complete or blocked.",
+            options: {},
+            color: "#ff4fd8",
+            prompt: [
+              "You are in Goal mode, a long-horizon autonomous execution mode.",
+              "Treat the user's prompt as the target outcome, not just the next immediate task.",
+              "Work in deliberate iterations: assess the current state, choose the highest-impact next step, execute it, validate the result, and continue until the goal is met or you are blocked.",
+              "Use the todo list to track objective-level progress and update it as evidence changes.",
+              "Prefer small verifiable steps over large speculative rewrites. Run focused validation whenever practical.",
+              "Stop only when the goal is complete, the remaining work is clearly blocked on the user or external systems, or continuing would be unsafe.",
+              "When blocked or complete, summarize the evidence, remaining risks, and exact next action.",
+            ].join("\n"),
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                question: "allow",
+                plan_enter: "allow",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
             steps: 100,
           },
           plan: {
@@ -377,13 +410,21 @@ export const layer = Layer.effect(
 
     return Service.of({
       get: Effect.fn("Agent.get")(function* (agent: string) {
-        return yield* InstanceState.useEffect(state, (s) => s.get(agent))
+        return applyPermissionModeToAgent(
+          yield* InstanceState.useEffect(state, (s) => s.get(agent)),
+          (yield* opencodexSettings.get().pipe(Effect.orDie)).permission_mode,
+        )
       }),
       list: Effect.fn("Agent.list")(function* () {
-        return yield* InstanceState.useEffect(state, (s) => s.list())
+        const agents = yield* InstanceState.useEffect(state, (s) => s.list())
+        const mode = (yield* opencodexSettings.get().pipe(Effect.orDie)).permission_mode
+        return agents.map((agent) => applyPermissionModeToAgent(agent, mode))
       }),
       defaultInfo: Effect.fn("Agent.defaultInfo")(function* () {
-        return yield* InstanceState.useEffect(state, (s) => s.defaultInfo())
+        return applyPermissionModeToAgent(
+          yield* InstanceState.useEffect(state, (s) => s.defaultInfo()),
+          (yield* opencodexSettings.get().pipe(Effect.orDie)).permission_mode,
+        )
       }),
       defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
         return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
@@ -468,6 +509,26 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Config.defaultLayer),
   Layer.provide(Skill.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
+  Layer.provide(OpencodeXSettings.defaultLayer),
 )
+
+function applyPermissionModeToAgent(agent: Info, mode: OpencodeXSettings.PermissionMode | undefined): Info
+function applyPermissionModeToAgent(agent: undefined, mode: OpencodeXSettings.PermissionMode | undefined): undefined
+function applyPermissionModeToAgent(agent: Info | undefined, mode: OpencodeXSettings.PermissionMode | undefined) {
+  if (!agent) return undefined
+  return { ...agent, permission: applyPermissionMode(agent.permission, mode) }
+}
+
+function applyPermissionMode(ruleset: Permission.Ruleset, mode: OpencodeXSettings.PermissionMode | undefined) {
+  if (!mode || mode === "configured") return [...ruleset]
+  if (mode === "yolo") {
+    return [...Permission.merge(ruleset, [{ permission: "*", pattern: "*", action: "allow" }])]
+  }
+  return ruleset.map((rule) => {
+    if (mode === "strict" && rule.action === "allow") return { ...rule, action: "ask" as const }
+    if (mode === "auto" && rule.action === "ask") return { ...rule, action: "allow" as const }
+    return rule
+  })
+}
 
 export * as Agent from "./agent"

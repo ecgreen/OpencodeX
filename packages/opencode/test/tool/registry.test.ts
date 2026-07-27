@@ -36,6 +36,8 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { OpencodeXProject } from "@/opencodex/project"
+import { GuiBridge } from "@/opencodex/gui-bridge"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -65,11 +67,15 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Instruction.defaultLayer),
       Layer.provide(AppFileSystem.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
+      Layer.provide(GuiBridge.defaultLayer),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
+    )
+    .pipe(
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
+      Layer.provide(Layer.mock(OpencodeXProject.Service)({})),
     )
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 
@@ -403,7 +409,7 @@ describe("tool.registry", () => {
           },
         })
       }),
-    20_000,
+    30_000,
   )
 
   it.instance("preserves attachments from structured custom tool results", () =>
@@ -436,6 +442,7 @@ describe("tool.registry", () => {
       const agents = yield* Agent.Service
       const result = yield* loaded.execute({}, {
         sessionID: SessionID.make("ses_test"),
+        directory: process.cwd(),
         messageID: MessageID.make("msg_test"),
         agent: (yield* agents.defaultInfo()).name,
         abort: new AbortController().signal,

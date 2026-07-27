@@ -1,0 +1,137 @@
+@media (max-width:760px) {
+  .dashboard-item-card.project-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .dashboard-project-view>header {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+}
+
+@media (max-width:1180px) {
+  .project-command-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:1180px) {
+  .project-metric:nth-child(odd) {
+    border-left: 0;
+  }
+}
+
+@media (max-width:760px) {
+  .project-command-detail-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-command-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-command-detail-header .row-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width:760px) {
+  .project-metric {
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+}
+
+@media (max-width:760px) {
+  .project-metric:nth-child(odd) {
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+}
+
+@media (max-width:760px) {
+  .project-metric:first-child {
+    border-top: 0;
+  }
+}
+
+@media (max-width:1180px) {
+  .project-directory-summary {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:1180px) {
+  .project-home-summary {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:1180px) {
+  .project-directory-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:1180px) {
+  .project-home-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:1180px) {
+  .project-directory-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width:760px) {
+  .project-directory-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-home-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-home-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-directory-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-home-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width:760px) {
+  .project-directory-panel>header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width:760px) {
+  .project-directory-search {
+    min-width: 0;
+    grid-template-columns: 18px minmax(0,1fr);
+  }
+}

@@ -56,6 +56,8 @@ import { memoMap } from "@opencode-ai/core/effect/memo-map"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { GuiBridge } from "@/opencodex/gui-bridge"
+import { OpencodeXSettings } from "@/opencodex/settings"
 
 export const AppLayer = Layer.mergeAll(
   Npm.defaultLayer,
@@ -85,6 +87,8 @@ export const AppLayer = Layer.mergeAll(
   BackgroundJob.defaultLayer,
   RuntimeFlags.defaultLayer,
   EventV2Bridge.defaultLayer,
+  GuiBridge.defaultLayer,
+  OpencodeXSettings.defaultLayer,
   SessionRunState.defaultLayer,
   SessionProcessor.defaultLayer,
   SessionCompaction.defaultLayer,

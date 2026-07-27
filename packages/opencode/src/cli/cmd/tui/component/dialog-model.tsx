@@ -8,8 +8,14 @@ import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
+import { setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
 
-export function DialogModel(props: { providerID?: string }) {
+type ModelSelection = {
+  providerID: string
+  modelID: string
+}
+
+export function DialogModel(props: { providerID?: string; current?: ModelSelection; onSelect?: (model: ModelSelection) => void }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
@@ -58,8 +64,34 @@ export function DialogModel(props: { providerID?: string }) {
       "Recent",
     )
 
+    // Swarms lead the picker: an agent team is selected exactly like a model.
+    const swarmOptions = pipe(
+      sync.data.provider.filter((provider) => provider.id === "swarm"),
+      flatMap((provider) =>
+        pipe(
+          provider.models,
+          entries(),
+          filter(() => !props.providerID || props.providerID === "swarm"),
+          map(([model, info]) => ({
+            value: { providerID: provider.id, modelID: model },
+            title: info.name ?? model,
+            releaseDate: info.release_date ?? "",
+            description: undefined as string | undefined,
+            category: "Swarms",
+            disabled: false,
+            footer: "Agent team",
+            onSelect() {
+              onSelect(provider.id, model)
+            },
+          })),
+          sortBy((option) => option.title),
+        ),
+      ),
+    )
+
     const providerOptions = pipe(
       sync.data.provider,
+      filter((provider) => provider.id !== "swarm"),
       sortBy(
         (provider) => provider.id !== "opencode",
         (provider) => provider.name,
@@ -110,12 +142,13 @@ export function DialogModel(props: { providerID?: string }) {
 
     if (needle) {
       return [
+        ...fuzzysort.go(needle, swarmOptions, { keys: ["title", "category"] }).map((x) => x.obj),
         ...fuzzysort.go(needle, providerOptions, { keys: ["title", "category"] }).map((x) => x.obj),
         ...fuzzysort.go(needle, popularProviders, { keys: ["title"] }).map((x) => x.obj),
       ]
     }
 
-    return [...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders]
+    return [...swarmOptions, ...favoriteOptions, ...recentOptions, ...providerOptions, ...popularProviders]
   })
 
   const provider = createMemo(() =>
@@ -129,7 +162,14 @@ export function DialogModel(props: { providerID?: string }) {
   })
 
   function onSelect(providerID: string, modelID: string) {
-    local.model.set({ providerID, modelID }, { recent: true })
+    const next = { providerID, modelID }
+    if (props.onSelect) {
+      props.onSelect(next)
+      dialog.clear()
+      return
+    }
+    setPendingOpencodeXSwarmTask(undefined)
+    local.model.set(next, { recent: true })
     const list = local.model.variant.list()
     const cur = local.model.variant.selected()
     if (cur === "default" || (cur && list.includes(cur))) {
@@ -167,7 +207,7 @@ export function DialogModel(props: { providerID?: string }) {
       flat={true}
       skipFilter={true}
       title={title()}
-      current={local.model.current()}
+      current={props.current ?? local.model.current()}
     />
   )
 }

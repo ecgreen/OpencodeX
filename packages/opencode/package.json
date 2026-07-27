@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "1.15.13",
+  "version": "0.0.1",
   "name": "opencode",
   "type": "module",
   "license": "MIT",
@@ -8,11 +8,12 @@
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "bun test --timeout 30000",
-    "test:ci": "mkdir -p .artifacts/unit && bun test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test:ci": "bun run script/test-ci.ts",
     "test:httpapi": "bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode auth --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode effect --fail-on-missing --fail-on-skip",
     "bench:test": "bun run script/bench-test-suite.ts",
     "profile:test": "bun run script/profile-test-files.ts",
     "build": "bun run script/build.ts",
+    "models:update": "bun run script/update-models.ts",
     "fix-node-pty": "bun run script/fix-node-pty.ts",
     "dev": "bun run --conditions=browser ./src/index.ts",
     "dev:temporary": "bun run --conditions=browser ./src/temporary.ts"
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.28.4",
+    "@babel/preset-typescript": "7.27.1",
     "@octokit/webhooks-types": "7.6.1",
     "@opencode-ai/core": "workspace:*",
     "@opencode-ai/http-recorder": "workspace:*",
@@ -71,6 +73,7 @@
     "drizzle-orm": "catalog:",
     "prettier": "3.6.2",
     "typescript": "catalog:",
+    "typescript-language-server": "5.3.0",
     "vscode-languageserver-types": "3.17.5",
     "why-is-node-running": "3.2.2"
   },
@@ -97,6 +100,7 @@
     "@ai-sdk/togetherai": "2.0.41",
     "@ai-sdk/vercel": "2.0.39",
     "@ai-sdk/xai": "3.0.82",
+    "@anthropic-ai/claude-agent-sdk": "0.3.217",
     "@aws-sdk/credential-providers": "3.993.0",
     "@clack/prompts": "1.0.0-alpha.1",
     "@effect/opentelemetry": "catalog:",

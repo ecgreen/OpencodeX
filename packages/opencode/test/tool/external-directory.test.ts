@@ -14,6 +14,7 @@ const it = testEffect(CrossSpawnSpawner.defaultLayer)
 
 const baseCtx: Omit<Tool.Context, "ask"> = {
   sessionID: SessionID.make("ses_test"),
+  directory: process.cwd(),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",
@@ -115,7 +116,7 @@ describe("tool.assertExternalDirectory", () => {
 
           const target = path.join(outerTmp, "outside.txt")
           const alt = target
-            .replace(/^[A-Za-z]:/, "")
+            .replace(/^([A-Za-z]):/, "/$1")
             .replaceAll("\\", "/")
             .toLowerCase()
 

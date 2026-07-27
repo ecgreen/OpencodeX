@@ -7,6 +7,7 @@
     "./package.json": "./package.json",
     "./*": "./src/components/*.tsx",
     "./session-diff": "./src/components/session-diff.ts",
+    "./tool-output-preview": "./src/components/tool-output-preview.ts",
     "./i18n/*": "./src/i18n/*.ts",
     "./pierre": "./src/pierre/index.ts",
     "./pierre/*": "./src/pierre/*.ts",
@@ -23,7 +24,8 @@
     "./icons/app": "./src/components/app-icons/types.ts",
     "./fonts/*": "./src/assets/fonts/*",
     "./audio/*": "./src/assets/audio/*",
-    "./v2/*": "./src/v2/*"
+    "./v2/*": "./src/v2/*",
+    "./v2/components/*": "./src/v2/components/*.tsx"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
@@ -42,7 +44,6 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plugin-icons-spritesheet": "3.0.1",
     "vite-plugin-solid": "catalog:"
   },
   "dependencies": {

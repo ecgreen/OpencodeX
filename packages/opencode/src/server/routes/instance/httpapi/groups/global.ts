@@ -1,4 +1,5 @@
 import { Config } from "@/config/config"
+import { GuiBridge } from "@/opencodex/gui-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { InstanceDisposed } from "@/server/event"
 import "@opencode-ai/core/account"
@@ -6,10 +7,12 @@ import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { described } from "./metadata"
+import { ConflictError, ForbiddenError, InvalidRequestError } from "../errors"
 
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
+  active: Schema.Boolean,
 })
 
 const SyncEventSchemas = EventV2.registry
@@ -66,6 +69,9 @@ export const GlobalPaths = {
   config: "/global/config",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
+  guiBridgeSync: "/global/gui-bridge/sync",
+  guiBridgeUnregister: "/global/gui-bridge/unregister",
+  guiBridgeRespond: "/global/gui-bridge/respond",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -127,6 +133,36 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.upgrade",
           summary: "Upgrade opencode",
           description: "Upgrade opencode to the specified version or latest if not specified.",
+        }),
+      ),
+      HttpApiEndpoint.post("guiBridgeSync", GlobalPaths.guiBridgeSync, {
+        payload: GuiBridge.SyncPayload,
+        success: described(GuiBridge.SyncResult, "GUI bridge desired state synchronized"),
+        error: [ForbiddenError, ConflictError, InvalidRequestError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.gui_bridge.sync",
+          summary: "Synchronize GUI bridge scopes",
+        }),
+      ),
+      HttpApiEndpoint.post("guiBridgeUnregister", GlobalPaths.guiBridgeUnregister, {
+        payload: GuiBridge.UnregisterPayload,
+        success: described(GuiBridge.MutationResult, "GUI bridge unregistered"),
+        error: [ForbiddenError, ConflictError, InvalidRequestError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.gui_bridge.unregister",
+          summary: "Unregister a GUI bridge lease",
+        }),
+      ),
+      HttpApiEndpoint.post("guiBridgeRespond", GlobalPaths.guiBridgeRespond, {
+        payload: GuiBridge.RespondPayload,
+        success: described(GuiBridge.MutationResult, "GUI bridge response accepted"),
+        error: [ForbiddenError, ConflictError, InvalidRequestError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.gui_bridge.respond",
+          summary: "Respond to a pending GUI bridge request",
         }),
       ),
     )

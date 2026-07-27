@@ -1,106 +1,122 @@
-import { OpencodeXProject } from "@/opencodex/project"
-import { Project } from "@/project/project"
-import { SessionID } from "@/session/schema"
 import { Effect } from "effect"
-import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { UpdateProjectPayload } from "../groups/opencodex"
-import { notFound, ProjectNotFoundError } from "../errors"
-import * as SessionError from "./session-errors"
+import { makeOpencodeXOperationsHandlers } from "./opencodex-operations-handlers"
+import { makeOpencodeXPluginHandlers } from "./opencodex-plugin-handlers"
+import { makeOpencodeXSessionHandlers } from "./opencodex-session-handlers"
+import { makeOpencodeXStateHandlers } from "./opencodex-state-handlers"
+import { makeOpencodeXWorkbenchFileHandlers } from "./opencodex-workbench-file-handlers"
+import { makeOpencodeXWorkbenchGitHandlers } from "./opencodex-workbench-git-handlers"
+import { makeOpencodeXWorkbenchGithubHandlers } from "./opencodex-workbench-github-handlers"
+import { makeOpencodeXSettingsHandlers } from "./opencodex-settings-handlers"
 
-function mapErrors<A, R>(effect: Effect.Effect<A, OpencodeXProject.InvalidFolderError | Project.NotFoundError, R>) {
-  return effect.pipe(
-    Effect.catchTag("OpencodeX.InvalidFolderError", () =>
-      Effect.fail(new HttpApiError.BadRequest({})),
-    ),
-    Effect.catchTag("Project.NotFoundError", (error) =>
-      Effect.fail(
-        new ProjectNotFoundError({
-          projectID: error.projectID,
-          message: `Project not found: ${error.projectID}`,
-        }),
-      ),
-    ),
-  )
-}
+export { sessionStatusSnapshot } from "./opencodex-session-handlers"
 
 export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencodex", (handlers) =>
   Effect.gen(function* () {
-    const service = yield* OpencodeXProject.Service
-
-    const listProjects = Effect.fn("OpencodeXHttpApi.listProjects")(function* () {
-      return yield* service.list()
-    })
-
-    const createProject = Effect.fn("OpencodeXHttpApi.createProject")(function* (ctx: {
-      payload: OpencodeXProject.CreateInput
-    }) {
-      return yield* mapErrors(service.create(ctx.payload))
-    })
-
-    const validateProject = Effect.fn("OpencodeXHttpApi.validateProject")(function* (ctx: {
-      payload: OpencodeXProject.ValidateInput
-    }) {
-      return yield* service.validate(ctx.payload)
-    })
-
-    const updateProject = Effect.fn("OpencodeXHttpApi.updateProject")(function* (ctx: {
-      params: { projectID: string }
-      payload: typeof UpdateProjectPayload.Type
-    }) {
-      return yield* mapErrors(service.update({ ...ctx.payload, projectID: ctx.params.projectID }))
-    })
-
-    const reorderProjects = Effect.fn("OpencodeXHttpApi.reorderProjects")(function* (ctx: {
-      payload: OpencodeXProject.ReorderInput
-    }) {
-      return yield* service.reorder(ctx.payload)
-    })
-
-    const createSession = Effect.fn("OpencodeXHttpApi.createSession")(function* (ctx: {
-      payload: OpencodeXProject.CreateSessionInput
-    }) {
-      return yield* mapErrors(service.createSession(ctx.payload))
-    })
-
-    const moveSession = Effect.fn("OpencodeXHttpApi.moveSession")(function* (ctx: {
-      payload: OpencodeXProject.MoveSessionInput
-    }) {
-      return yield* service.moveSession(ctx.payload).pipe(
-        Effect.catchTag("Project.NotFoundError", (error) =>
-          Effect.fail(
-            new ProjectNotFoundError({
-              projectID: error.projectID,
-              message: `Project not found: ${error.projectID}`,
-            }),
-          ),
-        ),
-        Effect.catchTag("NotFoundError", (error) => Effect.fail(notFound(error.message))),
-      )
-    })
-
-    const removeSession = Effect.fn("OpencodeXHttpApi.removeSession")(function* (ctx: {
-      params: { sessionID: SessionID }
-    }) {
-      yield* SessionError.mapStorageNotFound(service.removeSession(ctx.params.sessionID))
-      return true
-    })
-
-    const removeProject = Effect.fn("OpencodeXHttpApi.removeProject")(function* (ctx: {
-      params: { projectID: string }
-    }) {
-      return yield* service.removeProject(ctx.params.projectID)
-    })
+    const sessions = yield* makeOpencodeXSessionHandlers()
+    const plugins = yield* makeOpencodeXPluginHandlers()
+    const state = yield* makeOpencodeXStateHandlers(plugins)
+    const files = yield* makeOpencodeXWorkbenchFileHandlers()
+    const git = makeOpencodeXWorkbenchGitHandlers()
+    const github = makeOpencodeXWorkbenchGithubHandlers()
+    const operations = yield* makeOpencodeXOperationsHandlers()
+    const settings = yield* makeOpencodeXSettingsHandlers()
 
     return handlers
-      .handle("listProjects", listProjects)
-      .handle("createProject", createProject)
-      .handle("validateProject", validateProject)
-      .handle("updateProject", updateProject)
-      .handle("reorderProjects", reorderProjects)
-      .handle("createSession", createSession)
-      .handle("moveSession", moveSession)
-      .handle("removeSession", removeSession)
-      .handle("removeProject", removeProject)
+      .handle("getSettings", settings.getSettings)
+      .handle("updateSettings", settings.updateSettings)
+      .handle("listProjects", sessions.listProjects)
+      .handle("createProject", sessions.createProject)
+      .handle("validateProject", sessions.validateProject)
+      .handle("updateProject", sessions.updateProject)
+      .handle("reorderProjects", sessions.reorderProjects)
+      .handle("createSession", sessions.createSession)
+      .handle("sessionSync", sessions.sessionSync)
+      .handle("stateSnapshot", state.stateSnapshot)
+      .handle("stateOperations", state.stateOperations)
+      .handle("stateCapabilities", state.stateCapabilities)
+      .handle("stateSessionCards", state.stateSessionCards)
+      .handle("stateSession", state.stateSession)
+      .handleRaw("stateEvent", state.stateEvent)
+      .handle("updateSessionState", sessions.updateSessionState)
+      .handle("moveSession", sessions.moveSession)
+      .handle("removeSession", sessions.removeSession)
+      .handle("removeProject", sessions.removeProject)
+      .handle("listJobs", operations.listJobs)
+      .handle("listPlugins", plugins.listPlugins)
+      .handle("installPlugin", plugins.installPluginHandler)
+      .handle("togglePlugin", plugins.togglePlugin)
+      .handle("workbenchFileRead", files.workbenchFileRead)
+      .handle("workbenchFileWrite", files.workbenchFileWrite)
+      .handle("workbenchFileCreate", files.workbenchFileCreate)
+      .handle("workbenchFileRename", files.workbenchFileRename)
+      .handle("workbenchFileDelete", files.workbenchFileDelete)
+      .handle("workbenchFileDiagnostics", files.workbenchFileDiagnostics)
+      .handle("workbenchFileDefinition", files.workbenchFileDefinition)
+      .handle("workbenchFileHover", files.workbenchFileHover)
+      .handle("workbenchFileCompletion", files.workbenchFileCompletion)
+      .handle("workbenchGitBranches", git.workbenchGitBranches)
+      .handle("workbenchChangesPage", git.workbenchChanges)
+      .handle("workbenchChangePatch", git.workbenchChangePatch)
+      .handle("workbenchChangeMetricsPage", git.workbenchChangeMetricsPage)
+      .handle("workbenchChangePatchPage", git.workbenchChangePatchPage)
+      .handle("workbenchGitHistory", git.workbenchGitHistoryEndpoint)
+      .handle("workbenchDiagnostics", git.workbenchDiagnosticsEndpoint)
+      .handle("workbenchGitCheckout", git.workbenchGitCheckout)
+      .handle("workbenchGitCreateBranch", git.workbenchGitCreateBranch)
+      .handle("workbenchGitStage", git.workbenchGitStage)
+      .handle("workbenchGitUnstage", git.workbenchGitUnstage)
+      .handle("workbenchGitDiscard", git.workbenchGitDiscard)
+      .handle("workbenchGitCommit", git.workbenchGitCommit)
+      .handle("workbenchGitFetch", git.workbenchGitFetch)
+      .handle("workbenchGitPull", git.workbenchGitPull)
+      .handle("workbenchGitPush", git.workbenchGitPush)
+      .handle("workbenchGitPublish", git.workbenchGitPublish)
+      .handle("workbenchGitStashes", git.workbenchGitStashes)
+      .handle("workbenchGitStashCreate", git.workbenchGitStashCreate)
+      .handle("workbenchGitStashApply", git.workbenchGitStashApply)
+      .handle("workbenchGitStashPop", git.workbenchGitStashPop)
+      .handle("workbenchGitStashDrop", git.workbenchGitStashDrop)
+      .handle("workbenchGithubAuth", github.workbenchGithubAuth)
+      .handle("workbenchGithubRepo", github.workbenchGithubRepo)
+      .handle("workbenchGithubIssues", github.workbenchGithubIssues)
+      .handle("workbenchGithubPulls", github.workbenchGithubPulls)
+      .handle("workbenchGithubPull", github.workbenchGithubPull)
+      .handle("workbenchGithubChecks", github.workbenchGithubChecks)
+      .handle("workbenchGithubCheckoutPull", github.workbenchGithubCheckoutPull)
+      .handle("workbenchGithubCreatePull", github.workbenchGithubCreatePull)
+      .handle("createJob", operations.createJob)
+      .handle("getJob", operations.getJob)
+      .handle("updateJob", operations.updateJob)
+      .handle("cancelJob", operations.cancelJob)
+      .handle("claimJob", operations.claimJob)
+      .handle("startJob", operations.startJob)
+      .handle("renewJob", operations.renewJob)
+      .handle("succeedJob", operations.succeedJob)
+      .handle("failJob", operations.failJob)
+      .handle("retryJob", operations.retryJob)
+      .handle("listSwarms", operations.listSwarms)
+      .handle("createSwarm", operations.createSwarm)
+      .handle("getSwarm", operations.getSwarm)
+      .handle("updateSwarm", operations.updateSwarm)
+      .handle("startSwarm", operations.startSwarm)
+      .handle("assignSwarmTask", operations.assignSwarmTask)
+      .handle("cancelSwarm", operations.cancelSwarm)
+      .handle("removeSwarm", operations.removeSwarm)
+      .handle("addSwarmRole", operations.addSwarmRole)
+      .handle("updateSwarmRole", operations.updateSwarmRole)
+      .handle("listTerminalSessions", operations.listTerminalSessions)
+      .handle("createTerminalSession", operations.createTerminalSession)
+      .handle("getTerminalSession", operations.getTerminalSession)
+      .handle("updateTerminalSession", operations.updateTerminalSession)
+      .handle("openTerminalSession", operations.openTerminalSession)
+      .handle("removeTerminalSession", operations.removeTerminalSession)
+      .handle("listViews", operations.listViews)
+      .handle("createView", operations.createView)
+      .handle("reorderViews", operations.reorderViews)
+      .handle("getView", operations.getView)
+      .handle("updateView", operations.updateView)
+      .handle("removeView", operations.removeView)
   }),
 )

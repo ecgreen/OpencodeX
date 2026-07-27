@@ -1,0 +1,40 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`renders the complete OpencodeX dashboard without idle state polling 1`] = `
+"                                   │
+  OpencodeX Dashboard              │                                                    ▄
+                                   │                   █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█ ▀▄▀
+                                   │                   █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀ ▀ ▀
+ [-] Pinned                        │                   ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+ ───────────────────────────────── │
+ [-] Projects                   +  │  │                        │                        │
+ ───────────────────────────────── │  │ Project             +  │ Session             +  │ Swarm               +
+  No Projects            + Project │  │ Group work             │ New chat               │ Agent team
+
+ [-] Recent Sessions              Connect a provider                               esc
+ ─────────────────────────────
+  No Recent Sessions     + Ses    Search
+
+ [-] Views                        Providers
+ ─────────────────────────────    Other Custom provider
+  No Views                  +                                                                                        ▀
+
+ [+] Prior Sessions                │
+ ───────────────────────────────── │  ────────────────────────────────────────────────────────────────────────────
+                                   │
+                                   │    + Create project                                                  create
+                                   │      Group sessions, swarms, and views around a workspace.
+                                   │
+                                   │  ────────────────────────────────────────────────────────────────────────────
+                                   │
+                                   │  [-] Attention Needed
+                                   │
+                                   │  Nothing needs attention right now.
+                                   │
+                                   │  [-] Recent Sessions
+                                   │
+                                   │  ────────────────────────────────────────────────────────────────────────────
+  ctrl+x f focus sidebar           │
+  ctrl+s toggle                    │
+                                   │  arrows/h/j/k/l move grid  enter open  ctrl+p commands"
+`;

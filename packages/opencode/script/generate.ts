@@ -7,8 +7,14 @@ const dir = path.resolve(__dirname, "..")
 
 process.chdir(dir)
 
-const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"
-export const modelsData = process.env.MODELS_DEV_API_JSON
-  ? await Bun.file(process.env.MODELS_DEV_API_JSON).text()
-  : await fetch(`${modelsUrl}/api.json`).then((x) => x.text())
-console.log("Loaded models.dev snapshot")
+const snapshot = process.env.MODELS_DEV_API_JSON ?? path.join(dir, "test/tool/fixtures/models-api.json")
+const checksum = process.env.MODELS_DEV_API_SHA256
+  ? process.env.MODELS_DEV_API_SHA256.trim().toLowerCase()
+  : await Bun.file(path.join(dir, "test/tool/fixtures/models-api.sha256"))
+      .text()
+      .then((value) => value.trim())
+
+export const modelsData = await Bun.file(snapshot).text()
+const digest = new Bun.CryptoHasher("sha256").update(modelsData).digest("hex")
+if (digest !== checksum) throw new Error(`Models snapshot checksum mismatch: expected ${checksum}, received ${digest}`)
+console.log(`Loaded pinned models.dev snapshot ${digest.slice(0, 12)}`)

@@ -2536,6 +2536,7 @@ describe("ProviderTransform.variants", () => {
 
     for (const testCase of [
       { id: "openai/gpt-5.4", efforts: ["none", "low", "medium", "high", "xhigh"] },
+      { id: "openai/gpt-5.6-sol", efforts: ["none", "low", "medium", "high", "xhigh", "max"] },
       { id: "openai/gpt-5-pro", efforts: ["high"] },
       { id: "openai/gpt-5.5-pro", efforts: ["medium", "high", "xhigh"] },
       { id: "openai/gpt-5.2-codex", efforts: ["low", "medium", "high", "xhigh"] },
@@ -2793,6 +2794,7 @@ describe("ProviderTransform.variants", () => {
 
     for (const testCase of [
       { id: "openai/gpt-5-5", efforts: ["none", "low", "medium", "high", "xhigh"] },
+      { id: "openai/gpt-5-6-sol", efforts: ["none", "low", "medium", "high", "xhigh", "max"] },
       { id: "openai/gpt-5-pro", efforts: ["high"] },
       { id: "openai/gpt-5-5-pro", efforts: ["medium", "high", "xhigh"] },
       { id: "openai/gpt-5-2-codex", efforts: ["low", "medium", "high", "xhigh"] },
@@ -3190,6 +3192,11 @@ describe("ProviderTransform.variants", () => {
       { id: "gpt-5.1", releaseDate: "2025-11-13", efforts: ["none", "low", "medium", "high"] },
       { id: "gpt-5.4", releaseDate: "2026-03-05", efforts: ["none", "low", "medium", "high", "xhigh"] },
       {
+        id: "gpt-5.6-terra",
+        releaseDate: "2026-07-09",
+        efforts: ["none", "low", "medium", "high", "xhigh"],
+      },
+      {
         id: "gpt-5.5",
         modelID: "gpt-5-5",
         releaseDate: "2026-04-23",
@@ -3221,6 +3228,29 @@ describe("ProviderTransform.variants", () => {
           }),
         )
         expect(Object.keys(result)).toEqual(testCase.efforts)
+      })
+    }
+
+    for (const id of ["gpt-5.6-sol", "gpt-5-6-sol", "gpt-5.6-sol-2026-07-09"]) {
+      test(`${id} exposes max reasoning`, () => {
+        const result = ProviderTransform.variants(
+          createMockModel({
+            id,
+            providerID: "openai",
+            api: {
+              id,
+              url: "https://api.openai.com",
+              npm: "@ai-sdk/openai",
+            },
+            release_date: "2026-07-09",
+          }),
+        )
+        expect(Object.keys(result)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
+        expect(result.max).toEqual({
+          reasoningEffort: "max",
+          reasoningSummary: "auto",
+          include: ["reasoning.encrypted_content"],
+        })
       })
     }
 

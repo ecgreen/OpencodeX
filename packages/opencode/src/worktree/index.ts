@@ -12,7 +12,7 @@ import { errorMessage } from "../util/error"
 import { EventV2 } from "@opencode-ai/core/event"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Effect, Layer, Path, Schema, Scope, Context, Semaphore } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -167,6 +167,21 @@ export const layer: Layer.Layer<
     const gitSvc = yield* Git.Service
     const project = yield* Project.Service
     const store = yield* InstanceStore.Service
+    const locks = new Map<string, Semaphore.Semaphore>()
+
+    const lock = (key: string) => {
+      const current = locks.get(key)
+      if (current) return current
+      const next = Semaphore.makeUnsafe(1)
+      locks.set(key, next)
+      return next
+    }
+
+    const withRepoLock = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.gen(function* () {
+        const ctx = yield* InstanceState.context
+        return yield* lock(ctx.worktree).withPermits(1)(effect)
+      })
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
@@ -261,7 +276,7 @@ export const layer: Layer.Layer<
           workspace: workspaceID,
           payload: { type: Event.Failed.type, properties: { message } },
         })
-        return
+        return yield* new CreateFailedError({ message })
       }
 
       const booted = yield* store.load({ directory: info.directory }).pipe(
@@ -280,7 +295,7 @@ export const layer: Layer.Layer<
           }),
         ),
       )
-      if (!booted) return
+      if (!booted) return yield* new CreateFailedError({ message: "Failed to bootstrap worktree" })
 
       GlobalBus.emit("event", {
         directory: info.directory,
@@ -292,21 +307,29 @@ export const layer: Layer.Layer<
         },
       })
 
-      yield* runStartScripts(info.directory, { projectID, extra })
-    })
-
-    const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
-      yield* setup(info)
-      yield* boot(info, startCommand).pipe(
-        Effect.catchCause((cause) => Effect.sync(() => log.error("worktree bootstrap failed", { cause }))),
+      yield* runStartScripts(info.directory, { projectID, extra }).pipe(
+        Effect.catchCause((cause) => Effect.sync(() => log.error("worktree startup scripts failed", { cause }))),
         Effect.forkIn(scope),
       )
     })
 
+    const createFromInfoUnlocked = Effect.fnUntraced(function* (info: Info, startCommand?: string) {
+      yield* setup(info)
+      yield* boot(info, startCommand)
+    })
+
+    const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
+      yield* withRepoLock(createFromInfoUnlocked(info, startCommand))
+    })
+
     const create = Effect.fn("Worktree.create")(function* (input?: CreateInput) {
-      const info = yield* makeWorktreeInfo({ name: input?.name })
-      yield* createFromInfo(info, input?.startCommand)
-      return info
+      return yield* withRepoLock(
+        Effect.gen(function* () {
+          const info = yield* makeWorktreeInfo({ name: input?.name })
+          yield* createFromInfoUnlocked(info, input?.startCommand)
+          return info
+        }),
+      )
     })
 
     const canonical = Effect.fnUntraced(function* (input: string) {
@@ -402,7 +425,7 @@ export const layer: Layer.Layer<
       })
     }
 
-    const remove = Effect.fn("Worktree.remove")(function* (input: RemoveInput) {
+    const removeUnlocked = Effect.fnUntraced(function* (input: RemoveInput) {
       const ctx = yield* InstanceState.context
       if (ctx.project.vcs !== "git") {
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
@@ -539,7 +562,7 @@ export const layer: Layer.Layer<
       return yield* git(["clean", "-ffdx"], { cwd: root })
     })
 
-    const reset = Effect.fn("Worktree.reset")(function* (input: ResetInput) {
+    const resetUnlocked = Effect.fnUntraced(function* (input: ResetInput) {
       const ctx = yield* InstanceState.context
       if (ctx.project.vcs !== "git") {
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
@@ -625,6 +648,14 @@ export const layer: Layer.Layer<
       )
 
       return true
+    })
+
+    const remove = Effect.fn("Worktree.remove")(function* (input: RemoveInput) {
+      return yield* withRepoLock(removeUnlocked(input))
+    })
+
+    const reset = Effect.fn("Worktree.reset")(function* (input: ResetInput) {
+      return yield* withRepoLock(resetUnlocked(input))
     })
 
     return Service.of({ makeWorktreeInfo, createFromInfo, create, list, remove, reset })

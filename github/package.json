@@ -1,20 +1,17 @@
 {
   "name": "github",
-  "module": "index.ts",
   "type": "module",
   "private": true,
   "license": "MIT",
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test test",
+    "test:ci": "mkdir -p .artifacts/unit && bun test test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+  },
   "devDependencies": {
     "@types/bun": "catalog:"
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "@actions/core": "1.11.1",
-    "@actions/github": "6.0.1",
-    "@octokit/graphql": "9.0.1",
-    "@octokit/rest": "catalog:",
-    "@opencode-ai/sdk": "workspace:*"
   }
 }

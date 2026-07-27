@@ -172,9 +172,9 @@ export function isPathPluginSpec(spec: string) {
   return spec.startsWith("file://") || spec.startsWith(".") || isAbsolutePath(spec)
 }
 
-export async function resolvePathPluginTarget(spec: string) {
+export async function resolvePathPluginTarget(spec: string, directory = process.cwd()) {
   const raw = spec.startsWith("file://") ? fileURLToPath(spec) : spec
-  const file = path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) ? raw : path.resolve(raw)
+  const file = path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) ? raw : path.resolve(directory, raw)
   const stat = await Filesystem.statAsync(file)
   if (!stat?.isDirectory()) {
     if (spec.startsWith("file://")) return spec
@@ -204,8 +204,8 @@ export async function checkPluginCompatibility(target: string, opencodeVersion: 
   }
 }
 
-export async function resolvePluginTarget(spec: string) {
-  if (isPathPluginSpec(spec)) return resolvePathPluginTarget(spec)
+export async function resolvePluginTarget(spec: string, directory = process.cwd()) {
+  if (isPathPluginSpec(spec)) return resolvePathPluginTarget(spec, directory)
   const hit = parse(spec)
   const pkg = hit?.name && hit.raw === hit.name ? `${hit.name}@latest` : spec
   const result = await Npm.add(pkg)

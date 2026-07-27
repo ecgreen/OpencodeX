@@ -13,6 +13,7 @@ const params = Schema.Struct({ input: Schema.String })
 function makeCtx(): Tool.Context {
   return {
     sessionID: SessionID.descending(),
+    directory: process.cwd(),
     messageID: MessageID.ascending(),
     agent: "build",
     abort: new AbortController().signal,
@@ -138,10 +139,7 @@ describe("Tool.define", () => {
       expect(Exit.isFailure(exit)).toBe(true)
       if (!Exit.isFailure(exit)) return
 
-      // The wrap ends with Effect.orDie, so the failure lives in the cause as a
-      // defect. Recover the typed instance from there.
-      const die = exit.cause.reasons.find(Cause.isDieReason)
-      const error = die?.defect
+      const error = Cause.squash(exit.cause)
       expect(error).toBeInstanceOf(Tool.InvalidArgumentsError)
       const args = error as Tool.InvalidArgumentsError
       expect(args.tool).toBe("qtest")

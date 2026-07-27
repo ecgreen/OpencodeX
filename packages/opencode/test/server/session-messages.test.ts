@@ -50,6 +50,7 @@ const fill = Effect.fn("SessionMessagesTest.fill")(function* (
   sessionID: SessionID,
   count: number,
   time = (i: number) => Date.now() + i,
+  text = (i: number) => `m${i}`,
 ) {
   const session = yield* SessionNs.Service
   return yield* Effect.forEach(
@@ -71,7 +72,7 @@ const fill = Effect.fn("SessionMessagesTest.fill")(function* (
           sessionID,
           messageID: id,
           type: "text",
-          text: `m${i}`,
+          text: text(i),
         } satisfies SessionLegacy.TextPart)
         return id
       }),
@@ -128,6 +129,24 @@ describe("session messages endpoint", () => {
   )
 
   it.instance(
+    "returns cursor headers for budgeted pages",
+    withoutWatcher(
+      Effect.gen(function* () {
+        const session = yield* sessionScoped
+        const ids = yield* fill(session.id, 6)
+
+        const res = yield* request(`/session/${session.id}/message?limit=10&renderBudget=1500`)
+        expect(res.status).toBe(200)
+        const body = yield* json<SessionLegacy.WithParts[]>(res)
+        expect(body.map((item) => item.info.id)).toEqual(ids.slice(-2))
+        expect(res.headers["x-next-cursor"]).toBeTruthy()
+        expect(res.headers["link"]).toContain("renderBudget=1500")
+      }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
     "rejects invalid cursors and missing sessions",
     withoutWatcher(
       Effect.gen(function* () {
@@ -135,6 +154,9 @@ describe("session messages endpoint", () => {
 
         const bad = yield* request(`/session/${session.id}/message?limit=2&before=bad`)
         expect(bad.status).toBe(400)
+
+        const budgetWithoutLimit = yield* request(`/session/${session.id}/message?renderBudget=1500`)
+        expect(budgetWithoutLimit.status).toBe(400)
 
         const miss = yield* request(`/session/ses_missing/message?limit=2`)
         expect(miss.status).toBe(404)

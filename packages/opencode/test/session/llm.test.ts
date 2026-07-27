@@ -657,6 +657,15 @@ function loadFixture(providerID: string, modelID: string) {
   return { provider, model }
 }
 
+function gpt56SolFixture() {
+  return {
+    ...loadFixture("openai", "gpt-5.4").model,
+    id: "gpt-5.6-sol",
+    name: "GPT-5.6 Sol",
+    release_date: "2026-07-09",
+  }
+}
+
 function configModel(model: ModelsDev.Model) {
   return {
     id: model.id,
@@ -1001,6 +1010,97 @@ describe("session.llm.stream", () => {
         expect(maxTokens).toBe(undefined) // match codex cli behavior
       }),
     { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+  )
+
+  it.instance(
+    "uses max reasoning for GPT-5.6 Sol",
+    () =>
+      Effect.gen(function* () {
+        const model = gpt56SolFixture()
+        const request = waitRequest(
+          "/responses",
+          createEventResponse(
+            [
+              {
+                type: "response.created",
+                response: {
+                  id: "resp-max",
+                  created_at: Math.floor(Date.now() / 1000),
+                  model: model.id,
+                  service_tier: null,
+                },
+              },
+              {
+                type: "response.output_item.added",
+                output_index: 0,
+                item: { type: "message", id: "item-max", status: "in_progress", role: "assistant", content: [] },
+              },
+              {
+                type: "response.content_part.added",
+                item_id: "item-max",
+                output_index: 0,
+                content_index: 0,
+                part: { type: "output_text", text: "", annotations: [] },
+              },
+              {
+                type: "response.output_text.delta",
+                item_id: "item-max",
+                delta: "Hello",
+                logprobs: null,
+              },
+              {
+                type: "response.completed",
+                response: {
+                  incomplete_details: null,
+                  usage: {
+                    input_tokens: 1,
+                    input_tokens_details: null,
+                    output_tokens: 1,
+                    output_tokens_details: null,
+                  },
+                  service_tier: null,
+                },
+              },
+            ],
+            true,
+          ),
+        )
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ProviderV2.ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-max")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        expect(resolved.variants?.max).toEqual({
+          reasoningEffort: "max",
+          reasoningSummary: "auto",
+          include: ["reasoning.encrypted_content"],
+        })
+        expect(resolved.variants?.ultra).toBeUndefined()
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-max"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderV2.ID.openai, modelID: resolved.id, variant: "max" },
+          } satisfies SessionLegacy.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        expect((capture.body.reasoning as { effort?: string } | undefined)?.effort).toBe("max")
+      }),
+    { config: () => openAIConfig(gpt56SolFixture(), `${state.server!.url.origin}/v1`) },
   )
 
   it.instance(

@@ -20,7 +20,7 @@
 import { test, type TestOptions } from "bun:test"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { AppProcess } from "@opencode-ai/core/process"
-import { Deferred, Duration, Effect, Layer, Queue, Scope, Stream } from "effect"
+import { Deferred, Duration, Effect, Layer, Queue, Schedule, Scope, Stream } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import path from "node:path"
@@ -142,6 +142,7 @@ export type AcpHandle = {
   // calls this, so tests only need it when asserting exit behavior.
   readonly close: () => void
   readonly exited: Promise<number>
+  readonly stderr: () => string
 }
 
 export type OpencodeCli = {
@@ -185,9 +186,20 @@ export function withCliFixture<A, E>(
     const fs = yield* AppFileSystem.Service
     const appProc = yield* AppProcess.Service
 
-    // FileSystem.makeTempDirectoryScoped handles both creation and scope-tied
-    // cleanup — replaces the old mkdir + addFinalizer pair.
-    const home = yield* fs.makeTempDirectoryScoped({ prefix: "oc-cli-" })
+    /*
+     * Not makeTempDirectoryScoped: its finalizer removes the directory once
+     * and lets the error out. Windows keeps a handle on the tree a moment
+     * after the CLI child exits, so that single attempt fails EBUSY and takes
+     * a passing case down with it - which is what "exits nonzero promptly"
+     * was dying of while its own assertions passed. Retry, then let it go;
+     * a leftover temp directory is not worth failing a green test over.
+     */
+    const home = yield* Effect.acquireRelease(fs.makeTempDirectory({ prefix: "oc-cli-" }), (dir) =>
+      fs.remove(dir, { recursive: true }).pipe(
+        Effect.retry({ times: 20, schedule: Schedule.spaced(Duration.millis(100)) }),
+        Effect.ignore,
+      ),
+    )
 
     const configJson = JSON.stringify(testProviderConfig(llm.url))
     const env = isolatedEnv(home, configJson)
@@ -398,6 +410,7 @@ export function withCliFixture<A, E>(
         // proc.stdin.end() is idempotent in Bun; no try/catch needed.
         close: () => proc.stdin.end(),
         exited: proc.exited as Promise<number>,
+        stderr: () => stderrChunks.join(""),
       } satisfies AcpHandle
     })
 

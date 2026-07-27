@@ -1,0 +1,381 @@
+.rail-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.stage::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.rail-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.rail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stage::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rail-scroll::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.stage::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.rail-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.stage::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.rail-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.stage::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.rail-section header:hover .section-new {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rail-section header:focus-within .section-new {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rail-collapsed .brand:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+.rail-collapsed .new-button:hover {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  outline: none;
+}
+
+.rail-collapsed .rail-toggle:hover {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  outline: none;
+}
+
+.rail-collapsed .new-button:focus-visible {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  outline: none;
+}
+
+.rail-collapsed .rail-toggle:focus-visible {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  outline: none;
+}
+
+.rail-section.section-slot-placeholder>header.dragging {
+  opacity: 0;
+}
+
+.rail-section header:active {
+  cursor: grabbing;
+}
+
+.rail-section header.dropping.drop-after {
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.window-controls button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.window-controls .close:hover {
+  color: var(--theme-text);
+  background: var(--danger);
+}
+
+.rail button:hover {
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail button:focus-visible {
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail .rail-toggle:hover {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.rail .rail-toggle:focus-visible {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.rail-toggle:hover .icon {
+  transform: none;
+  filter: none;
+}
+
+.rail-toggle:focus-visible .icon {
+  transform: none;
+  filter: none;
+}
+
+.rail-section.section-slot-placeholder:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb,var(--theme-accent) 28%,transparent);
+  border-left: 2px solid var(--primary);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--theme-accent) 10%,transparent),var(--theme-overlay-subtle));
+  box-shadow: inset 0 0 0 1px var(--theme-overlay-subtle),0 10px 26px var(--theme-shadow-soft);
+  border-radius: 0;
+}
+
+.rail-section.section-slot-placeholder:after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 2;
+  width: min(148px,calc(100% - 24px));
+  height: 9px;
+  pointer-events: none;
+  background: linear-gradient(90deg,color-mix(in srgb,var(--theme-accent) 34%,transparent),var(--theme-overlay-soft));
+  border-radius: 0;
+}
+
+.rail-section header.dropping {
+  box-shadow: inset 0 2px 0 var(--primary);
+  border-radius: 0;
+}
+
+.rail-section header.dragging {
+  cursor: grabbing;
+  opacity: .3;
+  background: var(--theme-surface);
+  border-radius: 0;
+}
+
+.rail-section header :is(.section-toggle,.section-chevron,strong) {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header :is(.section-toggle,.section-chevron,strong):hover {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header :is(.section-toggle,.section-chevron,strong):focus-visible {
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header[data-rail-section-id] :is(.section-toggle,.section-chevron,strong) {
+  color: var(--major-row-color);
+}
+
+.rail-section header[data-rail-section-id]:hover {
+  border-color: color-mix(in srgb,var(--text) 20%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 6%,transparent),transparent 54%),var(--element-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
+}
+
+.rail-section header[data-rail-section-id]:focus-within {
+  border-color: color-mix(in srgb,var(--text) 20%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--text) 6%,transparent),transparent 54%),var(--element-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent);
+}
+
+.rail-section header>.section-new:hover {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 58%,var(--border));
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-section header>.section-new:focus-visible {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 58%,var(--border));
+  color: var(--major-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.titlebar-history-button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-history-button:focus-visible {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-breadcrumb-context:hover {
+  color: var(--ds-text);
+  background: var(--ds-surface-hover);
+}
+
+.titlebar-breadcrumb-context:focus-visible {
+  color: var(--ds-text);
+  background: var(--ds-surface-hover);
+  outline: 2px solid var(--ds-focus);
+  outline-offset: -2px;
+}
+
+.rail-resize-handle:hover:after {
+  background: var(--ds-focus);
+}
+
+.rail-resize-handle:focus-visible:after {
+  background: var(--ds-focus);
+}
+
+.stage[data-layout] {
+  padding: 0;
+}
+
+.stage[data-layout=scroll-page]>.stage-content.scroll-page {
+  display: block;
+  overflow: auto;
+  padding: 10px;
+  scrollbar-gutter: stable;
+}
+
+.stage[data-layout=full-bleed]>.stage-content.full-bleed {
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+}
+
+.stage-content>.error-card {
+  display: flex;
+  width: min(560px,100%);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 48px auto;
+  padding: 20px;
+}
+
+.brand:hover {
+  border-color: transparent;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.brand:focus-within {
+  border-color: transparent;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-toggle:hover {
+  outline: none;
+  box-shadow: none;
+  transform: none;
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.rail-toggle:focus-visible {
+  outline: none;
+  box-shadow: none;
+  transform: none;
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.rail .section-new:hover {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.rail .section-new:focus-visible {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.rail-section header:hover {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--major-row-accent) 42%,var(--border-subtle));
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-section header:focus-within {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--major-row-accent) 42%,var(--border-subtle));
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-section header:hover>.section-new {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 42%,var(--border));
+  color: color-mix(in srgb,var(--text) 86%,var(--muted));
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rail-section header:focus-within>.section-new {
+  border-left-color: color-mix(in srgb,var(--major-row-accent) 42%,var(--border));
+  color: color-mix(in srgb,var(--text) 86%,var(--muted));
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: auto;
+}

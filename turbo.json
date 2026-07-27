@@ -14,6 +14,12 @@
       "passThroughEnv": ["*"]
     },
     "test:ci": {
+      "dependsOn": ["^build"],
+      "outputs": [".artifacts/unit/junit.xml"],
+      "passThroughEnv": ["*"]
+    },
+    "@opencode-ai/sdk#test:ci": {
+      "dependsOn": ["build"],
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },

@@ -767,5 +767,16 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         misses: Effect.sync(() => [...misses]),
       })
     }),
-  ).pipe(Layer.provide(HttpRouter.layer), Layer.provide(NodeHttpServer.layer(() => Http.createServer(), { port: 0 })))
+  ).pipe(
+    Layer.provide(HttpRouter.layer),
+    /*
+     * Bind loopback explicitly. The url handed to subprocesses is already
+     * http://127.0.0.1, but listening without a host lets Node pick `::`, and
+     * a runner whose dual-stack does not map IPv4 loopback leaves the child
+     * dialing an address nothing answers on. On the Windows runner that showed
+     * up as every CLI case needing this server timing out at exactly 30s while
+     * the one case that exits without calling it passed in six.
+     */
+    Layer.provide(NodeHttpServer.layer(() => Http.createServer(), { port: 0, host: "127.0.0.1" })),
+  )
 }

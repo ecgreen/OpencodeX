@@ -1,5 +1,10 @@
 import os from "os"
 import fuzzysort from "fuzzysort"
+import { CLAUDE_CODE_PROVIDER_ID, claudeCodeProviderInfo, refreshClaudeCodeModels } from "./claude-code-provider"
+import { SWARM_PROVIDER_ID, isSwarmProvider, swarmModelRoute, swarmProviderInfo, swarmRoutes } from "./swarm-provider"
+import { Database } from "@opencode-ai/core/database/database"
+import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
+import { asc } from "drizzle-orm"
 import { Config } from "@/config/config"
 import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
@@ -31,7 +36,21 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
 
 const log = Log.create({ service: "provider" })
-const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
+const LOCAL_MODEL_DISCOVERY_TIMEOUT = 1_000
+const LOCAL_MODEL_PROVIDERS = [
+  {
+    id: ProviderV2.ID.make("lmstudio"),
+    name: "LMStudio",
+    api: "http://127.0.0.1:1234/v1",
+    env: ["LMSTUDIO_API_KEY"],
+  },
+  {
+    id: ProviderV2.ID.make("ollama"),
+    name: "Ollama",
+    api: "http://127.0.0.1:11434/v1",
+    env: ["OLLAMA_API_KEY"],
+  },
+]
 
 function wrapSSE(res: Response, ms: number, ctl: AbortController) {
   if (typeof ms !== "number" || ms <= 0) return res
@@ -195,7 +214,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
           return sdk.responses(modelID)
         },
-        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
+        options: {},
       }),
     xai: () =>
       Effect.succeed({
@@ -506,7 +525,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           },
         },
         async getModel(sdk: any, modelID: string) {
-          const id = String(modelID).trim()
+          const id = modelID.trim()
           return sdk.languageModel(id)
         },
       }
@@ -526,7 +545,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           ...(baseURL && { baseURL }),
         },
         async getModel(sdk: any, modelID) {
-          const id = String(modelID).trim()
+          const id = modelID.trim()
           return sdk.languageModel(id)
         },
       }
@@ -977,6 +996,182 @@ export function defaultModelIDs<T extends { models: Record<string, { id: string 
   return mapValues(providers, (item) => sort(Object.values(item.models))[0].id)
 }
 
+function localProviderInfo(input: LocalModelProvider, existing?: Info): Info {
+  return {
+    id: input.id,
+    source: existing?.source ?? "custom",
+    name: existing?.name ?? input.name,
+    env: existing?.env ?? input.env,
+    key: existing?.key,
+    options: mergeDeep({ apiKey: "local" }, existing?.options ?? {}),
+    models: existing?.models ?? {},
+  }
+}
+
+function addLocalProviders(database: Record<ProviderV2.ID, Info>) {
+  for (const item of LOCAL_MODEL_PROVIDERS) {
+    database[item.id] = localProviderInfo(item, database[item.id])
+  }
+  database[CLAUDE_CODE_PROVIDER_ID] = claudeCodeProviderInfo() as Info
+}
+
+/**
+ * The Claude Code menu depends on the signed-in account, so it is discovered
+ * from the CLI rather than declared. Discovery is cached behind a TTL because
+ * this runs on every provider refresh.
+ */
+async function refreshClaudeCodeProvider(state: State, config: Config.Info) {
+  const disabled = new Set(config.disabled_providers ?? [])
+  const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
+  if (disabled.has(CLAUDE_CODE_PROVIDER_ID) || (enabled && !enabled.has(CLAUDE_CODE_PROVIDER_ID))) {
+    delete state.providers[CLAUDE_CODE_PROVIDER_ID]
+    return
+  }
+  const provider = claudeCodeProviderInfo(await refreshClaudeCodeModels()) as Info
+  state.providers[CLAUDE_CODE_PROVIDER_ID] = provider
+  state.catalog[CLAUDE_CODE_PROVIDER_ID] = provider
+}
+
+function localProviderAPI(provider: Info, fallback: LocalModelProvider) {
+  if (typeof provider.options.baseURL === "string" && provider.options.baseURL) return provider.options.baseURL
+  return Object.values(provider.models)[0]?.api.url || fallback.api
+}
+
+async function refreshLocalProviders(input: {
+  state: State
+  config: Config.Info
+  env: Record<string, string | undefined>
+  enableExperimentalModels: boolean
+}) {
+  const disabled = new Set(input.config.disabled_providers ?? [])
+  const enabled = input.config.enabled_providers ? new Set(input.config.enabled_providers) : undefined
+
+  await refreshClaudeCodeProvider(input.state, input.config)
+  await Promise.all(
+    LOCAL_MODEL_PROVIDERS.map(async (item) => {
+      if (disabled.has(item.id) || (enabled && !enabled.has(item.id))) {
+        delete input.state.providers[item.id]
+        return
+      }
+
+      const existing = input.state.providers[item.id] ?? input.state.catalog[item.id] ?? localProviderInfo(item)
+      const provider = localProviderInfo(item, existing)
+      const api = localProviderAPI(provider, item)
+
+      try {
+        const models = await discoverOpenAICompatibleModels({
+          provider,
+          providerID: item.id,
+          api,
+          apiKey: localProviderAPIKey(provider, input.env),
+        })
+        provider.models = filterProviderModels(models, item.id, input.config, input.enableExperimentalModels)
+        if (Object.keys(provider.models).length === 0) {
+          delete input.state.providers[item.id]
+          return
+        }
+        input.state.providers[item.id] = provider
+        input.state.catalog[item.id] = provider
+      } catch (cause) {
+        log.debug("local model discovery failed", { providerID: item.id, error: cause })
+        delete input.state.providers[item.id]
+      }
+    }),
+  )
+}
+
+function localProviderAPIKey(provider: Info, env: Record<string, string | undefined>) {
+  if (typeof provider.options.apiKey === "string" && provider.options.apiKey) return provider.options.apiKey
+  return provider.key ?? provider.env.map((item) => env[item]).find(Boolean) ?? "local"
+}
+
+async function discoverOpenAICompatibleModels(input: {
+  provider: Info
+  providerID: ProviderV2.ID
+  api: string
+  apiKey: string
+}) {
+  const response = await fetch(`${input.api.replace(/\/+$/, "")}/models`, {
+    signal: AbortSignal.timeout(LOCAL_MODEL_DISCOVERY_TIMEOUT),
+    headers: { Authorization: `Bearer ${input.apiKey}` },
+  })
+  if (!response.ok) throw new Error(`Model discovery failed with HTTP ${response.status}`)
+
+  const body = (await response.json()) as OpenAIModelListResponse
+  if (!Array.isArray(body.data)) return {}
+
+  return Object.fromEntries(
+    body.data.flatMap((item: OpenAIModelListItem) => {
+      if (!isRecord(item) || typeof item.id !== "string" || item.id.trim() === "") return []
+      return [[item.id, localModel(input.providerID, item.id, input.api, input.provider.models[item.id])]]
+    }),
+  )
+}
+
+function localModel(providerID: ProviderV2.ID, modelID: string, api: string, existing?: Model): Model {
+  const model: Model = {
+    id: ProviderV2.ModelID.make(modelID),
+    providerID,
+    name: existing?.name ?? modelID,
+    family: existing?.family ?? "",
+    api: {
+      id: existing?.api.id ?? modelID,
+      url: api,
+      npm: existing?.api.npm ?? "@ai-sdk/openai-compatible",
+    },
+    status: existing?.status ?? "active",
+    headers: existing?.headers ?? {},
+    options: existing?.options ?? {},
+    cost: existing?.cost ?? { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: existing?.limit ?? { context: 0, output: 0 },
+    capabilities: existing?.capabilities ?? {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      output: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      interleaved: false,
+    },
+    release_date: existing?.release_date ?? "",
+    variants: existing?.variants ?? {},
+  }
+  if (!model.variants || Object.keys(model.variants).length === 0) {
+    model.variants = mapValues(ProviderTransform.variants(model), (v) => v)
+  }
+  return model
+}
+
+function filterProviderModels(
+  models: Record<string, Model>,
+  providerID: ProviderV2.ID,
+  config: Config.Info,
+  enableExperimentalModels: boolean,
+) {
+  const configProvider = config.provider?.[providerID]
+  return Object.fromEntries(
+    Object.entries(models).filter(([modelID, model]) => {
+      if (model.status === "alpha" && !enableExperimentalModels) return false
+      if (model.status === "deprecated") return false
+      if (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) return false
+      if (configProvider?.whitelist && !configProvider.whitelist.includes(modelID)) return false
+      return true
+    }),
+  )
+}
+
 export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundError>()("ProviderModelNotFoundError", {
   providerID: ProviderV2.ID,
   modelID: ProviderV2.ModelID,
@@ -1040,6 +1235,16 @@ interface State {
   sdk: Map<string, BundledSDK>
   modelLoaders: Record<string, CustomModelLoader>
   varsLoaders: Record<string, CustomVarsLoader>
+}
+
+type LocalModelProvider = (typeof LOCAL_MODEL_PROVIDERS)[number]
+
+type OpenAIModelListItem = {
+  id?: unknown
+}
+
+type OpenAIModelListResponse = {
+  data?: unknown
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Provider") {}
@@ -1203,6 +1408,7 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
+    const database = yield* Database.Service
 
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
@@ -1212,6 +1418,7 @@ export const layer = Layer.effect(
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
         const database = mapValues(catalog, toPublicInfo)
+        addLocalProviders(database)
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -1295,7 +1502,10 @@ export const layer = Layer.effect(
             id: ProviderV2.ID.make(providerID),
             name: provider.name ?? existing?.name ?? providerID,
             env: provider.env ?? existing?.env ?? [],
-            options: mergeDeep(existing?.options ?? {}, provider.options ?? {}),
+            options: mergeDeep(
+              mergeDeep(existing?.options ?? {}, provider.api ? { baseURL: provider.api } : {}),
+              provider.options ?? {},
+            ),
             source: "config",
             models: existing?.models ?? {},
           }
@@ -1448,6 +1658,10 @@ export const layer = Layer.effect(
           }
         }
 
+        // Claude Code authenticates through its own CLI, so it is always
+        // available rather than waiting on an env key or stored credential.
+        mergeProvider(CLAUDE_CODE_PROVIDER_ID, {})
+
         // load config - re-apply with updated data
         for (const [id, provider] of configProviders) {
           const providerID = ProviderV2.ID.make(id)
@@ -1473,6 +1687,15 @@ export const layer = Layer.effect(
             }
           })
         }
+
+        yield* Effect.promise(() =>
+          refreshLocalProviders({
+            state: { models: languages, providers, catalog, sdk, modelLoaders, varsLoaders },
+            config: cfg,
+            env: envs,
+            enableExperimentalModels: runtimeFlags.enableExperimentalModels,
+          }),
+        )
 
         for (const [id, provider] of Object.entries(providers)) {
           const providerID = ProviderV2.ID.make(id)
@@ -1536,7 +1759,61 @@ export const layer = Layer.effect(
       }),
     )
 
-    const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+    /**
+     * Swarms are user data, so the "swarm" provider is rebuilt from the
+     * database on refresh - creating or deleting a swarm shows up in the
+     * picker on the next capabilities read with no invalidation machinery.
+     */
+    const refreshSwarmProvider = Effect.fn("Provider.refreshSwarmProvider")(function* (s: State) {
+      const cfg = yield* config.get()
+      const disabled = new Set(cfg.disabled_providers ?? [])
+      const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : undefined
+      const routes =
+        disabled.has(SWARM_PROVIDER_ID) || (enabled && !enabled.has(SWARM_PROVIDER_ID))
+          ? []
+          : swarmRoutes(
+              yield* database.db
+                .select({ id: OpencodeXSwarmTable.id, title: OpencodeXSwarmTable.title })
+                .from(OpencodeXSwarmTable)
+                .orderBy(asc(OpencodeXSwarmTable.time_created))
+                .all()
+                .pipe(Effect.orElseSucceed(() => [])),
+              yield* database.db
+                .select({
+                  swarm_id: OpencodeXSwarmRoleTable.swarm_id,
+                  provider_id: OpencodeXSwarmRoleTable.provider_id,
+                  model_id: OpencodeXSwarmRoleTable.model_id,
+                })
+                .from(OpencodeXSwarmRoleTable)
+                .orderBy(asc(OpencodeXSwarmRoleTable.swarm_id), asc(OpencodeXSwarmRoleTable.sort_order))
+                .all()
+                .pipe(Effect.orElseSucceed(() => [])),
+            )
+      if (routes.length === 0) {
+        delete s.providers[SWARM_PROVIDER_ID]
+        delete s.catalog[SWARM_PROVIDER_ID]
+        return
+      }
+      const provider = swarmProviderInfo(routes) as Info
+      s.providers[SWARM_PROVIDER_ID] = provider
+      s.catalog[SWARM_PROVIDER_ID] = provider
+    })
+
+    const list = Effect.fn("Provider.list")(function* () {
+      const s = yield* InstanceState.get(state)
+      const cfg = yield* config.get()
+      const envs = yield* env.all()
+      yield* Effect.promise(() =>
+        refreshLocalProviders({
+          state: s,
+          config: cfg,
+          env: envs,
+          enableExperimentalModels: runtimeFlags.enableExperimentalModels,
+        }),
+      )
+      yield* refreshSwarmProvider(s)
+      return s.providers
+    })
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
@@ -1704,6 +1981,32 @@ export const layer = Layer.effect(
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ProviderV2.ModelID) {
       const s = yield* InstanceState.get(state)
+      // A swarm model is a facade: resolve it to the orchestrator's real model
+      // so SDK auth, pricing, and limits all come from the actual provider.
+      // Rewrites the ids in place instead of recursing so the rest of the
+      // resolution (local-provider refresh, suggestions) applies to the target.
+      if (isSwarmProvider(providerID)) {
+        if (!s.providers[SWARM_PROVIDER_ID]?.models[modelID]) yield* refreshSwarmProvider(s)
+        const route = swarmModelRoute(s.providers[SWARM_PROVIDER_ID]?.models[modelID])
+        if (!route || isSwarmProvider(route.providerID)) {
+          return yield* new ModelNotFoundError({ providerID, modelID })
+        }
+        providerID = ProviderV2.ID.make(route.providerID)
+        modelID = ProviderV2.ModelID.make(route.modelID)
+      }
+      const localProvider = LOCAL_MODEL_PROVIDERS.find((item) => item.id === providerID)
+      if (localProvider && !s.providers[providerID]?.models[modelID]) {
+        const cfg = yield* config.get()
+        const envs = yield* env.all()
+        yield* Effect.promise(() =>
+          refreshLocalProviders({
+            state: s,
+            config: cfg,
+            env: envs,
+            enableExperimentalModels: runtimeFlags.enableExperimentalModels,
+          }),
+        )
+      }
       const provider = s.providers[providerID]
       if (!provider) {
         const catalogProvider = s.catalog[providerID]
@@ -1869,6 +2172,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(ModelsDev.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
+    Layer.provide(Database.defaultLayer),
   ),
 )
 

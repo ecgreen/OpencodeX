@@ -16,6 +16,7 @@ import {
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Snapshot.defaultLayer, AppFileSystem.defaultLayer, testInstanceStoreLayer))
+const symlinkTest = process.platform === "win32" ? it.instance.skip : it.instance
 
 // Git always outputs /-separated paths internally. Snapshot.patch() joins them
 // with path.join (which produces \ on Windows) then normalizes back to /.
@@ -182,7 +183,7 @@ it.instance(
   { git: true },
 )
 
-it.instance(
+symlinkTest(
   "symlink handling",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
@@ -375,7 +376,7 @@ it.instance(
   { git: true },
 )
 
-it.instance(
+symlinkTest(
   "nested symlinks",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {

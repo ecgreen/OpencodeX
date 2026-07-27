@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { Session as SessionNs } from "@/session/session"
+import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import * as Log from "@opencode-ai/core/util/log"
 import { disposeAllInstances, provideInstance, TestInstance } from "../fixture/fixture"
 import { mkdir } from "fs/promises"
@@ -14,6 +15,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Storage } from "@/storage/storage"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
+import { MessageID } from "@/session/schema"
 
 void Log.init({ print: false })
 const it = testEffect(
@@ -232,6 +234,45 @@ describe("session.list", () => {
 
         const sessions = yield* SessionNs.use.list({ limit: 2 })
         expect(sessions.length).toBe(2)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "cleans up old empty placeholder sessions",
+    () =>
+      Effect.gen(function* () {
+        const session = yield* SessionNs.Service
+        const { db } = yield* Database.Service
+        const old = Date.now() - 5 * 60 * 60 * 1000
+
+        const empty = yield* withSession()
+        const fresh = yield* withSession()
+        const renamed = yield* withSession({ title: "keep-empty" })
+        const withMessage = yield* withSession()
+        yield* session.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: withMessage.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "user",
+          model: { providerID: "test", modelID: "test" },
+          tools: {},
+          mode: "",
+        } as unknown as SessionLegacy.Info)
+
+        yield* Effect.forEach(
+          [empty.id, renamed.id, withMessage.id],
+          (id) => db.update(SessionTable).set({ time_updated: old }).where(eq(SessionTable.id, id)).run(),
+          { discard: true },
+        ).pipe(Effect.orDie)
+
+        const ids = (yield* session.list()).map((item) => item.id)
+
+        expect(ids).not.toContain(empty.id)
+        expect(ids).toContain(fresh.id)
+        expect(ids).toContain(renamed.id)
+        expect(ids).toContain(withMessage.id)
       }),
     { git: true },
   )

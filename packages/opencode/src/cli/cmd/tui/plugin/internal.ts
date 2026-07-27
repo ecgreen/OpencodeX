@@ -12,9 +12,9 @@ import SessionV2Debug from "../feature-plugins/system/session-v2"
 import WhichKey from "../feature-plugins/system/which-key"
 import DiffViewer from "../feature-plugins/system/diff-viewer"
 import SessionSwitcher from "../feature-plugins/session"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
+import { internalTuiPluginManifest, type InternalTuiPluginID } from "@/plugin/internal-tui-manifest"
 
 export type InternalTuiPlugin = Omit<TuiPluginModule, "id"> & {
   id: string
@@ -23,20 +23,22 @@ export type InternalTuiPlugin = Omit<TuiPluginModule, "id"> & {
 }
 
 export function internalTuiPlugins(flags: Pick<RuntimeFlags.Info, "experimentalEventSystem">): InternalTuiPlugin[] {
-  return [
-    HomeFooter,
-    HomeTips,
-    SidebarContext,
-    SidebarMcp,
-    SidebarLsp,
-    SidebarTodo,
-    SidebarFiles,
-    SidebarFooter,
-    Notifications,
-    PluginManager,
-    WhichKey,
-    DiffViewer,
-    ...(flags.experimentalEventSystem ? [SessionV2Debug] : []),
-    ...(Flag.OPENCODE_EXPERIMENTAL_SESSION_SWITCHER ? [SessionSwitcher] : []),
-  ]
+  const implementations = {
+    "internal:home-footer": HomeFooter,
+    "internal:home-tips": HomeTips,
+    "internal:sidebar-context": SidebarContext,
+    "internal:sidebar-mcp": SidebarMcp,
+    "internal:sidebar-lsp": SidebarLsp,
+    "internal:sidebar-todo": SidebarTodo,
+    "internal:sidebar-files": SidebarFiles,
+    "internal:sidebar-footer": SidebarFooter,
+    "internal:notifications": Notifications,
+    "internal:plugin-manager": PluginManager,
+    "which-key": WhichKey,
+    "diff-viewer": DiffViewer,
+    "internal:session-v2-debug": SessionV2Debug,
+    "internal:session-switcher": SessionSwitcher,
+  } satisfies Record<InternalTuiPluginID, InternalTuiPlugin>
+
+  return internalTuiPluginManifest(flags).map((item) => ({ ...implementations[item.id], ...item }))
 }

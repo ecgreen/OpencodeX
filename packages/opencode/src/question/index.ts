@@ -1,10 +1,13 @@
-import { Deferred, Effect, Layer, Schema, Context } from "effect"
+import { Context, Deferred, Effect, Layer, Schema, Scope } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { SessionID, MessageID } from "@/session/schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { QuestionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
+import { Database } from "@opencode-ai/core/database/database"
+import { SessionInteractionTable } from "@opencode-ai/core/session/sql"
+import { and, eq } from "drizzle-orm"
 
 const log = Log.create({ service: "question" })
 
@@ -75,6 +78,24 @@ export const Reply = Schema.Struct({
 }).annotate({ identifier: "QuestionReply" })
 export type Reply = Schema.Schema.Type<typeof Reply>
 
+const decodeRequest = Schema.decodeUnknownOption(Request)
+const decodeReply = Schema.decodeUnknownOption(Reply)
+
+function requestRecord(info: Request): Record<string, unknown> {
+  return {
+    id: info.id,
+    sessionID: info.sessionID,
+    questions: info.questions.map((question) => ({
+      question: question.question,
+      header: question.header,
+      options: question.options.map((option) => ({ ...option })),
+      multiple: question.multiple,
+      custom: question.custom,
+    })),
+    tool: info.tool ? { ...info.tool } : undefined,
+  }
+}
+
 export const Replied = Schema.Struct({
   sessionID: SessionID,
   requestID: QuestionID,
@@ -133,6 +154,8 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const { db } = yield* Database.Service
+    const scope = yield* Scope.Scope
     const state = yield* InstanceState.make<State>(
       Effect.fn("Question.state")(function* () {
         const state = {
@@ -169,7 +192,33 @@ export const layer = Layer.effect(
         tool: input.tool,
       }
       pending.set(id, { info, deferred })
-      yield* events.publish(Event.Asked, info)
+      const ctx = yield* InstanceState.context
+      const now = Date.now()
+      const asked = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              yield* transaction
+                .insert(SessionInteractionTable)
+                .values([{
+                  id: String(id),
+                  kind: "question",
+                  session_id: info.sessionID,
+                  project_id: ctx.project.id,
+                  directory: ctx.directory,
+                  state: "pending",
+                  request_json: requestRecord(info),
+                  time_created: now,
+                  time_updated: now,
+                }])
+                .run()
+              return yield* events.commit(Event.Asked, info)
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.orDie),
+      )
+      yield* events.broadcast(asked)
+      yield* observe(id, deferred).pipe(Effect.forkIn(scope))
 
       return yield* Effect.ensuring(
         Deferred.await(deferred),
@@ -179,51 +228,157 @@ export const layer = Layer.effect(
       )
     })
 
+    const observe = Effect.fn("Question.observe")(function* (
+      requestID: QuestionID,
+      deferred: Deferred.Deferred<ReadonlyArray<Answer>, RejectedError>,
+    ) {
+      while (!(yield* Deferred.isDone(deferred))) {
+        const row = yield* db
+          .select({ state: SessionInteractionTable.state, response: SessionInteractionTable.response_json })
+          .from(SessionInteractionTable)
+          .where(
+            and(
+              eq(SessionInteractionTable.id, String(requestID)),
+              eq(SessionInteractionTable.kind, "question"),
+            ),
+          )
+          .get()
+          .pipe(Effect.orDie)
+        if (!row || row.state === "rejected") {
+          yield* Deferred.fail(deferred, new RejectedError()).pipe(Effect.asVoid)
+          return
+        }
+        if (row.state === "replied") {
+          const reply = decodeReply(row.response)
+          if (reply._tag === "Some") yield* Deferred.succeed(deferred, reply.value.answers).pipe(Effect.asVoid)
+          else yield* Deferred.fail(deferred, new RejectedError()).pipe(Effect.asVoid)
+          return
+        }
+        yield* Effect.sleep("50 millis")
+      }
+    })
+
     const reply = Effect.fn("Question.reply")(function* (input: {
       requestID: QuestionID
       answers: ReadonlyArray<Answer>
     }) {
-      const pending = (yield* InstanceState.get(state)).pending
-      const existing = pending.get(input.requestID)
-      if (!existing) {
-        log.warn("reply for unknown request", { requestID: input.requestID })
-        return yield* new NotFoundError({ requestID: input.requestID })
-      }
-      pending.delete(input.requestID)
+      const now = Date.now()
+      const committed = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const existing = yield* transaction
+                .select()
+                .from(SessionInteractionTable)
+                .where(
+                  and(
+                    eq(SessionInteractionTable.id, String(input.requestID)),
+                    eq(SessionInteractionTable.kind, "question"),
+                  ),
+                )
+                .get()
+              if (!existing) return { found: false as const, event: undefined }
+              if (existing.state !== "pending") return { found: true as const, event: undefined }
+              const answers = input.answers.map((answer) => [...answer])
+              const updated = yield* transaction
+                .update(SessionInteractionTable)
+                .set({
+                  state: "replied",
+                  response_json: { answers },
+                  responded_at: now,
+                  time_updated: now,
+                })
+                .where(
+                  and(
+                    eq(SessionInteractionTable.id, String(input.requestID)),
+                    eq(SessionInteractionTable.state, "pending"),
+                  ),
+                )
+                .returning({ id: SessionInteractionTable.id })
+                .get()
+              if (!updated) return { found: true as const, event: undefined }
+              return {
+                found: true as const,
+                event: yield* events.commit(Event.Replied, {
+                  sessionID: existing.session_id,
+                  requestID: input.requestID,
+                  answers,
+                }),
+              }
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.orDie),
+      )
+      if (!committed.found) return yield* new NotFoundError({ requestID: input.requestID })
+      if (committed.event) yield* events.broadcast(committed.event)
       log.info("replied", { requestID: input.requestID, answers: input.answers })
-      yield* events.publish(Event.Replied, {
-        sessionID: existing.info.sessionID,
-        requestID: existing.info.id,
-        answers: input.answers.map((a) => [...a]),
-      })
-      yield* Deferred.succeed(existing.deferred, input.answers)
     })
 
     const reject = Effect.fn("Question.reject")(function* (requestID: QuestionID) {
-      const pending = (yield* InstanceState.get(state)).pending
-      const existing = pending.get(requestID)
-      if (!existing) {
-        log.warn("reject for unknown request", { requestID })
-        return yield* new NotFoundError({ requestID })
-      }
-      pending.delete(requestID)
+      const now = Date.now()
+      const committed = yield* events.barrier(
+        db.transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const existing = yield* transaction
+                .select()
+                .from(SessionInteractionTable)
+                .where(
+                  and(eq(SessionInteractionTable.id, String(requestID)), eq(SessionInteractionTable.kind, "question")),
+                )
+                .get()
+              if (!existing) return { found: false as const, event: undefined }
+              if (existing.state !== "pending") return { found: true as const, event: undefined }
+              const updated = yield* transaction
+                .update(SessionInteractionTable)
+                .set({ state: "rejected", responded_at: now, time_updated: now })
+                .where(
+                  and(
+                    eq(SessionInteractionTable.id, String(requestID)),
+                    eq(SessionInteractionTable.state, "pending"),
+                  ),
+                )
+                .returning({ id: SessionInteractionTable.id })
+                .get()
+              if (!updated) return { found: true as const, event: undefined }
+              return {
+                found: true as const,
+                event: yield* events.commit(Event.Rejected, { sessionID: existing.session_id, requestID }),
+              }
+            }),
+          { behavior: "immediate" },
+        ).pipe(Effect.orDie),
+      )
+      if (!committed.found) return yield* new NotFoundError({ requestID })
+      if (committed.event) yield* events.broadcast(committed.event)
       log.info("rejected", { requestID })
-      yield* events.publish(Event.Rejected, {
-        sessionID: existing.info.sessionID,
-        requestID: existing.info.id,
-      })
-      yield* Deferred.fail(existing.deferred, new RejectedError())
     })
 
     const list = Effect.fn("Question.list")(function* () {
-      const pending = (yield* InstanceState.get(state)).pending
-      return Array.from(pending.values(), (x) => x.info)
+      const rows = yield* db
+        .select({ request: SessionInteractionTable.request_json })
+        .from(SessionInteractionTable)
+        .where(
+          and(
+            eq(SessionInteractionTable.kind, "question"),
+            eq(SessionInteractionTable.state, "pending"),
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      return rows.flatMap((row) => {
+        const request = decodeRequest(row.request)
+        return request._tag === "Some" ? [request.value] : []
+      })
     })
 
     return Service.of({ ask, reply, reject, list })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(EventV2Bridge.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provide(EventV2Bridge.defaultLayer),
+)
 
 export * as Question from "."

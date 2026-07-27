@@ -58,6 +58,8 @@ export type SelectV2Props<T> = Omit<
   invalid?: boolean
   numeric?: boolean
   children?: (item: T) => JSX.Element
+  optionDescription?: (item: T) => JSX.Element
+  optionMeta?: (item: T) => JSX.Element
   valueClass?: string
 }
 
@@ -75,6 +77,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
     "onHighlight",
     "onOpenChange",
     "children",
+    "optionDescription",
+    "optionMeta",
     "appearance",
     "invalid",
     "numeric",
@@ -134,16 +138,35 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         <Kobalte.Item
           {...itemProps}
           data-component="menu-v2-item"
+          data-appearance={local.optionDescription || local.optionMeta ? "detailed" : undefined}
           onPointerEnter={() => move(itemProps.item.rawValue)}
           onPointerMove={() => move(itemProps.item.rawValue)}
           onFocus={() => move(itemProps.item.rawValue)}
         >
           <Kobalte.ItemLabel data-slot="menu-v2-item-content" as="span">
-            {local.children
-              ? local.children(itemProps.item.rawValue)
-              : local.label
-                ? local.label(itemProps.item.rawValue)
-                : String(itemProps.item.rawValue as string)}
+            {local.children ? (
+              local.children(itemProps.item.rawValue)
+            ) : local.optionDescription || local.optionMeta ? (
+              <span data-slot="select-v2-option">
+                <span data-slot="select-v2-option-heading">
+                  <span data-slot="select-v2-option-label">
+                    {local.label ? local.label(itemProps.item.rawValue) : String(itemProps.item.rawValue as string)}
+                  </span>
+                  <Show when={local.optionMeta}>
+                    {(meta) => <span data-slot="select-v2-option-meta">{meta()(itemProps.item.rawValue)}</span>}
+                  </Show>
+                </span>
+                <Show when={local.optionDescription}>
+                  {(description) => (
+                    <span data-slot="select-v2-option-description">{description()(itemProps.item.rawValue)}</span>
+                  )}
+                </Show>
+              </span>
+            ) : local.label ? (
+              local.label(itemProps.item.rawValue)
+            ) : (
+              String(itemProps.item.rawValue as string)
+            )}
           </Kobalte.ItemLabel>
           <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" forceMount>
             <CheckSmall />
@@ -188,7 +211,10 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content data-component="menu-v2-content" data-slot="select-v2-content">
-          <Kobalte.Listbox data-slot="select-v2-listbox" />
+          <Kobalte.Listbox
+            data-slot="select-v2-listbox"
+            data-appearance={local.optionDescription || local.optionMeta ? "detailed" : undefined}
+          />
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

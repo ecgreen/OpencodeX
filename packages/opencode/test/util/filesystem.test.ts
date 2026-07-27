@@ -592,7 +592,7 @@ describe("filesystem", () => {
       expect(Filesystem.resolve(`/mnt/${drive}`)).toBe(Filesystem.resolve(`${drive.toUpperCase()}:/`))
     })
 
-    test("resolves symlinked directory to canonical path", async () => {
+    test.skipIf(process.platform === "win32")("resolves symlinked directory to canonical path", async () => {
       await using tmp = await tmpdir()
       const target = path.join(tmp.path, "real")
       await fs.mkdir(target)
@@ -608,7 +608,7 @@ describe("filesystem", () => {
       expect(result).toBe(Filesystem.normalizePath(path.resolve(missing)))
     })
 
-    test("throws ELOOP on symlink cycle", async () => {
+    test.skipIf(process.platform === "win32")("throws ELOOP on symlink cycle", async () => {
       await using tmp = await tmpdir()
       const a = path.join(tmp.path, "a")
       const b = path.join(tmp.path, "b")

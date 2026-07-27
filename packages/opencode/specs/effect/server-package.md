@@ -21,7 +21,7 @@ Target package layout:
 - `packages/core` - shared domain services and schemas
 - `packages/server` - HTTP contracts, handlers, OpenAPI generation, and an
   embeddable server API
-- `packages/cli` - TUI and CLI entrypoints
+- `packages/opencode` - backend plus the OpencodeX TUI and CLI entrypoints
 - `packages/sdk` - generated from the server OpenAPI spec
 - `packages/plugin` - plugin authoring surface
 

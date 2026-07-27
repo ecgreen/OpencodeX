@@ -1,0 +1,36 @@
+name: Upstream sync report
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact upstream release tag or SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+      - name: Fetch the selected upstream ref
+        run: |
+          git remote add upstream https://github.com/anomalyco/opencode.git
+          git fetch --no-tags upstream "${{ inputs.ref }}"
+      - name: Generate review report
+        run: |
+          bun run upstream:status FETCH_HEAD --markdown > upstream-report.md
+          printf '\n## Merge-tree rehearsal\n\n```text\n' >> upstream-report.md
+          bun run upstream:rehearse FETCH_HEAD >> upstream-report.md
+          printf '```\n' >> upstream-report.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-${{ inputs.ref }}
+          path: upstream-report.md
+          retention-days: 14

@@ -7,6 +7,7 @@ import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { DatabaseMigration } from "@opencode-ai/core/database/migration"
 import sessionUsageMigration from "@opencode-ai/core/database/migration/20260510033149_session_usage"
+import { migrations } from "@opencode-ai/core/database/migration.gen"
 import type { SqlClient as SqlClientService } from "effect/unstable/sql/SqlClient"
 
 const run = <A, E>(effect: Effect.Effect<A, E, SqlClientService>) =>
@@ -36,7 +37,20 @@ describe("DatabaseMigration", () => {
         expect(yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'`)).toEqual({
           name: "session",
         })
-        expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: 21 })
+        expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: migrations.length })
+        expect(
+          yield* db.get(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'session_time_updated_id_idx'`,
+          ),
+        ).toEqual({ name: "session_time_updated_id_idx" })
+        const plan = yield* db.all<{ detail: unknown }>(sql`
+          EXPLAIN QUERY PLAN
+          SELECT id FROM session
+          WHERE time_updated < 100 OR (time_updated = 100 AND id < 'ses_cursor')
+          ORDER BY time_updated DESC, id DESC
+          LIMIT 201
+        `)
+        expect(plan.some((row) => String(row.detail).includes("session_time_updated_id_idx"))).toBe(true)
       }),
     )
   })
@@ -85,6 +99,72 @@ describe("DatabaseMigration", () => {
         yield* DatabaseMigration.applyOnly(db, [])
 
         expect(yield* db.get(sql`SELECT id FROM migration`)).toEqual({ id: "20260127222353_familiar_lady_ursula" })
+      }),
+    )
+  })
+
+  test("upgrades an upstream database with a drizzle migration journal", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        const firstOpencodeXMigration = migrations.findIndex(
+          (migration) => migration.id === "20260601000000_opencodex_project_folder",
+        )
+        yield* DatabaseMigration.applyOnly(db, migrations.slice(0, firstOpencodeXMigration))
+        const completed = yield* db.all<{ id: string }>(sql`SELECT id FROM migration`)
+        yield* db.run(sql`DROP TABLE migration`)
+        yield* db.run(
+          sql`CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric, name text, applied_at TEXT)`,
+        )
+        yield* Effect.forEach(
+          completed,
+          (migration) =>
+            db.run(sql`
+              INSERT INTO __drizzle_migrations (hash, created_at, name, applied_at)
+              VALUES (${migration.id}, 1, ${migration.id}, ${new Date().toISOString()})
+            `),
+          { discard: true },
+        )
+
+        yield* DatabaseMigration.apply(db)
+
+        expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: migrations.length })
+        expect(
+          yield* db.get(
+            sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'opencodex_state_aggregate_sequence'`,
+          ),
+        ).toEqual({ name: "opencodex_state_aggregate_sequence" })
+      }),
+    )
+  })
+
+  test("upgrades an existing OpencodeX database through reconciliation", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        const coherenceMigration = migrations.findIndex(
+          (migration) => migration.id === "20260720000000_opencodex_state_coherence",
+        )
+        yield* DatabaseMigration.applyOnly(db, migrations.slice(0, coherenceMigration))
+        yield* db.run(sql`
+          INSERT INTO opencodex_state_event
+            (id, project_id, workspace_id, directory, aggregate_id, aggregate_sequence, domain, event_type, operation, payload, created_at)
+          VALUES ('evt_1', 'project_1', NULL, '/project', 'aggregate_1', 3, 'session', 'updated', 'update', '{}', 1)
+        `)
+
+        yield* DatabaseMigration.apply(db)
+
+        expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: migrations.length })
+        expect(
+          yield* db.get(sql`
+            SELECT visibility, aggregate_sequence
+            FROM opencodex_state_aggregate_sequence
+            WHERE aggregate_id = 'aggregate_1'
+          `),
+        ).toEqual({ visibility: "instance", aggregate_sequence: 3 })
+        expect(yield* db.get(sql`SELECT visibility FROM opencodex_state_event WHERE id = 'evt_1'`)).toEqual({
+          visibility: "instance",
+        })
       }),
     )
   })

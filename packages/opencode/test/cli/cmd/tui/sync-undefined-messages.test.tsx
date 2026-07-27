@@ -38,7 +38,7 @@ describe("tui sync (#26560)", () => {
     })
 
     try {
-      await expect(sync.session.sync(sessionID)).resolves.toBeUndefined()
+      expect(await sync.session.sync(sessionID)).toBeUndefined()
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

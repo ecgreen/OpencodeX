@@ -10,6 +10,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { PermissionTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { WorkspaceTable } from "@opencode-ai/core/control-plane/workspace.sql"
+import { OpencodeXProjectFolderTable, OpencodeXProjectTable } from "@opencode-ai/core/opencodex/sql"
 import { eq } from "drizzle-orm"
 import { Hash } from "@opencode-ai/core/util/hash"
 import { SessionID } from "@/session/schema"
@@ -203,6 +204,7 @@ describe("Project.fromDirectory", () => {
       const remoteID = remoteProjectID("github.com/acme/app")
       const sessionID = crypto.randomUUID() as SessionID
       const workspaceID = WorkspaceV2.ID.ascending()
+      const opencodexProjectID = "oxp_project_migration"
 
       yield* db
         .insert(SessionTable)
@@ -233,6 +235,28 @@ describe("Project.fromDirectory", () => {
         .values({ id: workspaceID, type: "local", name: "test", project_id: rootProject.id })
         .run()
         .pipe(Effect.orDie)
+      yield* db
+        .insert(OpencodeXProjectTable)
+        .values({
+          id: opencodexProjectID,
+          project_id: rootProject.id,
+          name: "Migrated",
+          time_created: Date.now(),
+          time_updated: Date.now(),
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(OpencodeXProjectFolderTable)
+        .values({
+          path: path.join(tmp, "nested"),
+          opencodex_project_id: opencodexProjectID,
+          project_id: rootProject.id,
+          time_created: Date.now(),
+          time_updated: Date.now(),
+        })
+        .run()
+        .pipe(Effect.orDie)
       yield* Effect.promise(() => $`git remote add origin git@github.com:acme/app.git`.cwd(tmp).quiet())
 
       const result = yield* projects.fromDirectory(tmp)
@@ -256,6 +280,22 @@ describe("Project.fromDirectory", () => {
       expect(
         (yield* db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, workspaceID)).get().pipe(Effect.orDie))
           ?.project_id,
+      ).toBe(remoteID)
+      expect(
+        (yield* db
+          .select()
+          .from(OpencodeXProjectTable)
+          .where(eq(OpencodeXProjectTable.id, opencodexProjectID))
+          .get()
+          .pipe(Effect.orDie))?.project_id,
+      ).toBe(remoteID)
+      expect(
+        (yield* db
+          .select()
+          .from(OpencodeXProjectFolderTable)
+          .where(eq(OpencodeXProjectFolderTable.opencodex_project_id, opencodexProjectID))
+          .get()
+          .pipe(Effect.orDie))?.project_id,
       ).toBe(remoteID)
     }),
   )

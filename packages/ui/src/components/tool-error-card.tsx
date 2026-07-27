@@ -6,6 +6,7 @@ import { Icon } from "./icon"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 import { useI18n } from "../context/i18n"
+import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "./tool-output-preview"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   tool: string
@@ -78,8 +79,8 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
 
   const body = createMemo(() => {
     const parts = tail().split(": ")
-    if (parts.length <= 1) return cleaned()
-    return parts.slice(1).join(": ").trim() || cleaned()
+    const value = parts.length <= 1 ? cleaned() : parts.slice(1).join(": ").trim() || cleaned()
+    return previewToolOutput(value, TOOL_OUTPUT_PREVIEW_LIMITS.expanded).text
   })
 
   const copy = async () => {

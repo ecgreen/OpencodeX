@@ -65,7 +65,7 @@ The color is applied to both the title row and the model-name sub-row, so you ca
 
 ### A multi-session dashboard
 
-The dashboard is the first thing you see when you launch `opencodex`. It lists every conversation in the current project, grouped by recency and status, with a one-line preview of the last user message on each row. Press `o` from anywhere in the TUI to jump back to it. The dashboard and the sidebar share the same data source, so they stay in sync without manual refresh.
+The dashboard is the first thing you see when you launch `opencodex`. It lists conversations across your OpencodeX projects, grouped by recency and status, with a one-line preview of the last user message on each row. Press `o` from anywhere in the TUI to jump back to it. The dashboard and the sidebar share the same data source, so they stay in sync without manual refresh. Exact-directory filtering remains available from the command palette when you want a workspace-only view.
 
 ```
   OpencodeX dashboard
@@ -140,13 +140,13 @@ OpencodeX ships as a single binary. There is no installer, no daemon, and no sys
 The recommended path is the GitHub Release installer:
 
 ```bash
-curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash
+curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash
 ```
 
 Install a specific version with:
 
 ```bash
-curl -fsSL https://github.com/opencodex/opencodex/releases/latest/download/install | bash -s -- --version 1.15.13
+curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash -s -- --version 1.15.13
 ```
 
 Then verify:
@@ -160,7 +160,7 @@ opencodex --version
 From PowerShell:
 
 ```powershell
-irm https://github.com/opencodex/opencodex/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
+irm https://github.com/ecgreen/OpencodeX/releases/latest/download/install-windows.ps1 -OutFile install-windows.ps1
 pwsh -File .\install-windows.ps1
 ```
 
@@ -182,12 +182,26 @@ To uninstall later:
 .\install-windows.ps1 -Uninstall
 ```
 
+### Desktop GUI public preview
+
+The desktop GUI is published as preview-quality GitHub Release assets alongside the CLI. Download the asset for your platform from:
+
+```text
+https://github.com/ecgreen/OpencodeX/releases/latest
+```
+
+Public GUI preview builds are expected to be signed on Windows and signed/notarized on macOS. Verify downloaded assets with `SHA256SUMS-GUI` from the same release. If a release is explicitly marked unsigned, macOS, Windows, or Linux may show an operating-system trust prompt before first launch.
+
+The GUI launches a local OpencodeX sidecar and uses the same session store as the TUI. You can create or continue work in either surface, then switch back without migration.
+
+See [Public Preview Notes](docs/PUBLIC_PREVIEW.md) for known limitations, validation expectations, and issue-reporting guidance.
+
 ### Build from source: macOS
 
 The recommended path is to build from source with the bundled script.
 
 ```bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bash build.sh --target darwin-arm64   # Apple Silicon
 # or
@@ -204,7 +218,7 @@ opencodex --version
 ### Build from source: Linux
 
 ```bash
-git clone https://github.com/opencodex/opencodex.git
+git clone https://github.com/ecgreen/OpencodeX.git
 cd opencodex
 bash build.sh --target linux-x64
 # or, for older CPUs without AVX2:
@@ -248,12 +262,12 @@ To uninstall a local Windows install later:
 
 `build.sh` accepts a few options you may want to know about:
 
-| Flag | Effect |
-| --- | --- |
+| Flag              | Effect                                                           |
+| ----------------- | ---------------------------------------------------------------- |
 | `--target <name>` | Build for a specific platform (defaults to `win32-x64-baseline`) |
-| `--minify` | Enable minification (off by default to avoid Bun compile quirks) |
-| `--clean` | Wipe the build cache in `/tmp` before starting |
-| `--help` | Show the full list of supported targets |
+| `--minify`        | Enable minification (off by default to avoid Bun compile quirks) |
+| `--clean`         | Wipe the build cache in `/tmp` before starting                   |
+| `--help`          | Show the full list of supported targets                          |
 
 Valid targets today: `win32-x64`, `win32-x64-baseline`, `win32-arm64`, `linux-x64`, `linux-x64-baseline`, `darwin-arm64`, `darwin-x64`.
 
@@ -307,21 +321,21 @@ The dashboard groups them by recency, and the **Sessions** group in the sidebar 
 
 The default keybindings:
 
-| Key | Action |
-| --- | --- |
-| `Ctrl+S` | Toggle the sidebar |
-| `Ctrl+U` | Go to the OpencodeX dashboard |
-| `<leader>p` | Create a new project |
-| `Ctrl+O` | Manage sessions (move, delete, rebind) |
-| `Ctrl+N` | New session in the current project |
-| `Ctrl+P` | Open the command palette |
-| `Ctrl+L` | Cycle the theme |
-| `Enter` | Resume the selected session (or jump to its prompt if blocked) |
-| `n` | New session in the current project |
-| `Esc` | Cancel the current input or dismiss a dialog |
-| `Tab` / `Shift+Tab` | Cycle through the prompt, sidebar, and dashboard |
-| `o` | Open the dashboard |
-| `q` / `Ctrl+C` | Quit (with confirmation if any session is running) |
+| Key                 | Action                                                         |
+| ------------------- | -------------------------------------------------------------- |
+| `Ctrl+S`            | Toggle the sidebar                                             |
+| `Ctrl+U`            | Go to the OpencodeX dashboard                                  |
+| `<leader>p`         | Create a new project                                           |
+| `Ctrl+O`            | Manage sessions (move, delete, rebind)                         |
+| `Ctrl+N`            | New session in the current project                             |
+| `Ctrl+P`            | Open the command palette                                       |
+| `Ctrl+L`            | Cycle the theme                                                |
+| `Enter`             | Resume the selected session (or jump to its prompt if blocked) |
+| `n`                 | New session in the current project                             |
+| `Esc`               | Cancel the current input or dismiss a dialog                   |
+| `Tab` / `Shift+Tab` | Cycle through the prompt, sidebar, and dashboard               |
+| `o`                 | Open the dashboard                                             |
+| `q` / `Ctrl+C`      | Quit (with confirmation if any session is running)             |
 
 The full keymap, including every upstream opencode binding, is available from the command palette (`Ctrl+P`).
 
@@ -348,7 +362,7 @@ Yes, but you should avoid pointing both at the same session id simultaneously.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) for development setup, style guide, and PR conventions. The default branch is `dev`; open PRs against it.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) for development setup, style guide, and PR conventions. The default branch is `main`; open PRs against it.
 
 ## License
 

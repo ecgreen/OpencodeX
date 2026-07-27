@@ -28,7 +28,7 @@ export function runScenario(options: Options) {
 }
 
 function runActive(options: Options, scenario: ActiveScenario) {
-  if (options.mode === "auth") return runAuth(scenario)
+  if (options.mode === "auth") return withContext(options, scenario, "auth", (ctx) => runAuth(scenario, ctx), false)
 
   return withContext(options, scenario, "shared", (ctx) =>
     Effect.gen(function* () {
@@ -42,12 +42,12 @@ function runActive(options: Options, scenario: ActiveScenario) {
   )
 }
 
-function runAuth(scenario: ActiveScenario) {
+function runAuth(scenario: ActiveScenario, ctx: SeededContext<unknown>) {
   return Effect.gen(function* () {
-    const result = yield* callAuthProbe(scenario, "missing")
+    const result = yield* callAuthProbe(scenario, ctx.headers(), "missing")
     if (scenario.auth === "protected") {
       if (result.status !== 401) throw new Error(`auth expected 401, got ${result.status}`)
-      const authed = yield* callAuthProbe(scenario, "valid")
+      const authed = yield* callAuthProbe(scenario, ctx.headers(), "valid")
       if (authed.status === 401) throw new Error("auth rejected valid credentials")
       return
     }
@@ -62,6 +62,7 @@ function withContext<A, E>(
   scenario: ActiveScenario,
   label: string,
   use: (ctx: SeededContext<unknown>) => Effect.Effect<A, E>,
+  seed = true,
 ) {
   return Effect.acquireRelease(
     Effect.gen(function* () {
@@ -183,7 +184,7 @@ function withContext<A, E>(
           tuiRequest: (request) => Effect.sync(() => modules.Tui.submitTuiRequest(request)),
         }
         yield* trace(options, scenario, `${label} seed start`)
-        const state = yield* scenario.seed(base)
+        const state = seed ? yield* scenario.seed(base) : undefined
         yield* trace(options, scenario, `${label} seed done`)
         yield* trace(options, scenario, `${label} use start`)
         const result = yield* use({ ...base, state })

@@ -1,0 +1,25 @@
+.plugin-center-header p:not(.eyebrow) {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.plugin-center-tabs button.active {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-raised);
+  color: var(--text);
+}
+
+.plugin-install-form input:not([type]) {
+  width: 100%;
+}
+
+.plugin-scope-filter button.active {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-raised);
+  color: var(--text);
+}
+
+.plugin-state.active {
+  color: var(--success);
+  border-color: color-mix(in srgb,var(--theme-success) 35%,transparent);
+}

@@ -4,6 +4,10 @@ import { Script } from "@opencode-ai/script"
 import { $ } from "bun"
 import { fileURLToPath } from "url"
 
+if (process.env.OPENCODEX_ENABLE_LEGACY_PUBLISH !== "1") {
+  throw new Error("Legacy upstream publishing is disabled. Use the OpencodeX release workflows.")
+}
+
 console.log("=== publishing ===\n")
 
 const dir = fileURLToPath(new URL("..", import.meta.url))

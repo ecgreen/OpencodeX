@@ -13,6 +13,7 @@ export interface CreateWebSocketFetchOptions {
   url?: string
   connectTimeout?: number
   idleTimeout?: number
+  poolIdleTimeout?: number
   maxConnectionAge?: number
   streamRetries?: number
 }
@@ -36,9 +37,10 @@ export function createWebSocketFetch(options?: CreateWebSocketFetchOptions) {
   const pool = new Map<string, PoolEntry>()
   const connectTimeout = options?.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT
   const idleTimeout = options?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT
+  const poolIdleTimeout = options?.poolIdleTimeout ?? DEFAULT_IDLE_TIMEOUT
   const maxConnectionAge = options?.maxConnectionAge ?? DEFAULT_MAX_CONNECTION_AGE
   const streamRetries = options?.streamRetries ?? 5
-  const pruneTimer = setInterval(() => prune(), Math.min(idleTimeout, 60_000))
+  const pruneTimer = setInterval(() => prune(), Math.min(poolIdleTimeout, 60_000))
   if (typeof pruneTimer === "object" && "unref" in pruneTimer && typeof pruneTimer.unref === "function") {
     pruneTimer.unref()
   }
@@ -179,7 +181,7 @@ export function createWebSocketFetch(options?: CreateWebSocketFetchOptions) {
     const now = Date.now()
     for (const [key, entry] of pool) {
       if (entry.busy) continue
-      if (now - entry.lastUsedAt < idleTimeout) continue
+      if (now - entry.lastUsedAt < poolIdleTimeout) continue
       log.debug("websocket idle prune", { key })
       invalidate(entry)
       pool.delete(key)
@@ -196,8 +198,9 @@ export function createWebSocketFetch(options?: CreateWebSocketFetchOptions) {
   return Object.assign(websocketFetch, { close })
 }
 
-function connectionLimitError(event: Record<string, unknown>) {
-  if (event.type !== "error" || !isRecord(event.error) || event.error.code !== CONNECTION_LIMIT_REACHED_CODE) return
+function connectionLimitError(event: Record<string, unknown>): Error | undefined {
+  if (event.type !== "error" || !isRecord(event.error) || event.error.code !== CONNECTION_LIMIT_REACHED_CODE)
+    return undefined
   return new Error(typeof event.error.message === "string" ? event.error.message : CONNECTION_LIMIT_REACHED_CODE)
 }
 

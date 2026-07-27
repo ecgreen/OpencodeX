@@ -35,8 +35,10 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return yield* svc.list(ctx.query.path)
     })
 
-    const content = Effect.fn("FileHttpApi.content")(function* (ctx: { query: { path: string } }) {
-      return yield* svc.read(ctx.query.path)
+    const content = Effect.fn("FileHttpApi.content")(function* (ctx: {
+      query: { path: string; maxBytes?: number }
+    }) {
+      return yield* svc.read(ctx.query.path, { maxBytes: ctx.query.maxBytes })
     })
 
     const status = Effect.fn("FileHttpApi.status")(function* () {

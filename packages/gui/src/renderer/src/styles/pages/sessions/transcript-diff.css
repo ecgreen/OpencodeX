@@ -1,0 +1,162 @@
+/*
+ * Diffs rendered inside the transcript. One token block feeds the Pierre diff
+ * component wherever it appears, so an edit and an apply_patch no longer paint
+ * additions in different colours. Property names are the component's contract.
+ */
+
+.tool-diff {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-card);
+  background: var(--ds-canvas);
+}
+
+.tool-diff pre {
+  overflow: visible;
+  max-height: none;
+  margin: 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 0;
+  background: var(--ds-canvas);
+  white-space: pre-wrap;
+  color: var(--ds-text);
+}
+
+.tool-file-diff, .tool-unified-patch {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  background: var(--ds-canvas);
+  --background-stronger: var(--ds-canvas);
+  --border-warning-base: color-mix(in srgb, var(--theme-accent) 58%, transparent);
+  --diffs-dark: var(--ds-text);
+  --diffs-dark-bg: var(--ds-canvas);
+  --diffs-light: var(--ds-text);
+  --diffs-light-bg: var(--ds-canvas);
+  --diffs-mixer: var(--ds-surface);
+  --diffs-bg-addition-override: color-mix(in srgb, var(--theme-success) 12%, transparent);
+  --diffs-bg-addition-number-override: color-mix(in srgb, var(--theme-success) 18%, transparent);
+  --diffs-bg-deletion-override: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  --diffs-bg-deletion-number-override: color-mix(in srgb, var(--theme-danger) 18%, transparent);
+  --diffs-bg-context-override: var(--ds-canvas);
+  --diffs-bg-separator-override: var(--ds-surface);
+  --solaris-dark-6: var(--theme-surface-raised);
+  --surface-warning-base: color-mix(in srgb, var(--theme-accent) 55%, transparent);
+  --surface-warning-strong: color-mix(in srgb, var(--theme-accent) 80%, transparent);
+  --syntax-diff-add: var(--theme-success);
+  --syntax-diff-delete: var(--theme-danger);
+  --syntax-unknown: var(--ds-text-muted);
+}
+
+.tool-file-diff-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ds-border-subtle);
+  color: var(--ds-text);
+  background: var(--ds-surface);
+  list-style: none;
+  cursor: pointer;
+}
+
+.tool-file-diff-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tool-file-diff-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  max-width: 46%;
+  color: var(--ds-text-muted);
+  font-size: 10px;
+}
+
+.tool-file-diff-separator {
+  color: var(--ds-border-strong);
+}
+
+.tool-file-diff-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  margin-left: auto;
+}
+
+.tool-file-diff-action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  background: transparent;
+  opacity: 0;
+}
+
+.tool-file-diff-action .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* The layout switch stays visible so the diff style is discoverable. */
+.tool-file-diff-action.layout {
+  opacity: .55;
+}
+
+.tool-file-diff-action.layout[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--ds-text);
+  background: var(--ds-surface-hover);
+}
+
+.tool-unified-patch[data-diff-style="split"] {
+  overflow-x: auto;
+}
+
+.tool-file-diff-collapse {
+  display: block;
+  min-width: 0;
+}
+
+.tool-deleted-lines {
+  margin: 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  color: var(--ds-danger);
+  font-family: var(--ds-font-technical);
+  font-size: 12px;
+}
+
+.tool-diff [data-component="code-block"] pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tool-diff [data-component="code-block"] code {
+  background: transparent;
+}
+
+.tool-file-diff [data-component="file"], .tool-unified-patch>[data-component="file"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

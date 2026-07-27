@@ -7,7 +7,14 @@ node_modules
 .idea
 .vscode
 .codex
+!.codex/
+.codex/*
+!.codex/skills/
+.codex/skills/*
+!.codex/skills/design/
+!.codex/skills/design/**
 *~
+*.local.html
 playground
 tmp
 dist
@@ -24,6 +31,11 @@ a.out
 target
 .scripts
 .direnv/
+.graphify_venv/
+graphify-out/
+.tmp/
+**/.artifacts/
+packages/gui/release/
 
 # Local dev files
 opencode-dev

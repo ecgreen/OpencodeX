@@ -11,6 +11,12 @@ import { Process } from "@/util/process"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { InstanceRef } from "@/effect/instance-ref"
+import { OpencodeXPlugin } from "@/opencodex/plugin"
+import {
+  coordinatorHeaders,
+  readPreferredCoordinator,
+  type TuiCoordinatorManifest,
+} from "@/cli/cmd/tui/coordinator-registry"
 
 type Spin = {
   start: (msg: string) => void
@@ -27,6 +33,7 @@ export type PlugDeps = {
   resolve: (spec: string) => Promise<string>
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
+  remove?: (file: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
   files: (dir: string, name: "opencode" | "tui") => string[]
   global: string
@@ -44,6 +51,15 @@ export type PlugCtx = {
   directory: string
 }
 
+export type CoordinatorPlugDeps = {
+  active: () => Promise<TuiCoordinatorManifest | undefined>
+  install: (
+    manifest: TuiCoordinatorManifest,
+    input: PlugInput,
+    context: PlugCtx,
+  ) => Promise<OpencodeXPlugin.InstallResult>
+}
+
 const defaultPlugDeps: PlugDeps = {
   spinner: () => spinner(),
   log: {
@@ -53,12 +69,38 @@ const defaultPlugDeps: PlugDeps = {
   },
   resolve: (spec) => resolvePluginTarget(spec),
   readText: (file) => Filesystem.readText(file),
-  write: async (file, text) => {
-    await Filesystem.write(file, text)
-  },
+  write: (file, text) => Filesystem.writeAtomic(file, text),
+  remove: (file) => Filesystem.remove(file),
   exists: (file) => Filesystem.exists(file),
   files: (dir, name) => ConfigPaths.fileInDirectory(dir, name),
   global: Global.Path.config,
+}
+
+const defaultCoordinatorPlugDeps: CoordinatorPlugDeps = {
+  active: () => readPreferredCoordinator(),
+  install: async (manifest, input, context) => {
+    const response = await fetch(new URL("/experimental/opencodex/plugin/install", manifest.url), {
+      method: "POST",
+      headers: {
+        ...coordinatorHeaders(manifest),
+        "content-type": "application/json",
+        "x-opencode-directory": context.directory,
+      },
+      body: JSON.stringify({ spec: input.mod, global: input.global, force: input.force }),
+    })
+    if (!response.ok) throw new Error(`Coordinator plugin install failed with HTTP ${response.status}`)
+    return (await response.json()) as OpencodeXPlugin.InstallResult
+  },
+}
+
+export async function installPluginThroughCoordinator(
+  input: PlugInput,
+  context: PlugCtx,
+  dep: CoordinatorPlugDeps = defaultCoordinatorPlugDeps,
+) {
+  const manifest = await dep.active()
+  if (!manifest) return undefined
+  return dep.install(manifest, input, context)
 }
 
 function cause(err: unknown) {
@@ -75,7 +117,7 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
   return async (ctx: PlugCtx) => {
     const install = dep.spinner()
     install.start("Installing plugin package...")
-    const target = await installPlugin(mod, dep)
+    const target = await installPlugin(mod, dep, ctx.directory)
     if (!target.ok) {
       install.stop("Install failed", 1)
       dep.log.error(`Could not install "${mod}"`)
@@ -133,7 +175,7 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
     patch.start("Updating plugin config...")
     const out = await patchPluginConfig(
       {
-        spec: mod,
+        spec: target.spec,
         targets: manifest.targets,
         force,
         global,
@@ -208,20 +250,43 @@ export const PluginCommand = effectCmd({
     UI.empty()
     intro(`Install plugin ${mod}`)
 
-    const run = createPlugTask({
+    const input = {
       mod,
       global: Boolean(args.global),
       force: Boolean(args.force),
-    })
+    }
 
     const ctx = yield* InstanceRef
     if (!ctx) return
+    const context = {
+      vcs: ctx.project.vcs,
+      worktree: ctx.worktree,
+      directory: ctx.directory,
+    }
+    const coordinated = yield* Effect.promise(() =>
+      installPluginThroughCoordinator(input, context).then(
+        (result) => ({ ok: true as const, result }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+    )
+    if (!coordinated.ok) {
+      UI.error(`Failed to install through the active coordinator: ${errorMessage(coordinated.error)}`)
+      process.exitCode = 1
+      return
+    }
+    if (coordinated.result) {
+      if (!coordinated.result.ok) {
+        UI.error(coordinated.result.message ?? `Failed to install ${mod}`)
+        process.exitCode = 1
+        return
+      }
+      outro("Done")
+      return
+    }
+
+    const run = createPlugTask(input)
     const ok = yield* Effect.promise(() =>
-      run({
-        vcs: ctx.project.vcs,
-        worktree: ctx.worktree,
-        directory: ctx.directory,
-      }),
+      run(context),
     )
 
     outro("Done")

@@ -41,7 +41,7 @@ import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
-import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
+import { Cause, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Scope, Context, Schema, Types } from "effect"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
@@ -55,14 +55,21 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { AgentAttachment, FileAttachment, ReferenceAttachment, Source } from "@opencode-ai/core/session/prompt"
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
-import { eq } from "drizzle-orm"
-import { SessionTable } from "@opencode-ai/core/session/sql"
+import { and, asc, eq, inArray, isNull, lt, or } from "drizzle-orm"
+import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
+import { SwarmBriefing } from "@/opencodex/swarm-briefing"
+import { isSwarmProvider } from "@/provider/swarm-provider"
+import { SessionCommandTable, SessionExecutionTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Todo } from "./todo"
 import { BackgroundJob } from "@/background/job"
+import { Identifier } from "@opencode-ai/core/util/identifier"
+import { SessionPromptRecovery } from "./prompt-recovery"
+import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
+import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -81,6 +88,16 @@ IMPORTANT:
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
 const log = Log.create({ service: "session.prompt" })
+
+/** One swarm role as the loop reads it, ordered by `sort_order`. */
+type SwarmRoleRow = {
+  name: string
+  agent: string | null
+  skill: string | null
+  instructions: string
+  provider_id: string | null
+  model_id: string | null
+}
 const elog = EffectLogger.create({ service: "session.prompt" })
 
 function isOrphanedInterruptedTool(part: SessionLegacy.ToolPart) {
@@ -148,6 +165,8 @@ function autoContinueText(reason: NonNullable<ReturnType<typeof autoContinueReas
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
+  readonly promptAsync: (input: PromptInput) => Effect.Effect<void, Image.Error>
+  readonly recover: () => Effect.Effect<void>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<SessionLegacy.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
@@ -161,6 +180,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const status = yield* SessionStatus.Service
     const sessions = yield* Session.Service
+    const claudeDriver = yield* OpencodeXClaudeDriver.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
     const processor = yield* SessionProcessor.Service
@@ -190,6 +210,8 @@ export const layer = Layer.effect(
     const background = yield* BackgroundJob.Service
     const todo = yield* Todo.Service
     const { db } = database
+    const commandOwner = `local:${process.pid}:prompt:${crypto.randomUUID()}`
+    const commandLeaseMillis = 30_000
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -435,6 +457,8 @@ export const layer = Layer.effect(
           agent: task.agent,
           messageID: assistantMessage.id,
           sessionID,
+          directory: session.directory,
+          workspaceID: session.workspaceID,
           abort: taskAbort.signal,
           callID: part.callID,
           extra: { bypassAgentCheck: true, promptOps },
@@ -762,6 +786,8 @@ export const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
+      const instance = yield* InstanceState.context
+      const workspaceID = yield* InstanceState.workspaceID
       const agentName = input.agent
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
@@ -958,6 +984,8 @@ export const layer = Layer.effect(
                 return read
                   .execute(args, {
                     sessionID: input.sessionID,
+                    directory: instance.directory,
+                    workspaceID,
                     abort: controller.signal,
                     agent: input.agent!,
                     messageID: info.id,
@@ -1290,9 +1318,7 @@ export const layer = Layer.effect(
       return { info, parts }
     }, Effect.scoped)
 
-    const prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error> = Effect.fn(
-      "SessionPrompt.prompt",
-    )(function* (input: PromptInput) {
+    const acceptPrompt = Effect.fn("SessionPrompt.acceptPrompt")(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
@@ -1307,6 +1333,13 @@ export const layer = Layer.effect(
         yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
       }
 
+      return message
+    })
+
+    const prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error> = Effect.fn(
+      "SessionPrompt.prompt",
+    )(function* (input: PromptInput) {
+      const message = yield* acceptPrompt(input)
       if (input.noReply === true) return message
       return yield* loop({ sessionID: input.sessionID })
     })
@@ -1633,9 +1666,543 @@ export const layer = Layer.effect(
 
     const loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts> = Effect.fn("SessionPrompt.loop")(
       function* (input: LoopInput) {
-        return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+        // Every prompt entry point funnels through here, so this is the one
+        // place that has to know a turn may belong to an external driver.
+        yield* ensureSwarmBriefing(input.sessionID).pipe(Effect.ignore)
+        const work = (yield* claudeCodeTurn(input.sessionID)) ?? runLoop(input.sessionID)
+        return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
       },
     )
+
+    /**
+     * Sessions on a swarm model run in place: the model resolves to the
+     * orchestrator's real model (Provider.getModel handles that), and this
+     * hidden part of the user message hands the orchestrator its team so it
+     * delegates specialists as subagents inside the same session.
+     */
+    const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const context = yield* swarmContext(sessionID)
+      if (!context) return
+      const briefed = context.last.parts.some(
+        (part) => part.type === "text" && part.synthetic === true && part.text.startsWith(SwarmBriefing.SWARM_BRIEFING_MARK),
+      )
+      if (briefed) return
+      const briefing = SwarmBriefing.buildSwarmBriefing({
+        swarmID: context.swarmID,
+        title: context.title,
+        delegation: context.orchestratorIsClaudeCode ? "delegate-tool" : "task-tool",
+        roles: context.roles.map((role) => ({
+          name: role.name,
+          agent: role.agent ?? undefined,
+          skill: role.skill ?? undefined,
+          instructions: role.instructions ?? undefined,
+          providerID: role.provider_id ?? undefined,
+          modelID: role.model_id ?? undefined,
+        })),
+      })
+      if (!briefing) return
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: context.last.info.id,
+        sessionID,
+        type: "text",
+        text: briefing,
+        synthetic: true,
+      })
+    })
+
+    /** The swarm behind a session's model, or undefined for an ordinary route. */
+    const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const last = yield* lastUserMessage(sessionID)
+      if (!last || last.info.role !== "user") return undefined
+      if (!isSwarmProvider(last.info.model.providerID)) return undefined
+      const swarmID = last.info.model.modelID
+      const swarm = yield* db
+        .select({ id: OpencodeXSwarmTable.id, title: OpencodeXSwarmTable.title })
+        .from(OpencodeXSwarmTable)
+        .where(eq(OpencodeXSwarmTable.id, swarmID))
+        .get()
+        .pipe(Effect.orElseSucceed(() => undefined))
+      if (!swarm) return undefined
+      const roles = yield* db
+        .select({
+          name: OpencodeXSwarmRoleTable.name,
+          agent: OpencodeXSwarmRoleTable.agent,
+          skill: OpencodeXSwarmRoleTable.skill,
+          instructions: OpencodeXSwarmRoleTable.instructions,
+          provider_id: OpencodeXSwarmRoleTable.provider_id,
+          model_id: OpencodeXSwarmRoleTable.model_id,
+        })
+        .from(OpencodeXSwarmRoleTable)
+        .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
+        .orderBy(asc(OpencodeXSwarmRoleTable.sort_order))
+        .all()
+        .pipe(Effect.orElseSucceed(() => []))
+      const orchestrator = roles[0]
+      return {
+        last,
+        swarmID,
+        title: swarm.title,
+        roles,
+        orchestrator,
+        orchestratorIsClaudeCode: Boolean(orchestrator?.provider_id && isClaudeCodeProvider(orchestrator.provider_id)),
+      }
+    })
+
+    /**
+     * Runs one specialist role as its own OpencodeX session on the model
+     * configured for it, and returns its report. This is what the Claude Code
+     * orchestrator's delegation tool calls, so specialists stay OpencodeX
+     * sessions instead of becoming Claude's internal subagents.
+     */
+    const runSwarmRole = Effect.fnUntraced(function* (input: {
+      sessionID: SessionID
+      swarmID: string
+      roles: SwarmRoleRow[]
+      role: string
+      prompt: string
+    }) {
+      const role = SwarmBriefing.matchSwarmRole(input.roles, input.role)
+      if (!role) {
+        return `Unknown role "${input.role}". Available roles: ${input.roles.map((item) => item.name).join(", ")}.`
+      }
+      if (!role.provider_id || !role.model_id) return `Role "${role.name}" has no model configured.`
+      const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const child = yield* sessions
+        .create({
+          parentID: input.sessionID,
+          title: `${role.name} (swarm role)`,
+          // The GUI's team view groups a swarm session's children by role, so
+          // each delegation records which role it ran as.
+          metadata: { opencodex: { swarmID: input.swarmID, swarmRole: role.name } },
+          ...(parent.permission ? { permission: parent.permission } : {}),
+        })
+        .pipe(Effect.orDie)
+      const text = [role.instructions?.trim(), input.prompt.trim()].filter(Boolean).join("\n\n")
+      const result = yield* prompt({
+        sessionID: child.id,
+        model: {
+          providerID: ProviderV2.ID.make(role.provider_id),
+          modelID: ProviderV2.ModelID.make(role.model_id),
+        },
+        ...(role.agent ? { agent: role.agent } : {}),
+        parts: [{ type: "text", text }],
+      }).pipe(Effect.catch(Effect.die))
+      if (result.info.role === "assistant" && result.info.error) {
+        return `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}`
+      }
+      const report = result.parts
+        .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
+        .join("\n")
+      return report || `Role "${role.name}" produced no output.`
+    })
+
+    /**
+     * Sessions on the "Claude subscription" model are answered by the local
+     * Claude Code CLI instead of a provider API. Returns the work effect for
+     * such a turn, or undefined for an ordinary session.
+     */
+    const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      const last = yield* lastUserMessage(sessionID)
+      const selected = last?.info.role === "user" ? last.info.model : session.model
+      // A swarm is a facade over its orchestrator, so a swarm whose
+      // orchestrator is the Claude subscription takes the driver path too -
+      // with a delegation tool that keeps specialists on their own models.
+      const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID) : undefined
+      const orchestrator = swarm?.orchestrator
+      const model =
+        swarm?.orchestratorIsClaudeCode && orchestrator?.provider_id && orchestrator.model_id
+          ? { providerID: orchestrator.provider_id, modelID: orchestrator.model_id }
+          : selected
+      const providerID = model?.providerID
+      if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
+      if (!last || last.info.role !== "user") return undefined
+      const text = last.parts
+        .flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text] : []))
+        .join("\n")
+        .trim()
+      if (!text) return undefined
+      yield* ensureClaudeTitle(session, text)
+      const specialists = swarm?.roles.slice(1) ?? []
+      return claudeDriver.runTurn({
+        sessionID,
+        parentMessageID: last.info.id,
+        text,
+        directory: session.directory,
+        // Attribute the turn to the route the reader picked, so a swarm session
+        // stays labelled with the team rather than the orchestrator's model.
+        providerID: selected?.providerID ?? providerID,
+        modelID: (swarm ? swarm.swarmID : modelIdentifier(model)) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+        claudeModelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+        // "default" is the sentinel for "no variant" everywhere else in the loop.
+        ...(selected?.variant && selected.variant !== "default" ? { variant: selected.variant } : {}),
+        ...(specialists.length > 0
+          ? {
+              delegate: {
+                roles: specialists.map((role) => ({
+                  name: role.name,
+                  description: role.skill ?? role.agent ?? undefined,
+                })),
+                run: (delegated) =>
+                  runSwarmRole({
+                    sessionID,
+                    swarmID: swarm!.swarmID,
+                    roles: swarm!.roles,
+                    role: delegated.role,
+                    prompt: delegated.prompt,
+                  }),
+              },
+            }
+          : {}),
+      })
+    })
+
+    /** User messages carry `modelID`; the session record carries `id`. */
+    const modelIdentifier = (model?: { modelID?: string; id?: string }) => model?.modelID ?? model?.id
+
+    /**
+     * Claude Code has no small model to summarize with, so a session takes its
+     * name from the opening request instead of an extra LLM call.
+     */
+    const ensureClaudeTitle = Effect.fnUntraced(function* (session: Session.Info, text: string) {
+      if (session.title && !Session.isDefaultTitle(session.title)) return
+      const line = text.split("\n").find((value) => value.trim())?.trim() ?? text.trim()
+      const title = line.length > 60 ? `${line.slice(0, 60)}…` : line
+      if (title) yield* sessions.setTitle({ sessionID: session.id, title }).pipe(Effect.ignore)
+    })
+
+    const lastUserMessage = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const match = yield* sessions.findMessage(sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
+      return Option.getOrUndefined(match)
+    })
+
+    const claimCommandTurn = Effect.fn("SessionPrompt.claimCommandTurn")(function* (commandID: string) {
+      const now = Date.now()
+      return yield* db
+        .transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* transaction
+                .select()
+                .from(SessionCommandTable)
+                .where(eq(SessionCommandTable.id, commandID))
+                .get()
+              if (!current || ["succeeded", "failed", "cancelled"].includes(current.status)) {
+                return { state: "done" as const }
+              }
+              if (current.status === "running" && current.lease_expires_at && current.lease_expires_at > now) {
+                return { state: "waiting" as const }
+              }
+              const active = yield* transaction
+                .select({
+                  id: SessionCommandTable.id,
+                  created: SessionCommandTable.time_created,
+                })
+                .from(SessionCommandTable)
+                .where(
+                  and(
+                    eq(SessionCommandTable.session_id, current.session_id),
+                    inArray(SessionCommandTable.status, ["queued", "running"]),
+                  ),
+                )
+                .all()
+              const blocked = active.some(
+                (item) =>
+                  item.id !== current.id &&
+                  (item.created < current.time_created ||
+                    (item.created === current.time_created && item.id.localeCompare(current.id) < 0)),
+              )
+              if (blocked) return { state: "waiting" as const }
+              const claimed = yield* transaction
+                .update(SessionCommandTable)
+                .set({
+                  status: "running",
+                  owner_id: commandOwner,
+                  claim_generation: current.claim_generation + 1,
+                  lease_expires_at: now + commandLeaseMillis,
+                  started_at: current.started_at ?? now,
+                  time_updated: now,
+                })
+                .where(
+                  and(
+                    eq(SessionCommandTable.id, commandID),
+                    eq(SessionCommandTable.status, current.status),
+                    eq(SessionCommandTable.claim_generation, current.claim_generation),
+                    current.status === "running"
+                      ? or(isNull(SessionCommandTable.lease_expires_at), lt(SessionCommandTable.lease_expires_at, now))
+                      : undefined,
+                  ),
+                )
+                .returning()
+                .get()
+              if (!claimed) return { state: "waiting" as const }
+              return { state: "ready" as const, command: claimed }
+            }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.orDie)
+    })
+
+    const waitForExecutionTurn = Effect.fn("SessionPrompt.waitForExecutionTurn")(function* (
+      commandID: string,
+      sessionID: SessionID,
+    ) {
+      while (true) {
+        const [command, execution] = yield* Effect.all(
+          [
+            db
+              .select({ status: SessionCommandTable.status })
+              .from(SessionCommandTable)
+              .where(eq(SessionCommandTable.id, commandID))
+              .get()
+              .pipe(Effect.orDie),
+            db
+              .select({ state: SessionExecutionTable.state, leaseExpiresAt: SessionExecutionTable.lease_expires_at })
+              .from(SessionExecutionTable)
+              .where(eq(SessionExecutionTable.session_id, sessionID))
+              .get()
+              .pipe(Effect.orDie),
+          ],
+          { concurrency: "unbounded" },
+        )
+        if (!command || ["succeeded", "failed", "cancelled"].includes(command.status)) return false
+        if (execution?.state !== "running" || !execution.leaseExpiresAt || execution.leaseExpiresAt <= Date.now()) {
+          return true
+        }
+        yield* Effect.sleep("200 millis")
+      }
+    })
+
+    const executeCommand = Effect.fn("SessionPrompt.executeCommand")(function* (commandID: string) {
+      let claimed = yield* claimCommandTurn(commandID)
+      while (claimed.state === "waiting") {
+        yield* Effect.sleep("200 millis")
+        claimed = yield* claimCommandTurn(commandID)
+      }
+      if (claimed.state !== "ready") return
+      const command = claimed.command
+      if (!(yield* waitForExecutionTurn(commandID, command.session_id))) return
+      const admitted = yield* db
+        .select({ id: SessionCommandTable.id })
+        .from(SessionCommandTable)
+        .where(
+          and(
+            eq(SessionCommandTable.id, commandID),
+            eq(SessionCommandTable.status, "running"),
+            eq(SessionCommandTable.owner_id, commandOwner),
+            eq(SessionCommandTable.claim_generation, command.claim_generation),
+          ),
+        )
+        .get()
+        .pipe(Effect.orDie)
+      if (!admitted) return
+
+      const heartbeat = yield* Effect.sleep(Math.floor(commandLeaseMillis / 3)).pipe(
+        Effect.andThen(
+          db
+            .update(SessionCommandTable)
+            .set({ lease_expires_at: Date.now() + commandLeaseMillis, time_updated: Date.now() })
+            .where(
+              and(
+                eq(SessionCommandTable.id, commandID),
+                eq(SessionCommandTable.status, "running"),
+                eq(SessionCommandTable.owner_id, commandOwner),
+                eq(SessionCommandTable.claim_generation, command.claim_generation),
+              ),
+            )
+            .run()
+            .pipe(Effect.orDie),
+        ),
+        Effect.repeat(Schedule.forever),
+        Effect.forkIn(scope),
+      )
+      const exit = yield* loop({ sessionID: command.session_id }).pipe(
+        Effect.exit,
+        Effect.ensuring(Fiber.interrupt(heartbeat)),
+      )
+      const completedAt = Date.now()
+      if (Exit.isSuccess(exit)) {
+        yield* db
+          .update(SessionCommandTable)
+          .set({
+            status: "succeeded",
+            owner_id: null,
+            lease_expires_at: null,
+            completed_at: completedAt,
+            time_updated: completedAt,
+          })
+          .where(
+            and(
+              eq(SessionCommandTable.id, commandID),
+              eq(SessionCommandTable.status, "running"),
+              eq(SessionCommandTable.owner_id, commandOwner),
+              eq(SessionCommandTable.claim_generation, command.claim_generation),
+            ),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        return
+      }
+
+      const error = Cause.pretty(exit.cause)
+      yield* db
+        .update(SessionCommandTable)
+        .set({
+          status: "failed",
+          owner_id: null,
+          lease_expires_at: null,
+          error,
+          completed_at: completedAt,
+          time_updated: completedAt,
+        })
+        .where(
+          and(
+            eq(SessionCommandTable.id, commandID),
+            eq(SessionCommandTable.status, "running"),
+            eq(SessionCommandTable.owner_id, commandOwner),
+            eq(SessionCommandTable.claim_generation, command.claim_generation),
+          ),
+        )
+        .run()
+        .pipe(Effect.orDie)
+      yield* Effect.logError("prompt_async failed").pipe(
+        Effect.annotateLogs({ sessionID: command.session_id, cause: exit.cause }),
+      )
+      yield* events.publish(Session.Event.Error, {
+        sessionID: command.session_id,
+        error: new NamedError.Unknown({ message: error }).toObject(),
+      })
+    })
+
+    const launchCommand = Effect.fn("SessionPrompt.launchCommand")(function* (commandID: string) {
+      yield* executeCommand(commandID).pipe(
+        Effect.catchCause((cause) => Effect.logError("prompt_async recovery failed", { commandID, cause })),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+    })
+
+    const promptAsync = Effect.fn("SessionPrompt.promptAsync")(function* (input: PromptInput) {
+      if (input.messageID) {
+        const existing = yield* db
+          .select({ id: SessionCommandTable.id, status: SessionCommandTable.status })
+          .from(SessionCommandTable)
+          .where(
+            and(
+              eq(SessionCommandTable.session_id, input.sessionID),
+              eq(SessionCommandTable.message_id, input.messageID),
+            ),
+          )
+          .get()
+          .pipe(Effect.orDie)
+        if (existing) {
+          if (!["succeeded", "failed", "cancelled"].includes(existing.status)) yield* launchCommand(existing.id)
+          return
+        }
+      }
+      const message = yield* acceptPrompt(input)
+      const ctx = yield* InstanceState.context
+      const now = Date.now()
+      const commandID = `sec_${Identifier.ascending()}`
+      const acceptedCommandID = yield* db
+        .transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const inserted = yield* transaction
+                .insert(SessionCommandTable)
+                .values({
+                  id: commandID,
+                  session_id: input.sessionID,
+                  message_id: message.info.id,
+                  project_id: ctx.project.id,
+                  directory: ctx.directory,
+                  status: input.noReply === true ? "succeeded" : "queued",
+                  completed_at: input.noReply === true ? now : null,
+                  time_created: now,
+                  time_updated: now,
+                })
+                .onConflictDoNothing()
+                .returning({ id: SessionCommandTable.id })
+                .get()
+              if (!inserted) {
+                const existing = yield* transaction
+                  .select({ id: SessionCommandTable.id })
+                  .from(SessionCommandTable)
+                  .where(
+                    and(
+                      eq(SessionCommandTable.session_id, input.sessionID),
+                      eq(SessionCommandTable.message_id, message.info.id),
+                    ),
+                  )
+                  .get()
+                if (!existing) return yield* Effect.die(new Error("Prompt command insert did not return a winner"))
+                return existing.id
+              }
+              if (input.noReply === true) return inserted.id
+              const current = yield* transaction
+                .select()
+                .from(SessionExecutionTable)
+                .where(eq(SessionExecutionTable.session_id, input.sessionID))
+                .get()
+              const active =
+                current?.state === "running" &&
+                !!current.owner_id &&
+                !!current.lease_expires_at &&
+                current.lease_expires_at > now
+              if (active) return inserted.id
+              yield* transaction
+                .insert(SessionExecutionTable)
+                .values({
+                  session_id: input.sessionID,
+                  project_id: ctx.project.id,
+                  directory: ctx.directory,
+                  state: "queued",
+                  generation: current?.generation ?? 0,
+                  queued_at: now,
+                  cancel_requested_at: null,
+                  time_created: current?.time_created ?? now,
+                  time_updated: now,
+                })
+                .onConflictDoUpdate({
+                  target: SessionExecutionTable.session_id,
+                  set: {
+                    project_id: ctx.project.id,
+                    directory: ctx.directory,
+                    state: "queued",
+                    owner_id: null,
+                    lease_expires_at: null,
+                    cancel_requested_at: null,
+                    queued_at: now,
+                    completed_at: null,
+                    time_updated: now,
+                  },
+                })
+                .run()
+              return inserted.id
+            }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.orDie)
+      if (input.noReply !== true) yield* launchCommand(acceptedCommandID)
+    })
+
+    const recover = Effect.fn("SessionPrompt.recover")(function* () {
+      const ctx = yield* InstanceState.context
+      const commands = yield* db
+        .select({ id: SessionCommandTable.id })
+        .from(SessionCommandTable)
+        .where(
+          and(
+            eq(SessionCommandTable.directory, ctx.directory),
+            inArray(SessionCommandTable.status, ["queued", "running"]),
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      yield* Effect.forEach(commands, (command) => launchCommand(command.id), { discard: true })
+    })
+    const unregisterRecovery = SessionPromptRecovery.register(() => recover())
+    yield* Effect.addFinalizer(() => Effect.sync(unregisterRecovery))
 
     const shell: (input: ShellInput) => Effect.Effect<SessionLegacy.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
@@ -1764,6 +2331,8 @@ export const layer = Layer.effect(
     return Service.of({
       cancel,
       prompt,
+      promptAsync,
+      recover,
       loop,
       shell,
       command,
@@ -1791,6 +2360,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Session.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
+    Layer.provide(OpencodeXClaudeDriver.defaultLayer),
+  ).pipe(
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Todo.defaultLayer),

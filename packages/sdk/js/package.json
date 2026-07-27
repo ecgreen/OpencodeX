@@ -5,6 +5,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "test": "bun test test",
+    "test:ci": "mkdir -p .artifacts/unit && bun test test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit",
     "build": "bun ./script/build.ts"
   },
@@ -14,6 +16,11 @@
     "./server": "./src/server.ts",
     "./v2": "./src/v2/index.ts",
     "./v2/client": "./src/v2/client.ts",
+    "./v2/client-sync": "./src/v2/client-sync.ts",
+    "./v2/legacy-session-sync": "./src/v2/legacy-session-sync.ts",
+    "./v2/session-order": "./src/v2/session-order.ts",
+    "./v2/swarm-presentation": "./src/v2/swarm-presentation.ts",
+    "./v2/work-item": "./src/v2/work-item.ts",
     "./v2/gen/client": "./src/v2/gen/client/index.ts",
     "./v2/server": "./src/v2/server.ts"
   },

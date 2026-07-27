@@ -16,6 +16,7 @@ import { ShareNext } from "@/share/share-next"
 import { SessionShareTable } from "@opencode-ai/core/share/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
+import { pollWithTimeout } from "../lib/effect"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { resetDatabase } from "../fixture/db"
 import { testEffect } from "../lib/effect"
@@ -301,7 +302,19 @@ describe("ShareNext", () => {
               },
             ],
           })
-          yield* Effect.sleep(1_250)
+          /*
+           * The flush is debounced by a second, so sleeping 1_250 left 250ms
+           * for the fork to wake and the request to land - a margin a loaded
+           * runner eats. Wait for the sync itself, then settle long enough
+           * that a second one would have arrived, since two uncoalesced
+           * flushes are scheduled microseconds apart and land together.
+           */
+          yield* pollWithTimeout(
+            Effect.sync(() => (seen.length > 0 ? seen.length : undefined)),
+            "share never synced after the diff events",
+            "15 seconds",
+          )
+          yield* Effect.sleep(500)
 
           expect(seen).toHaveLength(1)
           expect(seen[0].url).toBe("https://legacy-share.example.com/api/share/shr_abc/sync")

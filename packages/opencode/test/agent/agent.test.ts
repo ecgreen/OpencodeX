@@ -9,12 +9,16 @@ import { Config } from "../../src/config/config"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Global } from "@opencode-ai/core/global"
 import { Permission } from "../../src/permission"
+import { OpencodeXSettings } from "../../src/opencodex/settings"
 import { Plugin } from "../../src/plugin"
 import { Provider } from "../../src/provider/provider"
 import { Skill } from "../../src/skill"
 import { Truncate } from "../../src/tool/truncate"
 
-const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
+const agentLayer = (
+  flags: Partial<RuntimeFlags.Info> = {},
+  settings: Omit<OpencodeXSettings.Info, "revision"> = {},
+) =>
   Agent.layer.pipe(
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Provider.defaultLayer),
@@ -22,10 +26,14 @@ const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     Layer.provide(Config.defaultLayer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(RuntimeFlags.layer(flags)),
+    Layer.provide(OpencodeXSettings.memory(settings)),
   )
 
 const it = testEffect(agentLayer())
 const scout = testEffect(agentLayer({ experimentalScout: true }))
+const strict = testEffect(agentLayer({}, { permission_mode: "strict" }))
+const auto = testEffect(agentLayer({}, { permission_mode: "auto" }))
+const yolo = testEffect(agentLayer({}, { permission_mode: "yolo" }))
 
 // Helper to evaluate permission for a tool with wildcard pattern
 function evalPerm(agent: Agent.Info | undefined, permission: string): Permission.Action | undefined {
@@ -292,6 +300,33 @@ it.instance(
       },
     },
   },
+)
+
+strict.instance("strict permission mode asks for allowed actions and preserves denials", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    expect(evalPerm(build, "edit")).toBe("ask")
+    expect(evalPerm(build, "browser_navigate")).toBe("ask")
+    expect(evalPerm(build, "repo_clone")).toBe("deny")
+  }),
+)
+
+auto.instance("auto permission mode approves prompts and preserves denials", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    expect(evalPerm(build, "browser_navigate")).toBe("allow")
+    expect(evalPerm(build, "repo_clone")).toBe("deny")
+  }),
+)
+
+yolo.instance("yolo permission mode overrides denials", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    const plan = yield* load((svc) => svc.get("plan"))
+    expect(evalPerm(build, "browser_navigate")).toBe("allow")
+    expect(evalPerm(build, "repo_clone")).toBe("allow")
+    expect(evalPerm(plan, "edit")).toBe("allow")
+  }),
 )
 
 it.instance(
@@ -702,12 +737,11 @@ it.instance(
 )
 
 it.instance(
-  "defaultAgent returns plan when build is disabled and default_agent not set",
+  "defaultAgent returns goal when build is disabled and default_agent not set",
   () =>
     Effect.gen(function* () {
       const agent = yield* load((svc) => svc.defaultAgent())
-      // build is disabled, so it should return plan (next primary agent)
-      expect(agent).toBe("plan")
+      expect(agent).toBe("goal")
     }),
   {
     config: {
@@ -725,6 +759,7 @@ it.instance(
     config: {
       agent: {
         build: { disable: true },
+        goal: { disable: true },
         plan: { disable: true },
       },
     },

@@ -1,5 +1,5 @@
 import { Config } from "@/config/config"
-import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
+import { GlobalBus, subscribeGlobalBus, type GlobalEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
@@ -13,6 +13,15 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
 import { GlobalUpgradeInput } from "../groups/global"
+import { makeGuiBridgeHandlers } from "./gui-bridge"
+import { Database } from "@opencode-ai/core/database/database"
+import { OpencodeXJobTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
+import {
+  SessionCommandTable,
+  SessionExecutionTable,
+  SessionInteractionTable,
+} from "@opencode-ai/core/session/sql"
+import { and, eq, gt, inArray, notInArray, or } from "drizzle-orm"
 
 const log = Log.create({ service: "server" })
 
@@ -34,12 +43,18 @@ function parseBody(body: string) {
 }
 
 function eventResponse() {
-  log.info("global event connected")
-  const events = Stream.callback<GlobalBusEvent>((queue) => {
-    const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
+  const events = Stream.callback<GlobalEvent>((queue) => {
+    const handler = (event: GlobalEvent) => Queue.offerUnsafe(queue, event)
     return Effect.acquireRelease(
-      Effect.sync(() => GlobalBus.on("event", handler)),
-      () => Effect.sync(() => GlobalBus.off("event", handler)),
+      Effect.sync(() => {
+        const unsubscribe = subscribeGlobalBus(handler)
+        log.info("global event connected")
+        Queue.offerUnsafe(queue, {
+          payload: { id: EventV2.ID.create(), type: "server.connected", properties: {} },
+        })
+        return unsubscribe
+      }),
+      (unsubscribe) => Effect.sync(unsubscribe),
     )
   })
   const heartbeat = Stream.tick("10 seconds").pipe(
@@ -48,8 +63,8 @@ function eventResponse() {
   )
 
   return HttpServerResponse.stream(
-    Stream.make({ payload: { id: EventV2.ID.create(), type: "server.connected", properties: {} } }).pipe(
-      Stream.concat(events.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
+    events.pipe(
+      Stream.merge(heartbeat, { haltStrategy: "left" }),
       Stream.map(eventData),
       Stream.pipeThroughChannel(Sse.encode()),
       Stream.encodeText,
@@ -71,9 +86,55 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const config = yield* Config.Service
     const installation = yield* Installation.Service
     const bridge = yield* EffectBridge.make()
+    const guiBridge = yield* makeGuiBridgeHandlers()
+    const { db } = yield* Database.Service
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
-      return { healthy: true as const, version: InstallationVersion }
+      const now = Date.now()
+      const activity = yield* Effect.all(
+        [
+          db
+            .select({ id: SessionExecutionTable.session_id })
+            .from(SessionExecutionTable)
+            .where(
+              or(
+                eq(SessionExecutionTable.state, "queued"),
+                and(
+                  eq(SessionExecutionTable.state, "running"),
+                  gt(SessionExecutionTable.lease_expires_at, now),
+                ),
+              ),
+            )
+            .limit(1)
+            .get(),
+          db
+            .select({ id: SessionCommandTable.id })
+            .from(SessionCommandTable)
+            .where(inArray(SessionCommandTable.status, ["queued", "running"]))
+            .limit(1)
+            .get(),
+          db
+            .select({ id: SessionInteractionTable.id })
+            .from(SessionInteractionTable)
+            .where(eq(SessionInteractionTable.state, "pending"))
+            .limit(1)
+            .get(),
+          db
+            .select({ id: OpencodeXJobTable.id })
+            .from(OpencodeXJobTable)
+            .where(inArray(OpencodeXJobTable.status, ["queued", "claimed", "running"]))
+            .limit(1)
+            .get(),
+          db
+            .select({ id: OpencodeXSwarmTable.id })
+            .from(OpencodeXSwarmTable)
+            .where(notInArray(OpencodeXSwarmTable.status, ["completed", "partially_failed", "failed", "cancelled"]))
+            .limit(1)
+            .get(),
+        ].map((query) => query.pipe(Effect.map((row) => row !== undefined), Effect.orDie)),
+        { concurrency: "unbounded" },
+      )
+      return { healthy: true as const, version: InstallationVersion, active: activity.some(Boolean) }
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
@@ -153,5 +214,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handleRaw("upgrade", upgradeRaw)
+      .handle("guiBridgeSync", guiBridge.guiBridgeSync)
+      .handle("guiBridgeUnregister", guiBridge.guiBridgeUnregister)
+      .handle("guiBridgeRespond", guiBridge.guiBridgeRespond)
   }),
 )

@@ -217,6 +217,7 @@ describe("plugin.openai.ws-pool", () => {
       url: server.url,
       connectTimeout: 100,
       idleTimeout: 20,
+      poolIdleTimeout: 20,
       streamRetries: 0,
     })
 

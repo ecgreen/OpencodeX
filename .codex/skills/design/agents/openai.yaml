@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpencodeX Design"
+  short_description: "Design polished, restrained OpencodeX interfaces"
+  default_prompt: "Use $design to audit and improve this OpencodeX interface with the approved Instrument-grade design system."

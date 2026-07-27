@@ -19,7 +19,7 @@ if (Bun.argv.includes("--check")) {
 await $`bun drizzle-kit generate`.cwd(path.join(root, "packages/core"))
 
 const sqlMigrations = (await Array.fromAsync(new Bun.Glob("*/migration.sql").scan({ cwd: sqlDir })))
-  .map((file) => file.split("/")[0])
+  .map((file) => path.basename(path.dirname(file)))
   .filter((name) => name !== undefined)
   .sort()
 
@@ -31,7 +31,14 @@ for (const name of sqlMigrations) {
   )
 }
 
-await Bun.write(registry, renderRegistry(sqlMigrations))
+const runtimeMigrations = [
+  ...new Set([
+    ...sqlMigrations,
+    ...(await Array.fromAsync(new Bun.Glob("*.ts").scan({ cwd: tsDir }))).map((file) => path.basename(file, ".ts")),
+  ]),
+].sort()
+
+await Bun.write(registry, renderRegistry(runtimeMigrations))
 
 async function check() {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-core-migration-check-"))
@@ -56,7 +63,7 @@ export default { ...config, out: ${JSON.stringify(output)} }
     }
 
     const migrations = before
-      .map((entry) => entry.path.split("/")[0])
+      .map((entry) => entry.path.split(/[\\/]/)[0])
       .filter((name, index, all) => name !== undefined && all.indexOf(name) === index)
       .sort()
     for (const name of migrations) {
@@ -65,7 +72,13 @@ export default { ...config, out: ${JSON.stringify(output)} }
         `Database migration TypeScript wrapper is missing for ${name}. Run \`bun script/migration.ts\` from packages/core.`,
       )
     }
-    if ((await Bun.file(registry).text()) !== renderRegistry(migrations)) {
+    const runtimeMigrations = [
+      ...new Set([
+        ...migrations,
+        ...(await Array.fromAsync(new Bun.Glob("*.ts").scan({ cwd: tsDir }))).map((file) => path.basename(file, ".ts")),
+      ]),
+    ].sort()
+    if ((await Bun.file(registry).text()) !== renderRegistry(runtimeMigrations)) {
       throw new Error("Database migration registry is stale. Run `bun script/migration.ts` from packages/core.")
     }
   } finally {

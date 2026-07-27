@@ -6,12 +6,15 @@ import {
 import { Database } from "@opencode-ai/core/database/database"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { ProjectV2 } from "@opencode-ai/core/project"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { Effect } from "effect"
 import path from "path"
+import { renderableSessionWhere } from "./session-filter"
 
-type DatabaseService = Database.Interface["db"]
+type Transaction = Parameters<Parameters<Database.Interface["db"]["transaction"]>[0]>[0]
+type DatabaseService = Database.Interface["db"] | Transaction
 type FolderRow = typeof OpencodeXProjectFolderTable.$inferSelect
 export type ProjectRow = typeof OpencodeXProjectTable.$inferSelect
 
@@ -74,23 +77,17 @@ export function createProject(db: DatabaseService, input: { id: string; projectI
     .pipe(Effect.orDie)
 }
 
-export function reorderProjects(db: DatabaseService, projectIDs: string[]) {
-  return db
-    .transaction(
-      (tx) =>
-        Effect.forEach(
-          projectIDs,
-          (id, index) =>
-            tx
-              .update(OpencodeXProjectTable)
-              .set({ sort_order: index, time_updated: Date.now() })
-              .where(eq(OpencodeXProjectTable.id, id))
-              .run(),
-          { discard: true },
-        ),
-      { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+export function reorderProjects(db: DatabaseService, projectIDs: readonly string[]) {
+  return Effect.forEach(
+    projectIDs,
+    (id, index) =>
+      db
+        .update(OpencodeXProjectTable)
+        .set({ sort_order: index, time_updated: Date.now() })
+        .where(eq(OpencodeXProjectTable.id, id))
+        .run(),
+    { discard: true },
+  ).pipe(Effect.orDie)
 }
 
 export function updateProject(
@@ -133,43 +130,37 @@ export function listFoldersForOpencodeProjects(db: DatabaseService, projectIDs: 
 
 export function replaceFolders(
   db: DatabaseService,
-  input: { opencodexProjectID: string; projectID: ProjectV2.ID; folders: string[] },
+  input: { opencodexProjectID: string; projectID: ProjectV2.ID; folders: readonly string[] },
 ) {
   const now = Date.now()
   const paths = [...new Set(input.folders.map(normalizeFolderPath))]
-  return db
-    .transaction(
-      (tx) =>
-        Effect.gen(function* () {
-          yield* tx
-            .delete(OpencodeXProjectFolderTable)
-            .where(eq(OpencodeXProjectFolderTable.opencodex_project_id, input.opencodexProjectID))
-            .run()
-          if (paths.length === 0) return
-          yield* tx
-    .insert(OpencodeXProjectFolderTable)
-            .values(
-              paths.map((item) => ({
-                path: item,
-                opencodex_project_id: input.opencodexProjectID,
-                project_id: input.projectID,
-                time_created: now,
-                time_updated: now,
-              })),
-            )
-    .onConflictDoUpdate({
-      target: [OpencodeXProjectFolderTable.opencodex_project_id, OpencodeXProjectFolderTable.path],
-      set: {
-                opencodex_project_id: input.opencodexProjectID,
-                project_id: input.projectID,
-                time_updated: now,
-              },
-            })
-            .run()
-        }),
-      { behavior: "immediate" },
-    )
-    .pipe(Effect.orDie)
+  return Effect.gen(function* () {
+    yield* db
+      .delete(OpencodeXProjectFolderTable)
+      .where(eq(OpencodeXProjectFolderTable.opencodex_project_id, input.opencodexProjectID))
+      .run()
+    if (paths.length === 0) return
+    yield* db
+      .insert(OpencodeXProjectFolderTable)
+      .values(
+        paths.map((item) => ({
+          path: item,
+          opencodex_project_id: input.opencodexProjectID,
+          project_id: input.projectID,
+          time_created: now,
+          time_updated: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [OpencodeXProjectFolderTable.opencodex_project_id, OpencodeXProjectFolderTable.path],
+        set: {
+          opencodex_project_id: input.opencodexProjectID,
+          project_id: input.projectID,
+          time_updated: now,
+        },
+      })
+      .run()
+  }).pipe(Effect.orDie)
 }
 
 export function removeFolder(db: DatabaseService, opencodexProjectID: string, folder: string) {
@@ -213,9 +204,16 @@ export function addSession(
 
 export function listSessionIDs(db: DatabaseService, opencodexProjectID: string) {
   return db
-    .select()
+    .select({
+      session_id: OpencodeXProjectSessionTable.session_id,
+      opencodex_project_id: OpencodeXProjectSessionTable.opencodex_project_id,
+      path: OpencodeXProjectSessionTable.path,
+      time_created: OpencodeXProjectSessionTable.time_created,
+      time_updated: OpencodeXProjectSessionTable.time_updated,
+    })
     .from(OpencodeXProjectSessionTable)
-    .where(eq(OpencodeXProjectSessionTable.opencodex_project_id, opencodexProjectID))
+    .innerJoin(SessionTable, eq(SessionTable.id, OpencodeXProjectSessionTable.session_id))
+    .where(and(eq(OpencodeXProjectSessionTable.opencodex_project_id, opencodexProjectID), renderableSessionWhere()))
     .all()
     .pipe(Effect.orDie)
 }
@@ -230,7 +228,20 @@ export function getSessionProject(db: DatabaseService, sessionID: SessionID) {
 }
 
 export function listAllSessionIDs(db: DatabaseService) {
-  return db.select().from(OpencodeXProjectSessionTable).all().pipe(Effect.orDie)
+  return db
+    .select({
+      session_id: OpencodeXProjectSessionTable.session_id,
+      opencodex_project_id: OpencodeXProjectSessionTable.opencodex_project_id,
+      path: OpencodeXProjectSessionTable.path,
+      time_created: OpencodeXProjectSessionTable.time_created,
+      time_updated: OpencodeXProjectSessionTable.time_updated,
+    })
+    .from(OpencodeXProjectSessionTable)
+    .innerJoin(SessionTable, eq(SessionTable.id, OpencodeXProjectSessionTable.session_id))
+    .where(renderableSessionWhere())
+    .orderBy(desc(OpencodeXProjectSessionTable.time_updated), desc(OpencodeXProjectSessionTable.session_id))
+    .all()
+    .pipe(Effect.orDie)
 }
 
 export function removeSession(db: DatabaseService, sessionID: SessionID) {

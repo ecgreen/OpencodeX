@@ -54,6 +54,32 @@ test("returns a handle immediately and resolves ready after async mount setup", 
   expect(await promiseState(app.handle.done)).toBe("pending")
 })
 
+test("renders the complete OpencodeX dashboard without idle state polling", async () => {
+  const app = await startTui({ width: 120, height: 36 })
+
+  app.theme.resolve("dark")
+  await app.handle.ready
+
+  const frame = await waitForFrame(app.setup, "Dashboard")
+  expect(frame).toContain("Dashboard")
+  expect(frame).toContain("Projects")
+  expect(frame).toContain("No Projects")
+  expect(frame).not.toContain("undefined")
+  expect(frame).not.toContain("[object Object]")
+  expect(normalizeFrame(frame)).toMatchSnapshot()
+  expect(app.requests.filter((url) => url.pathname === "/experimental/opencodex/session-sync")).toHaveLength(0)
+  expect(app.requests.map((url) => url.pathname)).toEqual(
+    expect.arrayContaining(["/experimental/opencodex/state", "/experimental/opencodex/state/capabilities"]),
+  )
+  expect(app.requests.map((url) => url.pathname)).not.toEqual(
+    expect.arrayContaining(["/provider", "/config/providers", "/agent", "/command", "/lsp", "/formatter", "/mcp"]),
+  )
+
+  const count = synchronizedRequestCount(app.requests)
+  await Bun.sleep(1_100)
+  expect(synchronizedRequestCount(app.requests)).toBe(count)
+})
+
 test("production can await done only and still receives mount failures", async () => {
   const app = await startTui({ rejectTheme: new Error("theme failed") })
 
@@ -184,10 +210,15 @@ test("plugin, audio, and keymap cleanup run exactly once", async () => {
   }
 })
 
-async function startTui(options: { rejectTheme?: Error } = {}) {
+async function startTui(options: { rejectTheme?: Error; width?: number; height?: number } = {}) {
   const tmp = await tmpdir()
   const restore = await isolateGlobalPaths(tmp.path)
-  const setup = await createTestRenderer({ width: 80, height: 24, useThread: false, maxFps: Number.POSITIVE_INFINITY })
+  const setup = await createTestRenderer({
+    width: options.width ?? 80,
+    height: options.height ?? 24,
+    useThread: false,
+    maxFps: Number.POSITIVE_INFINITY,
+  })
   const theme = deferred<"dark" | "light" | null>()
   const waitForThemeMode = spyOn(setup.renderer, "waitForThemeMode").mockImplementation(() => {
     if (options.rejectTheme) return Promise.reject(options.rejectTheme)
@@ -216,7 +247,33 @@ async function startTui(options: { rejectTheme?: Error } = {}) {
     },
   }
 
-  return { handle, setup, theme }
+  return { handle, requests: calls.requests, setup, theme }
+}
+
+function synchronizedRequestCount(requests: URL[]) {
+  const synchronized = new Set([
+    "/experimental/opencodex/state",
+    "/experimental/opencodex/state/capabilities",
+  ])
+  return requests.filter((url) => synchronized.has(url.pathname)).length
+}
+
+function normalizeFrame(frame: string) {
+  return frame
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trimEnd()
+}
+
+async function waitForFrame(setup: TestRendererSetup, text: string) {
+  const started = Date.now()
+  while (Date.now() - started < 2_000) {
+    const frame = setup.captureCharFrame()
+    if (frame.includes(text)) return frame
+    await Bun.sleep(20)
+  }
+  throw new Error(`timed out waiting for rendered text: ${text}`)
 }
 
 async function isolateGlobalPaths(root: string) {

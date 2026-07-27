@@ -19,6 +19,7 @@ describe("opencode acp lifecycle subprocess", () => {
         acp.close()
 
         const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(5)))
+        if (code !== 0) throw new Error(`ACP exited with ${code}\n${acp.stderr().slice(-4000)}`)
         expect(code).toBe(0)
       }),
     60_000,

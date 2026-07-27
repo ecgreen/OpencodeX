@@ -1,0 +1,463 @@
+import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import type { SessionSchema } from "@opencode-ai/core/session/schema"
+
+type SessionID = typeof SessionSchema.ID.Type
+type MessageID = typeof SessionLegacy.MessageID.Type
+type PartID = typeof SessionLegacy.PartID.Type
+
+/**
+ * Pure translation of Claude Code's headless stream-json events into OpencodeX
+ * transcript writes. No IO, no Effect, no clock: every dependency (ids, now)
+ * is injected so the whole mapping is testable against recorded fixtures.
+ *
+ * Shapes follow `claude -p --output-format stream-json`. Parsing is deliberately
+ * permissive - unknown events and unknown content blocks are ignored rather
+ * than failing a turn.
+ */
+
+export type ClaudeEvent = {
+  type?: string
+  subtype?: string
+  session_id?: string
+  model?: string
+  cwd?: string
+  message?: {
+    id?: string
+    model?: string
+    content?: unknown
+    usage?: ClaudeUsage
+    stop_reason?: string
+  }
+  total_cost_usd?: number
+  usage?: ClaudeUsage
+  is_error?: boolean
+  result?: string
+  [key: string]: unknown
+}
+
+type ClaudeUsage = {
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+}
+
+export type SessionWrite =
+  | { kind: "message"; message: SessionLegacy.Assistant }
+  | { kind: "part"; part: SessionLegacy.Part }
+  | { kind: "todos"; todos: Array<{ content: string; status: string; priority?: string }> }
+
+export type MapperContext = {
+  sessionID: SessionID
+  /** Assistant messages hang off the user message that triggered the turn. */
+  parentMessageID: MessageID
+  directory: string
+  /**
+   * The OpencodeX route the turn was started on. Claude reports its own wire
+   * model id in the stream, but the transcript has to attribute the message to
+   * the catalog entry the reader actually picked.
+   */
+  providerID: string
+  modelID: string
+  nextMessageID: () => MessageID
+  nextPartID: () => PartID
+  now: () => number
+}
+
+export type MapperState = {
+  messageID?: MessageID
+  modelID: string
+  /** Claude reports cost/tokens cumulatively per conversation, not per turn. */
+  billed: { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
+  toolParts: Map<string, { partID: PartID; tool: string; input: Record<string, unknown>; start: number }>
+  textParts: Map<string, PartID>
+  claudeSessionID?: string
+  /** Set when a `--resume` was refused, so the stored id can be discarded. */
+  resumeRejected?: boolean
+  authFailed?: boolean
+  finished?: boolean
+}
+
+export function initialState(input: { modelID?: string; billed?: MapperState["billed"] } = {}): MapperState {
+  return {
+    modelID: input.modelID ?? "claude-code",
+    billed: input.billed ?? { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    toolParts: new Map(),
+    textParts: new Map(),
+  }
+}
+
+/**
+ * Claude's tool names are PascalCase; OpencodeX renders icons, titles, and card
+ * tiers off its own lowercase ids. Normalizing here makes mirrored tool calls
+ * indistinguishable from native ones in the transcript.
+ */
+const TOOL_NAMES: Record<string, string> = {
+  read: "read",
+  write: "write",
+  edit: "edit",
+  multiedit: "edit",
+  notebookedit: "edit",
+  bash: "bash",
+  bashoutput: "bash",
+  killshell: "bash",
+  glob: "glob",
+  grep: "grep",
+  todowrite: "todowrite",
+  webfetch: "webfetch",
+  websearch: "websearch",
+  task: "task",
+  exitplanmode: "plan_exit",
+  askuserquestion: "question",
+  // The swarm delegation tool (`mcp__opencodex_swarm__delegate`) is a task in
+  // everything but name, so it renders with the normal subtask card. A test
+  // pins this against the transport's constant.
+  mcpopencodexswarmdelegate: "task",
+}
+
+export function normalizeToolName(name: string) {
+  const key = name.replace(/[\s_-]/g, "").toLowerCase()
+  return TOOL_NAMES[key] ?? name.toLowerCase()
+}
+
+export function mapEvent(event: ClaudeEvent, state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
+  const writes: SessionWrite[] = []
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+
+  if (event.type === "system" && event.subtype === "init") {
+    if (typeof event.session_id === "string") next.claudeSessionID = event.session_id
+    if (typeof event.model === "string") next.modelID = event.model
+    return { writes, state: next }
+  }
+
+  if (event.type === "assistant" && event.message) {
+    if (typeof event.message.model === "string") next.modelID = event.message.model
+    ensureMessage(writes, next, context)
+    for (const block of contentBlocks(event.message.content)) {
+      mapAssistantBlock(block, writes, next, context)
+    }
+    return { writes, state: next }
+  }
+
+  if (event.type === "user" && event.message) {
+    for (const block of contentBlocks(event.message.content)) {
+      if (block.type !== "tool_result") continue
+      mapToolResult(block, writes, next, context)
+    }
+    return { writes, state: next }
+  }
+
+  if (event.type === "result") {
+    ensureMessage(writes, next, context)
+    finishTurn(event, writes, next, context)
+    return { writes, state: next }
+  }
+
+  return { writes, state: next }
+}
+
+/** Closes an interrupted or crashed turn so no part is left spinning. */
+export function finalizeAbandonedTurn(
+  state: MapperState,
+  context: MapperContext,
+  input: { reason: string; error?: string },
+): { writes: SessionWrite[]; state: MapperState } {
+  const writes: SessionWrite[] = []
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  if (!next.messageID) return { writes, state: next }
+  const now = context.now()
+  for (const [callID, pending] of next.toolParts) {
+    writes.push({
+      kind: "part",
+      part: {
+        id: pending.partID,
+        sessionID: context.sessionID,
+        messageID: next.messageID,
+        type: "tool",
+        callID,
+        tool: pending.tool,
+        state: {
+          status: "error",
+          input: pending.input,
+          error: input.error ?? input.reason,
+          time: { start: pending.start, end: now },
+        },
+      },
+    })
+  }
+  next.toolParts.clear()
+  writes.push(stepFinish(next, context, { reason: input.reason, cost: 0, tokens: emptyTokens() }))
+  writes.push({ kind: "message", message: assistantMessage(next, context, { completed: now, error: input.error }) })
+  next.finished = true
+  return { writes, state: next }
+}
+
+/** Opens an assistant message without any Claude event, for failure turns. */
+export function startTurn(state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
+  const writes: SessionWrite[] = []
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  ensureMessage(writes, next, context)
+  return { writes, state: next }
+}
+
+function ensureMessage(writes: SessionWrite[], state: MapperState, context: MapperContext) {
+  if (state.messageID) return
+  state.messageID = context.nextMessageID()
+  writes.push({ kind: "message", message: assistantMessage(state, context, {}) })
+  writes.push({
+    kind: "part",
+    part: {
+      id: context.nextPartID(),
+      sessionID: context.sessionID,
+      messageID: state.messageID,
+      type: "step-start",
+    },
+  })
+}
+
+function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
+  const messageID = state.messageID!
+  if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+    const key = `text:${blockKey(block)}`
+    const partID = state.textParts.get(key) ?? context.nextPartID()
+    state.textParts.set(key, partID)
+    writes.push({
+      kind: "part",
+      part: {
+        id: partID,
+        sessionID: context.sessionID,
+        messageID,
+        type: "text",
+        text: block.text,
+        time: { start: context.now(), end: context.now() },
+      },
+    })
+    return
+  }
+  if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+    const key = `thinking:${blockKey(block)}`
+    const partID = state.textParts.get(key) ?? context.nextPartID()
+    state.textParts.set(key, partID)
+    writes.push({
+      kind: "part",
+      part: {
+        id: partID,
+        sessionID: context.sessionID,
+        messageID,
+        type: "reasoning",
+        text: block.thinking,
+        time: { start: context.now(), end: context.now() },
+      },
+    })
+    return
+  }
+  if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+    const tool = normalizeToolName(block.name)
+    const input = isRecord(block.input) ? block.input : {}
+    const partID = state.toolParts.get(block.id)?.partID ?? context.nextPartID()
+    const start = state.toolParts.get(block.id)?.start ?? context.now()
+    state.toolParts.set(block.id, { partID, tool, input, start })
+    writes.push({
+      kind: "part",
+      part: {
+        id: partID,
+        sessionID: context.sessionID,
+        messageID,
+        type: "tool",
+        callID: block.id,
+        tool,
+        state: { status: "running", input, time: { start } },
+      },
+    })
+    if (tool === "todowrite") {
+      const todos = readTodos(input)
+      if (todos.length > 0) writes.push({ kind: "todos", todos })
+    }
+  }
+}
+
+function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
+  const callID = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined
+  if (!callID) return
+  const pending = state.toolParts.get(callID)
+  if (!pending || !state.messageID) return
+  state.toolParts.delete(callID)
+  const output = readResultText(block.content)
+  const end = context.now()
+  writes.push({
+    kind: "part",
+    part: {
+      id: pending.partID,
+      sessionID: context.sessionID,
+      messageID: state.messageID,
+      type: "tool",
+      callID,
+      tool: pending.tool,
+      state: block.is_error
+        ? { status: "error", input: pending.input, error: output || "The tool call failed.", time: { start: pending.start, end } }
+        : {
+            status: "completed",
+            input: pending.input,
+            output,
+            title: pending.tool,
+            metadata: {},
+            time: { start: pending.start, end },
+          },
+    },
+  })
+}
+
+function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperState, context: MapperContext) {
+  const usage = event.usage ?? event.message?.usage ?? {}
+  // `total_cost_usd` accumulates over the whole Claude conversation while the
+  // projector adds every step-finish into the session total, so only the delta
+  // since the previous turn belongs to this one. Token counts in `usage` are
+  // already per-request and are used as reported.
+  const totalCost = numberOr(event.total_cost_usd, state.billed.cost)
+  const cost = Math.max(0, totalCost - state.billed.cost)
+  const tokens = {
+    input: Math.max(0, numberOr(usage.input_tokens, 0)),
+    output: Math.max(0, numberOr(usage.output_tokens, 0)),
+    reasoning: 0,
+    cache: {
+      read: Math.max(0, numberOr(usage.cache_read_input_tokens, 0)),
+      write: Math.max(0, numberOr(usage.cache_creation_input_tokens, 0)),
+    },
+  }
+  state.billed = {
+    cost: totalCost,
+    input: tokens.input,
+    output: tokens.output,
+    cacheRead: tokens.cache.read,
+    cacheWrite: tokens.cache.write,
+  }
+  const failed = event.is_error === true || (event.subtype !== undefined && event.subtype !== "success")
+  const error = failed ? readResultError(event) : undefined
+  if (error && /not logged in|unauthorized|authentication|please run .*login/i.test(error)) state.authFailed = true
+  // A refused resume never reaches `system.init`, so the turn ends without ever
+  // naming a conversation. That is the signal to stop reusing the stored id.
+  if (failed && !state.claudeSessionID) state.resumeRejected = true
+  writes.push(stepFinish(state, context, { reason: event.subtype ?? "stop", cost, tokens }))
+  writes.push({
+    kind: "message",
+    message: assistantMessage(state, context, { completed: context.now(), cost, tokens, error }),
+  })
+  state.finished = true
+}
+
+function stepFinish(
+  state: MapperState,
+  context: MapperContext,
+  input: { reason: string; cost: number; tokens: SessionLegacy.StepFinishPart["tokens"] },
+): SessionWrite {
+  return {
+    kind: "part",
+    part: {
+      id: context.nextPartID(),
+      sessionID: context.sessionID,
+      messageID: state.messageID!,
+      type: "step-finish",
+      reason: input.reason,
+      cost: input.cost,
+      tokens: input.tokens,
+    },
+  }
+}
+
+function assistantMessage(
+  state: MapperState,
+  context: MapperContext,
+  input: { completed?: number; cost?: number; tokens?: SessionLegacy.StepFinishPart["tokens"]; error?: string },
+): SessionLegacy.Assistant {
+  return {
+    id: state.messageID!,
+    sessionID: context.sessionID,
+    role: "assistant",
+    time: { created: context.now(), ...(input.completed === undefined ? {} : { completed: input.completed }) },
+    parentID: context.parentMessageID,
+    modelID: context.modelID,
+    providerID: context.providerID,
+    mode: "claude-code",
+    agent: "claude-code",
+    path: { cwd: context.directory, root: context.directory },
+    cost: input.cost ?? 0,
+    tokens: input.tokens ?? emptyTokens(),
+    ...(input.error
+      ? { error: { name: "UnknownError" as const, data: { message: input.error } } }
+      : {}),
+  } as SessionLegacy.Assistant
+}
+
+function emptyTokens() {
+  return { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+}
+
+type ContentBlock = {
+  type?: string
+  text?: string
+  thinking?: string
+  id?: string
+  name?: string
+  input?: unknown
+  tool_use_id?: string
+  content?: unknown
+  is_error?: boolean
+  index?: number
+}
+
+function contentBlocks(content: unknown): ContentBlock[] {
+  if (typeof content === "string") return [{ type: "text", text: content }]
+  if (!Array.isArray(content)) return []
+  return content.filter((block): block is ContentBlock => isRecord(block))
+}
+
+/** Blocks have no stable id, so position within the message identifies them. */
+function blockKey(block: ContentBlock) {
+  return typeof block.index === "number" ? String(block.index) : (block.text ?? block.thinking ?? "").length.toString()
+}
+
+function readResultText(content: unknown): string {
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : typeof item === "string" ? item : ""))
+      .filter(Boolean)
+      .join("\n")
+  }
+  if (isRecord(content) && typeof content.text === "string") return content.text
+  return ""
+}
+
+/** Claude's own subtypes are opaque to a reader; say what actually happened. */
+const RESULT_ERRORS: Record<string, string> = {
+  error_during_execution:
+    "Claude Code could not continue this conversation. Sending another message starts a fresh one.",
+  error_max_turns: "Claude Code reached its turn limit for this request.",
+}
+
+function readResultError(event: ClaudeEvent) {
+  if (typeof event.result === "string" && event.result.trim()) return event.result.trim()
+  if (typeof event.subtype === "string" && event.subtype !== "success") {
+    return RESULT_ERRORS[event.subtype] ?? `Claude Code stopped: ${event.subtype}`
+  }
+  return "Claude Code reported an error."
+}
+
+function readTodos(input: Record<string, unknown>) {
+  const todos = Array.isArray(input.todos) ? input.todos : []
+  return todos.filter(isRecord).map((todo) => ({
+    content: typeof todo.content === "string" ? todo.content : typeof todo.activeForm === "string" ? todo.activeForm : "Todo",
+    status: typeof todo.status === "string" ? todo.status : "pending",
+    ...(typeof todo.priority === "string" ? { priority: todo.priority } : {}),
+  }))
+}
+
+function numberOr(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+export * as ClaudeMapper from "./claude-mapper"

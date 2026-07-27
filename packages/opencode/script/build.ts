@@ -22,6 +22,7 @@ const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const noMinify = process.argv.includes("--no-minify")
+const guiCoordinatorFlag = process.argv.includes("--gui-coordinator")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 const targetFlag = (() => {
@@ -53,7 +54,37 @@ const createEmbeddedWebUIBundle = async () => {
   ].join("\n")
 }
 
-const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+const embeddedFileMap = skipEmbedWebUi || guiCoordinatorFlag ? null : await createEmbeddedWebUIBundle()
+
+function bunTarget(name: string) {
+  switch (name) {
+    case "opencode-linux-arm64":
+      return "bun-linux-arm64"
+    case "opencode-linux-x64":
+      return "bun-linux-x64"
+    case "opencode-linux-x64-baseline":
+      return "bun-linux-x64-baseline"
+    case "opencode-linux-arm64-musl":
+      return "bun-linux-arm64-musl"
+    case "opencode-linux-x64-musl":
+      return "bun-linux-x64-musl"
+    case "opencode-linux-x64-baseline-musl":
+      return "bun-linux-x64-baseline-musl"
+    case "opencode-darwin-arm64":
+      return "bun-darwin-arm64"
+    case "opencode-darwin-x64":
+      return "bun-darwin-x64"
+    case "opencode-darwin-x64-baseline":
+      return "bun-darwin-x64-baseline"
+    case "opencode-windows-arm64":
+      return "bun-windows-arm64"
+    case "opencode-windows-x64":
+      return "bun-windows-x64"
+    case "opencode-windows-x64-baseline":
+      return "bun-windows-x64-baseline"
+  }
+  throw new Error(`No Bun compile target is defined for ${name}`)
+}
 
 const allTargets: {
   os: string
@@ -122,12 +153,7 @@ const targets = targetFlag
   ? allTargets.filter((item) => {
       // --target flag: match against the generated artifact name suffix
       // e.g. --target win32-x64-baseline matches { os: "win32", arch: "x64", avx2: false }
-      const suffix = [
-        item.os,
-        item.arch,
-        item.avx2 === false ? "baseline" : undefined,
-        item.abi,
-      ]
+      const suffix = [item.os, item.arch, item.avx2 === false ? "baseline" : undefined, item.abi]
         .filter(Boolean)
         .join("-")
       return suffix === targetFlag
@@ -153,12 +179,22 @@ const targets = targetFlag
       })
     : allTargets
 
+if (targetFlag && targets.length === 0) {
+  throw new Error(
+    `Unsupported build target: ${targetFlag}. Expected one of ${allTargets
+      .map((item) =>
+        [item.os, item.arch, item.avx2 === false ? "baseline" : undefined, item.abi].filter(Boolean).join("-"),
+      )
+      .join(", ")}`,
+  )
+}
+if (targets.length === 0) throw new Error(`No build target matches ${process.platform}-${process.arch}`)
+
 await $`rm -rf dist`
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
-  await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
-  await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
+  await $`bun install --frozen-lockfile --os="*" --cpu="*"`
 }
 for (const item of targets) {
   const name = [
@@ -174,19 +210,30 @@ for (const item of targets) {
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 
-  const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
-  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
-  const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
+  const parserWorker = guiCoordinatorFlag
+    ? undefined
+    : fs.realpathSync(
+        fs.existsSync(path.resolve(dir, "node_modules/@opentui/core/parser.worker.js"))
+          ? path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
+          : path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js"),
+      )
   const workerPath = "./src/cli/cmd/tui/worker.ts"
 
   // Use platform-specific bunfs root path based on target OS
   const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
-  const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
+  const workerRelativePath = parserWorker ? path.relative(dir, parserWorker).replaceAll("\\", "/") : undefined
+  const artifact = guiCoordinatorFlag ? "opencode-gui-coordinator" : "opencode"
+  const entrypoints = guiCoordinatorFlag
+    ? ["./src/gui-coordinator.ts"]
+    : parserWorker
+      ? ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])]
+      : []
+  if (entrypoints.length === 0) throw new Error("Missing OpenTUI parser worker")
 
-  await Bun.build({
+  const result = await Bun.build({
     conditions: ["browser"],
     tsconfig: "./tsconfig.json",
-    plugins: [plugin],
+    plugins: guiCoordinatorFlag ? [] : [plugin],
     external: ["node-gyp"],
     format: "esm",
     minify: !noMinify,
@@ -197,26 +244,41 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
-      outfile: `dist/${name}/bin/opencode`,
+      target: bunTarget(name),
+      outfile: `dist/${name}/bin/${artifact}`,
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    entrypoints,
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MODELS_DEV: generated.modelsData,
-      OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
-      OPENCODE_WORKER_PATH: workerPath,
+      ...(workerRelativePath
+        ? {
+            OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
+            OPENCODE_WORKER_PATH: workerPath,
+          }
+        : {}),
       OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
     },
   })
+  if (!result.success) throw new AggregateError(result.logs, `Build failed for ${name}`)
+
+  const binaryPath = path.resolve(`dist/${name}/bin/${artifact}${item.os === "win32" ? ".exe" : ""}`)
+  const binary = Bun.file(binaryPath)
+  if (!(await binary.exists()) || binary.size < 1024)
+    throw new Error(`Missing or empty binary for ${name}: ${binaryPath}`)
+  const header = Buffer.from(await binary.slice(0, 4).arrayBuffer()).toString("hex")
+  const validHeader =
+    (item.os === "win32" && header.startsWith("4d5a")) ||
+    (item.os === "linux" && header === "7f454c46") ||
+    (item.os === "darwin" && ["feedface", "feedfacf", "cefaedfe", "cffaedfe"].includes(header))
+  if (!validHeader) throw new Error(`Invalid ${item.os} binary header for ${name}: ${header}`)
 
   // Smoke test: only run if binary is for current platform
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/opencode`
+  if (!guiCoordinatorFlag && item.os === process.platform && item.arch === process.arch && !item.abi) {
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()

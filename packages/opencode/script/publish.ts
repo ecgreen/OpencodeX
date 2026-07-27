@@ -4,6 +4,10 @@ import pkg from "../package.json"
 import { Script } from "@opencode-ai/script"
 import { fileURLToPath } from "url"
 
+if (process.env.OPENCODEX_ENABLE_LEGACY_PUBLISH !== "1") {
+  throw new Error("Legacy upstream CLI publishing is disabled. Use release-cli.yml.")
+}
+
 const dir = fileURLToPath(new URL("..", import.meta.url))
 process.chdir(dir)
 

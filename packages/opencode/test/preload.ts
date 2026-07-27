@@ -11,7 +11,10 @@ const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
   const busy = (error: unknown) =>
-    typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "EBUSY" || (process.platform === "win32" && error.code === "EFAULT"))
   const rm = async (left: number): Promise<void> => {
     Bun.gc(true)
     await sleep(100)
@@ -22,8 +25,8 @@ afterAll(async () => {
     })
   }
 
-  // Windows can keep SQLite WAL handles alive until GC finalizers run, so we
-  // force GC and retry teardown to avoid flaky EBUSY in test cleanup.
+  // Bun can report retained Windows SQLite handles as EBUSY or EFAULT, so force
+  // GC and retry teardown without hiding persistent or unrelated failures.
   await rm(30)
 })
 
@@ -82,14 +85,45 @@ delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
 // Use in-memory sqlite
 process.env["OPENCODE_DB"] = ":memory:"
 
-// Now safe to import from src/
-const { Log } = await import("@opencode-ai/core/util/log")
-const { initProjectors } = await import("../src/server/projectors")
+const explicitTestTargets = process.argv.slice(1).filter((arg) => !arg.startsWith("-"))
+if (process.env["OPENCODE_TEST_PRELOAD_DEBUG"] === "true") {
+  console.error(JSON.stringify({ argv: process.argv, explicitTestTargets }))
+}
+const needsSolidTransform = explicitTestTargets.length === 0 || explicitTestTargets.some((arg) =>
+  arg.endsWith(".tsx") || arg.includes("/cli/tui/") || arg.includes("\\cli\\tui\\")
+)
+if (needsSolidTransform) {
+  await import("@opentui/solid/bun-plugin")
+    .then((mod) => mod.ensureSolidTransformPlugin())
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.includes("@babel/preset-typescript")) throw error
+    })
+}
 
-void Log.init({
-  print: false,
-  dev: true,
-  level: "DEBUG",
-})
+const purePreloadTest = explicitTestTargets.length > 0 && explicitTestTargets.every((arg) =>
+  arg.includes("/test/opencodex/workbench-git.test.ts") || arg.includes("\\test\\opencodex\\workbench-git.test.ts")
+)
 
-initProjectors()
+if (!purePreloadTest) {
+  // Now safe to import from src/
+  const appSetup = await Promise.all([
+    import("@opencode-ai/core/util/log"),
+    import("../src/server/projectors"),
+  ]).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes("Cannot find package 'effect'") || message.includes("xdg-basedir")) return
+    throw error
+  })
+
+  if (appSetup) {
+    const [{ Log }, { initProjectors }] = appSetup
+    void Log.init({
+      print: false,
+      dev: true,
+      level: "DEBUG",
+    })
+
+    initProjectors()
+  }
+}

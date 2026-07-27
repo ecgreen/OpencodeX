@@ -76,6 +76,12 @@ import type {
   GlobalDisposeResponses,
   GlobalEventErrors,
   GlobalEventResponses,
+  GlobalGuiBridgeRespondErrors,
+  GlobalGuiBridgeRespondResponses,
+  GlobalGuiBridgeSyncErrors,
+  GlobalGuiBridgeSyncResponses,
+  GlobalGuiBridgeUnregisterErrors,
+  GlobalGuiBridgeUnregisterResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
   GlobalUpgradeErrors,
@@ -102,6 +108,213 @@ import type {
   McpRemoteConfig,
   McpStatusErrors,
   McpStatusResponses,
+  OpencodexJobCancelErrors,
+  OpencodexJobCancelResponses,
+  OpencodexJobClaimErrors,
+  OpencodexJobClaimResponses,
+  OpencodexJobCreateErrors,
+  OpencodeXJobCreateInput,
+  OpencodexJobCreateResponses,
+  OpencodexJobFailErrors,
+  OpencodexJobFailResponses,
+  OpencodeXJobFailure,
+  OpencodexJobGetErrors,
+  OpencodexJobGetResponses,
+  OpencodexJobListErrors,
+  OpencodexJobListResponses,
+  OpencodexJobRenewErrors,
+  OpencodexJobRenewResponses,
+  OpencodexJobRetryErrors,
+  OpencodexJobRetryResponses,
+  OpencodexJobStartErrors,
+  OpencodexJobStartResponses,
+  OpencodexJobSucceedErrors,
+  OpencodexJobSucceedResponses,
+  OpencodexJobUpdateErrors,
+  OpencodexJobUpdateResponses,
+  OpencodexPluginInstallErrors,
+  OpencodeXPluginInstallInput,
+  OpencodexPluginInstallResponses,
+  OpencodexPluginListErrors,
+  OpencodexPluginListResponses,
+  OpencodexPluginToggleErrors,
+  OpencodeXPluginToggleInput,
+  OpencodexPluginToggleResponses,
+  OpencodexProjectCreateErrors,
+  OpencodeXProjectCreateInput,
+  OpencodexProjectCreateResponses,
+  OpencodexProjectDeleteErrors,
+  OpencodexProjectDeleteResponses,
+  OpencodexProjectListErrors,
+  OpencodexProjectListResponses,
+  OpencodexProjectReorderErrors,
+  OpencodeXProjectReorderInput,
+  OpencodexProjectReorderResponses,
+  OpencodexProjectUpdateErrors,
+  OpencodexProjectUpdateResponses,
+  OpencodexProjectValidateErrors,
+  OpencodeXProjectValidateInput,
+  OpencodexProjectValidateResponses,
+  OpencodexSessionCreateErrors,
+  OpencodeXSessionCreateInput,
+  OpencodexSessionCreateResponses,
+  OpencodexSessionDeleteErrors,
+  OpencodexSessionDeleteResponses,
+  OpencodexSessionMoveErrors,
+  OpencodeXSessionMoveInput,
+  OpencodexSessionMoveResponses,
+  OpencodexSessionStateUpdateErrors,
+  OpencodexSessionStateUpdateResponses,
+  OpencodexSessionSyncErrors,
+  OpencodexSessionSyncResponses,
+  OpencodexSettingsGetErrors,
+  OpencodexSettingsGetResponses,
+  OpencodexSettingsUpdateErrors,
+  OpencodeXSettingsUpdateInput,
+  OpencodexSettingsUpdateResponses,
+  OpencodexStateCapabilitiesErrors,
+  OpencodexStateCapabilitiesResponses,
+  OpencodexStateEventErrors,
+  OpencodexStateEventResponses,
+  OpencodexStateOperationsErrors,
+  OpencodexStateOperationsResponses,
+  OpencodexStateSessionCardsErrors,
+  OpencodexStateSessionCardsResponses,
+  OpencodexStateSessionErrors,
+  OpencodexStateSessionResponses,
+  OpencodexStateSnapshotErrors,
+  OpencodexStateSnapshotResponses,
+  OpencodeXSwarmAddRoleInput,
+  OpencodeXSwarmAssignTaskInput,
+  OpencodexSwarmCancelErrors,
+  OpencodexSwarmCancelResponses,
+  OpencodexSwarmCreateErrors,
+  OpencodeXSwarmCreateInput,
+  OpencodexSwarmCreateResponses,
+  OpencodexSwarmDeleteErrors,
+  OpencodexSwarmDeleteResponses,
+  OpencodexSwarmGetErrors,
+  OpencodexSwarmGetResponses,
+  OpencodexSwarmListErrors,
+  OpencodexSwarmListResponses,
+  OpencodexSwarmRoleAddErrors,
+  OpencodexSwarmRoleAddResponses,
+  OpencodexSwarmRoleUpdateErrors,
+  OpencodexSwarmRoleUpdateResponses,
+  OpencodexSwarmStartErrors,
+  OpencodexSwarmStartResponses,
+  OpencodexSwarmTaskAssignErrors,
+  OpencodexSwarmTaskAssignResponses,
+  OpencodexSwarmUpdateErrors,
+  OpencodeXSwarmUpdateInput,
+  OpencodexSwarmUpdateResponses,
+  OpencodeXSwarmUpdateRoleInput,
+  OpencodexTerminalSessionCreateErrors,
+  OpencodeXTerminalSessionCreateInput,
+  OpencodexTerminalSessionCreateResponses,
+  OpencodexTerminalSessionDeleteErrors,
+  OpencodexTerminalSessionDeleteResponses,
+  OpencodexTerminalSessionGetErrors,
+  OpencodexTerminalSessionGetResponses,
+  OpencodexTerminalSessionListErrors,
+  OpencodexTerminalSessionListResponses,
+  OpencodexTerminalSessionOpenedErrors,
+  OpencodexTerminalSessionOpenedResponses,
+  OpencodexTerminalSessionUpdateErrors,
+  OpencodexTerminalSessionUpdateResponses,
+  OpencodexViewCreateErrors,
+  OpencodeXViewCreateInput,
+  OpencodexViewCreateResponses,
+  OpencodexViewDeleteErrors,
+  OpencodexViewDeleteResponses,
+  OpencodexViewGetErrors,
+  OpencodexViewGetResponses,
+  OpencodexViewListErrors,
+  OpencodexViewListResponses,
+  OpencodeXViewMember,
+  OpencodexViewReorderErrors,
+  OpencodeXViewReorderInput,
+  OpencodexViewReorderResponses,
+  OpencodexViewUpdateErrors,
+  OpencodexViewUpdateResponses,
+  OpencodexWorkbenchChangesMetricsPageErrors,
+  OpencodexWorkbenchChangesMetricsPageResponses,
+  OpencodexWorkbenchChangesPageErrors,
+  OpencodexWorkbenchChangesPageResponses,
+  OpencodexWorkbenchChangesPatchErrors,
+  OpencodexWorkbenchChangesPatchPageErrors,
+  OpencodexWorkbenchChangesPatchPageResponses,
+  OpencodexWorkbenchChangesPatchResponses,
+  OpencodexWorkbenchDiagnosticsErrors,
+  OpencodexWorkbenchDiagnosticsResponses,
+  OpencodexWorkbenchFileCompletionErrors,
+  OpencodexWorkbenchFileCompletionResponses,
+  OpencodexWorkbenchFileCreateErrors,
+  OpencodexWorkbenchFileCreateResponses,
+  OpencodexWorkbenchFileDefinitionErrors,
+  OpencodexWorkbenchFileDefinitionResponses,
+  OpencodexWorkbenchFileDeleteErrors,
+  OpencodexWorkbenchFileDeleteResponses,
+  OpencodexWorkbenchFileDiagnosticsErrors,
+  OpencodexWorkbenchFileDiagnosticsResponses,
+  OpencodexWorkbenchFileHoverErrors,
+  OpencodexWorkbenchFileHoverResponses,
+  OpencodexWorkbenchFileReadErrors,
+  OpencodexWorkbenchFileReadResponses,
+  OpencodexWorkbenchFileRenameErrors,
+  OpencodexWorkbenchFileRenameResponses,
+  OpencodexWorkbenchFileWriteErrors,
+  OpencodexWorkbenchFileWriteResponses,
+  OpencodexWorkbenchGitBranchesErrors,
+  OpencodexWorkbenchGitBranchesResponses,
+  OpencodexWorkbenchGitCheckoutErrors,
+  OpencodexWorkbenchGitCheckoutResponses,
+  OpencodexWorkbenchGitCommitErrors,
+  OpencodexWorkbenchGitCommitResponses,
+  OpencodexWorkbenchGitCreateBranchErrors,
+  OpencodexWorkbenchGitCreateBranchResponses,
+  OpencodexWorkbenchGitDiscardErrors,
+  OpencodexWorkbenchGitDiscardResponses,
+  OpencodexWorkbenchGitFetchErrors,
+  OpencodexWorkbenchGitFetchResponses,
+  OpencodexWorkbenchGitHistoryErrors,
+  OpencodexWorkbenchGitHistoryResponses,
+  OpencodexWorkbenchGithubAuthErrors,
+  OpencodexWorkbenchGithubAuthResponses,
+  OpencodexWorkbenchGithubCheckoutPullErrors,
+  OpencodexWorkbenchGithubCheckoutPullResponses,
+  OpencodexWorkbenchGithubChecksErrors,
+  OpencodexWorkbenchGithubChecksResponses,
+  OpencodexWorkbenchGithubCreatePullErrors,
+  OpencodexWorkbenchGithubCreatePullResponses,
+  OpencodexWorkbenchGithubIssuesErrors,
+  OpencodexWorkbenchGithubIssuesResponses,
+  OpencodexWorkbenchGithubPullErrors,
+  OpencodexWorkbenchGithubPullResponses,
+  OpencodexWorkbenchGithubPullsErrors,
+  OpencodexWorkbenchGithubPullsResponses,
+  OpencodexWorkbenchGithubRepoErrors,
+  OpencodexWorkbenchGithubRepoResponses,
+  OpencodexWorkbenchGitPublishErrors,
+  OpencodexWorkbenchGitPublishResponses,
+  OpencodexWorkbenchGitPullErrors,
+  OpencodexWorkbenchGitPullResponses,
+  OpencodexWorkbenchGitPushErrors,
+  OpencodexWorkbenchGitPushResponses,
+  OpencodexWorkbenchGitStageErrors,
+  OpencodexWorkbenchGitStageResponses,
+  OpencodexWorkbenchGitStashApplyErrors,
+  OpencodexWorkbenchGitStashApplyResponses,
+  OpencodexWorkbenchGitStashDropErrors,
+  OpencodexWorkbenchGitStashDropResponses,
+  OpencodexWorkbenchGitStashErrors,
+  OpencodexWorkbenchGitStashesErrors,
+  OpencodexWorkbenchGitStashesResponses,
+  OpencodexWorkbenchGitStashPopErrors,
+  OpencodexWorkbenchGitStashPopResponses,
+  OpencodexWorkbenchGitStashResponses,
+  OpencodexWorkbenchGitUnstageErrors,
+  OpencodexWorkbenchGitUnstageResponses,
   OutputFormat,
   Part as Part2,
   PartDeleteErrors,
@@ -531,6 +744,204 @@ export class Config extends HeyApiClient {
   }
 }
 
+export class GuiBridge extends HeyApiClient {
+  /**
+   * Synchronize GUI bridge scopes
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters?: {
+      clientID?: string
+      token?: string
+      capabilities?: Array<
+        "workspace.open" | "browser.navigate" | "browser.state" | "browser.screenshot" | "browser.snapshot"
+      >
+      scopes?: Array<{
+        directory: string
+        workspaceID?: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "clientID" },
+            { in: "body", key: "token" },
+            { in: "body", key: "capabilities" },
+            { in: "body", key: "scopes" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GlobalGuiBridgeSyncResponses, GlobalGuiBridgeSyncErrors, ThrowOnError>(
+      {
+        url: "/global/gui-bridge/sync",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Unregister a GUI bridge lease
+   */
+  public unregister<ThrowOnError extends boolean = false>(
+    parameters?: {
+      clientID?: string
+      token?: string
+      generation?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "clientID" },
+            { in: "body", key: "token" },
+            { in: "body", key: "generation" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      GlobalGuiBridgeUnregisterResponses,
+      GlobalGuiBridgeUnregisterErrors,
+      ThrowOnError
+    >({
+      url: "/global/gui-bridge/unregister",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Respond to a pending GUI bridge request
+   */
+  public respond<ThrowOnError extends boolean = false>(
+    parameters?: {
+      body?:
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "workspace.open"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    path: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.navigate"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.state"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.screenshot"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                    dataURL: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+        | {
+            clientID: string
+            token: string
+            requestID: string
+            operation: "browser.snapshot"
+            result:
+              | {
+                  status: "ok"
+                  output: {
+                    url: string
+                    text: string
+                  }
+                }
+              | {
+                  status: "error"
+                  message: string
+                }
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      GlobalGuiBridgeRespondResponses,
+      GlobalGuiBridgeRespondErrors,
+      ThrowOnError
+    >({
+      url: "/global/gui-bridge/respond",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Global extends HeyApiClient {
   /**
    * Get health
@@ -595,6 +1006,11 @@ export class Global extends HeyApiClient {
   private _config?: Config
   get config(): Config {
     return (this._config ??= new Config({ client: this.client }))
+  }
+
+  private _guiBridge?: GuiBridge
+  get guiBridge(): GuiBridge {
+    return (this._guiBridge ??= new GuiBridge({ client: this.client }))
   }
 }
 
@@ -1573,6 +1989,7 @@ export class File extends HeyApiClient {
       directory?: string
       workspace?: string
       path: string
+      maxBytes?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1584,6 +2001,7 @@ export class File extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "query", key: "path" },
+            { in: "query", key: "maxBytes" },
           ],
         },
       ],
@@ -2231,7 +2649,2736 @@ export class Mcp extends HeyApiClient {
   }
 }
 
+export class Settings extends HeyApiClient {
+  /**
+   * Get OpenCodeX-only settings
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexSettingsGetResponses,
+      OpencodexSettingsGetErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/settings", ...options })
+  }
+
+  /**
+   * Update OpenCodeX-only settings
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXSettingsUpdateInput?: OpencodeXSettingsUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXSettingsUpdateInput", map: "body" }] }])
+    return (options?.client ?? this.client).patch<
+      OpencodexSettingsUpdateResponses,
+      OpencodexSettingsUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Project extends HeyApiClient {
+  /**
+   * List OpencodeX projects
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexProjectListResponses,
+      OpencodexProjectListErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/project", ...options })
+  }
+
+  /**
+   * Create OpencodeX project
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXProjectCreateInput?: OpencodeXProjectCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXProjectCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexProjectCreateResponses,
+      OpencodexProjectCreateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/project",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Validate OpencodeX project folders
+   */
+  public validate<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXProjectValidateInput?: OpencodeXProjectValidateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXProjectValidateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexProjectValidateResponses,
+      OpencodexProjectValidateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/project/validate",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete an OpencodeX project
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      projectID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "projectID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexProjectDeleteResponses,
+      OpencodexProjectDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/project/{projectID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update OpencodeX project
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      projectID: string
+      name?: string
+      folders?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "projectID" },
+            { in: "body", key: "name" },
+            { in: "body", key: "folders" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexProjectUpdateResponses,
+      OpencodexProjectUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/project/{projectID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Reorder OpencodeX projects
+   */
+  public reorder<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXProjectReorderInput?: OpencodeXProjectReorderInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXProjectReorderInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexProjectReorderResponses,
+      OpencodexProjectReorderErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/project/reorder",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Session2 extends HeyApiClient {
+  /**
+   * Create a session under an OpencodeX project
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXSessionCreateInput?: OpencodeXSessionCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXSessionCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexSessionCreateResponses,
+      OpencodexSessionCreateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get lightweight OpencodeX session sync snapshot
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scope?: "project"
+      path?: string
+      roots?: "true" | "false"
+      start?: string
+      search?: string
+      limit?: string
+      since?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "scope" },
+            { in: "query", key: "path" },
+            { in: "query", key: "roots" },
+            { in: "query", key: "start" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "since" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexSessionSyncResponses,
+      OpencodexSessionSyncErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session-sync",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Move a session into an OpencodeX project
+   */
+  public move<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXSessionMoveInput?: OpencodeXSessionMoveInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXSessionMoveInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexSessionMoveResponses,
+      OpencodexSessionMoveErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session/move",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete a session
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexSessionDeleteResponses,
+      OpencodexSessionDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session/{sessionID}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class State extends HeyApiClient {
+  /**
+   * Get an atomic OpencodeX state snapshot
+   */
+  public snapshot<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateSnapshotResponses,
+      OpencodexStateSnapshotErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get an atomic OpencodeX jobs and swarms snapshot
+   */
+  public operations<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateOperationsResponses,
+      OpencodexStateOperationsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/operations",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get an atomic OpencodeX capabilities snapshot
+   */
+  public capabilities<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateCapabilitiesResponses,
+      OpencodexStateCapabilitiesErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/capabilities",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get a session-card page or resolve retained session IDs
+   */
+  public sessionCards<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      cursor?: string
+      limit?: string
+      ids?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "ids" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateSessionCardsResponses,
+      OpencodexStateSessionCardsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/session-card",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get an atomic OpencodeX session snapshot
+   */
+  public session<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      limit?: string
+      before?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "before" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexStateSessionResponses,
+      OpencodexStateSessionErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/session/{sessionID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Subscribe to server-authoritative OpencodeX state events
+   */
+  public event<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      after?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "after" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).sse.get<
+      OpencodexStateEventResponses,
+      OpencodexStateEventErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/state/event",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class SessionState extends HeyApiClient {
+  /**
+   * Update OpencodeX session UI state
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      expectedReviewedFiles?: Array<string>
+      seenAt?: number
+      reviewedAt?: number
+      reviewedFiles?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "expectedReviewedFiles" },
+            { in: "body", key: "seenAt" },
+            { in: "body", key: "reviewedAt" },
+            { in: "body", key: "reviewedFiles" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexSessionStateUpdateResponses,
+      OpencodexSessionStateUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/session-state/{sessionID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Job extends HeyApiClient {
+  /**
+   * List OpencodeX jobs
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<OpencodexJobListResponses, OpencodexJobListErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job",
+      ...options,
+    })
+  }
+
+  /**
+   * Create OpencodeX job
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXJobCreateInput?: OpencodeXJobCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXJobCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<OpencodexJobCreateResponses, OpencodexJobCreateErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get OpencodeX job
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "jobID" }] }])
+    return (options?.client ?? this.client).get<OpencodexJobGetResponses, OpencodexJobGetErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update OpencodeX job
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      title?: string
+      status?: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+      sessionID?: string
+      timeoutAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      statusReason?: string
+      metadata?: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "title" },
+            { in: "body", key: "status" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "timeoutAt" },
+            { in: "body", key: "statusReason" },
+            { in: "body", key: "metadata" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<OpencodexJobUpdateResponses, OpencodexJobUpdateErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel OpencodeX job
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "jobID" }] }])
+    return (options?.client ?? this.client).post<OpencodexJobCancelResponses, OpencodexJobCancelErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Claim an OpencodeX job lease
+   */
+  public claim<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      leaseMs?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "leaseMs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobClaimResponses, OpencodexJobClaimErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/claim",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Start a claimed OpencodeX job
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobStartResponses, OpencodexJobStartErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Renew an OpencodeX job lease
+   */
+  public renew<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      leaseMs?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "leaseMs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobRenewResponses, OpencodexJobRenewErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/renew",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Complete an OpencodeX job successfully
+   */
+  public succeed<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      result?: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "result" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobSucceedResponses, OpencodexJobSucceedErrors, ThrowOnError>(
+      {
+        url: "/experimental/opencodex/job/{jobID}/succeed",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Complete an OpencodeX job with a typed failure
+   */
+  public fail<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      owner?: string
+      failure?: OpencodeXJobFailure
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "body", key: "owner" },
+            { in: "body", key: "failure" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexJobFailResponses, OpencodexJobFailErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/fail",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Requeue an interrupted or failed OpencodeX job
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "jobID" }] }])
+    return (options?.client ?? this.client).post<OpencodexJobRetryResponses, OpencodexJobRetryErrors, ThrowOnError>({
+      url: "/experimental/opencodex/job/{jobID}/retry",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Plugin extends HeyApiClient {
+  /**
+   * List configured OpencodeX plugins
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<OpencodexPluginListResponses, OpencodexPluginListErrors, ThrowOnError>({
+      url: "/experimental/opencodex/plugin",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Install an OpencodeX plugin
+   */
+  public install<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      opencodeXPluginInstallInput?: OpencodeXPluginInstallInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "opencodeXPluginInstallInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexPluginInstallResponses,
+      OpencodexPluginInstallErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/plugin/install",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Enable or disable a TUI plugin
+   */
+  public toggle<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      opencodeXPluginToggleInput?: OpencodeXPluginToggleInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "opencodeXPluginToggleInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexPluginToggleResponses,
+      OpencodexPluginToggleErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/plugin/toggle",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class File2 extends HeyApiClient {
+  /**
+   * Read exact text from the GUI workbench
+   */
+  public read<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+      root?: string
+      maxBytes?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "root" },
+            { in: "query", key: "maxBytes" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchFileReadResponses,
+      OpencodexWorkbenchFileReadErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/read",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Write a text file from the GUI workbench
+   */
+  public write<ThrowOnError extends boolean = false>(
+    parameters?: {
+      path?: string
+      content?: string
+      previousContent?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "path" },
+            { in: "body", key: "content" },
+            { in: "body", key: "previousContent" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileWriteResponses,
+      OpencodexWorkbenchFileWriteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/write",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Create a text file from the GUI workbench
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      path?: string
+      content?: string
+      directory?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "path" },
+            { in: "body", key: "content" },
+            { in: "body", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileCreateResponses,
+      OpencodexWorkbenchFileCreateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/create",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Rename a file from the GUI workbench
+   */
+  public rename<ThrowOnError extends boolean = false>(
+    parameters?: {
+      from?: string
+      to?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "from" },
+            { in: "body", key: "to" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileRenameResponses,
+      OpencodexWorkbenchFileRenameErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/rename",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete a file from the GUI workbench
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters?: {
+      path?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "path" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileDeleteResponses,
+      OpencodexWorkbenchFileDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/delete",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Check one GUI workbench file
+   */
+  public diagnostics<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileDiagnosticsResponses,
+      OpencodexWorkbenchFileDiagnosticsErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/diagnostics",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Find a definition from the GUI workbench
+   */
+  public definition<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+      line?: number
+      column?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+            { in: "body", key: "line" },
+            { in: "body", key: "column" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileDefinitionResponses,
+      OpencodexWorkbenchFileDefinitionErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/definition",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Describe a symbol in the GUI workbench
+   */
+  public hover<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+      line?: number
+      column?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+            { in: "body", key: "line" },
+            { in: "body", key: "column" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileHoverResponses,
+      OpencodexWorkbenchFileHoverErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/hover",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Complete a symbol in the GUI workbench
+   */
+  public completion<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      root?: string
+      content?: string
+      line?: number
+      column?: number
+      triggerKind?: 1 | 2 | 3
+      triggerCharacter?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "root" },
+            { in: "body", key: "content" },
+            { in: "body", key: "line" },
+            { in: "body", key: "column" },
+            { in: "body", key: "triggerKind" },
+            { in: "body", key: "triggerCharacter" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchFileCompletionResponses,
+      OpencodexWorkbenchFileCompletionErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/file/completion",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Git extends HeyApiClient {
+  /**
+   * List Git branches for the GUI workbench
+   */
+  public branches<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGitBranchesResponses,
+      OpencodexWorkbenchGitBranchesErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/branches", ...options })
+  }
+
+  /**
+   * Load Git history for the GUI workbench
+   */
+  public history<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGitHistoryResponses,
+      OpencodexWorkbenchGitHistoryErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/history", ...options })
+  }
+
+  /**
+   * Checkout a Git branch
+   */
+  public checkout<ThrowOnError extends boolean = false>(
+    parameters?: {
+      branch?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "branch" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitCheckoutResponses,
+      OpencodexWorkbenchGitCheckoutErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/checkout",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Create and checkout a Git branch
+   */
+  public createBranch<ThrowOnError extends boolean = false>(
+    parameters?: {
+      branch?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "branch" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitCreateBranchResponses,
+      OpencodexWorkbenchGitCreateBranchErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/create-branch",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Stage Git files
+   */
+  public stage<ThrowOnError extends boolean = false>(
+    parameters?: {
+      paths?: Array<string>
+      all?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "paths" },
+            { in: "body", key: "all" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitStageResponses,
+      OpencodexWorkbenchGitStageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/stage",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Unstage Git files
+   */
+  public unstage<ThrowOnError extends boolean = false>(
+    parameters?: {
+      paths?: Array<string>
+      all?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "paths" },
+            { in: "body", key: "all" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitUnstageResponses,
+      OpencodexWorkbenchGitUnstageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/unstage",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Discard Git file changes
+   */
+  public discard<ThrowOnError extends boolean = false>(
+    parameters?: {
+      paths?: Array<string>
+      all?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "paths" },
+            { in: "body", key: "all" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitDiscardResponses,
+      OpencodexWorkbenchGitDiscardErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/discard",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Commit staged Git changes
+   */
+  public commit<ThrowOnError extends boolean = false>(
+    parameters?: {
+      message?: string
+      body?: string
+      paths?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "message" },
+            { in: "body", key: "body" },
+            { in: "body", key: "paths" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitCommitResponses,
+      OpencodexWorkbenchGitCommitErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/commit",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Fetch Git remotes
+   */
+  public fetch<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitFetchResponses,
+      OpencodexWorkbenchGitFetchErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/fetch", ...options })
+  }
+
+  /**
+   * Pull current Git branch
+   */
+  public pull<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitPullResponses,
+      OpencodexWorkbenchGitPullErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/pull", ...options })
+  }
+
+  /**
+   * Push current Git branch
+   */
+  public push<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitPushResponses,
+      OpencodexWorkbenchGitPushErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/push", ...options })
+  }
+
+  /**
+   * Publish current Git branch and set upstream
+   */
+  public publish<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitPublishResponses,
+      OpencodexWorkbenchGitPublishErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/publish", ...options })
+  }
+
+  /**
+   * List Git stashes
+   */
+  public stashes<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGitStashesResponses,
+      OpencodexWorkbenchGitStashesErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/git/stashes", ...options })
+  }
+
+  /**
+   * Stash current Git changes
+   */
+  public stash<ThrowOnError extends boolean = false>(
+    parameters?: {
+      message?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "message" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitStashResponses,
+      OpencodexWorkbenchGitStashErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/stash",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Apply a Git stash
+   */
+  public stashApply<ThrowOnError extends boolean = false>(
+    parameters?: {
+      ref?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "ref" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitStashApplyResponses,
+      OpencodexWorkbenchGitStashApplyErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/stash/apply",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Pop a Git stash
+   */
+  public stashPop<ThrowOnError extends boolean = false>(
+    parameters?: {
+      ref?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "ref" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitStashPopResponses,
+      OpencodexWorkbenchGitStashPopErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/stash/pop",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Drop a Git stash
+   */
+  public stashDrop<ThrowOnError extends boolean = false>(
+    parameters?: {
+      ref?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "ref" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGitStashDropResponses,
+      OpencodexWorkbenchGitStashDropErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/git/stash/drop",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Changes extends HeyApiClient {
+  /**
+   * List paged GUI workbench changes
+   */
+  public page<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      cursor?: string
+      revision?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesPageResponses,
+      OpencodexWorkbenchChangesPageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/page",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Load one bounded GUI workbench patch
+   */
+  public patch<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+      revision?: string
+      context?: string
+      maxBytes?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "context" },
+            { in: "query", key: "maxBytes" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesPatchResponses,
+      OpencodexWorkbenchChangesPatchErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/patch",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Measure a page of GUI workbench changes
+   */
+  public metricsPage<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      revision: string
+      path?: string
+      cursor?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "path" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesMetricsPageResponses,
+      OpencodexWorkbenchChangesMetricsPageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/metrics/page",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Load a selected GUI workbench patch page
+   */
+  public patchPage<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+      revision: string
+      cursor?: string
+      context?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+            { in: "query", key: "revision" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "context" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchChangesPatchPageResponses,
+      OpencodexWorkbenchChangesPatchPageErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/changes/patch/page",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Github extends HeyApiClient {
+  /**
+   * Get GitHub remote status
+   */
+  public auth<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGithubAuthResponses,
+      OpencodexWorkbenchGithubAuthErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/github/auth", ...options })
+  }
+
+  /**
+   * Get GitHub repository information
+   */
+  public repo<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGithubRepoResponses,
+      OpencodexWorkbenchGithubRepoErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/github/repo", ...options })
+  }
+
+  /**
+   * List GitHub issues from the remote repository
+   */
+  public issues<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGithubIssuesResponses,
+      OpencodexWorkbenchGithubIssuesErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/github/issues", ...options })
+  }
+
+  /**
+   * List GitHub pull requests from the remote repository
+   */
+  public pulls<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchGithubPullsResponses,
+      OpencodexWorkbenchGithubPullsErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/github/pulls", ...options })
+  }
+
+  /**
+   * Get GitHub pull request detail from the remote repository
+   */
+  public pull<ThrowOnError extends boolean = false>(
+    parameters?: {
+      number?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "number" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGithubPullResponses,
+      OpencodexWorkbenchGithubPullErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/github/pull",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get GitHub pull request checks from the remote repository
+   */
+  public checks<ThrowOnError extends boolean = false>(
+    parameters?: {
+      number?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "number" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGithubChecksResponses,
+      OpencodexWorkbenchGithubChecksErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/github/checks",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Checkout a GitHub pull request with Git
+   */
+  public checkoutPull<ThrowOnError extends boolean = false>(
+    parameters?: {
+      number?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "number" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGithubCheckoutPullResponses,
+      OpencodexWorkbenchGithubCheckoutPullErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/github/checkout-pull",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Create a GitHub pull request browser handoff
+   */
+  public createPull<ThrowOnError extends boolean = false>(
+    parameters?: {
+      title?: string
+      body?: string
+      base?: string
+      head?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "title" },
+            { in: "body", key: "body" },
+            { in: "body", key: "base" },
+            { in: "body", key: "head" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexWorkbenchGithubCreatePullResponses,
+      OpencodexWorkbenchGithubCreatePullErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/workbench/github/create-pull",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Workbench extends HeyApiClient {
+  /**
+   * Run project checks for the GUI workbench
+   */
+  public diagnostics<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexWorkbenchDiagnosticsResponses,
+      OpencodexWorkbenchDiagnosticsErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/workbench/diagnostics", ...options })
+  }
+
+  private _file?: File2
+  get file(): File2 {
+    return (this._file ??= new File2({ client: this.client }))
+  }
+
+  private _git?: Git
+  get git(): Git {
+    return (this._git ??= new Git({ client: this.client }))
+  }
+
+  private _changes?: Changes
+  get changes(): Changes {
+    return (this._changes ??= new Changes({ client: this.client }))
+  }
+
+  private _github?: Github
+  get github(): Github {
+    return (this._github ??= new Github({ client: this.client }))
+  }
+}
+
+export class Task extends HeyApiClient {
+  /**
+   * Assign task to OpencodeX swarm
+   */
+  public assign<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+      opencodeXSwarmAssignTaskInput?: OpencodeXSwarmAssignTaskInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "swarmID" },
+            { key: "opencodeXSwarmAssignTaskInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexSwarmTaskAssignResponses,
+      OpencodexSwarmTaskAssignErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm/{swarmID}/task",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Role extends HeyApiClient {
+  /**
+   * Add OpencodeX swarm role
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+      opencodeXSwarmAddRoleInput?: OpencodeXSwarmAddRoleInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "swarmID" },
+            { key: "opencodeXSwarmAddRoleInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexSwarmRoleAddResponses,
+      OpencodexSwarmRoleAddErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm/{swarmID}/role",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Update OpencodeX swarm role
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+      roleID: string
+      opencodeXSwarmUpdateRoleInput?: OpencodeXSwarmUpdateRoleInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "swarmID" },
+            { in: "path", key: "roleID" },
+            { key: "opencodeXSwarmUpdateRoleInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexSwarmRoleUpdateResponses,
+      OpencodexSwarmRoleUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm/{swarmID}/role/{roleID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Swarm extends HeyApiClient {
+  /**
+   * List OpencodeX swarms
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<OpencodexSwarmListResponses, OpencodexSwarmListErrors, ThrowOnError>({
+      url: "/experimental/opencodex/swarm",
+      ...options,
+    })
+  }
+
+  /**
+   * Create OpencodeX swarm
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXSwarmCreateInput?: OpencodeXSwarmCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXSwarmCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexSwarmCreateResponses,
+      OpencodexSwarmCreateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete OpencodeX swarm
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "swarmID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexSwarmDeleteResponses,
+      OpencodexSwarmDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm/{swarmID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get OpencodeX swarm
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "swarmID" }] }])
+    return (options?.client ?? this.client).get<OpencodexSwarmGetResponses, OpencodexSwarmGetErrors, ThrowOnError>({
+      url: "/experimental/opencodex/swarm/{swarmID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update OpencodeX swarm
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+      opencodeXSwarmUpdateInput?: OpencodeXSwarmUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "swarmID" },
+            { key: "opencodeXSwarmUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexSwarmUpdateResponses,
+      OpencodexSwarmUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm/{swarmID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Start OpencodeX swarm
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "swarmID" }] }])
+    return (options?.client ?? this.client).post<OpencodexSwarmStartResponses, OpencodexSwarmStartErrors, ThrowOnError>(
+      {
+        url: "/experimental/opencodex/swarm/{swarmID}/start",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Cancel OpencodeX swarm
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      swarmID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "swarmID" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexSwarmCancelResponses,
+      OpencodexSwarmCancelErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/swarm/{swarmID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _task?: Task
+  get task(): Task {
+    return (this._task ??= new Task({ client: this.client }))
+  }
+
+  private _role?: Role
+  get role(): Role {
+    return (this._role ??= new Role({ client: this.client }))
+  }
+}
+
+export class TerminalSession extends HeyApiClient {
+  /**
+   * List OpencodeX terminal sessions
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      OpencodexTerminalSessionListResponses,
+      OpencodexTerminalSessionListErrors,
+      ThrowOnError
+    >({ url: "/experimental/opencodex/terminal-session", ...options })
+  }
+
+  /**
+   * Create an OpencodeX terminal session
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXTerminalSessionCreateInput?: OpencodeXTerminalSessionCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ key: "opencodeXTerminalSessionCreateInput", map: "body" }] }],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexTerminalSessionCreateResponses,
+      OpencodexTerminalSessionCreateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete an OpencodeX terminal session
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "terminalSessionID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexTerminalSessionDeleteResponses,
+      OpencodexTerminalSessionDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get an OpencodeX terminal session
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "terminalSessionID" }] }])
+    return (options?.client ?? this.client).get<
+      OpencodexTerminalSessionGetResponses,
+      OpencodexTerminalSessionGetErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update an OpencodeX terminal session
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+      expectedTimeUpdated?: number
+      title?: string
+      projectID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "terminalSessionID" },
+            { in: "body", key: "expectedTimeUpdated" },
+            { in: "body", key: "title" },
+            { in: "body", key: "projectID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexTerminalSessionUpdateResponses,
+      OpencodexTerminalSessionUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Record an OpencodeX terminal session launch
+   */
+  public opened<ThrowOnError extends boolean = false>(
+    parameters: {
+      terminalSessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "terminalSessionID" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexTerminalSessionOpenedResponses,
+      OpencodexTerminalSessionOpenedErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/terminal-session/{terminalSessionID}/opened",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class View extends HeyApiClient {
+  /**
+   * List OpencodeX views
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<OpencodexViewListResponses, OpencodexViewListErrors, ThrowOnError>({
+      url: "/experimental/opencodex/view",
+      ...options,
+    })
+  }
+
+  /**
+   * Create OpencodeX view
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXViewCreateInput?: OpencodeXViewCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXViewCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<OpencodexViewCreateResponses, OpencodexViewCreateErrors, ThrowOnError>(
+      {
+        url: "/experimental/opencodex/view",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Reorder OpencodeX views
+   */
+  public reorder<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXViewReorderInput?: OpencodeXViewReorderInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXViewReorderInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      OpencodexViewReorderResponses,
+      OpencodexViewReorderErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/view/reorder",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete OpencodeX view
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      viewID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "viewID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexViewDeleteResponses,
+      OpencodexViewDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/view/{viewID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get OpencodeX view
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      viewID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "viewID" }] }])
+    return (options?.client ?? this.client).get<OpencodexViewGetResponses, OpencodexViewGetErrors, ThrowOnError>({
+      url: "/experimental/opencodex/view/{viewID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update OpencodeX view
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      viewID: string
+      expectedTimeUpdated?: number
+      title?: string
+      sessionIDs?: Array<string>
+      members?: Array<OpencodeXViewMember>
+      focusedSessionID?: string
+      focusedItemID?: string
+      layout?: string
+      metadata?: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "viewID" },
+            { in: "body", key: "expectedTimeUpdated" },
+            { in: "body", key: "title" },
+            { in: "body", key: "sessionIDs" },
+            { in: "body", key: "members" },
+            { in: "body", key: "focusedSessionID" },
+            { in: "body", key: "focusedItemID" },
+            { in: "body", key: "layout" },
+            { in: "body", key: "metadata" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexViewUpdateResponses,
+      OpencodexViewUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/view/{viewID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Opencodex extends HeyApiClient {
+  private _settings?: Settings
+  get settings(): Settings {
+    return (this._settings ??= new Settings({ client: this.client }))
+  }
+
+  private _project?: Project
+  get project(): Project {
+    return (this._project ??= new Project({ client: this.client }))
+  }
+
+  private _session?: Session2
+  get session(): Session2 {
+    return (this._session ??= new Session2({ client: this.client }))
+  }
+
+  private _state?: State
+  get state(): State {
+    return (this._state ??= new State({ client: this.client }))
+  }
+
+  private _sessionState?: SessionState
+  get sessionState(): SessionState {
+    return (this._sessionState ??= new SessionState({ client: this.client }))
+  }
+
+  private _job?: Job
+  get job(): Job {
+    return (this._job ??= new Job({ client: this.client }))
+  }
+
+  private _plugin?: Plugin
+  get plugin(): Plugin {
+    return (this._plugin ??= new Plugin({ client: this.client }))
+  }
+
+  private _workbench?: Workbench
+  get workbench(): Workbench {
+    return (this._workbench ??= new Workbench({ client: this.client }))
+  }
+
+  private _swarm?: Swarm
+  get swarm(): Swarm {
+    return (this._swarm ??= new Swarm({ client: this.client }))
+  }
+
+  private _terminalSession?: TerminalSession
+  get terminalSession(): TerminalSession {
+    return (this._terminalSession ??= new TerminalSession({ client: this.client }))
+  }
+
+  private _view?: View
+  get view(): View {
+    return (this._view ??= new View({ client: this.client }))
+  }
+}
+
+export class Project2 extends HeyApiClient {
   /**
    * List all projects
    *
@@ -3040,7 +6187,7 @@ export class Provider extends HeyApiClient {
   }
 }
 
-export class Session2 extends HeyApiClient {
+export class Session3 extends HeyApiClient {
   /**
    * List sessions
    *
@@ -3092,6 +6239,7 @@ export class Session2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
+      id?: string
       parentID?: string
       title?: string
       agent?: string
@@ -3115,6 +6263,7 @@ export class Session2 extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
             { in: "body", key: "parentID" },
             { in: "body", key: "title" },
             { in: "body", key: "agent" },
@@ -3247,6 +6396,12 @@ export class Session2 extends HeyApiClient {
         [key: string]: unknown
       }
       permission?: PermissionRuleset
+      model?: {
+        id: string
+        providerID: string
+        variant?: string
+      }
+      agent?: string
       time?: {
         archived?: number
       }
@@ -3264,6 +6419,8 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "title" },
             { in: "body", key: "metadata" },
             { in: "body", key: "permission" },
+            { in: "body", key: "model" },
+            { in: "body", key: "agent" },
             { in: "body", key: "time" },
           ],
         },
@@ -3390,6 +6547,7 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       limit?: number
+      renderBudget?: number
       before?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -3403,6 +6561,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "query", key: "limit" },
+            { in: "query", key: "renderBudget" },
             { in: "query", key: "before" },
           ],
         },
@@ -4255,7 +7414,7 @@ export class Sync extends HeyApiClient {
   }
 }
 
-export class Session3 extends HeyApiClient {
+export class Session4 extends HeyApiClient {
   /**
    * List v2 sessions
    *
@@ -4558,9 +7717,9 @@ export class Provider2 extends HeyApiClient {
 }
 
 export class V2 extends HeyApiClient {
-  private _session?: Session3
-  get session(): Session3 {
-    return (this._session ??= new Session3({ client: this.client }))
+  private _session?: Session4
+  get session(): Session4 {
+    return (this._session ??= new Session4({ client: this.client }))
   }
 
   private _model?: Model
@@ -5114,9 +8273,14 @@ export class OpencodeClient extends HeyApiClient {
     return (this._mcp ??= new Mcp({ client: this.client }))
   }
 
-  private _project?: Project
-  get project(): Project {
-    return (this._project ??= new Project({ client: this.client }))
+  private _opencodex?: Opencodex
+  get opencodex(): Opencodex {
+    return (this._opencodex ??= new Opencodex({ client: this.client }))
+  }
+
+  private _project?: Project2
+  get project(): Project2 {
+    return (this._project ??= new Project2({ client: this.client }))
   }
 
   private _pty?: Pty
@@ -5139,9 +8303,9 @@ export class OpencodeClient extends HeyApiClient {
     return (this._provider ??= new Provider({ client: this.client }))
   }
 
-  private _session?: Session2
-  get session(): Session2 {
-    return (this._session ??= new Session2({ client: this.client }))
+  private _session?: Session3
+  get session(): Session3 {
+    return (this._session ??= new Session3({ client: this.client }))
   }
 
   private _part?: Part

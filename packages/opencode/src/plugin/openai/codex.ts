@@ -378,8 +378,8 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           Object.entries(provider.models)
             .filter(([, model]) => {
               if (ALLOWED_MODELS.has(model.api.id)) return true
-              const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
-              return match ? parseFloat(match[1]) > 5.4 : false
+              const match = model.api.id.match(/^gpt-(\d+)[.-](\d+)/)
+              return match ? Number(`${match[1]}.${match[2]}`) > 5.4 : false
             })
             .map(([modelID, model]) => [
               modelID,
@@ -397,6 +397,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                       output: 128_000,
                     }
                   : model.limit,
+                variants: openaiModelVariants(model),
               },
             ]),
         )
@@ -645,6 +646,22 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
       if (input.model.providerID !== "openai") return
       // Match codex cli
       output.maxOutputTokens = undefined
+    },
+  }
+}
+
+function openaiModelVariants(model: {
+  api: { id: string }
+  id: string
+  variants?: Record<string, Record<string, unknown>>
+}) {
+  if (!["gpt-5.5", "gpt-5-5"].includes(model.api.id) && !["gpt-5.5", "gpt-5-5"].includes(model.id)) return model.variants
+  return {
+    ...model.variants,
+    xhigh: model.variants?.xhigh ?? {
+      reasoningEffort: "xhigh",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
     },
   }
 }

@@ -10,6 +10,7 @@ import {
 } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { AppProcess } from "@opencode-ai/core/process"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
@@ -25,6 +26,15 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { OpencodeXProject } from "@/opencodex/project"
+import { OpencodeXJob } from "@/opencodex/job"
+import { OpencodeXSwarm } from "@/opencodex/swarm"
+import { OpencodeXSessionState } from "@/opencodex/session-state"
+import { OpencodeXState } from "@/opencodex/state"
+import { OpencodeXSettings } from "@/opencodex/settings"
+import { OpencodeXView } from "@/opencodex/view"
+import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
+import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
+import { GuiBridge } from "@/opencodex/gui-bridge"
 import { Installation } from "@/installation"
 import { InstanceLayer } from "@/project/instance-layer"
 import { Plugin } from "@/plugin"
@@ -208,7 +218,16 @@ export function createRoutes(
       Installation.defaultLayer,
       MCP.defaultLayer,
       ModelsDev.defaultLayer,
+      OpencodeXJob.defaultLayer,
       OpencodeXProject.defaultLayer,
+      OpencodeXSessionState.defaultLayer,
+      OpencodeXState.defaultLayer,
+      OpencodeXSettings.defaultLayer,
+      OpencodeXSwarm.defaultLayer,
+      OpencodeXTerminalSession.defaultLayer,
+      OpencodeXClaudeDriver.defaultLayer,
+      OpencodeXView.defaultLayer,
+      GuiBridge.defaultLayer,
       Permission.defaultLayer,
       Plugin.defaultLayer,
       Project.defaultLayer,
@@ -237,6 +256,7 @@ export function createRoutes(
       Workspace.defaultLayer,
       Worktree.appLayer,
       AppFileSystem.defaultLayer,
+      AppProcess.defaultLayer,
       FetchHttpClient.layer,
       HttpServer.layerServices,
     ]),

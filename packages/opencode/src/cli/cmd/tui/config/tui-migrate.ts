@@ -101,6 +101,8 @@ function normalizeTui(data: Record<string, unknown>):
 
 async function backupAndStripLegacy(file: string, source: string) {
   const backup = file + ".tui-migration.bak"
+  const info = Filesystem.stat(file)
+  if (info && (Number(info.mode) & 0o222) === 0) return false
   const hasBackup = await Filesystem.exists(backup)
   const backed = hasBackup
     ? true

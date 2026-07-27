@@ -1,0 +1,239 @@
+/* Thinking blocks and todo lists - the two "card" surfaces that are not diffs. */
+
+.part.thinking-block {
+  display: block;
+  margin: var(--ds-space-2) 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-left: 3px solid var(--part-accent);
+  border-radius: 0 var(--ds-radius-card) var(--ds-radius-card) 0;
+  background: var(--ds-surface);
+}
+
+.part.thinking-block .part-title {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.part.thinking-block .part-meta {
+  font-style: italic;
+}
+
+.thinking-segments {
+  display: grid;
+  gap: var(--ds-space-3);
+}
+
+.thinking-segment header {
+  margin-bottom: var(--ds-space-1);
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.thinking-segment [data-component="markdown"] {
+  color: var(--ds-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/*
+ * Todos read as a plan in flight: progress bar, then a stepper rail that
+ * connects the status markers. Status is carried by marker shape and text
+ * weight, never by colour alone.
+ */
+.todo-list {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.todo-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 2px 0;
+}
+
+.todo-progress-track {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-accent-plan) 16%, transparent);
+}
+
+.todo-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ds-accent-plan);
+  transition: width var(--ds-motion-route) var(--ds-ease-enter);
+}
+
+.todo-progress-label {
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.todo-items {
+  position: relative;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The rail: a thin line behind the markers, trimmed at both ends. */
+.todo-items::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 9px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--ds-border-subtle);
+}
+
+.todo-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 5px var(--ds-space-2) 5px 0;
+  border-radius: var(--ds-radius-control);
+}
+
+.todo-item:hover {
+  background: color-mix(in srgb, var(--ds-surface-hover) 60%, transparent);
+}
+
+.todo-marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--ds-border-strong);
+  border-radius: 999px;
+  color: var(--ds-text-muted);
+  background: var(--ds-surface);
+}
+
+/* Glyphs are drawn heavier than the icon default: at this size a 2px stroke
+   reads as a smudge, not a check. */
+.todo-marker .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3px;
+}
+
+.todo-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--ds-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.todo-priority {
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--ds-text-muted);
+  background: color-mix(in srgb, var(--ds-text-muted) 12%, transparent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.todo-priority[data-priority="high"] {
+  color: var(--ds-danger);
+  background: color-mix(in srgb, var(--ds-danger) 12%, transparent);
+}
+
+.todo-priority[data-priority="medium"] {
+  color: var(--ds-warning);
+  background: color-mix(in srgb, var(--ds-warning) 13%, transparent);
+}
+
+.todo-item[data-status="completed"] .todo-marker {
+  border-color: transparent;
+  background: var(--ds-accent-plan);
+  color: var(--ds-control-accent-text);
+}
+
+.todo-item[data-status="completed"] .todo-content {
+  color: var(--ds-text-muted);
+  font-weight: 500;
+}
+
+.todo-item[data-status="in_progress"] .todo-marker {
+  border-color: var(--ds-accent-plan);
+  color: var(--ds-accent-plan);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-accent-plan) 15%, transparent);
+}
+
+.todo-marker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ds-accent-plan);
+  animation: todo-pulse 1.8s var(--ds-ease-enter) infinite;
+}
+
+@keyframes todo-pulse {
+  0%, 100% {
+    transform: scale(.7);
+    opacity: .65;
+  }
+
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.todo-item[data-status="in_progress"] .todo-content {
+  font-weight: 700;
+}
+
+.todo-item[data-status="cancelled"] {
+  opacity: .65;
+}
+
+.todo-item[data-status="cancelled"] .todo-marker {
+  border-style: dashed;
+}
+
+.todo-item[data-status="cancelled"] .todo-content {
+  color: var(--ds-text-muted);
+  font-weight: 500;
+  text-decoration: line-through;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-marker-dot {
+    animation: none;
+  }
+
+  .todo-progress-fill {
+    transition: none;
+  }
+}
+
+.inspector-todos {
+  gap: var(--ds-space-1);
+}

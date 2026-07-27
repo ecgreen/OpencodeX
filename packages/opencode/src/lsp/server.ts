@@ -98,12 +98,32 @@ export const Typescript: Info = {
     ["deno.json", "deno.jsonc"],
   ),
   extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
-  async spawn(root, ctx) {
-    const tsserver = Module.resolve("typescript/lib/tsserver.js", ctx.directory)
+  async spawn(root, ctx, flags) {
+    const target = path.join(
+      "node_modules",
+      ".bin",
+      "typescript-language-server" + (process.platform === "win32" ? ".cmd" : ""),
+    )
+    const candidates = Filesystem.up({
+      targets: [target],
+      start: root,
+      stop: ctx.worktree,
+    })
+    const first = await candidates.next()
+    await candidates.return()
+    const installed = first.value ?? which("typescript-language-server")
+    const bin = installed ?? (flags.disableLspDownload ? undefined : await Npm.which("typescript-language-server"))
+    if (!bin) return
+    const localTypeScript = Module.resolve("typescript/lib/tsserver.js", ctx.directory)
+      ?? Module.resolve("typescript/lib/tsserver.js", import.meta.dir)
+      ?? Module.resolve("typescript/lib/tsserver.js", path.dirname(bin))
+    const cachedTypeScript = localTypeScript || flags.disableLspDownload
+      ? undefined
+      : await Npm.add("typescript").then((item) => item.directory).catch(() => undefined)
+    const tsserver = localTypeScript
+      ?? (cachedTypeScript ? Module.resolve("typescript/lib/tsserver.js", cachedTypeScript) : undefined)
     log.info("typescript server", { tsserver })
     if (!tsserver) return
-    const bin = await Npm.which("typescript-language-server")
-    if (!bin) return
     const proc = spawn(bin, ["--stdio"], {
       cwd: root,
       env: {
