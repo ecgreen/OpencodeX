@@ -1,14 +1,14 @@
 name: CLI subprocess diagnostic
 
-# Temporary. Runs only the CLI subprocess suites on the Windows runner and
-# reports real per-case durations, so a budget overshoot can be told apart from
-# a wedged child. Delete once the Windows subprocess coverage is settled.
+# Temporary. Mirrors the CI unit job for Windows so the full run can be timed
+# and read on a branch, because CI itself only builds main and pull requests
+# and there is no PR to attach to yet. Delete once the Windows subprocess
+# coverage is settled.
 
 on:
   workflow_dispatch:
   # Push-triggered so it can run before it exists on the default branch, which
-  # workflow_dispatch would otherwise require. Nothing else builds this prefix,
-  # so a diagnostic push costs one short job instead of the full CI matrix.
+  # workflow_dispatch would otherwise require.
   push:
     branches: ["diagnostic/**"]
 
@@ -17,16 +17,14 @@ permissions:
   checks: write
 
 jobs:
-  diagnose:
-    name: cli subprocess (${{ matrix.os }})
+  unit:
+    name: full unit (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows
             runner: windows-latest
-          - os: linux
-            runner: ubuntu-latest
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -34,12 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: ./.github/actions/setup-bun
-      - name: Diagnose CLI subprocess suites
-        working-directory: packages/opencode
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          bun run test:ci 2>&1 | tee "${RUNNER_TEMP//\\//}/unit.log"
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
-          # Deliberately far above any plausible real duration. A case that hits
-          # this is wedged, not slow, and that distinction is the whole question.
-          OPENCODE_TEST_CLI_TIMEOUT_MS: "240000"
-          OPENCODE_TEST_CLI_BOOT_MS: "240000"
-        run: bun run script/diagnose-cli-subprocess.ts
+      - name: Surface unit failures
+        if: failure()
+        run: bun run script/annotate-unit-failures.ts "${RUNNER_TEMP//\\//}/unit.log"
