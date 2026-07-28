@@ -117,22 +117,11 @@ export function registerTerminalIpc() {
     }
   })
 
-  ipcMain.handle("opencodex:terminal:write", (event, raw: unknown) => {
-    const input = validTerminalWriteInput(raw)
-    if (!input) return false
-    return writeTerminal(input.id, input.data, event.sender.id)
-  })
-
+  // The preload sends these two, so only the `on` registrations are reachable.
   ipcMain.on("opencodex:terminal:write", (event, raw: unknown) => {
     const input = validTerminalWriteInput(raw)
     if (!input) return
     writeTerminal(input.id, input.data, event.sender.id)
-  })
-
-  ipcMain.handle("opencodex:terminal:resize", (event, raw: unknown) => {
-    const input = validTerminalResizeInput(raw)
-    if (!input) return false
-    return resizeTerminal(input.id, input.cols, input.rows, event.sender.id)
   })
 
   ipcMain.on("opencodex:terminal:resize", (event, raw: unknown) => {

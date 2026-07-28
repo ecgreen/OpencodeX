@@ -663,16 +663,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const controller = await requireStateSync()
           await controller.refresh()
         },
-        status(sessionID: string) {
-          const session = result.session.get(sessionID)
-          if (!session) return "idle"
-          if (session.time.compacting) return "compacting"
-          const messages = store.message[sessionID] ?? []
-          const last = messages.at(-1)
-          if (!last) return "idle"
-          if (last.role === "user") return "working"
-          return last.time.completed ? "idle" : "working"
-        },
         setPendingPrompt(sessionID: string, messageID: string | undefined) {
           updatePendingPrompt(sessionID, messageID)
         },
