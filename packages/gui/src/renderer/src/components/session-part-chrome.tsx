@@ -33,6 +33,8 @@ type TranscriptContextValue = {
   /** False once the reader scrolls away from the tail. */
   following: () => boolean
   disclosure: () => DisclosureStore | undefined
+  /** False when the session is idle - nothing can genuinely be running then. */
+  live: () => boolean
 }
 
 const TranscriptContext = createContext<TranscriptContextValue>()
@@ -40,7 +42,7 @@ const TranscriptContext = createContext<TranscriptContextValue>()
 export const TranscriptChromeProvider = TranscriptContext.Provider
 
 export function useTranscriptChrome(): TranscriptContextValue {
-  return useContext(TranscriptContext) ?? { following: () => true, disclosure: () => undefined }
+  return useContext(TranscriptContext) ?? { following: () => true, disclosure: () => undefined, live: () => true }
 }
 
 /**
@@ -84,9 +86,9 @@ export function PartHeader(props: {
  * Status has to be visible without expanding the row: a live timer while work
  * runs, a duration receipt once it lands, and the failure text when it does not.
  */
-export function ToolStatusIndicator(props: { state: ToolPart["state"] }) {
+export function ToolStatusIndicator(props: { state: ToolPart["state"]; stale?: boolean }) {
   const status = () => props.state.status
-  const running = () => status() === "running" || status() === "pending"
+  const running = () => (status() === "running" || status() === "pending") && !props.stale
   const now = useNowTicker()
   const started = createMemo(() => "time" in props.state ? props.state.time?.start : undefined)
   const elapsed = createMemo(() => {
@@ -105,6 +107,11 @@ export function ToolStatusIndicator(props: { state: ToolPart["state"] }) {
       <Show when={running()}>
         <span class="part-spinner" aria-hidden="true" />
         <span class="part-status-label">Running</span>
+      </Show>
+      {/* The turn moved on without this call ever landing a result. No timer -
+          there is nothing left to time. */}
+      <Show when={props.stale && (status() === "running" || status() === "pending")}>
+        <span class="part-status-label muted">Interrupted</span>
       </Show>
       <Show when={status() === "error"}>
         <span class="part-status-label error">Failed</span>

@@ -14,7 +14,9 @@ export const OPEN_TAB_LAYOUT_FALLBACK_MEASUREMENTS: OpenTabLayoutMeasurements = 
   gap: 4,
 }
 
-const OPEN_TAB_LAYOUT_FALLBACK_TAB_WIDTH = 168
+/* Matches the CSS minimum tab width (plus its border): tabs are flexible, so
+   the fit decision packs by minimum width and CSS stretches the survivors. */
+const OPEN_TAB_LAYOUT_FALLBACK_TAB_WIDTH = 122
 const OPEN_TAB_LAYOUT_FALLBACK_OVERFLOW_WIDTH = 72
 
 export function visibleOpenTabIDs(input: {

@@ -23,21 +23,21 @@
   padding-right: 34px;
   --session-state-color: var(--blue);
   --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
-  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--blue) 22%, transparent), var(--surface-active) 48%) ;
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--blue) 22%, transparent), var(--session-active-surface) 48%) ;
 }
 
 .session-link.status-input-needed {
   border-left-color: var(--session-state-color);
   --session-state-color: var(--amber);
   --session-card-bg: linear-gradient(90deg, var(--amber-soft), var(--surface) 48%);
-  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--amber) 22%, transparent), var(--surface-active) 48%) ;
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--amber) 22%, transparent), var(--session-active-surface) 48%) ;
 }
 
 .session-link.status-failed {
   border-left-color: var(--session-state-color);
   --session-state-color: var(--danger);
   --session-card-bg: linear-gradient(90deg, var(--danger-soft), var(--surface) 48%);
-  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--danger) 22%, transparent), var(--surface-active) 48%) ;
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--danger) 22%, transparent), var(--session-active-surface) 48%) ;
 }
 
 .rail-session {
@@ -78,6 +78,9 @@
   border-left-color: var(--primary);
   border-left: 0;
   display: grid;
+  /* The implicit column would size to max-content, so one long unbreakable
+     line in any part would widen every sibling past the viewport. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   align-self: flex-end;
   justify-self: end;
@@ -241,6 +244,8 @@
   border-left: 0;
   padding-left: 24px;
   display: grid;
+  /* See .message.user: the implicit column must never track max-content. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
 }
 

@@ -1,5 +1,6 @@
 import type { OpencodeXSessionSnapshot, Part } from "@opencode-ai/sdk/v2/client"
 import type { ClientStateSyncState } from "@opencode-ai/sdk/v2/client-sync"
+import { messageCursorBefore } from "./message-window"
 import { displayMessageText } from "./message-text"
 import type { MessageBundle, SessionData } from "./store-types"
 
@@ -33,10 +34,17 @@ export function sessionDataFromClientState(
     })
     return [{ info, parts }]
   })
-  const messages = current && sameItems(current.messages, projected) ? current.messages : projected
+  // The sync state may hold far more history than the windowed page this
+  // session opened with. Projecting all of it would silently prepend older
+  // messages - the transcript visibly grows above and the scroll shifts on the
+  // first live update after a prompt. Older history stays behind "Load more".
+  const windowed = clipToCurrentWindow(projected, current)
+  const messages = current && sameItems(current.messages, windowed.messages) ? current.messages : windowed.messages
   const next = {
     messages,
-    messageCursor: detail.snapshot.messages.boundary.next,
+    messageCursor: windowed.clipped
+      ? messageCursorBefore(windowed.messages[0]!) ?? detail.snapshot.messages.boundary.next
+      : detail.snapshot.messages.boundary.next,
     todos: detail.snapshot.todos,
     diffs: detail.snapshot.diff,
   }
@@ -75,6 +83,23 @@ function normalizeMessagePart(part: Part) {
   const normalized = { ...part, text: displayMessageText(part.text) } as Part
   normalizedPartCache.set(part, normalized)
   return normalized
+}
+
+/**
+ * Drops projected messages older than the first one currently shown, unless the
+ * reader explicitly expanded the window with "Load more". New messages only
+ * ever arrive at the tail, so clipping the head never hides fresh activity.
+ */
+export function clipToCurrentWindow(
+  projected: MessageBundle[],
+  current?: SessionData,
+): { messages: MessageBundle[]; clipped: boolean } {
+  if (!current || current.messageWindowExpanded) return { messages: projected, clipped: false }
+  const first = current.messages[0]
+  if (!first) return { messages: projected, clipped: false }
+  const index = projected.findIndex((message) => message.info.id === first.info.id)
+  if (index <= 0) return { messages: projected, clipped: false }
+  return { messages: projected.slice(index), clipped: true }
 }
 
 function sameItems<T>(current: T[], next: T[]) {

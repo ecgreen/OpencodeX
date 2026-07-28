@@ -1,4 +1,5 @@
 import { onCleanup, onMount, type Accessor } from "solid-js"
+import { composerHeightDecision } from "../lib/composer-height"
 import { createAnimationFrameTask, createDebouncedTask } from "../lib/deferred-work"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import { clearComposerDraft, writeComposerDraft } from "../lib/session-composer-helpers"
@@ -19,7 +20,11 @@ export function createSessionComposerInputController(input: {
   const resizeNow = () => {
     if (!textarea) return
     textarea.style.height = "auto"
-    textarea.style.height = `${textarea.scrollHeight}px`
+    // Clamped so a long draft cannot swallow the transcript - and so clearing
+    // it on submit doesn't yank hundreds of pixels back out of the viewport.
+    const decision = composerHeightDecision(textarea.scrollHeight, window.innerHeight)
+    textarea.style.height = `${decision.height}px`
+    textarea.style.overflowY = decision.scrollable ? "auto" : "hidden"
   }
   const resize = createAnimationFrameTask(resizeNow)
 

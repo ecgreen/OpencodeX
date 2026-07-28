@@ -119,9 +119,11 @@ describe("GUI tool display helpers", () => {
     expect(permissionTitle(permission("read"), { filePath: "README.md" })).toBe("Read README.md")
     expect(permissionTitle(permission("doom_loop"), {})).toBe("Continue after repeated failures")
     expect(permissionTitle(permission("workspace_open"), { path: "C:/repo/README.md" })).toBe("Open workspace C:/repo/README.md")
-    expect(permissionTitle(permission("browser_navigate"), { url: "https://example.com/" })).toBe("Navigate browser https://example.com/")
-    expect(permissionTitle(permission("browser_screenshot"), { url: "https://example.com/" })).toBe("Capture browser https://example.com/")
-    expect(permissionTitle(permission("browser_snapshot"), { url: "https://example.com/" })).toBe("Snapshot browser https://example.com/")
+    // URL-bearing permission headings name only the host; the full URL renders
+    // in the card body where it can wrap.
+    expect(permissionTitle(permission("browser_navigate"), { url: "https://example.com/some/page" })).toBe("Navigate browser example.com")
+    expect(permissionTitle(permission("browser_screenshot"), { url: "https://example.com/" })).toBe("Capture browser example.com")
+    expect(permissionTitle(permission("browser_snapshot"), { url: "https://example.com/" })).toBe("Snapshot browser example.com")
     expect(toolPatchTitle("move", "new.ts", { filePath: "old.ts" })).toBe("Moved old.ts -> new.ts")
   })
 

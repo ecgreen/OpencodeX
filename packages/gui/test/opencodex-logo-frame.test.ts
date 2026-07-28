@@ -69,6 +69,33 @@ describe("OpencodeX logo frames", () => {
     expect(logoCellFrame(geometry.cells[40]!, 0, geometry, theme).color).toBe("rgb(240, 160, 40)")
   })
 
+  test("the X takes the dedicated x ink when provided", () => {
+    const geometry = createLogoGeometry([" ".repeat(41)], [])
+    const themed = { ...theme, x: { r: 250, g: 100, b: 30 } }
+    expect(logoCellFrame(geometry.cells[40]!, 0, geometry, themed).color).toBe("rgb(250, 100, 30)")
+    // Letters before the threshold keep the run ink.
+    expect(logoCellFrame(geometry.cells[39]!, 0, geometry, themed).color).toBe("rgb(80, 90, 100)")
+  })
+
+  test("the shading tone becomes a flat interior fill; strokes keep the letter ink", () => {
+    const geometry = createLogoGeometry(["_^~,"], [])
+    const gray = { r: 160, g: 170, b: 180 }
+    const plain = geometry.cells.map((cell) => logoCellFrame(cell, 0, geometry, theme))
+    const shaded = geometry.cells.map((cell) => logoCellFrame(cell, 0, geometry, { ...theme, shading: gray }))
+    // Stroke glyphs (`_`, `^`) keep the run ink, so the mid-bars of letters
+    // never change color.
+    expect(shaded[0]?.color).toBe(plain[0]!.color)
+    expect(shaded[1]?.color).toBe(plain[1]!.color)
+    // The interior - stroke backgrounds and shadow-only cells - is the flat
+    // shading tone with no shimmer or shadow tinting.
+    expect(shaded[0]?.backgroundColor).toBe("rgb(160, 170, 180)")
+    expect(shaded[1]?.backgroundColor).toBe("rgb(160, 170, 180)")
+    expect(shaded[2]?.color).toBe("rgb(160, 170, 180)")
+    expect(shaded[3]?.color).toBe("rgb(160, 170, 180)")
+    // Without shading, the animated shadow treatment still applies.
+    expect(plain[0]?.backgroundColor).not.toBe(plain[0]?.color)
+  })
+
   test("gates animation and admits frames at the 50ms cadence", () => {
     const eligible = { active: true, pageVisible: true, windowFocused: true, reducedMotion: false }
     expect(logoAnimationEnabled(eligible)).toBe(true)
@@ -81,5 +108,17 @@ describe("OpencodeX logo frames", () => {
     expect(logoFrameDue(undefined, 1_000)).toBe(true)
     expect(logoFrameDue(1_000, 1_000 + LOGO_FRAME_INTERVAL_MS - 0.01)).toBe(false)
     expect(logoFrameDue(1_000, 1_000 + LOGO_FRAME_INTERVAL_MS)).toBe(true)
+  })
+})
+
+describe("css color parsing", () => {
+  test("parses hex and functional rgb() computed values", async () => {
+    const { cssColorToRgb } = await import("../src/renderer/src/lib/opencodex-logo-frame")
+    expect(cssColorToRgb(" #c6cdd6 ")).toEqual({ r: 198, g: 205, b: 214 })
+    expect(cssColorToRgb("#abc")).toEqual({ r: 170, g: 187, b: 204 })
+    // Registered/normalized custom properties come back functional - a parse
+    // failure here used to paint the wordmark black.
+    expect(cssColorToRgb("rgb(198, 205, 214)")).toEqual({ r: 198, g: 205, b: 214 })
+    expect(cssColorToRgb("rgba(16 21 28 / 0.5)")).toEqual({ r: 16, g: 21, b: 28 })
   })
 })

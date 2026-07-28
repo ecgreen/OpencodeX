@@ -524,11 +524,18 @@ function applyPermissionMode(ruleset: Permission.Ruleset, mode: OpencodeXSetting
   if (mode === "yolo") {
     return [...Permission.merge(ruleset, [{ permission: "*", pattern: "*", action: "allow" }])]
   }
-  return ruleset.map((rule) => {
+  const mapped = ruleset.map((rule) => {
     if (mode === "strict" && rule.action === "allow") return { ...rule, action: "ask" as const }
     if (mode === "auto" && rule.action === "ask") return { ...rule, action: "allow" as const }
     return rule
   })
+  // Rewriting existing `ask` rules is not enough on its own: `evaluate` falls
+  // back to "ask" for any permission no rule matches, so anything outside the
+  // configured ruleset would still prompt. Prepended rather than appended, so
+  // it is the lowest-priority match and every explicit `deny` still wins -
+  // "approve prompts automatically while preserving explicit denials".
+  if (mode === "auto") return [{ permission: "*", pattern: "*", action: "allow" as const }, ...mapped]
+  return mapped
 }
 
 export * as Agent from "./agent"

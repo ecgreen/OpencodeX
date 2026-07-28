@@ -68,6 +68,7 @@ import { Todo } from "./todo"
 import { BackgroundJob } from "@/background/job"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { SessionPromptRecovery } from "./prompt-recovery"
+import { Question } from "@/question"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
 
@@ -189,6 +190,7 @@ export const layer = Layer.effect(
     const commands = yield* Command.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
+    const question = yield* Question.Service
     const fsys = yield* AppFileSystem.Service
     const mcp = yield* MCP.Service
     const lsp = yield* LSP.Service
@@ -222,7 +224,31 @@ export const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* elog.info("cancel", { sessionID })
+      yield* rejectPendingInteractions(sessionID)
       yield* state.cancel(sessionID)
+    })
+
+    /**
+     * A stopped turn can no longer consume an answer, so any card still waiting
+     * on the user would be an unanswerable zombie in the dock. Reject them so
+     * the UI clears alongside the turn (the Claude driver's asks run on a
+     * captured bridge runtime, so fiber interruption alone never reaches them).
+     */
+    const rejectPendingInteractions = Effect.fn("SessionPrompt.rejectPendingInteractions")(function* (
+      sessionID: SessionID,
+    ) {
+      const permissions = yield* permission.list().pipe(Effect.orElseSucceed(() => []))
+      yield* Effect.forEach(
+        permissions.filter((request) => request.sessionID === sessionID),
+        (request) => permission.reply({ requestID: request.id, reply: "reject" }).pipe(Effect.ignore),
+        { discard: true },
+      )
+      const questions = yield* question.list().pipe(Effect.orElseSucceed(() => []))
+      yield* Effect.forEach(
+        questions.filter((request) => request.sessionID === sessionID),
+        (request) => question.reject(request.id).pipe(Effect.ignore),
+        { discard: true },
+      )
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -2349,6 +2375,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(SessionProcessor.defaultLayer),
     Layer.provide(Command.defaultLayer),
     Layer.provide(Permission.defaultLayer),
+    Layer.provide(Question.defaultLayer),
     Layer.provide(MCP.defaultLayer),
     Layer.provide(LSP.defaultLayer),
     Layer.provide(ToolRegistry.defaultLayer),

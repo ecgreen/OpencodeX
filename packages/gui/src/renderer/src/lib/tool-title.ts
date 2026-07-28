@@ -37,20 +37,30 @@ const TOOL_TITLE_BY_ID: Record<string, ToolTitleBuilder | undefined> = {
 
 const PERMISSION_TITLE_BY_ID: Record<string, PermissionTitleBuilder | undefined> = {
   edit: (request) => typeof request.metadata.filepath === "string" ? `Edit ${request.metadata.filepath}` : undefined,
+  write: (request) => typeof request.metadata.filepath === "string" ? `Write ${request.metadata.filepath}` : undefined,
   read: (_request, input) => stringFieldTitle("Read", input.filePath),
   glob: (_request, input) => stringFieldTitle("Glob", input.pattern),
   grep: (_request, input) => stringFieldTitle("Grep", input.pattern),
   list: (_request, input) => stringFieldTitle("List", input.path),
   bash: (_request, input) => stringValue(input.command),
   task: (_request, input) => stringFieldTitle("Task:", input.description),
-  webfetch: (_request, input) => stringFieldTitle("Fetch", input.url),
+  // The heading names only the host - the full URL renders in the card body,
+  // where it can wrap instead of truncating the title.
+  webfetch: (_request, input) => stringFieldTitle("Fetch", urlHost(input.url)),
   websearch: (_request, input) => stringFieldTitle("Search", input.query),
   external_directory: () => "Access external directory",
   doom_loop: () => "Continue after repeated failures",
   workspace_open: (_request, input) => stringFieldTitle("Open workspace", input.path),
-  browser_navigate: (_request, input) => stringFieldTitle("Navigate browser", input.url),
-  browser_screenshot: (_request, input) => stringFieldTitle("Capture browser", input.url),
-  browser_snapshot: (_request, input) => stringFieldTitle("Snapshot browser", input.url),
+  browser_navigate: (_request, input) => stringFieldTitle("Navigate browser", urlHost(input.url)),
+  browser_screenshot: (_request, input) => stringFieldTitle("Capture browser", urlHost(input.url)),
+  browser_snapshot: (_request, input) => stringFieldTitle("Snapshot browser", urlHost(input.url)),
+}
+
+function urlHost(value: unknown) {
+  const url = stringValue(value)
+  if (!url) return undefined
+  const match = url.match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i)
+  return match ? match[1] : url
 }
 
 /**

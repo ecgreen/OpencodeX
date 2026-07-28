@@ -1,8 +1,10 @@
 import { Context, Effect, Layer, Option } from "effect"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import type { SessionSchema } from "@opencode-ai/core/session/schema"
+import { Agent } from "@/agent/agent"
 import { EffectBridge } from "@/effect/bridge"
 import { Permission } from "@/permission"
+import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { ClaudeDriverMetadata } from "./claude-driver-metadata"
@@ -17,6 +19,15 @@ import {
 } from "./claude-transport"
 
 type SessionID = typeof SessionSchema.ID.Type
+
+/**
+ * Tools that are Claude's own control flow rather than actions the permission
+ * system is meant to gate. Exported so a test can pin the list against the
+ * mapper's normalized names.
+ */
+export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [
+  { permission: "plan_exit", pattern: "*", action: "allow" },
+]
 
 /**
  * Runs a session's turns through the user's local Claude Code CLI in headless
@@ -70,7 +81,9 @@ export const layer = Layer.effect(
     const sessions = yield* Session.Service
     const todos = yield* Todo.Service
     const permission = yield* Permission.Service
-    const decide = ClaudePermission.decideWith(permission)
+    const question = yield* Question.Service
+    const agents = yield* Agent.Service
+    const decide = ClaudePermission.decideWith(permission, question)
     const transport: Transport = createSdkTransport()
 
     const runTurn = Effect.fn("OpencodeXClaudeDriver.runTurn")(function* (input: {
@@ -85,11 +98,32 @@ export const layer = Layer.effect(
       delegate?: SwarmDelegate
     }) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      // Resolved per turn rather than per layer: `Agent.defaultInfo` re-reads
+      // `opencodex.json` on every call and applies the user's `permission_mode`
+      // to the ruleset, so switching modes in the GUI takes effect on the next
+      // turn instead of needing a restart.
+      const permissionAgent = yield* agents.defaultInfo()
+      const ruleset = Permission.merge(
+        permissionAgent?.permission ?? [],
+        session.permission ?? [],
+        // `ExitPlanMode` normalizes onto `plan_exit`, which the default ruleset
+        // denies because it is an OpencodeX tool a model should not call
+        // directly. In a mirrored session it is Claude's own control flow, and
+        // the CLI has no way to recover from a denial - it would simply be
+        // unable to leave plan mode. Appended last so it wins the match.
+        CLAUDE_CONTROL_FLOW,
+      )
       const conversation = ClaudeDriverMetadata.readConversation(session.metadata)
       // Only an id Claude issued can be resumed. The first turn passes none and
       // adopts whatever `system.init` reports; every later turn resumes that.
       const resumeID = conversation?.conversationID
 
+      // When the permission gate rewrites a call's input - the AskUserQuestion
+      // answers come back that way - the transcript should record what was
+      // actually approved, not the model's original request. The decision
+      // always resolves before the CLI executes the tool, so the entry is in
+      // place by the time the tool_result event is mapped.
+      const decidedInputs = new Map<string, Record<string, unknown>>()
       const context: MapperContext = {
         sessionID: input.sessionID,
         parentMessageID: input.parentMessageID,
@@ -99,6 +133,7 @@ export const layer = Layer.effect(
         nextMessageID: () => SessionLegacy.MessageID.ascending(),
         nextPartID: () => SessionLegacy.PartID.ascending(),
         now: () => Date.now(),
+        decidedInput: (callID) => decidedInputs.get(callID),
       }
       let live = ClaudeMapper.initialState({
         modelID: conversation?.modelID,
@@ -151,8 +186,13 @@ export const layer = Layer.effect(
                 toolInput,
                 messageID: live.messageID,
                 callID: toolUseID,
+                ruleset,
               }),
             )
+            .then((decision) => {
+              if (decision.allow && decision.input && toolUseID) decidedInputs.set(toolUseID, decision.input)
+              return decision
+            })
             .catch(() => ({ allow: false as const, message: "The permission request failed." })),
       })
 
@@ -162,23 +202,57 @@ export const layer = Layer.effect(
         yield* applyWrites(closing.writes, input.sessionID)
       })
 
+      const saveConversation = Effect.fn("OpencodeXClaudeDriver.saveConversation")(function* () {
+        // A resume that Claude rejected leaves the stored id unusable, so drop it
+        // and let the next turn open a fresh conversation instead of failing forever.
+        const nextID = live.claudeSessionID ?? (live.resumeRejected ? undefined : resumeID)
+        yield* sessions
+          .setMetadata({
+            sessionID: input.sessionID,
+            metadata: ClaudeDriverMetadata.withConversation(session.metadata, {
+              ...(nextID ? { conversationID: nextID } : {}),
+              launched: true,
+              modelID: live.modelID,
+              billed: live.billed,
+              ...(live.authFailed ? { authState: "needs-login" as const } : { authState: "ready" as const }),
+            }),
+          })
+          .pipe(Effect.ignore)
+      })
+
       const iterator = turn.events[Symbol.asyncIterator]()
       let failure: unknown
-      while (true) {
-        const next = yield* Effect.promise(() =>
-          iterator.next().catch((cause: unknown) => ({ done: true as const, value: undefined, failure: cause })),
-        )
-        const raised = (next as { failure?: unknown }).failure
-        if (raised) {
-          failure = raised
-          break
+      const consume = Effect.gen(function* () {
+        while (true) {
+          const next = yield* Effect.promise(() =>
+            iterator.next().catch((cause: unknown) => ({ done: true as const, value: undefined, failure: cause })),
+          )
+          const raised = (next as { failure?: unknown }).failure
+          if (raised) {
+            failure = raised
+            break
+          }
+          if (next.done) break
+          const mapped = ClaudeMapper.mapEvent(next.value, live, context)
+          live = mapped.state
+          yield* applyWrites(mapped.writes, input.sessionID)
+          if (live.finished) break
         }
-        if (next.done) break
-        const mapped = ClaudeMapper.mapEvent(next.value, live, context)
-        live = mapped.state
-        yield* applyWrites(mapped.writes, input.sessionID)
-        if (live.finished) break
-      }
+      })
+      // Stopping the session interrupts this fiber, and interruption must reach
+      // the CLI subprocess: without the explicit `interrupt` the child keeps
+      // running headless, and without `finalize` its tool parts stay "running"
+      // in the transcript forever. Runs in the interrupt handler because the
+      // code after this pipe never executes on an interrupted fiber.
+      yield* consume.pipe(
+        Effect.onInterrupt(() =>
+          Effect.gen(function* () {
+            yield* Effect.promise(() => turn.interrupt().catch(() => undefined))
+            yield* finalize("abort")
+            yield* saveConversation()
+          }),
+        ),
+      )
 
       if (failure) {
         // `failure` is whatever the SDK iterator threw; String() on an object
@@ -190,21 +264,7 @@ export const layer = Layer.effect(
         yield* finalize("stop")
       }
 
-      // A resume that Claude rejected leaves the stored id unusable, so drop it
-      // and let the next turn open a fresh conversation instead of failing forever.
-      const nextID = live.claudeSessionID ?? (live.resumeRejected ? undefined : resumeID)
-      yield* sessions
-        .setMetadata({
-          sessionID: input.sessionID,
-          metadata: ClaudeDriverMetadata.withConversation(session.metadata, {
-            ...(nextID ? { conversationID: nextID } : {}),
-            launched: true,
-            modelID: live.modelID,
-            billed: live.billed,
-            ...(live.authFailed ? { authState: "needs-login" as const } : { authState: "ready" as const }),
-          }),
-        })
-        .pipe(Effect.ignore)
+      yield* saveConversation()
 
       return yield* readTurn(input.sessionID, live.messageID)
     })
@@ -268,6 +328,8 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Session.defaultLayer),
   Layer.provide(Todo.defaultLayer),
   Layer.provide(Permission.defaultLayer),
+  Layer.provide(Question.defaultLayer),
+  Layer.provide(Agent.defaultLayer),
 )
 
 export * as OpencodeXClaudeDriver from "./claude-driver"

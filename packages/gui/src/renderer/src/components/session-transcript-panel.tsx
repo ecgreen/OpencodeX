@@ -16,6 +16,7 @@ import {
   TRANSCRIPT_BOTTOM_FOLLOW_THRESHOLD,
   type TranscriptFollowState,
 } from "../lib/transcript-scroll"
+import { observeTranscriptScrollGeometry } from "../lib/transcript-viewport"
 import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/transcript-visibility"
 import { Icon } from "./icon"
 import { MessageActions } from "./message-actions"
@@ -25,6 +26,14 @@ import { DisplayPartView, activeTranscriptStreamingPartID, groupTranscriptParts 
 import { SessionEmptyState, TranscriptLoadingSkeleton, TranscriptMessageError, activeAssistantProgressParts, hasActiveAssistantProgress, isScrollbarPointer, showTranscriptHeader, transcriptHeaderLabel } from "./session-transcript-presentation"
 
 const ASSISTANT_THINKING_DELAY_MS = 1_600
+/** Sessions at or below this many messages mount synchronously - deferring them
+ * would only flash a skeleton for content that renders in well under a frame. */
+const DEFER_TRANSCRIPT_MOUNT_MESSAGE_COUNT = 16
+
+/** True once an assistant message has closed - nothing inside it can still run. */
+function assistantCompleted(info: MessageBundle["info"]) {
+  return info.role === "assistant" && typeof info.time.completed === "number"
+}
 
 export function TranscriptPanel(props: {
   sessionID: string
@@ -59,15 +68,45 @@ export function TranscriptPanel(props: {
   const [olderMessagesLoading, setOlderMessagesLoading] = createSignal(false)
   const [assistantThinkingVisible, setAssistantThinkingVisible] = createSignal(false)
   const [scrolledAway, setScrolledAway] = createSignal(false)
-  const visibleMessages = createMemo(() => visibleTranscriptMessages(props.data.messages))
+  // Committing a session switch must never wait on its transcript: a large
+  // cached message tree can take hundreds of milliseconds to mount, which reads
+  // as the click not registering. The switch paints the skeleton first and the
+  // heavy content mounts one frame later. Small sessions skip the deferral so
+  // they still open with zero flicker.
+  const [warmSessionID, setWarmSessionID] = createSignal("")
+  let warmFrame: number | undefined
+  const warming = createMemo(() => warmSessionID() !== props.sessionID)
+  createEffect(() => {
+    const id = props.sessionID
+    if (warmSessionID() === id) return
+    if (warmFrame !== undefined) cancelAnimationFrame(warmFrame)
+    warmFrame = undefined
+    if (props.data.messages.length <= DEFER_TRANSCRIPT_MOUNT_MESSAGE_COUNT) {
+      setWarmSessionID(id)
+      return
+    }
+    // Double rAF: the first fires before the skeleton's paint, the second lands
+    // in the following frame - only then does the heavy mount begin.
+    warmFrame = requestAnimationFrame(() => {
+      warmFrame = requestAnimationFrame(() => {
+        warmFrame = undefined
+        setWarmSessionID(id)
+      })
+    })
+  })
+  onCleanup(() => {
+    if (warmFrame !== undefined) cancelAnimationFrame(warmFrame)
+  })
+  const contentPending = () => props.loading || warming()
+  const visibleMessages = createMemo(() => (warming() ? [] : visibleTranscriptMessages(props.data.messages)))
   const visibleMessageMap = createMemo(() => new Map(visibleMessages().map((item) => [item.info.id, item])))
-  const visibleMessageIDs = createMemo(() => visibleTranscriptMessageIDs(props.data.messages))
+  const visibleMessageIDs = createMemo(() => (warming() ? [] : visibleTranscriptMessageIDs(props.data.messages)))
   const streamingPartID = createMemo(() => activeTranscriptStreamingPartID(visibleMessages(), props.running === true))
   const activeAssistantHasProgress = createMemo(() => hasActiveAssistantProgress(visibleMessages()))
   const activeAssistantProgressKey = createMemo(() => activeAssistantProgressParts(visibleMessages()).join("|"))
   const emptyStateHandoff = () => props.emptyStateHandoff === true
   const transcriptHasContent = () => visibleMessages().length > 0 || assistantThinkingVisible()
-  const [loadingSkeletonVisible, setLoadingSkeletonVisible] = createSignal(props.loading)
+  const [loadingSkeletonVisible, setLoadingSkeletonVisible] = createSignal(true)
   const pendingSession = () => props.sessionID.startsWith("pending:")
   const newMessageCount = createMemo(() => scrolledAway() ? transcriptNewMessageCount(visibleMessageIDs(), lastMessageIDAtRelease) : 0)
   // Parts auto-collapse only while the reader is at the tail, and remember
@@ -75,6 +114,7 @@ export function TranscriptPanel(props: {
   const transcriptChrome = {
     following: () => !scrolledAway(),
     disclosure: () => sessionDisclosureStore(props.sessionID),
+    live: () => props.running === true,
   }
   const clearAssistantThinkingTimer = () => {
     if (assistantThinkingTimer === undefined) return
@@ -99,7 +139,7 @@ export function TranscriptPanel(props: {
     loadingSkeletonFrame = undefined
   }
   const emptyStateVisible = createMemo(
-    () => (!props.emptyStateDismissed || emptyStateHandoff()) && !props.loading && !transcriptHasContent(),
+    () => (!props.emptyStateDismissed || emptyStateHandoff()) && !contentPending() && !transcriptHasContent(),
   )
   const showLoadingSkeleton = () => {
     clearLoadingSkeletonFrame()
@@ -113,12 +153,12 @@ export function TranscriptPanel(props: {
     if (loadingSkeletonFrame !== undefined) return
     loadingSkeletonFrame = requestAnimationFrame(() => {
       loadingSkeletonFrame = undefined
-      if (!props.loading && !forceBottomScroll) setLoadingSkeletonVisible(false)
+      if (!contentPending() && !forceBottomScroll) setLoadingSkeletonVisible(false)
     })
   }
   const updateLoadingSkeleton = () => {
     const decision = transcriptLoadingSkeletonDecision({
-      loading: props.loading,
+      loading: contentPending(),
       visible: loadingSkeletonVisible(),
       forceBottomScroll,
       hasContent: transcriptHasContent(),
@@ -153,7 +193,7 @@ export function TranscriptPanel(props: {
       return
     }
     if (forceBottomScroll) {
-      if (!shouldSpendTranscriptOpenBottomScroll({ loading: props.loading, hasContent: transcriptHasContent() })) return
+      if (!shouldSpendTranscriptOpenBottomScroll({ loading: contentPending(), hasContent: transcriptHasContent() })) return
       forceBottomScroll = false
       followState = { followBottom: true, releasedUntil: 0 }
       transcript.scrollTop = transcriptBottomScrollTop(transcript)
@@ -252,11 +292,19 @@ export function TranscriptPanel(props: {
   }
 
   onMount(() => {
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleScrollUpdate)
-    if (transcript) observer?.observe(transcript)
-    if (transcriptContent) observer?.observe(transcriptContent)
+    // The composer growing or the safety dock appearing resizes the viewport;
+    // the observer compensates `scrollTop` before paint so the transcript never
+    // visibly jumps away and snaps back. Content growth still settles on the
+    // next frame via `scheduleScrollUpdate`.
+    const cleanup = observeTranscriptScrollGeometry({
+      viewport: () => transcript,
+      content: () => transcriptContent,
+      followBottom: () => followState.followBottom,
+      suspended: () => Boolean(loadMoreAnchor) || forceBottomScroll,
+      update: scheduleScrollUpdate,
+    })
     scheduleScrollUpdate()
-    onCleanup(() => observer?.disconnect())
+    onCleanup(cleanup)
   })
   createEffect(() => {
     visibleMessages()
@@ -265,7 +313,7 @@ export function TranscriptPanel(props: {
     props.showThinking
     props.showToolDetails
     props.showGenericToolOutput
-    props.loading
+    contentPending()
     props.data.messageCursor
     scheduleScrollUpdate()
   })
@@ -291,7 +339,7 @@ export function TranscriptPanel(props: {
     clearAssistantThinkingTimer()
   })
   createEffect(() => {
-    props.loading
+    contentPending()
     visibleMessages()
     assistantThinkingVisible()
     updateLoadingSkeleton()
@@ -355,7 +403,7 @@ export function TranscriptPanel(props: {
                         {(key) => {
                           const item = createMemo(() => partMap().get(key))
                           return <Show when={item()}>
-                            {(currentItem) => <DisplayPartView item={currentItem()} showThinking={props.showThinking} showToolDetails={props.showToolDetails} showGenericToolOutput={props.showGenericToolOutput} streamingPartID={streamingPartID()} />}
+                            {(currentItem) => <DisplayPartView item={currentItem()} showThinking={props.showThinking} showToolDetails={props.showToolDetails} showGenericToolOutput={props.showGenericToolOutput} streamingPartID={streamingPartID()} messageCompleted={assistantCompleted(current().info)} />}
                           </Show>
                         }}
                       </For>

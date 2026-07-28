@@ -46,8 +46,11 @@
 
 .session-open-tab-shell {
   position: relative;
-  flex: 0 0 164px;
-  min-width: 126px;
+  /* Flexible: visible tabs stretch to use the full row, and the layout math
+     packs as many as fit at the minimum width - no dead space before the
+     overflow chip. */
+  flex: 1 1 150px;
+  min-width: 120px;
   max-width: 224px;
   height: 31px;
 }
@@ -58,12 +61,14 @@
   flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
   gap: 7px;
-  min-width: 126px;
+  min-width: 0;
   max-width: none;
   height: 31px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 8px 8px 0 0;
   color: color-mix(in srgb,var(--muted) 88%,var(--text));
   background: linear-gradient(180deg,color-mix(in srgb,var(--text) 3%,transparent),transparent),color-mix(in srgb,var(--panel) 54%,transparent);
   padding: 0 30px 0 10px;
@@ -71,11 +76,20 @@
   transition: border-color .14s ease,background .14s ease,color .14s ease,box-shadow .14s ease,transform .14s ease;
 }
 
+.session-open-tab-button>span:first-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
 .session-open-tab-placeholder {
   flex: 0 0 auto;
   height: 31px;
   border: 1px dashed color-mix(in srgb,var(--accent) 34%,var(--border));
-  border-radius: 9px;
+  border-radius: 8px 8px 0 0;
   background: color-mix(in srgb,var(--accent) 10%,transparent);
 }
 
@@ -226,8 +240,42 @@
 .session-open-file-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   margin-left: auto;
+}
+
+/* Quiet, borderless icon actions - color and a soft wash on hover are the
+   entire affordance. */
+.session-open-file-bar .session-open-file-action {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  transition: color .12s ease, background .12s ease;
+}
+
+.session-open-file-bar .session-open-file-action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--element);
+}
+
+.session-open-file-bar .session-open-file-action:disabled {
+  opacity: .35;
+}
+
+.session-open-file-bar .session-open-file-action[data-selected="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* An enabled save is the one action that matters - let it carry the accent. */
+.session-open-file-bar .session-open-file-save:not(:disabled) {
+  color: var(--accent);
 }
 
 .session-open-file-readonly {

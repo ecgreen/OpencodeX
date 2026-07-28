@@ -319,6 +319,43 @@ auto.instance("auto permission mode approves prompts and preserves denials", () 
   }),
 )
 
+auto.instance("auto permission mode flips every default prompt, not just browser tools", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    // Each of these is `ask` in the default ruleset.
+    expect(evalPerm(build, "doom_loop")).toBe("allow")
+    expect(evalPerm(build, "workspace_open")).toBe("allow")
+    expect(evalPerm(build, "browser_screenshot")).toBe("allow")
+    expect(evalPerm(build, "browser_snapshot")).toBe("allow")
+    // Pattern-scoped prompts flip too: .env reads are `ask` by default.
+    expect(Permission.evaluate("read", "/repo/.env", build!.permission).action).toBe("allow")
+    expect(Permission.evaluate("external_directory", "/somewhere/else", build!.permission).action).toBe("allow")
+  }),
+)
+
+auto.instance("auto permission mode leaves an unmatched permission allowed", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    // No rule names this tool, so it resolves via a wildcard rather than
+    // `evaluate`'s implicit "ask" fallback.
+    expect(evalPerm(build, "some_tool_no_rule_names")).toBe("allow")
+  }),
+)
+
+auto.instance("auto permission mode still honours a user deny", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    expect(evalPerm(build, "bash")).toBe("deny")
+  }),
+  {
+    config: {
+      permission: {
+        bash: "deny",
+      },
+    },
+  },
+)
+
 yolo.instance("yolo permission mode overrides denials", () =>
   Effect.gen(function* () {
     const build = yield* load((svc) => svc.get("build"))

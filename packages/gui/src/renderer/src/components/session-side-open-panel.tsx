@@ -24,6 +24,21 @@ import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./s
 import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-controller"
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
 import { SessionSideFileEditor } from "./session-side-file-editor"
+
+const EXPLORER_WIDTH_KEY = "opencodex.file-explorer-width"
+
+function clampExplorerWidth(value: number) {
+  return Math.max(180, Math.min(480, Math.round(value)))
+}
+
+function storedExplorerWidth() {
+  try {
+    const value = Number(localStorage.getItem(EXPLORER_WIDTH_KEY))
+    return Number.isFinite(value) && value > 0 ? clampExplorerWidth(value) : 240
+  } catch {
+    return 240
+  }
+}
 export function SessionSideOpenPanel(props: {
   sessionID: string; active: boolean
   gui?: GuiClient; directory?: string
@@ -46,6 +61,10 @@ export function SessionSideOpenPanel(props: {
   const [activeID, setActiveID] = createSignal(restoredState.activeID)
   const activeTab = createMemo(() => tabs().find((item) => item.id === activeID()) ?? tabs()[0])
   const [menuOpen, setMenuOpen] = createSignal(false)
+  // File tabs render Git-style: a collapsible explorer beside the file. Opening
+  // a file from the explorer keeps the pane open so browsing feels continuous.
+  const [explorerOpen, setExplorerOpen] = createSignal(false)
+  const [explorerWidth, setExplorerWidth] = createSignal(storedExplorerWidth())
   let handledRequestToken = 0
   let loadedSessionID = props.sessionID
   const browser = createSessionSideBrowserController({
@@ -218,7 +237,11 @@ export function SessionSideOpenPanel(props: {
     selectSingletonTab("context", "Context")
   }
   function addGitTab() { selectSingletonTab("git", "Git") }
-  function addFileTab() { selectSingletonTab("files", "Files") }
+  // Deliberately not a singleton: "+ Files" always opens a fresh explorer tab.
+  function addFileTab() {
+    createTab({ kind: "files", title: "Files" })
+    tabBar.closeNewMenu()
+  }
   function addWebTab() {
     createTab({ kind: "web", input: "https://", title: "New webpage" })
     tabBar.closeNewMenu()
@@ -296,10 +319,71 @@ export function SessionSideOpenPanel(props: {
   }
   function activeDirectory() { return props.directory || props.gui?.directory || "" }
   const dirty = createMemo(() => activeTab() ? openTabDirty(activeTab()!) : false)
+  function openFromExplorer(path: string) {
+    setExplorerOpen(true)
+    const tab = activeTab()
+    // The explorer navigates the tab it lives in, like the Git view: a Files
+    // tab converts into the picked file in place, and a file tab swaps its
+    // file. Two guards: a dirty buffer is never replaced (a new tab opens
+    // instead), and a file already open elsewhere is focused, not duplicated.
+    const inPlace = tab && (tab.kind === "files" || tab.kind === "picker" || (tab.kind === "file" && !openTabDirty(tab)))
+    if (inPlace) {
+      const identity = openTabFileIdentity({ path, directory: activeDirectory() })
+      const existing = tabs().find((item) => item.kind === "file" && openTabFileIdentity(item, activeDirectory()) === identity)
+      if (existing && existing.id !== tab.id) {
+        tabBar.select(existing.id)
+        return
+      }
+      void files.openFile(tab.id, { path, directory: activeDirectory() })
+      return
+    }
+    void files.openExplorerFile(path)
+  }
+  function fileExplorerPane(close: () => void) {
+    return (
+      <div class="session-open-file-pane" style={{ width: `${explorerWidth()}px` }}>
+        <SessionSideFileExplorer
+          directory={activeDirectory()}
+          filter={files.filter()}
+          setFilter={files.setFilter}
+          searchState={files.searchState()}
+          matches={files.matches()}
+          rows={files.rows()}
+          loading={files.busy()}
+          openPath={activeTab()?.path ?? ""}
+          toggleFolder={(file) => void files.toggleFolder(file)}
+          openFile={openFromExplorer}
+          close={close}
+        />
+        <div class="session-open-file-resize" role="separator" aria-orientation="vertical" aria-label="Resize file explorer" onPointerDown={startExplorerResize} />
+      </div>
+    )
+  }
+  function startExplorerResize(event: PointerEvent) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const pointerID = event.pointerId
+    const origin = event.clientX
+    const startWidth = explorerWidth()
+    const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerID) return
+      setExplorerWidth(clampExplorerWidth(startWidth + (moveEvent.clientX - origin)))
+    }
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId !== pointerID) return
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", finish)
+      window.removeEventListener("pointercancel", finish)
+      try { localStorage.setItem(EXPLORER_WIDTH_KEY, String(explorerWidth())) } catch { /* storage unavailable */ }
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", finish)
+    window.addEventListener("pointercancel", finish)
+  }
 
   return (
     <section class="session-side-open">
-      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={files.openInActiveTab} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
+      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={() => setExplorerOpen((open) => !open)} explorerOpen={explorerOpen()} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
       <Switch>
         <Match when={!props.directoryOnly && activeTab()?.kind === "context" && props.contextModel}>
           <div class="session-side-context">
@@ -337,45 +421,47 @@ export function SessionSideOpenPanel(props: {
           />
         </Match>
         <Match when={activeTab()?.kind === "files" || activeTab()?.kind === "picker"}>
-          <SessionSideFileExplorer
-            directory={activeDirectory()}
-            filter={files.filter()}
-            setFilter={files.setFilter}
-            searchState={files.searchState()}
-            matches={files.matches()}
-            rows={files.rows()}
-            loading={files.busy()}
-            openPath={activeTab()?.path ?? ""}
-            toggleFolder={(file) => void files.toggleFolder(file)}
-            openFile={(path) => void files.openExplorerFile(path)}
-            close={files.closeExplorer}
-          />
-        </Match>
-        <Match when={activeTab()?.kind === "file" && activeTab()?.fileMode === "metadata"}>
-          <div class="session-side-empty">File metadata only. Preview content is omitted above 2 MiB.</div>
-        </Match>
-        <Match when={isWorkbenchImageContent(activeTab()?.content)}>
-          <div class="workbench-image-preview">
-            <img src={`data:${activeTab()?.content?.mimeType ?? "image/png"};base64,${activeTab()?.content?.content ?? ""}`} alt={activeTab()?.path} />
+          <div class="session-open-file-split">
+            {fileExplorerPane(files.closeExplorer)}
+            <div class="session-open-file-content">
+              <div class="session-side-empty">Select a file to view it here.</div>
+            </div>
           </div>
         </Match>
-        <Match when={activeTab()?.kind === "file" && activeTab()?.content?.type === "binary"}>
-          <div class="session-side-empty">Binary preview is read-only.</div>
-        </Match>
-        <Match when={activeTab()?.kind === "file" && activeTab()?.content?.type === "text" && activeTab()?.fileMode === "preview"}>
-          <pre class="session-open-large-file">{activeTab()?.text}</pre>
-        </Match>
-        <Match when={activeTab()?.kind === "file" && activeTab()?.content?.type === "text"}>
-          <SessionSideFileEditor
-            tab={activeTab()}
-            diagnostics={diagnostics}
-            navigation={files.navigation()}
-            change={(value) => activeTab() && !activeTab()?.readOnly && updateOpenTab(activeTab()!.id, { text: value })}
-            save={() => void files.saveActiveFile()}
-            definition={(position) => void files.openDefinition(position)}
-            hover={files.loadHover}
-            completion={files.loadCompletion}
-          />
+        <Match when={activeTab()?.kind === "file"}>
+          <div class="session-open-file-split">
+            <Show when={explorerOpen()}>{fileExplorerPane(() => setExplorerOpen(false))}</Show>
+            <div class="session-open-file-content">
+              <Switch>
+                <Match when={activeTab()?.fileMode === "metadata"}>
+                  <div class="session-side-empty">File metadata only. Preview content is omitted above 2 MiB.</div>
+                </Match>
+                <Match when={isWorkbenchImageContent(activeTab()?.content)}>
+                  <div class="workbench-image-preview">
+                    <img src={`data:${activeTab()?.content?.mimeType ?? "image/png"};base64,${activeTab()?.content?.content ?? ""}`} alt={activeTab()?.path} />
+                  </div>
+                </Match>
+                <Match when={activeTab()?.content?.type === "binary"}>
+                  <div class="session-side-empty">Binary preview is read-only.</div>
+                </Match>
+                <Match when={activeTab()?.content?.type === "text" && activeTab()?.fileMode === "preview"}>
+                  <pre class="session-open-large-file">{activeTab()?.text}</pre>
+                </Match>
+                <Match when={activeTab()?.content?.type === "text"}>
+                  <SessionSideFileEditor
+                    tab={activeTab()}
+                    diagnostics={diagnostics}
+                    navigation={files.navigation()}
+                    change={(value) => activeTab() && !activeTab()?.readOnly && updateOpenTab(activeTab()!.id, { text: value })}
+                    save={() => void files.saveActiveFile()}
+                    definition={(position) => void files.openDefinition(position)}
+                    hover={files.loadHover}
+                    completion={files.loadCompletion}
+                  />
+                </Match>
+              </Switch>
+            </div>
+          </div>
         </Match>
         <Match when={activeTab()?.kind === "web"}>
           <SessionSideBrowserHost preview={browser.activePreview()} parked={browser.parkedID() === activeTab()?.id} available={Boolean(window.opencodex?.browser)} lifecycle={browser.lifecycle()} error={browser.error()} url={activeTab()?.url ?? ""} setHost={browser.setHost} />

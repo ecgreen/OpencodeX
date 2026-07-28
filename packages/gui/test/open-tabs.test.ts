@@ -79,3 +79,33 @@ function measurements(ids: string[]): OpenTabLayoutMeasurements {
     gap: 4,
   }
 }
+
+describe("flexible tab packing", () => {
+  // Tabs are flexible in CSS, so the fit decision uses the constant minimum
+  // width (the fallback) instead of measured, stretch-inflated widths. These
+  // pin the responsive behavior: narrower bar -> fewer visible, wider -> more.
+  const flexible: OpenTabLayoutMeasurements = {
+    tabs: {},
+    overflow: {},
+    newTab: 31,
+    padding: 56,
+    gap: 4,
+  }
+  const ids = Array.from({ length: 8 }, (_, index) => `tab-${index}`)
+
+  test("packs as many minimum-width tabs as fit, spilling the rest", () => {
+    expect(visibleOpenTabIDs({ ids, activeID: "tab-0", width: 834, measurements: flexible })).toHaveLength(5)
+    expect(visibleOpenTabIDs({ ids, activeID: "tab-0", width: 594, measurements: flexible })).toHaveLength(3)
+    expect(visibleOpenTabIDs({ ids, activeID: "tab-0", width: 430, measurements: flexible })).toHaveLength(2)
+    expect(visibleOpenTabIDs({ ids, activeID: "tab-0", width: 394, measurements: flexible })).toHaveLength(1)
+  })
+
+  test("re-expands when the bar grows back", () => {
+    expect(visibleOpenTabIDs({ ids, activeID: "tab-0", width: 1200, measurements: flexible })).toHaveLength(8)
+  })
+
+  test("always keeps the active tab visible", () => {
+    const visible = visibleOpenTabIDs({ ids, activeID: "tab-7", width: 594, measurements: flexible })
+    expect(visible).toContain("tab-7")
+  })
+})

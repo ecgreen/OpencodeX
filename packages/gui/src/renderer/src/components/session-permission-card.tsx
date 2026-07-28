@@ -3,15 +3,14 @@ import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js"
 import { Portal } from "solid-js/web"
-import { COPY_FULL_LABEL, NESTED_TRANSCRIPT_DIFF_OPTIONS, collapseOutput, copyFullToolText, patchContents, toolError, toolInput, toolOutput } from "../lib/tool-display"
+import { COPY_FULL_LABEL, NESTED_TRANSCRIPT_DIFF_OPTIONS, copyFullToolText, patchContents, toolInput } from "../lib/tool-display"
 import { describePermission } from "../lib/safety-present"
 import { isKeyboardEditingTarget } from "../lib/keyboard-shortcuts"
 import type { ToolPart } from "./session-transcript"
-import { DisclosureChevron } from "./icon"
 import { ModalFrame } from "./modal-frame"
 import { SafetyCardHeader, type SafetyQueuePosition } from "./session-safety-card"
 import { ToolPreviewText } from "./session-tool-text"
-import { Button, Menu, SurfaceCard } from "./ui"
+import { Button, SurfaceCard } from "./ui"
 
 type PermissionReply = "once" | "always" | "reject"
 
@@ -25,7 +24,6 @@ export function SessionPermissionCard(props: {
   const titleID = `permission-title-${createUniqueId()}`
   const input = createMemo(() => toolInput(props.request, props.tool))
   const presentation = createMemo(() => describePermission(props.request, input()))
-  const [detailsOpen, setDetailsOpen] = createSignal(false)
   const [diffOpen, setDiffOpen] = createSignal(false)
   const choose = (reply: PermissionReply) => props.reply(props.request, reply)
   let card: HTMLElement | undefined
@@ -47,7 +45,7 @@ export function SessionPermissionCard(props: {
         if (event.key === "1") choose("once")
         if (event.key === "2") choose("always")
         if (event.key === "3" || event.key === "Escape") choose("reject")
-        if (event.key.toLowerCase() === "f") presentation().diff ? setDiffOpen(true) : setDetailsOpen((open) => !open)
+        if (event.key.toLowerCase() === "f" && presentation().diff) setDiffOpen(true)
         if (event.key === "ArrowLeft" && props.position.total > 1) props.position.previous()
         if (event.key === "ArrowRight" && props.position.total > 1) props.position.next()
       }}
@@ -84,53 +82,13 @@ export function SessionPermissionCard(props: {
             </For>
           </dl>
         </Show>
-
-        <Show when={props.request.patterns.length > 0}>
-          <div class="permission-patterns">
-            <span>Requested scope</span>
-            <div><For each={props.request.patterns}>{(pattern) => <code>{pattern}</code>}</For></div>
-          </div>
-        </Show>
-
-        <Show when={hasDetails(props.request, input(), props.tool)}>
-          <details class="permission-details" open={detailsOpen()} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
-            <summary class="part-header">
-              <DisclosureChevron />
-              <span class="part-title">Technical details</span>
-            </summary>
-            <Show when={detailsOpen()}>
-              <div class="permission-details-content">
-                <Show when={Object.keys(input()).length > 0}>
-                  <section><h3>Tool input</h3><ToolPreviewText text={JSON.stringify(input(), null, 2)} /></section>
-                </Show>
-                <Show when={input() !== props.request.metadata && Object.keys(props.request.metadata).length > 0}>
-                  <section><h3>Request metadata</h3><ToolPreviewText text={JSON.stringify(props.request.metadata, null, 2)} /></section>
-                </Show>
-                <Show when={props.tool ? toolOutput(props.tool.state) : undefined}>
-                  {(output) => <PermissionOutput output={output()} />}
-                </Show>
-                <Show when={props.tool ? toolError(props.tool.state) : undefined}>
-                  {(error) => <section><h3>Tool error</h3><ToolPreviewText text={error()} /></section>}
-                </Show>
-              </div>
-            </Show>
-          </details>
-        </Show>
       </div>
 
       <footer class="safety-card-actions">
         <Button appearance="ghost" tone="danger" onClick={() => choose("reject")} leadingIcon="x">Reject <kbd>3</kbd></Button>
-        <div class="permission-allow-actions">
-          <Button appearance="solid" tone="accent" onClick={() => choose("once")} leadingIcon="check">Allow once <kbd>1</kbd></Button>
-          <Menu placement="top-end">
-            <Menu.Trigger as={Button} class="permission-more-trigger" appearance="solid" tone="accent" icon="chevronDown" iconOnly aria-label="More permission options" title="More permission options" />
-            <Menu.Portal>
-              <Menu.Content class="permission-action-menu">
-                <Menu.Item shortcut="2" onSelect={() => choose("always")}>Always allow</Menu.Item>
-              </Menu.Content>
-            </Menu.Portal>
-          </Menu>
-        </div>
+        <span class="safety-action-spacer" />
+        <Button appearance="soft" tone="success" onClick={() => choose("always")}>Always allow <kbd>2</kbd></Button>
+        <Button appearance="solid" tone="success" onClick={() => choose("once")} leadingIcon="check">Allow once <kbd>1</kbd></Button>
       </footer>
 
       <Show when={diffOpen() && presentation().diff}>
@@ -166,15 +124,4 @@ function PermissionDiff(props: { diff: string; filePath?: string; split?: boolea
       )}
     </Show>
   )
-}
-
-function PermissionOutput(props: { output: string }) {
-  const preview = createMemo(() => collapseOutput(props.output))
-  return <section><h3>Tool output</h3><pre>{preview().output}</pre><Show when={preview().overflow}><Button appearance="ghost" type="button" onClick={() => void copyFullToolText(props.output)}>{COPY_FULL_LABEL}</Button></Show></section>
-}
-
-function hasDetails(request: PermissionRequest, input: Record<string, unknown>, tool?: ToolPart) {
-  if (Object.keys(input).length > 0 || Object.keys(request.metadata).length > 0) return true
-  if (!tool) return false
-  return Boolean(toolOutput(tool.state) || toolError(tool.state))
 }

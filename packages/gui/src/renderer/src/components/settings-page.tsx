@@ -123,7 +123,7 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
               <p>Choose how OpenCodeX handles permission checks across projects and sessions.</p>
             </div>
           </header>
-          <SurfaceCard class="settings-safety-card">
+          <div class="settings-safety-card">
             <Select<PermissionModeOption>
               label="Security mode"
               description={
@@ -150,7 +150,7 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
                 </InlineNotice>
               )}
             </Show>
-          </SurfaceCard>
+          </div>
         </section>
 
         <section class="settings-section" aria-labelledby="settings-connection">

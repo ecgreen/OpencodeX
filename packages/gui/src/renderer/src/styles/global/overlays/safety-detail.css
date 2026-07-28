@@ -2,36 +2,6 @@
   gap: var(--ds-space-4);
 }
 
-.question-progress {
-  display: grid;
-  grid-template-columns: auto minmax(80px,160px);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
-  color: var(--ds-text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  line-height: 16px;
-}
-
-.question-progress progress {
-  width: 100%;
-  height: 3px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--ds-border-subtle);
-}
-
-.question-progress progress::-webkit-progress-bar {
-  border-radius: 999px;
-  background: var(--ds-border-subtle);
-}
-
-.question-progress progress::-webkit-progress-value {
-  border-radius: 999px;
-  background: var(--ds-info);
-}
-
 .question-step {
   display: grid;
   gap: var(--ds-space-2);
@@ -169,11 +139,22 @@
 @keyframes safety-dock-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(14px) scale(.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* One-time ring pulse so a freshly raised request registers even while the
+   reader's eyes are on the transcript. Settles into the resting shadow. */
+@keyframes safety-card-attention {
+  from {
+    box-shadow: 0 0 0 6px color-mix(in srgb,var(--ui-tone) 25%,transparent),var(--ds-shadow-overlay);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent,var(--ds-shadow-overlay);
   }
 }
 
@@ -198,7 +179,7 @@
     white-space: normal;
   }
 
-  .safety-queue>span {
+  .safety-queue-count {
     min-width: 42px;
   }
 
@@ -215,7 +196,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .safety-dock {
+  .safety-dock,
+  .safety-card {
     animation: none;
   }
 }

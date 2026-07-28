@@ -87,6 +87,24 @@
 .spaceBar { height: var(--ds-space-3); border-radius: var(--ds-radius-full); background: var(--ds-control-accent); }
 .elevationTile { display: grid; height: var(--ds-space-9); place-content: center; border: 1px solid var(--ds-border); border-radius: var(--ds-radius-card); color: var(--ds-text-muted); background: var(--ds-surface-raised); font-size: var(--ds-text-xs); }
 
+
+.safetyStage { display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ds-space-3); min-height: 620px; padding: var(--ds-space-4); border: 1px solid var(--ds-border-subtle); border-radius: var(--ds-radius-card); background: var(--ds-canvas); }
+.safetyStageTranscript { display: grid; gap: var(--ds-space-2); flex: 1 1 auto; align-content: start; }
+.safetyStageTranscript p { margin: 0; max-width: 64ch; color: var(--ds-text-muted); font-size: var(--ds-text-sm); line-height: var(--ds-leading-prose); }
+.safetyStageTranscript strong { color: var(--ds-text); }
+.safetyStageComposer { display: flex; align-items: center; min-height: 68px; padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-card); background: var(--ds-surface-raised); color: var(--ds-text-subtle); font-size: var(--ds-text-md); }
+.safetyStageEmpty { display: flex; align-items: center; gap: var(--ds-space-3); justify-content: center; padding: var(--ds-space-3); }
+.safetyStageEmpty p { margin: 0; color: var(--ds-text-muted); font-size: var(--ds-text-sm); }
+
+
+.transcriptStageRow { display: flex; flex-wrap: wrap; gap: var(--ds-space-4); align-items: flex-start; }
+.transcriptStage { display: block; width: 400px; padding: var(--ds-space-3); border: 1px dashed var(--ds-border-strong); border-radius: var(--ds-radius-card); background: var(--ds-canvas); }
+.transcriptStage > code { display: block; margin-bottom: var(--ds-space-2); }
+
+
+.workspaceStages { display: grid; gap: var(--ds-space-4); }
+.workspaceStage { display: grid; gap: var(--ds-space-2); padding: var(--ds-space-3); border: 1px dashed var(--ds-border-strong); border-radius: var(--ds-radius-card); background: var(--ds-canvas); }
+
 @media (max-width: 900px) {
   .lab { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .rail { height: auto; border-right: 0; border-bottom: 1px solid var(--ds-border-subtle); }

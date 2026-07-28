@@ -62,6 +62,12 @@ export type MapperContext = {
   nextMessageID: () => MessageID
   nextPartID: () => PartID
   now: () => number
+  /**
+   * The input the permission gate actually approved for a call, when it
+   * rewrote it - the AskUserQuestion answers travel back this way. Recording it
+   * on the finished part is what lets the transcript show what the user chose.
+   */
+  decidedInput?: (callID: string) => Record<string, unknown> | undefined
 }
 
 export type MapperState = {
@@ -180,6 +186,7 @@ export function finalizeAbandonedTurn(
           status: "error",
           input: pending.input,
           error: input.error ?? input.reason,
+          metadata: { interrupted: true },
           time: { start: pending.start, end: now },
         },
       },
@@ -284,6 +291,7 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
   state.toolParts.delete(callID)
   const output = readResultText(block.content)
   const end = context.now()
+  const input = context.decidedInput?.(callID) ?? pending.input
   writes.push({
     kind: "part",
     part: {
@@ -294,10 +302,10 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
       callID,
       tool: pending.tool,
       state: block.is_error
-        ? { status: "error", input: pending.input, error: output || "The tool call failed.", time: { start: pending.start, end } }
+        ? { status: "error", input, error: output || "The tool call failed.", time: { start: pending.start, end } }
         : {
             status: "completed",
-            input: pending.input,
+            input,
             output,
             title: pending.tool,
             metadata: {},
@@ -308,6 +316,31 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
 }
 
 function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperState, context: MapperContext) {
+  // A denied tool call (a rejected question, a refused permission) may never
+  // stream a tool_result. The turn is over, so anything still open is closed
+  // here - otherwise the transcript shows a "Running" timer forever.
+  const end = context.now()
+  for (const [callID, pending] of state.toolParts) {
+    writes.push({
+      kind: "part",
+      part: {
+        id: pending.partID,
+        sessionID: context.sessionID,
+        messageID: state.messageID!,
+        type: "tool",
+        callID,
+        tool: pending.tool,
+        state: {
+          status: "error",
+          input: pending.input,
+          error: "The tool call did not return a result before the turn ended.",
+          metadata: { interrupted: true },
+          time: { start: pending.start, end },
+        },
+      },
+    })
+  }
+  state.toolParts.clear()
   const usage = event.usage ?? event.message?.usage ?? {}
   // `total_cost_usd` accumulates over the whole Claude conversation while the
   // projector adds every step-finish into the session total, so only the delta

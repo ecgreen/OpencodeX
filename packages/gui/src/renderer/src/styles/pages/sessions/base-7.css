@@ -33,8 +33,12 @@
   position: relative;
   display: grid;
   grid-template-rows: minmax(0,1fr) auto auto;
+  grid-template-columns: minmax(0,1fr);
   flex: 1 1 auto;
-  min-width: 0;
+  /* The transcript column never compresses below this; the side panel yields
+     first. All part components are verified to contain themselves at 400px
+     (lab.html?page=transcript). */
+  min-width: 400px;
   min-height: 0;
   gap: 8px;
 }
@@ -92,6 +96,14 @@
   background: var(--surface-raised);
   box-shadow: none;
   transition: border-color var(--motion-control) ease,box-shadow var(--motion-control) ease;
+}
+
+/* On the light slate ramp the raised token still reads too bright for a
+   surface this large; the composer sits on a light slate gray - a step above
+   the canvas so it stands out, without the blue cast of the surface ramp. */
+:root[data-theme="light"] .composer-input {
+  background: #d6dade;
+  border-color: rgba(16, 21, 28, 0.24);
 }
 
 .composer-input.build {

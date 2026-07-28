@@ -44,6 +44,19 @@ export function transcriptBottomScrollTop(metrics: Pick<TranscriptScrollMetrics,
   return metrics.scrollHeight
 }
 
+export type TranscriptViewportShiftMetrics = TranscriptScrollMetrics & {
+  previousClientHeight: number
+}
+
+// When the viewport itself changes height (composer grows, safety dock appears)
+// the reader should keep seeing the same content. Anchoring the distance from
+// the bottom keeps the line just above the composer stable, which is where the
+// eye rests in a bottom-fed transcript.
+export function transcriptViewportShiftScrollTop(metrics: TranscriptViewportShiftMetrics) {
+  const shifted = metrics.scrollTop + metrics.previousClientHeight - metrics.clientHeight
+  return Math.max(0, Math.min(shifted, Math.max(0, metrics.scrollHeight - metrics.clientHeight)))
+}
+
 export function transcriptFollowStateAfterUserInput(now = Date.now()): TranscriptFollowState {
   return { followBottom: false, releasedUntil: now + TRANSCRIPT_USER_SCROLL_RELEASE_MS }
 }

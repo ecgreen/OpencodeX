@@ -57,9 +57,23 @@ export function OpencodeXLogo(props: { active?: boolean } = {}) {
     if (enabled()) animation.frame = window.requestAnimationFrame(animate)
   }
 
+  let themeRetryTimer: ReturnType<typeof setTimeout> | undefined
+  const adoptTheme = () => {
+    const theme = logoTheme()
+    animation.theme = theme
+    if (theme) {
+      syncAnimation()
+      return
+    }
+    // The stylesheet with the theme tokens can land after mount (vite injects
+    // CSS asynchronously in dev). Painting from empty tokens renders every
+    // glyph black, so retry until the tokens resolve.
+    themeRetryTimer = setTimeout(adoptTheme, 120)
+  }
+
   onMount(() => {
     animation.mounted = true
-    animation.theme = logoTheme()
+    adoptTheme()
     const updateVisibility = () => {
       const visible = document.visibilityState === "visible"
       if (animation.pageVisible === visible) return
@@ -81,19 +95,16 @@ export function OpencodeXLogo(props: { active?: boolean } = {}) {
       animation.reducedMotion = media.matches
       syncAnimation()
     }
-    const themeObserver = new MutationObserver(() => {
-      animation.theme = logoTheme()
-      syncAnimation()
-    })
+    const themeObserver = new MutationObserver(adoptTheme)
     document.addEventListener("visibilitychange", updateVisibility)
     window.addEventListener("focus", focus)
     window.addEventListener("blur", blur)
     media.addEventListener("change", updateMotion)
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
-    syncAnimation()
     onCleanup(() => {
       animation.mounted = false
       cancelFrame()
+      clearTimeout(themeRetryTimer)
       themeObserver.disconnect()
       document.removeEventListener("visibilitychange", updateVisibility)
       window.removeEventListener("focus", focus)
@@ -126,20 +137,37 @@ export function OpencodeXLogo(props: { active?: boolean } = {}) {
   )
 }
 
-function logoTheme(): LogoTheme {
+function logoTheme(): LogoTheme | undefined {
   const style = getComputedStyle(document.documentElement)
+  // Unresolved tokens (theme stylesheet not applied yet) parse to black and
+  // would paint the whole wordmark black - report "not ready" instead.
+  if (!style.getPropertyValue("--theme-canvas").trim()) return undefined
   const color = (name: string) => cssColorToRgb(style.getPropertyValue(name))
   const background = color("--theme-canvas")
   // Derived from the canvas rather than the theme name, so a future light
   // palette gets the right treatment without being special-cased here.
   const lightCanvas = relativeLuminance(background) > 0.45
+  // On paper the wordmark is engraved ink: letters in one dark gray, their
+  // interior shading several steps lighter, and only the X carries color.
+  // These inks are LIGHT-MODE ONLY - left undefined on a dark canvas so the
+  // dark rendering stays byte-for-byte what it always was (x falls back to
+  // the warning ink, shading to the run ink).
+  const letters = lightCanvas ? color("--theme-text-muted") : undefined
   return {
     background,
-    primary: color("--theme-accent"),
+    // On paper the crest tints toward the letter ink itself, which makes the
+    // shimmer invisible: no orange or blue speckle ever crosses the glyphs.
+    primary: letters ?? color("--theme-accent"),
     warning: color("--theme-warning"),
-    peak: color("--theme-text"),
-    muted: color("--theme-text-muted"),
-    text: color("--theme-text"),
+    peak: letters ?? color("--theme-text"),
+    muted: letters ?? color("--theme-text-muted"),
+    text: letters ?? color("--theme-text"),
+    // One brand orange for the X in both themes - the theme accents drift too
+    // amber (dark) and too brown (light) at glyph size.
+    x: { r: 200, g: 88, b: 28 },
+    // Light canvas only: the interior of the letters is the canvas itself -
+    // exactly how dark mode reads - with no shimmer or shadow tints.
+    ...(lightCanvas ? { shading: background } : {}),
     // Ink on paper: the crest warms toward the accent instead of driving to
     // black, and the halo behind the glyphs stays a hint rather than a smudge.
     glow: lightCanvas ? color("--theme-accent") : color("--theme-text"),

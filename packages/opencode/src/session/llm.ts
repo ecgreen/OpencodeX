@@ -195,7 +195,10 @@ const live: Layer.Layer<
                 patterns: uniquePatterns,
                 metadata: { tools: approvalTools },
                 always: uniquePatterns,
-                ruleset: [],
+                // The same ruleset `sessionPreapprovedTools` is derived from, so
+                // permission mode and configured rules gate workflow approvals
+                // too. An empty ruleset here made `evaluate` fall back to "ask".
+                ruleset,
               }),
             )
             for (const name of uniqueNames) approvedToolsForSession.add(name)

@@ -114,6 +114,10 @@ body {
   max-width: 100%;
   margin: 0 0 4px;
   overflow: visible;
+  /* A composited layer forces grayscale antialiasing: ClearType's subpixel
+     rendering leaves orange/blue fringes on the block glyphs' vertical edges,
+     visible as colored seams between cells on a light canvas. */
+  transform: translateZ(0);
   font-size: clamp(8px,1.05vw,16px);
   font-weight: 900;
   line-height: 1;

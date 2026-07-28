@@ -235,3 +235,52 @@ describe("claude stream-json mapper", () => {
 function _typecheckState(state: MapperState) {
   return state.billed.cost
 }
+
+describe("decided input recording", () => {
+  test("the finished part carries the input the permission gate approved, not the model's original", () => {
+    const decided = new Map<string, Record<string, unknown>>([
+      ["toolu_q", { questions: [{ question: "Which way?" }], answers: { "Which way?": "Left" } }],
+    ])
+    const ctx = { ...context(), decidedInput: (callID: string) => decided.get(callID) }
+    const { writes } = run(
+      [
+        {
+          type: "assistant",
+          message: {
+            id: "m1",
+            content: [{ type: "tool_use", id: "toolu_q", name: "AskUserQuestion", input: { questions: [{ question: "Which way?" }] } }],
+          },
+        },
+        {
+          type: "user",
+          message: { content: [{ type: "tool_result", tool_use_id: "toolu_q", content: "User selected Left" }] },
+        },
+      ],
+      ctx,
+    )
+    const finished = parts(writes).filter((part) => part.type === "tool").at(-1)
+    expect(finished).toMatchObject({
+      tool: "question",
+      state: { status: "completed", input: { answers: { "Which way?": "Left" } } },
+    })
+  })
+
+  test("a turn result closes still-open tool parts so nothing shows as running forever", () => {
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [{ type: "tool_use", id: "toolu_q", name: "AskUserQuestion", input: { questions: [] } }],
+        },
+      },
+      // No tool_result: the question was rejected and the CLI went straight to the result.
+      { type: "result", subtype: "success" },
+    ])
+    const finished = parts(writes).filter((part) => part.type === "tool").at(-1)
+    expect(finished).toMatchObject({
+      tool: "question",
+      state: { status: "error", metadata: { interrupted: true } },
+    })
+  })
+})

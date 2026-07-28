@@ -5,7 +5,10 @@ import { LabFeedback } from "./lab-feedback"
 import { LabFoundations } from "./lab-foundations"
 import { LabNavigation } from "./lab-navigation"
 import { LabOverlays } from "./lab-overlays"
+import { LabSafety } from "./lab-safety"
 import { LabSignature } from "./lab-signature"
+import { LabTranscript } from "./lab-transcript"
+import { LabWorkspace } from "./lab-workspace"
 import { LAB_PAGES, type LabPageId } from "./lab-shared"
 import styles from "./lab.module.css"
 
@@ -78,7 +81,10 @@ export function LabApp() {
             <Match when={page() === "feedback"}><LabFeedback /></Match>
             <Match when={page() === "navigation"}><LabNavigation /></Match>
             <Match when={page() === "overlays"}><LabOverlays /></Match>
+            <Match when={page() === "safety"}><LabSafety /></Match>
             <Match when={page() === "signature"}><LabSignature /></Match>
+            <Match when={page() === "transcript"}><LabTranscript /></Match>
+            <Match when={page() === "workspace"}><LabWorkspace /></Match>
           </Switch>
           <Show when={page() === "foundations"}>
             <p class={styles.pageDetail}>

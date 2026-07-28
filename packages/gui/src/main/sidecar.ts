@@ -40,7 +40,11 @@ type SidecarState = {
   generation: number
 }
 
-const START_TIMEOUT = 15_000
+/* Generous on purpose: the coordinator is `bun run` over the full opencode
+   source graph, and a dev machine under load (builds, test suites) can push a
+   cold start well past 15s. The wait loop still returns the moment the
+   manifest appears, so the ceiling only matters on slow starts. */
+const START_TIMEOUT = 45_000
 const CLIENT_HEARTBEAT_INTERVAL = 2_000
 const state: SidecarState = { generation: 0 }
 

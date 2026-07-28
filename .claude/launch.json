@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gui-lab",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "--cwd",
+        "packages/gui",
+        "dev",
+        "--port",
+        "5873",
+        "--strictPort"
+      ],
+      "port": 5873
+    }
+  ]
+}

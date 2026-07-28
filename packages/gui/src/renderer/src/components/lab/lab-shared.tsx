@@ -2,7 +2,7 @@ import type { JSX } from "solid-js"
 import { For } from "solid-js"
 import styles from "./lab.module.css"
 
-export type LabPageId = "foundations" | "controls" | "feedback" | "navigation" | "overlays" | "signature"
+export type LabPageId = "foundations" | "controls" | "feedback" | "navigation" | "overlays" | "safety" | "signature" | "transcript" | "workspace"
 
 export const LAB_PAGES: { id: LabPageId; label: string; detail: string }[] = [
   { id: "foundations", label: "Foundations", detail: "Type ramp, spacing, color, elevation, motion." },
@@ -10,7 +10,10 @@ export const LAB_PAGES: { id: LabPageId; label: string; detail: string }[] = [
   { id: "feedback", label: "Feedback", detail: "Badges, notices, states, skeletons, meters, toasts." },
   { id: "navigation", label: "Navigation", detail: "Tabs, shortcuts, command rows, breadcrumbs." },
   { id: "overlays", label: "Overlays", detail: "Tooltips, dialogs, popovers, menus." },
+  { id: "safety", label: "Safety", detail: "Permission and question cards, the composer dock queue." },
   { id: "signature", label: "Signature", detail: "Session cards, identity, the status system." },
+  { id: "transcript", label: "Transcript", detail: "Message parts at minimum width - no horizontal scroll allowed." },
+  { id: "workspace", label: "Workspace", detail: "Side panel tab bar - responsive overflow, tab anatomy." },
 ]
 
 /** A titled block within a lab page. */

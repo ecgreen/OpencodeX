@@ -1,7 +1,19 @@
 #!/bin/sh
 set -e
 
+# Whitespace problems (trailing whitespace, CRLF endings, blank lines at EOF)
+# are auto-fixed and re-staged rather than failing the commit. Note: fixed
+# files are re-added whole, so a partially staged file gets fully staged.
+if ! git diff --cached --check > /dev/null 2>&1; then
+  git diff --cached --check | sed -n 's/^\(.*\):[0-9][0-9]*: .*/\1/p' | sort -u | while IFS= read -r file; do
+    [ -f "$file" ] || continue
+    perl -i -pe 's/\r$//; s/[ \t]+$//' "$file"
+    git add -- "$file"
+    echo "pre-commit: fixed whitespace in $file"
+  done
+fi
 git diff --cached --check
+
 bun run --cwd packages/gui check:design-system --staged
 
 files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' '*.js' '*.jsx')

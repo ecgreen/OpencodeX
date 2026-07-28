@@ -235,15 +235,17 @@ export function createSessionSideTabBarController(input: {
     const style = getComputedStyle(root)
     setMeasurements((current) => {
       const overflowCount = overflowTabs().length
-      const tabs = Object.fromEntries(Array.from(root.querySelectorAll<HTMLElement>("[data-open-tab-id]")).map((element) => [element.dataset.openTabId, Math.ceil(element.closest<HTMLElement>("[data-open-tab-row-id]")?.getBoundingClientRect().width ?? element.getBoundingClientRect().width)] as const).filter((entry): entry is readonly [string, number] => entry[0] !== undefined))
+      // Tab widths are deliberately NOT measured: tabs are flexible and stretch
+      // to fill the row, so measuring them would feed the stretched width back
+      // into the fit decision and make collapse one-way. Fitting always uses
+      // the constant minimum width instead.
       const overflowWidth = overflowCount > 0 ? Math.ceil(overflowMenuAnchor?.getBoundingClientRect().width ?? 0) : 0
       const overflow = overflowWidth > 0 && current.overflow[overflowCount] !== overflowWidth ? { ...current.overflow, [overflowCount]: overflowWidth } : current.overflow
       const newTab = Math.ceil(newMenuAnchor?.getBoundingClientRect().width ?? current.newTab)
       const padding = cssPixelValue(style.paddingLeft) + cssPixelValue(style.paddingRight)
       const gap = cssPixelValue(style.columnGap) || cssPixelValue(style.gap)
-      const tabsChanged = Object.entries(tabs).some(([id, width]) => current.tabs[id] !== width)
-      if (!tabsChanged && overflow === current.overflow && newTab === current.newTab && padding === current.padding && gap === current.gap) return current
-      return { tabs: { ...current.tabs, ...tabs }, overflow, newTab, padding, gap }
+      if (overflow === current.overflow && newTab === current.newTab && padding === current.padding && gap === current.gap) return current
+      return { tabs: current.tabs, overflow, newTab, padding, gap }
     })
   }
 

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { Message, OpencodeXSessionSnapshot, Part, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientStateSyncController } from "@opencode-ai/sdk/v2/client-sync"
 import { loadClientStateSessionTranscript } from "../src/renderer/src/lib/client-session-loader"
-import { sessionDataFromSnapshot } from "../src/renderer/src/lib/session-data-projection"
+import { clipToCurrentWindow, sessionDataFromSnapshot } from "../src/renderer/src/lib/session-data-projection"
+import type { MessageBundle, SessionData } from "../src/renderer/src/lib/store-types"
 
 describe("GUI standalone session projection", () => {
   test("normalizes message parts projected directly from a snapshot", () => {
@@ -48,6 +49,36 @@ describe("GUI standalone session projection", () => {
     expect(selected).toEqual({ value: "selected" })
     expect(views).toEqual({ value: "views" })
     expect(presentation).toEqual({ value: "presentation" })
+  })
+})
+
+describe("GUI session projection window clipping", () => {
+  const windowed = (messages: MessageBundle[], expanded = false): SessionData =>
+    ({ messages, todos: [], diffs: [], ...(expanded ? { messageWindowExpanded: true } : {}) }) as unknown as SessionData
+
+  test("drops history older than the visible window so prompting never prepends content", () => {
+    // The session opened showing 3..4; the sync state knows 1..5.
+    const projected = bundles(1, 6)
+    const result = clipToCurrentWindow(projected, windowed(bundles(3, 5)))
+    expect(result.clipped).toBe(true)
+    expect(result.messages.map((item) => item.info.id)).toEqual(["message-3", "message-4", "message-5"])
+  })
+
+  test("keeps everything once the reader expanded the window with Load more", () => {
+    const result = clipToCurrentWindow(bundles(1, 4), windowed(bundles(2, 4), true))
+    expect(result.clipped).toBe(false)
+    expect(result.messages).toHaveLength(3)
+  })
+
+  test("keeps everything when there is no current window to preserve", () => {
+    expect(clipToCurrentWindow(bundles(1, 3), undefined).clipped).toBe(false)
+    expect(clipToCurrentWindow(bundles(1, 3), windowed([])).clipped).toBe(false)
+  })
+
+  test("keeps everything when the current head already leads the projection", () => {
+    const result = clipToCurrentWindow(bundles(3, 6), windowed(bundles(3, 5)))
+    expect(result.clipped).toBe(false)
+    expect(result.messages).toHaveLength(3)
   })
 })
 

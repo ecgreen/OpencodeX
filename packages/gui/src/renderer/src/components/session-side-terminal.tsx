@@ -50,10 +50,14 @@ export function SessionOpenTerminal(props: { tab: TerminalTab & { title?: string
   return (
     <div class="session-open-terminal">
       <header>
-        <Show when={editing()} fallback={<span><Icon name="terminal" /> {props.tab.title || (props.tab.directory ? compactPath(props.tab.directory) : "Terminal")}</span>}>
-          <TextInput value={title()} aria-label="Terminal name" autofocus onInput={(event) => setTitle(event.currentTarget.value)} onBlur={commitName} onKeyDown={(event) => event.key === "Enter" && commitName()} />
-        </Show>
-        <IconButton icon="pencil" label="Rename terminal" size="compact" onClick={() => setEditing(true)} />
+        <div class="session-open-terminal-title">
+          <Show when={editing()} fallback={<span><Icon name="terminal" /> {props.tab.title || (props.tab.directory ? compactPath(props.tab.directory) : "Terminal")}</span>}>
+            <TextInput value={title()} aria-label="Terminal name" autofocus onInput={(event) => setTitle(event.currentTarget.value)} onBlur={commitName} onKeyDown={(event) => event.key === "Enter" && commitName()} />
+          </Show>
+          <Show when={!editing()}>
+            <IconButton appearance="ghost" icon="pencil" label="Rename terminal" size="compact" class="session-open-terminal-rename" onClick={() => setEditing(true)} />
+          </Show>
+        </div>
         <small>{props.tab.terminalStatus === "closed" ? "closed" : props.tab.terminalStatus === "connecting" ? "connecting" : "interactive"}</small>
       </header>
       <div class="session-open-terminal-host" ref={(element) => { host = element }} />

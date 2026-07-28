@@ -10,6 +10,7 @@ import {
   transcriptLoadingSkeletonDecision,
   transcriptLoadMoreScrollTop,
   transcriptNewMessageCount,
+  transcriptViewportShiftScrollTop,
   shouldSpendTranscriptOpenBottomScroll,
 } from "../src/renderer/src/lib/transcript-scroll"
 
@@ -126,5 +127,27 @@ describe("GUI transcript scroll decisions", () => {
       forceBottomScroll: true,
       hasContent: true,
     })).toBe("hide")
+  })
+})
+
+describe("GUI transcript viewport shift compensation", () => {
+  test("keeps the distance from the bottom stable when the viewport shrinks", () => {
+    // Viewport lost 120px (composer grew): scrollTop must grow by 120px so the
+    // line above the composer stays put.
+    expect(transcriptViewportShiftScrollTop({ scrollTop: 400, scrollHeight: 2_000, clientHeight: 480, previousClientHeight: 600 })).toBe(520)
+  })
+
+  test("keeps the distance from the bottom stable when the viewport grows", () => {
+    // Composer collapsed after submit: viewport gained 260px back.
+    expect(transcriptViewportShiftScrollTop({ scrollTop: 700, scrollHeight: 2_000, clientHeight: 660, previousClientHeight: 400 })).toBe(440)
+  })
+
+  test("clamps to the scrollable range", () => {
+    expect(transcriptViewportShiftScrollTop({ scrollTop: 10, scrollHeight: 2_000, clientHeight: 900, previousClientHeight: 400 })).toBe(0)
+    expect(transcriptViewportShiftScrollTop({ scrollTop: 1_500, scrollHeight: 2_000, clientHeight: 400, previousClientHeight: 900 })).toBe(1_600)
+  })
+
+  test("degenerate content shorter than the viewport pins to the top", () => {
+    expect(transcriptViewportShiftScrollTop({ scrollTop: 0, scrollHeight: 300, clientHeight: 500, previousClientHeight: 700 })).toBe(0)
   })
 })

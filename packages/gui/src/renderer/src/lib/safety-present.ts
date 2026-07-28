@@ -3,7 +3,16 @@ import { permissionDiff, permissionTitle, stringValue } from "./tool-display"
 
 export type SafetyQueueItem =
   | { kind: "permission"; id: string; request: PermissionRequest }
-  | { kind: "question"; id: string; request: QuestionRequest }
+  | { kind: "question"; id: string; request: QuestionRequest; step: number }
+
+export type SafetyQueueGroup = {
+  /** Zero-based position within the active item's group (permissions or questions). */
+  index: number
+  /** Size of the active item's group. */
+  total: number
+  /** Human hint for the other group still waiting behind this one, e.g. "2 questions". */
+  upNext?: string
+}
 
 export type PermissionSummaryRow = {
   label: string
@@ -37,12 +46,25 @@ const PERMISSION_ICONS: Record<string, string | undefined> = {
   webfetch: "browser",
   websearch: "search",
   workspace_open: "folder-open",
+  write: "pencil",
 }
 
+/**
+ * Permissions come first, then questions - approvals unblock the model faster
+ * than opinions do. A request with several questions contributes one queue entry
+ * per question, so the one top-right pill is the only pagination anywhere.
+ */
 export function buildSafetyQueue(permissions: PermissionRequest[], questions: QuestionRequest[]): SafetyQueueItem[] {
   return [
     ...permissions.map((request) => ({ kind: "permission" as const, id: `permission:${request.id}`, request })),
-    ...questions.map((request) => ({ kind: "question" as const, id: `question:${request.id}`, request })),
+    ...questions.flatMap((request) =>
+      request.questions.map((_, step) => ({
+        kind: "question" as const,
+        id: `question:${request.id}:${step}`,
+        request,
+        step,
+      })),
+    ),
   ]
 }
 
@@ -51,21 +73,47 @@ export function moveSafetyQueueIndex(index: number, total: number, delta: number
   return (index + delta + total) % total
 }
 
+/**
+ * The pill reads group-relative ("1 of 3" permissions, then "1 of 2"
+ * questions), with a hint that another group is queued behind the current one.
+ */
+export function safetyQueueGroup(queue: SafetyQueueItem[], index: number): SafetyQueueGroup {
+  const active = queue[index]
+  const permissions = queue.filter((item) => item.kind === "permission").length
+  const questionSteps = queue.length - permissions
+  if (!active) return { index: 0, total: queue.length }
+  const label = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
+  if (active.kind === "permission") {
+    return {
+      index,
+      total: permissions,
+      ...(questionSteps > 0 ? { upNext: label(questionSteps, "question") } : {}),
+    }
+  }
+  return {
+    index: index - permissions,
+    total: questionSteps,
+    ...(permissions > 0 ? { upNext: label(permissions, "permission") } : {}),
+  }
+}
+
 export function describePermission(request: PermissionRequest, input: Record<string, unknown>): PermissionPresentation {
   const command = request.permission === "bash" ? stringValue(input.command) : undefined
   const description = stringValue(input.description)
   const title = command
     ? description ?? command.split("\n")[0] ?? "Run shell command"
     : permissionTitle(request, input)
+  const heading = title || `Use ${request.permission.replaceAll("_", " ")}`
 
   return {
     icon: PERMISSION_ICONS[request.permission] ?? "lock",
     kind: request.permission.replaceAll("_", " "),
-    title: title || `Use ${request.permission.replaceAll("_", " ")}`,
+    title: heading,
     command,
     diff: permissionDiff(request),
     filePath: stringValue(request.metadata.filepath),
-    summary: permissionSummary(request, input),
+    // A row that repeats the heading (the fetch URL, the file path) is noise.
+    summary: permissionSummary(request, input).filter((row) => !heading.includes(row.value)),
   }
 }
 

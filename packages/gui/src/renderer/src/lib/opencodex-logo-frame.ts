@@ -20,6 +20,16 @@ export type LogoTheme = {
    * light themes dial it back. Defaults to 1.
    */
   shadowScale?: number
+  /** Ink for the X glyph - the brand orange in both themes. Defaults to `warning`. */
+  x?: LogoRgb
+  /**
+   * Flat fill for the interior of the block letters (the backgrounds behind
+   * `_`/`^` strokes and the `~`/`,` shadow cells). When set, the interior is
+   * this single tone - no shimmer ghosts or shadow tints, which on a light
+   * canvas read as random blue and orange pixels. The strokes themselves
+   * always use the run ink. Defaults to the animated shadow treatment.
+   */
+  shading?: LogoRgb
 }
 
 type LogoPointGeometry = {
@@ -120,33 +130,38 @@ export function logoFrameDue(previous: number | undefined, current: number) {
 }
 
 export function logoCellFrame(cell: LogoCellGeometry, time: number, geometry: LogoGeometry, theme: LogoTheme): LogoCellFrame {
-  const charInk = cell.x >= 40 ? theme.warning : theme[cell.ink]
+  const charInk = cell.x >= 40 ? theme.x ?? theme.warning : theme[cell.ink]
   if (cell.char === " ") return { color: rgbToCss(charInk) }
 
+  const interior = theme.shading
   const top = logoIdle(cell.top, time, geometry.reach)
   const bottom = logoIdle(cell.bottom, time, geometry.reach)
   const pulse = { peak: (top.peak + bottom.peak) / 2, primary: (top.primary + bottom.primary) / 2 }
   const inkTop = logoPeakTint(charInk, top, theme)
   const inkBottom = logoPeakTint(charInk, bottom, theme)
-  const inkTinted = logoPeakTint(charInk, pulse, theme)
   const shadowMix = LOGO_SHIMMER.shadowMix * (theme.shadowScale ?? 1)
   const shadowTop = tint(theme.background, theme.peak, Math.min(1, top.peak * shadowMix))
   const shadowBottom = tint(theme.background, theme.peak, Math.min(1, bottom.peak * shadowMix))
   const shadowTinted = tint(theme.background, theme.peak, Math.min(1, pulse.peak * shadowMix))
   const shimmer = logoShimmer(cell.shimmerDistance, time, geometry.span)
 
-  if (cell.char === "_") return { color: rgbToCss(inkTinted), backgroundColor: rgbToCss(shade(shadowTinted, ghost(shimmer, 0.06), theme)) }
-  if (cell.char === "^") return { color: rgbToCss(inkTop), backgroundColor: rgbToCss(shade(shadowBottom, ghost(shimmer, 0.05), theme)) }
-  if (cell.char === "~") return { color: rgbToCss(shade(shadowTop, ghost(shimmer, 0.05), theme)) }
-  if (cell.char === ",") return { color: rgbToCss(shade(shadowBottom, ghost(shimmer, 0.05), theme)) }
+  if (cell.char === "_") return { color: rgbToCss(logoPeakTint(charInk, pulse, theme)), backgroundColor: rgbToCss(interior ?? shade(shadowTinted, ghost(shimmer, 0.06), theme)) }
+  if (cell.char === "^") return { color: rgbToCss(inkTop), backgroundColor: rgbToCss(interior ?? shade(shadowBottom, ghost(shimmer, 0.05), theme)) }
+  if (cell.char === "~") return { color: rgbToCss(interior ?? shade(shadowTop, ghost(shimmer, 0.05), theme)) }
+  if (cell.char === ",") return { color: rgbToCss(interior ?? shade(shadowBottom, ghost(shimmer, 0.05), theme)) }
   if (cell.char === "\u2588") return { color: rgbToCss(inkTop), backgroundColor: rgbToCss(inkBottom) }
   if (cell.char === "\u2580") return { color: rgbToCss(inkTop) }
   if (cell.char === "\u2584") return { color: rgbToCss(inkBottom) }
-  return { color: rgbToCss(inkTinted) }
+  return { color: rgbToCss(logoPeakTint(charInk, pulse, theme)) }
 }
 
 export function cssColorToRgb(value: string) {
-  const hex = value.trim().replace("#", "")
+  const trimmed = value.trim()
+  // Computed values can come back as rgb()/rgba() rather than the authored
+  // hex; a parse failure here silently painted the whole wordmark black.
+  const functional = trimmed.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i)
+  if (functional) return { r: Number(functional[1]), g: Number(functional[2]), b: Number(functional[3]) }
+  const hex = trimmed.replace("#", "")
   if (hex.length === 3) return { r: Number.parseInt(hex[0] + hex[0], 16), g: Number.parseInt(hex[1] + hex[1], 16), b: Number.parseInt(hex[2] + hex[2], 16) }
   if (hex.length >= 6) return { r: Number.parseInt(hex.slice(0, 2), 16), g: Number.parseInt(hex.slice(2, 4), 16), b: Number.parseInt(hex.slice(4, 6), 16) }
   return { r: 0, g: 0, b: 0 }

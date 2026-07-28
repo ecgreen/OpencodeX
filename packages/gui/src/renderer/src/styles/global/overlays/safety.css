@@ -1,16 +1,36 @@
+/* The anchor row holds the composer; the dock floats above it as an overlay so
+   an arriving request never reflows the transcript underneath. */
+.session-dock-anchor {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .safety-dock {
+  position: absolute;
+  inset-inline: 0;
+  bottom: calc(100% + 10px);
+  /* Below .dialog-backdrop (20), so the expanded diff review opens on top. */
+  z-index: 15;
   min-width: 0;
   animation: safety-dock-in var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
 }
 
 .safety-card {
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0,1fr) auto;
   width: 100%;
   max-height: min(48vh,480px);
   min-width: 0;
   overflow: hidden;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
   color: var(--ds-text);
+  animation: safety-card-attention .9s cubic-bezier(.16,1,.3,1);
 }
 
 .safety-card:focus-visible {
@@ -25,6 +45,7 @@
   gap: var(--ds-space-3);
   padding: var(--ds-space-3) var(--ds-space-4);
   border-bottom: 1px solid var(--ds-border-subtle);
+  background: color-mix(in srgb,var(--ui-tone) 5%,transparent);
 }
 
 .safety-card-heading {
@@ -84,14 +105,40 @@
   flex: none;
   align-items: center;
   gap: 2px;
-  color: var(--ds-text-muted);
+  overflow: hidden;
+  padding: 2px;
+  border: 1px solid var(--ds-border);
+  border-radius: 999px;
+  background: var(--ds-surface);
+  color: var(--ds-text);
 }
 
-.safety-queue>span {
-  min-width: 48px;
+/* The pill is fully rounded, so its arrow buttons must be too - a square
+   ghost-hover background poking out of the capsule reads as a glitch. */
+.safety-queue .ui-button {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  border-radius: 999px;
+}
+
+.safety-queue-count {
+  min-width: 44px;
+  padding: 0 var(--ds-space-2);
   font-size: 11px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   text-align: center;
+  white-space: nowrap;
+}
+
+.safety-queue-more {
+  padding: 0 var(--ds-space-2);
+  border-left: 1px solid var(--ds-border-subtle);
+  color: var(--ds-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .safety-card-body {
@@ -145,8 +192,7 @@
   gap: var(--ds-space-3);
 }
 
-.permission-summary dt,
-.permission-patterns>span {
+.permission-summary dt {
   color: var(--ds-text-muted);
   font-size: 11px;
   font-weight: 620;
@@ -164,58 +210,6 @@
   font-family: var(--ds-font-technical);
 }
 
-.permission-patterns {
-  display: grid;
-  grid-template-columns: minmax(76px,auto) minmax(0,1fr);
-  gap: var(--ds-space-3);
-  align-items: start;
-}
-
-.permission-patterns>div {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: var(--ds-space-1);
-}
-
-.permission-patterns code {
-  max-width: 100%;
-  overflow: hidden;
-  padding: 2px 6px;
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-control);
-  color: var(--ds-text);
-  background: var(--ds-surface-raised);
-  font-family: var(--ds-font-technical);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.permission-details {
-  display: grid;
-  justify-items: start;
-}
-
-.permission-details-content {
-  display: grid;
-  width: 100%;
-  gap: var(--ds-space-2);
-  margin-top: var(--ds-space-2);
-}
-
-.permission-details-content section {
-  min-width: 0;
-}
-
-.permission-details-content h3 {
-  margin: 0 0 var(--ds-space-1);
-  color: var(--ds-text-muted);
-  font-size: 11px;
-  font-weight: 620;
-}
-
-.permission-details-content pre,
 .permission-diff-preview>pre {
   max-height: 180px;
   overflow: auto;
@@ -270,8 +264,14 @@
   align-items: center;
   justify-content: flex-end;
   gap: var(--ds-space-2);
-  padding: var(--ds-space-2) var(--ds-space-4) var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-space-4);
   border-top: 1px solid var(--ds-border-subtle);
+  background: color-mix(in srgb,var(--ds-canvas) 45%,transparent);
+}
+
+.safety-card-actions>.ui-button:not([data-icon-only="true"]),
+.permission-allow-actions>.ui-button:not([data-icon-only="true"]) {
+  min-width: 96px;
 }
 
 .safety-card-actions kbd,
@@ -293,4 +293,11 @@
 
 .safety-action-spacer {
   flex: 1 1 auto;
+}
+
+.question-answer-progress {
+  color: var(--ds-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }

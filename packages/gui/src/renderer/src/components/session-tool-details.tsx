@@ -222,11 +222,20 @@ function ToolTodos(props: { input: Record<string, unknown>; metadata: Record<str
 function ToolQuestions(props: { input: Record<string, unknown>; metadata: Record<string, unknown> }) {
   const questions = createMemo(() => arrayValue(props.input.questions).filter(isRecordValue))
   const answers = createMemo(() => arrayValue(props.metadata.answers))
+  // Native sessions record answers positionally in metadata; Claude Code hands
+  // them back inside the tool input, keyed by the full question text.
+  const inputAnswers = createMemo(() => (isRecordValue(props.input.answers) ? props.input.answers : {}))
+  const answerFor = (question: Record<string, unknown>, index: number) => {
+    const positional = answers()[index]
+    if (positional !== undefined) return positional
+    const text = stringValue(question.question)
+    return text !== undefined ? inputAnswers()[text] : undefined
+  }
   return (
     <Show when={questions().length > 0}>
       <div class="tool-questions">
         <For each={questions()}>
-          {(question, index) => <div><strong>{stringValue(question.question) ?? stringValue(question.header) ?? "Question"}</strong><p>{previewToolOutput(formatToolValue(answers()[index()] ?? "No answer")).text}</p></div>}
+          {(question, index) => <div><strong>{stringValue(question.question) ?? stringValue(question.header) ?? "Question"}</strong><p>{previewToolOutput(formatToolValue(answerFor(question, index()) ?? "No answer")).text}</p></div>}
         </For>
       </div>
     </Show>

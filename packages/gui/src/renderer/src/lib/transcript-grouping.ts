@@ -75,6 +75,17 @@ export function toolGroupStatus(parts: ToolPart[]) {
   return parts.at(-1)?.state.status ?? "pending"
 }
 
+/**
+ * A part can only genuinely be running while its turn is: once the assistant
+ * message completed, or the session went idle, a still-"running" status is a
+ * write that never landed - show it as interrupted instead of ticking a live
+ * timer forever.
+ */
+export function isStaleRunningTool(status: string, messageCompleted: boolean, sessionLive: boolean) {
+  if (status !== "running" && status !== "pending") return false
+  return messageCompleted || !sessionLive
+}
+
 export function toolGroupTitle(tool: string, parts: ToolPart[]) {
   const entry = GROUP_VERB_BY_TOOL[tool]
   if (!entry) return `${tool} x${parts.length}`

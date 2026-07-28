@@ -1,5 +1,6 @@
 import { For, createSignal } from "solid-js"
 import { knownStatuses, knownVariants, statusPresentation } from "../../lib/status-system"
+import { OpencodeXLogo } from "../opencodex-logo"
 import { AgentGlyph, IconButton, ModelBadge, SessionCard, StatusBadge } from "../ui"
 import { Grid, Row, Section, Specimen } from "./lab-shared"
 import styles from "./lab.module.css"
@@ -49,6 +50,12 @@ export function LabSignature() {
 
   return (
     <>
+      <Section title="Wordmark" detail="The animated ASCII wordmark. Light mode: dark gray letters, light gray interior shading, orange X.">
+        <div data-lab-logo style={{ padding: "16px", background: "var(--theme-canvas)", "border-radius": "8px", width: "max-content" }}>
+          <OpencodeXLogo />
+        </div>
+      </Section>
+
       <Section title="Session card · dashboard density" detail="The atom of the product. Left stripe and badge both encode status, so it reads in grayscale.">
         <Grid columns={2}>
           <For each={SESSIONS}>

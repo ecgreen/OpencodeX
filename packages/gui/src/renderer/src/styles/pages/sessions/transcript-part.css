@@ -136,6 +136,13 @@
   font-size: 11px;
 }
 
+.part-meta-command {
+  color: var(--ds-text-muted);
+  background: transparent;
+  font-family: var(--ds-font-technical);
+  font-size: 11px;
+}
+
 .part-status {
   display: inline-flex;
   align-items: center;
@@ -153,6 +160,11 @@
 
 .part-status-label.error {
   color: var(--ds-danger);
+}
+
+.part-status-label.muted {
+  color: var(--ds-text-subtle);
+  font-weight: 620;
 }
 
 .part-duration {

@@ -283,6 +283,9 @@ export function SessionPage(props: SessionPageProps) {
             emptyStateSuggestion={restoreComposerPrompt}
             connectProvider={props.connectProvider}
           />
+          {/* The dock anchors the safety cards as an overlay above the composer,
+              so an arriving permission never resizes the transcript viewport. */}
+          <div class="session-dock-anchor">
           <Show when={blocked()}>
             <SessionSafetyDock permissions={props.permissions} questions={props.questions} messages={props.data.messages} replyPermission={props.replyPermission} replyQuestion={props.replyQuestion} rejectQuestion={props.rejectQuestion} />
           </Show>
@@ -333,6 +336,7 @@ export function SessionPage(props: SessionPageProps) {
             setMode={models.setMode}
             selectVariant={models.selectVariant}
           />
+          </div>
           </Show>
         </div>
         <Show when={sidePanel.mounted() ? sidePanel.session() : undefined}>

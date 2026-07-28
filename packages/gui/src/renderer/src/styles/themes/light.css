@@ -9,31 +9,32 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  /* Paper, not paper-white. A bright canvas with white cards is fatiguing on a
-     surface people stare at all day, so the whole ladder is pulled down and
-     nothing is pure white. */
-  --theme-canvas: #d9dee5;
-  --theme-surface: #e7ebf0;
-  --theme-surface-raised: #f4f6f9;
-  --theme-surface-hover: #dce2ea;
-  --theme-surface-selected: #cbd3dd;
-  --theme-surface-strong: #b3bec9;
-  --theme-text: #0f1319;
-  --theme-text-muted: #414b58;
-  --theme-text-subtle: #4f5967;
+  /* Slate, not paper. The whole ladder lives in light-to-medium grays: the
+     canvas is a clearly gray backdrop, and even the highest raised surface
+     (composer, inline code, cards) stays visibly gray - nothing approaches
+     white, so no surface can glare. */
+  --theme-canvas: #c6cdd6;
+  --theme-surface: #d4dae1;
+  --theme-surface-raised: #e2e6ec;
+  --theme-surface-hover: #c9d0d9;
+  --theme-surface-selected: #b8c1cc;
+  --theme-surface-strong: #99a5b3;
+  --theme-text: #10151c;
+  --theme-text-muted: #38424e;
+  --theme-text-subtle: #46505d;
   --theme-text-inverse: #ffffff;
   --theme-white: #ffffff;
   --theme-black: #000000;
-  --theme-border-subtle: rgba(15, 19, 25, 0.13);
-  --theme-border: rgba(15, 19, 25, 0.22);
-  --theme-border-strong: rgba(15, 19, 25, 0.34);
-  --theme-overlay-subtle: rgba(15, 19, 25, 0.04);
-  --theme-overlay-soft: rgba(15, 19, 25, 0.07);
-  --theme-overlay-medium: rgba(15, 19, 25, 0.12);
-  --theme-overlay-strong: rgba(15, 19, 25, 0.2);
-  --theme-shadow-soft: rgba(15, 19, 25, 0.1);
-  --theme-shadow-medium: rgba(15, 19, 25, 0.16);
-  --theme-shadow-strong: rgba(15, 19, 25, 0.24);
+  --theme-border-subtle: rgba(16, 21, 28, 0.16);
+  --theme-border: rgba(16, 21, 28, 0.26);
+  --theme-border-strong: rgba(16, 21, 28, 0.4);
+  --theme-overlay-subtle: rgba(16, 21, 28, 0.05);
+  --theme-overlay-soft: rgba(16, 21, 28, 0.09);
+  --theme-overlay-medium: rgba(16, 21, 28, 0.14);
+  --theme-overlay-strong: rgba(16, 21, 28, 0.22);
+  --theme-shadow-soft: rgba(16, 21, 28, 0.12);
+  --theme-shadow-medium: rgba(16, 21, 28, 0.18);
+  --theme-shadow-strong: rgba(16, 21, 28, 0.26);
   --theme-backdrop: rgba(15, 19, 25, 0.48);
   --theme-accent: #9c4418;
   --theme-accent-hover: #83380f;

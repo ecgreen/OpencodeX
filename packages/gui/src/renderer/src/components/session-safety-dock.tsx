@@ -1,10 +1,12 @@
 import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
-import { buildSafetyQueue, moveSafetyQueueIndex } from "../lib/safety-present"
+import { buildSafetyQueue, moveSafetyQueueIndex, safetyQueueGroup } from "../lib/safety-present"
 import { permissionToolPart } from "../lib/tool-display"
 import type { MessageBundle } from "../lib/store"
 import { SessionPermissionCard } from "./session-permission-card"
 import { SessionQuestionCard } from "./session-question-card"
+
+type QuestionDraft = { answers: QuestionAnswer[]; custom: string[] }
 
 export function SessionSafetyDock(props: {
   permissions: PermissionRequest[]
@@ -16,6 +18,9 @@ export function SessionSafetyDock(props: {
 }) {
   const queue = createMemo(() => buildSafetyQueue(props.permissions, props.questions))
   const [activeID, setActiveID] = createSignal<string>()
+  // Selections survive paging between question steps: the draft lives here,
+  // keyed by request, not inside the per-step card.
+  const [drafts, setDrafts] = createSignal<Record<string, QuestionDraft>>({})
   let preferredIndex = 0
   let card: HTMLElement | undefined
   let focusFrame = 0
@@ -27,6 +32,17 @@ export function SessionSafetyDock(props: {
     if (items.some((item) => item.id === activeID())) return
     preferredIndex = Math.min(preferredIndex, Math.max(0, items.length - 1))
     setActiveID(items[preferredIndex]?.id)
+  })
+
+  createEffect(() => {
+    const pending = new Set(props.questions.map((request) => request.id))
+    setDrafts((current) => {
+      const stale = Object.keys(current).filter((id) => !pending.has(id))
+      if (stale.length === 0) return current
+      const next = { ...current }
+      for (const id of stale) delete next[id]
+      return next
+    })
   })
 
   createEffect(() => {
@@ -42,7 +58,24 @@ export function SessionSafetyDock(props: {
     preferredIndex = moveSafetyQueueIndex(activeIndex(), queue().length, delta)
     setActiveID(queue()[preferredIndex]?.id)
   }
-  const position = () => ({ index: activeIndex(), total: queue().length, previous: () => move(-1), next: () => move(1) })
+  const position = () => {
+    const group = safetyQueueGroup(queue(), activeIndex())
+    return {
+      index: group.index,
+      total: group.total,
+      upNext: group.upNext,
+      canNavigate: queue().length > 1,
+      previous: () => move(-1),
+      next: () => move(1),
+    }
+  }
+  const draftFor = (request: QuestionRequest): QuestionDraft =>
+    drafts()[request.id] ?? {
+      answers: request.questions.map(() => []),
+      custom: request.questions.map(() => ""),
+    }
+  const updateDraft = (request: QuestionRequest, update: (draft: QuestionDraft) => QuestionDraft) =>
+    setDrafts((current) => ({ ...current, [request.id]: update(current[request.id] ?? draftFor(request)) }))
 
   return (
     <div class="safety-dock" role="region" aria-label={`${queue().length} pending request${queue().length === 1 ? "" : "s"}`}>
@@ -62,6 +95,9 @@ export function SessionSafetyDock(props: {
           return (
             <SessionQuestionCard
               request={item.request}
+              step={item.step}
+              draft={draftFor(item.request)}
+              updateDraft={(update) => updateDraft(item.request, update)}
               position={position()}
               setCard={(element) => { card = element }}
               reply={props.replyQuestion}
@@ -73,3 +109,5 @@ export function SessionSafetyDock(props: {
     </div>
   )
 }
+
+export type { QuestionDraft }
