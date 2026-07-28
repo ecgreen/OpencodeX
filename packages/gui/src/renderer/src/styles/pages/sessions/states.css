@@ -106,12 +106,6 @@
   transform: translate(0);
 }
 
-.session-side-tabs>button.active {
-  color: var(--text);
-  background: var(--panel);
-  box-shadow: inset 0 -2px 0 var(--primary);
-}
-
 .session-side-file-list button.selected {
   background: var(--element);
 }

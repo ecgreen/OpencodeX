@@ -45,25 +45,6 @@
   box-shadow: none;
 }
 
-.session-header h1 {
-  line-height: 1.2;
-  font-size: 14px;
-  letter-spacing: 0;
-}
-
-.session-meta span {
-  border: 1px solid var(--border-subtle);
-  color: var(--muted);
-  font-weight: 800;
-  padding: 4px 7px;
-  border-color: var(--theme-border);
-  font-size: 10px;
-  min-height: 22px;
-  border-radius: 0;
-  background: var(--element);
-  box-shadow: none;
-}
-
 .message header {
   font-weight: 800;
   margin: 0 0 5px;

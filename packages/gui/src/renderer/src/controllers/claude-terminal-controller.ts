@@ -1,7 +1,7 @@
 import type { OpencodeXTerminalSession } from "@opencode-ai/sdk/v2/client"
 import { createSignal, onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
-import { terminalSurface } from "../components/session-side-terminal"
+import { terminalSurface } from "../components/session-side-terminal-views"
 import type { GuiClient } from "../lib/client"
 import { claudeStatusLabel, exitDescription } from "../lib/terminal-presentation"
 

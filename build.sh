@@ -180,8 +180,7 @@ step "Installing dependencies"
 cd "$BUILD_DIR"
 log "Running bun install …"
 if ! bun install --frozen-lockfile; then
-  exit 1
-  warn "bun install exited non-zero — continuing anyway (some optional packages may 403)"
+  err "bun install failed (see output above)"
 fi
 
 ok "Dependencies installed"
@@ -207,8 +206,7 @@ fi
 
 log "Running: bun run ${BUILD_ARGS[*]}"
 if ! bun run "${BUILD_ARGS[@]}"; then
-  exit 1
-  warn "Build script exited non-zero — checking for output anyway …"
+  err "build script failed (see output above)"
 fi
 
 step_done

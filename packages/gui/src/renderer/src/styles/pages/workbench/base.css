@@ -1,21 +1,3 @@
-.role-editor-card label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.role-editor-card textarea {
-  min-height: 96px;
-  resize: vertical;
-  width: 100%;
-  border: 1px solid var(--border);
-  background: var(--element);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 9px 10px;
-}
 
 .view-editor-page textarea {
   min-height: 96px;
@@ -26,35 +8,6 @@
   color: var(--text);
   border-radius: 6px;
   padding: 9px 10px;
-}
-
-.role-editor-card input {
-  width: 100%;
-  border: 1px solid var(--border);
-  background: var(--element);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 9px 10px;
-}
-
-.role-editor-card select {
-  width: 100%;
-  border: 1px solid var(--border);
-  background: var(--element);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 9px 10px;
-}
-
-.role-editor-list {
-  display: grid;
-  gap: 12px;
-}
-
-.role-editor-card>header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .view-editor-page {
@@ -429,12 +382,4 @@
 .session-side-panel:has(.session-side-browser-host) {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-}
-
-.session-side-browser-artifacts {
-  color: var(--muted);
-  font-size: 12px;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--panel);
-  padding: 6px 8px;
 }

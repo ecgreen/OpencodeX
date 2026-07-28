@@ -50,7 +50,7 @@ Privacy and scope notes:
 
 Session transcript scroll behavior is intentionally centralized and should stay simple.
 
-- The scroll controller lives in `packages/gui/src/renderer/src/components/session-transcript-panel.tsx`.
+- The scroll controller lives in `packages/gui/src/renderer/src/components/session-transcript-scroll-controller.ts`; `session-transcript-panel.tsx` only wires it into the view.
 - Pure scroll decision helpers live in `packages/gui/src/renderer/src/lib/transcript-scroll.ts`, with coverage in `packages/gui/test/transcript-scroll.test.ts`.
 - Session transcript layout CSS is split across the GUI style sections, with base `.transcript` scrolling in `packages/gui/src/renderer/src/styles/section-05.css`, Load More affordance styling in `packages/gui/src/renderer/src/styles/section-10.css`, and final stage/session overflow constraints in `packages/gui/src/renderer/src/styles/section-22.css`.
 

@@ -50,14 +50,6 @@
   transform: none;
 }
 
-.session-header p:not(.eyebrow) {
-  max-width: 680px;
-  color: var(--muted);
-  line-height: 1.6;
-  margin-top: 2px;
-  font-size: 11px;
-}
-
 .message.user [data-component=markdown] {
   color: var(--text);
 }

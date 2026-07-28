@@ -53,7 +53,8 @@
 @import "./styles/pages/projects/states.css" layer(features);
 @import "./styles/pages/projects/states-2.css" layer(features);
 @import "./styles/pages/sessions/base.css" layer(features);
-@import "./styles/pages/sessions/base-2.css" layer(features);
+@import "./styles/pages/sessions/session-open-panel.css" layer(features);
+@import "./styles/pages/sessions/session-open-empty.css" layer(features);
 @import "./styles/pages/sessions/base-3.css" layer(features);
 @import "./styles/pages/sessions/base-4.css" layer(features);
 @import "./styles/pages/sessions/base-5.css" layer(features);
@@ -91,7 +92,6 @@
 @import "./styles/pages/workbench/base-2.css" layer(features);
 @import "./styles/pages/workbench/base-3.css" layer(features);
 @import "./styles/pages/workbench/base-6.css" layer(features);
-@import "./styles/pages/workbench/base-7.css" layer(features);
 @import "./styles/pages/workbench/base-8.css" layer(features);
 @import "./styles/pages/workbench/responsive.css" layer(features);
 @import "./styles/pages/workbench/states.css" layer(features);
