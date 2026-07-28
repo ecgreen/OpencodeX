@@ -1,0 +1,7 @@
+# Store text files with LF in the repository and check them out with LF on
+# every platform, so Windows tooling can't leak CRLF into commits.
+* text=auto eol=lf
+
+# cmd.exe misreads batch labels split across bare-LF lines - keep CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
