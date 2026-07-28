@@ -37,7 +37,6 @@
       "packages/llm",
       "packages/script",
       "packages/effect-drizzle-sqlite",
-      "packages/effect-sqlite-node",
       "packages/http-recorder",
       "github"
     ],
@@ -58,7 +57,6 @@
       "@types/semver": "7.7.1",
       "@tsconfig/node22": "22.0.2",
       "@tsconfig/bun": "1.0.9",
-      "@openauthjs/openauth": "0.0.0-20250322224806",
       "@pierre/diffs": "1.1.0-beta.18",
       "opentui-spinner": "0.0.6",
       "@tailwindcss/vite": "4.1.11",
