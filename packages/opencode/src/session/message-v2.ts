@@ -28,6 +28,7 @@ import { desc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import * as ProviderError from "@/provider/error"
@@ -475,6 +476,32 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
     more,
     cursor: more && tail ? cursor.encode({ id: tail.id, time: tail.time_created }) : undefined,
   }
+})
+
+/**
+ * One user message plus the assistant messages that answer it. Summarization
+ * runs after every step and only ever needs this slice, so it must not page the
+ * whole transcript in to find it.
+ */
+export const messageWithChildren = Effect.fn("MessageV2.messageWithChildren")(function* (input: {
+  sessionID: SessionID
+  messageID: MessageID
+}) {
+  const { db } = yield* Database.Service
+  const rows = yield* db
+    .select()
+    .from(MessageTable)
+    .where(
+      and(
+        eq(MessageTable.session_id, input.sessionID),
+        or(eq(MessageTable.id, input.messageID), eq(sql`json_extract(${MessageTable.data}, '$.parentID')`, input.messageID)),
+      ),
+    )
+    .orderBy(MessageTable.time_created, MessageTable.id)
+    .all()
+    .pipe(Effect.orDie)
+  if (rows.length === 0) return [] as WithParts[]
+  return yield* hydrate(db, rows)
 })
 
 const RENDER_BUDGET_CHUNK_SIZE = 32

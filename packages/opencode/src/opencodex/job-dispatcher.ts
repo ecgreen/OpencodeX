@@ -163,8 +163,13 @@ export function layer(options: Options = {}) {
       const dispatch = Effect.fn("OpencodeXJobDispatcher.dispatch")(function* () {
         const capacity = concurrency - active.size
         if (capacity <= 0) return
-        const all = yield* jobs.list()
-        const byID = new Map(all.map((job) => [job.id, job]))
+        // Only queued jobs can be dispatched. Their parents are fetched by id
+        // because the gating checks below read parent status, and a parent can
+        // sit in any state.
+        const all = yield* jobs.list({ statuses: ["queued"] })
+        const parentIDs = [...new Set(all.flatMap((job) => (job.parentJobID ? [job.parentJobID] : [])))]
+        const parents = yield* jobs.getMany(parentIDs)
+        const byID = new Map([...all, ...parents].map((job) => [job.id, job]))
         yield* Effect.forEach(
           all.filter((job) => {
             if (job.status !== "queued" || !job.parentJobID) return false

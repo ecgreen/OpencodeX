@@ -42,5 +42,6 @@ export const migrations = (
     import("./migration/20260724000000_opencodex_terminal_sessions"),
     import("./migration/20260725000000_terminal_session_mirror"),
     import("./migration/20260725012451_chubby_lyja"),
+    import("./migration/20260728232403_cooing_arachne"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

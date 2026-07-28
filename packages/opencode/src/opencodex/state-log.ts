@@ -344,6 +344,9 @@ export const makeStateLog = Effect.fn("OpencodeXState.makeLog")(function* (
     durableDomain(event) === undefined ? Effect.void : drain(),
   )
   yield* maintain()
+  // The listener above only fires for events this graph published. Rows written
+  // by another graph against the same database are picked up solely by this
+  // poll, so it sets the cross-graph tailing latency and must stay tight.
   yield* Effect.sleep(Duration.seconds(1)).pipe(
     Effect.andThen(drain()),
     Effect.repeat(Schedule.forever),

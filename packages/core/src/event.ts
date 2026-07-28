@@ -181,7 +181,18 @@ export const layer = Layer.effect(
         const definition = registry.get(event.type)
         const sync = definition?.sync
         if (!sync) {
-          for (const item of handlers) yield* item.handler(event)
+          if (handlers.length === 0) return true
+          // Handlers can write several rows (the state log does), so they still
+          // need to land atomically even though there is no journal row to add.
+          yield* db
+            .transaction(
+              () =>
+                Effect.gen(function* () {
+                  for (const item of handlers) yield* item.handler(event)
+                }),
+              { behavior: "immediate" },
+            )
+            .pipe(Effect.orDie)
           return true
         }
         if (event.version !== sync.version) {
@@ -269,9 +280,9 @@ export const layer = Layer.effect(
     ) {
       const handlers = syncHandlers.filter((item) => item.filter?.(event as Payload) ?? true)
       if (handlers.length === 0 && registry.get(event.type)?.sync === undefined) return Effect.succeed(true)
-      return db
-        .transaction(() => commitSyncEvent(event as Payload, input, handlers), { behavior: "immediate" })
-        .pipe(Effect.orDie)
+      // commitSyncEvent opens its own immediate transaction on both paths.
+      // Wrapping it in a second one only bought a savepoint per event.
+      return commitSyncEvent(event as Payload, input, handlers)
     }
 
     function broadcastEvent<D extends Definition>(event: Payload<D>) {

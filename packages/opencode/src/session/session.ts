@@ -37,7 +37,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
 import { Global } from "@opencode-ai/core/global"
-import { Effect, Layer, Option, Context, Schema, Types } from "effect"
+import { Duration, Effect, Layer, Option, Context, Schedule, Schema, Types } from "effect"
 import { AbsolutePath, NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -48,6 +48,7 @@ const runtime = makeRuntime(Database.Service, Database.defaultLayer)
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
 const emptySessionCleanupAge = 4 * 60 * 60 * 1000
+const emptySessionCleanupInterval = 10 * 60 * 1000
 
 function createDefaultTitle(isChild = false) {
   return (isChild ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString()
@@ -504,6 +505,10 @@ export interface Interface {
     sessionID: SessionID
     limit?: number
   }) => Effect.Effect<SessionLegacy.WithParts[], NotFound>
+  readonly messageWithChildren: (input: {
+    sessionID: SessionID
+    messageID: MessageID
+  }) => Effect.Effect<SessionLegacy.WithParts[]>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends SessionLegacy.Info>(msg: T) => Effect.Effect<T>
@@ -619,6 +624,19 @@ export const layer: Layer.Layer<
       return fromRow(row)
     })
 
+    // Reaping abandoned default-titled sessions costs three unindexable LIKE
+    // scans plus five probe queries per candidate. It used to run on every list
+    // call, so every sidebar refresh paid for it. An empty session lingering a
+    // few extra minutes is invisible, so amortize it instead.
+    // Zero so the first list of a process still reaps, matching the old
+    // behaviour on startup; only the repeats are throttled.
+    let lastCleanup = 0
+    const maybeCleanupEmpty = Effect.fn("Session.maybeCleanupEmpty")(function* () {
+      if (Date.now() - lastCleanup < emptySessionCleanupInterval) return
+      lastCleanup = Date.now()
+      yield* cleanupEmpty()
+    })
+
     const cleanupEmpty = Effect.fn("Session.cleanupEmpty")(function* () {
       const rows = yield* db
         .select({ id: SessionTable.id, title: SessionTable.title })
@@ -680,7 +698,7 @@ export const layer: Layer.Layer<
 
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
       const ctx = yield* InstanceState.context
-      yield* cleanupEmpty()
+      yield* maybeCleanupEmpty()
       return yield* listByProject(db, {
         projectID: ctx.project.id,
         experimentalWorkspaces: flags.experimentalWorkspaces,
@@ -710,7 +728,7 @@ export const layer: Layer.Layer<
     })
 
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
-      yield* cleanupEmpty()
+      yield* maybeCleanupEmpty()
       const conditions: SQL[] = []
       if (input?.directory) conditions.push(eq(SessionTable.directory, input.directory))
       if (input?.projectID) conditions.push(eq(SessionTable.project_id, input.projectID))
@@ -1020,6 +1038,12 @@ export const layer: Layer.Layer<
       return result.reverse()
     })
 
+    const messageWithChildren: Interface["messageWithChildren"] = Effect.fn("Session.messageWithChildren")(
+      function* (input) {
+        return yield* MessageV2.messageWithChildren(input).pipe(Effect.provideService(Database.Service, database))
+      },
+    )
+
     const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
       sessionID: SessionID
       messageID: MessageID
@@ -1104,6 +1128,7 @@ export const layer: Layer.Layer<
       setWorkspace,
       diff,
       messages,
+      messageWithChildren,
       children,
       remove,
       updateMessage,
