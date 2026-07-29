@@ -14,7 +14,6 @@ export type InternalTuiPluginID =
   | "internal:plugin-manager"
   | "which-key"
   | "diff-viewer"
-  | "internal:session-v2-debug"
   | "internal:session-switcher"
 
 export type InternalTuiPluginManifestItem = {
@@ -22,9 +21,7 @@ export type InternalTuiPluginManifestItem = {
   readonly enabled?: boolean
 }
 
-export function internalTuiPluginManifest(
-  flags: Pick<RuntimeFlags.Info, "experimentalEventSystem">,
-): InternalTuiPluginManifestItem[] {
+export function internalTuiPluginManifest(): InternalTuiPluginManifestItem[] {
   return [
     { id: "internal:home-footer" },
     { id: "internal:home-tips" },
@@ -38,7 +35,6 @@ export function internalTuiPluginManifest(
     { id: "internal:plugin-manager" },
     { id: "which-key", enabled: false },
     { id: "diff-viewer" },
-    ...(flags.experimentalEventSystem ? [{ id: "internal:session-v2-debug" as const }] : []),
     ...(Flag.OPENCODE_EXPERIMENTAL_SESSION_SWITCHER ? [{ id: "internal:session-switcher" as const }] : []),
   ]
 }

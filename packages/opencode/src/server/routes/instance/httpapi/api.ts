@@ -22,7 +22,6 @@ import { SessionApi } from "./groups/session"
 import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
-import { V2Api } from "./groups/v2"
 // GlobalEventSchema snapshots the registry after event-producing groups register their variants.
 import { GlobalApi } from "./groups/global"
 import { Authorization } from "./middleware/authorization"
@@ -62,7 +61,6 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(ProviderApi)
   .addHttpApi(SessionApi)
   .addHttpApi(SyncApi)
-  .addHttpApi(V2Api)
   .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
   .middleware(SchemaErrorMiddleware)

@@ -10,7 +10,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
-import { SessionV2 } from "@opencode-ai/core/session"
+import { SessionProjector } from "@opencode-ai/core/session/projector"
 
 import { NotFoundError } from "@/storage/storage"
 import { eq } from "drizzle-orm"
@@ -23,7 +23,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { MessageTable, PartTable, SessionMessageTable, SessionTable, TodoTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionTable, TodoTable } from "@opencode-ai/core/session/sql"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
@@ -659,7 +659,7 @@ export const layer: Layer.Layer<
         rows.filter((row) => row.title === "New session" || isDefaultTitle(row.title)),
         (row) =>
           Effect.gen(function* () {
-            const [message, part, sessionMessage, todo, child] = yield* Effect.all(
+            const [message, part, todo, child] = yield* Effect.all(
               [
                 db
                   .select({ id: MessageTable.id })
@@ -668,12 +668,6 @@ export const layer: Layer.Layer<
                   .limit(1)
                   .get(),
                 db.select({ id: PartTable.id }).from(PartTable).where(eq(PartTable.session_id, row.id)).limit(1).get(),
-                db
-                  .select({ id: SessionMessageTable.id })
-                  .from(SessionMessageTable)
-                  .where(eq(SessionMessageTable.session_id, row.id))
-                  .limit(1)
-                  .get(),
                 db
                   .select({ sessionID: TodoTable.session_id })
                   .from(TodoTable)
@@ -689,7 +683,7 @@ export const layer: Layer.Layer<
               ],
               { concurrency: "unbounded" },
             ).pipe(Effect.orDie)
-            if (message || part || sessionMessage || todo || child) return
+            if (message || part || todo || child) return
             yield* remove(row.id).pipe(Effect.ignore)
           }),
         { concurrency: "unbounded", discard: true },
@@ -1146,7 +1140,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(BackgroundJob.defaultLayer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
-  Layer.provide(SessionV2.defaultLayer),
+  Layer.provide(SessionProjector.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
 )
 

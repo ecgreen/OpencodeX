@@ -84,66 +84,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
     expect(builtInEndpointErrors).toEqual(allowedV2BuiltInEndpointErrors)
   })
 
-  test("documents v2 provider and model catalog errors", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-
-    expect(componentName(responseRef(spec.paths["/api/provider"]?.get?.responses?.["503"]) ?? "")).toBe(
-      "ServiceUnavailableError",
-    )
-    expect(componentName(responseRef(spec.paths["/api/model"]?.get?.responses?.["503"]) ?? "")).toBe(
-      "ServiceUnavailableError",
-    )
-    expect(componentName(responseRef(spec.paths["/api/provider/{providerID}"]?.get?.responses?.["404"]) ?? "")).toBe(
-      "ProviderNotFoundError",
-    )
-    expect(componentName(responseRef(spec.paths["/api/provider/{providerID}"]?.get?.responses?.["503"]) ?? "")).toBe(
-      "ServiceUnavailableError",
-    )
-  })
-
-  test("documents v2 session not-found errors", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-
-    for (const route of [
-      ["post", "/api/session/{sessionID}/prompt"],
-      ["post", "/api/session/{sessionID}/compact"],
-      ["post", "/api/session/{sessionID}/wait"],
-      ["get", "/api/session/{sessionID}/context"],
-      ["get", "/api/session/{sessionID}/message"],
-    ] as const) {
-      expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["404"]) ?? "")).toBe(
-        "SessionNotFoundError",
-      )
-    }
-  })
-
-  test("documents v2 unfinished session mutation errors", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-
-    for (const route of [
-      ["post", "/api/session/{sessionID}/prompt"],
-      ["post", "/api/session/{sessionID}/compact"],
-      ["post", "/api/session/{sessionID}/wait"],
-    ] as const) {
-      expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["503"]) ?? "")).toBe(
-        "ServiceUnavailableError",
-      )
-    }
-  })
-
-  test("documents v2 session read data errors", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-
-    for (const route of [
-      ["get", "/api/session/{sessionID}/context"],
-      ["get", "/api/session/{sessionID}/message"],
-    ] as const) {
-      expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["500"]) ?? "")).toMatch(
-        /^UnknownError\d*$/,
-      )
-    }
-  })
-
   test("documents session busy errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 

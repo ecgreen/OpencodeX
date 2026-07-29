@@ -127,7 +127,7 @@ async function load(input: {
       pluginLog.info("skipping external tui plugins in pure mode", { count: input.config.plugin_origins.length })
     }
 
-    addInternalPluginEntries(next, flags)
+    addInternalPluginEntries(next)
     await addExternalPluginEntries(next, await resolveExternalPlugins(records, () => TuiConfig.waitForDependencies()))
     applyInitialPluginEnabledState(next, input.config)
 

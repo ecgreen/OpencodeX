@@ -73,8 +73,8 @@ function loadInternalPlugin(item: InternalTuiPlugin): PluginLoad {
   }
 }
 
-export function addInternalPluginEntries(state: RuntimeState, flags: Parameters<typeof internalTuiPlugins>[0]) {
-  internalTuiPlugins(flags).forEach((item) => {
+export function addInternalPluginEntries(state: RuntimeState) {
+  internalTuiPlugins().forEach((item) => {
     pluginLog.info("loading internal tui plugin", { id: item.id })
     const entry = loadInternalPlugin(item)
     addPluginEntry(state, {

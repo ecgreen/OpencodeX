@@ -29,7 +29,6 @@ import { Session } from "@/session/session"
 import {
   SessionCommandTable,
   SessionExecutionTable,
-  SessionMessageTable,
   SessionTable,
 } from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
@@ -44,7 +43,6 @@ import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
-import { SessionV2 } from "@opencode-ai/core/session"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
 import { Shell } from "../../src/shell/shell"
@@ -209,7 +207,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provide(Layer.mock(OpencodeXProject.Service)({})),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
@@ -222,11 +220,11 @@ function makePrompt(input?: { processor?: "blocking" }) {
       : SessionProcessor.layer.pipe(
           Layer.provide(summary),
           Layer.provide(Image.defaultLayer),
-          Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+          Layer.provide(RuntimeFlags.layer({})),
           Layer.provideMerge(deps),
         )
   const compact = SessionCompaction.layer.pipe(
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
@@ -244,7 +242,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(todo),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )
@@ -680,50 +678,6 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
-noLLMServer.instance.skip(
-  "prompt emits v2 prompted and synthetic events (v2 projector disabled)",
-  () =>
-    Effect.gen(function* () {
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Pinned" })
-
-      yield* prompt.prompt({
-        sessionID: chat.id,
-        agent: "build",
-        noReply: true,
-        parts: [
-          { type: "text", text: "hello v2" },
-          {
-            type: "file",
-            mime: "text/plain",
-            filename: "note.txt",
-            url: "data:text/plain;base64,bm90ZSBjb250ZW50",
-          },
-        ],
-      })
-
-      const messages = yield* SessionV2.Service.use((session) => session.messages({ sessionID: chat.id })).pipe(
-        Effect.provide(SessionV2.defaultLayer),
-      )
-      const { db } = yield* Database.Service
-      const row = yield* db
-        .select()
-        .from(SessionMessageTable)
-        .where(eq(SessionMessageTable.session_id, chat.id))
-        .get()
-        .pipe(Effect.orDie)
-      expect(messages.find((message) => message.type === "user")).toMatchObject({ type: "user", text: "hello v2" })
-      expect(typeof row?.data.time.created).toBe("number")
-      expect(messages).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: "synthetic", text: expect.stringContaining("Called the Read tool") }),
-          expect.objectContaining({ type: "synthetic", text: "note content" }),
-        ]),
-      )
-    }),
-  { config: cfg },
-)
 
 it.instance("static loop returns assistant text through local provider", () =>
   Effect.gen(function* () {

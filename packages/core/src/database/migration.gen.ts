@@ -43,5 +43,6 @@ export const migrations = (
     import("./migration/20260725000000_terminal_session_mirror"),
     import("./migration/20260725012451_chubby_lyja"),
     import("./migration/20260728232403_cooing_arachne"),
+    import("./migration/20260728234513_yielding_loners"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

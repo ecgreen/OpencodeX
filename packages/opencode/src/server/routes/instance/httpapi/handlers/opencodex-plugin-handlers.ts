@@ -33,7 +33,7 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
   const snapshot = Effect.fn("OpencodeXHttpApi.pluginSnapshot")(function* () {
     const instance = yield* InstanceState.context
     return dedupePlugins([
-      ...(yield* internalTuiPluginRows(runtimeFlags, fs)),
+      ...(yield* internalTuiPluginRows(fs)),
       ...serverPlugins(yield* config.get()),
       ...(yield* readTuiPlugins(instance.directory, fs)),
     ])
@@ -298,11 +298,11 @@ function readTuiPlugins(directory: string, fs: AppFileSystem.Interface) {
   })
 }
 
-function internalTuiPluginRows(flags: Pick<RuntimeFlags.Info, "experimentalEventSystem">, fs: AppFileSystem.Interface) {
+function internalTuiPluginRows(fs: AppFileSystem.Interface) {
   return Effect.gen(function* () {
     const configFile = yield* existingTuiConfigFile(fileInDirectory(Global.Path.config, "tui"), fs)
     const enabled = yield* readTuiEnabledMap(configFile, fs)
-    return internalTuiPluginManifest(flags).map((item) => {
+    return internalTuiPluginManifest().map((item) => {
       const state = enabled[item.id] ?? item.enabled ?? true
       return pluginRow({
         kind: "tui",

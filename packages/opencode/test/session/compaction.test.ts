@@ -20,7 +20,6 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
-import { SessionV2 } from "@opencode-ai/core/session"
 
 import type { Provider } from "@/provider/provider"
 import * as SessionProcessorModule from "../../src/session/processor"
@@ -232,7 +231,7 @@ const deps = Layer.mergeAll(
   Plugin.defaultLayer,
   EventV2Bridge.defaultLayer,
   Config.defaultLayer,
-  RuntimeFlags.layer({ experimentalEventSystem: true }),
+  RuntimeFlags.layer({}),
   Database.defaultLayer,
   EventV2Bridge.defaultLayer,
 )
@@ -274,7 +273,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     ? SessionProcessorModule.SessionProcessor.layer.pipe(
         Layer.provide(summary),
         Layer.provide(Image.defaultLayer),
-        Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+        Layer.provide(RuntimeFlags.layer({})),
         Layer.provide(status),
       )
     : layer(options?.result ?? "continue")
@@ -289,7 +288,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     Layer.provide(status),
     Layer.provide(events),
     Layer.provide(options?.config ?? Config.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provide(EventV2Bridge.defaultLayer),
   )
 }
@@ -595,35 +594,9 @@ describe("session.compaction.create", () => {
       }),
     ),
   )
-
-  it.live.skip(
-    "projects a compaction message to v2 (v2 projector disabled)",
-    provideTmpdirInstance(() =>
-      Effect.gen(function* () {
-        const compact = yield* SessionCompaction.Service
-        const ssn = yield* SessionNs.Service
-        const info = yield* ssn.create({})
-
-        yield* compact.create({
-          sessionID: info.id,
-          agent: "build",
-          model: ref,
-          auto: true,
-          overflow: true,
-        })
-
-        const v2 = yield* SessionV2.Service.use((svc) => svc.messages({ sessionID: info.id })).pipe(
-          Effect.provide(SessionV2.defaultLayer),
-        )
-        expect(v2.at(-1)).toMatchObject({
-          type: "compaction",
-          reason: "auto",
-          summary: "",
-        })
-      }),
-    ),
-  )
 })
+
+
 
 describe("session.compaction.prune", () => {
   it.live(

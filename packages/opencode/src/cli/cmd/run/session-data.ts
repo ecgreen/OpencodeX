@@ -770,53 +770,6 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
   const data = input.data
   const event = input.event
 
-  if (event.type === "session.next.shell.started") {
-    if (event.properties.sessionID !== input.sessionID) {
-      return out(data, commits)
-    }
-
-    const shell = claimShell(data, event.properties.callID, "shell", event.properties.command)
-    if (shell.source !== "shell") {
-      return out(data, commits)
-    }
-
-    const partID = shellPartID(event.properties.callID)
-    if (data.ids.has(partID) || data.tools.has(partID)) {
-      return out(data, commits, patch({ status: "running shell" }))
-    }
-
-    data.tools.add(partID)
-    commits.push(startShell(event.properties.callID, shell.command ?? event.properties.command))
-    return out(data, commits, patch({ status: "running shell" }))
-  }
-
-  if (event.type === "session.next.shell.ended") {
-    if (event.properties.sessionID !== input.sessionID) {
-      return out(data, commits)
-    }
-
-    const shell = claimShell(data, event.properties.callID, "shell")
-    if (shell.source !== "shell") {
-      return out(data, commits)
-    }
-
-    const partID = shellPartID(event.properties.callID)
-    const seen = data.tools.has(partID)
-    const command = shell.command ?? ""
-    data.tools.delete(partID)
-    if (data.ids.has(partID)) {
-      return out(data, commits)
-    }
-
-    if (!seen && command) {
-      commits.push(startShell(event.properties.callID, command))
-    }
-
-    data.ids.add(partID)
-    commits.push(doneShell(event.properties.callID, command, event.properties.output))
-    return out(data, commits)
-  }
-
   if (event.type === "message.updated") {
     if (event.properties.sessionID !== input.sessionID) {
       return out(data, commits)
