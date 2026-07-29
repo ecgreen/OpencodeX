@@ -44,8 +44,7 @@ export async function loadClientSessionTranscript(
     })
     latest ??= snapshot
     pages.unshift(snapshot.messages.items as ClientSessionTranscriptBundle[])
-    if (!snapshot.messages.boundary.hasMore)
-      return { messages: pages.flat(), latest, pages: pages.length }
+    if (!snapshot.messages.boundary.hasMore) return { messages: pages.flat(), latest, pages: pages.length }
     const cursor = snapshot.messages.boundary.next
     if (!cursor || seen.has(cursor)) throw new Error(`Session transcript pagination stalled for ${sessionID}`)
     seen.add(cursor)

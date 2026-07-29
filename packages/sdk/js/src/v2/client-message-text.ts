@@ -130,7 +130,8 @@ function extractMessageContent(value: JsonRecord) {
 function extractTypedContent(value: JsonRecord) {
   const type = typeof value.type === "string" ? value.type : undefined
   if ((type === "text" || type === "output_text") && typeof value.text === "string") return value.text
-  if ((type === "message" || type === "assistant") && value.content !== undefined) return extractVisibleText(value.content)
+  if ((type === "message" || type === "assistant") && value.content !== undefined)
+    return extractVisibleText(value.content)
 }
 
 function extractRoleContent(value: JsonRecord) {

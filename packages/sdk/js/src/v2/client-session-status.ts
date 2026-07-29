@@ -73,9 +73,7 @@ export function deriveClientSessionStatus(input: ClientSessionStatusInput): Clie
  * bookkeeping (work landed after the last review), not about the reader's seen
  * state, which the derived status layers on top.
  */
-export function deriveClientSessionDisplayStatus(
-  input: ClientSessionDisplayStatusInput,
-): ClientSessionDisplayStatus {
+export function deriveClientSessionDisplayStatus(input: ClientSessionDisplayStatusInput): ClientSessionDisplayStatus {
   if (input.hasPendingInteraction) return "input_needed"
   if (isClientSessionWorking(input)) return "in_progress"
   if (input.updatedAt > (input.reviewedAt ?? 0)) return "needs_review"
@@ -83,9 +81,7 @@ export function deriveClientSessionDisplayStatus(
 }
 
 /** Rolls a group of session statuses up to the one status the group should show. */
-export function deriveClientViewStatus(
-  statuses: readonly ClientDerivedSessionStatus[],
-): ClientDerivedSessionStatus {
+export function deriveClientViewStatus(statuses: readonly ClientDerivedSessionStatus[]): ClientDerivedSessionStatus {
   if (statuses.includes("input_needed")) return "input_needed"
   if (statuses.includes("in_progress")) return "in_progress"
   if (statuses.includes("needs_review")) return "needs_review"
@@ -137,11 +133,7 @@ export function clientSessionLikelyActive(
   return parts.length > 0
 }
 
-function isClientSessionWorking(input: {
-  status?: SessionStatus
-  pendingPrompt?: boolean
-  likelyActive?: boolean
-}) {
+function isClientSessionWorking(input: { status?: SessionStatus; pendingPrompt?: boolean; likelyActive?: boolean }) {
   if (input.status?.type === "busy" || input.status?.type === "retry") return true
   if (input.pendingPrompt === true) return true
   return input.likelyActive === true
