@@ -505,7 +505,14 @@ export interface Interface {
     messageID: MessageID
     partID: PartID
   }) => Effect.Effect<SessionLegacy.Part | undefined>
-  readonly updatePart: <T extends SessionLegacy.Part>(part: T) => Effect.Effect<T>
+  /**
+   * `transient` publishes the revision to live subscribers without journaling
+   * it. Use it for in-flight progress only - terminal state must stay durable.
+   */
+  readonly updatePart: <T extends SessionLegacy.Part>(
+    part: T,
+    options?: { transient?: boolean },
+  ) => Effect.Effect<T>
   readonly updatePartDelta: (input: {
     sessionID: SessionID
     messageID: MessageID
@@ -783,18 +790,28 @@ export const layer: Layer.Layer<
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
-    const updatePart = <T extends SessionLegacy.Part>(part: T): Effect.Effect<T> =>
+    const updatePart = <T extends SessionLegacy.Part>(part: T, options?: { transient?: boolean }): Effect.Effect<T> =>
       Effect.gen(function* () {
         const location = yield* locationForSession(part.sessionID)
-        yield* events.publish(
-          SessionLegacy.Event.PartUpdated,
-          {
-            sessionID: part.sessionID,
-            part: structuredClone(part),
-            time: Date.now(),
-          },
-          { location },
-        )
+        const data = {
+          sessionID: part.sessionID,
+          part: structuredClone(part),
+          time: Date.now(),
+        }
+        // A transient revision is an in-flight progress frame: the wire payload
+        // is byte-identical to a durable one, but it skips the journal append,
+        // the sequence bump and the state-log invalidation. Safe because the
+        // state log is invalidate-then-refetch and the durable terminal write
+        // that follows still triggers that refetch, so a dropped intermediate
+        // revision is unobservable. Same shape as `message.part.delta`, which
+        // has always been broadcast-only.
+        if (options?.transient) {
+          yield* events.broadcast(
+            yield* events.payload(SessionLegacy.Event.PartUpdated, data, { location }),
+          )
+          return part
+        }
+        yield* events.publish(SessionLegacy.Event.PartUpdated, data, { location })
         return part
       }).pipe(Effect.withSpan("Session.updatePart"))
 

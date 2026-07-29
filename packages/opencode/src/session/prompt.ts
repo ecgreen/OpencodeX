@@ -488,13 +488,19 @@ export const layer = Layer.effect(
           callID: part.callID,
           extra: { bypassAgentCheck: true, promptOps },
           messages: msgs,
+          // Subtask progress is in-flight state, so it is broadcast without a
+          // journal append. `part` stays the in-memory source of truth for the
+          // durable completion/error write below, which is unaffected.
           metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
             Effect.gen(function* () {
-              part = yield* sessions.updatePart({
-                ...part,
-                type: "tool",
-                state: { ...part.state, ...val },
-              } satisfies SessionLegacy.ToolPart)
+              part = yield* sessions.updatePart(
+                {
+                  ...part,
+                  type: "tool",
+                  state: { ...part.state, ...val },
+                } satisfies SessionLegacy.ToolPart,
+                { transient: true },
+              )
             }),
           ask: (req: any) =>
             permission

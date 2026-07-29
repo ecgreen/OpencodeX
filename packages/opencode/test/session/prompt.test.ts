@@ -102,6 +102,32 @@ function toolPart(parts: SessionLegacy.Part[]) {
   return parts.find((part): part is SessionLegacy.ToolPart => part.type === "tool")
 }
 
+/**
+ * In-flight tool revisions are broadcast rather than journaled, so the durable
+ * projection only ever shows terminal state. Real clients read progress off the
+ * event stream; these tests do the same. Keyed by part id so the map always
+ * holds the newest revision of each part.
+ */
+const liveToolParts = Effect.fnUntraced(function* () {
+  const events = yield* EventV2Bridge.Service
+  const live = new Map<string, SessionLegacy.ToolPart>()
+  const unsubscribe = yield* events.listen((event) =>
+    Effect.sync(() => {
+      if (event.type !== SessionLegacy.Event.PartUpdated.type) return
+      const part = (event.data as { part: SessionLegacy.Part }).part
+      if (part.type === "tool") live.set(part.id, part)
+    }),
+  )
+  yield* Effect.addFinalizer(() => unsubscribe)
+  return {
+    running: (messageID: MessageID) =>
+      [...live.values()].find(
+        (part) =>
+          part.messageID === messageID && part.state.status === "running" && part.state.metadata?.sessionId !== undefined,
+      ),
+  }
+})
+
 type CompletedToolPart = SessionLegacy.ToolPart & { state: SessionLegacy.ToolStateCompleted }
 type ErrorToolPart = SessionLegacy.ToolPart & { state: SessionLegacy.ToolStateError }
 
@@ -984,6 +1010,7 @@ it.instance(
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const chat = yield* sessions.create({ title: "Pinned" })
+      const live = yield* liveToolParts()
       yield* llm.hang
       const msg = yield* user(chat.id, "hello")
       yield* addSubtask(chat.id, msg.id)
@@ -994,8 +1021,7 @@ it.instance(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
-          const tool = taskMsg?.parts.find((part): part is SessionLegacy.ToolPart => part.type === "tool")
-          if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
+          return taskMsg && live.running(taskMsg.info.id)
         }),
         "timed out waiting for running subtask metadata",
       )
@@ -1022,6 +1048,7 @@ it.instance(
         title: "Pinned",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
+      const live = yield* liveToolParts()
       yield* llm.tool("task", {
         description: "inspect bug",
         prompt: "look into the cache key path",
@@ -1036,10 +1063,8 @@ it.instance(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
-          const tool = assistant?.parts.find(
-            (part): part is SessionLegacy.ToolPart => part.type === "tool" && part.tool === "task",
-          )
-          if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
+          const running = assistant && live.running(assistant.info.id)
+          return running?.tool === "task" ? running : undefined
         }),
         "timed out waiting for running task metadata",
       )
@@ -1278,6 +1303,7 @@ it.instance(
       const sessions = yield* Session.Service
       const status = yield* SessionStatus.Service
       const chat = yield* sessions.create({ title: "Pinned" })
+      const live = yield* liveToolParts()
       yield* llm.hang
       const msg = yield* user(chat.id, "hello")
       yield* addSubtask(chat.id, msg.id)
@@ -1285,10 +1311,15 @@ it.instance(
       const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* llm.wait(1)
 
-      const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-      const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
-      const tool = taskMsg ? toolPart(taskMsg.parts) : undefined
-      const sessionID = tool?.state.status === "running" ? tool.state.metadata?.sessionId : undefined
+      const tool = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+          return taskMsg && live.running(taskMsg.info.id)
+        }),
+        "timed out waiting for running subtask metadata",
+      )
+      const sessionID = tool.state.status === "running" ? tool.state.metadata?.sessionId : undefined
       expect(typeof sessionID).toBe("string")
       if (typeof sessionID !== "string") throw new Error("missing child session id")
       const childID = SessionID.make(sessionID)

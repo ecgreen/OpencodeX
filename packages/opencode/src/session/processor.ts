@@ -36,9 +36,15 @@ export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
   readonly message: SessionLegacy.Assistant
+  /**
+   * `transient` skips the journal append for this revision. Only in-flight
+   * progress may use it: `completeToolCall` and `failToolCall` stay durable so
+   * terminal state survives a crash.
+   */
   readonly updateToolCall: (
     toolCallID: string,
     update: (part: SessionLegacy.ToolPart) => SessionLegacy.ToolPart,
+    options?: { transient?: boolean },
   ) => Effect.Effect<SessionLegacy.ToolPart | undefined>
   readonly completeToolCall: (
     toolCallID: string,
@@ -152,10 +158,11 @@ export const layer = Layer.effect(
       const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
         toolCallID: string,
         update: (part: SessionLegacy.ToolPart) => SessionLegacy.ToolPart,
+        options?: { transient?: boolean },
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match) return undefined
-        const part = yield* session.updatePart(update(match.part))
+        const part = yield* session.updatePart(update(match.part), options)
         ctx.toolcalls[toolCallID] = {
           ...match.call,
           partID: part.id,
