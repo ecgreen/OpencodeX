@@ -175,12 +175,19 @@ export const makeOpencodeXWorkbenchFileHandlers = Effect.fn("OpencodeXHttpApi.ma
     if (!target || !(yield* fs.existsSafe(target))) {
       return { supported: false, message: "File is outside the active workspace.", contents: [], definitions: [] }
     }
-    if (yield* lsp.workbenchPrepare(target, ctx.payload.content)) {
+    const prepared = yield* lsp.workbenchPrepare(target, ctx.payload.content)
+    // TEMPORARY CI PROBE
+    yield* Effect.logInfo(
+      `HOVERPROBE prepared=${prepared} target=${target} line=${ctx.payload.line} col=${ctx.payload.column} contentLen=${ctx.payload.content.length} contentHead=${JSON.stringify(ctx.payload.content.slice(0, 60))}`,
+    )
+    if (prepared) {
       const position = { file: target, line: ctx.payload.line - 1, character: ctx.payload.column - 1, workbench: true }
-      const result = workbenchHoverResult(
-        yield* lsp.hover(position),
-        workbenchDefinitionLocations(yield* lsp.definition(position), instance),
-      )
+      const rawHover = yield* lsp.hover(position)
+      const rawDefinition = yield* lsp.definition(position)
+      // TEMPORARY CI PROBE
+      yield* Effect.logInfo(`HOVERPROBE rawHover=${JSON.stringify(rawHover).slice(0, 600)}`)
+      yield* Effect.logInfo(`HOVERPROBE rawDefinitionCount=${JSON.stringify(rawDefinition).slice(0, 300)}`)
+      const result = workbenchHoverResult(rawHover, workbenchDefinitionLocations(rawDefinition, instance))
       if (result.contents.length > 0 || result.definitions.length > 0) return result
     }
     const fallback = yield* resolveRelativeImport(ctx.payload, target, instance, fs)

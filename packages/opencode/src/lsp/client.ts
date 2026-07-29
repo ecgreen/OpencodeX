@@ -176,6 +176,8 @@ export async function create(input: {
       path: filePath,
       count: params.diagnostics.length,
       version: params.version,
+      // TEMPORARY CI PROBE
+      probe: JSON.stringify(params.diagnostics.slice(0, 3).map((item: { message?: string }) => item.message)).slice(0, 300),
     })
     published.set(filePath, {
       at: Date.now(),
