@@ -124,7 +124,10 @@ export function createOpencodeXSwarmsController() {
       }),
     }).catch((error: Error) => void DialogAlert.show(dialog, "Assign Task", error.message))
     if (!session) return false
-    await sync.session.sync(session.id)
+    // One-shot retainer: the session route or view pane picks the session up
+    // inside the deferred-release grace period.
+    const release = sync.session.retain(session.id)
+    await sync.session.sync(session.id).finally(release)
     sendPromptToSession({
       sdk,
       sync,

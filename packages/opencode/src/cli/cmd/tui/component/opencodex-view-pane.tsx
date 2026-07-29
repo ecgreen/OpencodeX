@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { TextAttributes } from "@opentui/core"
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 import { usePromptRef } from "@tui/context/prompt"
 import { useRoute } from "@tui/context/route"
@@ -54,9 +54,11 @@ function ViewPane(props: {
   onCleanup(() => {
     if (focusTimer) clearTimeout(focusTimer)
   })
-  onMount(() => {
+  createEffect(() => {
     const current = session()
-    if (current) void sync.session.sync(current.id)
+    if (!current) return
+    onCleanup(sync.session.retain(current.id))
+    void sync.session.sync(current.id)
   })
 
   const createSession = async (input: {

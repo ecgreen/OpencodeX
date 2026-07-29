@@ -19,6 +19,7 @@ const sessionBindingCommands = [
   "session.toggle.actions",
   "session.toggle.scrollbar",
   "session.toggle.generic_tool_output",
+  "session.load_older",
   "session.first",
   "session.last",
   "session.messages_last_user",

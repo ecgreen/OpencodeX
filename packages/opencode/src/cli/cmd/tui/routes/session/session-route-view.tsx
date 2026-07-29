@@ -51,6 +51,9 @@ export function SessionRouteView(props: { controller: ReturnType<typeof createSe
   )
 }
 
+// opentui 0.3 has no windowed list primitive and `viewportCulling` only skips
+// paint, not yoga layout, so the bounded data window in the sync context is what
+// actually keeps a long transcript cheap; culling just saves the paint on top.
 function SessionTranscript(props: { controller: ReturnType<typeof createSessionRouteController> }) {
   return (
     <scrollbox
@@ -67,9 +70,16 @@ function SessionTranscript(props: { controller: ReturnType<typeof createSessionR
       stickyScroll={true}
       stickyStart="bottom"
       flexGrow={1}
+      viewportCulling={true}
       scrollAcceleration={props.controller.scrollAcceleration()}
     >
       <box height={1} />
+      <Show when={props.controller.transcript().hasOlder}>
+        <LoadOlderMessages controller={props.controller} />
+      </Show>
+      <Show when={props.controller.revertBeforeWindow()}>
+        <RevertedBeforeWindow controller={props.controller} />
+      </Show>
       <For each={props.controller.messages()}>{(message, index) => (
         <Switch>
           <Match when={message.id === props.controller.revert()?.messageID}>
@@ -104,6 +114,47 @@ function SessionTranscript(props: { controller: ReturnType<typeof createSessionR
         </Switch>
       )}</For>
     </scrollbox>
+  )
+}
+
+function LoadOlderMessages(props: { controller: ReturnType<typeof createSessionRouteController> }) {
+  const shortcut = useCommandShortcut("session.load_older")
+  const [hover, setHover] = createSignal(false)
+  return (
+    <box
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
+      onMouseUp={() => void props.controller.loadOlderMessages()}
+      flexShrink={0}
+      paddingLeft={3}
+      paddingBottom={1}
+      backgroundColor={hover() ? props.controller.theme.backgroundElement : undefined}
+    >
+      <Show
+        when={!props.controller.transcript().loadingOlder}
+        fallback={<text fg={props.controller.theme.textMuted}>Loading older messages...</text>}
+      >
+        <Show
+          when={shortcut()}
+          fallback={<text fg={props.controller.theme.textMuted}>Click to load older messages</text>}
+        >
+          <text fg={props.controller.theme.textMuted}>
+            <span style={{ fg: props.controller.theme.text }}>{shortcut()}</span> or click to load older messages
+          </text>
+        </Show>
+      </Show>
+    </box>
+  )
+}
+
+function RevertedBeforeWindow(props: { controller: ReturnType<typeof createSessionRouteController> }) {
+  const shortcut = useCommandShortcut("session.redo")
+  return (
+    <box flexShrink={0} paddingLeft={3} paddingBottom={1}>
+      <text fg={props.controller.theme.textMuted}>
+        Messages were reverted above this point. <span style={{ fg: props.controller.theme.text }}>{shortcut()}</span> or /redo to restore
+      </text>
+    </box>
   )
 }
 

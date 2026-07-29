@@ -127,7 +127,12 @@ export function createPromptSubmit(input: {
       })
       return false
     }
-    if (!input.props.sessionID) await sync.session.sync(sessionID)
+    if (!input.props.sessionID) {
+      // One-shot retainer: the session route mounts moments later and takes
+      // over inside the deferred-release grace period.
+      const release = sync.session.retain(sessionID)
+      await sync.session.sync(sessionID).finally(release)
+    }
     const result = sendPromptToSession({
       sdk,
       sync,

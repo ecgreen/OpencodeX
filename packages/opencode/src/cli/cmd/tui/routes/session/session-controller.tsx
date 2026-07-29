@@ -103,6 +103,9 @@ export function createSessionRouteController() {
 
   createEffect(() => {
     const sessionID = route.sessionID
+    // Holds the transcript resident while this route is on screen; leaving it
+    // hands the session to the deferred-release grace period.
+    onCleanup(sync.session.retain(sessionID))
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
@@ -310,6 +313,35 @@ export function createSessionRouteController() {
     }
   })
 
+  // The revert marker is rendered against the message it points at. When that
+  // message is older than the loaded window there is nothing to attach to, so
+  // the transcript shows a compact banner at the top instead of nothing.
+  const revertBeforeWindow = createMemo(() => {
+    const messageID = revertMessageID()
+    if (!messageID) return false
+    return !messages().some((message) => message.id === messageID)
+  })
+
+  const transcript = createMemo(() => sync.session.transcript(route.sessionID))
+
+  async function loadOlderMessages() {
+    const current = transcript()
+    if (!current.hasOlder || current.loadingOlder) return
+    const box = scroll
+    const before = box && !box.isDestroyed ? { height: box.scrollHeight, top: box.scrollTop } : undefined
+    const atBottom = box && before ? before.top >= before.height - box.height - 1 : false
+    const loaded = await sync.session.loadOlder(route.sessionID)
+    if (!loaded || !box || !before) return
+    // Prepending grows the content above the viewport, so hold the reader's
+    // place by re-applying the recorded offset once layout has settled.
+    const anchor = () => {
+      if (box.isDestroyed) return
+      box.scrollTo(atBottom ? box.scrollHeight : before.top + (box.scrollHeight - before.height))
+    }
+    setTimeout(anchor, 0)
+    setTimeout(anchor, 50)
+  }
+
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
   return {
@@ -320,7 +352,8 @@ export function createSessionRouteController() {
     showGenericToolOutput, setShowGenericToolOutput, wide, sidebarVisible, showTimestamps, contentWidth, providers,
     scrollAcceleration, toast, sdk, editor, bind, keymap, dialog, renderer, exit, findNextVisibleMessage,
     scrollToMessage, toBottom, local, enterChild, moveFirstChild, moveChild, childSessionHandler, revertInfo,
-    revertMessageID, revertDiffFiles, revertRevertedMessages, revert,
+    revertMessageID, revertDiffFiles, revertRevertedMessages, revert, revertBeforeWindow,
+    transcript, loadOlderMessages,
     scroll: () => scroll,
     prompt: () => prompt,
     setScroll: (value: ScrollBoxRenderable) => {

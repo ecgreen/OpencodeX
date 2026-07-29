@@ -38,6 +38,7 @@ import type {
   ClientSessionTailOptions,
 } from "./client-sync-types.js"
 import { isClientSessionRenderable } from "./client-sync-cards.js"
+import { createClientSeenIdRing } from "./client-seen-ids.js"
 
 const MAX_QUEUED_STATE_FRAMES = 1_024
 
@@ -55,8 +56,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
   const sessionRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const sessionCorrectionAttempts = new Map<string, number>()
   const sessionEventBuffers = createClientSessionEventBuffers()
-  const seenEventIDs = new Set<string>()
-  const seenEventIDOrder = new Array<string>()
+  const seenEventIDs = createClientSeenIdRing(2_048)
   const dirtyCatalogSessions = new Map<string, number>()
   let state = emptyClientStateSyncState()
   let stopped = true
@@ -204,13 +204,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     })
   }
   function rememberEventID(id: string) {
-    if (seenEventIDs.has(id)) return
-    seenEventIDs.add(id)
-    seenEventIDOrder.push(id)
-    while (seenEventIDOrder.length > 2_048) {
-      const stale = seenEventIDOrder.shift()
-      if (stale) seenEventIDs.delete(stale)
-    }
+    seenEventIDs.remember(id)
   }
   const refresh = () => {
     rootRefreshQueued = true
@@ -983,7 +977,6 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     sessionCardGenerations.clear()
     dirtyCatalogSessions.clear()
     seenEventIDs.clear()
-    seenEventIDOrder.length = 0
     queuedFrames.length = 0
     commit({
       ...emptyClientStateSyncState(),
@@ -1128,7 +1121,6 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       sessionCorrectionAttempts.clear()
       clearClientSessionEventBuffers(sessionEventBuffers)
       seenEventIDs.clear()
-      seenEventIDOrder.length = 0
       if (batchTimer !== undefined) clearTimeout(batchTimer)
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
       if (pollTimer !== undefined) clearInterval(pollTimer)
@@ -1245,7 +1237,7 @@ function resetClientSessionLoadAfterAbort(
   )
 }
 
-function contiguousDeltaGroup(events: readonly Event[], start: number, seen: ReadonlySet<string>) {
+function contiguousDeltaGroup(events: readonly Event[], start: number, seen: { has: (id: string) => boolean }) {
   const first = events[start]
   if (first.type !== "message.part.delta") return { events: [first], reduced: first }
   const grouped = [first]

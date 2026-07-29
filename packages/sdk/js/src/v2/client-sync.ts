@@ -1,4 +1,12 @@
 export { createClientStateSync } from "./client-sync-controller.js"
+export { createClientSeenIdRing } from "./client-seen-ids.js"
+export type { ClientSeenIdRing } from "./client-seen-ids.js"
+export { loadClientSessionTranscript } from "./client-sync-transcript.js"
+export type {
+  ClientSessionTranscript,
+  ClientSessionTranscriptBundle,
+  ClientSessionTranscriptOptions,
+} from "./client-sync-transcript.js"
 export { isRenderableClientSession, mergeClientSessions, updateClientSessionState } from "./client-sync-session.js"
 export type { ClientSessionStateUpdate } from "./client-sync-session.js"
 export {

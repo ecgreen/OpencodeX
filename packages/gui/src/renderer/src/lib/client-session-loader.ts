@@ -1,7 +1,6 @@
-import type { ClientStateSyncController } from "@opencode-ai/sdk/v2/client-sync"
-import { prependOlderMessages } from "./message-window"
-import { sessionDataFromClientState, sessionDataFromSnapshot } from "./session-data-projection"
-import type { SessionData } from "./store-types"
+import { loadClientSessionTranscript, type ClientStateSyncController } from "@opencode-ai/sdk/v2/client-sync"
+import { normalizeMessageText, sessionDataFromClientState, sessionDataFromSnapshot } from "./session-data-projection"
+import type { MessageBundle, SessionData } from "./store-types"
 
 export async function refreshClientStateSessionTail(
   controller: ClientStateSyncController,
@@ -27,22 +26,12 @@ export async function loadClientStateSessionTranscript(
   controller: ClientStateSyncController,
   sessionID: string,
   options: { pageLimit?: number; signal?: AbortSignal } = {},
-) {
-  const cursors = new Set<string>()
-  let before: string | undefined
-  let data: SessionData | undefined
-  while (true) {
-    const snapshot = await controller.fetchSessionPage(sessionID, {
-      limit: options.pageLimit ?? 1_000,
-      before,
-      signal: options.signal,
-    })
-    const page = sessionDataFromSnapshot(snapshot)
-    data = data ? prependOlderMessages(data, { messages: page.messages, cursor: page.messageCursor }) : page
-    if (!snapshot.messages.boundary.hasMore) return data
-    const cursor = snapshot.messages.boundary.next
-    if (!cursor || cursors.has(cursor)) throw new Error(`Session transcript pagination stalled for ${sessionID}`)
-    cursors.add(cursor)
-    before = cursor
+): Promise<SessionData> {
+  const transcript = await loadClientSessionTranscript(controller, sessionID, options)
+  return {
+    ...sessionDataFromSnapshot(transcript.latest),
+    messages: normalizeMessageText(transcript.messages as MessageBundle[]),
+    messageCursor: transcript.cursor,
+    ...(transcript.pages > 1 ? { messageWindowExpanded: true } : {}),
   }
 }

@@ -81,6 +81,16 @@ export function createSessionNavigationCommands(controller: ReturnType<typeof cr
     scrollCommand(controller, "Half page up", "session.half.page.up", () => -scroll().height / 4),
     scrollCommand(controller, "Half page down", "session.half.page.down", () => scroll().height / 4),
     {
+      title: "Load older messages",
+      value: "session.load_older",
+      category: "Session",
+      enabled: controller.transcript().hasOlder,
+      run: () => {
+        void controller.loadOlderMessages()
+        controller.dialog.clear()
+      },
+    },
+    {
       title: "First message",
       value: "session.first",
       category: "Session",

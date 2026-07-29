@@ -1,5 +1,5 @@
 import stripAnsi from "strip-ansi"
-import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import type { QuestionTool } from "@/tool/question"
 import { ShellTool } from "@/tool/shell"
 import type { SkillTool } from "@/tool/skill"
@@ -80,8 +80,11 @@ export function Task(props: SessionToolProps<typeof TaskTool>) {
   const { navigate } = useRoute()
   const sync = useSync()
   const dialog = useDialog()
-  onMount(() => {
-    if (props.metadata.sessionId && !sync.data.message[props.metadata.sessionId]?.length) void sync.session.sync(props.metadata.sessionId)
+  createEffect(() => {
+    const sessionId = props.metadata.sessionId
+    if (!sessionId) return
+    onCleanup(sync.session.retain(sessionId))
+    if (!sync.data.message[sessionId]?.length) void sync.session.sync(sessionId)
   })
   const messages = createMemo(() => sync.data.message[props.metadata.sessionId ?? ""] ?? [])
   const tools = createMemo(() => messages().flatMap((message) =>

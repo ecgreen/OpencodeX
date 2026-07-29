@@ -190,10 +190,14 @@ function ReasoningHeader(props: { toggleable: boolean; open: boolean; done: bool
 function SessionTextPart(props: { part: TextPart }) {
   const context = useSessionView()
   const { theme, syntax } = useTheme()
+  // A streaming part re-renders on every delta batch. `trim()` copies the whole
+  // accumulated text each time, so only pay for it once the part is finished;
+  // while streaming, a regex is enough to answer "is there any content yet".
+  const content = createMemo(() => props.part.time?.end === undefined ? props.part.text : props.part.text.trim())
   return (
-    <Show when={props.part.text.trim()}>
+    <Show when={/\S/.test(content())}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>
-        <markdown syntaxStyle={syntax()} streaming={true} internalBlockMode="top-level" content={props.part.text.trim()} tableOptions={{ style: "grid" }} conceal={context.conceal()} fg={theme.markdownText} bg={theme.background} />
+        <markdown syntaxStyle={syntax()} streaming={true} internalBlockMode="top-level" content={content()} tableOptions={{ style: "grid" }} conceal={context.conceal()} fg={theme.markdownText} bg={theme.background} />
       </box>
     </Show>
   )

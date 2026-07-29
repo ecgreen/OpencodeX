@@ -1,5 +1,6 @@
 import type { GlobalEvent, Session } from "@opencode-ai/sdk/v2/client"
 import {
+  createClientSeenIdRing,
   createClientStateSync,
   selectClientKnownSessionIDs,
   type ClientStateSyncState,
@@ -62,8 +63,7 @@ export function createAuthoritativeStateController(input: {
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
   const sessionPresentation = createSessionPresentationController({ inactiveLimit: 16 })
   const appliedSessionVersions = new Map<string, string>()
-  const seenEventIDs = new Set<string>()
-  const seenEventIDOrder: string[] = []
+  const seenEventIDs = createClientSeenIdRing(SEEN_EVENT_ID_LIMIT)
   const globalEvents = createGlobalEventFanout()
   let sessionDataLoadedTime = 0
   let stateSync: ReturnType<typeof createClientStateSync> | undefined
@@ -244,14 +244,7 @@ export function createAuthoritativeStateController(input: {
   }
 
   function rememberEventID(id: string) {
-    if (seenEventIDs.has(id)) return false
-    seenEventIDs.add(id)
-    seenEventIDOrder.push(id)
-    while (seenEventIDOrder.length > SEEN_EVENT_ID_LIMIT) {
-      const stale = seenEventIDOrder.shift()
-      if (stale) seenEventIDs.delete(stale)
-    }
-    return true
+    return seenEventIDs.remember(id)
   }
 
   function handleGlobalEvent(event: GlobalEvent) {

@@ -18,18 +18,19 @@ export function sessionDataFromClientState(
     const info = detail.messages[messageID]
     if (!info) return []
     const partIDs = detail.partIDs[messageID] ?? []
+    const messageParts = detail.parts[messageID]
     const existing = currentMessages.get(messageID)
     if (
       existing?.info === info &&
       existing.parts.length === partIDs.length &&
       partIDs.every((partID, index) => {
-        const part = detail.parts[partID]
+        const part = messageParts?.[partID]
         return part ? normalizeMessagePart(part) === existing.parts[index] : false
       })
     )
       return [existing]
     const parts = partIDs.flatMap((partID) => {
-      const part = detail.parts[partID]
+      const part = messageParts?.[partID]
       return part ? [normalizeMessagePart(part)] : []
     })
     return [{ info, parts }]
