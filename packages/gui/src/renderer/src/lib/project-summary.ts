@@ -45,7 +45,7 @@ export function projectAttentionItems(
   const sessions = projectSessions(project, snapshot, state)
     .filter((session) => {
       const status = deriveSessionStatus(snapshot, session)
-      return status === "input_needed" || status === "ready_for_review" || status === "failed"
+      return status === "input_needed" || status === "ready_for_review"
     })
     .toSorted((a, b) => timeValue(b.time.updated) - timeValue(a.time.updated))
     .map((session) => {
@@ -55,7 +55,7 @@ export function projectAttentionItems(
         sessionID: session.id,
         title: title(session.title),
         detail: sessionStatusLabel(status),
-        tone: status === "failed" ? ("danger" as const) : ("warning" as const),
+        tone: "warning" as const,
       }
     })
   const permissions = (snapshot?.permissions ?? [])
@@ -123,7 +123,6 @@ export function projectSessionStatus(
   if (statuses.includes("input_needed")) return "input_needed"
   if (statuses.includes("in_progress")) return "in_progress"
   if (statuses.includes("ready_for_review")) return "ready_for_review"
-  if (statuses.includes("failed")) return "failed"
   return "dormant"
 }
 

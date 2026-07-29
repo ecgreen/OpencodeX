@@ -1,5 +1,6 @@
 import { ScrollBoxRenderable } from "@opentui/core"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { clientPlanModeSwitch } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { Locale } from "@/util/locale"
 import { UI } from "@/cli/ui"
@@ -144,20 +145,10 @@ export function createSessionRouteController() {
 
   let lastSwitch: string | undefined = undefined
   onCleanup(event.on("message.part.updated", (evt) => {
-    const part = evt.properties.part
-    if (part.type !== "tool") return
-    if (part.sessionID !== route.sessionID) return
-    if (part.state.status !== "completed") return
-    if (part.id === lastSwitch) return
-
-    if (part.tool === "plan_exit") {
-      local.agent.set("build")
-      lastSwitch = part.id
-      return
-    }
-    if (part.tool !== "plan_enter") return
-    local.agent.set("plan")
-    lastSwitch = part.id
+    const change = clientPlanModeSwitch(evt)
+    if (!change || change.sessionID !== route.sessionID || change.partID === lastSwitch) return
+    local.agent.set(change.agent)
+    lastSwitch = change.partID
   }))
 
   let seeded = false

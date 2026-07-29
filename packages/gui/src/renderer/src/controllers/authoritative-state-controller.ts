@@ -9,6 +9,7 @@ import { clientAttentionItems, createClientWorkItemSelector } from "@opencode-ai
 import { createMemo, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
 import { connectGuiClient, type GuiClient } from "../lib/client"
 import { emptyGuiSnapshot } from "../lib/gui-state"
+import { markSessionPromptPendingInSnapshot, releaseSessionPromptPendingInSnapshot } from "../lib/session-status"
 import { createGlobalEventFanout } from "../lib/global-event-fanout"
 import { createGlobalEventBatcher } from "../lib/global-event-batcher"
 import { globalEventAction, globalEventID, globalEventPayload } from "../lib/live-session-patch"
@@ -39,6 +40,12 @@ import { createAuthoritativeStateApplicator } from "./authoritative-state-applic
 
 export const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
 const SEEN_EVENT_ID_LIMIT = 2_000
+/**
+ * How long an optimistic pending prompt survives without the backend ever
+ * reporting the session busy. Only reached when the send itself was lost, so it
+ * is a watchdog, not a normal path.
+ */
+const PENDING_PROMPT_WATCHDOG_MS = 30_000
 
 export function createAuthoritativeStateController(input: {
   route: Accessor<Route>
@@ -65,6 +72,7 @@ export function createAuthoritativeStateController(input: {
   const appliedSessionVersions = new Map<string, string>()
   const seenEventIDs = createClientSeenIdRing(SEEN_EVENT_ID_LIMIT)
   const globalEvents = createGlobalEventFanout()
+  const pendingPromptWatchdogs = new Map<string, ReturnType<typeof setTimeout>>()
   let sessionDataLoadedTime = 0
   let stateSync: ReturnType<typeof createClientStateSync> | undefined
   const releaseSessions = createDeferredSessionRelease({
@@ -147,6 +155,34 @@ export function createAuthoritativeStateController(input: {
     evictPresentation: evictSessionPresentation,
   })
 
+  /**
+   * Optimistic: the reader pressed Enter, so the session reads as running right
+   * away instead of staying idle until the backend reports busy. Released as
+   * soon as the backend confirms work, or by the watchdog if it never does.
+   */
+  function markSessionPromptPending(sessionID: string) {
+    setSnapshot((current) => (current ? markSessionPromptPendingInSnapshot(current, sessionID) : current))
+    clearTimeout(pendingPromptWatchdogs.get(sessionID))
+    const timer = setTimeout(() => releaseSessionPromptPending(sessionID), PENDING_PROMPT_WATCHDOG_MS)
+    pendingPromptWatchdogs.set(sessionID, timer)
+  }
+
+  function releaseSessionPromptPending(sessionID: string) {
+    clearTimeout(pendingPromptWatchdogs.get(sessionID))
+    pendingPromptWatchdogs.delete(sessionID)
+    setSnapshot((current) => (current ? releaseSessionPromptPendingInSnapshot(current, sessionID) : current))
+  }
+
+  function releaseConfirmedPendingPrompts(next: ClientStateSyncState) {
+    const pending = snapshot()?.sessionPendingPrompt
+    if (!pending) return
+    Object.keys(pending).forEach((sessionID) => {
+      if (!pending[sessionID]) return
+      const type = next.sessionStatus[sessionID]?.type
+      if (type === "busy" || type === "retry") releaseSessionPromptPending(sessionID)
+    })
+  }
+
   function applyState(next: ClientStateSyncState) {
     const previous = state()
     const reconcileUnionMembership =
@@ -160,6 +196,7 @@ export function createAuthoritativeStateController(input: {
       if (stateSync?.getState() !== next) return
     }
     applyAuthoritativeState(next)
+    releaseConfirmedPendingPrompts(next)
     if (reconcileUnionMembership) reconcilePresentation(next)
   }
 
@@ -276,6 +313,8 @@ export function createAuthoritativeStateController(input: {
     let unsubscribeEvents: (() => void) | undefined
     let unsubscribeState: (() => void) | undefined
     onCleanup(() => {
+      pendingPromptWatchdogs.forEach((timer) => clearTimeout(timer))
+      pendingPromptWatchdogs.clear()
       liveEvents.clear()
       unsubscribeEvents?.()
       unsubscribeState?.()
@@ -336,6 +375,8 @@ export function createAuthoritativeStateController(input: {
     attentionItems,
     loadingSessionID,
     setLoadingSessionID,
+    markSessionPromptPending,
+    releaseSessionPromptPending,
     refresh,
     refreshCapabilities,
     loadMoreSessionCards,

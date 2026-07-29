@@ -1,6 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { MessageBundle, PromptPart, SessionData } from "./store-types"
-import { displayMessageText } from "./message-text"
+import { displayClientMessageText } from "@opencode-ai/sdk/v2/client-sync"
 
 export type SessionMessageActionKind = "copy" | "edit" | "retry" | "fork"
 
@@ -19,7 +19,7 @@ export function messageTextForCopy(bundle: MessageBundle) {
     })
     .filter(Boolean)
     .join("\n\n")
-  return displayMessageText(text).trim()
+  return displayClientMessageText(text).trim()
 }
 
 export function messagePromptForEdit(bundle: MessageBundle) {

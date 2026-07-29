@@ -1,7 +1,7 @@
 import {
   selectClientOperationsSnapshot,
   selectClientCapabilitiesSnapshot,
-  selectClientSessionMessages,
+  selectClientSessionDisplayMessages,
   selectClientStateSyncSnapshot,
   clientAttentionItems,
   clientWorkItems,
@@ -108,7 +108,7 @@ export function projectTuiSessionDetail(state: ClientStateSyncState, sessionID: 
   if (!detail) return
   return {
     version: `${state.epoch ?? ""}:${detail.revision}`,
-    messages: selectClientSessionMessages(state, sessionID),
+    messages: selectClientSessionDisplayMessages(state, sessionID),
     todos: detail.snapshot.todos,
     diff: detail.snapshot.diff,
     session: detail.snapshot.session,

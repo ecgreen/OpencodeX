@@ -9,6 +9,12 @@ const RECENT_VIEW_WINDOW_MS = 4 * 60 * 60 * 1000
 
 export type ViewSummaryGroupID = "attention" | "active" | "recent" | "quiet"
 
+/**
+ * A view can also roll up to `failed`, which no session ever derives: it comes
+ * from the view's own interrupted or failed jobs.
+ */
+export type ViewSummaryStatus = DerivedSessionStatus | "failed"
+
 export type ViewSessionSummary = {
   session: Session
   status: DerivedSessionStatus
@@ -24,7 +30,7 @@ export type ViewAttentionCounts = {
 
 export type ViewSummary = {
   view: ClientCatalogView
-  status: DerivedSessionStatus
+  status: ViewSummaryStatus
   group: ViewSummaryGroupID
   paneCount: number
   pendingCount: number
@@ -103,7 +109,7 @@ export function viewStatusMeta(summary: ViewSummary) {
 }
 
 function viewSummaryGroup(input: {
-  status: DerivedSessionStatus
+  status: ViewSummaryStatus
   attentionCounts: ViewAttentionCounts
   lastUpdated: number
   now: number

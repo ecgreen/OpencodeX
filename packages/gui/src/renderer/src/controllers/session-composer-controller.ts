@@ -54,6 +54,8 @@ export function createSessionComposerController(input: {
           : Promise.resolve(),
       serverCommands: input.authoritative.snapshot()?.commands ?? [],
       rememberModel: input.rememberModel,
+      markPendingPrompt: input.authoritative.markSessionPromptPending,
+      releasePendingPrompt: input.authoritative.releaseSessionPromptPending,
       syncSession: (sessionID) => input.authoritative.syncSession(sessionID, { force: true }),
       refresh: input.authoritative.refresh,
       openCreatedSession: (sessionID, session) => {

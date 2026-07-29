@@ -187,6 +187,8 @@ export function createViewController(input: {
       modelForSession: (session) => modelValueForPane(paneID, session),
       variantForSession: (session) => variantValue(paneID, session),
       setDraftLoading: input.authoritative.setViewPaneLoading,
+      markPendingPrompt: input.authoritative.markSessionPromptPending,
+      releasePendingPrompt: input.authoritative.releaseSessionPromptPending,
       setFocusedSessionID,
       alert: input.alert,
       sendPrompt: (sessionID, text, options) =>

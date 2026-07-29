@@ -1,12 +1,11 @@
 import type { Part } from "@opencode-ai/sdk/v2/client"
-import { displayMessageText } from "./message-text"
+import { normalizeClientDisplayPart } from "@opencode-ai/sdk/v2/client-sync"
 
 const pendingLiveParts = new Map<string, Part[]>()
 const pendingLivePartDeltas = new Map<string, Map<string, string>>()
 
 export function normalizeLivePart(part: Part): Part {
-  if (part.type !== "text" && part.type !== "reasoning") return part
-  return { ...part, text: displayMessageText(part.text) } as Part
+  return normalizeClientDisplayPart(part)
 }
 
 export function mergePartLists(parts: Part[], incoming: Part[]) {

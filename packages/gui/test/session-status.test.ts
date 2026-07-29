@@ -15,7 +15,6 @@ describe("GUI session status parity", () => {
       "ready_for_review",
     ])
     expect(isActiveSessionStatus("dormant")).toBe(false)
-    expect(isActiveSessionStatus("failed")).toBe(false)
   })
 
   test("derives the same backend states as the TUI", () => {
@@ -166,8 +165,10 @@ function tuiSync(snapshot: GuiSnapshot): Parameters<typeof deriveTuiStatus>[1] {
     data: {
       permission: groupBySession(snapshot.permissions),
       question: groupBySession(snapshot.questions),
+      session: snapshot.sessions,
       session_status: snapshot.sessionStatus,
       session_ui_state: snapshot.sessionUiState,
+      session_pending_prompt: {},
       message: {},
       part: {},
     },

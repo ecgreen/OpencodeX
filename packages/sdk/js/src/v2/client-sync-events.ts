@@ -2,6 +2,7 @@ import type { Event, OpencodeXSessionSnapshot, Part, Session } from "./client.js
 import type { ClientEntityState, ClientSessionDetailState, ClientStateSyncState } from "./client-sync-types.js"
 import { releaseClientSessionState } from "./client-sync-state.js"
 import { isClientSessionRenderable } from "./client-sync-cards.js"
+import { deriveClientSessionDisplayStatus } from "./client-session-status.js"
 
 type ClientBufferedSessionEvent = Extract<
   Event,
@@ -500,20 +501,21 @@ function reconcileClientSessionUiState(current: ClientStateSyncState, sessionID:
   const needsInput =
     current.permissions.ids.some((id) => current.permissions.records[id]?.sessionID === sessionID) ||
     current.questions.ids.some((id) => current.questions.records[id]?.sessionID === sessionID)
-  const running =
-    current.sessionStatus[sessionID]?.type === "busy" || current.sessionStatus[sessionID]?.type === "retry"
   const next = {
     sessionID,
     ...(previous?.seenAt === undefined ? {} : { seenAt: previous.seenAt }),
     ...(previous?.reviewedAt === undefined ? {} : { reviewedAt: previous.reviewedAt }),
     reviewedFiles: previous?.reviewedFiles ?? [],
-    displayStatus: needsInput
-      ? ("input_needed" as const)
-      : running
-        ? ("in_progress" as const)
-        : session.time.updated > (previous?.reviewedAt ?? 0)
-          ? ("needs_review" as const)
-          : ("idle" as const),
+    // Same core the clients render from, so the persisted value cannot drift
+    // from the derived one. The reconciler has no view of a client's optimistic
+    // pending prompt or of transcript activity, so it only supplies what it
+    // authoritatively knows.
+    displayStatus: deriveClientSessionDisplayStatus({
+      status: current.sessionStatus[sessionID],
+      hasPendingInteraction: needsInput,
+      updatedAt: session.time.updated,
+      reviewedAt: previous?.reviewedAt,
+    }),
     updated: session.time.updated > (previous?.seenAt ?? 0),
   }
   if (equalClientSessionUiState(previous, next)) return current

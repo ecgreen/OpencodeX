@@ -52,11 +52,12 @@ function sync(
     data: {
       permission: {},
       question: {},
+      session: [],
       session_status: {},
       session_ui_state: { [state.sessionID]: state },
       session_pending_prompt: pending ? { [state.sessionID]: pending } : {},
       message: {},
       part: {},
     },
-  } as Parameters<typeof deriveStatus>[1]
+  } as unknown as Parameters<typeof deriveStatus>[1]
 }

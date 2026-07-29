@@ -28,7 +28,7 @@ import type {
   ClientCatalogView,
   OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
-import { createClientStateSync, loadClientSessionTranscript } from "@opencode-ai/sdk/v2"
+import { createClientStateSync, loadClientSessionTranscript, normalizeClientDisplayPart } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
@@ -466,7 +466,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         const previousParts = previous.parts[messageID]
         const parts = store.part[messageID] ?? []
         if (previous.partIDs[messageID] !== partIDs || parts.length !== partIDs.length) {
-          setStore("part", messageID, reconcile(partIDs.flatMap((partID) => detailParts?.[partID] ?? [])))
+          setStore(
+            "part",
+            messageID,
+            reconcile(partIDs.flatMap((partID) => (detailParts?.[partID] ? [displayPart(detailParts[partID])] : []))),
+          )
           return
         }
         const changedPartIDs = hinted
@@ -476,7 +480,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const partIndex = partIDs.indexOf(partID)
           if (partIndex === -1) return
           const part = detailParts?.[partID]
-          if (part && previousParts?.[partID] !== part) setStore("part", messageID, partIndex, reconcile(part))
+          if (part && previousParts?.[partID] !== part)
+            setStore("part", messageID, partIndex, reconcile(displayPart(part)))
         })
       })
       if (previous.snapshot.todos !== detail.snapshot.todos)
@@ -484,6 +489,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       if (previous.snapshot.diff !== detail.snapshot.diff)
         setStore("session_diff", sessionID, reconcile(detail.snapshot.diff))
       if (previous.snapshot.session !== detail.snapshot.session) upsertSession(detail.snapshot.session)
+    }
+
+    /**
+     * Transcript parts land in the store display-ready, so the TUI renders the
+     * same prose the GUI does instead of the raw provider envelope. Streaming
+     * parts pass through untouched and are normalized once they complete.
+     */
+    function displayPart(part: Part) {
+      return normalizeClientDisplayPart(part)
     }
 
     function replaceSessionDetail(state: ClientStateSyncState, sessionID: string) {
@@ -508,7 +522,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         setStore(
           "part",
           message.id,
-          reconcile((detail.partIDs[message.id] ?? []).flatMap((partID) => detail.parts[message.id]?.[partID] ?? [])),
+          reconcile(
+            (detail.partIDs[message.id] ?? []).flatMap((partID) => {
+              const part = detail.parts[message.id]?.[partID]
+              return part ? [displayPart(part)] : []
+            }),
+          ),
         ),
       )
       setStore("todo", sessionID, reconcile(detail.snapshot.todos))

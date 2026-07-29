@@ -1,6 +1,34 @@
 export { createClientStateSync } from "./client-sync-controller.js"
 export { createClientSeenIdRing } from "./client-seen-ids.js"
 export type { ClientSeenIdRing } from "./client-seen-ids.js"
+export {
+  clientGlobalEventData,
+  clientGlobalEventKind,
+  clientPlanModeSwitch,
+  normalizeClientGlobalEventPayload,
+} from "./client-global-event.js"
+export {
+  displayClientMessageText,
+  isStreamingClientDisplayPart,
+  normalizeClientDisplayPart,
+  selectClientSessionDisplayMessages,
+} from "./client-message-text.js"
+export {
+  CLIENT_SESSION_ACTIVITY_WINDOW_MS,
+  clientSessionLikelyActive,
+  clientSessionStatusLabel,
+  deriveClientSessionDisplayStatus,
+  deriveClientSessionStatus,
+  deriveClientViewStatus,
+  isActiveClientSessionStatus,
+} from "./client-session-status.js"
+export type {
+  ClientDerivedSessionStatus,
+  ClientSessionActivityMessage,
+  ClientSessionDisplayStatus,
+  ClientSessionDisplayStatusInput,
+  ClientSessionStatusInput,
+} from "./client-session-status.js"
 export { loadClientSessionTranscript } from "./client-sync-transcript.js"
 export type {
   ClientSessionTranscript,

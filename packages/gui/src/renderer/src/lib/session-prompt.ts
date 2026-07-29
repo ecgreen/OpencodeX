@@ -41,6 +41,9 @@ export async function runSessionPromptAction(input: {
   runShell?: (sessionID: string, command: string, options: SessionPromptSendTarget["options"]) => Promise<void>
   serverCommands?: Command[]
   rememberModel: (model: string) => void
+  /** Marks the target session as running the moment the prompt leaves, before the backend reports busy. */
+  markPendingPrompt?: (sessionID: string) => void
+  releasePendingPrompt?: (sessionID: string) => void
   syncSession: (sessionID: string) => Promise<void>
   refresh: () => Promise<void>
   openCreatedSession: (sessionID: string, session: Session) => void
@@ -72,9 +75,15 @@ export async function runSessionPromptAction(input: {
       prompt: submission.prompt,
     })
     const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
-    if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
-    else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
-    else await input.sendPrompt(target.sessionID, submission.prompt.input, target.options)
+    input.markPendingPrompt?.(target.sessionID)
+    try {
+      if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
+      else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
+      else await input.sendPrompt(target.sessionID, submission.prompt.input, target.options)
+    } catch (error) {
+      input.releasePendingPrompt?.(target.sessionID)
+      throw error
+    }
     input.setPrompt("")
     if (prepared.createdSessionID) input.openCreatedSession(prepared.createdSessionID, prepared.target)
     if (target.modelToRemember) input.rememberModel(target.modelToRemember)
