@@ -103,16 +103,8 @@ Options:
       --variant                       model variant (provider-specific reasoning effort, e.g., high,
                                       max, minimal)                                         [string]
       --thinking                      show thinking blocks                                 [boolean]
-      --replay                        replay visible session history on interactive resume
-                                                                          [boolean] [default: false]
-      --replay-limit                  cap visible interactive replay to the newest N messages
-                                                                                            [number]
-  -i, --interactive                   run in direct interactive split-footer mode
-                                                                          [boolean] [default: false]
       --dangerously-skip-permissions  auto-approve permissions that are not explicitly denied
-                                      (dangerous!)                        [boolean] [default: false]
-      --demo                          enable direct interactive demo slash commands; pass one as the
-                                      message to run it immediately       [boolean] [default: false]"
+                                      (dangerous!)                        [boolean] [default: false]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode debug --help 1`] = `
