@@ -1,0 +1,70 @@
+.project-command-header p:not(.eyebrow) {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-command-detail-header p:not(.eyebrow) {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-metric:first-child {
+  border-left: 0;
+}
+
+.project-metric[data-tone=warning] {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 7%,transparent);
+}
+
+.project-metric:nth-child(1) {
+  border-top-color: var(--primary);
+}
+
+.project-metric:nth-child(2) {
+  border-top-color: var(--blue);
+}
+
+.project-metric:nth-child(3) {
+  border-top-color: var(--amber);
+}
+
+.project-metric:nth-child(4) {
+  border-top-color: var(--purple);
+}
+
+.project-metric:nth-child(5) {
+  border-top-color: var(--success);
+}
+
+.project-command-main .project-detail-list:nth-child(1) {
+  --project-section-accent: var(--amber) ;
+}
+
+.project-command-main .project-detail-list:nth-child(2) {
+  --project-section-accent: var(--blue) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(1) {
+  --project-section-accent: var(--success) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(2) {
+  --project-section-accent: var(--purple) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(3) {
+  --project-section-accent: var(--primary) ;
+}
+
+.project-command-sidebar .project-detail-list:nth-child(4) {
+  --project-section-accent: var(--muted) ;
+}
+
+.project-detail-list>div>.project-detail-row:first-child {
+  border-top: 0;
+}

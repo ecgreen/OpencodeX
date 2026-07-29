@@ -1,0 +1,44 @@
+.new-button:hover {
+  transform: translateY(-2px);
+  outline: none;
+  box-shadow: var(--shadow-button-hover);
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.new-button:focus-visible {
+  transform: translateY(-2px);
+  outline: none;
+  box-shadow: var(--shadow-button-hover);
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.nav button:hover {
+  transform: translateY(0);
+  border-color: transparent;
+  color: var(--text);
+  background: var(--element);
+  box-shadow: none;
+}
+
+.nav button:focus-visible {
+  transform: translateY(0);
+  border-color: transparent;
+  color: var(--text);
+  background: var(--element);
+  box-shadow: none;
+}
+
+.nav button.active {
+  border-color: transparent;
+  color: var(--text);
+  background: var(--brand-soft);
+  box-shadow: none;
+}
+
+.nav button.active .icon {
+  color: var(--brand);
+}

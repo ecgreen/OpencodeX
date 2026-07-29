@@ -1,0 +1,60 @@
+.rail-section header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0 5px 7px;
+  cursor: grab;
+  padding: 5px 6px;
+  --sidebar-hover-duration: 0.17s;
+  --sidebar-hover-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateY(0);
+  transition:
+    background var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    border-color var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    box-shadow var(--sidebar-hover-duration) var(--sidebar-hover-ease),
+    color 0.13s ease,
+    opacity 0.13s ease;
+  --major-row-color: color-mix(in srgb, var(--text) 92%, var(--theme-text));
+  --major-row-accent: color-mix(in srgb, var(--text) 58%, var(--border-active));
+  --major-row-muted: color-mix(in srgb, var(--muted) 74%, var(--text));
+  color: var(--major-row-color);
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--element-2) 58%, var(--element));
+}
+
+.rail-section header .section-count {
+  color: var(--major-row-muted);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0;
+}
+
+.rail-section header strong {
+  color: var(--major-row-color);
+  font-size: 12px;
+  font-weight: 780;
+  letter-spacing: 0.04em;
+}
+
+.rail-section header > .section-new {
+  width: 52px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  border-left: 1px solid color-mix(in srgb, var(--major-row-accent) 28%, var(--border-subtle));
+  color: var(--major-row-muted);
+  box-shadow: none;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-hover) ease;
+}

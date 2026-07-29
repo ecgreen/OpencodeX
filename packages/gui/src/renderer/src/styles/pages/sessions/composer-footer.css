@@ -1,0 +1,14 @@
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  min-height: 34px;
+  border-top: 0;
+}
+
+.stage-content.full-bleed>.session-page {
+  padding: 0 5px 10px 10px;
+}

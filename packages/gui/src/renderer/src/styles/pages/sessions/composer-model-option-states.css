@@ -1,0 +1,58 @@
+.transcript-window-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: none;
+}
+
+.message.user [data-component=markdown] {
+  color: var(--text);
+}
+
+.composer-add-context:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.composer-add-context:focus-visible {
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.model-option-card:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.model-option-card.selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.model-option-card:focus-within {
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
+.session-toolbar .session-side-panel-toggle[aria-pressed=true]:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--secondary) 78%,white 8%);
+  color: var(--theme-text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 24%,transparent),transparent),color-mix(in srgb,var(--surface-raised) 66%,var(--secondary) 26%);
+  box-shadow: 0 0 0 1px color-mix(in srgb,var(--secondary) 34%,transparent),0 12px 28px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-toolbar .session-side-panel-toggle[aria-pressed=true]:focus-visible {
+  border-color: color-mix(in srgb,var(--secondary) 78%,white 8%);
+  color: var(--theme-text);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 24%,transparent),transparent),color-mix(in srgb,var(--surface-raised) 66%,var(--secondary) 26%);
+  box-shadow: 0 0 0 1px color-mix(in srgb,var(--secondary) 34%,transparent),0 12px 28px color-mix(in srgb,var(--secondary) 18%,transparent);
+}

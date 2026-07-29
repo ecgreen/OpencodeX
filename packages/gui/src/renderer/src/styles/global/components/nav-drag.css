@@ -1,0 +1,62 @@
+.provider-auth-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid color-mix(in srgb,var(--theme-success) 40%,transparent);
+  border-radius: 999px;
+  color: var(--success);
+  background: color-mix(in srgb,var(--theme-success) 10%,transparent);
+}
+
+.provider-auth-badge .icon {
+  width: 8px;
+  height: 8px;
+}
+
+.new-button .icon {
+  position: relative;
+  transition: transform .3s cubic-bezier(.16,1,.3,1),filter .22s ease;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: none;
+}
+
+.nav button small {
+  color: var(--muted);
+  font-size: 10px;
+  display: none;
+}
+
+.drag-handle {
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  width: 22px;
+  height: 26px;
+  opacity: 0;
+}
+
+.draggable-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  align-items: start;
+  cursor: grab;
+}
+
+.draggable-row>div {
+  min-width: 0;
+}

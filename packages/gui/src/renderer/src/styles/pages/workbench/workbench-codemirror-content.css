@@ -1,0 +1,23 @@
+.workbench-diagnostics-bar.loading {
+  background: var(--theme-surface-raised);
+}
+
+.workbench-codemirror .cm-content {
+  padding-block: 12px;
+}
+
+.workbench-codemirror .cm-line {
+  padding-inline: 14px;
+}
+
+.workbench-codemirror .cm-selectionBackground {
+  background-color: var(--theme-info);
+}
+
+.workbench-codemirror .cm-editor.cm-focused .cm-selectionBackground {
+  background-color: var(--theme-info);
+}
+
+.workbench-codemirror .cm-lineNumbers .cm-gutterElement {
+  min-width: 42px;
+}

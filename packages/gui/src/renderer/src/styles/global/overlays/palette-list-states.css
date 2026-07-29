@@ -1,0 +1,23 @@
+.command-palette-list button:hover:not(:disabled) {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.command-palette-list button.selected:not(:disabled) {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.slash-command-menu button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.slash-command-menu button.selected {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}

@@ -1,0 +1,20 @@
+.diff-file-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: color-mix(in srgb,var(--panel) 82%,transparent);
+  border-right: 1px solid var(--border);
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 14px 18px;
+  background: var(--panel);
+}

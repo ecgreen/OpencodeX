@@ -1,0 +1,47 @@
+.status.busy {
+  border-color: color-mix(in srgb,var(--blue) 34%,var(--line));
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.status.running {
+  border-color: color-mix(in srgb,var(--blue) 34%,var(--line));
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.status.in-progress {
+  border-color: color-mix(in srgb,var(--blue) 34%,var(--line));
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.status.queued {
+  border-color: color-mix(in srgb,var(--blue) 34%,var(--line));
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.status.blocked {
+  border-color: color-mix(in srgb,var(--amber) 36%,var(--line));
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.status.approval-needed {
+  border-color: color-mix(in srgb,var(--amber) 36%,var(--line));
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.status.input-needed {
+  border-color: color-mix(in srgb,var(--amber) 36%,var(--line));
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.status.needs-input {
+  border-color: color-mix(in srgb,var(--amber) 36%,var(--line));
+  color: var(--amber);
+  background: var(--amber-soft);
+}

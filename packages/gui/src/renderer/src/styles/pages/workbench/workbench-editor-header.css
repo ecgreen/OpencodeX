@@ -1,0 +1,31 @@
+.workbench-editor>header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.workbench-editor>header .row-actions {
+  gap: 6px;
+}
+
+.workbench-editor>header .row-actions>button[aria-pressed=true] {
+  color: var(--brand);
+  border-color: color-mix(in srgb,var(--brand) 45%,var(--line));
+  background: var(--brand-soft);
+}
+
+.workbench-editor>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--workbench-border-soft);
+  padding: 5px 8px;
+  min-height: 46px;
+  padding-block: 8px;
+  border-bottom-color: var(--line-soft);
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--panel);
+}

@@ -1,0 +1,15 @@
+.new-button:hover .icon {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 8px color-mix(in srgb,var(--theme-accent) 28%,transparent));
+}
+
+.new-button:focus-visible .icon {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 8px color-mix(in srgb,var(--theme-accent) 28%,transparent));
+}
+
+.icon-button:hover {
+  color: var(--text);
+  border-color: var(--border-active);
+  background: var(--theme-surface);
+}

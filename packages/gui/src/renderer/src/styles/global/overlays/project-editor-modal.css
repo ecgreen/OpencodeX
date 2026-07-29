@@ -1,0 +1,43 @@
+.project-editor-modal {
+  width: min(720px,calc(100vw - 36px));
+  border-color: color-mix(in srgb,var(--primary) 28%,var(--border-active));
+  border-radius: 8px;
+  background: var(--theme-surface);
+  box-shadow: 0 24px 90px var(--theme-shadow-medium);
+}
+
+.project-editor-modal>header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.project-editor-modal>header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.project-editor-modal>header p {
+  max-width: 62ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.project-editor-modal>header .ui-icon-button {
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-editor-modal .dialog-actions {
+  justify-content: flex-end;
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--border-subtle);
+}

@@ -1,0 +1,58 @@
+.rail-section header[data-rail-section-id=projects] {
+  --project-row-color: var(--secondary) ;
+}
+
+.project-heading :is(.project-toggle,.project-title) {
+  color: var(--project-row-color);
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle,.project-title):hover {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading :is(.project-toggle,.project-title):focus-visible {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:hover :is(.project-toggle,.project-title) {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:focus-within :is(.project-toggle,.project-title) {
+  color: color-mix(in srgb,var(--project-row-color) 86%,var(--text));
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-heading:hover {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--project-row-color) 34%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--project-row-color) 13%,transparent),transparent 52%),color-mix(in srgb,var(--panel) 91%,var(--project-row-color) 9%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--project-row-color) 16%,transparent);
+}
+
+.project-heading:focus-within {
+  transform: translateY(0);
+  border-color: color-mix(in srgb,var(--project-row-color) 34%,var(--border-subtle));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--project-row-color) 13%,transparent),transparent 52%),color-mix(in srgb,var(--panel) 91%,var(--project-row-color) 9%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--project-row-color) 16%,transparent);
+}
+
+.project-group.dropping {
+  box-shadow: inset 0 2px 0 var(--primary);
+  border-radius: 0;
+}
+
+.project-heading.dragging {
+  cursor: grabbing;
+  background: var(--theme-surface);
+  border-radius: 0;
+}

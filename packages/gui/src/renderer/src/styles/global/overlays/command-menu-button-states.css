@@ -1,0 +1,51 @@
+.slash-command-menu button:hover:not(:disabled) {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+.slash-command-menu button.selected:not(:disabled) {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+.slash-command-menu button:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.composer-add-menu button:hover {
+  border-color: var(--border-subtle);
+  background: var(--theme-overlay-soft);
+}
+
+.composer-add-menu button.selected {
+  border-color: var(--border-subtle);
+  background: var(--theme-overlay-soft);
+}
+
+.composer-add-menu button:nth-child(2).selected {
+  color: var(--theme-special);
+}
+
+.composer-add-menu button:nth-child(2):hover {
+  color: var(--theme-special);
+}
+
+.variant-menu button:hover {
+  color: var(--warning);
+  background: color-mix(in srgb,var(--theme-accent) 11%,transparent);
+}
+
+.variant-menu button.selected {
+  color: var(--warning);
+  background: color-mix(in srgb,var(--theme-accent) 11%,transparent);
+}
+
+.command-palette-list button.suggested:not(:disabled) {
+  border-color: var(--theme-border);
+}
+
+.command-palette-list button:disabled {
+  cursor: default;
+  opacity: .5;
+}

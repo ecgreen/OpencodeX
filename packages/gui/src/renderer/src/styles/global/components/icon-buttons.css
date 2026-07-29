@@ -1,0 +1,71 @@
+/* Chrome-free: the pin is an icon in a row, never a button-looking control,
+   so no border, fill, or selected-state ring survives here. */
+.pin-toggle {
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+  opacity: .42;
+  transition: opacity .14s ease,color .14s ease,background .14s ease;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.icon-button {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.row-actions button .icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.mode-chip .icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.variant-trigger .icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.action-plus {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  border: 1px solid color-mix(in srgb,var(--action-color) 32%,var(--line));
+  border-radius: 8px;
+  color: var(--action-color);
+  background: color-mix(in srgb,var(--action-color) 10%,transparent);
+}
+
+.action-plus .icon {
+  width: 16px;
+  height: 16px;
+}

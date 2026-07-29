@@ -1,0 +1,56 @@
+.workbench-tree {
+  min-height: 0;
+  overflow: auto;
+  padding: 3px 0 10px;
+}
+
+.workbench-file-row {
+  display: grid;
+  grid-template-columns: 14px 16px minmax(0,1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 23px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--workbench-text);
+  padding: 2px 8px 2px calc(8px + (var(--depth) * 14px));
+  font-family: Cascadia Code,JetBrains Mono,SFMono-Regular,Consolas,monospace;
+  font-size: 12px;
+  text-align: left;
+  animation: workbench-tree-row-in .14s cubic-bezier(.16,1,.3,1);
+  transition: background .14s ease,color .14s ease,padding-left .18s cubic-bezier(.16,1,.3,1);
+}
+
+.workbench-file-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-file-row.directory {
+  color: var(--theme-text);
+}
+
+.workbench-disclosure {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+}
+
+.workbench-tree-spacer {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+}
+
+.workbench-disclosure .icon {
+  width: 13px;
+  height: 13px;
+  transition: transform .16s cubic-bezier(.16,1,.3,1);
+}
+
+.workbench-file-row.expanded .workbench-disclosure .icon {
+  transform: rotate(0);
+}

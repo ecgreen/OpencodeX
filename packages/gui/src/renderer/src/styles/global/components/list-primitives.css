@@ -1,0 +1,62 @@
+.card-row.interactive {
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.nav-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.section-chevron {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.virtual-list {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.virtual-list-spacer {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.virtual-list-row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.section-new {
+  justify-self: end;
+  opacity: 0;
+  pointer-events: none;
+  letter-spacing: normal;
+  text-transform: none;
+  transition: opacity .14s ease,color .14s ease;
+  white-space: nowrap;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 6px;
+}

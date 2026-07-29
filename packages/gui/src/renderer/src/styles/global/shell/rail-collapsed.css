@@ -1,0 +1,50 @@
+.rail-collapsed .quick-actions {
+  display: none;
+}
+
+.rail-collapsed .rail-scroll {
+  display: none;
+}
+
+.rail-collapsed .nav-label {
+  display: none;
+}
+
+.rail-collapsed .nav button small {
+  display: none;
+}
+
+.rail-section header button {
+  border: 0;
+  border-radius: 4px;
+  color: var(--primary);
+  background: transparent;
+}
+
+.rail-section-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  transition: grid-template-rows var(--ds-motion-route) cubic-bezier(.22,1,.36,1),opacity var(--ds-motion-control) ease,transform var(--ds-motion-route) cubic-bezier(.22,1,.36,1);
+}
+
+.rail-section-content>div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rail-section-content.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+}
+
+.rail-section header .section-new {
+  color: var(--theme-text);
+}
+
+.app-shell.rail-collapsed {
+  grid-template-columns: 76px minmax(0,1fr);
+}

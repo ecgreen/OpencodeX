@@ -1,0 +1,26 @@
+.opencodex-logo-line {
+  display: flex;
+  height: 1em;
+}
+
+.opencodex-logo-run {
+  display: flex;
+}
+
+.opencodex-logo-gap {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  line-height: 1;
+  white-space: pre;
+}
+
+.opencodex-logo-cell {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  line-height: 1;
+  white-space: pre;
+  overflow: hidden;
+  text-align: left;
+}

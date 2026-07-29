@@ -1,0 +1,48 @@
+.message {
+  position: relative;
+  border-left: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  margin: 0 0 10px;
+  /* Chromium skips layout, style, and paint for messages scrolled out of the
+     transcript viewport. The intrinsic size keeps the scrollbar stable while a
+     message is skipped, and `auto` lets the real height replace it once it has
+     been rendered at least once. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
+.message.assistant {
+  border-left: 0;
+  padding-left: 24px;
+  display: grid;
+  /* See .message.user: the implicit column must never track max-content. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+}
+
+.assistant-thinking-message {
+  margin-top: -2px;
+}
+
+.assistant-thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  min-height: 26px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.assistant-thinking-indicator span {
+  color: transparent;
+  background: linear-gradient(110deg,color-mix(in srgb,var(--muted) 82%,var(--text) 18%) 0%,color-mix(in srgb,var(--muted) 48%,var(--text) 52%) 36%,var(--text) 50%,color-mix(in srgb,var(--muted) 42%,var(--text) 58%) 64%,color-mix(in srgb,var(--muted) 82%,var(--text) 18%) 100%);
+  background-size: 340% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  letter-spacing: .01em;
+  animation: thinking-gradient 3.4s cubic-bezier(.45,0,.2,1) infinite;
+}

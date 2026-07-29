@@ -1,0 +1,118 @@
+.dashboard-item-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -.005em;
+}
+
+.dashboard-status-card strong {
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-unviewed strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-ready-for-review strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-needs-review strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  transition: none;
+  color: var(--text);
+  background: none;
+  animation: none;
+  text-shadow: none;
+}
+
+.dashboard-status-card.status-unviewed {
+  --session-card-bg: linear-gradient(90deg, var(--purple-soft), var(--surface) 48%);
+  background: transparent;
+  --card-accent: var(--purple);
+  --session-state-color: var(--info) ;
+}
+
+.dashboard-status-card.status-ready-for-review {
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+  background: linear-gradient(90deg,var(--blue-soft),var(--surface) 58%);
+  --card-accent: var(--blue);
+  --session-state-color: var(--info) ;
+}
+
+.dashboard-status-card.status-needs-review {
+  background: transparent;
+  --card-accent: var(--purple);
+  --session-state-color: var(--info) ;
+}
+
+.dashboard-item-card span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 470;
+}
+
+.dashboard-item-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 470;
+}
+
+.dashboard-item-card footer {
+  min-width: 0;
+  overflow: hidden;
+  align-self: end;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}

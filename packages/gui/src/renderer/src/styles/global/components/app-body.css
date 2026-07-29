@@ -1,0 +1,34 @@
+@keyframes workbench-assistant-in {
+  0% {
+    opacity: 0;
+    transform: translate(16px) scaleX(.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(0) scaleX(1);
+  }
+}
+
+@keyframes workbench-assistant-out {
+  0% {
+    opacity: 1;
+    transform: translate(0) scaleX(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate(18px) scaleX(.985);
+  }
+}
+
+body {
+  margin: 0;
+  min-width: 720px;
+  min-height: 100vh;
+  overflow: hidden;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  background: var(--bg);
+}

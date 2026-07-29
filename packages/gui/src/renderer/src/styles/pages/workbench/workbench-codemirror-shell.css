@@ -1,0 +1,19 @@
+.workbench-codemirror {
+  overflow: hidden;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench-codemirror .cm-editor {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench-codemirror .cm-scroller {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+}

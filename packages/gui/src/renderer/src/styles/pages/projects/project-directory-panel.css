@@ -1,0 +1,85 @@
+.project-directory-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb,var(--border) 76%,transparent);
+  border-radius: 8px;
+  background: var(--theme-surface);
+}
+
+.project-home-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb,var(--border) 76%,transparent);
+  border-radius: 8px;
+  background: var(--theme-surface);
+}
+
+.project-directory-panel>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.project-home-panel>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.project-directory-panel h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.project-home-panel>header strong {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.project-directory-panel header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.project-home-panel header small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.project-home-session-panel>header button {
+  display: grid;
+  grid-template-columns: 16px minmax(0,1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+}
+
+.project-home-session-panel>header button .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  transition: color .16s ease;
+}
+
+.project-home-session-panel>header button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,29 @@
+.transcript {
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-overlay-strong) transparent;
+  flex: 1 1 auto;
+  overflow: auto;
+  overflow-anchor: none;
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: 12px 14px;
+  min-width: 0;
+  min-height: 0;
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.transcript-shell {
+  position: relative;
+  display: grid;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: none;
+}

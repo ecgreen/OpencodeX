@@ -1,0 +1,67 @@
+.dashboard-page {
+  min-width: 0;
+  overflow-x: hidden;
+  align-content: start;
+  background: var(--bg);
+  grid-template-rows: auto minmax(0,1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+  margin: 0;
+  gap: 24px;
+  padding: clamp(14px,2vw,28px);
+}
+
+.dashboard-sections {
+  display: grid;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  grid-template-rows: repeat(2,minmax(0,1fr));
+  align-items: stretch;
+  gap: 24px;
+}
+
+.dashboard-section {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  min-height: 0;
+  box-shadow: none;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}
+
+.dashboard-section>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+  min-height: 32px;
+}
+
+.dashboard-section .section-collapse {
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 660;
+}
+
+.dashboard-card-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill,minmax(min(280px,100%),1fr));
+  gap: 8px;
+}
+
+.dashboard-card-grid.compact {
+  grid-template-columns: repeat(auto-fill,minmax(min(260px,100%),1fr));
+}

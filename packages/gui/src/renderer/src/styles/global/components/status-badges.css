@@ -1,0 +1,56 @@
+/* Element resets for button, textarea, and input moved to design-base.css.
+   In this layer they outranked the primitives layer and clobbered every
+   control's typography. */
+
+.loading-card {
+  padding: 18px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.empty {
+  padding: 18px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 820;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  min-height: 22px;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.chip {
+  border: 1px solid var(--border-subtle);
+  color: var(--muted);
+  font-weight: 800;
+  padding: 4px 7px;
+  border-color: var(--theme-border);
+  font-size: 10px;
+  min-height: 22px;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}

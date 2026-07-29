@@ -1,0 +1,35 @@
+.workbench-diff-panel>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--workbench-border-soft);
+  padding: 6px 8px;
+}
+
+.workbench-diff-panel>header>div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workbench-diff-panel span {
+  overflow: hidden;
+  color: var(--workbench-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-diff-preview pre {
+  margin: 0;
+  padding: 14px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.workbench-diff-refreshing {
+  position: relative;
+  min-height: 0;
+}

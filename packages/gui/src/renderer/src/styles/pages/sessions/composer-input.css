@@ -1,0 +1,58 @@
+.composer {
+  display: grid;
+  grid-template-columns: 1fr;
+  border: 0;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+}
+
+.composer-input {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px 11px;
+  border-left: 3px solid var(--secondary);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: var(--border-active);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: none;
+  transition: border-color var(--motion-control) ease,box-shadow var(--motion-control) ease;
+}
+
+/* On the light slate ramp the raised token still reads too bright for a
+   surface this large; the composer sits on a light slate gray - a step above
+   the canvas so it stands out, without the blue cast of the surface ramp. */
+:root[data-theme="light"] .composer-input {
+  background: var(--theme-surface-composer);
+  border-color: var(--theme-border-composer);
+}
+
+.composer-input.build {
+  border-left-color: var(--border);
+}
+
+.composer-input.plan {
+  border-left-color: var(--border);
+}
+
+.composer-input.goal {
+  border-left-color: var(--border);
+}
+
+.composer textarea {
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  outline: none;
+  scrollbar-color: var(--border-active) transparent;
+  min-height: 46px;
+  padding: 10px 12px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  line-height: 1.55;
+}

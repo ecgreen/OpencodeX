@@ -1,0 +1,26 @@
+.workbench-panel>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--workbench-border-soft);
+  min-height: 36px;
+  padding: 5px 8px;
+  background: linear-gradient(180deg,var(--theme-overlay-subtle),transparent),var(--workbench-panel);
+}
+
+.workbench-panel>header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-editor>header span {
+  color: var(--workbench-muted);
+  font-size: 12px;
+}
+
+.workbench-panel>header span {
+  color: var(--workbench-muted);
+  font-size: 12px;
+}

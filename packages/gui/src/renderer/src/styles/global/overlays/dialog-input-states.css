@@ -1,0 +1,30 @@
+.command-palette-modal header button:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.dialog-card input:not([data-embedded="true"]):focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.dialog-card textarea:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.command-palette-modal>input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.model-picker-modal input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}
+
+.keyboard-help-modal>input:focus {
+  border-color: color-mix(in srgb,var(--ring) 70%,var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent);
+}

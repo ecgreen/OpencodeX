@@ -1,0 +1,124 @@
+.dashboard-sections .dashboard-item-card {
+  background: var(--bg);
+}
+
+.dashboard-session-groups .dashboard-item-card {
+  background: var(--bg);
+}
+
+.dashboard-status-card {
+  --session-state-color: var(--theme-text-muted);
+  align-content: space-between;
+  gap: 5px;
+  border-left-color: var(--session-state-color);
+  cursor: pointer;
+  min-height: 82px;
+  height: 82px;
+  padding: 12px 38px 10px 13px;
+  border-left: 1px solid var(--line);
+  border-color: var(--line);
+  border-radius: 0;
+  --session-card-bg: transparent;
+  background: transparent;
+}
+
+.dashboard-status-card.status-dormant {
+  --session-state-color: var(--muted);
+  background: transparent;
+}
+
+.dashboard-status-card.status-in-progress {
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+  background: transparent;
+  --session-state-color: var(--blue);
+  --card-accent: var(--blue) ;
+}
+
+.dashboard-status-card.status-input-needed {
+  --session-card-bg: linear-gradient(90deg, var(--amber-soft), var(--surface) 48%);
+  background: transparent;
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-status-card.status-failed {
+  --session-state-color: var(--danger);
+  --session-card-bg: linear-gradient(90deg, var(--danger-soft), var(--surface) 48%);
+  background: transparent;
+  --card-accent: var(--error) ;
+}
+
+.dashboard-page>.opencodex-logo {
+  justify-self: center;
+  margin: clamp(12px,3vh,32px) 0 clamp(4px,1.4vh,16px);
+  font-size: clamp(10px,1.35vw,17px);
+  opacity: .96;
+}
+
+.dashboard-action-card {
+  display: grid;
+  gap: 3px 12px;
+  color: var(--text);
+  text-align: left;
+  grid-template-columns: 24px minmax(0,1fr) auto;
+  grid-template-rows: auto auto;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--action-color, var(--border-active));
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  transform: none;
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  overflow: hidden;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-item-card.interactive {
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-status-card.interactive {
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.dashboard-status-card.status-input-needed strong {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: linear-gradient(100deg,var(--session-state-color) 0%,var(--session-state-color) 42%,color-mix(in srgb,var(--session-state-color) 28%,white) 49%,var(--theme-surface) 53%,color-mix(in srgb,var(--session-state-color) 28%,white) 57%,var(--session-state-color) 64%,var(--session-state-color) 100%);
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: sidebar-title-shimmer 3.4s linear infinite;
+  text-shadow: 0 0 16px color-mix(in srgb,var(--session-state-color) 28%,transparent);
+  transition: none;
+}
+
+.dashboard-status-card.status-cancelling {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-status-card.status-retrying {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}
+
+.dashboard-status-card.status-partially-failed {
+  --session-state-color: var(--amber);
+  --card-accent: var(--amber) ;
+}

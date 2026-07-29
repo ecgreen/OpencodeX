@@ -1,0 +1,47 @@
+.rail-project-row {
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+}
+
+.project-heading .project-toggle {
+  color: var(--text);
+}
+
+.project-heading .project-title {
+  color: var(--text);
+}
+
+.dashboard-item-card.project-card {
+  border-left-color: var(--primary);
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  --card-accent: var(--primary);
+  position: relative;
+  min-height: 92px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: none;
+  transform: none;
+  transition: border-color var(--motion-hover) ease,background var(--motion-hover) ease;
+}
+
+.dashboard-project-open {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  width: 100%;
+  min-height: 90px;
+  align-items: stretch;
+  padding: 14px 42px 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+}

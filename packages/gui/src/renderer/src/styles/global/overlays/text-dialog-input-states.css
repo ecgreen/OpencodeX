@@ -1,0 +1,9 @@
+.dialog-card.text-dialog-card>input:focus {
+  border-color: color-mix(in srgb,var(--primary) 68%,var(--border-active));
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--primary) 18%,transparent);
+}
+
+.dialog-card.text-dialog-card>textarea:focus {
+  border-color: color-mix(in srgb,var(--primary) 68%,var(--border-active));
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--primary) 18%,transparent);
+}

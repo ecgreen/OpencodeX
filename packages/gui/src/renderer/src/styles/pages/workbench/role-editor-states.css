@@ -1,0 +1,19 @@
+.session-main :is(.transcript-shell a[href],.session-side-context a[href],[data-side-panel-file],[data-side-panel-git-file],[data-side-panel-open-file]) {
+  cursor: pointer;
+}
+
+.role-editor-card :is(p,span,small,strong) {
+  transition: color .14s ease;
+}
+
+.role-editor-card:hover :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.role-editor-card:focus-within :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.project-editor-folder-row:first-child {
+  border-top: 0;
+}

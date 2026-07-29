@@ -1,0 +1,144 @@
+.manager-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.manager-page-header h1 {
+  margin: 0;
+}
+
+.manager-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.manager-section>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manager-section>header>div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.manager-section>header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(220px,1fr));
+  gap: 12px;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.full-width-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-grid input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.form-grid select {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.full-width-field input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+@keyframes view-row-move-up {
+  0% {
+    transform: translateY(0);
+  }
+
+  45% {
+    transform: translateY(-10px);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes view-row-move-down {
+  0% {
+    transform: translateY(0);
+  }
+
+  45% {
+    transform: translateY(10px);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.manager-table {
+  display: grid;
+  gap: 8px;
+}
+
+.manager-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.manager-row small {
+  color: var(--muted);
+}
+
+.page-actions {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}

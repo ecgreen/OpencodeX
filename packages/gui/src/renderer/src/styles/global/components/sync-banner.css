@@ -1,0 +1,20 @@
+.sync-status-banner {
+  display: flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-block: 1px solid color-mix(in srgb,var(--warning) 48%,var(--border));
+  color: var(--text);
+  background: color-mix(in srgb,var(--warning) 10%,var(--panel));
+}
+
+.sync-status-banner span {
+  min-width: 0;
+}
+
+.sync-status-banner button {
+  flex: 0 0 auto;
+}

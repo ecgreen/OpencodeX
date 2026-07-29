@@ -1,0 +1,25 @@
+.drag-handle:hover {
+  color: var(--text);
+  border-color: var(--border-active);
+  background: var(--theme-surface);
+}
+
+.draggable-row:active {
+  cursor: grabbing;
+}
+
+.draggable-row:hover .drag-handle {
+  opacity: 1;
+}
+
+.drag-handle:focus-visible {
+  opacity: 1;
+}
+
+.draggable-row.dropping.drop-after {
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.status-dot.failed {
+  background: var(--error);
+}

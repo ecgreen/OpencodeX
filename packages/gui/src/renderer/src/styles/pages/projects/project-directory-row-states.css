@@ -1,0 +1,27 @@
+.project-directory-row:last-child {
+  border-bottom: 0;
+}
+
+.project-directory-row:hover {
+  background: color-mix(in srgb,var(--element) 46%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.project-directory-row:focus-within {
+  background: color-mix(in srgb,var(--element) 46%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.project-directory-row.dragging {
+  opacity: .26;
+  background: color-mix(in srgb,var(--panel) 74%,var(--theme-canvas) 26%);
+  cursor: grabbing;
+}
+
+.project-directory-row.dropping {
+  box-shadow: inset 0 3px 0 var(--primary),inset 3px 0 0 var(--primary);
+}
+
+.project-directory-row.dropping.drop-after {
+  box-shadow: inset 0 -3px 0 var(--primary),inset 3px 0 0 var(--primary);
+}

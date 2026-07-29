@@ -1,0 +1,48 @@
+.app-loading-title[data-short=true] {
+  width: min(58%,280px);
+}
+
+.app-loading-line:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-control:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-icon-control:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-pin:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.app-loading-bucket-chevron:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-info) 14%,transparent),transparent);
+  transform: translate(-115%);
+  animation: app-loading-skeleton-shimmer 1.35s ease-in-out infinite;
+}

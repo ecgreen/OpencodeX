@@ -1,0 +1,30 @@
+.transcript.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.session-link.nested {
+  margin-left: 0;
+  width: 100%;
+}
+
+.session-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-link-shell .pin-toggle {
+  position: absolute;
+  top: 4px;
+  right: 7px;
+  z-index: 2;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}

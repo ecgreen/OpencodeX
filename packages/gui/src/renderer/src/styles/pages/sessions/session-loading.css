@@ -1,0 +1,121 @@
+.session-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  min-height: 0;
+  padding: 48px 20px 240px;
+  color: var(--muted);
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px) scale(.985);
+  background: radial-gradient(circle at 50% 34%,color-mix(in srgb,var(--theme-accent) 10%,transparent),transparent 32%),linear-gradient(180deg,var(--theme-overlay-subtle),transparent 38%);
+  transition: opacity 1.3s cubic-bezier(.16,1,.3,1),transform 1.3s cubic-bezier(.16,1,.3,1),visibility 0s linear 1.3s;
+}
+
+.session-empty-state.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition: opacity .18s ease,transform .22s cubic-bezier(.16,1,.3,1);
+}
+
+.session-empty-state.handoff {
+  background: radial-gradient(circle at 50% 34%,color-mix(in srgb,var(--muted) 12%,transparent),transparent 34%),linear-gradient(180deg,color-mix(in srgb,var(--bg) 8%,transparent),transparent 42%);
+}
+
+.session-empty-state .opencodex-logo {
+  margin: 0;
+  font-size: clamp(9px,1.34vw,22px);
+}
+
+.session-empty-state h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(24px,4vw,42px);
+  letter-spacing: -.05em;
+}
+
+.session-empty-state p {
+  max-width: 560px;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.session-loading-spinner {
+  width: 58px;
+  height: 58px;
+  border: 5px solid color-mix(in srgb,var(--theme-accent) 18%,transparent);
+  border-top-color: var(--theme-accent);
+  border-right-color: var(--theme-accent);
+  border-radius: 999px;
+  animation: composer-spinner .76s linear infinite;
+  box-shadow: 0 0 40px color-mix(in srgb,var(--theme-accent) 26%,transparent);
+}
+
+.session-loading-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  background: linear-gradient(180deg,color-mix(in srgb,var(--bg) 94%,transparent),color-mix(in srgb,var(--bg) 86%,transparent)),radial-gradient(circle at 62% 8%,color-mix(in srgb,var(--secondary) 9%,transparent),transparent 36%),var(--bg);
+  transition: opacity .14s ease,visibility 0s linear .14s;
+}
+
+.session-loading-skeleton.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 90ms ease;
+}
+
+.session-loading-skeleton-stack {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  min-height: 100%;
+  padding: 10px 12px;
+}
+
+.session-loading-skeleton-message {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-height: 86px;
+  padding: 0 0 0 24px;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.session-loading-skeleton-line {
+  position: relative;
+  overflow: hidden;
+  width: 84%;
+  height: 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--muted) 18%,transparent);
+}
+
+.session-loading-skeleton-line.title {
+  width: 34%;
+  height: 8px;
+  margin-bottom: 3px;
+  background: color-mix(in srgb,var(--text) 14%,transparent);
+}
+
+.session-loading-skeleton-line.short {
+  width: 58%;
+}

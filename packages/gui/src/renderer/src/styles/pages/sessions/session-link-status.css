@@ -1,0 +1,26 @@
+.session-link.status-in-progress {
+  border-left-color: var(--session-state-color);
+  padding-right: 34px;
+  --session-state-color: var(--blue);
+  --session-card-bg: linear-gradient(90deg, var(--blue-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--blue) 22%, transparent), var(--session-active-surface) 48%) ;
+}
+
+.session-link.status-input-needed {
+  border-left-color: var(--session-state-color);
+  --session-state-color: var(--amber);
+  --session-card-bg: linear-gradient(90deg, var(--amber-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--amber) 22%, transparent), var(--session-active-surface) 48%) ;
+}
+
+.session-link.status-failed {
+  border-left-color: var(--session-state-color);
+  --session-state-color: var(--danger);
+  --session-card-bg: linear-gradient(90deg, var(--danger-soft), var(--surface) 48%);
+  --session-active-bg: linear-gradient(90deg, color-mix(in srgb, var(--danger) 22%, transparent), var(--session-active-surface) 48%) ;
+}
+
+.rail-session {
+  background: var(--bg);
+  box-shadow: none;
+}

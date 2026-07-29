@@ -1,0 +1,16 @@
+.nav.nav-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  width: 44px;
+  padding: 4px;
+  overflow: hidden;
+}
+
+.nav.nav-collapsed button {
+  flex: 0 0 34px;
+  width: 34px;
+  min-height: 34px;
+  height: 34px;
+  padding: 8px;
+}

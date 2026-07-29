@@ -1,0 +1,24 @@
+.model-menu:before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--muted) 72%,transparent);
+}
+
+.model-menu:hover:not(:disabled) {
+  color: var(--primary);
+  transform: translateY(-1px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}
+
+.model-menu:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.12);
+}

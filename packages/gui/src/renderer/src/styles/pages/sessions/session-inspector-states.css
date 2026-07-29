@@ -1,0 +1,16 @@
+.session-link-shell:hover .pin-toggle {
+  opacity: 1;
+}
+
+.session-link-shell:focus-within .pin-toggle {
+  opacity: 1;
+}
+
+.session-inspector-section:first-child {
+  padding-top: 0;
+}
+
+.session-inspector-section:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}

@@ -1,0 +1,31 @@
+.transcript-shell>.transcript {
+  grid-area: 1 / 1;
+  height: 100%;
+}
+
+.transcript-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.transcript-load-more-anchor {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 14px;
+}
+
+.transcript-page-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: color-mix(in srgb,var(--theme-accent) 86%,transparent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.transcript-page-loader .session-loading-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}

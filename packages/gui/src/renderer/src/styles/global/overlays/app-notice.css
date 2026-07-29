@@ -1,0 +1,25 @@
+.app-notice {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(520px,calc(100vw - 40px));
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb,var(--accent) 52%,var(--border));
+  border-radius: 12px;
+  color: var(--text);
+  background: color-mix(in srgb,var(--panel) 94%,black);
+  box-shadow: 0 18px 50px var(--theme-shadow-medium);
+}
+
+.app-notice button {
+  flex: 0 0 auto;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+}

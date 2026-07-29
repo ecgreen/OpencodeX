@@ -1,0 +1,35 @@
+.project-drag-preview-heading {
+  display: grid;
+  grid-template-columns: 24px minmax(0,1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 9px;
+}
+
+.project-drag-preview-heading strong {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.project-drag-preview-sessions {
+  display: grid;
+  gap: 3px;
+  padding: 0 9px 8px 31px;
+}
+
+.views-manager-page {
+  overflow: auto;
+  background: var(--bg);
+}
+
+.dashboard-project-view-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}

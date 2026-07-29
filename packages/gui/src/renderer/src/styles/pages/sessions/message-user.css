@@ -1,0 +1,52 @@
+.message header {
+  font-weight: 800;
+  margin: 0 0 5px;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.message.user {
+  border-left-color: var(--primary);
+  border-left: 0;
+  display: grid;
+  /* The implicit column would size to max-content, so one long unbreakable
+     line in any part would widen every sibling past the viewport. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  align-self: flex-end;
+  justify-self: end;
+  width: min(760px,88%);
+  max-width: 92%;
+  margin-left: auto;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb,var(--element) 84%,white 5%);
+  box-shadow: 0 1px var(--theme-overlay-subtle) inset;
+}
+
+.message.user header {
+  order: 2;
+  margin: 7px 0 0;
+  padding-left: 0;
+  color: color-mix(in srgb,var(--text) 48%,var(--muted));
+  font-size: 10px;
+  text-align: right;
+}
+
+.message.user .part {
+  order: 1;
+}
+
+.message.user .part.text {
+  color: var(--text);
+}
+
+.message.assistant .part.text {
+  padding: 0;
+  background: transparent;
+}

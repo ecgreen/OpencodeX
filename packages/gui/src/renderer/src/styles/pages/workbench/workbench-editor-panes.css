@@ -1,0 +1,19 @@
+.workbench-loading {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.workbench-editor>.workbench-codemirror {
+  flex: 1;
+  min-height: 0;
+}
+
+.workbench-editor>.workbench-placeholder {
+  flex: 1;
+  min-height: 0;
+}
+
+.workbench-editor>.workbench-image-preview {
+  flex: 1;
+  min-height: 0;
+}

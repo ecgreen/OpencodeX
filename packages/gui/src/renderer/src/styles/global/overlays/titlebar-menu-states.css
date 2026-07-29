@@ -1,0 +1,21 @@
+.titlebar-menu-trigger:hover {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-menu-trigger:focus-visible {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.titlebar-menu-trigger[data-expanded] {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 84%,transparent);
+}
+
+.app-notice.error {
+  border-color: color-mix(in srgb,var(--danger) 68%,var(--border));
+}

@@ -1,0 +1,45 @@
+.session-toolbar .session-titleline {
+  align-self: center;
+  min-height: 28px;
+}
+
+.session-toolbar .session-titleline>div {
+  display: grid;
+  align-content: center;
+  min-height: 28px;
+}
+
+.session-toolbar .session-titleline h1 {
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.session-toolbar .session-titleline p {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.session-toolbar .session-actions.compact {
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.session-toolbar .session-actions.compact>* {
+  align-self: center;
+}
+
+.session-toolbar .session-side-panel-toggle {
+  border-color: color-mix(in srgb,var(--line-strong) 84%,transparent);
+  color: color-mix(in srgb,var(--muted) 82%,var(--text));
+  background: linear-gradient(180deg,var(--theme-overlay-subtle),transparent),color-mix(in srgb,var(--surface-raised) 82%,var(--bg));
+}
+
+.session-toolbar .session-side-panel-toggle[aria-pressed=true] {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--line-strong));
+  color: color-mix(in srgb,var(--secondary) 82%,white);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 18%,transparent),transparent),color-mix(in srgb,var(--surface-raised) 74%,var(--secondary) 18%);
+  box-shadow: 0 0 0 1px color-mix(in srgb,var(--secondary) 24%,transparent),0 10px 24px color-mix(in srgb,var(--secondary) 14%,transparent);
+}

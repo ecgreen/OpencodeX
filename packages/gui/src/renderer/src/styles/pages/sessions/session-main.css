@@ -1,0 +1,22 @@
+.session-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  gap: 0;
+  padding: 8px 10px 10px;
+}
+
+.session-workspace {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0,1fr) auto auto;
+  grid-template-columns: minmax(0,1fr);
+  flex: 1 1 auto;
+  /* The transcript column never compresses below this; the side panel yields
+     first. All part components are verified to contain themselves at 400px
+     (lab.html?page=transcript). */
+  min-width: 400px;
+  min-height: 0;
+  gap: 8px;
+}

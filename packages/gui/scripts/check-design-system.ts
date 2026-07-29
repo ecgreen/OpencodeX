@@ -147,8 +147,25 @@ async function duplicateSelectors(files: string[]) {
   return findings
 }
 
+// A stylesheet is named for what it styles. A trailing counter is a split that
+// never got a name: it says nothing about the rules inside, and it hides the
+// fact that the manifest in styles.css - not the filename - owns cascade order.
+// Hard failure with no baseline, so it can never be ratcheted around.
+function numberedStylesheets(files: string[]) {
+  return files
+    .map((file) => relative(file))
+    .filter((file) => file.startsWith("src/renderer/src/styles/") && /-\d+\.css$/.test(file))
+    .sort()
+}
+
 async function fullScan() {
   const files = await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx,css}").scan({ cwd: rendererRoot, absolute: true }))
+  const numbered = numberedStylesheets(files)
+  if (numbered.length > 0) {
+    throw new Error(
+      `Stylesheets are named for what they style, not for the order a split happened in:\n${numbered.join("\n")}\nRename each file after the rules it owns, and rewrite its @import in src/renderer/src/styles.css in place so the cascade order is unchanged.`,
+    )
+  }
   const findings = [
     ...(await Promise.all(files.map(async (file) => inspect(file, await Bun.file(file).text())))).flat(),
     ...(await duplicateSelectors(files)),

@@ -1,0 +1,53 @@
+.diff-patch-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.diff-patch-file {
+  display: flex;
+  flex-direction: column;
+  min-height: min(720px,100%);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.diff-file-header>div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.diff-file-header strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diff-file-header span {
+  color: var(--muted);
+}
+
+.diff-patch {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.diff-patch pre {
+  margin: 0;
+  padding: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.diff-empty {
+  display: grid;
+  place-items: center;
+  flex: 1 1 0;
+  min-height: 180px;
+  color: var(--muted);
+}

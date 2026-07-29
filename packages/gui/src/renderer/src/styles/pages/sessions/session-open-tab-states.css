@@ -1,0 +1,147 @@
+.session-open-tab-button.dragging {
+  opacity: .24;
+  cursor: grabbing;
+}
+
+.session-open-tab-button:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb,var(--border-active) 34%,transparent);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 4%,transparent),transparent),color-mix(in srgb,var(--panel) 88%,var(--element));
+  transform: translateY(-1px);
+}
+
+.session-open-tab-button:focus-visible {
+  color: var(--text);
+  border-color: color-mix(in srgb,var(--border-active) 34%,transparent);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 4%,transparent),transparent),color-mix(in srgb,var(--panel) 88%,var(--element));
+  transform: translateY(-1px);
+}
+
+.session-open-tab-button.active {
+  color: var(--text);
+  border-color: color-mix(in srgb,var(--secondary) 34%,var(--border));
+  background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 7%,transparent),transparent 72%),color-mix(in srgb,var(--bg) 92%,var(--panel));
+  box-shadow: inset 0 -2px color-mix(in srgb,var(--secondary) 78%,white 5%),inset 0 1px color-mix(in srgb,var(--text) 5%,transparent),0 1px 10px color-mix(in srgb,var(--theme-shadow-medium) 18%,transparent);
+  transform: none;
+}
+
+.session-open-tab-button span:not(.session-open-tab-close) {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-tab-close:hover {
+  color: var(--error);
+  background: color-mix(in srgb,var(--error) 12%,transparent);
+}
+
+.session-open-tab-close:focus-visible {
+  color: var(--error);
+  background: color-mix(in srgb,var(--error) 12%,transparent);
+}
+
+.session-open-overflow-tab-panel button.active {
+  color: var(--text);
+  background: color-mix(in srgb,var(--accent) 14%,var(--element));
+}
+
+.session-open-bar:focus-within {
+  border-bottom-color: color-mix(in srgb,var(--blue) 62%,var(--border));
+  box-shadow: inset 0 -1px color-mix(in srgb,var(--blue) 44%,transparent);
+}
+
+.session-open-bar .ui-icon-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--secondary) 38%,var(--border));
+  color: var(--text);
+  background: color-mix(in srgb,var(--secondary) 9%,var(--panel));
+  transform: none;
+}
+
+.session-open-bar .ui-icon-button:focus-visible {
+  border-color: color-mix(in srgb,var(--secondary) 38%,var(--border));
+  color: var(--text);
+  background: color-mix(in srgb,var(--secondary) 9%,var(--panel));
+  transform: none;
+}
+
+.session-open-bar .ui-icon-button:disabled {
+  opacity: .42;
+}
+
+.session-open-location:focus-within {
+  border-color: color-mix(in srgb,var(--blue) 62%,var(--border));
+  color: color-mix(in srgb,var(--blue) 82%,white);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--blue) 15%,transparent),transparent 72%),color-mix(in srgb,var(--blue) 12%,var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--blue) 13%,transparent),inset 0 1px color-mix(in srgb,white 7%,transparent);
+}
+
+.session-open-empty-mark svg:first-child {
+  width: 36px;
+  height: 36px;
+}
+
+.session-open-empty-mark svg:last-child {
+  position: absolute;
+  right: -8px;
+  bottom: -7px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--bg);
+  padding: 4px;
+}
+
+.session-open-empty-actions button[data-empty-tone=git] {
+  --empty-action-tone: var(--success);
+  grid-column: 1 / -1;
+  grid-template-columns: 52px minmax(0,1fr);
+  min-height: 140px;
+  padding: 21px;
+}
+
+.session-open-empty-actions button[data-empty-tone=context] {
+  --empty-action-tone: var(--primary) ;
+}
+
+.session-open-empty-actions button[data-empty-tone=file] {
+  --empty-action-tone: var(--secondary) ;
+}
+
+.session-open-empty-actions button[data-empty-tone=web] {
+  --empty-action-tone: var(--blue) ;
+}
+
+.session-open-empty-actions button[data-empty-tone=git]>.icon {
+  width: 30px;
+  height: 30px;
+  padding: 10px;
+}
+
+.session-open-empty-actions button[data-empty-tone=git] strong {
+  font-size: 18px;
+}
+
+.session-open-empty-actions button[data-empty-tone=git] span {
+  max-width: 56ch;
+  font-size: 13px;
+}
+
+.session-open-empty-actions button:hover {
+  border-color: color-mix(in srgb,var(--empty-action-tone) 62%,var(--border));
+  background: linear-gradient(135deg,color-mix(in srgb,var(--empty-action-tone) 21%,transparent),transparent 60%),color-mix(in srgb,var(--panel) 94%,var(--bg));
+  box-shadow: 0 16px 34px color-mix(in srgb,var(--theme-shadow-medium) 28%,transparent),0 0 0 2px color-mix(in srgb,var(--empty-action-tone) 13%,transparent),inset 0 1px color-mix(in srgb,var(--text) 7%,transparent);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.session-open-empty-actions button:focus-visible {
+  border-color: color-mix(in srgb,var(--empty-action-tone) 62%,var(--border));
+  background: linear-gradient(135deg,color-mix(in srgb,var(--empty-action-tone) 21%,transparent),transparent 60%),color-mix(in srgb,var(--panel) 94%,var(--bg));
+  box-shadow: 0 16px 34px color-mix(in srgb,var(--theme-shadow-medium) 28%,transparent),0 0 0 2px color-mix(in srgb,var(--empty-action-tone) 13%,transparent),inset 0 1px color-mix(in srgb,var(--text) 7%,transparent);
+  outline: none;
+  transform: translateY(-1px);
+}

@@ -1,0 +1,70 @@
+.views-manager-page.has-active-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.views-manager-page.has-active-view .manager-page-header {
+  flex: 0 0 auto;
+  padding: 16px 18px 0;
+}
+
+.view-list-card .dashboard-card-open {
+  min-height: 54px;
+}
+
+.view-card-actions {
+  display: grid;
+  grid-template-columns: repeat(4,30px);
+  gap: 5px;
+}
+
+.views-index-header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: end;
+  gap: 16px;
+  padding: 18px 18px 14px;
+}
+
+.views-index-header h1 {
+  margin: 0;
+}
+
+.views-index-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.views-index-controls [data-ui=field] {
+  width: min(320px,34vw);
+}
+
+.views-index-layout {
+  min-height: 0;
+  padding: 0 18px 18px;
+}
+
+.views-index-list {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+
+.views-index-list>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  color: var(--text);
+}
+
+.views-index-list>header span {
+  color: var(--muted);
+  font-size: 11px;
+}

@@ -1,0 +1,22 @@
+.section-collapse {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: 0;
+  font-size: 15px;
+  font-weight: 900;
+  text-align: left;
+  background: transparent;
+  min-height: 30px;
+  border-radius: 7px;
+  padding: 4px 7px 4px 2px;
+  color: var(--text);
+  transition: background .16s ease,color .16s ease;
+}
+
+.section-count {
+  color: var(--muted);
+  font-weight: 720;
+}

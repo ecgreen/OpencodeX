@@ -1,0 +1,63 @@
+.command-palette-group {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 6px;
+  border: 0;
+}
+
+.command-palette-group h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 -1px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--secondary);
+}
+
+.command-palette-list button {
+  align-content: center;
+  padding: 7px 9px;
+  color: var(--text);
+  text-align: left;
+  border: 1px solid var(--line);
+  transition: border-color .15s ease,background .15s ease,transform .15s ease;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.command-palette-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10px;
+  grid-column: 1;
+}
+
+.command-palette-list kbd {
+  align-self: center;
+  justify-self: end;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid var(--theme-border);
+  font-size: 9px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: var(--line);
+  color: var(--muted);
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border-radius: 0;
+  background: var(--bg);
+}

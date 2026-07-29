@@ -1,0 +1,21 @@
+.workbench-panel>textarea {
+  margin-inline: 12px;
+}
+
+.workbench-panel>button {
+  margin-inline: 12px;
+}
+
+.workbench-panel>.empty {
+  margin-inline: 12px;
+}
+
+.workbench-panel textarea {
+  min-height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--element);
+  color: var(--text);
+  padding: 10px;
+  resize: vertical;
+}

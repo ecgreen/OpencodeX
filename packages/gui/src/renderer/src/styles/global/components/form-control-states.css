@@ -1,0 +1,19 @@
+button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.quick-actions button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+}
+
+.row-actions button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+}

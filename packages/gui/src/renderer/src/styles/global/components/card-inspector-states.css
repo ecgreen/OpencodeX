@@ -1,0 +1,16 @@
+.card-row.interactive:hover {
+  border-color: var(--border-active);
+  background: var(--element-2);
+}
+
+.card-row.warning {
+  border-color: var(--warning);
+}
+
+.inspector-status.failed {
+  border-color: color-mix(in srgb,var(--error) 45%,var(--border-subtle));
+}
+
+.inspector-status.error {
+  border-color: color-mix(in srgb,var(--error) 45%,var(--border-subtle));
+}

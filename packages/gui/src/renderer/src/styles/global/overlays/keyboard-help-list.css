@@ -1,0 +1,33 @@
+.keyboard-help-modal p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.keyboard-help-list {
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.keyboard-help-list section {
+  display: grid;
+  gap: 6px;
+}
+
+.keyboard-help-list h3 {
+  margin: 0;
+  color: var(--primary);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.keyboard-help-list section>div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--element);
+}

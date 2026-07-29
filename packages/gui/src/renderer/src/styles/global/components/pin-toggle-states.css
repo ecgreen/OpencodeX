@@ -1,0 +1,35 @@
+.hero p:not(.eyebrow) {
+  max-width: 680px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.placeholder-page p:not(.eyebrow) {
+  max-width: 680px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.pin-toggle.pinned {
+  color: var(--primary);
+  opacity: 1;
+}
+
+.pin-toggle:hover {
+  color: var(--primary);
+  background: transparent;
+  opacity: 1;
+  outline: none;
+}
+
+.pin-toggle:focus-visible {
+  color: var(--primary);
+  background: transparent;
+  opacity: 1;
+  outline: none;
+}
+
+.pin-toggle[data-selected="true"] {
+  border-color: transparent;
+  background: transparent;
+}

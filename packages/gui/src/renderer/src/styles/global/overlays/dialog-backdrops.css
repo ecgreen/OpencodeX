@@ -1,0 +1,24 @@
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--theme-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.session-dialog-backdrop {
+  position: absolute;
+  padding: min(24px,4%);
+}
+
+.command-palette-backdrop {
+  align-items: start;
+  padding-top: min(10vh,76px);
+  background: var(--theme-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

@@ -1,0 +1,32 @@
+.overflow-menu {
+  position: relative;
+}
+
+.overflow-menu hr {
+  width: 100%;
+  margin: 5px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.plugin-safety-note {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb,var(--warning) 38%,var(--theme-border));
+  border-radius: 6px;
+  background: color-mix(in srgb,var(--warning) 8%,transparent);
+}
+
+.plugin-safety-note p {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.plugin-safety-grid {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+}

@@ -1,0 +1,124 @@
+.model-picker-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-overlay-strong) transparent;
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.model-picker-section {
+  display: grid;
+  gap: 7px;
+}
+
+.model-picker-section-heading {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.model-picker-section-toggle {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0 2px;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.model-picker-section-toggle>.icon {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.model-picker-section-toggle small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.model-picker-section>div {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 6px;
+}
+
+.model-option-card .model-option-header {
+  display: flex;
+  grid-column: 1;
+  grid-row: 2;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.model-option-card .model-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-weight: 800;
+}
+
+.model-option-select>small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  grid-column: 1;
+  grid-row: 3;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.model-option-card em {
+  flex: none;
+  color: var(--success);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* Icon-only star, so the row keeps its geometry whether or not it is starred. */
+.model-favorite-toggle {
+  display: inline-flex;
+  grid-column: 2;
+  grid-row: 1 / -1;
+  align-self: stretch;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 var(--ds-space-4);
+  border: 0;
+  border-radius: 0;
+  color: var(--ds-text-subtle);
+}
+
+.model-favorite-toggle .icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* A starred model reads at a glance: the outline fills with the warm accent. */
+.model-favorite-toggle.active { color: var(--ds-control-accent); }
+.model-favorite-toggle.active .icon { fill: currentColor; }
+
+.model-picker-empty {
+  color: var(--muted);
+}

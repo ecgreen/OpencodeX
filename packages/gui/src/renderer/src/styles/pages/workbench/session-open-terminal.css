@@ -1,0 +1,78 @@
+.session-open-terminal {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr);
+  flex: 1;
+  min-height: 0;
+  color: var(--theme-text);
+  background: var(--theme-canvas);
+}
+
+.session-open-terminal>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid color-mix(in srgb,var(--border-subtle) 58%,transparent);
+  color: var(--muted);
+  background: color-mix(in srgb,var(--theme-surface) 88%,var(--panel));
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.session-open-terminal>header span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-terminal-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+/* A quiet inline affordance beside the title, not a filled control. */
+.session-open-terminal-rename {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  opacity: .7;
+}
+
+.session-open-terminal-rename:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+.session-open-terminal>header small {
+  color: color-mix(in srgb,var(--accent) 72%,var(--muted));
+  text-transform: lowercase;
+}
+
+.session-open-terminal-host {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--theme-canvas);
+}
+
+.session-open-terminal-host .xterm {
+  height: 100%;
+}
+
+.session-open-terminal-host .xterm-viewport {
+  background: transparent;
+}
+
+.session-open-terminal-host .xterm-screen {
+  outline: none;
+}
