@@ -230,14 +230,14 @@ function sessionOpencodeXSwarmID(session: Session | undefined) {
 }
 
 function routeTitle(route: ReturnType<typeof useRoute>["data"], sync: ReturnType<typeof useSync>) {
-  if (route.type === "home") return "OpenCode"
-  if (route.type === "opencodex-dashboard") return "OC | Operations"
-  if (route.type === "opencodex-swarms") return "OC | Swarms"
-  if (route.type === "opencodex-swarm-create") return "OC | Create Swarm"
-  if (route.type === "opencodex-view") return "OC | View"
-  if (route.type === "plugin") return `OC | ${route.id}`
-  if (route.type !== "session") return "OpenCode"
+  if (route.type === "home") return "OpencodeX"
+  if (route.type === "opencodex-dashboard") return "OCX | Operations"
+  if (route.type === "opencodex-swarms") return "OCX | Swarms"
+  if (route.type === "opencodex-swarm-create") return "OCX | Create Swarm"
+  if (route.type === "opencodex-view") return "OCX | View"
+  if (route.type === "plugin") return `OCX | ${route.id}`
+  if (route.type !== "session") return "OpencodeX"
   const session = sync.session.get(route.sessionID)
-  if (!session || SessionApi.isDefaultTitle(session.title)) return "OpenCode"
-  return `OC | ${session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title}`
+  if (!session || SessionApi.isDefaultTitle(session.title)) return "OpencodeX"
+  return `OCX | ${session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title}`
 }

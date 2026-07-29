@@ -15,3 +15,12 @@
 - TUI/GUI event and storage parity, deterministic JavaScript SDK generation, GitHub Action fixtures, and cross-platform release dry-runs.
 
 Nix, hosted enterprise infrastructure, Slack, websites, editor extensions, preview CLI, and upstream front ends are not supported products unless a future architecture decision explicitly restores them.
+
+## Support policy: no upstream-hosted egress
+
+OpencodeX does not send session data to infrastructure it does not operate. As of 2026-07-29 the
+paths that used to do so are removed from the tree, not merely disabled: session sharing (`opncd.ai`),
+the `app.opencode.ai` web-UI reverse proxy and the `web` command, and console/account login. Restoring
+any of them is an architecture decision, not a bug fix. The complete list, with the paths deleted, is
+the divergence ledger in [`docs/UPSTREAM.md`](docs/UPSTREAM.md); a sync must not reintroduce them
+silently.

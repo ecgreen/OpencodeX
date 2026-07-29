@@ -1,6 +1,6 @@
 # Backend Synchronization Progress
 
-Last updated: 2026-07-21
+Last updated: 2026-07-29
 
 ## Goal
 
@@ -18,7 +18,7 @@ The current design assumes a single backend authority for each SQLite database. 
 - Added command ownership fields: `owner_id`, `claim_generation`, and `lease_expires_at`.
 - Added a unique `(session_id, message_id)` command index for idempotent prompt submission.
 - Added `20260721055823_amazing_madrox` as a no-op Drizzle reconciliation marker. Its generated SQL snapshot records schema already introduced by the preceding hand-written sidecar migrations.
-- The expected migration count is now 37.
+- The expected migration count is now **44** — the count is asserted dynamically against `migrations.length` in `packages/core/test/database-migration.test.ts`, so it does not need to be edited here when a migration is added. The last four are from the cleanup branch: `20260728232403_cooing_arachne` (adds `event_aggregate_seq_idx` on `event(aggregate_id, seq)`), `20260728234513_yielding_loners`, `20260729003748_great_unus` (drops `session_share` and `session.share_url`), and `20260729023717_married_marrow` (drops `account`, `account_state`, `control_account`).
 - Fixed the previously blocking migration failure where `session_command_lease_idx` referenced a missing `lease_expires_at` column.
 
 Relevant files:
@@ -31,6 +31,14 @@ Relevant files:
 - `packages/core/migration/20260721055823_amazing_madrox/`
 - `packages/core/src/session/sql.ts`
 - `packages/core/test/database-migration.test.ts`
+
+### Event journal retention (cleanup branch, 2026-07-29)
+
+- `packages/core/src/event/retention.ts` compacts the append-only `event` journal on a 60s loop, keeping the **first and last** revision per entity for `message.part.updated.1`, `message.updated.1`, and `session.updated.1`. Created/deleted/removed events are never touched, and no aggregate is time-pruned as a whole, so session warp and `/sync/history` still replay onto identical rows.
+- Because deletion makes sequence numbers sparse, `commitSyncEvent` and `replayAll` were relaxed from **dense** to **strictly increasing** sequences.
+- `event_aggregate_seq_idx` on `event(aggregate_id, seq)` backs both the compaction pass and replay (migration `20260728232403_cooing_arachne`).
+- `Session.updatePart` gained a `transient` option so in-flight tool progress broadcasts without writing a journal row, and `ctx.metadata` is coalesced per tool call on a 100ms leading+trailing window. Terminal tool state (`ensureToolCall`, `completeToolCall`, `failToolCall`) stays durable.
+- Coverage: `packages/core/test/event/retention.test.ts`, `packages/core/test/event.test.ts`, `packages/opencode/test/session/tools.test.ts`.
 
 ### Atomic project, view, and session-state mutations
 
@@ -342,11 +350,13 @@ installed Windows TUI:
 
 ### Residual architecture follow-ups
 
-- Settings and plugin configuration changes publish dedicated durable mutation events, but there is no filesystem-to-event outbox. Crash recovery between a file commit and event publication is not yet modeled.
-- Multi-target plugin writes stage and roll back process-level failures, but there is no durable transaction journal for a process crash between the two atomic renames.
-- The separate core EventV2 `event` journal and `/sync/history` protocol remain unbounded. They need a remote acknowledgment/reset policy before pruning; state-event retention must not silently delete remote-sync history.
-- One-coordinator-per-database is enforced by GUI/TUI launch paths, not universally by `Database.defaultLayer`; an independently launched generic server can still open the same SQLite file.
-- Add a full backend restart test with a deliberately slow state client, pruning, reset, snapshot replacement, and final multi-client convergence. Current deterministic state-log, HTTP handoff, SDK reset, and GUI parity tests cover the individual boundaries but not one long-running process-level soak.
+Status as of the 2026-07-29 cleanup branch: **1 of 5 resolved**, 4 still open.
+
+- **OPEN** — Settings and plugin configuration changes publish dedicated durable mutation events, but there is no filesystem-to-event outbox. Crash recovery between a file commit and event publication is not yet modeled.
+- **OPEN** — Multi-target plugin writes stage and roll back process-level failures, but there is no durable transaction journal for a process crash between the two atomic renames.
+- **RESOLVED (2026-07-29)** — ~~The separate core EventV2 `event` journal and `/sync/history` protocol remain unbounded.~~ The journal is now bounded by `packages/core/src/event/retention.ts` (see *Event journal retention* above) and indexed by `event_aggregate_seq_idx`. The concern that retention "must not silently delete remote-sync history" is satisfied structurally rather than by an acknowledgment protocol: compaction only drops *intermediate revisions of an entity that is still present*, never a created/deleted/removed event and never a whole aggregate, so any replay — including a remote client resuming from an old sequence — lands on identical rows. Remote acknowledgment/reset semantics are therefore no longer a prerequisite for pruning.
+- **OPEN** — One-coordinator-per-database is enforced by GUI/TUI launch paths, not universally by `Database.defaultLayer`; an independently launched generic server can still open the same SQLite file. (The cleanup branch added a coordinator version handshake, which narrows client/server mismatch but does not change who may open the file.)
+- **OPEN** — Add a full backend restart test with a deliberately slow state client, pruning, reset, snapshot replacement, and final multi-client convergence. Current deterministic state-log, HTTP handoff, SDK reset, and GUI parity tests cover the individual boundaries but not one long-running process-level soak.
 
 ### Final validation
 
@@ -361,8 +371,7 @@ For future follow-up work:
 
 ## Worktree Notes
 
-- The worktree is intentionally dirty and contains a large set of uncommitted synchronization changes.
-- Do not reset, revert, or overwrite unrelated modifications.
+- The synchronization work described above is committed; the "intentionally dirty worktree" note that used to live here no longer applies.
 - Migration source and generated reconciliation artifacts must remain consistent. Run `bun script/migration.ts --check` from `packages/core` after schema changes.
 - Tests cannot run from the repository root; use the affected package directory.
 - The SDK generation command is `bun packages/sdk/js/script/build.ts` from the repository root.
@@ -370,6 +379,6 @@ For future follow-up work:
 ## Recommended Resume Order
 
 1. Add a recoverable filesystem outbox for settings/plugin invalidations and a durable transaction journal for multi-file plugin replacement.
-2. Define remote acknowledgment/reset semantics for the core EventV2 journal before adding core-history retention.
+2. ~~Define remote acknowledgment/reset semantics for the core EventV2 journal before adding core-history retention.~~ Done 2026-07-29 — retention landed without needing the protocol; see *Event journal retention*.
 3. Enforce one authority per database below the GUI/TUI coordinator launch paths if generic standalone servers must share the same invariant.
 4. Add the process-level restart/slow-client convergence test.

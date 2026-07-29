@@ -146,8 +146,10 @@ curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install
 Install a specific version with:
 
 ```bash
-curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash -s -- --version 1.15.13
+curl -fsSL https://github.com/ecgreen/OpencodeX/releases/latest/download/install | bash -s -- --version 0.1.0
 ```
+
+The version must match an OpencodeX release tag (see the [releases page](https://github.com/ecgreen/OpencodeX/releases)), not an upstream `opencode` version — the two version lines are independent.
 
 Then verify:
 
@@ -341,7 +343,19 @@ The full keymap, including every upstream opencode binding, is available from th
 
 ## Compatible with upstream `opencode`
 
-OpencodeX is a strict superset of the upstream TUI. Anything you can do in upstream `opencode`, you can do in OpencodeX, plus the sidebar, the dashboard, the project system, and the new overlay API. Sessions, plugins, MCP servers, providers, themes, and the JavaScript SDK all work unchanged. You can keep both installed and switch between them with no migration.
+OpencodeX adds the sidebar, the dashboard, the project system, and the overlay API on top of the upstream TUI. Sessions, plugins, MCP servers, providers, agents, skills, themes, and the JavaScript SDK all work unchanged, and you can keep both installed and switch between them with no migration.
+
+It is not a strict superset. OpencodeX deliberately removes upstream features that depend on hosted infrastructure this fork does not operate, or that duplicate a surface it already has:
+
+| Removed | Why |
+|---|---|
+| `/share` and auto-share | Posted full session transcripts to upstream's hosted service. OpencodeX has no share backend; use `/export` to save a conversation as Markdown. |
+| `opencode web` | Reverse-proxied upstream's hosted web UI. |
+| Console / account login and org switching | Bound to upstream's hosted console. Provider credentials via `/connect` are unaffected. |
+| `run --interactive` | A second interactive terminal UI alongside the main TUI. Non-interactive `opencodex run` is unchanged. |
+| The PTY HTTP endpoints | Unused by either client; the GUI's embedded terminal is unaffected. |
+
+Everything else upstream does, OpencodeX does.
 
 ## FAQ
 

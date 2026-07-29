@@ -13,7 +13,7 @@ Best workflow:
 - Follow promising hits with `graphify explain "<symbol>"` to inspect that symbol's callers, callees, source file, line number, and graph neighborhood.
 - Use `graphify path "<symbol A>" "<symbol B>"` when trying to understand how two concepts are connected before opening a chain of files.
 - After graph orientation, read the actual source files and tests it points to. The graph is a navigation aid, not a substitute for verifying behavior in code.
-- For GUI/TUI session work, useful starting points discovered by the graph include `loadSessionCards`, `loadSnapshot`, and `loadSession` in `packages/gui/src/renderer/src/lib/store.ts`, live patching around `patchSessionData` in `packages/gui/src/renderer/src/app.tsx`, parity tests in `packages/gui/test/store.parity.test.ts`, and TUI session rendering in `packages/opencode/src/cli/cmd/tui/feature-plugins/system/session-v2.tsx`.
+- For GUI/TUI session work, useful starting points discovered by the graph include `loadSessionCards`, `loadSnapshot`, and `loadSession` in `packages/gui/src/renderer/src/lib/session-api.ts`, live patching around `patchSessionData` in `packages/gui/src/renderer/src/app.tsx`, parity tests in `packages/gui/test/store.parity.test.ts`, and TUI session rendering in `packages/opencode/src/cli/cmd/tui/routes/session/session-messages.tsx`.
 
 Common commands:
 
@@ -52,7 +52,7 @@ Session transcript scroll behavior is intentionally centralized and should stay 
 
 - The scroll controller lives in `packages/gui/src/renderer/src/components/session-transcript-scroll-controller.ts`; `session-transcript-panel.tsx` only wires it into the view.
 - Pure scroll decision helpers live in `packages/gui/src/renderer/src/lib/transcript-scroll.ts`, with coverage in `packages/gui/test/transcript-scroll.test.ts`.
-- Session transcript layout CSS is split across the GUI style sections, with base `.transcript` scrolling in `packages/gui/src/renderer/src/styles/section-05.css`, Load More affordance styling in `packages/gui/src/renderer/src/styles/section-10.css`, and final stage/session overflow constraints in `packages/gui/src/renderer/src/styles/section-22.css`.
+- Session transcript layout CSS is split across the GUI stylesheets, with base `.transcript` scrolling in `packages/gui/src/renderer/src/styles/pages/sessions/transcript-shell.css`, Load More affordance styling in `packages/gui/src/renderer/src/styles/pages/sessions/transcript-paging.css`, and stage/session overflow constraints in `packages/gui/src/renderer/src/styles/global/shell/stage.css`.
 
 Keep exactly these automatic transcript scroll rules:
 

@@ -2,7 +2,7 @@
 
 This is the developer-side companion to the user-facing [`README.md`](README.md). If you just want to run OpencodeX, start there. If you want to build it, change it, debug it, or release a new version, you're in the right place.
 
-OpencodeX is a Bun workspace monorepo built on top of [opencode](https://github.com/anomalyco/opencode). The product is the TUI; everything in this repo exists to support building, shipping, and running that TUI on every platform.
+OpencodeX is a Bun workspace monorepo built on top of [opencode](https://github.com/anomalyco/opencode). The primary product is the terminal client — the CLI and its TUI. A second, public-preview client (the Electron GUI in `packages/gui`) runs against the same backend; unless a section says otherwise, everything below is about the terminal client.
 
 ## Table of contents
 
@@ -36,43 +36,50 @@ You need:
 - **WSL 2** — required for the Windows build path. See the [Windows section](#windows-via-wsl).
 - **PowerShell 7+** — for the Windows install scripts. `pwsh -Version` should report `7.x` or higher. Windows 10/11 usually ship with `powershell.exe` 5.1; install `pwsh` from the Microsoft Store or `winget install Microsoft.PowerShell`.
 
-That's the entire list. There is no Docker, no Postgres, no Vite dev server, no Storybook. The TUI runs against an in-process server.
+That's the entire list for the terminal client: no Docker, no Postgres, no dev server, no Storybook — the TUI runs against an in-process server. The GUI preview adds two of its own: Vite (`bun dev:electron`, wired up inside `packages/gui`) and, only for the containerised end-to-end suite, Docker via `compose.gui-e2e.yaml`. Neither is needed to build or run the TUI.
 
 ## Repo layout
+
+There are eleven workspaces, all of them declared in the root `package.json` and enforced by
+`bun run surface:audit`. If a directory is not in that list, it is not a workspace.
 
 ```
 .
 ├── packages/
-│   ├── opencode/            # the TUI (the product)
-│   ├── core/                # agent runtime
-│   ├── sdk/                 # typed client (HTTP + websocket)
-│   ├── ui/                  # shared TUI components
-│   ├── llm/                 # LLM provider adapters
-│   ├── plugin/              # plugin runtime
-│   ├── script/              # build & release scripts
-│   ├── http-recorder/       # HTTP recording for replays
-│   ├── containers/          # container orchestration
-│   ├── extensions/          # editor integration adapters
-│   ├── identity/            # identity / auth helpers
-│   ├── function/            # function-calling utilities
-│   ├── enterprise/          # enterprise feature flags
-│   ├── slack/               # slack integration
-│   ├── effect-sqlite-node/      # sqlite-on-node effect
-│   ├── effect-drizzle-sqlite/   # drizzle-on-sqlite effect
-│   ├── cli/                 # command-line tools
-│   └── docs/                # in-repo docs site
-├── docs/opencodex.md        # product direction
-├── docs/opencodex-upstream.md   # upstream touchpoints / merge notes
+│   ├── opencode/                # the CLI + TUI (the product)
+│   ├── core/                    # agent runtime, SQLite schema, migrations
+│   ├── gui/                     # Electron desktop GUI (public preview)
+│   ├── sdk/js/                  # generated typed client (HTTP + websocket)
+│   ├── ui/                      # shared Solid components + notification audio
+│   ├── llm/                     # LLM provider adapters and routing
+│   ├── plugin/                  # plugin runtime + public plugin types
+│   ├── script/                  # shared release metadata (channel, version, team)
+│   ├── effect-drizzle-sqlite/   # drizzle-on-sqlite Effect integration
+│   └── http-recorder/           # HTTP recording for replay tests
+├── github/                  # the published GitHub Action (its own workspace)
+├── docs/                    # ARCHITECTURE, UPSTREAM, GITHUB, PUBLIC_PREVIEW, opencodex
+├── upstream/                # upstream pin (lock.json) + retained-surface policy
+├── script/                  # repo-level scripts (lint baseline, upstream status, dev launcher)
+├── .github/workflows/       # ci, release-cli, release-gui, upstream-status, upstream-sync
 ├── .opencode/               # self-hosted opencode config (used to develop opencodex)
 ├── build.sh                 # cross-platform build (run from WSL for Windows)
 ├── build-and-install.ps1    # WSL build + Windows install, one shot
-├── install-windows.ps1      # install a prebuilt Windows artifact
-├── install                  # upstream opencode installer (kept for reference)
-├── nix/                     # Nix derivation for reproducible builds
-└── script/                  # repo-level scripts (opentui upgrade, format, etc.)
+├── install-windows.ps1      # Windows installer (also uploaded to every release)
+├── install                  # this fork's POSIX installer (also uploaded to every release)
+└── opencodex, opencodex.cmd # repo-local launcher shims
 ```
 
-The TUI is `packages/opencode`. The build scripts (`build.sh`, `build-and-install.ps1`, `install-windows.ps1`) live at the repo root so they can be invoked from a developer shell that is not inside any one workspace.
+Two directories are easy to overlook and are the largest fork-owned surfaces after
+`packages/opencode`: **`packages/gui`** (the Electron preview, with its own docs under
+`packages/gui/docs/`) and **`github/`** (the published Action, documented in
+[`docs/GITHUB.md`](docs/GITHUB.md)).
+
+`install` is **this fork's** installer, not an upstream leftover: `release-cli.yml` copies it into
+every GitHub Release, which is what `curl -fsSL .../releases/latest/download/install | bash`
+downloads. Do not delete it.
+
+The build scripts (`build.sh`, `build-and-install.ps1`, `install-windows.ps1`) live at the repo root
+so they can be invoked from a developer shell that is not inside any one workspace.
 
 ## Quickstart by platform
 
@@ -172,47 +179,55 @@ The rest of this guide assumes you can run `bun` and the build scripts from your
 
 Most days look like this:
 
-1. `git pull` and `git checkout dev` (the default branch is `dev`; see [Upstream merge workflow](#upstream-merge-workflow) for why).
+1. `git pull` and `git checkout main` (the default branch is `main`; see [Upstream merge workflow](#upstream-merge-workflow)).
 2. `bun install` — only needed if `bun.lock` or a `package.json` changed.
 3. `bun dev` (or `bun dev <directory>`).
 4. Edit code. `bun dev` hot-reloads.
-5. Before pushing, run `bun run --cwd packages/opencode typecheck` and `bun run lint` from WSL — see the [next section](#linting-and-typechecking) for why this is on you, not the assistant.
+5. Before pushing, run `bun run typecheck`, `bun run lint:ci`, and `bun run surface:audit` — see the [next section](#linting-and-typechecking).
 
 Common patterns:
 
-- **Edit the TUI**: change files under `packages/opencode/src/cli/cmd/tui/`, save, and `bun dev` will pick them up. Reuse the components in `packages/ui` rather than rolling your own — this keeps every part of the TUI visually consistent and is the project convention.
-- **Edit a keybinding**: register it through the keybind registry in `packages/opencode/src/cli/cmd/tui/config/keybind.ts` so it is discoverable in the command palette (`Ctrl+P`).
-- **Edit the agent runtime**: most runtime logic lives in `packages/core/`. The TUI talks to it through the SDK in `packages/sdk/`.
+- **Edit the TUI**: change files under `packages/opencode/src/cli/cmd/tui/`, save, and `bun dev` will pick them up. TUI widgets are OpenTUI/Solid components local to that tree; `packages/ui` is the Solid component library shared with the **GUI** (plus the notification audio the TUI imports), not a TUI widget kit.
+- **Edit a keybinding**: register it in `packages/opencode/src/cli/cmd/tui/config/keybind-definitions.ts` (the `keybind(...)` table plus the action-id map at the bottom of the file) so it is discoverable in the command palette (`Ctrl+P`). `keybind.ts` alongside it resolves and merges those definitions.
+- **Edit the agent runtime**: most runtime logic lives in `packages/core/`. The TUI and GUI talk to it through the generated SDK in `packages/sdk/js/`.
 - **Add a new provider or model**: providers are loaded from `models.dev`, not from this repo. Add the model upstream first, then it will appear in the TUI on the next fetch.
-- **Add a new TUI feature under `opencodex`**: the new code lives under `packages/opencode/src/opencodex/`. The HTTP surface goes in `packages/opencode/src/server/routes/instance/httpapi/groups/opencodex.ts` and `handlers/opencodex.ts`. The sidebar component is `packages/opencode/src/cli/cmd/tui/component/opencode-sidebar.tsx` — see [`docs/opencodex-upstream.md`](docs/opencodex-upstream.md) for the full list of seams that OpencodeX touches in upstream code.
+- **Add a new TUI feature under `opencodex`**: the new code lives under `packages/opencode/src/opencodex/`. The HTTP surface goes in `packages/opencode/src/server/routes/instance/httpapi/groups/opencodex.ts` and `handlers/opencodex.ts`. The sidebar component is `packages/opencode/src/cli/cmd/tui/component/opencodex-sidebar.tsx` — see [`docs/UPSTREAM.md`](docs/UPSTREAM.md) for the fork's upstream-seam and sync policy.
 
 ## Linting and typechecking
 
-This is the one place where the conventions in this repo diverge from a normal open-source project. The short version: **the assistant does not run typecheck or lint for you. You do.**
+Two conventions from `AGENTS.md` matter here:
 
-Per `AGENTS.md`:
-
-- The default branch is `dev`, not `main`.
-- `bun typecheck`, `tsc`, `npm run typecheck`, and any lint command are **not** executed by the assistant in this environment. Run them yourself in WSL (or your platform of choice) before sending work for review.
+- The default branch is `main`. Use `main` / `origin/main` as the base for diffs and pull requests.
 - Tests cannot be run from the repo root; they are guarded against it. Always `cd packages/opencode` (or whatever package the test lives in) first.
 
 The relevant commands:
 
 ```bash
-# TypeScript across the whole workspace
-bun turbo typecheck
+# TypeScript across the whole workspace (turbo fan-out)
+bun run typecheck
 
 # TypeScript for the TUI package only (fastest loop)
 bun run --cwd packages/opencode typecheck
 
-# Linter
+# Linter (raw oxlint; reports the full warning set)
 bun run lint
 
-# Lint a single file
-bun run --cwd packages/opencode oxlint <path>
+# Linter as CI runs it — compares against .oxlint-baseline.json and fails only on regressions
+bun run lint:ci
 
-# Auto-fix
-bun run --cwd packages/opencode oxlint --fix <path>
+# Lint or auto-fix a single file
+bunx oxlint <path>
+bunx oxlint --fix <path>
+```
+
+`lint:ci` is the gate that matters. The repo carries a large baselined warning count in
+`.oxlint-baseline.json`; `bun run lint` printing warnings is expected, `bun run lint:ci` failing is not.
+
+Two structural checks run in CI and are worth running locally when you move files around:
+
+```bash
+bun run surface:audit      # workspace/catalog/pruned-path policy in upstream/policy.json
+bun run check:client-state # GUI client-state boundary
 ```
 
 If you changed `packages/opencode/src/server/server.ts` or anything in the SDK, regenerate the JS SDK before running typecheck:
@@ -240,9 +255,24 @@ bun run test:ci
 bun run test:httpapi
 ```
 
+The GUI has its own suite:
+
+```bash
+cd packages/gui
+bun test                # unit + logic tests
+bun run qa              # typecheck + tests + design-system + package checks
+bun run test:e2e        # Playwright end-to-end (needs a built renderer)
+```
+
+Everything at once, the way CI runs it, from the repo root:
+
+```bash
+bun run test:ci         # CI-task check + client-state boundary + turbo test:ci across workspaces
+```
+
 Notes:
 
-- Tests are guarded at the repo root — running `bun test` from there will refuse to run. Always `cd` into the package first.
+- Tests are guarded at the repo root — running `bun test` from there will refuse to run. Always `cd` into the package first. (`bun run test:ci` from the root is fine; it fans out through turbo.)
 - `test:httpapi` runs the API surface through a coverage + auth + effect cycle and fails the run on missing or skipped cases. It is the closest thing to an integration test we have.
 - If you want to profile a slow test, `bun run profile:test` will help. `bun run bench:test` runs the test suite in benchmark mode.
 
@@ -353,9 +383,9 @@ The TUI uses this to drive the `opencode` vs `opencodex` branding (the dashboard
 
 A few rules of thumb that have been burned into the project:
 
-- **TUI features**: prefer the components in `packages/ui` so the whole TUI can reuse them. Avoid one-off styling in `packages/opencode/src/cli/cmd/tui/`.
-- **New keybindings**: register them in `packages/opencode/src/cli/cmd/tui/config/keybind.ts` (the `keybind(...)` table) and the corresponding action id in the dispatcher table. This is what makes them show up in the command palette.
-- **OpencodeX-only TUI features**: the sidebar component is `packages/opencode/src/cli/cmd/tui/component/opencode-sidebar.tsx`. New overlay state and HTTP routes go in `packages/opencode/src/server/routes/instance/httpapi/groups/opencodex.ts` and `handlers/opencodex.ts`. The project folder and project services live under `packages/opencode/src/opencodex/`.
+- **TUI features**: reuse the existing components under `packages/opencode/src/cli/cmd/tui/component/` and drive colors from the theme context rather than hardcoding them. `packages/ui` is the GUI's Solid component library, not the TUI's — the only thing the TUI pulls from it is the notification audio.
+- **New keybindings**: register them in `packages/opencode/src/cli/cmd/tui/config/keybind-definitions.ts` (the `keybind(...)` table) and the corresponding action id in the map at the bottom of the same file. This is what makes them show up in the command palette.
+- **OpencodeX-only TUI features**: the sidebar lives in `packages/opencode/src/cli/cmd/tui/component/opencodex-sidebar*.{ts,tsx}` (view, controller, model, projection, rows are separate files). New overlay state and HTTP routes go in `packages/opencode/src/server/routes/instance/httpapi/groups/opencodex.ts` and `handlers/opencodex.ts`. The project folder and project services live under `packages/opencode/src/opencodex/`.
 - **Schema changes**: new SQLite sidecar tables for OpencodeX go in `packages/core/src/opencodex/sql.ts` and a migration in `packages/core/src/database/migration/*opencodex*`. Do not change upstream schemas in place — the fork is designed to merge cleanly.
 - **Provider logic**: avoid editing providers in this repo. Add or update them upstream in `models.dev`.
 
@@ -375,7 +405,7 @@ opencode attach http://localhost:4096
 
 Some other tips that come up repeatedly:
 
-- If breakpoints in the server don't trigger, you may need `bun dev spawn` instead of `bun dev` — `bun dev` runs the server in a worker thread.
+- If breakpoints in the server don't trigger, split the processes: run `serve` under the inspector and attach the TUI to it (the two-command recipe above). `bun dev` with any of `--port`, `--hostname`, or `--mdns` moves the server into a `Worker` (see `packages/opencode/src/cli/cmd/tui/thread.ts`), where breakpoints frequently do not bind. There is no `bun dev spawn` subcommand.
 - `--inspect-wait` and `--inspect-brk` are also available, and `BUN_OPTIONS=--inspect=...` in your shell saves you from retyping the URL.
 - The TUI's `tree-sitter` parser worker is its own process; to step into it, set `OTUI_TREE_SITTER_WORKER_PATH` (the build sets this to a `B:/~BUN/root/` path on Windows).
 - VS Code launch configurations are checked in as `.vscode/launch.example.json` and `.vscode/settings.example.json` — copy them to `launch.json` / `settings.json` if you use VS Code, and adapt the inspect URL.
@@ -389,10 +419,15 @@ For the TUI specifically:
 
 The release pipeline is `.github/workflows/release-cli.yml`. It builds the CLI from an Ubuntu runner, packages the generated binaries as `opencodex-*` assets, and uploads them with `install` and `install-windows.ps1` to a GitHub Release.
 
+The workflow is **`workflow_dispatch` only** — there is no tag trigger, and pushing a `vX.Y.Z` tag
+does not release anything. The version comes from `packages/opencode/package.json`; the optional
+`version` input must match it exactly or the run fails its own check. The quality gate
+(`typecheck`, `test:ci`, `lint:ci`, `git diff --check`) runs before anything is built.
+
 To publish a release:
 
-1. Open the `release-cli` workflow in GitHub Actions.
-2. Run it manually with a version, or push a `vX.Y.Z` tag.
+1. Bump `packages/opencode/package.json` and merge that to `main`.
+2. Open the `release-cli` workflow in GitHub Actions and run it from `main` (leave `version` blank to use the manifest value). Releases are marked prerelease by default; uncheck `prerelease` for a stable one.
 3. Confirm the release contains:
 
    ```text
@@ -417,9 +452,11 @@ irm https://github.com/ecgreen/OpencodeX/releases/latest/download/install-window
 pwsh -File .\install-windows.ps1
 ```
 
+The desktop GUI preview ships from a separate `release-gui` workflow — see [`RELEASE_GUIDE.md`](RELEASE_GUIDE.md).
+
 The local fallback flow is:
 
-1. Bump the version in `packages/opencode/package.json` (the value that ends up in `--version`).
+1. Bump the version in `packages/opencode/package.json` (the value that ends up in `--version`, and the value `packages/script` reports as `Script.version`).
 2. Build the targets you want to ship:
 
    ```bash
@@ -438,28 +475,39 @@ If you are tagging a release for the first time, also regenerate the SDK first s
 
 ## Upstream merge workflow
 
-OpencodeX is a thin additive overlay on top of upstream `opencode`. The full list of seams OpencodeX touches is in [`docs/opencodex-upstream.md`](docs/opencodex-upstream.md). The short version:
+OpencodeX is an additive overlay on top of upstream `opencode`. The process, the release-sync
+runbook, and the **divergence ledger** (upstream files this fork deliberately deleted, moved, or
+split — do not restore them during conflict resolution) all live in
+[`docs/UPSTREAM.md`](docs/UPSTREAM.md). The short version:
 
-- New TUI files live under `packages/opencode/src/opencodex/` and `packages/opencode/src/cli/cmd/tui/component/opencode-sidebar.tsx`.
+- The upstream pin is `upstream/lock.json`; the machine-enforced surface policy is `upstream/policy.json`, checked by `bun run surface:audit`.
+- New TUI files live under `packages/opencode/src/opencodex/` and `packages/opencode/src/cli/cmd/tui/component/opencodex-sidebar*.{ts,tsx}`.
 - New HTTP surface lives under `packages/opencode/src/server/routes/instance/httpapi/groups/opencodex.ts` and `handlers/opencodex.ts`.
 - The HTTP server registers the OpencodeX handlers via `server.ts`. The API group is registered in `api.ts`.
 - Schema additions for OpencodeX (projects, folders, sessions) live in `packages/core/src/opencodex/sql.ts` and a migration in `packages/core/src/database/migration/*opencodex*`.
-- The few upstream files OpencodeX does touch (project service, instance store, system prompt, session listing, project ID derivation) are all small, well-marked seams — see the upstream doc for the full list.
+- The few upstream files OpencodeX does touch (project service, instance store, system prompt, session listing, project ID derivation) are all small, well-marked seams.
 
-After every upstream `dev` merge:
+The sync itself is driven by two scripts, both run from the repo root:
 
 ```bash
-git diff dev...HEAD -- packages/opencode/src
-cd packages/opencode && bun typecheck
-cd packages/opencode && bun test test/opencodex
-./packages/sdk/js/script/build.ts
+bun run upstream:status vX.Y.Z --markdown   # what changed upstream, grouped by area
+bun run upstream:rehearse vX.Y.Z            # measure the merge/conflict surface without touching the worktree
 ```
 
-If the diff against upstream is non-trivial, regenerate the changelog and stats as well:
+After a sync merge lands on your branch:
+
+```bash
+git diff origin/main...HEAD -- packages/opencode/src
+bun run typecheck
+bun run surface:audit
+cd packages/opencode && bun test test/opencodex
+./packages/sdk/js/script/build.ts            # generated SDK output must have no unexplained diff
+```
+
+If the diff against upstream is non-trivial, regenerate the changelog as well:
 
 ```bash
 bun run script/changelog.ts
-bun run script/stats.ts
 ```
 
 ## Troubleshooting
@@ -485,5 +533,8 @@ That is intentional — the root `package.json` has a guard script. `cd packages
 **The TUI looks broken in Windows Terminal.**
 Set Windows Terminal's color scheme to "Campbell" or "One Half Dark". The OpenTUI components assume a 24-bit color terminal; legacy 16-color schemes are unsupported on Windows.
 
-**`bun typecheck` is not being run for me.**
-Correct — per `AGENTS.md`, the assistant does not run typecheck or lint in this environment. You do, locally, before sending work for review.
+**`bun run lint` prints thousands of warnings.**
+Expected. The repo lints against a recorded baseline: `bun run lint:ci` (`script/check-lint-baseline.ts`) compares the current count against `.oxlint-baseline.json` and only fails on regressions. Use `lint:ci` to decide whether your change is clean.
+
+**`bun run surface:audit` fails after I moved or deleted a package.**
+`upstream/policy.json` is the source of truth for which workspaces exist and which upstream paths are permanently pruned. Update it in the same change that moves the files.

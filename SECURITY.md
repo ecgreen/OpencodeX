@@ -44,10 +44,18 @@ Server mode is opt-in only. When enabled, set `OPENCODE_SERVER_PASSWORD` to requ
 
 We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
 
-To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/ecgreen/OpencodeX/security/advisories/new) tab.
+Report privately through GitHub, never in a public issue or pull request:
 
-The team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
+1. Go to <https://github.com/ecgreen/OpencodeX/security> (the repository's **Security** tab).
+2. Choose **Report a vulnerability** — this opens a [GitHub private vulnerability report](https://github.com/ecgreen/OpencodeX/security/advisories/new) visible only to you and the maintainer.
+3. Include the affected version (`opencodex --version`), your platform, and reproduction steps.
+
+The maintainer will respond with the next steps in handling your report, and will keep you informed of progress towards a fix and disclosure. Additional information or guidance may be requested.
 
 ## Escalation
 
-If you do not receive an acknowledgement of your report within 6 business days, you may send an email to security@anoma.ly
+If you do not receive an acknowledgement within 6 business days, comment on your own private advisory to bump it. GitHub notifies the maintainer for every advisory update, so the private advisory thread is the escalation path — there is no separate security mailing address for this fork.
+
+<!-- MAINTAINER NOTE: if you would rather receive reports directly, replace the escalation
+     paragraph above with a private contact address you actually monitor. Do not list an
+     address that forwards to the upstream project — reports sent there will not reach you. -->

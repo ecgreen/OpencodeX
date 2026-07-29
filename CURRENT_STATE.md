@@ -6,6 +6,50 @@
 
 ---
 
+> ## ⚠️ ADDENDUM — cleanup branch landed (2026-07-29)
+>
+> **The body of this document below describes the repository as of 2026-07-28, before the cleanup
+> branch built from it.** It has deliberately not been rewritten — it is the record the work was
+> planned against. Read this addendum first; where the two disagree, this addendum wins.
+>
+> ### Resolved by the cleanup branch
+>
+> | Audit finding | Resolution |
+> |---|---|
+> | §1.1 unbounded, unindexed `event` table | `packages/core/src/event/retention.ts` compacts the journal on a 60s loop (first + last revision per entity); `event_aggregate_seq_idx` added by migration `20260728232403_cooing_arachne`; replay relaxed from dense to strictly-increasing sequences. |
+> | §1.1 every shell stdout chunk becomes a durable transaction | `Session.updatePart` gained a `transient` mode for in-flight progress, and `ctx.metadata` is coalesced per tool call on a 100 ms leading+trailing window. Terminal tool state stays durable. |
+> | §1.1 TUI hydrates entire transcripts | TUI transcript paging, eviction, and windowing; SDK parts keyed by message with a dedupe ring. |
+> | §1.2 ~76% of `packages/ui` dead | Pruned. What survives is exactly the components the GUI imports plus the five notification `.mp3`s the TUI imports. |
+> | §1.2 deletable packages/scripts | `packages/{containers,identity,extensions,effect-sqlite-node}`, `script/{publish.ts,release,generate.ts}`, `.husky/graphify-update` and dead in-tree modules removed; the `upstream/policy.json` prune-path bug that let them pass `surface:audit` is fixed. |
+> | §1.2 session data flowing to upstream infrastructure | Share pipeline (`opncd.ai`), the `app.opencode.ai` web-UI proxy and `web` command, and console/account login are all deleted, with migrations dropping `session_share`, `session.share_url`, `account`, `account_state`, and `control_account`. |
+> | §1.3 parity drift ring of hand-duplicated modules | Normalizer, display text, and status logic unified into the SDK; the GUI's dead second reducer deleted; a coordinator version handshake plus three GUI parity features added. |
+> | §1.4 v2 message/event system half-migrated | The experimental v2 system is deleted outright, along with the legacy session-sync endpoint and its compatibility gate. |
+> | §4 `cmd/run` as a second interactive TUI | `run --interactive` and the whole `cli/cmd/run/` split-footer surface deleted. Non-interactive `opencode run` is unaffected. |
+> | §4 PTY HTTP surface, `tui/appendPrompt` | Removed. |
+> | §"Fork identity / branding" items (TUI crash-report URL at upstream's repo, `SECURITY.md` escalation address at `security@anoma.ly`, terminal titles, upstream docker-image tip, upstream `$schema` URLs, release version fetched from upstream's npm package) | All fixed. |
+>
+> Migration count is now **44** (the audit's table says 40). `docs/UPSTREAM.md` now carries a
+> **divergence ledger** recording every upstream-owned path this branch deleted, moved, or split, so
+> the first sync treats them as deliberate.
+>
+> ### Corrections to this audit
+>
+> Two "dead code" findings in §3 were wrong. Both are live:
+>
+> - **`/sync/steal` is live.** It is called by `packages/opencode/src/control-plane/workspace.ts:793` during session warp, when a session is moved into a workspace owned by another coordinator. It was kept.
+> - **`storage/json-migration.ts` is live.** It is wired into all three entry points — `packages/opencode/src/index.ts:34`, `src/gui-coordinator-runtime.ts:7`, and re-exported from `src/node.ts:6`. It performs the one-time JSON→SQLite import and cannot be removed while any pre-SQLite install exists. It was kept.
+>
+> ### Still open after this branch
+>
+> - **The upstream sync has still not been executed.** The pin remains `v1.15.13` (2026-05-31) against `v1.18.3` observed 2026-07-18 — three minor versions — and the history is still a snapshot import without a common ancestor, so the first sync is an unrelated-histories merge whose conflict surface keeps growing. This is now the single largest unaddressed risk in the repo.
+> - **Native LLM path is still gated to 3 of 11 provider adapters.** `packages/opencode/src/session/llm/native-runtime.ts` still admits only `openai`, `anthropic`, and `opencode*`; Azure/Google/Bedrock/OpenRouter remain wired but blocked.
+> - **macOS has no CI.** `.github/workflows/ci.yml` runs `ubuntu-latest` and `windows-latest` only, while `release-cli.yml` ships `darwin-arm64` and `darwin-x64` assets. Those binaries are released untested.
+> - **~2,300 lint warnings remain**, baselined rather than fixed. `bun run lint:ci` reports `2329 warning(s), baseline 2630` — the deletions in this branch dropped the real count by ~300 but the ceiling in `.oxlint-baseline.json` was not ratcheted down, so there is ~300 warnings of unearned slack before CI would complain again. Ratcheting it to the current count is a one-line change and would make the gate mean something.
+> - **The plugin API is still typed against the v1 SDK frozen at fork inception** (§1.4's second half-finished migration) — untouched by this branch.
+> - Four of the five `BACKEND_SYNC_PROGRESS.md` "Residual architecture follow-ups" remain open (filesystem→event outbox, plugin multi-write journal, one-authority-per-database below the launch paths, process-level restart/soak test). Only the event-journal item was resolved.
+
+---
+
 ## 1. Executive summary
 
 OpencodeX is a two-month-old, single-author fork of [opencode](https://github.com/anomalyco/opencode) (85 commits, 2026-05-31 → 2026-07-28) that adds a multi-session workspace layer: a persistent sidebar/dashboard TUI, an Electron GUI, projects, views, swarms, and a durable-state SQLite backend shared by both clients. The engineering quality of the *fork-authored* code is unusually high — near-zero TODOs, almost no `any`, hardened Electron security, disciplined migration/event machinery, real parity tests, and serious CI. The problems cluster in four areas:
@@ -143,7 +187,8 @@ Gaps flagged in both directions: GUI `/workspaces` and `/warp` are partial (docu
 | 🟡 GUI dead helper modules | ~50 LOC | `lib/live-sync.ts`, `lib/session-activity.ts` — referenced only by their own tests (pre-authoritative-sync polling era); duplicate terminal `ipcMain.handle` registrations unreachable behind the `.on` variants ([terminal-ipc.ts:120](packages/gui/src/main/terminal-ipc.ts:120)) | Delete |
 | 🟡 SDK dead surface | — | `v2/data.ts` helper with hardcoded `id: "asdasd"` placeholder IDs; committed stale `packages/sdk/openapi.json` (692 KB, only writer is the dead `script/generate.ts`); exports with no consumers (`./v2/server`, `./v2/legacy-session-sync`, `./v2/gen/client`) | Delete |
 | ⚪ TUI dead components | — | `dialog-tag.tsx`, `dialog-subagent.tsx` (zero importers); dead third status algorithm at [sync.tsx:666](packages/opencode/src/cli/cmd/tui/context/sync.tsx:666) | Delete |
-| ⚪ `sync/steal`, `tui/appendPrompt` endpoints; `src/sync/` schema+README stub; `storage/json-migration.ts` (437 LOC one-time import) | — | No callers / superseded / sunset-eligible | Review & remove |
+| ⚪ ~~`sync/steal`~~, `tui/appendPrompt` endpoints; `src/sync/` schema+README stub; ~~`storage/json-migration.ts` (437 LOC one-time import)~~ | — | No callers / superseded / sunset-eligible | Review & remove |
+| **CORRECTION (2026-07-29)** | — | The row above is wrong about two of its four entries. **`/sync/steal` has a caller** — `control-plane/workspace.ts:793`, during session warp into another coordinator's workspace. **`storage/json-migration.ts` has three callers** — `src/index.ts:34`, `src/gui-coordinator-runtime.ts:7`, and a re-export from `src/node.ts:6`; it is the one-time JSON→SQLite import path. | Both **kept**. The `tui/appendPrompt` server route was removed (a stale binding survives in the frozen v1 generated SDK, `packages/sdk/js/src/gen/sdk.gen.ts`); the `src/sync/` README+schema stub is still there and still unreviewed. |
 | ⚪ `build.sh:183-186,209-212` | — | `exit 1` immediately precedes unreachable "continuing anyway" warns | Fix (behavior contradicts comments and DEV_README) |
 
 ---

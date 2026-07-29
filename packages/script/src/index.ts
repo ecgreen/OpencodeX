@@ -31,23 +31,31 @@ const CHANNEL = await (async () => {
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
+// The fork's own release state is the source of truth for the version. `release-cli.yml`
+// resolves the tag from packages/opencode/package.json and passes it through as
+// OPENCODE_VERSION, so this only has to agree with that file — never with upstream's
+// npm registry entry, which this fork does not publish to and does not track.
+const cliPkgPath = path.resolve(import.meta.dir, "../../opencode/package.json")
+
 const VERSION = await (async () => {
   if (env.OPENCODE_VERSION) return env.OPENCODE_VERSION
   if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
-  const version = await fetch("https://registry.npmjs.org/opencode-ai/latest")
-    .then((res) => {
-      if (!res.ok) throw new Error(res.statusText)
-      return res.json()
-    })
-    .then((data: any) => data.version)
-  const [major, minor, patch] = version.split(".").map((x: string) => Number(x) || 0)
-  const t = env.OPENCODE_BUMP?.toLowerCase()
-  if (t === "major") return `${major + 1}.0.0`
-  if (t === "minor") return `${major}.${minor + 1}.0`
-  return `${major}.${minor}.${patch + 1}`
+  const declared = await Bun.file(cliPkgPath)
+    .json()
+    .then((pkg: { version?: string }) => pkg.version)
+    .catch(() => undefined)
+  const version = (declared ? semver.valid(semver.coerce(declared)) : null) ?? "0.0.0"
+  if (version === "0.0.0" && declared !== "0.0.0") {
+    console.warn(`unable to read a valid version from ${cliPkgPath}; falling back to 0.0.0`)
+  }
+  const bump = env.OPENCODE_BUMP?.toLowerCase()
+  if (bump === "major" || bump === "minor" || bump === "patch") return semver.inc(version, bump) ?? version
+  // No explicit bump: ship exactly what packages/opencode/package.json declares, which is
+  // what release-cli.yml validates the release tag against.
+  return version
 })()
 
-const bot = ["actions-user", "opencode", "opencode-agent[bot]"]
+const bot = ["actions-user", "github-actions[bot]"]
 const team = ["ecgreen", ...bot]
 
 export const Script = {
@@ -67,4 +75,4 @@ export const Script = {
     return team
   },
 }
-console.log(`opencode script`, JSON.stringify(Script, null, 2))
+console.log(`opencodex script`, JSON.stringify(Script, null, 2))

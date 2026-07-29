@@ -34,11 +34,11 @@ An honest inventory, because the plan only makes sense against it.
 | --- | --- |
 | Typography | **No type tokens at all.** 23 distinct raw px sizes (145× `12px`, 106× `11px`, one `10.5px`), 23 distinct raw weights including `760`, `620`, `470`, `440`. |
 | Spacing | 6-step scale exists but loses ~4:1 to raw px. Off-grid padding pairs dominate: `10px 12px`, `9px 10px`, `6px 9px`, `7px 9px`. |
-| Radius | Tokens exist but `999px`/`8px`/`6px`/`7px`/`9px` are re-typed raw ~200 times; two icon-button implementations sit 1px of radius apart (`.icon-button` in `global/components/base-3.css` vs `.ui-button[data-icon-only]`). |
+| Radius | Tokens exist but `999px`/`8px`/`6px`/`7px`/`9px` are re-typed raw ~200 times; two icon-button implementations sit 1px of radius apart (`.icon-button`, now in `global/components/icon-buttons.css`, vs `.ui-button[data-icon-only]`). |
 | Elevation | No shadow/overlay token tier; overlay treatments improvised per surface. |
 | Component tier | `Tooltip`, `Dialog`, `DialogFooter`, `Popover`, `Separator` are exported and **used zero times**. Tooltips are native `title` attributes. No Tabs, Toast, Kbd, Skeleton, ProgressMeter, SegmentedControl, or SessionCard primitives — each surface improvises (~150 ad-hoc button/chip/badge/card class names across 729 selectors). |
 | Token unification | **Three parallel color systems**: GUI `--theme-*` CSS vars, `@opencode-ai/ui` (762 custom properties imported wholesale for ~15 component imports), and the TUI's ~50-token RGBA theme JSON system (32 bundled themes). Same palette values hardcoded in all three. Plus three generations of aliases inside `dark.css` itself (`--ds-*`, legacy `--bg`/`--panel`/`--brand`, and `--v2-*` bridge). |
-| CSS organization | 89 stylesheets named by line-count overflow (`sessions/base.css` … `base-7.css`) instead of by domain. |
+| CSS organization | ~~89 stylesheets named by line-count overflow (`sessions/base.css` … `base-7.css`) instead of by domain.~~ **Done 2026-07-29** — the numbered files are renamed to domain names (`sessions/transcript-shell.css`, `global/components/icon-buttons.css`, …). A handful of `base.css`/`states.css` files remain where the domain name would just repeat the directory. |
 | Theming | GUI ships exactly dark + light. The TUI ships 32 user-selectable themes with a public schema. No system-follow (`prefers-color-scheme`) mode in the GUI. |
 
 The conclusion that shapes everything below: **the governance machinery works.** Color went to zero because the
@@ -297,11 +297,14 @@ vendor-or-wrap the six v2 controls behind `components/ui/` (already the pattern)
 delete the `--v2-*` / `--background-bg-base` bridge aliases from `dark.css`. Exit criterion: `dark.css`
 contains exactly two tiers and zero bridge vocabulary.
 
-### 7.2 Reorganize CSS by domain
+### 7.2 Reorganize CSS by domain — **done (2026-07-29)**
 
-Retire numbered overflow files (`base-2`…`base-8`) in favor of domain names (`sessions/transcript.css`,
-`sessions/composer.css`, `workbench/git.css`, …). Mechanical, incremental, done per-page during the migration
-passes in §9 — never as a big-bang rename.
+~~Retire numbered overflow files (`base-2`…`base-8`) in favor of domain names.~~ Landed: every
+`base-N.css` / `states-N.css` / `section-NN.css` file is now named for what it styles
+(`sessions/transcript-shell.css`, `sessions/transcript-paging.css`, `global/components/icon-buttons.css`,
+`global/shell/stage.css`, …). A few `base.css` / `states.css` files survive where a domain name would only
+repeat the directory. Any doc or comment still citing a numbered stylesheet is stale; `git log -M
+--diff-filter=R` gives the full old→new mapping.
 
 ### 7.3 GUI ↔ TUI shared vocabulary
 
