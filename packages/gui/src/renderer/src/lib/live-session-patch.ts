@@ -90,10 +90,6 @@ export function isSnapshotPatchEvent(event: GlobalEvent) {
   )
 }
 
-export function isHighFrequencySessionEvent(event: GlobalEvent) {
-  return eventKind(event).startsWith("session.next.")
-}
-
 export function isCapabilityRefreshEvent(event: GlobalEvent) {
   const kind = eventKind(event)
   return kind === "plugin.added" || kind === "lsp.updated" || kind === "mcp.tools.changed" || kind === "server.instance.disposed"
@@ -110,7 +106,6 @@ export function globalEventAction(event: GlobalEvent): GlobalEventAction {
   if (stateEvent) return { type: "state", ...stateEvent }
   if (isSessionDataEvent(event)) return { type: "session-data" }
   if (isSnapshotPatchEvent(event)) return { type: "snapshot" }
-  if (isHighFrequencySessionEvent(event)) return { type: "ignore" }
   if (isCapabilityRefreshEvent(event)) return { type: "refresh", root: eventKind(event) === "server.instance.disposed" }
   return { type: "ignore" }
 }

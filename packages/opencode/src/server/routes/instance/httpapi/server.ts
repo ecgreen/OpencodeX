@@ -57,7 +57,7 @@ import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@/server/cors
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { PublicApi } from "./public"
-import { authorizationLayer, authorizationRouterMiddleware, v2AuthorizationLayer } from "./middleware/authorization"
+import { authorizationLayer, authorizationRouterMiddleware } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
@@ -104,7 +104,6 @@ const cors = (corsOptions?: CorsOptions) =>
 // - docRoute: OpenAPI spec; auth is router middleware.
 const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
-const v2HttpApiAuthLayer = v2AuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const workspaceRoutingLive = workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide([controlHandlers, globalHandlers]),
@@ -135,7 +134,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
 )
 
 const instanceRoutes = instanceApiRoutes.pipe(
-  Layer.provide([httpApiAuthLayer, v2HttpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
+  Layer.provide([httpApiAuthLayer, workspaceRoutingLive, instanceContextLayer, schemaErrorLayer]),
 )
 
 // `OpenApi.fromApi` is non-trivial; defer until /doc is actually hit so

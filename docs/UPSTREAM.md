@@ -45,6 +45,7 @@ Deleted, upstream-owned (do not restore on merge):
 | `packages/sdk/js/src/v2/legacy-session-sync.ts`, `script/check-legacy-session-sync.ts`, `docs/session-sync-compatibility.md` | The legacy session-sync endpoint and its compatibility gate. |
 | ~76% of `packages/ui/src` — all of `theme/`, `hooks/`, `storybook/`, `styles/tailwind/`, the icon/favicon/image asset sets, most of `components/`, `v2/`, `i18n/`, `context/` | Upstream web-frontend residue. `packages/ui` survives only as the Solid components the GUI still imports (`file`, `markdown`, `code-block`, `popover`, `logo`, `session-diff`, `tool-output-preview`, `context/marked`, four `v2/components/*-v2`) plus the five notification `.mp3`s the TUI imports. Anything outside that set is intentionally gone; re-adding a file here needs a live importer. |
 | `packages/{containers,identity,extensions,effect-sqlite-node}`, `script/{publish.ts,release,generate.ts}`, `packages/plugin/src/example*.ts` | Vestigial upstream packages and scripts. Also in `permanentlyPrunedPaths`. |
+| `packages/opencode/script/publish.ts`, `packages/plugin/script/publish.ts`, `packages/sdk/js/script/publish.ts` | Upstream's release pipeline: Docker push to `ghcr.io/anomalyco/opencode`, AUR PKGBUILDs, a Homebrew tap, and `npm publish` to the `@opencode-ai` scope this fork does not own. The fork releases via `.github/workflows/release-cli.yml` + `script/build.ts` only. Also in `permanentlyPrunedPaths`. |
 
 Moved or split (a merge conflict here means upstream edited the *old* path — port the change into the new one):
 

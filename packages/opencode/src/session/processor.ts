@@ -23,10 +23,6 @@ import * as Log from "@opencode-ai/core/util/log"
 import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import * as DateTime from "effect/DateTime"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 
 const DOOM_LOOP_THRESHOLD = 3
@@ -105,7 +101,6 @@ export const layer = Layer.effect(
     const status = yield* SessionStatus.Service
     const image = yield* Image.Service
     const events = yield* EventV2Bridge.Service
-    const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
@@ -440,8 +435,6 @@ export const layer = Layer.effect(
 
           case "step-start":
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
-            if (!ctx.assistantMessage.summary) {
-            }
             yield* session.updatePart({
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -459,8 +452,6 @@ export const layer = Layer.effect(
               usage: value.usage ?? new Usage({}),
               metadata: value.providerMetadata,
             })
-            if (!ctx.assistantMessage.summary) {
-            }
             ctx.assistantMessage.finish = value.reason
             ctx.assistantMessage.cost += usage.cost
             ctx.assistantMessage.tokens = usage.tokens
@@ -505,8 +496,6 @@ export const layer = Layer.effect(
           }
 
           case "text-start":
-            if (!ctx.assistantMessage.summary) {
-            }
             ctx.currentText = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -545,8 +534,6 @@ export const layer = Layer.effect(
               },
               { text: ctx.currentText.text },
             )).text
-            if (!ctx.assistantMessage.summary) {
-            }
             {
               const end = Date.now()
               ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
@@ -628,8 +615,6 @@ export const layer = Layer.effect(
           ctx.needsCompaction = true
           yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
           return
-        }
-        if (!ctx.assistantMessage.summary) {
         }
         ctx.assistantMessage.error = error
         yield* events.publish(Session.Event.Error, {
@@ -717,7 +702,6 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(SessionStatus.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Config.defaultLayer),
-    Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(Database.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
   ),

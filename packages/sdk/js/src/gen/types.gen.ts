@@ -541,9 +541,6 @@ export type Session = {
     files: number
     diffs?: Array<FileDiff>
   }
-  share?: {
-    url: string
-  }
   title: string
   version: string
   time: {
@@ -625,7 +622,6 @@ export type EventTuiCommandExecute = {
       | (
           | "session.list"
           | "session.new"
-          | "session.share"
           | "session.interrupt"
           | "session.compact"
           | "session.page.up"
@@ -652,45 +648,6 @@ export type EventTuiToastShow = {
      * Duration in milliseconds
      */
     duration?: number
-  }
-}
-
-export type Pty = {
-  id: string
-  title: string
-  command: string
-  args: Array<string>
-  cwd: string
-  status: "running" | "exited"
-  pid: number
-}
-
-export type EventPtyCreated = {
-  type: "pty.created"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyUpdated = {
-  type: "pty.updated"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyExited = {
-  type: "pty.exited"
-  properties: {
-    id: string
-    exitCode: number
-  }
-}
-
-export type EventPtyDeleted = {
-  type: "pty.deleted"
-  properties: {
-    id: string
   }
 }
 
@@ -729,10 +686,6 @@ export type Event =
   | EventTuiPromptAppend
   | EventTuiCommandExecute
   | EventTuiToastShow
-  | EventPtyCreated
-  | EventPtyUpdated
-  | EventPtyExited
-  | EventPtyDeleted
   | EventServerConnected
 
 export type GlobalEvent = {
@@ -818,14 +771,6 @@ export type KeybindsConfig = {
    * Show session timeline
    */
   session_timeline?: string
-  /**
-   * Share current session
-   */
-  session_share?: string
-  /**
-   * Unshare current session
-   */
-  session_unshare?: string
   /**
    * Interrupt current session
    */
@@ -1225,14 +1170,6 @@ export type Config = {
   }
   plugin?: Array<string>
   snapshot?: boolean
-  /**
-   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
-   */
-  share?: "manual" | "auto" | "disabled"
-  /**
-   * @deprecated Use 'share' field instead. Share newly created sessions automatically
-   */
-  autoshare?: boolean
   /**
    * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
    */
@@ -1731,181 +1668,6 @@ export type ProjectCurrentResponses = {
 
 export type ProjectCurrentResponse = ProjectCurrentResponses[keyof ProjectCurrentResponses]
 
-export type PtyListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/pty"
-}
-
-export type PtyListResponses = {
-  /**
-   * List of sessions
-   */
-  200: Array<Pty>
-}
-
-export type PtyListResponse = PtyListResponses[keyof PtyListResponses]
-
-export type PtyCreateData = {
-  body?: {
-    command?: string
-    args?: Array<string>
-    cwd?: string
-    title?: string
-    env?: {
-      [key: string]: string
-    }
-  }
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/pty"
-}
-
-export type PtyCreateErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type PtyCreateError = PtyCreateErrors[keyof PtyCreateErrors]
-
-export type PtyCreateResponses = {
-  /**
-   * Created session
-   */
-  200: Pty
-}
-
-export type PtyCreateResponse = PtyCreateResponses[keyof PtyCreateResponses]
-
-export type PtyRemoveData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-  }
-  url: "/pty/{id}"
-}
-
-export type PtyRemoveErrors = {
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type PtyRemoveError = PtyRemoveErrors[keyof PtyRemoveErrors]
-
-export type PtyRemoveResponses = {
-  /**
-   * Session removed
-   */
-  200: boolean
-}
-
-export type PtyRemoveResponse = PtyRemoveResponses[keyof PtyRemoveResponses]
-
-export type PtyGetData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-  }
-  url: "/pty/{id}"
-}
-
-export type PtyGetErrors = {
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type PtyGetError = PtyGetErrors[keyof PtyGetErrors]
-
-export type PtyGetResponses = {
-  /**
-   * Session info
-   */
-  200: Pty
-}
-
-export type PtyGetResponse = PtyGetResponses[keyof PtyGetResponses]
-
-export type PtyUpdateData = {
-  body?: {
-    title?: string
-    size?: {
-      rows: number
-      cols: number
-    }
-  }
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-  }
-  url: "/pty/{id}"
-}
-
-export type PtyUpdateErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type PtyUpdateError = PtyUpdateErrors[keyof PtyUpdateErrors]
-
-export type PtyUpdateResponses = {
-  /**
-   * Updated session
-   */
-  200: Pty
-}
-
-export type PtyUpdateResponse = PtyUpdateResponses[keyof PtyUpdateResponses]
-
-export type PtyConnectData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-  }
-  url: "/pty/{id}/connect"
-}
-
-export type PtyConnectErrors = {
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type PtyConnectError = PtyConnectErrors[keyof PtyConnectErrors]
-
-export type PtyConnectResponses = {
-  /**
-   * Connected session
-   */
-  200: boolean
-}
-
-export type PtyConnectResponse = PtyConnectResponses[keyof PtyConnectResponses]
-
 export type ConfigGetData = {
   body?: never
   path?: never
@@ -2402,72 +2164,6 @@ export type SessionAbortResponses = {
 }
 
 export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
-
-export type SessionUnshareData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-  }
-  url: "/session/{id}/share"
-}
-
-export type SessionUnshareErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionUnshareError = SessionUnshareErrors[keyof SessionUnshareErrors]
-
-export type SessionUnshareResponses = {
-  /**
-   * Successfully unshared session
-   */
-  200: Session
-}
-
-export type SessionUnshareResponse = SessionUnshareResponses[keyof SessionUnshareResponses]
-
-export type SessionShareData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-  }
-  url: "/session/{id}/share"
-}
-
-export type SessionShareErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionShareError = SessionShareErrors[keyof SessionShareErrors]
-
-export type SessionShareResponses = {
-  /**
-   * Successfully shared session
-   */
-  200: Session
-}
-
-export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
 
 export type SessionDiffData = {
   body?: never
@@ -3596,35 +3292,6 @@ export type FormatterStatusResponses = {
 }
 
 export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
-
-export type TuiAppendPromptData = {
-  body?: {
-    text: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/tui/append-prompt"
-}
-
-export type TuiAppendPromptErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiAppendPromptError = TuiAppendPromptErrors[keyof TuiAppendPromptErrors]
-
-export type TuiAppendPromptResponses = {
-  /**
-   * Prompt processed successfully
-   */
-  200: boolean
-}
-
-export type TuiAppendPromptResponse = TuiAppendPromptResponses[keyof TuiAppendPromptResponses]
 
 export type TuiOpenHelpData = {
   body?: never

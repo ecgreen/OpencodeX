@@ -9,7 +9,6 @@ import {
 } from "../src/renderer/src/lib/live-session-event"
 import {
   globalEventAction,
-  isHighFrequencySessionEvent,
   isCapabilityRefreshEvent,
   isSessionDataEvent,
   mergeLiveSessionData,
@@ -23,7 +22,6 @@ describe("GUI live session projection", () => {
     expect(isSessionDataEvent(event)).toBe(true)
     expect(eventSessionID(event)).toBe("ses_live")
     expect(eventMessageID(event)).toBe("msg_classify")
-    expect(isHighFrequencySessionEvent(syncEvent("session.next.token.9", {}))).toBe(true)
   })
 
   test("routes global status and session state events", () => {
@@ -80,7 +78,6 @@ describe("GUI live session projection", () => {
       type: "session-data",
     })
     expect(globalEventAction(event("session.deleted", { sessionID: "ses_gone" }))).toEqual({ type: "snapshot" })
-    expect(globalEventAction(syncEvent("session.next.token.9", {}))).toEqual({ type: "ignore" })
     expect(isCapabilityRefreshEvent(event("lsp.updated", {}))).toBe(true)
     expect(globalEventAction(event("file.watcher.updated", { file: "src/app.tsx" }))).toEqual({ type: "ignore" })
     expect(globalEventAction(event("plugin.added", {}))).toEqual({ type: "refresh", root: false })

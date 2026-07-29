@@ -2,7 +2,6 @@ import { ServerAuth } from "@/server/auth"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
-import { UnauthorizedError } from "../errors"
 
 const AUTH_TOKEN_QUERY = "auth_token"
 const UNAUTHORIZED = 401
@@ -15,13 +14,6 @@ export class Authorization extends HttpApiMiddleware.Service<Authorization>()(
   "@opencode/ExperimentalHttpApiAuthorization",
   {
     error: HttpApiError.UnauthorizedNoContent,
-  },
-) {}
-
-export class V2Authorization extends HttpApiMiddleware.Service<V2Authorization>()(
-  "@opencode/ExperimentalHttpApiV2Authorization",
-  {
-    error: UnauthorizedError,
   },
 ) {}
 
@@ -119,30 +111,6 @@ export const authorizationLayer = Layer.effect(
         const request = yield* HttpServerRequest.HttpServerRequest
         return yield* credentialFromRequest(request).pipe(
           Effect.flatMap((credential) => validateCredential(effect, credential, config)),
-        )
-      }),
-    )
-  }),
-)
-
-export const v2AuthorizationLayer = Layer.effect(
-  V2Authorization,
-  Effect.gen(function* () {
-    const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return V2Authorization.of((effect) => effect)
-    return V2Authorization.of((effect) =>
-      Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        return yield* credentialFromRequest(request).pipe(
-          Effect.flatMap((credential) =>
-            Effect.gen(function* () {
-              if (ServerAuth.authorized(credential, config)) return yield* effect
-              yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-                Effect.succeed(HttpServerResponse.setHeader(response, "www-authenticate", WWW_AUTHENTICATE)),
-              )
-              return yield* new UnauthorizedError({ message: "Authentication required" })
-            }),
-          ),
         )
       }),
     )

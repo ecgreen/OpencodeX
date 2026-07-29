@@ -277,9 +277,6 @@ packages/opencode:
   bun test test/cli/coordinator-selection.test.ts --timeout 30000
   Result: 5 passed
 
-  bun test test/cli/cmd/tui/sync-v2.test.tsx --timeout 30000
-  Result: 1 passed
-
   bun test test/cli/tui/sync-state.test.ts --timeout 30000
   Result: 1 passed
 
@@ -308,8 +305,8 @@ packages/gui:
   Result: Electron main and preload bundles built with validated externals
 
 TUI reconnect synchronization:
-  bun test test/cli/cmd/tui/sync.test.tsx test/cli/cmd/tui/sync-undefined-messages.test.tsx test/cli/cmd/tui/sync-v2.test.tsx test/cli/tui/sync-state.test.ts test/cli/tui/use-event.test.tsx --timeout 30000
-  Result: 16 passed
+  bun test test/cli/cmd/tui/sync.test.tsx test/cli/cmd/tui/sync-undefined-messages.test.tsx test/cli/tui/sync-state.test.ts test/cli/tui/use-event.test.tsx --timeout 30000
+  Result: 15 passed (sync-v2.test.tsx retired with the v2 event system)
 
 TUI status and prompt lifecycle:
   bun test test/cli/cmd/tui/opencodex-session-viewed.test.ts test/cli/cmd/tui/notifications.test.ts --timeout 30000

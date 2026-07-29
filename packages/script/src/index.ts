@@ -55,9 +55,6 @@ const VERSION = await (async () => {
   return version
 })()
 
-const bot = ["actions-user", "github-actions[bot]"]
-const team = ["ecgreen", ...bot]
-
 export const Script = {
   get channel() {
     return CHANNEL
@@ -70,9 +67,6 @@ export const Script = {
   },
   get release(): boolean {
     return !!env.OPENCODE_RELEASE
-  },
-  get team() {
-    return team
   },
 }
 console.log(`opencodex script`, JSON.stringify(Script, null, 2))

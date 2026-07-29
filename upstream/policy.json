@@ -19,7 +19,6 @@
     "packages/opencode/src/cli/cmd/tui/**",
     "packages/opencode/src/opencodex/**",
     "packages/opencode/src/server/routes/instance/httpapi/handlers/opencodex.ts",
-    "packages/opencode/src/server/routes/instance/httpapi/handlers/opencodex.test.ts",
     "github/**",
     ".github/**",
     "install",
@@ -44,8 +43,6 @@
     "packages/opencode/src/plugin/**",
     "packages/opencode/src/cli/cmd/github.ts",
     "packages/sdk/js/**",
-    "packages/ui/src/components/file-icons/**",
-    "packages/ui/src/components/provider-icons/**",
     "package.json",
     "bun.lock"
   ],
@@ -68,7 +65,10 @@
     "sst.config.ts",
     "sst-env.d.ts",
     "packages/ui/src/assets/icons/file-types",
-    "packages/ui/src/assets/icons/provider"
+    "packages/ui/src/assets/icons/provider",
+    "packages/opencode/script/publish.ts",
+    "packages/plugin/script/publish.ts",
+    "packages/sdk/js/script/publish.ts"
   ],
   "ownedConfiguration": [
     ".github",

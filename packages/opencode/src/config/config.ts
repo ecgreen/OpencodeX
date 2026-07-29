@@ -139,7 +139,7 @@ export const Info = Schema.Struct({
   }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),
   server: Schema.optional(ConfigServer.Server).annotate({
-    description: "Server configuration for opencode serve and web commands",
+    description: "Server configuration for the opencode serve command",
   }),
   command: Schema.optional(Schema.Record(Schema.String, ConfigCommand.Info)).annotate({
     description: "Command configuration, see https://opencode.ai/docs/commands",

@@ -8,23 +8,6 @@ import type {
   ProjectListResponses,
   ProjectCurrentData,
   ProjectCurrentResponses,
-  PtyListData,
-  PtyListResponses,
-  PtyCreateData,
-  PtyCreateResponses,
-  PtyCreateErrors,
-  PtyRemoveData,
-  PtyRemoveResponses,
-  PtyRemoveErrors,
-  PtyGetData,
-  PtyGetResponses,
-  PtyGetErrors,
-  PtyUpdateData,
-  PtyUpdateResponses,
-  PtyUpdateErrors,
-  PtyConnectData,
-  PtyConnectResponses,
-  PtyConnectErrors,
   ConfigGetData,
   ConfigGetResponses,
   ConfigUpdateData,
@@ -73,12 +56,6 @@ import type {
   SessionAbortData,
   SessionAbortResponses,
   SessionAbortErrors,
-  SessionUnshareData,
-  SessionUnshareResponses,
-  SessionUnshareErrors,
-  SessionShareData,
-  SessionShareResponses,
-  SessionShareErrors,
   SessionDiffData,
   SessionDiffResponses,
   SessionDiffErrors,
@@ -168,9 +145,6 @@ import type {
   LspStatusResponses,
   FormatterStatusData,
   FormatterStatusResponses,
-  TuiAppendPromptData,
-  TuiAppendPromptResponses,
-  TuiAppendPromptErrors,
   TuiOpenHelpData,
   TuiOpenHelpResponses,
   TuiOpenSessionsData,
@@ -259,76 +233,6 @@ class Project extends _HeyApiClient {
   public current<ThrowOnError extends boolean = false>(options?: Options<ProjectCurrentData, ThrowOnError>) {
     return (options?.client ?? this._client).get<ProjectCurrentResponses, unknown, ThrowOnError>({
       url: "/project/current",
-      ...options,
-    })
-  }
-}
-
-class Pty extends _HeyApiClient {
-  /**
-   * List all PTY sessions
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<PtyListData, ThrowOnError>) {
-    return (options?.client ?? this._client).get<PtyListResponses, unknown, ThrowOnError>({
-      url: "/pty",
-      ...options,
-    })
-  }
-
-  /**
-   * Create a new PTY session
-   */
-  public create<ThrowOnError extends boolean = false>(options?: Options<PtyCreateData, ThrowOnError>) {
-    return (options?.client ?? this._client).post<PtyCreateResponses, PtyCreateErrors, ThrowOnError>({
-      url: "/pty",
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-    })
-  }
-
-  /**
-   * Remove a PTY session
-   */
-  public remove<ThrowOnError extends boolean = false>(options: Options<PtyRemoveData, ThrowOnError>) {
-    return (options.client ?? this._client).delete<PtyRemoveResponses, PtyRemoveErrors, ThrowOnError>({
-      url: "/pty/{id}",
-      ...options,
-    })
-  }
-
-  /**
-   * Get PTY session info
-   */
-  public get<ThrowOnError extends boolean = false>(options: Options<PtyGetData, ThrowOnError>) {
-    return (options.client ?? this._client).get<PtyGetResponses, PtyGetErrors, ThrowOnError>({
-      url: "/pty/{id}",
-      ...options,
-    })
-  }
-
-  /**
-   * Update PTY session
-   */
-  public update<ThrowOnError extends boolean = false>(options: Options<PtyUpdateData, ThrowOnError>) {
-    return (options.client ?? this._client).put<PtyUpdateResponses, PtyUpdateErrors, ThrowOnError>({
-      url: "/pty/{id}",
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-    })
-  }
-
-  /**
-   * Connect to a PTY session
-   */
-  public connect<ThrowOnError extends boolean = false>(options: Options<PtyConnectData, ThrowOnError>) {
-    return (options.client ?? this._client).get<PtyConnectResponses, PtyConnectErrors, ThrowOnError>({
-      url: "/pty/{id}/connect",
       ...options,
     })
   }
@@ -551,26 +455,6 @@ class Session extends _HeyApiClient {
   public abort<ThrowOnError extends boolean = false>(options: Options<SessionAbortData, ThrowOnError>) {
     return (options.client ?? this._client).post<SessionAbortResponses, SessionAbortErrors, ThrowOnError>({
       url: "/session/{id}/abort",
-      ...options,
-    })
-  }
-
-  /**
-   * Unshare the session
-   */
-  public unshare<ThrowOnError extends boolean = false>(options: Options<SessionUnshareData, ThrowOnError>) {
-    return (options.client ?? this._client).delete<SessionUnshareResponses, SessionUnshareErrors, ThrowOnError>({
-      url: "/session/{id}/share",
-      ...options,
-    })
-  }
-
-  /**
-   * Share a session
-   */
-  public share<ThrowOnError extends boolean = false>(options: Options<SessionShareData, ThrowOnError>) {
-    return (options.client ?? this._client).post<SessionShareResponses, SessionShareErrors, ThrowOnError>({
-      url: "/session/{id}/share",
       ...options,
     })
   }
@@ -1025,20 +909,6 @@ class Control extends _HeyApiClient {
 
 class Tui extends _HeyApiClient {
   /**
-   * Append prompt to the TUI
-   */
-  public appendPrompt<ThrowOnError extends boolean = false>(options?: Options<TuiAppendPromptData, ThrowOnError>) {
-    return (options?.client ?? this._client).post<TuiAppendPromptResponses, TuiAppendPromptErrors, ThrowOnError>({
-      url: "/tui/append-prompt",
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-    })
-  }
-
-  /**
    * Open the help dialog
    */
   public openHelp<ThrowOnError extends boolean = false>(options?: Options<TuiOpenHelpData, ThrowOnError>) {
@@ -1176,7 +1046,6 @@ export class OpencodeClient extends _HeyApiClient {
   }
   global = new Global({ client: this._client })
   project = new Project({ client: this._client })
-  pty = new Pty({ client: this._client })
   config = new Config({ client: this._client })
   tool = new Tool({ client: this._client })
   instance = new Instance({ client: this._client })
