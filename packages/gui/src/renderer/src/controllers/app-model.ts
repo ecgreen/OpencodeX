@@ -19,6 +19,7 @@ import type { createSessionSwitcherController } from "./session-switcher-control
 import type { createSettingsController } from "./settings-controller"
 import type { createSwarmTeamController } from "./swarm-team-controller"
 import type { createTranscriptPreferences } from "./transcript-preferences"
+import type { createUpdateNoticeController } from "./update-notice-controller"
 import type { createViewController } from "./view-controller"
 
 export type GuiAppModel = {
@@ -43,5 +44,6 @@ export type GuiAppModel = {
   settings: ReturnType<typeof createSettingsController>
   swarmTeam: ReturnType<typeof createSwarmTeamController>
   transcriptPreferences: ReturnType<typeof createTranscriptPreferences>
+  updateNotice: ReturnType<typeof createUpdateNoticeController>
   view: ReturnType<typeof createViewController>
 }

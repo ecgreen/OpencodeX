@@ -67,7 +67,7 @@ function inventory(): PackageInventory {
       resources:
         sidecarLimit("win32", "x64") + packageLimits.asar + packageLimits.unpacked["win32-x64"] + 64 * 1024,
     },
-    totals: { renderer: 1, main: 1, preload: 1, asar: 1, unpacked: 1, sidecar: 1, resources: 1 },
+    totals: { renderer: 1, main: 1, preload: 1, asar: 1, unpacked: 1, sidecar: 2, resources: 2 },
     asarFiles: [
       { path: "dist/electron-metafile.json", bytes: 1 },
       { path: "dist/main/index.js", bytes: 1 },
@@ -79,8 +79,14 @@ function inventory(): PackageInventory {
       { path: "package.json", bytes: 1 },
     ],
     unpackedFiles: native.map((file) => ({ path: file, bytes: 1 })),
-    sidecarFiles: [{ path: "sidecar/opencode-gui-coordinator.exe", bytes: 1 }],
-    resourceFiles: [{ path: "sidecar/opencode-gui-coordinator.exe", bytes: 1 }],
+    sidecarFiles: [
+      { path: "sidecar/opencode-gui-coordinator.exe", bytes: 1 },
+      { path: "sidecar/version.json", bytes: 1 },
+    ],
+    resourceFiles: [
+      { path: "sidecar/opencode-gui-coordinator.exe", bytes: 1 },
+      { path: "sidecar/version.json", bytes: 1 },
+    ],
     pdbFiles: [],
   }
 }

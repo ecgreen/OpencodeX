@@ -29,6 +29,8 @@ export const measuredSidecarBytes = {
   "darwin-arm64": 88_858_082,
 } as const
 
+export const SIDECAR_VERSION_STAMP = "sidecar/version.json"
+
 export function sidecarLimit(platform: string, arch: string) {
   const key = `${platform}-${arch}`
   const measured = Object.entries(measuredSidecarBytes).find(([target]) => target === key)?.[1]
@@ -97,6 +99,10 @@ export function validatePackageInventory(inventory: PackageInventory) {
   const markedUnpacked = inventory.asarFiles.filter((file) => file.unpacked).map((file) => file.path).sort()
   const physicalUnpacked = inventory.unpackedFiles.map((file) => file.path).sort()
   const expectedCoordinator = `sidecar/opencode-gui-coordinator${inventory.platform === "win32" ? ".exe" : ""}`
+  /* The version stamp travels with the binary: Electron main reads it to
+     present this build's backend version in the coordinator handshake. */
+  const expectedSidecar = [expectedCoordinator, SIDECAR_VERSION_STAMP].sort()
+  const coordinatorBytes = inventory.sidecarFiles.find((file) => file.path === expectedCoordinator)?.bytes ?? 0
   const sidecarBytes = inventory.sidecarFiles.reduce((sum, file) => sum + file.bytes, 0)
   const resourceBytes = inventory.resourceFiles.reduce((sum, file) => sum + file.bytes, 0)
 
@@ -130,9 +136,9 @@ export function validatePackageInventory(inventory: PackageInventory) {
     failures.push(`unexpected ASAR unpack markers: ${markedUnpacked.join(", ") || "none"}`)
   if (!same(physicalUnpacked, expectedNative))
     failures.push(`unexpected app.asar.unpacked files: ${physicalUnpacked.join(", ") || "none"}`)
-  if (!same(inventory.sidecarFiles.map((file) => file.path), [expectedCoordinator]))
-    failures.push(`sidecar must contain only ${expectedCoordinator}`)
-  if ((inventory.sidecarFiles[0]?.bytes ?? 0) === 0) failures.push("GUI coordinator is empty")
+  if (!same(inventory.sidecarFiles.map((file) => file.path), expectedSidecar))
+    failures.push(`sidecar must contain only ${expectedSidecar.join(" and ")}`)
+  if (coordinatorBytes === 0) failures.push("GUI coordinator is empty")
   if (inventory.pdbFiles.length > 0) failures.push(`PDB files are forbidden: ${inventory.pdbFiles.join(", ")}`)
   return failures
 }

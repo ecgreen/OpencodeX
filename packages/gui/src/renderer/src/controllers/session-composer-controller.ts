@@ -3,6 +3,7 @@ import type { createAuthoritativeStateController } from "./authoritative-state-c
 import type { createNavigationController } from "./navigation-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
 import type { createSessionState } from "./session-state"
+import { createPlanModeFollow } from "../lib/plan-mode-follow"
 import { activeSessionRouteKey } from "../lib/route-selection"
 import { runSessionPromptAction } from "../lib/session-prompt"
 import { runShellCommand, runSessionCommand, sendPrompt } from "../lib/store"
@@ -16,6 +17,11 @@ export function createSessionComposerController(input: {
   pinSession: (sessionID: string) => void
   rememberModel: (value: string) => void
 }) {
+  createPlanModeFollow({
+    subscribe: input.authoritative.subscribeGlobalEvents,
+    activeSessionID: input.selection.activeSessionID,
+    setAgent: input.state.setSelectedAgent,
+  })
   async function submit(event: SubmitEvent, value?: string | GuiPromptInfo) {
     event.preventDefault()
     const client = input.authoritative.client()

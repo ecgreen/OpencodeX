@@ -2,12 +2,20 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { rememberBackendAuthority } from "./backend-authority.js"
 import fs from "node:fs"
-import path from "node:path"
 import {
+  checkCoordinatorCompatibility,
+  fetchCoordinatorHealth,
+  isCoordinatorProcessAlive,
+  isMissingCoordinatorFile,
+  readCoordinatorManifestFile,
+  readCoordinatorManifestToken,
+  removeCoordinatorManifest as removeCoordinatorManifestIn,
+  startCoordinatorClientLease as startCoordinatorClientLeaseIn,
+} from "@opencode-ai/sdk/coordinator"
+import {
+  COORDINATOR_STATE_ROOT,
   COORDINATOR_USERNAME,
-  coordinatorClientDir,
   coordinatorDatabaseIdentity,
-  coordinatorHeaders,
   coordinatorKey,
   coordinatorManifestPath,
   coordinatorStartupLogPath,
@@ -15,13 +23,13 @@ import {
   createStartupLog,
   selectedDatabaseEnv,
   sidecarDatabase,
+  sidecarVersion,
   startError,
   startupLogDetails,
   workingDirectory,
   type CoordinatorManifest,
   type SidecarLaunch,
 } from "./sidecar-launch.js"
-import { loopbackSidecarURL } from "./sidecar-connection.js"
 import { stopDetachedChild } from "./sidecar-lifecycle.js"
 
 export type SidecarConnection = {
@@ -38,6 +46,19 @@ type SidecarState = {
   lease?: { dispose: () => Promise<void> }
   controller?: AbortController
   generation: number
+}
+
+/**
+ * A coordinator whose server version this GUI cannot verify is refused, never
+ * replaced: the manifest stays, the process keeps running, and any client that
+ * does match it stays attached. Killing it would put a second writer on the
+ * same database, which is the failure the whole attach protocol prevents.
+ */
+class CoordinatorVersionMismatchError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "CoordinatorVersionMismatchError"
+  }
 }
 
 /* Generous on purpose: the coordinator is `bun run` over the full opencode
@@ -145,8 +166,20 @@ async function activeCoordinator(key: string, database: string) {
     await removeCoordinatorManifest(key, manifest.token)
     return undefined
   }
-  if (await isSidecarConnectionHealthy(manifest)) return manifest
-  if (isProcessAlive(manifest.pid)) {
+  const health = await fetchCoordinatorHealth(manifest)
+  if (health?.healthy === true) {
+    const compatibility = checkCoordinatorCompatibility({
+      manifest,
+      clientVersion: sidecarVersion(),
+      healthVersion: health.version,
+    })
+    if (!compatibility.compatible) {
+      throw new CoordinatorVersionMismatchError(compatibility.message ?? "Coordinator version mismatch")
+    }
+    if (compatibility.reason === "local" && compatibility.message) console.warn(compatibility.message)
+    return manifest
+  }
+  if (isCoordinatorProcessAlive(manifest.pid)) {
     throw new Error(`OpencodeX coordinator process ${manifest.pid} is alive but unhealthy; refusing to replace it`)
   }
   await removeCoordinatorManifest(key, manifest.token)
@@ -157,131 +190,31 @@ async function readActiveManifest(key: string) {
   try {
     return await readCoordinatorManifest(key)
   } catch (error) {
-    if (isMissingFile(error)) return undefined
-    const token = await readCoordinatorManifestToken(key)
+    if (isMissingCoordinatorFile(error)) return undefined
+    const token = await readCoordinatorManifestToken(coordinatorManifestPath(key))
     if (!token) throw new Error("Invalid TUI coordinator manifest cannot be removed safely")
     await removeCoordinatorManifest(key, token)
     return undefined
   }
 }
 
-async function readCoordinatorManifest(key: string) {
-  const parsed = JSON.parse(await fs.promises.readFile(coordinatorManifestPath(key), "utf8")) as Partial<CoordinatorManifest>
-  if (
-    parsed.version !== 2 ||
-    typeof parsed.key !== "string" ||
-    typeof parsed.directory !== "string" ||
-    typeof parsed.database !== "string" ||
-    typeof parsed.pid !== "number" ||
-    typeof parsed.url !== "string" ||
-    !loopbackSidecarURL(parsed.url) ||
-    typeof parsed.username !== "string" ||
-    typeof parsed.password !== "string" ||
-    typeof parsed.token !== "string" ||
-    typeof parsed.createdAt !== "string"
-  ) {
-    throw new Error("Invalid TUI coordinator manifest")
-  }
-  return parsed as CoordinatorManifest
+function readCoordinatorManifest(key: string) {
+  return readCoordinatorManifestFile(coordinatorManifestPath(key))
 }
 
-async function readCoordinatorManifestToken(key: string) {
-  return fs.promises
-    .readFile(coordinatorManifestPath(key), "utf8")
-    .then((raw) => JSON.parse(raw) as Partial<CoordinatorManifest>)
-    .then((manifest) => (typeof manifest.token === "string" ? manifest.token : undefined))
-    .catch(() => undefined)
-}
-
-async function removeCoordinatorManifest(key: string, token: string) {
-  if ((await readCoordinatorManifestToken(key)) !== token) return
-  await fs.promises.rm(coordinatorManifestPath(key), { force: true })
-}
-
-function isMissingFile(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error.code === "ENOENT" || error.code === "ENOTDIR")
-  )
-}
-
-function isProcessAlive(pid: number) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM"
-  }
-}
-
-export async function isSidecarConnectionHealthy(manifest: Pick<CoordinatorManifest, "url" | "username" | "password">) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 1_500)
-  try {
-    const response = await fetch(new URL("/global/health", manifest.url), {
-      headers: coordinatorHeaders(manifest),
-      signal: controller.signal,
-    })
-    if (!response.ok) return false
-    const body = (await response.json()) as { healthy?: unknown }
-    return body.healthy === true
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timeout)
-  }
+function removeCoordinatorManifest(key: string, token: string) {
+  return removeCoordinatorManifestIn(COORDINATOR_STATE_ROOT, key, token)
 }
 
 function startCoordinatorClientLease(key: string) {
-  const dir = coordinatorClientDir(key)
-  const file = path.join(dir, `${process.pid}.gui.json`)
-  let disposed = false
-  let writing = Promise.resolve()
-  const write = () => {
-    const next = writing.catch(() => {}).then(async () => {
-      if (disposed) return
-      await fs.promises.mkdir(dir, { recursive: true })
-      if (disposed) return
-      const temporary = `${file}.${randomBytes(4).toString("hex")}.tmp`
-      try {
-        await fs.promises.writeFile(
-          temporary,
-          JSON.stringify({
-            version: 1,
-            key,
-            pid: process.pid,
-            updatedAt: Date.now(),
-          }),
-          { mode: 0o600 },
-        )
-        if (disposed) return
-        await fs.promises.rename(temporary, file)
-        if (disposed) await fs.promises.rm(file, { force: true })
-      } finally {
-        await fs.promises.rm(temporary, { force: true }).catch(() => undefined)
-      }
-    })
-    writing = next
-    return next
-  }
-  const timer = setInterval(() => {
-    void write().catch(() => {})
-  }, CLIENT_HEARTBEAT_INTERVAL)
-  timer.unref?.()
-  const ready = write()
-
-  return {
-    ready,
-    async dispose() {
-      if (disposed) return
-      disposed = true
-      clearInterval(timer)
-      await Promise.all([ready.catch(() => undefined), writing.catch(() => undefined)])
-      await fs.promises.rm(file, { force: true }).catch(() => undefined)
-    },
-  }
+  /* The `.gui` suffix is load-bearing: the TUI scans for `*.gui.json` leases to
+     decide which database an active GUI already owns. */
+  return startCoordinatorClientLeaseIn({
+    stateRoot: COORDINATOR_STATE_ROOT,
+    key,
+    suffix: ".gui",
+    interval: CLIENT_HEARTBEAT_INTERVAL,
+  })
 }
 
 async function spawnCoordinator(directory: string, key: string, database: string, signal: AbortSignal) {

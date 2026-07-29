@@ -118,7 +118,8 @@
         "to": "sidecar",
         "filter": [
           "opencode-gui-coordinator",
-          "opencode-gui-coordinator.exe"
+          "opencode-gui-coordinator.exe",
+          "version.json"
         ]
       }
     ],

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { OpencodeXJob, OpencodeXSwarm, Session } from "../src/v2/client"
-import { clientAttentionItems, clientWorkItemBucket, clientWorkItems, createClientWorkItemSelector, type WorkItemProjectionInput } from "../src/v2/work-item"
+import { clientAttentionItems, clientAttentionTransitions, clientWorkItemBucket, clientWorkItems, createClientWorkItemSelector, type AttentionItem, type WorkItemProjectionInput } from "../src/v2/work-item"
 
 describe("shared work item projection", () => {
   test("projects session, job, and swarm run lifecycle without duplicating state owners", () => {
@@ -22,6 +22,18 @@ describe("shared work item projection", () => {
     expect(attention[0]?.workItemID).toBe("session:session-1")
   })
 
+  test("reports only newly appeared attention items", () => {
+    const permission = attention("permission:session:session-1")
+    const failure = attention("failure:swarm_run:run-1")
+
+    expect(clientAttentionTransitions([], [permission, failure])).toEqual([permission, failure])
+    expect(clientAttentionTransitions([permission], [permission, failure])).toEqual([failure])
+    expect(clientAttentionTransitions([permission, failure], [permission, failure])).toEqual([])
+    expect(clientAttentionTransitions([permission, failure], [])).toEqual([])
+    // A resolved item returning later is new again, so the reader is told twice.
+    expect(clientAttentionTransitions([failure], [permission])).toEqual([permission])
+  })
+
   test("retains projection identity when transcript-only state changes", () => {
     const input = state()
     const select = createClientWorkItemSelector()
@@ -30,6 +42,19 @@ describe("shared work item projection", () => {
     expect(select({ ...input, sessionStatus: { ...input.sessionStatus } })).not.toBe(first)
   })
 })
+
+function attention(id: string): AttentionItem {
+  return {
+    id,
+    workItemID: id.split(":").slice(1).join(":"),
+    kind: "permission",
+    priority: 0,
+    title: id,
+    detail: "",
+    state: "waiting_permission",
+    updatedAt: 1_000,
+  }
+}
 
 function state(): WorkItemProjectionInput {
   const session = {

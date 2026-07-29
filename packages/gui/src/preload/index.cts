@@ -64,6 +64,16 @@ export type ContextPath = {
   type: "file" | "directory"
 }
 
+export type NotificationRequest = {
+  title: string
+  body: string
+  sessionID?: string
+}
+
+export type NotificationActivateEvent = {
+  sessionID: string
+}
+
 /**
  * `ipcRenderer.invoke` is typed `Promise<any>`, so every call site would need
  * its own assertion. Narrowing once here keeps the bridge readable and confines
@@ -99,6 +109,14 @@ contextBridge.exposeInMainWorld("opencodex", {
       const handler = (_event: Electron.IpcRendererEvent, payload: TerminalExitEvent) => listener(payload)
       ipcRenderer.on("opencodex:terminal:exit", handler)
       return () => ipcRenderer.off("opencodex:terminal:exit", handler)
+    },
+  },
+  notifications: {
+    show: (input: NotificationRequest) => ipcRenderer.send("opencodex:notification:show", input),
+    onActivate: (listener: (event: NotificationActivateEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: NotificationActivateEvent) => listener(payload)
+      ipcRenderer.on("opencodex:notification:activate", handler)
+      return () => ipcRenderer.off("opencodex:notification:activate", handler)
     },
   },
   window: (action: "minimize" | "maximize" | "close") => ipcRenderer.invoke("opencodex:window", action),
