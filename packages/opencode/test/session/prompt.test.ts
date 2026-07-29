@@ -1920,6 +1920,7 @@ unix(
       const { dir, llm } = yield* useServerConfig(providerCfg)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
+      const afs = yield* AppFileSystem.Service
       const chat = yield* sessions.create({
         title: "Interrupted bash truncation",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
@@ -1934,7 +1935,7 @@ unix(
 
       yield* llm.tool("bash", {
         command:
-          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; sleep 30',
+          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; : > .bash-lines-done; sleep 30',
         description: "Print many lines",
         timeout: 30_000,
         workdir: path.resolve(dir),
@@ -1944,17 +1945,18 @@ unix(
       yield* llm.wait(1)
       /*
        * The case is about what cancel does to output that already overflowed,
-       * so the shell has to get through all 4000 lines first. Sleeping 150ms
-       * only guessed that it had: on a loaded runner the cancel landed early,
-       * nothing had overflowed, and `truncated` came back false. Wait for the
-       * last line the loop prints instead of for a duration.
+       * so the shell has to get through all 4000 lines first. Polling the
+       * stored part for the last line no longer works: in-flight tool metadata
+       * is broadcast transiently and only the terminal revision is durable.
+       * The marker file bash touches after the loop is the observable signal -
+       * and since 4000 lines (~424 KB) dwarf both the 50 KB truncation limit
+       * and any pipe buffer, the reader must have consumed past the limit
+       * before bash can finish the loop.
        */
+      const marker = path.join(dir, ".bash-lines-done")
       yield* pollWithTimeout(
         Effect.gen(function* () {
-          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-          const assistant = msgs.find((item) => item.info.role === "assistant")
-          const running = assistant ? toolPart(assistant.parts) : undefined
-          if (running?.state.status === "running" && running.state.metadata?.output.includes("03999")) return true
+          if (yield* afs.existsSafe(marker)) return true
         }),
         "bash never printed enough output to overflow the truncation limit",
         "20 seconds",
