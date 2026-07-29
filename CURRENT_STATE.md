@@ -51,7 +51,8 @@
 >   coalescer got a sequence guard against a permit-race reordering; the retention and status
 >   maintenance loops survive a failed pass instead of dying silently; the TUI releases warm SDK
 >   tails on reset.
-> - **Added:** an `OPENCODE_SKIP_MIGRATIONS` regression test; lint baseline ratcheted 2291 → 2286.
+> - **Added:** an `OPENCODE_SKIP_MIGRATIONS` regression test; lint baseline ratcheted 2630 → 2319
+>   (the exact Linux/CI count — oxlint reports ~33 fewer warnings on Windows, so local runs show slack).
 > - **Kept deliberately:** the SDK `./v2/server` export (`v2/index.ts` re-exports it, so it was
 >   never consumer-less as the plan claimed).
 >
@@ -67,7 +68,7 @@
 > - **The upstream sync has still not been executed.** The pin remains `v1.15.13` (2026-05-31) against `v1.18.3` observed 2026-07-18 — three minor versions — and the history is still a snapshot import without a common ancestor, so the first sync is an unrelated-histories merge whose conflict surface keeps growing. This is now the single largest unaddressed risk in the repo.
 > - **Native LLM path is still gated to 3 of 11 provider adapters.** `packages/opencode/src/session/llm/native-runtime.ts` still admits only `openai`, `anthropic`, and `opencode*`; Azure/Google/Bedrock/OpenRouter remain wired but blocked.
 > - **macOS has no CI.** `.github/workflows/ci.yml` runs `ubuntu-latest` and `windows-latest` only, while `release-cli.yml` ships `darwin-arm64` and `darwin-x64` assets. Those binaries are released untested.
-> - **~2,300 lint warnings remain**, baselined rather than fixed. The ceiling in `.oxlint-baseline.json` is ratcheted to the exact current count (2,286, down from main's 2,630), so any new warning fails CI — but the debt itself is untouched.
+> - **~2,300 lint warnings remain**, baselined rather than fixed. The ceiling in `.oxlint-baseline.json` is ratcheted to the exact current count on Linux, where CI runs (2,319, down from main's 2,630), so any new warning fails CI — but the debt itself is untouched. Note the count is platform-dependent: Windows reports ~33 fewer, so local runs carry that much slack.
 > - **The plugin API is still typed against the v1 SDK frozen at fork inception** (§1.4's second half-finished migration) — untouched by this branch.
 > - Four of the five `BACKEND_SYNC_PROGRESS.md` "Residual architecture follow-ups" remain open (filesystem→event outbox, plugin multi-write journal, one-authority-per-database below the launch paths, process-level restart/soak test). Only the event-journal item was resolved.
 
