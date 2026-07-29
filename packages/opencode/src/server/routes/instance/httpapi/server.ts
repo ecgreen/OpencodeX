@@ -53,8 +53,6 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
-import { SessionShare } from "@/share/session"
-import { ShareNext } from "@/share/share-next"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { Skill } from "@/skill"
@@ -240,11 +238,9 @@ export function createRoutes(
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
       SessionRevert.defaultLayer,
-      SessionShare.defaultLayer,
       SessionRunState.defaultLayer,
       SessionStatus.defaultLayer,
       SessionSummary.defaultLayer,
-      ShareNext.defaultLayer,
       Snapshot.defaultLayer,
       EventV2Bridge.defaultLayer,
       Skill.defaultLayer,

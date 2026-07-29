@@ -117,7 +117,7 @@ TUI references:
 ## P2-10 Session Power Tools
 
 Acceptance criteria:
-- Session actions include timeline, fork, compact, share/unshare, export, copy, undo/redo, diff preview, and delete.
+- Session actions include timeline, fork, compact, export, copy, undo/redo, diff preview, and delete.
 - Timestamps, thinking visibility, tool detail visibility, and scroll controls are available.
 
 TUI references:

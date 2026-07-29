@@ -286,14 +286,6 @@ export async function abortSession(gui: GuiClient, sessionID: string, directory?
   )
 }
 
-export async function shareSession(gui: GuiClient, sessionID: string) {
-  return gui.client.session.share({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function unshareSession(gui: GuiClient, sessionID: string) {
-  return gui.client.session.unshare({ sessionID }, { headers: authHeaders(gui), throwOnError: true })
-}
-
 export async function summarizeSession(
   gui: GuiClient,
   input: { sessionID: string; providerID: string; modelID: string },

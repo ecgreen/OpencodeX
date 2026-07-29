@@ -82,7 +82,6 @@ Options:
   -s, --session                       session id to continue                                [string]
       --fork                          fork the session before continuing (requires --continue or
                                       --session)                                           [boolean]
-      --share                         share the session                                    [boolean]
   -m, --model                         model to use in the format of provider/model          [string]
       --agent                         agent to use                                          [string]
       --format                        format: default (formatted) or json (raw JSON events)
@@ -301,10 +300,10 @@ Options:
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode import --help 1`] = `
 "opencodex import <file>
 
-import session data from JSON file or URL
+import session data from a JSON file
 
 Positionals:
-  file  path to JSON file or share URL                                           [string] [required]
+  file  path to JSON file                                                        [string] [required]
 
 Options:
   -h, --help        show help                                                              [boolean]

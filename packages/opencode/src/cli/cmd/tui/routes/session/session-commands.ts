@@ -6,12 +6,10 @@ import { createSessionNavigationCommands } from "./session-commands-navigation"
 import { createSessionTranscriptCommands } from "./session-commands-transcript"
 
 const sessionBindingCommands = [
-  "session.share",
   "session.rename",
   "session.timeline",
   "session.fork",
   "session.compact",
-  "session.unshare",
   "session.undo",
   "session.redo",
   "session.sidebar.toggle",

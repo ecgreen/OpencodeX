@@ -7,7 +7,6 @@ import * as Project from "./project"
 import * as Vcs from "./vcs"
 import { InstanceState } from "@/effect/instance-state"
 import { FileWatcher } from "@/file/watcher"
-import { ShareNext } from "@/share/share-next"
 import { Effect, Layer } from "effect"
 import { Config } from "@/config/config"
 import { Service } from "./bootstrap-service"
@@ -31,7 +30,6 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const project = yield* Project.Service
     const reference = yield* Reference.Service
-    const shareNext = yield* ShareNext.Service
     const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
 
@@ -46,7 +44,7 @@ export const layer = Layer.effect(
       // Each service self-manages its own slow work via Effect.forkScoped against
       // its per-instance state scope. We just await materialization here.
       yield* Effect.forEach(
-        [reference, lsp, shareNext, format, file, fileWatcher, vcs, snapshot, project],
+        [reference, lsp, format, file, fileWatcher, vcs, snapshot, project],
         (s) =>
           s.init().pipe(
             Effect.timeout("5 seconds"),
@@ -70,7 +68,6 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     Plugin.defaultLayer,
     Project.defaultLayer,
     Reference.defaultLayer,
-    ShareNext.defaultLayer,
     Snapshot.defaultLayer,
     Vcs.defaultLayer,
   ]),

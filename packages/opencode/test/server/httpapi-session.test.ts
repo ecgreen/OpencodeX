@@ -465,7 +465,7 @@ describe("session HttpApi", () => {
           }),
         ).toBe(true)
       }),
-    { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
+    { git: true, config: { formatter: false, lsp: false } },
   )
 
   it.instance(
@@ -497,7 +497,7 @@ describe("session HttpApi", () => {
         expect(messages.status).toBe(200)
         expect(yield* getWorkspaceID(created.id)).toEqual({ workspaceID: workspace.id })
       }),
-    { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
+    { git: true, config: { formatter: false, lsp: false } },
   )
 
   it.instance(

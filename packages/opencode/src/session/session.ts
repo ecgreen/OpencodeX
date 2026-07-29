@@ -72,7 +72,6 @@ export function fromRow(row: SessionRow): Info {
           diffs: row.summary_diffs ?? undefined,
         }
       : undefined
-  const share = row.share_url ? { url: row.share_url } : undefined
   const revert = row.revert ?? undefined
   return {
     id: row.id,
@@ -103,7 +102,6 @@ export function fromRow(row: SessionRow): Info {
         write: row.tokens_cache_write,
       },
     },
-    share,
     metadata: row.metadata ?? undefined,
     revert,
     permission: row.permission ? [...row.permission] : undefined,
@@ -136,7 +134,6 @@ export function toRow(info: Info) {
     agent: info.agent,
     model: info.model,
     version: info.version,
-    share_url: info.share?.url,
     summary_additions: info.summary?.additions,
     summary_deletions: info.summary?.deletions,
     summary_files: info.summary?.files,
@@ -190,10 +187,6 @@ const Tokens = Schema.Struct({
 
 const EmptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 
-const Share = Schema.Struct({
-  url: Schema.String,
-})
-
 // Legacy HTTP accepted negative values here. Keep archive timestamps permissive
 // while excluding non-finite values that cannot round-trip through JSON.
 export const ArchivedTimestamp = Schema.Finite
@@ -233,7 +226,6 @@ export const Info = Schema.Struct({
   summary: optionalOmitUndefined(Summary),
   cost: optionalOmitUndefined(Schema.Finite),
   tokens: optionalOmitUndefined(Tokens),
-  share: optionalOmitUndefined(Share),
   title: Schema.String,
   agent: optionalOmitUndefined(Schema.String),
   model: optionalOmitUndefined(Model),
@@ -328,10 +320,6 @@ const CreatedEventSchema = Schema.Struct({
   info: Info,
 })
 
-const UpdatedShare = Schema.Struct({
-  url: Schema.optional(Schema.NullOr(Schema.String)),
-})
-
 const UpdatedTime = Schema.Struct({
   created: Schema.optional(Schema.NullOr(NonNegativeInt)),
   updated: Schema.optional(Schema.NullOr(NonNegativeInt)),
@@ -350,7 +338,6 @@ const UpdatedInfo = Schema.Struct({
   summary: Schema.optional(Schema.NullOr(Summary)),
   cost: Schema.optional(Schema.Finite),
   tokens: Schema.optional(Tokens),
-  share: Schema.optional(UpdatedShare),
   title: Schema.optional(Schema.NullOr(Schema.String)),
   agent: Schema.optional(Schema.NullOr(Schema.String)),
   model: Schema.optional(Schema.NullOr(Model)),
@@ -498,7 +485,6 @@ export interface Interface {
   }) => Effect.Effect<void>
   readonly clearRevert: (sessionID: SessionID) => Effect.Effect<void>
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
-  readonly setShare: (input: { sessionID: SessionID; share: Info["share"] }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
   readonly messages: (input: {
@@ -538,9 +524,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 
 export const use = serviceUse(Service)
 
-export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" | "permission"> & {
+export type Patch = Omit<Partial<Info>, "time" | "summary" | "revert" | "permission"> & {
   time?: Partial<Info["time"]>
-  share?: Partial<NonNullable<Info["share"]>> | null
   summary?: Info["summary"] | null
   revert?: Info["revert"] | null
   permission?: Info["permission"] | null
@@ -915,8 +900,6 @@ export const layer: Layer.Layer<
                   ...current,
                   ...info,
                   time: info.time ? { ...current.time, ...info.time } : current.time,
-                  share:
-                    info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
                   summary: info.summary === null ? undefined : (info.summary ?? current.summary),
                   revert: info.revert === null ? undefined : (info.revert ?? current.revert),
                   permission: info.permission === null ? undefined : (info.permission ?? current.permission),
@@ -987,10 +970,6 @@ export const layer: Layer.Layer<
       summary: Info["summary"]
     }) {
       yield* patch(input.sessionID, { time: { updated: Date.now() }, summary: input.summary }).pipe(Effect.orDie)
-    })
-
-    const setShare = Effect.fn("Session.setShare")(function* (input: { sessionID: SessionID; share: Info["share"] }) {
-      yield* patch(input.sessionID, { share: input.share ?? null, time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
 
     const setWorkspace = Effect.fn("Session.setWorkspace")(function* (input: {
@@ -1118,7 +1097,6 @@ export const layer: Layer.Layer<
       setRevert,
       clearRevert,
       setSummary,
-      setShare,
       setWorkspace,
       diff,
       messages,

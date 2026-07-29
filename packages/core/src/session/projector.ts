@@ -43,7 +43,6 @@ function sessionRow(info: SessionLegacy.SessionInfo): typeof SessionTable.$infer
     agent: info.agent,
     model: info.model,
     version: info.version,
-    share_url: info.share?.url,
     summary_additions: info.summary?.additions,
     summary_deletions: info.summary?.deletions,
     summary_files: info.summary?.files,

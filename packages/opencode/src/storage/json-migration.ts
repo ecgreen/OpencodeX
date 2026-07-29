@@ -4,7 +4,6 @@ import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { SessionTable, MessageTable, PartTable, TodoTable, PermissionTable } from "@opencode-ai/core/session/sql"
-import { SessionShareTable } from "@opencode-ai/core/share/sql"
 import path from "path"
 import { existsSync } from "fs"
 import { Filesystem } from "@/util/filesystem"
@@ -34,7 +33,6 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
       parts: 0,
       todos: 0,
       permissions: 0,
-      shares: 0,
       errors: [] as string[],
     }
   }
@@ -56,14 +54,12 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
     parts: 0,
     todos: 0,
     permissions: 0,
-    shares: 0,
     errors: [] as string[],
   }
   const orphans = {
     sessions: 0,
     todos: 0,
     permissions: 0,
-    shares: 0,
   }
   const errs = stats.errors
 
@@ -108,14 +104,13 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
 
   // Pre-scan all files upfront to avoid repeated glob operations
   log.info("scanning files...")
-  const [projectFiles, sessionFiles, messageFiles, partFiles, todoFiles, permFiles, shareFiles] = await Promise.all([
+  const [projectFiles, sessionFiles, messageFiles, partFiles, todoFiles, permFiles] = await Promise.all([
     list("project/*.json"),
     list("session/*/*.json"),
     list("message/*/*.json"),
     list("part/*/*.json"),
     list("todo/*.json"),
     list("permission/*.json"),
-    list("session_share/*.json"),
   ])
 
   log.info("file scan complete", {
@@ -125,7 +120,6 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
     parts: partFiles.length,
     todos: todoFiles.length,
     permissions: permFiles.length,
-    shares: shareFiles.length,
   })
 
   const total = Math.max(
@@ -135,8 +129,7 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
       messageFiles.length +
       partFiles.length +
       todoFiles.length +
-      permFiles.length +
-      shareFiles.length,
+      permFiles.length,
   )
   const progress = options?.progress
   let current = 0
@@ -211,7 +204,6 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
         path: data.path ?? null,
         title: data.title ?? "",
         version: data.version ?? "",
-        share_url: data.share?.url ?? null,
         summary_additions: data.summary?.additions ?? null,
         summary_deletions: data.summary?.deletions ?? null,
         summary_files: data.summary?.files ?? null,
@@ -382,35 +374,6 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
     log.warn("skipped orphaned permissions", { count: orphans.permissions })
   }
 
-  // Migrate session shares
-  const shareSessions = shareFiles.map((file) => path.basename(file, ".json"))
-  const shareValues: unknown[] = []
-  for (let i = 0; i < shareFiles.length; i += batchSize) {
-    const end = Math.min(i + batchSize, shareFiles.length)
-    const batch = await read(shareFiles, i, end)
-    shareValues.length = 0
-    for (let j = 0; j < batch.length; j++) {
-      const data = batch[j]
-      if (!data) continue
-      const sessionID = shareSessions[i + j]
-      if (!sessionIds.has(sessionID)) {
-        orphans.shares++
-        continue
-      }
-      if (!data?.id || !data?.secret || !data?.url) {
-        errs.push(`session_share missing id/secret/url: ${shareFiles[i + j]}`)
-        continue
-      }
-      shareValues.push({ session_id: sessionID, id: data.id, secret: data.secret, url: data.url })
-    }
-    stats.shares += insert(shareValues, SessionShareTable, "session_share")
-    step("shares", end - i)
-  }
-  log.info("migrated session shares", { count: stats.shares })
-  if (orphans.shares > 0) {
-    log.warn("skipped orphaned session shares", { count: orphans.shares })
-  }
-
   db.run("COMMIT")
 
   log.info("json migration complete", {
@@ -420,7 +383,6 @@ export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<a
     parts: stats.parts,
     todos: stats.todos,
     permissions: stats.permissions,
-    shares: stats.shares,
     errorCount: stats.errors.length,
     duration: Math.round(performance.now() - start),
   })

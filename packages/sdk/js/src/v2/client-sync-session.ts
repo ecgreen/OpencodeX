@@ -42,7 +42,7 @@ export function mergeClientSessions(
 
 export function isRenderableClientSession(session: Session) {
   if (session.parentID) return true
-  if (session.model || session.summary || session.share || session.revert) return true
+  if (session.model || session.summary || session.revert) return true
   const tokens = session.tokens
   if (tokens && tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write > 0)
     return true

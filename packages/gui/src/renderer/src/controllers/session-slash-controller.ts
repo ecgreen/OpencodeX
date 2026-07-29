@@ -23,11 +23,9 @@ import {
   listWorkspaces,
   removeWorkspace,
   revertSession,
-  shareSession,
   summarizeSession,
   syncWorkspaces,
   unrevertSession,
-  unshareSession,
   warpSessionWorkspace,
   workspaceStatus,
   type MessageBundle,
@@ -118,24 +116,6 @@ export function createSessionSlashController(input: {
     })
     await reloadSession(session)
     input.alert("Session workspace updated.")
-  }
-
-  async function share(session?: Session) {
-    const client = input.authoritative.client()
-    if (!client || !session) return
-    const url = session.share?.url ?? (await shareSession(client, session.id)).data?.share?.url
-    if (!url) return input.alert("No share URL returned.")
-    await navigator.clipboard.writeText(url)
-    await input.authoritative.refresh()
-    input.alert("Share URL copied.")
-  }
-
-  async function unshare(session?: Session) {
-    const client = input.authoritative.client()
-    if (!client || !session) return
-    await unshareSession(client, session.id)
-    await input.authoritative.refresh()
-    input.alert("Session unshared.")
   }
 
   async function compact(session?: Session, selectedModel = input.selectedModel()) {
@@ -279,7 +259,6 @@ export function createSessionSlashController(input: {
     } = {},
   ): SessionSlashCommand[] {
     const local = buildSessionSlashCommands({
-      shared: !!session?.share?.url,
       canRedo: !!session?.revert?.messageID,
       variantCount: selectedModelVariants(
         input.authoritative.snapshot()?.providers ?? [],
@@ -321,11 +300,9 @@ export function createSessionSlashController(input: {
         openSkills: input.capabilityActions.skills,
         warpWorkspace: () => warpWorkspace(session),
         openDiff: () => input.sessionActions.openDiff(session),
-        shareSession: () => share(session),
         renameSession: () => (session ? input.sessionActions.rename(session) : undefined),
         forkSession: () => fork(session, options.data),
         compactSession: () => compact(session, options.selectedModel),
-        unshareSession: () => unshare(session),
         undoMessage: () => undo(session, options.data, options.restorePrompt),
         redoMessage: () => redo(session, options.data),
         toggleCodeConceal: input.transcriptPreferences.handleToggleCodeConcealSlash,
