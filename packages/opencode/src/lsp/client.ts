@@ -646,6 +646,13 @@ export async function create(input: {
           ],
         })
 
+        // TEMPORARY CI PROBE
+        logger.info("OPENPROBE didOpen", {
+          path: request.path,
+          languageId,
+          textLen: text.length,
+          textHead: JSON.stringify(text.slice(0, 80)),
+        })
         logger.info("textDocument/didOpen", request)
         pushDiagnostics.delete(request.path)
         pullDiagnostics.delete(request.path)

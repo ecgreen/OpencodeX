@@ -11,6 +11,7 @@ import { workbenchFileTarget, workbenchReadPath } from "@/opencodex/workbench-pa
 import type { InstanceContext } from "@/project/instance-context"
 import { Filesystem } from "@/util/filesystem"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import * as Log from "@opencode-ai/core/util/log"
 import { Module } from "@opencode-ai/core/util/module"
 import { Effect, Option } from "effect"
 import path from "path"
@@ -30,6 +31,9 @@ import {
   workbenchPath,
   workbenchSuccess,
 } from "./opencodex-workbench-common"
+
+// TEMPORARY CI PROBE
+const probeLog = Log.create({ service: "hoverprobe" })
 
 export const makeOpencodeXWorkbenchFileHandlers = Effect.fn("OpencodeXHttpApi.makeWorkbenchFileHandlers")(function* () {
   const fs = yield* AppFileSystem.Service
@@ -177,16 +181,23 @@ export const makeOpencodeXWorkbenchFileHandlers = Effect.fn("OpencodeXHttpApi.ma
     }
     const prepared = yield* lsp.workbenchPrepare(target, ctx.payload.content)
     // TEMPORARY CI PROBE
-    yield* Effect.logInfo(
-      `HOVERPROBE prepared=${prepared} target=${target} line=${ctx.payload.line} col=${ctx.payload.column} contentLen=${ctx.payload.content.length} contentHead=${JSON.stringify(ctx.payload.content.slice(0, 60))}`,
-    )
+    probeLog.info("HOVERPROBE request", {
+      prepared,
+      target,
+      line: ctx.payload.line,
+      column: ctx.payload.column,
+      contentLen: ctx.payload.content.length,
+      contentHead: JSON.stringify(ctx.payload.content.slice(0, 80)),
+    })
     if (prepared) {
       const position = { file: target, line: ctx.payload.line - 1, character: ctx.payload.column - 1, workbench: true }
       const rawHover = yield* lsp.hover(position)
       const rawDefinition = yield* lsp.definition(position)
       // TEMPORARY CI PROBE
-      yield* Effect.logInfo(`HOVERPROBE rawHover=${JSON.stringify(rawHover).slice(0, 600)}`)
-      yield* Effect.logInfo(`HOVERPROBE rawDefinitionCount=${JSON.stringify(rawDefinition).slice(0, 300)}`)
+      probeLog.info("HOVERPROBE result", {
+        hover: JSON.stringify(rawHover).slice(0, 500),
+        definition: JSON.stringify(rawDefinition).slice(0, 200),
+      })
       const result = workbenchHoverResult(rawHover, workbenchDefinitionLocations(rawDefinition, instance))
       if (result.contents.length > 0 || result.definitions.length > 0) return result
     }
