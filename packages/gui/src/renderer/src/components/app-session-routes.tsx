@@ -128,6 +128,10 @@ export function SessionRoute(props: { model: GuiAppModel }) {
           ? model.notices.run(() => model.authoritative.loadOlderSessionMessages(session()!.id, cursor))
           : Promise.resolve()
       }
+      collapseMessageWindow={() => {
+        const current = session()
+        if (current) model.authoritative.collapseSessionMessageWindow(current.id)
+      }}
       onMessageAction={(action, context) => model.notices.run(() => model.sessionSlash.messageAction(action, context))}
       gui={model.authoritative.client()}
       subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}

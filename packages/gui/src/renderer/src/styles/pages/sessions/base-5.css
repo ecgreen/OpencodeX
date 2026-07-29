@@ -219,6 +219,12 @@
   border-radius: 0;
   background: transparent;
   margin: 0 0 10px;
+  /* Chromium skips layout, style, and paint for messages scrolled out of the
+     transcript viewport. The intrinsic size keeps the scrollbar stable while a
+     message is skipped, and `auto` lets the real height replace it once it has
+     been rendered at least once. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
 }
 
 .message.assistant {

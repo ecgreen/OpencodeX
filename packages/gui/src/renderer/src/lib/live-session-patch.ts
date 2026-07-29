@@ -1,69 +1,8 @@
-import type {
-  GlobalEvent,
-  Message,
-  OpencodeXSessionState,
-  Part,
-  Session,
-  SnapshotFileDiff,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
-import { trimToLiveTail, type MessageWindow } from "./message-window"
-import { reconcileSessionUiState } from "./session-status"
-import type { GuiSnapshot, MessageBundle, SessionCardSnapshot, SessionData } from "./store"
+import type { GlobalEvent, OpencodeXSessionState } from "@opencode-ai/sdk/v2/client"
+import { eventKind, globalEventSessionState, globalEventSessionStatus } from "./live-session-event"
+import type { GuiSnapshot, SessionCardSnapshot } from "./store"
 export { mergeLiveSessionData } from "./live-session-merge"
-import { setRecordEntry } from "./view-pane-state"
-import {
-  eventAggregateID,
-  eventData,
-  eventKind,
-  eventMessageID,
-  eventSessionID,
-  globalEventPayload,
-  globalEventID,
-  globalEventSessionState,
-  globalEventSessionStatus,
-} from "./live-session-event"
-import {
-  forgetPendingMessageParts,
-  forgetPendingPart,
-  normalizeLivePart,
-} from "./live-session-parts"
-import {
-  applyPartDelta,
-  removePart,
-  stableValue,
-  upsertByID,
-  upsertMessage,
-  upsertPart,
-  type SessionDataPatchOptions,
-} from "./live-session-patch-helpers"
-export {
-  eventAggregateID,
-  eventData,
-  eventKind,
-  eventMessageID,
-  eventSessionID,
-  globalEventPayload,
-  globalEventID,
-  globalEventSessionState,
-  globalEventSessionStatus,
-} from "./live-session-event"
-export { patchSnapshot } from "./live-snapshot-patch"
-
-export type SessionDataEventRouteContext = {
-  currentSessionID?: string
-  activeViewSessionIDs?: string[]
-  loadedSessionID?: string
-  loadedSessionData?: SessionData
-  viewSessionData: Record<string, SessionData>
-}
-
-type RouteLike = { name: string; sessionID?: string }
-
-export type SessionDataEventTargets = {
-  selectedSessionID?: string
-  visibleSessionIDs: string[]
-}
+export { globalEventID, globalEventPayload } from "./live-session-event"
 
 export type GlobalEventAction =
   | {
@@ -78,93 +17,38 @@ export type GlobalEventAction =
   | { type: "ignore" }
   | { type: "refresh"; root: boolean }
 
-export type GlobalEventRefreshAction = { root: boolean }
-
-export function runGlobalEventAction(
-  action: GlobalEventAction,
-  handlers: {
-    applyStatus: (sessionID: string, status: NonNullable<GuiSnapshot["sessionStatus"][string]>) => void
-    syncVisible: (sessionID: string) => void
-    applyState: (sessionID: string, state: OpencodeXSessionState) => void
-    applySessionData: () => void
-    applySnapshot: () => void
-  },
-): GlobalEventRefreshAction | undefined {
-  switch (action.type) {
-    case "status":
-      handlers.applyStatus(action.sessionID, action.status)
-      if (action.syncVisible) handlers.syncVisible(action.sessionID)
-      return undefined
-    case "state":
-      handlers.applyState(action.sessionID, action.state)
-      return undefined
-    case "session-data":
-      handlers.applySessionData()
-      return undefined
-    case "snapshot":
-      handlers.applySnapshot()
-      return undefined
-    case "ignore":
-      return undefined
-    case "refresh":
-      return { root: action.root }
-  }
-  return undefined
-}
-
-export function applySessionStatusSnapshot(
-  snapshot: GuiSnapshot | undefined,
-  sessionID: string,
-  status: NonNullable<GuiSnapshot["sessionStatus"][string]>,
-) {
-  if (!snapshot) return snapshot
-  const next =
-    status.type === "idle"
-      ? {
-          ...snapshot,
-          sessionStatus: Object.fromEntries(Object.entries(snapshot.sessionStatus).filter(([id]) => id !== sessionID)),
-        }
-      : { ...snapshot, sessionStatus: { ...snapshot.sessionStatus, [sessionID]: status } }
-  return reconcileSessionUiState(next, sessionID)
-}
-
-export function applySessionStateSnapshot(
-  snapshot: GuiSnapshot | undefined,
-  sessionID: string,
-  state: OpencodeXSessionState,
-) {
-  if (!snapshot) return snapshot
-  const existing = snapshot.sessionUiState[sessionID]
-  return reconcileSessionUiState(
-    {
-      ...snapshot,
-      sessionUiState: {
-        ...snapshot.sessionUiState,
-        [sessionID]: {
-          sessionID,
-          ...(state.seenAt === undefined ? {} : { seenAt: state.seenAt }),
-          ...(state.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
-          reviewedFiles: state.reviewedFiles,
-          displayStatus: existing?.displayStatus ?? "idle",
-          updated: existing?.updated ?? false,
-        },
-      },
-    },
-    sessionID,
-  )
-}
-
+/**
+ * Projects the catalog the SDK just selected onto the live GUI snapshot, keeping
+ * every array and record reference the renderer already holds whenever the
+ * contents are unchanged.
+ *
+ * `selectClientStateSyncSnapshot` rebuilds each catalog array on every call, so
+ * an `Object.is` fast path never fires and this runs on every catalog batch -
+ * which is every streaming batch, since applying a session snapshot always
+ * returns a fresh `state.sessions` wrapper. Deep-comparing the rebuilt arrays
+ * there walks every field of every session. It is also unnecessary: the SDK
+ * reconciles its entity records, so the rebuilt arrays hold the *same element
+ * objects* whenever nothing changed, and per-element identity answers the
+ * question exactly. Every compare below is therefore stricter than a deep one -
+ * the worst case is one redundant render, never a stale card.
+ *
+ * Note for future edits: `stateRevision` (the SDK state digest) cannot be used
+ * as a short-circuit key here. It only advances on a full catalog snapshot,
+ * while session records are merged into the catalog by session-detail updates
+ * that leave the digest untouched - keying on it would freeze session titles and
+ * ordering until the next full snapshot.
+ */
 export function mergeSessionCardSnapshot(snapshot: GuiSnapshot, next: SessionCardSnapshot): GuiSnapshot {
   const merged = {
     ...snapshot,
-    projects: stableValue(snapshot.projects, next.projects),
-    sessions: stableValue(snapshot.sessions, next.sessions),
-    terminalSessions: stableValue(snapshot.terminalSessions, next.terminalSessions),
-    views: stableValue(snapshot.views, next.views),
-    sessionStatus: stableValue(snapshot.sessionStatus, next.sessionStatus),
-    sessionUiState: stableValue(snapshot.sessionUiState, next.sessionUiState),
-    permissions: stableValue(snapshot.permissions, next.permissions),
-    questions: stableValue(snapshot.questions, next.questions),
+    projects: stableGroups(snapshot.projects, next.projects),
+    sessions: stableItems(snapshot.sessions, next.sessions),
+    terminalSessions: stableItems(snapshot.terminalSessions, next.terminalSessions),
+    views: stableGroups(snapshot.views, next.views),
+    sessionStatus: stableRecord(snapshot.sessionStatus, next.sessionStatus),
+    sessionUiState: stableRecord(snapshot.sessionUiState, next.sessionUiState),
+    permissions: stableItems(snapshot.permissions, next.permissions),
+    questions: stableItems(snapshot.questions, next.questions),
     stateRevision: next.stateRevision,
   }
   return snapshot.projects === merged.projects &&
@@ -215,6 +99,10 @@ export function isCapabilityRefreshEvent(event: GlobalEvent) {
   return kind === "plugin.added" || kind === "lsp.updated" || kind === "mcp.tools.changed" || kind === "server.instance.disposed"
 }
 
+/**
+ * Classifies a live event for the authoritative controller. Only `refresh` needs
+ * client-side handling; everything else is projected from shared sync state.
+ */
 export function globalEventAction(event: GlobalEvent): GlobalEventAction {
   const statusEvent = globalEventSessionStatus(event)
   if (statusEvent) return { type: "status", ...statusEvent }
@@ -227,139 +115,44 @@ export function globalEventAction(event: GlobalEvent): GlobalEventAction {
   return { type: "ignore" }
 }
 
-export function patchBoundedSessionData(data: SessionData, event: GlobalEvent, limit: MessageWindow): SessionData {
-  return trimToLiveTail(patchSessionData(data, event), limit)
+function stableItems<T>(current: T[], next: T[]) {
+  return sameItems(current, next) ? current : next
 }
 
-export function patchSelectedSessionData(input: {
-  data: SessionData
-  loadedSessionID: string
-  targetSessionID: string
-  event: GlobalEvent
-  limit: MessageWindow
-  emptyData: SessionData
-}) {
-  return patchBoundedSessionData(
-    input.loadedSessionID === input.targetSessionID ? input.data : input.emptyData,
-    input.event,
-    input.limit,
-  )
+function stableRecord<T>(current: Record<string, T>, next: Record<string, T>) {
+  const keys = Object.keys(next)
+  return keys.length === Object.keys(current).length && keys.every((key) => current[key] === next[key])
+    ? current
+    : next
 }
 
-export function patchVisibleViewSessionData(input: {
-  data: Record<string, SessionData>
-  sessionIDs: string[]
-  event: GlobalEvent
-  limit: MessageWindow
-  emptyData: SessionData
-}) {
-  return input.sessionIDs.reduce((next, sessionID) => {
-    const current = next[sessionID] ?? input.emptyData
-    return setRecordEntry(next, sessionID, patchBoundedSessionData(current, input.event, input.limit))
-  }, input.data)
+function stableGroups<T extends object>(current: T[], next: T[]) {
+  return current.length === next.length && current.every((item, index) => sameGroup(item, next[index]))
+    ? current
+    : next
 }
 
-export function markViewSessionsLoaded(current: Record<string, number>, sessionIDs: string[], time: number) {
-  return sessionIDs.reduce((next, sessionID) => setRecordEntry(next, sessionID, time), current)
+function sameItems<T>(current: readonly T[], next: readonly T[]) {
+  return current.length === next.length && current.every((item, index) => item === next[index])
 }
 
-export function sessionDataEventTargets(
-  event: GlobalEvent,
-  context: {
-    route: RouteLike
-    activeViewSessions: Session[]
-    loadedSessionID?: string
-    loadedSessionData?: SessionData
-    viewSessionData: Record<string, SessionData>
-  },
-): SessionDataEventTargets | undefined {
-  if (!isSessionDataEvent(event)) return
-  const sessionIDs = sessionDataEventSessionIDs(event, {
-    currentSessionID: context.route.name === "session" ? context.route.sessionID : undefined,
-    activeViewSessionIDs: context.route.name === "views" ? context.activeViewSessions.map((session) => session.id) : [],
-    loadedSessionID: context.loadedSessionID,
-    loadedSessionData: context.loadedSessionData,
-    viewSessionData: context.viewSessionData,
+/**
+ * Projects and views are re-spread by the selector with freshly built `sessions`
+ * and `terminalSessions` arrays, so whole-object identity never matches. Every
+ * other field is copied straight off the SDK's reconciled record, so a shallow
+ * compare that falls back to per-element identity for array fields is exact -
+ * and it never descends into a session the way a deep compare would.
+ */
+function sameGroup(current: object, next?: object) {
+  if (current === next) return true
+  if (!next) return false
+  const source = new Map<string, unknown>(Object.entries(current))
+  const entries = Object.entries(next)
+  if (entries.length !== source.size) return false
+  return entries.every(([key, right]) => {
+    if (!source.has(key)) return false
+    const left = source.get(key)
+    if (left === right) return true
+    return Array.isArray(left) && Array.isArray(right) && sameItems(left, right)
   })
-
-  return {
-    selectedSessionID:
-      context.route.name === "session" && context.route.sessionID && sessionIDs.has(context.route.sessionID)
-        ? context.route.sessionID
-        : undefined,
-    visibleSessionIDs:
-      context.route.name === "views"
-        ? context.activeViewSessions.filter((session) => sessionIDs.has(session.id)).map((session) => session.id)
-        : [],
-  }
-}
-
-export function sessionDataEventSessionIDs(event: GlobalEvent, context: SessionDataEventRouteContext) {
-  const sessionID = eventSessionID(event)
-  if (sessionID) return new Set([sessionID])
-
-  const aggregateID = eventAggregateID(event)
-  if (aggregateID && (context.currentSessionID === aggregateID || context.activeViewSessionIDs?.includes(aggregateID)))
-    return new Set([aggregateID])
-
-  const messageID = eventMessageID(event)
-  if (!messageID) return new Set<string>()
-
-  return new Set([
-    ...(context.loadedSessionID &&
-    context.loadedSessionData &&
-    sessionDataHasMessage(context.loadedSessionData, messageID)
-      ? [context.loadedSessionID]
-      : []),
-    ...Object.entries(context.viewSessionData).flatMap(([viewSessionID, data]) =>
-      sessionDataHasMessage(data, messageID) ? [viewSessionID] : [],
-    ),
-  ])
-}
-
-export function patchSessionData(
-  data: SessionData,
-  event: GlobalEvent,
-  options: SessionDataPatchOptions = {},
-): SessionData {
-  const properties = eventData(event)
-  if (!properties) return data
-  switch (eventKind(event)) {
-    case "message.updated":
-      return { ...data, messages: upsertMessage(data.messages, (properties as { info: Message }).info, options) }
-    case "message.removed": {
-      forgetPendingMessageParts((properties as { messageID: string }).messageID)
-      return {
-        ...data,
-        messages: data.messages.filter((bundle) => bundle.info.id !== (properties as { messageID: string }).messageID),
-      }
-    }
-    case "message.part.updated":
-      return {
-        ...data,
-        messages: upsertPart(data.messages, normalizeLivePart((properties as { part: Part }).part), options),
-      }
-    case "message.part.removed": {
-      const removed = properties as { messageID: string; partID: string }
-      forgetPendingPart(removed.messageID, removed.partID)
-      return { ...data, messages: removePart(data.messages, removed.messageID, removed.partID) }
-    }
-    case "message.part.delta": {
-      const delta = properties as { messageID: string; partID: string; field: string; delta: string }
-      return {
-        ...data,
-        messages: applyPartDelta(data.messages, delta.messageID, delta.partID, delta.field, delta.delta, options),
-      }
-    }
-    case "todo.updated":
-      return { ...data, todos: (properties as { todos: Todo[] }).todos }
-    case "session.diff":
-      return { ...data, diffs: (properties as { diff: SnapshotFileDiff[] }).diff }
-    default:
-      return data
-  }
-}
-
-function sessionDataHasMessage(data: SessionData, messageID: string) {
-  return data.messages.some((bundle) => bundle.info.id === messageID)
 }

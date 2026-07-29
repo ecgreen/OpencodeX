@@ -61,6 +61,7 @@ export function ViewPane(props: {
   toggleGenericToolOutput: () => void
   toggleCodeConceal?: () => void
   loadOlderMessages: (cursor: string) => Promise<void>
+  collapseMessageWindow: () => void
   onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
 }) {
   const handlePointerDown = (event: PointerEvent) => {
@@ -124,6 +125,7 @@ export function ViewPane(props: {
         sidePanelEnabled={false}
         openSidePanelTarget={props.openSidePanelTarget}
         loadOlderMessages={props.loadOlderMessages}
+        collapseMessageWindow={props.collapseMessageWindow}
         onMessageAction={props.onMessageAction}
       />
     </article>

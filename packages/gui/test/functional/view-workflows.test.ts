@@ -2,12 +2,9 @@ import { describe, expect, test } from "bun:test"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2/client"
 import type { OpencodeXTerminalSession } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
-import {
-  eventSessionID,
-  markViewSessionsLoaded,
-  mergeLiveSessionData,
-  patchVisibleViewSessionData,
-} from "../../src/renderer/src/lib/live-session-patch"
+import { eventSessionID } from "../../src/renderer/src/lib/live-session-event"
+import { mergeLiveSessionData } from "../../src/renderer/src/lib/live-session-patch"
+import { setRecordEntry } from "../../src/renderer/src/lib/view-pane-state"
 import { textPrompt } from "../../src/renderer/src/lib/prompt-state"
 import { runViewPromptAction } from "../../src/renderer/src/lib/view-prompt"
 import {
@@ -39,24 +36,21 @@ describe("GUI functional view workflows", () => {
       "session-a": sessionData([userMessage("msg_a", "keep me")]),
       "session-b": sessionData([assistantMessage({ id: "msg_b", text: "start" })]),
     }
-    const nextData = patchVisibleViewSessionData({
-      data: currentData,
-      sessionIDs: ["session-b"],
-      event: event("message.part.delta", {
-        messageID: "msg_b",
-        partID: "msg_b-text",
-        field: "text",
-        delta: " streaming",
-      }),
-      limit: { count: 48, budget: 28_000 },
-      emptyData: sessionData(),
-    })
-    const loadedTimes = markViewSessionsLoaded({}, ["session-b"], 11)
+    // Live pane updates go through the shared projection: only the streaming
+    // pane's record is replaced, so its sibling keeps its identity and composer.
+    const nextData = setRecordEntry(
+      currentData,
+      "session-b",
+      mergeLiveSessionData(
+        currentData["session-b"],
+        sessionData([assistantMessage({ id: "msg_b", text: "start streaming" })]),
+      ),
+    )
 
     expect(nextState["session-a"]).toBe(paneA)
     expect(nextData["session-a"]).toBe(currentData["session-a"])
     expect(nextData["session-b"]?.messages[0]?.parts[0]).toMatchObject({ text: "start streaming" })
-    expect(loadedTimes["session-b"]).toBe(11)
+    expect(nextState["session-b"]?.loadedTime).toBe(10)
   })
 
   test("separates view membership from volatile session sync metadata", () => {

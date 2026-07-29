@@ -37,6 +37,7 @@ export function TranscriptPanel(props: {
   emptyStateDismissed?: boolean
   emptyStateHandoff?: boolean
   loadOlderMessages?: (cursor: string) => Promise<void>
+  collapseMessageWindow?: () => void
   messageAction?: (action: SessionMessageActionKind, bundle: MessageBundle) => void
   emptyStateSuggestion?: (prompt: string) => void
   connectProvider?: (providerID?: string) => void
@@ -123,6 +124,22 @@ export function TranscriptPanel(props: {
   const emptyStateVisible = createMemo(
     () => (!props.emptyStateDismissed || emptyStateHandoff()) && !contentPending() && !transcriptHasContent(),
   )
+
+  // "Load more" detaches this transcript from the live tail window. Once the
+  // reader is back at the bottom and new messages are arriving, the older pages
+  // they expanded for are off screen and only cost memory and layout, so the
+  // window collapses back to the tail budget - "Load more" reopens it.
+  let tailAnchor = { sessionID: "", messageID: "" }
+  createEffect(() => {
+    const sessionID = props.sessionID
+    const messageID = visibleMessageIDs().at(-1) ?? ""
+    const previous = tailAnchor
+    tailAnchor = { sessionID, messageID }
+    if (!props.data.messageWindowExpanded || !props.collapseMessageWindow) return
+    if (previous.sessionID !== sessionID || !previous.messageID || previous.messageID === messageID) return
+    if (scroll.scrolledAway()) return
+    props.collapseMessageWindow()
+  })
 
   createEffect(() => {
     const running = props.running === true

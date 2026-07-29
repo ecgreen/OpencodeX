@@ -176,6 +176,7 @@ function OpenCodeViewPane(props: {
       loadOlderMessages={(sessionID, cursor) =>
         run(() => props.model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
       }
+      collapseMessageWindow={(sessionID) => props.model.authoritative.collapseViewSessionMessageWindow(sessionID)}
       onMessageAction={(action, context) => run(() => props.model.sessionSlash.messageAction(action, context))}
     />
   )

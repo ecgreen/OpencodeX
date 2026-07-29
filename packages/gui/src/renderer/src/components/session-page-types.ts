@@ -74,6 +74,7 @@ export type SessionPageProps = {
   updateComposerState?: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
   composerFocusToken?: () => number
   loadOlderMessages?: (cursor: string) => Promise<void>
+  collapseMessageWindow?: () => void
   onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
   gui?: GuiClient
   subscribeGlobalEvents?: (listener: (event: GlobalEvent) => void | Promise<void>) => () => void

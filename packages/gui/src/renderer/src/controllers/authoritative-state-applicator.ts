@@ -9,7 +9,7 @@ import {
   reconcileGuiOperations,
 } from "../lib/gui-state"
 import { mergeLiveSessionData } from "../lib/live-session-patch"
-import { sessionLoadedTime } from "../lib/session-hydration"
+import { sessionLoadedTime } from "../lib/session-hydration-policy"
 import {
   RENDERER_PERFORMANCE_MARKS,
   RENDERER_PERFORMANCE_MEASURES,

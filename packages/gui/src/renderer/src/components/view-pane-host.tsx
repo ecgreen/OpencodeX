@@ -61,6 +61,7 @@ export function ViewPaneHost(props: {
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
   loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
+  collapseMessageWindow: (sessionID: string) => void
   onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
 }) {
   const session = () => viewItemSession(props.item)
@@ -120,6 +121,7 @@ export function ViewPaneHost(props: {
       toggleScrollbar={props.toggleScrollbar}
       toggleGenericToolOutput={props.toggleGenericToolOutput}
       loadOlderMessages={(cursor) => props.loadOlderMessages(id(), cursor)}
+      collapseMessageWindow={() => props.collapseMessageWindow(id())}
       onMessageAction={props.onMessageAction}
     />
   )

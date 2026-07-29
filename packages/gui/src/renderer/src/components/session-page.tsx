@@ -279,6 +279,7 @@ export function SessionPage(props: SessionPageProps) {
             emptyStateDismissed={emptyStateDismissed()}
             emptyStateHandoff={props.pending === true && emptyStateDismissed()}
             loadOlderMessages={props.loadOlderMessages}
+            collapseMessageWindow={props.collapseMessageWindow}
             messageAction={props.onMessageAction ? handleMessageAction : undefined}
             emptyStateSuggestion={restoreComposerPrompt}
             connectProvider={props.connectProvider}
