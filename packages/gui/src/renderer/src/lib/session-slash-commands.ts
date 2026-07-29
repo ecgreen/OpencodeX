@@ -153,14 +153,6 @@ export function buildSessionSlashCommands(input: {
       run: input.actions.connectProvider,
     },
     {
-      name: "org",
-      title: "Switch org",
-      detail: "Change the active console organization",
-      category: "Provider",
-      aliases: ["orgs", "switch-org"],
-      run: input.actions.switchOrg,
-    },
-    {
       name: "status",
       title: "View status",
       detail: "Open provider and runtime status",

@@ -4,7 +4,6 @@ import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { GlobalBus } from "@/bus/global"
 import { EventV2 } from "@opencode-ai/core/event"
 import { AbsolutePath } from "@opencode-ai/core/schema"
-import "@opencode-ai/core/account"
 import "@opencode-ai/core/catalog"
 import { Context, Effect, Layer } from "effect"
 

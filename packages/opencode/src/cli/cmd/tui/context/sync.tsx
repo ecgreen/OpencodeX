@@ -39,7 +39,6 @@ import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import * as Log from "@opencode-ai/core/util/log"
-import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
@@ -63,7 +62,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       provider: Provider[]
       provider_default: Record<string, string>
       provider_next: ProviderListResponse
-      console_state: ConsoleState
       provider_auth: Record<string, ProviderAuthMethod[]>
       agent: Agent[]
       command: Command[]
@@ -116,7 +114,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         default: {},
         connected: [],
       },
-      console_state: emptyConsoleState,
       provider_auth: {},
       config: {},
       status: "loading",
@@ -572,10 +569,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         ])
       })
 
-      const consoleStatePromise = sdk.client.experimental.console
-        .get({ workspace }, { throwOnError: true })
-        .then((x) => x.data)
-        .catch(() => emptyConsoleState)
       const blockingRequests: { name: string; promise: Promise<unknown> }[] = [
         { name: "project.sync", promise: projectPromise },
         { name: "opencodex.state", promise: stateSyncPromise },
@@ -593,7 +586,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
           void Promise.all([
-            consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),

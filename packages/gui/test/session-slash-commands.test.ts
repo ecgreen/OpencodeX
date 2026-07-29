@@ -29,7 +29,6 @@ describe("GUI session slash command catalog", () => {
       "mcps",
       "variants",
       "connect",
-      "org",
       "status",
       "themes",
       "help",
@@ -75,7 +74,6 @@ describe("GUI session slash command catalog", () => {
     await command(commands, "agents")?.run()
     await command(commands, "connect")?.run()
     await command(commands, "mcps")?.run()
-    await command(commands, "org")?.run()
     await command(commands, "rename")?.run()
     await command(commands, "conceal")?.run()
     await command(commands, "actions")?.run()
@@ -85,7 +83,7 @@ describe("GUI session slash command catalog", () => {
 
     expect(command(commands, "redo")?.disabled).toBe("No message to redo.")
     expect(command(commands, "variants")?.disabled).toBe("The selected model does not expose variants.")
-    expect(calls).toEqual(["model", "agent", "connect", "mcps", "org", "rename", "conceal", "actions", "scrollbar", "generic-output", "copy"])
+    expect(calls).toEqual(["model", "agent", "connect", "mcps", "rename", "conceal", "actions", "scrollbar", "generic-output", "copy"])
   })
 })
 
@@ -114,7 +112,6 @@ function actions(calls: string[]) {
     toggleMcps: () => calls.push("mcps"),
     switchVariant: () => calls.push("variants"),
     connectProvider: () => calls.push("connect"),
-    switchOrg: () => calls.push("org"),
     viewStatus: () => calls.push("status"),
     switchTheme: () => calls.push("themes"),
     showHelp: () => calls.push("help"),

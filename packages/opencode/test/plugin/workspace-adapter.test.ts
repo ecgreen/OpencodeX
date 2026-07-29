@@ -23,7 +23,6 @@ import { Session } from "../../src/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 
@@ -32,7 +31,6 @@ const configLayer = Config.layer.pipe(
   Layer.provide(AppFileSystem.defaultLayer),
   Layer.provide(Env.defaultLayer),
   Layer.provide(AuthTest.empty),
-  Layer.provide(AccountTest.empty),
   Layer.provide(NpmTest.noop),
   Layer.provide(FetchHttpClient.layer),
 )

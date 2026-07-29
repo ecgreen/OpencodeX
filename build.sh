@@ -197,7 +197,6 @@ BUILD_ARGS=(
   "script/build.ts"
   "--"
   "--target" "$TARGET"
-  "--skip-embed-web-ui"
 )
 
 if [[ "$MINIFY" != "true" ]]; then

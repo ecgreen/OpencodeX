@@ -34,7 +34,6 @@ export const TuiPublishPayload = Schema.Union([
 ])
 
 export const TuiPaths = {
-  appendPrompt: `${root}/append-prompt`,
   openHelp: `${root}/open-help`,
   openSessions: `${root}/open-sessions`,
   openThemes: `${root}/open-themes`,
@@ -53,18 +52,6 @@ export const TuiApi = HttpApi.make("tui")
   .add(
     HttpApiGroup.make("tui")
       .add(
-        HttpApiEndpoint.post("appendPrompt", TuiPaths.appendPrompt, {
-          query: WorkspaceRoutingQuery,
-          payload: TuiEvent.PromptAppend.data,
-          success: described(Schema.Boolean, "Prompt processed successfully"),
-          error: HttpApiError.BadRequest,
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "tui.appendPrompt",
-            summary: "Append TUI prompt",
-            description: "Append prompt to the TUI.",
-          }),
-        ),
         HttpApiEndpoint.post("openHelp", TuiPaths.openHelp, {
           query: WorkspaceRoutingQuery,
           success: described(Schema.Boolean, "Help dialog opened successfully"),

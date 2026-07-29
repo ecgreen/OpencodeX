@@ -3,8 +3,6 @@ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { Locale } from "@/util/locale"
 import { UI } from "@/cli/ui"
-import { SessionRetry } from "@/session/retry"
-import { DialogRetryAction } from "@tui/component/dialog-retry-action"
 import { OPENCODEX_SIDEBAR_WIDTH } from "@tui/component/opencodex-sidebar"
 import { type PromptRef } from "@tui/component/prompt"
 import { useEditorContext } from "@tui/context/editor"
@@ -29,19 +27,7 @@ import { getRevertDiffFiles } from "@tui/util/revert-diff"
 import { getScrollAcceleration } from "@tui/util/scroll"
 import { index } from "@tui/util/model"
 
-const GO_UPSELL_FREE_TIER_LAST_SEEN_AT = "go_upsell_last_seen_at"
-const GO_UPSELL_FREE_TIER_DONT_SHOW = "go_upsell_dont_show"
-const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_last_seen_at"
-const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
-const GO_UPSELL_WINDOW = 86_400_000
-const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 const SESSION_VIEWED_MARK_DELAY_MS = 2_000
-
-function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
-  if (!action || !GO_UPSELL_PROVIDERS.has(action.provider)) return
-  if (action.reason === "free_tier_limit") return { lastSeenAt: GO_UPSELL_FREE_TIER_LAST_SEEN_AT, dontShow: GO_UPSELL_FREE_TIER_DONT_SHOW }
-  if (action.reason === "account_rate_limit") return { lastSeenAt: GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT, dontShow: GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW }
-}
 
 export function createSessionRouteController() {
   const route = useRouteData("session")
@@ -184,26 +170,6 @@ export function createSessionRouteController() {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
-
-  onCleanup(event.on("session.status", (evt) => {
-    if (evt.properties.sessionID !== route.sessionID) return
-    if (evt.properties.status.type !== "retry") return
-    if (!evt.properties.status.action) return
-    if (dialog.stack.length > 0) return
-
-    const keys = goUpsellKeys(evt.properties.status.action)
-    if (!keys) return
-
-    const seen = kv.get(keys.lastSeenAt)
-    if (typeof seen === "number" && Date.now() - seen < GO_UPSELL_WINDOW) return
-
-    if (kv.get(keys.dontShow)) return
-
-    void DialogRetryAction.show(dialog, evt.properties.status.action).then((dontShowAgain) => {
-      if (dontShowAgain) kv.set(keys.dontShow, true)
-      kv.set(keys.lastSeenAt, Date.now())
-    })
-  }))
 
   const exit = useExit()
 

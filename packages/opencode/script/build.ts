@@ -24,37 +24,10 @@ const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const noMinify = process.argv.includes("--no-minify")
 const guiCoordinatorFlag = process.argv.includes("--gui-coordinator")
 const plugin = createSolidTransformPlugin()
-const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 const targetFlag = (() => {
   const idx = process.argv.indexOf("--target")
   return idx !== -1 && idx + 1 < process.argv.length ? process.argv[idx + 1] : undefined
 })()
-
-const createEmbeddedWebUIBundle = async () => {
-  console.log(`Building Web UI to embed in the binary`)
-  const appDir = path.join(import.meta.dirname, "../../app")
-  const dist = path.join(appDir, "dist")
-  await $`OPENCODE_CHANNEL=${Script.channel} bun run --cwd ${appDir} build`
-  const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
-    .map((file) => file.replaceAll("\\", "/"))
-    .filter((file) => !file.endsWith(".map"))
-    .sort()
-  const imports = files.map((file, i) => {
-    const spec = path.relative(dir, path.join(dist, file)).replaceAll("\\", "/")
-    return `import file_${i} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`
-  })
-  const entries = files.map((file, i) => `  ${JSON.stringify(file)}: file_${i},`)
-  return [
-    `// Import all files as file_$i with type: "file"`,
-    ...imports,
-    `// Export with original mappings`,
-    `export default {`,
-    ...entries,
-    `}`,
-  ].join("\n")
-}
-
-const embeddedFileMap = skipEmbedWebUi || guiCoordinatorFlag ? null : await createEmbeddedWebUIBundle()
 
 function bunTarget(name: string) {
   switch (name) {
@@ -226,7 +199,7 @@ for (const item of targets) {
   const entrypoints = guiCoordinatorFlag
     ? ["./src/gui-coordinator.ts"]
     : parserWorker
-      ? ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])]
+      ? ["./src/index.ts", parserWorker, workerPath]
       : []
   if (entrypoints.length === 0) throw new Error("Missing OpenTUI parser worker")
 
@@ -249,7 +222,6 @@ for (const item of targets) {
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
-    files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
     entrypoints,
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,

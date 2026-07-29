@@ -93,7 +93,6 @@ describe("GUI functional session workflows", () => {
         "toggleMcps",
         "switchVariant",
         "connectProvider",
-        "switchOrg",
         "viewStatus",
         "switchTheme",
         "showHelp",

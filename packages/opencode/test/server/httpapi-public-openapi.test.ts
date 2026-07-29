@@ -132,29 +132,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
     }
   })
 
-  test("documents PTY resource and ticket errors", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-
-    for (const route of [
-      ["get", "/pty/{ptyID}"],
-      ["put", "/pty/{ptyID}"],
-      ["delete", "/pty/{ptyID}"],
-      ["post", "/pty/{ptyID}/connect-token"],
-    ] as const) {
-      expect(componentName(responseRef(spec.paths[route[1]]?.[route[0]]?.responses?.["404"]) ?? "")).toBe(
-        "PtyNotFoundError",
-      )
-    }
-    expect(componentName(responseRef(spec.paths["/pty/{ptyID}/connect-token"]?.post?.responses?.["403"]) ?? "")).toBe(
-      "PtyForbiddenError",
-    )
-    expect(
-      spec.paths["/pty/{ptyID}/connect"]?.get?.parameters
-        ?.filter((parameter) => parameter.in === "query")
-        .map((parameter) => parameter.name),
-    ).toEqual(["directory", "workspace", "cursor", "ticket"])
-  })
-
   test("documents project not-found errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 

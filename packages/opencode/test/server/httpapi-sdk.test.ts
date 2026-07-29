@@ -1165,7 +1165,6 @@ describe("HttpApi SDK", () => {
       Effect.gen(function* () {
         const session = yield* capture(() => sdk.session.create({ title: "tui" }))
         const sessionID = String(record(session.data).id)
-        const appendPrompt = yield* capture(() => sdk.tui.appendPrompt({ text: "hello" }))
         const openHelp = yield* capture(() => sdk.tui.openHelp())
         const openSessions = yield* capture(() => sdk.tui.openSessions())
         const openThemes = yield* capture(() => sdk.tui.openThemes())
@@ -1181,7 +1180,6 @@ describe("HttpApi SDK", () => {
         return {
           statuses: statuses({
             session,
-            appendPrompt,
             openHelp,
             openSessions,
             openThemes,
@@ -1195,7 +1193,6 @@ describe("HttpApi SDK", () => {
             invalidSession,
           }),
           data: {
-            appendPrompt: appendPrompt.data,
             openHelp: openHelp.data,
             openSessions: openSessions.data,
             openThemes: openThemes.data,

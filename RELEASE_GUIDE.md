@@ -261,7 +261,7 @@ Local builds are useful for preview testing but should not be the primary public
 From `packages/opencode`:
 
 ```bash
-bun run script/build.ts --target linux-x64 --skip-embed-web-ui --no-minify
+bun run script/build.ts --target linux-x64 --no-minify
 ```
 
 Replace `linux-x64` with the target platform. Local output goes to:

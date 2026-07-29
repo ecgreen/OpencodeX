@@ -30,13 +30,6 @@ export const tuiHandlers = HttpApiBuilder.group(InstanceHttpApi, "tui", (handler
     const publishCommand = (command: typeof TuiEvent.CommandExecute.data.Type.command | undefined) =>
       events.publish(TuiEvent.CommandExecute, { command } as typeof TuiEvent.CommandExecute.data.Type)
 
-    const appendPrompt = Effect.fn("TuiHttpApi.appendPrompt")(function* (ctx: {
-      payload: typeof TuiEvent.PromptAppend.data.Type
-    }) {
-      yield* events.publish(TuiEvent.PromptAppend, ctx.payload)
-      return true
-    })
-
     const openHelp = Effect.fn("TuiHttpApi.openHelp")(function* () {
       yield* publishCommand("help.show")
       return true
@@ -113,7 +106,6 @@ export const tuiHandlers = HttpApiBuilder.group(InstanceHttpApi, "tui", (handler
     })
 
     return handlers
-      .handle("appendPrompt", appendPrompt)
       .handle("openHelp", openHelp)
       .handle("openSessions", openSessions)
       .handle("openThemes", openThemes)

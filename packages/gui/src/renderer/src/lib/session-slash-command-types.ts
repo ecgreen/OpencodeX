@@ -38,7 +38,6 @@ export type SessionSlashCommandActions = {
   toggleMcps: (context?: SessionSlashCommandContext) => void | Promise<void>
   switchVariant: (context?: SessionSlashCommandContext) => void | Promise<void>
   connectProvider: (context?: SessionSlashCommandContext) => void | Promise<void>
-  switchOrg: (context?: SessionSlashCommandContext) => void | Promise<void>
   viewStatus: (context?: SessionSlashCommandContext) => void | Promise<void>
   switchTheme: (context?: SessionSlashCommandContext) => void | Promise<void>
   showHelp: (context?: SessionSlashCommandContext) => void | Promise<void>

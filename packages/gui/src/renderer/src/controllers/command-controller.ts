@@ -81,7 +81,6 @@ export function createCommandController(input: {
         cycleVariant: input.sessionActions.cycleVariant,
         switchVariant: input.sessionActions.switchVariant,
         connectProvider: input.capabilityActions.connectProvider,
-        switchOrg: input.capabilityActions.switchOrg,
         switchTheme: input.sessionActions.switchTheme,
         showHelp: input.sessionActions.showHelp,
         showKeyboardHelp: openKeyboardHelp,

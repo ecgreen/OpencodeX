@@ -16,7 +16,6 @@ import { OpencodeXApi } from "./groups/opencodex"
 import { PermissionApi } from "./groups/permission"
 import { ProjectApi } from "./groups/project"
 import { ProviderApi } from "./groups/provider"
-import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
 import { SessionApi } from "./groups/session"
 import { SyncApi } from "./groups/sync"
@@ -55,7 +54,6 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(McpApi)
   .addHttpApi(OpencodeXApi)
   .addHttpApi(ProjectApi)
-  .addHttpApi(PtyApi)
   .addHttpApi(QuestionApi)
   .addHttpApi(PermissionApi)
   .addHttpApi(ProviderApi)
@@ -69,7 +67,6 @@ export const OpenCodeHttpApi = HttpApi.make("opencode")
   .addHttpApi(RootHttpApi)
   .addHttpApi(EventApi)
   .addHttpApi(InstanceHttpApi)
-  .addHttpApi(PtyConnectApi)
   .annotate(HttpApi.AdditionalSchemas, [
     EventSchema,
     Question.Replied,

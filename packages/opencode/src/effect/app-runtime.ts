@@ -5,7 +5,6 @@ import * as Observability from "@opencode-ai/core/effect/observability"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Database } from "@opencode-ai/core/database/database"
 import { Auth } from "@/auth"
-import { Account } from "@/account/account"
 import { Config } from "@/config/config"
 import { Git } from "@/git"
 import { Ripgrep } from "@/file/ripgrep"
@@ -46,8 +45,6 @@ import { Vcs } from "@/project/vcs"
 import { Reference } from "@/reference/reference"
 import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
-import { Pty } from "@/pty"
-import { PtyTicket } from "@/pty/ticket"
 import { Installation } from "@/installation"
 import { Npm } from "@opencode-ai/core/npm"
 import { memoMap } from "@opencode-ai/core/effect/memo-map"
@@ -62,7 +59,6 @@ export const AppLayer = Layer.mergeAll(
   AppFileSystem.defaultLayer,
   Database.defaultLayer,
   Auth.defaultLayer,
-  Account.defaultLayer,
   Config.defaultLayer,
   Git.defaultLayer,
   Ripgrep.defaultLayer,
@@ -107,8 +103,6 @@ export const AppLayer = Layer.mergeAll(
   Reference.defaultLayer,
   Workspace.defaultLayer,
   Worktree.appLayer,
-  Pty.defaultLayer,
-  PtyTicket.defaultLayer,
   Installation.defaultLayer,
 ).pipe(Layer.provideMerge(InstanceLayer.layer), Layer.provideMerge(Observability.layer))
 

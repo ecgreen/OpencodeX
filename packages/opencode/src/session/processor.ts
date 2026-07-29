@@ -664,14 +664,12 @@ export const layer = Layer.effect(
             ),
             Effect.retry(
               SessionRetry.policy({
-                provider: input.model.providerID,
                 parse,
                 set: (info) =>
                   status.set(ctx.sessionID, {
                     type: "retry",
                     attempt: info.attempt,
                     message: info.message,
-                    action: info.action,
                     next: info.next,
                   }),
               }),

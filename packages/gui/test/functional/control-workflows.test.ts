@@ -112,7 +112,6 @@ describe("GUI functional control workflows", () => {
         cycleVariant: () => calls.push("cycle"),
         switchVariant: () => calls.push("variant"),
         connectProvider: () => calls.push("connect"),
-        switchOrg: () => calls.push("org"),
         switchTheme: () => calls.push("theme"),
         showHelp: () => calls.push("help"),
         showKeyboardHelp: () => calls.push("keyboard"),

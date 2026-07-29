@@ -72,7 +72,7 @@ jobs:
         env:
           OPENCODE_CHANNEL: latest
           OPENCODE_VERSION: ${{ steps.version.outputs.version }}
-        run: bun ./packages/opencode/script/build.ts --skip-embed-web-ui --no-minify
+        run: bun ./packages/opencode/script/build.ts --no-minify
 
       - name: Package release assets
         shell: bash

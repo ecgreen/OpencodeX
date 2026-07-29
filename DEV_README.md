@@ -278,7 +278,7 @@ The script:
 1. Verifies `bun` and `rsync` are installed.
 2. Mirrors the source from the repo root to `/tmp/OpencodeX` (working around WSL's virtiofs symlink limitations — building inside `/mnt/c/` is unreliable on WSL).
 3. Runs `bun install` in the mirror.
-4. Runs `bun run packages/opencode/script/build.ts -- --target <target> --skip-embed-web-ui`.
+4. Runs `bun run packages/opencode/script/build.ts -- --target <target>`.
 5. Copies the resulting binary into `artifacts/`. On Windows targets it also produces a `.zip`.
 
 The full list of valid targets is enumerated in `packages/opencode/script/build.ts` and printed by `bash build.sh --help`.
