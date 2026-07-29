@@ -1,7 +1,7 @@
 import type { Command, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
-import { createSession, type PromptPart } from "./store"
+import { createSession, type PromptPart } from "./session-api"
 import { promptPartsForSubmit, serverCommandMatch, textPrompt, type GuiPromptInfo } from "./prompt-state"
 
 export type PreparedSessionPromptTarget = {

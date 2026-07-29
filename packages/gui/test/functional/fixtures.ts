@@ -1,7 +1,7 @@
 import type { Agent, Command, OpencodeXView, Part, PermissionRequest, Provider, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "../../src/renderer/src/lib/client"
 import type { ClientCatalogProject } from "@opencode-ai/sdk/v2/client-sync"
-import type { MessageBundle, SessionData } from "../../src/renderer/src/lib/store"
+import type { MessageBundle, SessionData } from "../../src/renderer/src/lib/session-api"
 
 export function gui(directory = "C:/Work/OpencodeX"): GuiClient {
   return { directory } as GuiClient

@@ -9,7 +9,7 @@ import {
   runDeleteProjectAction,
   runEditProjectAction,
 } from "../src/renderer/src/lib/project-actions"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 
 describe("GUI project action decisions", () => {
   test("derives project names from selected directories", () => {

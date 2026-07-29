@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { moveSessionBlockedMessage, moveSessionConfirmInput, permissionAlwaysConfirmInput, permissionRejectDialog, runMoveSessionAction, runPermissionAction, sessionDirectoryForRequest, sidePanelDirectoryForSession } from "../src/renderer/src/lib/session-actions"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 
 describe("GUI session action decisions", () => {
   test("finds request session directories for permission and question replies", () => {

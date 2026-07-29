@@ -2,7 +2,7 @@ import type { Command, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
-import { createSession, deleteSession, updateView, type PromptPart } from "./store"
+import { createSession, deleteSession, updateView, type PromptPart } from "./session-api"
 import { promptPartsForSubmit, serverCommandMatch, textPrompt, type GuiPromptInfo } from "./prompt-state"
 import { pendingViewSessions, replacePendingViewPane, viewItemID, viewItemSession, type ViewItem } from "./view-items"
 

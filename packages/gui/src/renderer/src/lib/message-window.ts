@@ -1,4 +1,4 @@
-import type { MessageBundle, SessionData } from "./store"
+import type { MessageBundle, SessionData } from "./session-api"
 
 export type MessageWindow = {
   count: number

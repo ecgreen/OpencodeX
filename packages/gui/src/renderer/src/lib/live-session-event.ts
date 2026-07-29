@@ -1,6 +1,6 @@
 import type { Event, GlobalEvent, OpencodeXSessionState } from "@opencode-ai/sdk/v2/client"
 import { clientGlobalEventData, clientGlobalEventKind } from "@opencode-ai/sdk/v2/client-sync"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 export function globalEventID(event: GlobalEvent) {
   const id = (event.payload as { id?: string }).id

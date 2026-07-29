@@ -1,11 +1,11 @@
 import { chmod, mkdir, readFile, rename, rm, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
-import { realpathSync } from "fs"
 import { randomUUID } from "crypto"
-import { basename, dirname, isAbsolute, join, relative, resolve as pathResolve, sep, win32 } from "path"
+import { basename, dirname, isAbsolute, join, resolve as pathResolve } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 import { Glob } from "@opencode-ai/core/util/glob"
+import { FsPath as AppPath } from "@opencode-ai/core/util/fs-path"
 import { fileURLToPath } from "url"
 
 // Fast sync version for metadata checks
@@ -123,70 +123,26 @@ export async function mimeType(p: string): Promise<string> {
 }
 
 /**
- * On Windows, normalize a path to its canonical casing using the filesystem.
- * This is needed because Windows paths are case-insensitive but LSP servers
- * may return paths with different casing than what we send them.
+ * Pure path helpers live in `@opencode-ai/core/path` so this namespace and
+ * `AppFileSystem` cannot drift apart. Re-exported here to keep both APIs.
+ *
+ * `normalizePath` canonicalizes Windows casing via the filesystem, because
+ * Windows paths are case-insensitive but LSP servers may return paths with
+ * different casing than what we send them. `resolve` additionally translates
+ * Git Bash / Cygwin / MSYS2 / WSL prefixes and follows symlinks, so callers
+ * using the result as a cache key get one canonical path per directory.
  */
-export function normalizePath(p: string): string {
-  if (process.platform !== "win32") return p
-  const resolved = win32.normalize(win32.resolve(windowsPath(p)))
-  try {
-    return realpathSync.native(resolved)
-  } catch {
-    return resolved
-  }
-}
-
-export function normalizePathPattern(p: string): string {
-  if (process.platform !== "win32") return p
-  if (p === "*") return p
-  const match = p.match(/^(.*)[\\/]\*$/)
-  if (!match) return normalizePath(p)
-  const dir = /^[A-Za-z]:$/.test(match[1]) ? match[1] + "\\" : match[1]
-  return join(normalizePath(dir), "*")
-}
-
-// We cannot rely on path.resolve() here because git.exe may come from Git Bash, Cygwin, or MSYS2, so we need to translate these paths at the boundary.
-// Also resolves symlinks so that callers using the result as a cache key
-// always get the same canonical path for a given physical directory.
-export function resolve(p: string): string {
-  const resolved = pathResolve(windowsPath(p))
-  try {
-    return normalizePath(realpathSync(resolved))
-  } catch (e) {
-    if (isEnoent(e)) return normalizePath(resolved)
-    throw e
-  }
-}
+export const normalizePath = AppPath.normalizePath
+export const normalizePathPattern = AppPath.normalizePathPattern
+export const resolve = AppPath.resolve
+export const windowsPath = AppPath.windowsPath
+export const overlaps = AppPath.overlaps
+export const contains = AppPath.contains
 
 export function resolveFilePath(root: string, file: string): string {
   const raw = file.startsWith("file://") ? fileURLToPath(file) : file
   if (isAbsolute(raw)) return raw
   return pathResolve(root, raw)
-}
-
-export function windowsPath(p: string): string {
-  if (process.platform !== "win32") return p
-  return (
-    p
-      .replace(/^\/([a-zA-Z]):(?:[\\/]|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      // Git Bash for Windows paths are typically /<drive>/...
-      .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      // Cygwin git paths are typically /cygdrive/<drive>/...
-      .replace(/^\/cygdrive\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      // WSL paths are typically /mnt/<drive>/...
-      .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-  )
-}
-export function overlaps(a: string, b: string) {
-  const relA = relative(a, b)
-  const relB = relative(b, a)
-  return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
-}
-
-export function contains(parent: string, child: string) {
-  const result = relative(parent, child)
-  return result === "" || (!isAbsolute(result) && result !== ".." && !result.startsWith(`..${sep}`))
 }
 
 export async function findUp(

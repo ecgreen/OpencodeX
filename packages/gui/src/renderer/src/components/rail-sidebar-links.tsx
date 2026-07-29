@@ -2,7 +2,7 @@ import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/clie
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { Show, createMemo } from "solid-js"
 import { formatRelative, title } from "../lib/format"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, type DerivedSessionStatus } from "../lib/session-status"
 import { pendingViewSessions } from "../lib/view-items"
 import { CardContextMenu } from "./card-context-menu"

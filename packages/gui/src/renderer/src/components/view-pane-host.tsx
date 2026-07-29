@@ -2,7 +2,7 @@ import type { Agent, FileNode, OpencodeXSwarm, PermissionRequest, Provider, Ques
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { GuiSnapshot, SessionData } from "../lib/store"
+import type { GuiSnapshot, SessionData } from "../lib/session-api"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"

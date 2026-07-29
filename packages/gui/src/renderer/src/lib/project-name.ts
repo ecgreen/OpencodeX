@@ -1,4 +1,4 @@
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 export function projectNameForID(projects: GuiSnapshot["projects"], projectID?: string) {
   const project = projects.find((item) => item.id === projectID)

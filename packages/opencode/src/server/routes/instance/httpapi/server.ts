@@ -4,6 +4,7 @@ import { FetchHttpClient, HttpMiddleware, HttpRouter, HttpServer, HttpServerResp
 import * as Socket from "effect/unstable/socket/Socket"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { AppProcess } from "@opencode-ai/core/process"
+import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
@@ -166,6 +167,7 @@ export function createRoutes(
       fenceLayer.pipe(Layer.provide(Database.defaultLayer)),
       cors(corsOptions),
       Database.defaultLayer,
+      EffectFlock.defaultLayer,
       Agent.defaultLayer,
       Auth.defaultLayer,
       Command.defaultLayer,

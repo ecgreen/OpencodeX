@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { MessageBundle, SessionData } from "../src/renderer/src/lib/store"
+import type { MessageBundle, SessionData } from "../src/renderer/src/lib/session-api"
 import {
   EXPANDED_MESSAGE_WINDOW,
   collapseMessageWindow,

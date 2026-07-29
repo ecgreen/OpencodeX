@@ -1,6 +1,6 @@
 import type { GlobalEvent, OpencodeXSessionState } from "@opencode-ai/sdk/v2/client"
 import { eventKind, globalEventSessionState, globalEventSessionStatus } from "./live-session-event"
-import type { GuiSnapshot, SessionCardSnapshot } from "./store"
+import type { GuiSnapshot, SessionCardSnapshot } from "./session-api"
 export { mergeLiveSessionData } from "./live-session-merge"
 export { globalEventID, globalEventPayload } from "./live-session-event"
 

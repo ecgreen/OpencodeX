@@ -3,7 +3,7 @@ import { type EditorState, type Extension } from "@codemirror/state"
 import { Decoration, EditorView } from "@codemirror/view"
 import { linter, type Diagnostic } from "@codemirror/lint"
 import { tags } from "@lezer/highlight"
-import type { WorkbenchDiagnostic } from "../lib/store"
+import type { WorkbenchDiagnostic } from "../lib/session-api"
 import { workbenchChangedLineNumbers, workbenchLanguageID } from "../lib/workbench"
 
 export const codeEditorHighlightStyle = HighlightStyle.define([

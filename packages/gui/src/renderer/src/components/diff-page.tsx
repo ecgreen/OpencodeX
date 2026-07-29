@@ -1,7 +1,7 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { File as FileDiffView } from "@opencode-ai/ui/file"
 import { For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
-import type { DiffFile, GuiSnapshot } from "../lib/store"
+import type { DiffFile, GuiSnapshot } from "../lib/session-api"
 import type { GuiClient } from "../lib/client"
 import type { DiffMode } from "../lib/routes"
 import { patchContents, shouldVirtualizeDiff } from "../lib/tool-display"

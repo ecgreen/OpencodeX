@@ -24,7 +24,7 @@ import { deriveStatus as deriveTuiStatus } from "../../opencode/src/cli/cmd/tui/
 import { clientWorkItems } from "@opencode-ai/sdk/v2/work-item"
 import { emptyGuiSnapshot, reconcileGuiAuthoritativeState } from "../src/renderer/src/lib/gui-state"
 import { deriveSessionStatus } from "../src/renderer/src/lib/session-status"
-import { sessionDataFromClientState } from "../src/renderer/src/lib/store"
+import { sessionDataFromClientState } from "../src/renderer/src/lib/session-api"
 
 const HARMONY_ENVELOPE = JSON.stringify({ channel: "final", content: "done" })
 const REMINDER_TEXT = "keep this\n<system-reminder>drop this</system-reminder>"

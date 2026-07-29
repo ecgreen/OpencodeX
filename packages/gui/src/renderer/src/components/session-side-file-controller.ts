@@ -10,7 +10,7 @@ import {
   listWorkbenchFiles,
   readWorkbenchFile,
   writeWorkbenchFile,
-} from "../lib/store"
+} from "../lib/session-api"
 import { flattenWorkbenchFileTree, workbenchPathKey } from "../lib/workbench"
 import { openTabFileIdentity } from "./session-side-open-state"
 import type { OpenFileTarget, OpenTab } from "./session-side-open-types"

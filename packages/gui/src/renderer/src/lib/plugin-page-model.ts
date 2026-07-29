@@ -1,5 +1,5 @@
 import type { InstalledGuiPlugin } from "./gui-plugins"
-import type { GuiPlugin } from "./store"
+import type { GuiPlugin } from "./session-api"
 
 export function pluginPageStats(plugins: GuiPlugin[]) {
   return {

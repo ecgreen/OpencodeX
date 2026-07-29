@@ -1,8 +1,5 @@
 import type { GlobalEvent, QuestionAnswer, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
-import {
-  updateClientSessionState,
-  type ClientSessionStateUpdate,
-} from "@opencode-ai/sdk/v2/client-sync"
+import { updateClientSessionState, type ClientSessionStateUpdate } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { messageCursorBefore } from "./message-window"
 import { normalizeMessageText } from "./session-data-projection"
@@ -122,9 +119,9 @@ export async function loadSessionDiff(
 ) {
   return gui.client.session.diff(
     {
-    sessionID: input.sessionID,
-    directory: input.directory || gui.directory || undefined,
-    messageID: input.messageID,
+      sessionID: input.sessionID,
+      directory: input.directory || gui.directory || undefined,
+      messageID: input.messageID,
     },
     { headers: authHeaders(gui), throwOnError: true },
   )
@@ -196,13 +193,13 @@ export async function sendPrompt(
 ) {
   return gui.client.session.promptAsync(
     {
-    sessionID,
-    directory: options.directory || gui.directory || undefined,
-    messageID: createClientMessageID(),
-    agent: options.agent,
-    model: options.model,
-    variant: options.variant,
-    parts: options.parts ?? [{ type: "text", text }],
+      sessionID,
+      directory: options.directory || gui.directory || undefined,
+      messageID: createClientMessageID(),
+      agent: options.agent,
+      model: options.model,
+      variant: options.variant,
+      parts: options.parts ?? [{ type: "text", text }],
     },
     { headers: authHeaders(gui), throwOnError: true },
   )
@@ -223,14 +220,14 @@ export async function runSessionCommand(
 ) {
   return gui.client.session.command(
     {
-    sessionID,
-    command: input.command,
-    arguments: input.arguments,
-    directory: input.directory || gui.directory || undefined,
-    messageID: createClientMessageID(),
-    agent: input.agent,
-    model: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
-    variant: input.variant,
+      sessionID,
+      command: input.command,
+      arguments: input.arguments,
+      directory: input.directory || gui.directory || undefined,
+      messageID: createClientMessageID(),
+      agent: input.agent,
+      model: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
+      variant: input.variant,
       parts: input.parts?.flatMap((part) => (part.type === "file" ? [part] : [])),
     },
     { headers: authHeaders(gui), throwOnError: true },
@@ -249,12 +246,12 @@ export async function runShellCommand(
 ) {
   return gui.client.session.shell(
     {
-    sessionID,
-    command: input.command,
-    directory: input.directory || gui.directory || undefined,
-    messageID: createClientMessageID(),
-    agent: input.agent,
-    model: input.model,
+      sessionID,
+      command: input.command,
+      directory: input.directory || gui.directory || undefined,
+      messageID: createClientMessageID(),
+      agent: input.agent,
+      model: input.model,
     },
     { headers: authHeaders(gui), throwOnError: true },
   )
@@ -314,10 +311,10 @@ export async function replyPermission(
 ) {
   return gui.client.permission.reply(
     {
-    requestID,
-    directory: directory || gui.directory || undefined,
-    reply,
-    message,
+      requestID,
+      directory: directory || gui.directory || undefined,
+      reply,
+      message,
     },
     { headers: authHeaders(gui), throwOnError: true },
   )
@@ -326,9 +323,9 @@ export async function replyPermission(
 export async function replyQuestion(gui: GuiClient, requestID: string, answers: QuestionAnswer[], directory?: string) {
   return gui.client.question.reply(
     {
-    requestID,
-    directory: directory || gui.directory || undefined,
-    answers,
+      requestID,
+      directory: directory || gui.directory || undefined,
+      answers,
     },
     { headers: authHeaders(gui), throwOnError: true },
   )
@@ -337,8 +334,8 @@ export async function replyQuestion(gui: GuiClient, requestID: string, answers: 
 export async function rejectQuestion(gui: GuiClient, requestID: string, directory?: string) {
   return gui.client.question.reject(
     {
-    requestID,
-    directory: directory || gui.directory || undefined,
+      requestID,
+      directory: directory || gui.directory || undefined,
     },
     { headers: authHeaders(gui), throwOnError: true },
   )

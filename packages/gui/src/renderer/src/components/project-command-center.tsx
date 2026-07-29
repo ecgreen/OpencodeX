@@ -3,7 +3,7 @@ import { clientWorkItemBucket, type AttentionItem, type WorkItem } from "@openco
 import { compactPath, formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
 import { projectSwarms, projectViewSessionCount, projectViews } from "../lib/project-summary"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard, TerminalSessionStatusCard } from "./session-card-list"
 import { Button } from "./ui"
 import { projectLabel } from "./project-directory"

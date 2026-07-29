@@ -4,7 +4,7 @@ import { Portal } from "solid-js/web"
 import { formatRelative, title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
 import { sessionStatusLabel } from "../lib/session-status"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import {
   summarizeViews,
   viewProjectMeta,

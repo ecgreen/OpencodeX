@@ -6,7 +6,7 @@ import {
   type GuiPromptInfo,
   type GuiPromptStashEntry,
 } from "./prompt-state"
-import type { MessageBundle, PromptPart } from "./store"
+import type { MessageBundle, PromptPart } from "./session-api"
 
 const COMPOSER_STASH_EVENT = "opencodex:composer-stash"
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { GlobalEvent, Part, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot, MessageBundle, SessionCardSnapshot, SessionData } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot, MessageBundle, SessionCardSnapshot, SessionData } from "../src/renderer/src/lib/session-api"
 import {
   eventMessageID,
   eventSessionID,

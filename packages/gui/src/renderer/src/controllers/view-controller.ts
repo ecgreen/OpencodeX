@@ -13,7 +13,7 @@ import { modelValue } from "../lib/model-selection"
 import { projectNameForID, projectNameForSession } from "../lib/project-name"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import { activeViewForRoute, focusedViewItemID } from "../lib/route-selection"
-import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus } from "../lib/store"
+import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus } from "../lib/session-api"
 import {
   orderedViewItems,
   viewItemID,

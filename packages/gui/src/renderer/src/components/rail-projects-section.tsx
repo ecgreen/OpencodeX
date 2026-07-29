@@ -4,7 +4,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { projectSessionPreviewItems, sessionOrderBucket } from "../lib/app-session-lists"
 import { title } from "../lib/format"
 import { moveRelative } from "../lib/reorder"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { Icon } from "./icon"
 import { ProjectDragPreview, type ProjectDragPreviewState } from "./rail-project-drag-preview"
 import { RailSection } from "./rail-section"

@@ -1,7 +1,7 @@
 import type { Part } from "@opencode-ai/sdk/v2/client"
 import { For, Match, Show, Switch, createMemo } from "solid-js"
 import { Markdown } from "@opencode-ai/ui/markdown"
-import type { MessageBundle } from "../lib/store"
+import type { MessageBundle } from "../lib/session-api"
 import { autoOpenForStatus, createDisclosure, createMountedOnce } from "../lib/disclosure"
 import type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
 import { isStaleRunningTool, toolGroupStatus, toolGroupSummary, toolGroupTitle } from "../lib/transcript-grouping"

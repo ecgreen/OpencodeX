@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createOpencodeClient, type GlobalEvent } from "@opencode-ai/sdk/v2/client"
-import { subscribeEvents } from "../src/renderer/src/lib/store"
+import { subscribeEvents } from "../src/renderer/src/lib/session-api"
 
 test("raw event subscription retries failed initialization and stops after cancellation", async () => {
   let eventConnections = 0

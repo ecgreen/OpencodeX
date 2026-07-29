@@ -15,7 +15,7 @@ import { errorMessage } from "@/util/error"
 import { Filesystem } from "@/util/filesystem"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
-import { Flock } from "@opencode-ai/core/util/flock"
+import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
@@ -28,6 +28,7 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
   const fs = yield* AppFileSystem.Service
   const runtimeFlags = yield* RuntimeFlags.Service
   const events = yield* EventV2Bridge.Service
+  const flock = yield* EffectFlock.Service
   const bridge = yield* EffectBridge.make()
 
   const snapshot = Effect.fn("OpencodeXHttpApi.pluginSnapshot")(function* () {
@@ -123,7 +124,7 @@ export const makeOpencodeXPluginHandlers = Effect.fn("OpencodeXHttpApi.makePlugi
   }) {
     const item = (yield* snapshot()).find((plugin) => plugin.id === ctx.payload.id)
     if (!item || !item.canToggle || item.kind !== "tui") return yield* Effect.fail(new HttpApiError.BadRequest({}))
-    if (!(yield* Effect.promise(() => patchTuiPluginEnabled(item.source, item.pluginID, ctx.payload.enabled)))) {
+    if (!(yield* patchTuiPluginEnabled(flock, item.source, item.pluginID, ctx.payload.enabled))) {
       return yield* Effect.fail(new HttpApiError.BadRequest({}))
     }
     yield* events.publish(OpencodeXPlugin.Event.Updated, {
@@ -336,20 +337,35 @@ function serverPlugins(config: Config.Info) {
   )
 }
 
-async function patchTuiPluginEnabled(file: string, spec: string, enabled: boolean) {
-  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.dirname(file))}`)
-  const before = await Filesystem.readText(file).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return "{}"
-    throw error
-  })
-  const errors: ParseError[] = []
-  const parsed = parse(before, errors, { allowTrailingComma: true })
-  if (errors.length > 0 || (parsed !== undefined && !isRecord(parsed))) return false
-  const document = before.trim() ? before : "{}"
-  const next = applyEdits(
-    document,
-    modify(document, ["plugin_enabled", spec], enabled, { formattingOptions: { insertSpaces: true, tabSize: 2 } }),
-  )
-  await Filesystem.writeAtomic(file, next)
-  return true
+/**
+ * Shares the `plug-config:<dir>` lock with `plugin/install.ts`, which still
+ * uses the promise-based `Flock`. Both sit on the same on-disk protocol
+ * (`LockProtocol`), so an Effect holder and a promise holder exclude each
+ * other correctly. A lock failure is a defect, matching the old behaviour
+ * where `Flock.acquire` rejected into `Effect.promise`.
+ */
+function patchTuiPluginEnabled(flock: EffectFlock.Interface, file: string, spec: string, enabled: boolean) {
+  return flock
+    .withLock(
+      Effect.promise(async () => {
+        const before = await Filesystem.readText(file).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return "{}"
+          throw error
+        })
+        const errors: ParseError[] = []
+        const parsed = parse(before, errors, { allowTrailingComma: true })
+        if (errors.length > 0 || (parsed !== undefined && !isRecord(parsed))) return false
+        const document = before.trim() ? before : "{}"
+        const next = applyEdits(
+          document,
+          modify(document, ["plugin_enabled", spec], enabled, {
+            formattingOptions: { insertSpaces: true, tabSize: 2 },
+          }),
+        )
+        await Filesystem.writeAtomic(file, next)
+        return true
+      }),
+      `plug-config:${Filesystem.resolve(path.dirname(file))}`,
+    )
+    .pipe(Effect.orDie)
 }

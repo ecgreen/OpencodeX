@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { runCreateProjectSessionAction, runCreateSwarmAction, runCreateViewAction } from "../src/renderer/src/lib/creation-actions"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 
 describe("GUI creation action workflows", () => {
   test("creates swarms through project choice and opens the swarms route", async () => {

@@ -38,7 +38,7 @@ import {
   updateView,
   validateProjectFolders,
   type GuiSnapshot,
-} from "../lib/store"
+} from "../lib/session-api"
 
 export function createManagementActionsController(input: {
   client: Accessor<GuiClient | undefined>

@@ -6,7 +6,7 @@ import type { createSessionState } from "./session-state"
 import { createPlanModeFollow } from "../lib/plan-mode-follow"
 import { activeSessionRouteKey } from "../lib/route-selection"
 import { runSessionPromptAction } from "../lib/session-prompt"
-import { runShellCommand, runSessionCommand, sendPrompt } from "../lib/store"
+import { runShellCommand, runSessionCommand, sendPrompt } from "../lib/session-api"
 import { workbenchPromptTarget } from "../lib/workbench"
 
 export function createSessionComposerController(input: {

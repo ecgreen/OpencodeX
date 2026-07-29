@@ -1,6 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogProject, ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, type DerivedSessionStatus } from "./session-status"
 import { pendingViewSessions } from "./view-items"
 import { viewSessionsInOrder } from "./view-sync"

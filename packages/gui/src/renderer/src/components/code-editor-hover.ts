@@ -1,5 +1,5 @@
 import { hoverTooltip } from "@codemirror/view"
-import type { WorkbenchHoverResult } from "../lib/store"
+import type { WorkbenchHoverResult } from "../lib/session-api"
 import { editorOffset } from "./code-editor-extensions"
 
 export type CodeEditorHover = WorkbenchHoverResult

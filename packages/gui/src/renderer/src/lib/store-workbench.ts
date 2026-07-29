@@ -24,7 +24,7 @@ import {
   type WorkbenchGitHistoryCommit,
   type WorkbenchGitStash,
   type WorkbenchOperationResult,
-} from "./store"
+} from "./session-api"
 
 export async function findFiles(gui: GuiClient, input: { query: string; directory?: string; limit?: number; signal?: AbortSignal }): Promise<FileNode[]> {
   return gui.client.find.files({

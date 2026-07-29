@@ -1,8 +1,6 @@
-import path from "path"
 import os from "os"
-import { randomBytes, randomUUID } from "crypto"
 import { mkdir, readFile, rm, stat, utimes, writeFile } from "fs/promises"
-import { Hash } from "./hash"
+import { LockProtocol } from "./lock-protocol"
 import { Effect } from "effect"
 
 export type FlockGlobal = {
@@ -18,15 +16,15 @@ export namespace Flock {
 
   const root = () => {
     if (!global) throw new Error("Flock global not set")
-    return path.join(global.state, "locks")
+    return LockProtocol.rootDir(global.state)
   }
 
   // Defaults for callers that do not provide timing options.
   const defaultOpts = {
-    staleMs: 60_000,
-    timeoutMs: 5 * 60_000,
-    baseDelayMs: 100,
-    maxDelayMs: 2_000,
+    staleMs: LockProtocol.STALE_MS,
+    timeoutMs: LockProtocol.TIMEOUT_MS,
+    baseDelayMs: LockProtocol.BASE_DELAY_MS,
+    maxDelayMs: LockProtocol.MAX_DELAY_MS,
   }
 
   export interface WaitEvent {
@@ -146,12 +144,12 @@ export namespace Flock {
   }
 
   async function tryAcquireLockDir(lockDir: string, opts: Opts): Promise<Owned | { acquired: false }> {
-    const token = randomUUID?.() ?? randomBytes(16).toString("hex")
-    const metaPath = path.join(lockDir, "meta.json")
-    const heartbeatPath = path.join(lockDir, "heartbeat")
+    const token = LockProtocol.createToken()
+    const metaPath = LockProtocol.metaPath(lockDir)
+    const heartbeatPath = LockProtocol.heartbeatPath(lockDir)
 
     try {
-      await mkdir(lockDir, { mode: 0o700 })
+      await mkdir(lockDir, { mode: LockProtocol.DIR_MODE })
     } catch (err) {
       if (code(err) !== "EEXIST") {
         throw err
@@ -161,9 +159,9 @@ export namespace Flock {
         return { acquired: false }
       }
 
-      const breakerPath = lockDir + ".breaker"
+      const breakerPath = LockProtocol.breakerPath(lockDir)
       try {
-        await mkdir(breakerPath, { mode: 0o700 })
+        await mkdir(breakerPath, { mode: LockProtocol.DIR_MODE })
       } catch (claimErr) {
         const errCode = code(claimErr)
         if (errCode === "EEXIST") {
@@ -190,7 +188,7 @@ export namespace Flock {
         await rm(lockDir, { recursive: true, force: true })
 
         try {
-          await mkdir(lockDir, { mode: 0o700 })
+          await mkdir(lockDir, { mode: LockProtocol.DIR_MODE })
         } catch (retryErr) {
           const errCode = code(retryErr)
           if (errCode === "EEXIST" || errCode === "ENOTEMPTY") {
@@ -203,12 +201,7 @@ export namespace Flock {
       }
     }
 
-    const meta = {
-      token,
-      pid: process.pid,
-      hostname: os.hostname(),
-      createdAt: new Date().toISOString(),
-    }
+    const meta = LockProtocol.meta({ token, hostname: os.hostname() })
 
     await writeFile(heartbeatPath, "", { flag: "wx" }).catch(async () => {
       await rm(lockDir, { recursive: true, force: true })
@@ -222,7 +215,7 @@ export namespace Flock {
 
     let timer: NodeJS.Timeout | undefined
 
-    const startHeartbeat = (intervalMs = Math.max(100, Math.floor(opts.staleMs / 3))) => {
+    const startHeartbeat = (intervalMs = LockProtocol.heartbeatIntervalMs(opts.staleMs)) => {
       if (timer) return
       // Heartbeat prevents long critical sections from being evicted as stale.
       timer = setInterval(() => {
@@ -303,7 +296,7 @@ export namespace Flock {
       })
       await sleep(ms, input.signal)
       waited += ms
-      delay = Math.min(opts.maxDelayMs, Math.floor(delay * 1.7))
+      delay = Math.min(opts.maxDelayMs, Math.floor(delay * LockProtocol.BACKOFF_FACTOR))
     }
   }
 
@@ -318,7 +311,7 @@ export namespace Flock {
     const dir = input.dir ?? root()
 
     await mkdir(dir, { recursive: true })
-    const lockfile = path.join(dir, Hash.fast(key) + ".lock")
+    const lockfile = LockProtocol.lockDir(dir, key)
     const lock = await acquireLockDir(
       lockfile,
       {

@@ -8,7 +8,7 @@ import {
   type GuiPluginManifest,
   type InstalledGuiPlugin,
 } from "../lib/gui-plugins"
-import type { GuiPlugin } from "../lib/store"
+import type { GuiPlugin } from "../lib/session-api"
 import { filterGuiPluginPagePlugins, filterPluginPagePlugins, guiPluginPageStats, pluginPageGroups, pluginPageStats } from "../lib/plugin-page-model"
 import { Icon } from "./icon"
 import { CardActionMenu } from "./card-action-menu"

@@ -29,7 +29,7 @@ export {
   VIEW_MESSAGE_PAGE_LIMIT,
 } from "../lib/session-hydration"
 import { createDeferredSessionRelease, createSessionPresentationController } from "../lib/session-presentation"
-import { subscribeEvents, type GuiSnapshot, type SessionData } from "../lib/store"
+import { subscribeEvents, type GuiSnapshot, type SessionData } from "../lib/session-api"
 import {
   EMPTY_VIEW_PANE_RUNTIME_STATE,
   setRecordEntry,

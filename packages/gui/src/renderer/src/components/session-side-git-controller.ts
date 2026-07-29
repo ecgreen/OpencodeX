@@ -7,7 +7,7 @@ import {
   workbenchChangePatchPage,
   workbenchChanges,
   type WorkbenchChangeFile,
-} from "../lib/store"
+} from "../lib/session-api"
 import {
   displayWorkbenchChangeSummary,
   emptyWorkbenchChangeSummary,

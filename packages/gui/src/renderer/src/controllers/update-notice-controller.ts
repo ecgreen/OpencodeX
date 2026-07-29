@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
-import { authHeaders } from "../lib/store"
+import { authHeaders } from "../lib/session-api"
 import {
   readSkippedVersion,
   shouldShowUpdateNotice,

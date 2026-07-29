@@ -1,7 +1,7 @@
 import type { LspStatus } from "@opencode-ai/sdk/v2/client"
 import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import type { DiffFile } from "../lib/store"
+import type { DiffFile } from "../lib/session-api"
 import { isWorkbenchImageContent } from "../lib/workbench"
 import { sessionReplacementCleanupTabs } from "../lib/resource-limits"
 import { Select } from "./ui"

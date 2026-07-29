@@ -7,7 +7,7 @@ import {
 import { createSignal } from "solid-js"
 import { createAuthoritativeStateApplicator } from "../src/renderer/src/controllers/authoritative-state-applicator"
 import { emptyGuiSnapshot } from "../src/renderer/src/lib/gui-state"
-import type { SessionData } from "../src/renderer/src/lib/store"
+import type { SessionData } from "../src/renderer/src/lib/session-api"
 
 describe("GUI authoritative state applicator", () => {
   test("preserves the rendered snapshot and session caches while canonical state resets", () => {

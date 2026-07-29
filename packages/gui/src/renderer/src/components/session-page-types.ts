@@ -2,7 +2,7 @@ import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpS
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { SessionData } from "../lib/store"
+import type { SessionData } from "../lib/session-api"
 import type { GuiClient } from "../lib/client"
 import type { SwarmTeamView } from "../lib/swarm-team"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"

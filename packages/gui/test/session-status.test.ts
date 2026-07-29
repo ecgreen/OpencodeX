@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { GlobalSession, OpencodeXView, PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 import { deriveSessionStatus, deriveViewStatus, isActiveSessionStatus, markSessionViewedInSnapshot, reconcileSessionUiState, type DerivedSessionStatus } from "../src/renderer/src/lib/session-status"
 import { deriveStatus as deriveTuiStatus } from "../../opencode/src/cli/cmd/tui/component/opencodex-session-status-core"
 

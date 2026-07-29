@@ -1,4 +1,4 @@
-import type { DiffFile, WorkbenchChangeFile } from "./store"
+import type { DiffFile, WorkbenchChangeFile } from "./session-api"
 
 export type DiffTreeNode =
   | { id: string; type: "directory"; name: string; path: string; children: DiffTreeNode[] }

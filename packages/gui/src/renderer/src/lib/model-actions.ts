@@ -1,4 +1,4 @@
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 import { isFreeOpencodeModel, modelPickerOptions, modelValue, selectedModelVariants } from "./model-selection"
 
 type ChoiceOption = { value: string; title: string; description?: string; meta?: string }

@@ -26,7 +26,7 @@ import {
   workbenchGithubPost,
   writeWorkbenchFile,
   type DiffFile,
-} from "../src/renderer/src/lib/store"
+} from "../src/renderer/src/lib/session-api"
 import {
   activeWorkbenchBrowserTab,
   addWorkbenchArtifact,

@@ -30,7 +30,7 @@ import {
   workspaceStatus,
   type MessageBundle,
   type SessionData,
-} from "../lib/store"
+} from "../lib/session-api"
 
 export function createSessionSlashController(input: {
   authoritative: ReturnType<typeof createAuthoritativeStateController>

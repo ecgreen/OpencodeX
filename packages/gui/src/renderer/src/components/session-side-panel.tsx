@@ -1,7 +1,7 @@
 import type { GlobalEvent, LspStatus, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import type { GuiSnapshot, SessionData } from "../lib/store"
+import type { GuiSnapshot, SessionData } from "../lib/session-api"
 import { Icon } from "./icon"
 import { sessionInspectorModel } from "./session-inspector"
 import {

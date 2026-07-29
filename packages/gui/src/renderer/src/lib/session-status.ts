@@ -10,7 +10,7 @@ import {
   type ClientSessionActivityMessage,
 } from "@opencode-ai/sdk/v2/client-sync"
 import { statusLabel, statusTone } from "./status-system"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 /**
  * The GUI's spelling of the shared status vocabulary. `needs_review` is called

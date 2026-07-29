@@ -3,7 +3,7 @@ import type { createAppearanceController } from "./appearance-controller"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createDialogController } from "./dialog-controller"
 import type { createTranscriptPreferences } from "./transcript-preferences"
-import { authHeaders } from "../lib/store"
+import { authHeaders } from "../lib/session-api"
 import { readBoolPreference, writeBoolPreference } from "../lib/app-preferences"
 import {
   isPermissionMode,

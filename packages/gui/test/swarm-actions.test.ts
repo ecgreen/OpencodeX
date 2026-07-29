@@ -9,7 +9,7 @@ import {
   swarmProviderSelectionKey,
 } from "../src/renderer/src/lib/swarm-actions"
 import { defaultTeamRun, sessionSwarm, swarmTeamChildren, swarmTeamView, teamMemberForSession } from "../src/renderer/src/lib/swarm-team"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 
 describe("GUI swarm action helpers", () => {
   test("normalizes role payloads without empty optional fields", () => {

@@ -1,6 +1,6 @@
 import { createEffect, createSignal, type Accessor, type Setter } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import {
   installGuiPlugin,
   readInstalledGuiPlugins,
@@ -8,7 +8,7 @@ import {
   type GuiPluginManifest,
   type InstalledGuiPlugin,
 } from "../lib/gui-plugins"
-import { listPlugins } from "../lib/store"
+import { listPlugins } from "../lib/session-api"
 
 export function createPluginController(input: {
   client: Accessor<GuiClient | undefined>

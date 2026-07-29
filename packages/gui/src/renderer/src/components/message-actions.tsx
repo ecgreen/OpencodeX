@@ -1,5 +1,5 @@
 import { Show } from "solid-js"
-import type { MessageBundle } from "../lib/store"
+import type { MessageBundle } from "../lib/session-api"
 import { messageActionAvailability, type SessionMessageActionKind } from "../lib/message-actions"
 import { IconButton } from "./ui"
 

@@ -1,7 +1,7 @@
 import { Button } from "./ui"
 import type { Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
-import type { MessageBundle, SessionData } from "../lib/store"
+import type { MessageBundle, SessionData } from "../lib/session-api"
 import type { SessionMessageActionKind } from "../lib/message-actions"
 import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/transcript-visibility"
 import { Icon } from "./icon"

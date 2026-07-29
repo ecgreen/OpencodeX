@@ -1,6 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 import { pendingSession, viewItemID, type ViewItem } from "./view-items"
 
 type RouteLike = {

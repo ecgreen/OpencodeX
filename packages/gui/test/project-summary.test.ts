@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { OpencodeXSwarm, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 import { projectAttentionItems, projectLatestActivity, projectSessionStatus, projectSwarms, projectViews } from "../src/renderer/src/lib/project-summary"
 
 describe("GUI project summaries", () => {

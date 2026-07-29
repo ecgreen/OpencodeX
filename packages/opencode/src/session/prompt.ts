@@ -1,16 +1,11 @@
-import path from "path"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
-import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
-import * as Log from "@opencode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
 
-import { type Tool as AITool, tool, jsonSchema } from "ai"
-import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
@@ -19,85 +14,60 @@ import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
-import { ulid } from "ulid"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
 import { Command } from "../command"
-import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
-import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { Shell } from "@/shell/shell"
-import { ShellID } from "@/tool/shell/id"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
-import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
-import { Cause, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Scope, Context, Schema, Types } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Scope, Context } from "effect"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
-import { TaskTool, type TaskPromptOps } from "@/tool/task"
+import { type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
-import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { AgentAttachment, FileAttachment, ReferenceAttachment, Source } from "@opencode-ai/core/session/prompt"
 import { Reference } from "@/reference/reference"
-import * as DateTime from "effect/DateTime"
-import { and, asc, eq, inArray, isNull, lt, or } from "drizzle-orm"
-import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
-import { SwarmBriefing } from "@/opencodex/swarm-briefing"
-import { isSwarmProvider } from "@/provider/swarm-provider"
+import { and, eq } from "drizzle-orm"
 import { SessionCommandTable, SessionExecutionTable, SessionTable } from "@opencode-ai/core/session/sql"
-import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Todo } from "./todo"
 import { BackgroundJob } from "@/background/job"
 import { Identifier } from "@opencode-ai/core/util/identifier"
-import { SessionPromptRecovery } from "./prompt-recovery"
 import { Question } from "@/question"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
-import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
+import { PromptInput, LoopInput, ShellInput, CommandInput } from "./prompt-schema"
+import { STRUCTURED_OUTPUT_SYSTEM_PROMPT, createStructuredOutputTool } from "./prompt-structured-output"
+import * as PromptClaim from "./prompt-claim"
+import * as PromptShell from "./prompt-shell"
+import * as PromptSubtask from "./prompt-subtask"
+import * as PromptSwarm from "./prompt-swarm"
+import * as PromptUserMessage from "./prompt-user-message"
+import { argsRegex, bashRegex, placeholderRegex, quoteTrimRegex } from "./prompt-user-message"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
 
-const decodeMessageInfo = Schema.decodeUnknownExit(SessionLegacy.Info)
-const decodeMessagePart = Schema.decodeUnknownExit(SessionLegacy.Part)
+// Re-exported so `SessionPrompt.PromptInput` and friends keep working from
+// every existing import path; the definitions live in ./prompt-schema.
+export { PromptInput, LoopInput, ShellInput, CommandInput }
+export { createStructuredOutputTool }
 
-const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
-
-IMPORTANT:
-- You MUST call this tool exactly once at the end of your response
-- The input must be valid JSON matching the required schema
-- Complete all necessary research and tool calls BEFORE calling this tool
-- This tool provides your final answer - no further actions are taken after calling it`
-
-const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
-
-const log = Log.create({ service: "session.prompt" })
-
-/** One swarm role as the loop reads it, ordered by `sort_order`. */
-type SwarmRoleRow = {
-  name: string
-  agent: string | null
-  skill: string | null
-  instructions: string
-  provider_id: string | null
-  model_id: string | null
-}
 const elog = EffectLogger.create({ service: "session.prompt" })
 
 function isOrphanedInterruptedTool(part: SessionLegacy.ToolPart) {
@@ -211,8 +181,7 @@ export const layer = Layer.effect(
     const background = yield* BackgroundJob.Service
     const todo = yield* Todo.Service
     const { db } = database
-    const commandOwner = `local:${process.pid}:prompt:${crypto.randomUUID()}`
-    const commandLeaseMillis = 30_000
+
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -250,100 +219,21 @@ export const layer = Layer.effect(
       )
     })
 
-    const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
-      const ctx = yield* InstanceState.context
-      const parts: Types.DeepMutable<PromptInput["parts"]> = [{ type: "text", text: template }]
-      const files = ConfigMarkdown.files(template)
-      const seen = new Set<string>()
-      const mentionSource = (match: RegExpMatchArray) => {
-        const start = match.index ?? 0
-        return { value: match[0], start, end: start + match[0].length }
-      }
-      yield* Effect.forEach(
-        files,
-        Effect.fnUntraced(function* (match) {
-          const name = match[1]
-          if (!name) return
-          if (seen.has(name)) return
-          seen.add(name)
-
-          const slash = name.indexOf("/")
-          const alias = slash === -1 ? name : name.slice(0, slash)
-          const reference = yield* references.get(alias)
-          if (reference) {
-            const source = mentionSource(match)
-            if (reference.kind === "invalid") {
-              parts.push(
-                referenceTextPart({ reference, source, target: slash === -1 ? undefined : name.slice(slash + 1) }),
-              )
-              return
-            }
-
-            yield* references.ensure(reference.path)
-            if (slash === -1) {
-              parts.push(referenceTextPart({ reference, source }))
-              return
-            }
-
-            const target = name.slice(slash + 1)
-            const targetPath = path.resolve(reference.path, target)
-            if (!AppFileSystem.contains(reference.path, targetPath)) {
-              parts.push(
-                referenceTextPart({
-                  reference,
-                  source,
-                  target,
-                  targetPath,
-                  problem: `Path escapes configured reference @${alias}: ${target}`,
-                }),
-              )
-              return
-            }
-
-            const info = yield* fsys.stat(targetPath).pipe(Effect.option)
-            if (Option.isNone(info)) {
-              parts.push(
-                referenceTextPart({
-                  reference,
-                  source,
-                  target,
-                  targetPath,
-                  problem: `Path does not exist inside configured reference @${alias}: ${target}`,
-                }),
-              )
-              return
-            }
-
-            parts.push({
-              type: "file",
-              url: pathToFileURL(targetPath).href,
-              filename: name,
-              mime: info.value.type === "Directory" ? "application/x-directory" : "text/plain",
-            })
-            return
-          }
-
-          const filepath = name.startsWith("~/")
-            ? path.join(os.homedir(), name.slice(2))
-            : path.resolve(ctx.worktree, name)
-
-          const info = yield* fsys.stat(filepath).pipe(Effect.option)
-          if (Option.isNone(info)) {
-            const found = yield* agents.get(name)
-            if (found) parts.push({ type: "agent", name: found.name })
-            return
-          }
-          const stat = info.value
-          parts.push({
-            type: "file",
-            url: pathToFileURL(filepath).href,
-            filename: name,
-            mime: stat.type === "Directory" ? "application/x-directory" : "text/plain",
-          })
-        }),
-        { concurrency: "unbounded", discard: true },
-      )
-      return parts
+    const { resolvePromptParts, createUserMessage } = PromptUserMessage.make({
+      agents,
+      database,
+      events,
+      fsys,
+      image,
+      instruction,
+      lsp,
+      mcp,
+      plugin,
+      provider,
+      references,
+      registry,
+      sessions,
+      currentModel: (sessionID) => currentModel(sessionID),
     })
 
     const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
@@ -408,355 +298,28 @@ export const layer = Layer.effect(
         .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))
     })
 
-    const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
-      task: SessionLegacy.SubtaskPart
-      model: Provider.Model
-      lastUser: SessionLegacy.User
-      sessionID: SessionID
-      session: Session.Info
-      msgs: SessionLegacy.WithParts[]
-    }) {
-      const { task, model, lastUser, sessionID, session, msgs } = input
-      const ctx = yield* InstanceState.context
-      const promptOps = yield* ops()
-      const { task: taskTool } = yield* registry.named()
-      const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
-      const assistantMessage: SessionLegacy.Assistant = yield* sessions.updateMessage({
-        id: MessageID.ascending(),
-        role: "assistant",
-        parentID: lastUser.id,
-        sessionID,
-        mode: task.agent,
-        agent: task.agent,
-        variant: lastUser.model.variant,
-        path: { cwd: ctx.directory, root: ctx.worktree },
-        cost: 0,
-        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        modelID: taskModel.id,
-        providerID: taskModel.providerID,
-        time: { created: Date.now() },
-      })
-      let part: SessionLegacy.ToolPart = yield* sessions.updatePart({
-        id: PartID.ascending(),
-        messageID: assistantMessage.id,
-        sessionID: assistantMessage.sessionID,
-        type: "tool",
-        callID: ulid(),
-        tool: TaskTool.id,
-        state: {
-          status: "running",
-          input: {
-            prompt: task.prompt,
-            description: task.description,
-            subagent_type: task.agent,
-            command: task.command,
-          },
-          time: { start: Date.now() },
-        },
-      })
-      const taskArgs = {
-        prompt: task.prompt,
-        description: task.description,
-        subagent_type: task.agent,
-        command: task.command,
-      }
-      yield* plugin.trigger(
-        "tool.execute.before",
-        { tool: TaskTool.id, sessionID, callID: part.id },
-        { args: taskArgs },
-      )
-
-      const taskAgent = yield* agents.get(task.agent)
-      if (!taskAgent) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${task.agent}".${hint}` })
-        yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
-        throw error
-      }
-
-      let error: Error | undefined
-      const taskAbort = new AbortController()
-      const result = yield* taskTool
-        .execute(taskArgs, {
-          agent: task.agent,
-          messageID: assistantMessage.id,
-          sessionID,
-          directory: session.directory,
-          workspaceID: session.workspaceID,
-          abort: taskAbort.signal,
-          callID: part.callID,
-          extra: { bypassAgentCheck: true, promptOps },
-          messages: msgs,
-          // Subtask progress is in-flight state, so it is broadcast without a
-          // journal append. `part` stays the in-memory source of truth for the
-          // durable completion/error write below, which is unaffected.
-          metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
-            Effect.gen(function* () {
-              part = yield* sessions.updatePart(
-                {
-                  ...part,
-                  type: "tool",
-                  state: { ...part.state, ...val },
-                } satisfies SessionLegacy.ToolPart,
-                { transient: true },
-              )
-            }),
-          ask: (req: any) =>
-            permission
-              .ask({
-                ...req,
-                sessionID,
-                ruleset: Permission.merge(taskAgent.permission, session.permission ?? []),
-              })
-              .pipe(Effect.orDie),
-        })
-        .pipe(
-          Effect.catchCause((cause) => {
-            const defect = Cause.squash(cause)
-            error = defect instanceof Error ? defect : new Error(String(defect))
-            log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
-            return Effect.void
-          }),
-          Effect.onInterrupt(() =>
-            Effect.gen(function* () {
-              taskAbort.abort()
-              assistantMessage.finish = "tool-calls"
-              assistantMessage.time.completed = Date.now()
-              yield* sessions.updateMessage(assistantMessage)
-              if (part.state.status === "running") {
-                yield* sessions.updatePart({
-                  ...part,
-                  state: {
-                    status: "error",
-                    error: "Cancelled",
-                    time: { start: part.state.time.start, end: Date.now() },
-                    metadata: part.state.metadata,
-                    input: part.state.input,
-                  },
-                } satisfies SessionLegacy.ToolPart)
-              }
-            }),
-          ),
-        )
-
-      const attachments = result?.attachments?.map((attachment) => ({
-        ...attachment,
-        id: PartID.ascending(),
-        sessionID,
-        messageID: assistantMessage.id,
-      }))
-
-      yield* plugin.trigger(
-        "tool.execute.after",
-        { tool: TaskTool.id, sessionID, callID: part.id, args: taskArgs },
-        result,
-      )
-
-      assistantMessage.finish = "tool-calls"
-      assistantMessage.time.completed = Date.now()
-      yield* sessions.updateMessage(assistantMessage)
-
-      if (result && part.state.status === "running") {
-        yield* sessions.updatePart({
-          ...part,
-          state: {
-            status: "completed",
-            input: part.state.input,
-            title: result.title,
-            metadata: result.metadata,
-            output: result.output,
-            attachments,
-            time: { ...part.state.time, end: Date.now() },
-          },
-        } satisfies SessionLegacy.ToolPart)
-      }
-
-      if (!result) {
-        yield* sessions.updatePart({
-          ...part,
-          state: {
-            status: "error",
-            error: error ? `Tool execution failed: ${error.message}` : "Tool execution failed",
-            time: {
-              start: part.state.status === "running" ? part.state.time.start : Date.now(),
-              end: Date.now(),
-            },
-            metadata: part.state.status === "pending" ? undefined : part.state.metadata,
-            input: part.state.input,
-          },
-        } satisfies SessionLegacy.ToolPart)
-      }
-
-      if (!task.command) return
-
-      const summaryUserMsg: SessionLegacy.User = {
-        id: MessageID.ascending(),
-        sessionID,
-        role: "user",
-        time: { created: Date.now() },
-        agent: lastUser.agent,
-        model: lastUser.model,
-      }
-      yield* sessions.updateMessage(summaryUserMsg)
-      yield* sessions.updatePart({
-        id: PartID.ascending(),
-        messageID: summaryUserMsg.id,
-        sessionID,
-        type: "text",
-        text: "Summarize the task tool output above and continue with your task.",
-        synthetic: true,
-      } satisfies SessionLegacy.TextPart)
+    const { handleSubtask } = PromptSubtask.make({
+      agents,
+      events,
+      permission,
+      plugin,
+      registry,
+      sessions,
+      getModel: (providerID, modelID, sessionID) => getModel(providerID, modelID, sessionID),
+      ops: () => ops(),
     })
 
-    const shellImpl = Effect.fn("SessionPrompt.shellImpl")(function* (input: ShellInput, ready?: Latch.Latch) {
-      return yield* Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function* () {
-          const markReady = ready ? ready.open.pipe(Effect.asVoid) : Effect.void
-          const { msg, part, cwd } = yield* Effect.gen(function* () {
-            const ctx = yield* InstanceState.context
-            const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-            if (session.revert) {
-              yield* revert.cleanup(session)
-            }
-            const agent = yield* agents.get(input.agent)
-            if (!agent) {
-              const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-              const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-              const error = new NamedError.Unknown({ message: `Agent not found: "${input.agent}".${hint}` })
-              yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
-              throw error
-            }
-            const model = input.model ?? agent.model ?? (yield* currentModel(input.sessionID))
-            const userMsg: SessionLegacy.User = {
-              id: input.messageID ?? MessageID.ascending(),
-              sessionID: input.sessionID,
-              time: { created: Date.now() },
-              role: "user",
-              agent: input.agent,
-              model: { providerID: model.providerID, modelID: model.modelID },
-            }
-            yield* sessions.setModel({
-              sessionID: input.sessionID,
-              model: {
-                providerID: userMsg.model.providerID,
-                id: userMsg.model.modelID,
-              },
-            })
-            yield* sessions.updateMessage(userMsg)
-            const userPart: SessionLegacy.Part = {
-              type: "text",
-              id: PartID.ascending(),
-              messageID: userMsg.id,
-              sessionID: input.sessionID,
-              text: "The following tool was executed by the user",
-              synthetic: true,
-            }
-            yield* sessions.updatePart(userPart)
-
-            const msg: SessionLegacy.Assistant = {
-              id: MessageID.ascending(),
-              sessionID: input.sessionID,
-              parentID: userMsg.id,
-              mode: input.agent,
-              agent: input.agent,
-              cost: 0,
-              path: { cwd: ctx.directory, root: ctx.worktree },
-              time: { created: Date.now() },
-              role: "assistant",
-              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-              modelID: model.modelID,
-              providerID: model.providerID,
-            }
-            yield* sessions.updateMessage(msg)
-            const started = Date.now()
-            const part: SessionLegacy.ToolPart = {
-              type: "tool",
-              id: PartID.ascending(),
-              messageID: msg.id,
-              sessionID: input.sessionID,
-              tool: ShellID.ToolID,
-              callID: ulid(),
-              state: {
-                status: "running",
-                time: { start: started },
-                input: { command: input.command },
-              },
-            }
-            yield* sessions.updatePart(part)
-            return { msg, part, cwd: ctx.directory }
-          }).pipe(Effect.ensuring(markReady))
-
-          const cfg = yield* config.get()
-          const sh = Shell.preferred(cfg.shell)
-          const args = Shell.args(sh, input.command, cwd)
-          let output = ""
-          let aborted = false
-
-          const finish = Effect.uninterruptible(
-            Effect.gen(function* () {
-              if (aborted) {
-                output += "\n\n" + ["<metadata>", "User aborted the command", "</metadata>"].join("\n")
-              }
-              const completed = Date.now()
-              if (!msg.time.completed) {
-                msg.time.completed = completed
-                yield* sessions.updateMessage(msg)
-              }
-              if (part.state.status === "running") {
-                part.state = {
-                  status: "completed",
-                  time: { ...part.state.time, end: completed },
-                  input: part.state.input,
-                  title: "",
-                  metadata: { output, description: "" },
-                  output,
-                }
-                yield* sessions.updatePart(part)
-              }
-            }),
-          )
-
-          const exit = yield* restore(
-            Effect.gen(function* () {
-              const shellEnv = yield* plugin.trigger(
-                "shell.env",
-                { cwd, sessionID: input.sessionID, callID: part.callID },
-                { env: {} },
-              )
-              const cmd = ChildProcess.make(sh, args, {
-                cwd,
-                extendEnv: true,
-                env: { ...shellEnv.env, TERM: "dumb" },
-                stdin: "ignore",
-                forceKillAfter: "3 seconds",
-              })
-              const handle = yield* spawner.spawn(cmd)
-              yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
-                Effect.gen(function* () {
-                  output += chunk
-                  if (part.state.status === "running") {
-                    part.state.metadata = { output, description: "" }
-                    yield* sessions.updatePart(part)
-                  }
-                }),
-              )
-              yield* handle.exitCode
-            }).pipe(Effect.scoped, Effect.orDie),
-          ).pipe(Effect.exit)
-
-          if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause) && !Cause.hasDies(exit.cause)) {
-            aborted = true
-          }
-          yield* finish
-
-          if (Exit.isFailure(exit) && !aborted && !Cause.hasInterruptsOnly(exit.cause)) {
-            return yield* Effect.failCause(exit.cause)
-          }
-
-          return { info: msg, parts: [part] }
-        }),
-      )
+    const { shell } = PromptShell.make({
+      agents,
+      config,
+      events,
+      plugin,
+      revert,
+      sessions,
+      spawner,
+      state,
+      currentModel: (sessionID) => currentModel(sessionID),
+      lastAssistant: (sessionID) => lastAssistant(sessionID),
     })
 
     const getModel = Effect.fn("SessionPrompt.getModel")(function* (
@@ -799,496 +362,6 @@ export const layer = Layer.effect(
       if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
       return yield* provider.defaultModel().pipe(Effect.orDie)
     })
-
-    const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
-      const instance = yield* InstanceState.context
-      const workspaceID = yield* InstanceState.workspaceID
-      const agentName = input.agent
-      const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
-      if (!ag) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
-        yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
-        throw error
-      }
-
-      const current = yield* db
-        .select({ agent: SessionTable.agent, model: SessionTable.model })
-        .from(SessionTable)
-        .where(eq(SessionTable.id, input.sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      const model = input.model ?? ag.model ?? (yield* currentModel(input.sessionID))
-      const same = ag.model && model.providerID === ag.model.providerID && model.modelID === ag.model.modelID
-      const full =
-        !input.variant && ag.variant && same
-          ? yield* provider
-              .getModel(model.providerID, model.modelID)
-              .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
-          : undefined
-      const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
-
-      const info: SessionLegacy.User = {
-        id: input.messageID ?? MessageID.ascending(),
-        role: "user",
-        sessionID: input.sessionID,
-        time: { created: Date.now() },
-        tools: input.tools,
-        agent: ag.name,
-        model: {
-          providerID: model.providerID,
-          modelID: model.modelID,
-          variant,
-        },
-        system: input.system,
-        format: input.format,
-      }
-      yield* sessions.setModel({
-        sessionID: input.sessionID,
-        model: {
-          providerID: info.model.providerID,
-          id: info.model.modelID,
-          ...(info.model.variant ? { variant: info.model.variant } : {}),
-        },
-      })
-
-
-      yield* Effect.addFinalizer(() => instruction.clear(info.id))
-
-      type Draft<T> = T extends SessionLegacy.Part ? Omit<T, "id"> & { id?: string } : never
-      const assign = (part: Draft<SessionLegacy.Part>): SessionLegacy.Part => ({
-        ...part,
-        id: part.id ? PartID.make(part.id) : PartID.ascending(),
-      })
-
-      const referenceContextFromFilePart = Effect.fnUntraced(function* (
-        part: Extract<PromptInput["parts"][number], { type: "file" }>,
-        filepath: string,
-      ) {
-        const name = part.filename?.replace(/#\d+(?:-\d*)?$/, "")
-        if (!name) return
-        const slash = name.indexOf("/")
-        if (slash === -1) return
-
-        const reference = yield* references.get(name.slice(0, slash))
-        if (!reference || reference.kind === "invalid") return
-        if (!AppFileSystem.contains(reference.path, filepath)) return
-
-        const target = path.relative(reference.path, filepath).split(path.sep).join("/")
-        if (!target || target.startsWith("../") || target === "..") return
-
-        return referenceTextPart({
-          reference,
-          source: part.source?.text ?? { value: `@${name}`, start: 0, end: name.length + 1 },
-          target,
-          targetPath: filepath,
-        })
-      })
-
-      const resolvePart: (part: PromptInput["parts"][number]) => Effect.Effect<Draft<SessionLegacy.Part>[]> = Effect.fn(
-        "SessionPrompt.resolveUserPart",
-      )(function* (part) {
-        if (part.type === "file") {
-          if (part.source?.type === "resource") {
-            const { clientName, uri } = part.source
-            log.info("mcp resource", { clientName, uri, mime: part.mime })
-            const pieces: Draft<SessionLegacy.Part>[] = [
-              {
-                messageID: info.id,
-                sessionID: input.sessionID,
-                type: "text",
-                synthetic: true,
-                text: `Reading MCP resource: ${part.filename} (${uri})`,
-              },
-            ]
-            const exit = yield* mcp.readResource(clientName, uri).pipe(Effect.exit)
-            if (Exit.isSuccess(exit)) {
-              const content = exit.value
-              if (!content) throw new Error(`Resource not found: ${clientName}/${uri}`)
-              const items = Array.isArray(content.contents) ? content.contents : [content.contents]
-              for (const c of items) {
-                if ("text" in c && c.text) {
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: c.text,
-                  })
-                } else if ("blob" in c && c.blob) {
-                  const mime = "mimeType" in c ? c.mimeType : part.mime
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `[Binary content: ${mime}]`,
-                  })
-                }
-              }
-              pieces.push({ ...part, messageID: info.id, sessionID: input.sessionID })
-            } else {
-              const error = Cause.squash(exit.cause)
-              log.error("failed to read MCP resource", { error, clientName, uri })
-              const message = error instanceof Error ? error.message : String(error)
-              pieces.push({
-                messageID: info.id,
-                sessionID: input.sessionID,
-                type: "text",
-                synthetic: true,
-                text: `Failed to read MCP resource ${part.filename}: ${message}`,
-              })
-            }
-            return pieces
-          }
-          const url = new URL(part.url)
-          switch (url.protocol) {
-            case "data:":
-              if (part.mime === "text/plain") {
-                return [
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Called the Read tool with the following input: ${JSON.stringify({ filePath: part.filename })}`,
-                  },
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: decodeDataUrl(part.url),
-                  },
-                  { ...part, messageID: info.id, sessionID: input.sessionID },
-                ]
-              }
-              break
-            case "file:": {
-              log.info("file", { mime: part.mime })
-              const filepath = fileURLToPath(part.url)
-              const referenceContext = yield* referenceContextFromFilePart(part, filepath)
-              const mime = (yield* fsys.isDir(filepath)) ? "application/x-directory" : part.mime
-
-              const { read } = yield* registry.named()
-              const execRead = (args: Parameters<typeof read.execute>[0], extra?: Tool.Context["extra"]) => {
-                const controller = new AbortController()
-                return read
-                  .execute(args, {
-                    sessionID: input.sessionID,
-                    directory: instance.directory,
-                    workspaceID,
-                    abort: controller.signal,
-                    agent: input.agent!,
-                    messageID: info.id,
-                    extra: { bypassCwdCheck: true, ...extra },
-                    messages: [],
-                    metadata: () => Effect.void,
-                    ask: () => Effect.void,
-                  })
-                  .pipe(Effect.onInterrupt(() => Effect.sync(() => controller.abort())))
-              }
-
-              if (mime === "text/plain") {
-                let offset: number | undefined
-                let limit: number | undefined
-                const range = { start: url.searchParams.get("start"), end: url.searchParams.get("end") }
-                if (range.start != null) {
-                  const filePathURI = part.url.split("?")[0]
-                  let start = parseInt(range.start)
-                  let end = range.end ? parseInt(range.end) : undefined
-                  if (start === end) {
-                    const symbols = yield* lsp.documentSymbol(filePathURI).pipe(Effect.catch(() => Effect.succeed([])))
-                    for (const symbol of symbols) {
-                      let r: LSP.Range | undefined
-                      if ("range" in symbol) r = symbol.range
-                      else if ("location" in symbol) r = symbol.location.range
-                      if (r?.start?.line && r?.start?.line === start) {
-                        start = r.start.line
-                        end = r?.end?.line ?? start
-                        break
-                      }
-                    }
-                  }
-                  offset = Math.max(start, 1)
-                  if (end) limit = end - (offset - 1)
-                }
-                const args = { filePath: filepath, offset, limit }
-                const pieces: Draft<SessionLegacy.Part>[] = [
-                  ...(referenceContext
-                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
-                    : []),
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Called the Read tool with the following input: ${JSON.stringify(args)}`,
-                  },
-                ]
-                const exit = yield* provider.getModel(info.model.providerID, info.model.modelID).pipe(
-                  Effect.flatMap((mdl) => execRead(args, { model: mdl })),
-                  Effect.exit,
-                )
-                if (Exit.isSuccess(exit)) {
-                  const result = exit.value
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: result.output,
-                  })
-                  if (result.attachments?.length) {
-                    pieces.push(
-                      ...result.attachments.map((a) => ({
-                        ...a,
-                        synthetic: true,
-                        filename: a.filename ?? part.filename,
-                        messageID: info.id,
-                        sessionID: input.sessionID,
-                      })),
-                    )
-                  } else {
-                    pieces.push({ ...part, mime, messageID: info.id, sessionID: input.sessionID })
-                  }
-                } else {
-                  const error = Cause.squash(exit.cause)
-                  log.error("failed to read file", { error })
-                  const message = error instanceof Error ? error.message : String(error)
-                  yield* events.publish(Session.Event.Error, {
-                    sessionID: input.sessionID,
-                    error: new NamedError.Unknown({ message }).toObject(),
-                  })
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Read tool failed to read ${filepath} with the following error: ${message}`,
-                  })
-                }
-                return pieces
-              }
-
-              if (mime === "application/x-directory") {
-                const args = { filePath: filepath }
-                const exit = yield* execRead(args).pipe(Effect.exit)
-                if (Exit.isFailure(exit)) {
-                  const error = Cause.squash(exit.cause)
-                  log.error("failed to read directory", { error })
-                  const message = error instanceof Error ? error.message : String(error)
-                  yield* events.publish(Session.Event.Error, {
-                    sessionID: input.sessionID,
-                    error: new NamedError.Unknown({ message }).toObject(),
-                  })
-                  return [
-                    ...(referenceContext
-                      ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
-                      : []),
-                    {
-                      messageID: info.id,
-                      sessionID: input.sessionID,
-                      type: "text",
-                      synthetic: true,
-                      text: `Read tool failed to read ${filepath} with the following error: ${message}`,
-                    },
-                  ]
-                }
-                return [
-                  ...(referenceContext
-                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
-                    : []),
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Called the Read tool with the following input: ${JSON.stringify(args)}`,
-                  },
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: exit.value.output,
-                  },
-                  { ...part, mime, messageID: info.id, sessionID: input.sessionID },
-                ]
-              }
-
-              return [
-                ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
-                {
-                  messageID: info.id,
-                  sessionID: input.sessionID,
-                  type: "text",
-                  synthetic: true,
-                  text: `Called the Read tool with the following input: {"filePath":"${filepath}"}`,
-                },
-                {
-                  id: part.id,
-                  messageID: info.id,
-                  sessionID: input.sessionID,
-                  type: "file",
-                  url:
-                    `data:${mime};base64,` +
-                    Buffer.from(yield* fsys.readFile(filepath).pipe(Effect.catch(Effect.die))).toString("base64"),
-                  mime,
-                  filename: part.filename!,
-                  source: part.source,
-                },
-              ]
-            }
-          }
-        }
-
-        if (part.type === "agent") {
-          const perm = Permission.evaluate("task", part.name, ag.permission)
-          const hint = perm.action === "deny" ? " . Invoked by user; guaranteed to exist." : ""
-          return [
-            { ...part, messageID: info.id, sessionID: input.sessionID },
-            {
-              messageID: info.id,
-              sessionID: input.sessionID,
-              type: "text",
-              synthetic: true,
-              text:
-                " Use the above message and context to generate a prompt and call the task tool with subagent: " +
-                part.name +
-                hint,
-            },
-          ]
-        }
-
-        return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
-      })
-
-      const resolvedParts = yield* Effect.forEach(input.parts, resolvePart, { concurrency: "unbounded" }).pipe(
-        Effect.map((x) => x.flat().map(assign)),
-      )
-
-      yield* plugin.trigger(
-        "chat.message",
-        {
-          sessionID: input.sessionID,
-          agent: input.agent,
-          model: input.model,
-          messageID: input.messageID,
-          variant: input.variant,
-        },
-        { message: info, parts: resolvedParts },
-      )
-
-      const parts = yield* Effect.forEach(resolvedParts, (part) =>
-        part.type === "file" && part.mime.startsWith("image/")
-          ? image.normalize(part).pipe(
-              Effect.catchIf(
-                (error) => error instanceof Image.ResizerUnavailableError,
-                () => Effect.succeed(part),
-              ),
-            )
-          : Effect.succeed(part),
-      )
-
-      const parsed = decodeMessageInfo(info, { errors: "all", propertyOrder: "original" })
-      if (Exit.isFailure(parsed)) {
-        log.error("invalid user message before save", {
-          sessionID: input.sessionID,
-          messageID: info.id,
-          agent: info.agent,
-          model: info.model,
-          cause: Cause.pretty(parsed.cause),
-        })
-      }
-      parts.forEach((part, index) => {
-        const p = decodeMessagePart(part, { errors: "all", propertyOrder: "original" })
-        if (Exit.isSuccess(p)) return
-        log.error("invalid user part before save", {
-          sessionID: input.sessionID,
-          messageID: info.id,
-          partID: part.id,
-          partType: part.type,
-          index,
-          cause: Cause.pretty(p.cause),
-          part,
-        })
-      })
-
-      yield* sessions.updateMessage(info)
-      for (const part of parts) yield* sessions.updatePart(part)
-      const nextPrompt = parts.reduce(
-        (result, part) => {
-          if (part.type === "text") {
-            if (part.synthetic) result.synthetic.push(part.text)
-            else result.text.push(part.text)
-            const reference = referencePromptMetadata(part.metadata?.reference)
-            if (reference) {
-              result.references.push(
-                new ReferenceAttachment({
-                  name: reference.name,
-                  kind: reference.kind,
-                  uri: reference.path ? pathToFileURL(reference.path).href : undefined,
-                  repository: reference.repository,
-                  branch: reference.branch,
-                  target: reference.target,
-                  targetUri: reference.targetPath ? pathToFileURL(reference.targetPath).href : undefined,
-                  problem: reference.problem,
-                  source: new Source({
-                    start: reference.source.start,
-                    end: reference.source.end,
-                    text: reference.source.value,
-                  }),
-                }),
-              )
-            }
-          }
-          if (part.type === "file") {
-            result.files.push(
-              new FileAttachment({
-                uri: part.url,
-                mime: part.mime,
-                name: part.filename,
-                source: part.source
-                  ? new Source({
-                      start: part.source.text.start,
-                      end: part.source.text.end,
-                      text: part.source.text.value,
-                    })
-                  : undefined,
-              }),
-            )
-          }
-          if (part.type === "agent") {
-            result.agents.push(
-              new AgentAttachment({
-                name: part.name,
-                source: part.source
-                  ? new Source({
-                      start: part.source.start,
-                      end: part.source.end,
-                      text: part.source.value,
-                    })
-                  : undefined,
-              }),
-            )
-          }
-          return result
-        },
-        {
-          text: [] as string[],
-          files: [] as FileAttachment[],
-          agents: [] as AgentAttachment[],
-          references: [] as ReferenceAttachment[],
-          synthetic: [] as string[],
-        },
-      )
-      for (const text of nextPrompt.synthetic) {
-      }
-
-      return { info, parts }
-    }, Effect.scoped)
 
     const acceptPrompt = Effect.fn("SessionPrompt.acceptPrompt")(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
@@ -1636,6 +709,13 @@ export const layer = Layer.effect(
       },
     )
 
+    const { ensureSwarmBriefing, claudeCodeTurn } = PromptSwarm.make({
+      claudeDriver,
+      database,
+      sessions,
+      prompt: (input) => prompt(input),
+    })
+
     const loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts> = Effect.fn("SessionPrompt.loop")(
       function* (input: LoopInput) {
         // Every prompt entry point funnels through here, so this is the one
@@ -1646,412 +726,11 @@ export const layer = Layer.effect(
       },
     )
 
-    /**
-     * Sessions on a swarm model run in place: the model resolves to the
-     * orchestrator's real model (Provider.getModel handles that), and this
-     * hidden part of the user message hands the orchestrator its team so it
-     * delegates specialists as subagents inside the same session.
-     */
-    const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const context = yield* swarmContext(sessionID)
-      if (!context) return
-      const briefed = context.last.parts.some(
-        (part) => part.type === "text" && part.synthetic === true && part.text.startsWith(SwarmBriefing.SWARM_BRIEFING_MARK),
-      )
-      if (briefed) return
-      const briefing = SwarmBriefing.buildSwarmBriefing({
-        swarmID: context.swarmID,
-        title: context.title,
-        delegation: context.orchestratorIsClaudeCode ? "delegate-tool" : "task-tool",
-        roles: context.roles.map((role) => ({
-          name: role.name,
-          agent: role.agent ?? undefined,
-          skill: role.skill ?? undefined,
-          instructions: role.instructions ?? undefined,
-          providerID: role.provider_id ?? undefined,
-          modelID: role.model_id ?? undefined,
-        })),
-      })
-      if (!briefing) return
-      yield* sessions.updatePart({
-        id: PartID.ascending(),
-        messageID: context.last.info.id,
-        sessionID,
-        type: "text",
-        text: briefing,
-        synthetic: true,
-      })
-    })
-
-    /** The swarm behind a session's model, or undefined for an ordinary route. */
-    const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const last = yield* lastUserMessage(sessionID)
-      if (!last || last.info.role !== "user") return undefined
-      if (!isSwarmProvider(last.info.model.providerID)) return undefined
-      const swarmID = last.info.model.modelID
-      const swarm = yield* db
-        .select({ id: OpencodeXSwarmTable.id, title: OpencodeXSwarmTable.title })
-        .from(OpencodeXSwarmTable)
-        .where(eq(OpencodeXSwarmTable.id, swarmID))
-        .get()
-        .pipe(Effect.orElseSucceed(() => undefined))
-      if (!swarm) return undefined
-      const roles = yield* db
-        .select({
-          name: OpencodeXSwarmRoleTable.name,
-          agent: OpencodeXSwarmRoleTable.agent,
-          skill: OpencodeXSwarmRoleTable.skill,
-          instructions: OpencodeXSwarmRoleTable.instructions,
-          provider_id: OpencodeXSwarmRoleTable.provider_id,
-          model_id: OpencodeXSwarmRoleTable.model_id,
-        })
-        .from(OpencodeXSwarmRoleTable)
-        .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
-        .orderBy(asc(OpencodeXSwarmRoleTable.sort_order))
-        .all()
-        .pipe(Effect.orElseSucceed(() => []))
-      const orchestrator = roles[0]
-      return {
-        last,
-        swarmID,
-        title: swarm.title,
-        roles,
-        orchestrator,
-        orchestratorIsClaudeCode: Boolean(orchestrator?.provider_id && isClaudeCodeProvider(orchestrator.provider_id)),
-      }
-    })
-
-    /**
-     * Runs one specialist role as its own OpencodeX session on the model
-     * configured for it, and returns its report. This is what the Claude Code
-     * orchestrator's delegation tool calls, so specialists stay OpencodeX
-     * sessions instead of becoming Claude's internal subagents.
-     */
-    const runSwarmRole = Effect.fnUntraced(function* (input: {
-      sessionID: SessionID
-      swarmID: string
-      roles: SwarmRoleRow[]
-      role: string
-      prompt: string
-    }) {
-      const role = SwarmBriefing.matchSwarmRole(input.roles, input.role)
-      if (!role) {
-        return `Unknown role "${input.role}". Available roles: ${input.roles.map((item) => item.name).join(", ")}.`
-      }
-      if (!role.provider_id || !role.model_id) return `Role "${role.name}" has no model configured.`
-      const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      const child = yield* sessions
-        .create({
-          parentID: input.sessionID,
-          title: `${role.name} (swarm role)`,
-          // The GUI's team view groups a swarm session's children by role, so
-          // each delegation records which role it ran as.
-          metadata: { opencodex: { swarmID: input.swarmID, swarmRole: role.name } },
-          ...(parent.permission ? { permission: parent.permission } : {}),
-        })
-        .pipe(Effect.orDie)
-      const text = [role.instructions?.trim(), input.prompt.trim()].filter(Boolean).join("\n\n")
-      const result = yield* prompt({
-        sessionID: child.id,
-        model: {
-          providerID: ProviderV2.ID.make(role.provider_id),
-          modelID: ProviderV2.ModelID.make(role.model_id),
-        },
-        ...(role.agent ? { agent: role.agent } : {}),
-        parts: [{ type: "text", text }],
-      }).pipe(Effect.catch(Effect.die))
-      if (result.info.role === "assistant" && result.info.error) {
-        return `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}`
-      }
-      const report = result.parts
-        .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
-        .join("\n")
-      return report || `Role "${role.name}" produced no output.`
-    })
-
-    /**
-     * Sessions on the "Claude subscription" model are answered by the local
-     * Claude Code CLI instead of a provider API. Returns the work effect for
-     * such a turn, or undefined for an ordinary session.
-     */
-    const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
-      const last = yield* lastUserMessage(sessionID)
-      const selected = last?.info.role === "user" ? last.info.model : session.model
-      // A swarm is a facade over its orchestrator, so a swarm whose
-      // orchestrator is the Claude subscription takes the driver path too -
-      // with a delegation tool that keeps specialists on their own models.
-      const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID) : undefined
-      const orchestrator = swarm?.orchestrator
-      const model =
-        swarm?.orchestratorIsClaudeCode && orchestrator?.provider_id && orchestrator.model_id
-          ? { providerID: orchestrator.provider_id, modelID: orchestrator.model_id }
-          : selected
-      const providerID = model?.providerID
-      if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
-      if (!last || last.info.role !== "user") return undefined
-      const text = last.parts
-        .flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text] : []))
-        .join("\n")
-        .trim()
-      if (!text) return undefined
-      yield* ensureClaudeTitle(session, text)
-      const specialists = swarm?.roles.slice(1) ?? []
-      return claudeDriver.runTurn({
-        sessionID,
-        parentMessageID: last.info.id,
-        text,
-        directory: session.directory,
-        // Attribute the turn to the route the reader picked, so a swarm session
-        // stays labelled with the team rather than the orchestrator's model.
-        providerID: selected?.providerID ?? providerID,
-        modelID: (swarm ? swarm.swarmID : modelIdentifier(model)) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
-        claudeModelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
-        // "default" is the sentinel for "no variant" everywhere else in the loop.
-        ...(selected?.variant && selected.variant !== "default" ? { variant: selected.variant } : {}),
-        ...(specialists.length > 0
-          ? {
-              delegate: {
-                roles: specialists.map((role) => ({
-                  name: role.name,
-                  description: role.skill ?? role.agent ?? undefined,
-                })),
-                run: (delegated) =>
-                  runSwarmRole({
-                    sessionID,
-                    swarmID: swarm!.swarmID,
-                    roles: swarm!.roles,
-                    role: delegated.role,
-                    prompt: delegated.prompt,
-                  }),
-              },
-            }
-          : {}),
-      })
-    })
-
-    /** User messages carry `modelID`; the session record carries `id`. */
-    const modelIdentifier = (model?: { modelID?: string; id?: string }) => model?.modelID ?? model?.id
-
-    /**
-     * Claude Code has no small model to summarize with, so a session takes its
-     * name from the opening request instead of an extra LLM call.
-     */
-    const ensureClaudeTitle = Effect.fnUntraced(function* (session: Session.Info, text: string) {
-      if (session.title && !Session.isDefaultTitle(session.title)) return
-      const line = text.split("\n").find((value) => value.trim())?.trim() ?? text.trim()
-      const title = line.length > 60 ? `${line.slice(0, 60)}…` : line
-      if (title) yield* sessions.setTitle({ sessionID: session.id, title }).pipe(Effect.ignore)
-    })
-
-    const lastUserMessage = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const match = yield* sessions.findMessage(sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
-      return Option.getOrUndefined(match)
-    })
-
-    const claimCommandTurn = Effect.fn("SessionPrompt.claimCommandTurn")(function* (commandID: string) {
-      const now = Date.now()
-      return yield* db
-        .transaction(
-          (transaction) =>
-            Effect.gen(function* () {
-              const current = yield* transaction
-                .select()
-                .from(SessionCommandTable)
-                .where(eq(SessionCommandTable.id, commandID))
-                .get()
-              if (!current || ["succeeded", "failed", "cancelled"].includes(current.status)) {
-                return { state: "done" as const }
-              }
-              if (current.status === "running" && current.lease_expires_at && current.lease_expires_at > now) {
-                return { state: "waiting" as const }
-              }
-              const active = yield* transaction
-                .select({
-                  id: SessionCommandTable.id,
-                  created: SessionCommandTable.time_created,
-                })
-                .from(SessionCommandTable)
-                .where(
-                  and(
-                    eq(SessionCommandTable.session_id, current.session_id),
-                    inArray(SessionCommandTable.status, ["queued", "running"]),
-                  ),
-                )
-                .all()
-              const blocked = active.some(
-                (item) =>
-                  item.id !== current.id &&
-                  (item.created < current.time_created ||
-                    (item.created === current.time_created && item.id.localeCompare(current.id) < 0)),
-              )
-              if (blocked) return { state: "waiting" as const }
-              const claimed = yield* transaction
-                .update(SessionCommandTable)
-                .set({
-                  status: "running",
-                  owner_id: commandOwner,
-                  claim_generation: current.claim_generation + 1,
-                  lease_expires_at: now + commandLeaseMillis,
-                  started_at: current.started_at ?? now,
-                  time_updated: now,
-                })
-                .where(
-                  and(
-                    eq(SessionCommandTable.id, commandID),
-                    eq(SessionCommandTable.status, current.status),
-                    eq(SessionCommandTable.claim_generation, current.claim_generation),
-                    current.status === "running"
-                      ? or(isNull(SessionCommandTable.lease_expires_at), lt(SessionCommandTable.lease_expires_at, now))
-                      : undefined,
-                  ),
-                )
-                .returning()
-                .get()
-              if (!claimed) return { state: "waiting" as const }
-              return { state: "ready" as const, command: claimed }
-            }),
-          { behavior: "immediate" },
-        )
-        .pipe(Effect.orDie)
-    })
-
-    const waitForExecutionTurn = Effect.fn("SessionPrompt.waitForExecutionTurn")(function* (
-      commandID: string,
-      sessionID: SessionID,
-    ) {
-      while (true) {
-        const [command, execution] = yield* Effect.all(
-          [
-            db
-              .select({ status: SessionCommandTable.status })
-              .from(SessionCommandTable)
-              .where(eq(SessionCommandTable.id, commandID))
-              .get()
-              .pipe(Effect.orDie),
-            db
-              .select({ state: SessionExecutionTable.state, leaseExpiresAt: SessionExecutionTable.lease_expires_at })
-              .from(SessionExecutionTable)
-              .where(eq(SessionExecutionTable.session_id, sessionID))
-              .get()
-              .pipe(Effect.orDie),
-          ],
-          { concurrency: "unbounded" },
-        )
-        if (!command || ["succeeded", "failed", "cancelled"].includes(command.status)) return false
-        if (execution?.state !== "running" || !execution.leaseExpiresAt || execution.leaseExpiresAt <= Date.now()) {
-          return true
-        }
-        yield* Effect.sleep("200 millis")
-      }
-    })
-
-    const executeCommand = Effect.fn("SessionPrompt.executeCommand")(function* (commandID: string) {
-      let claimed = yield* claimCommandTurn(commandID)
-      while (claimed.state === "waiting") {
-        yield* Effect.sleep("200 millis")
-        claimed = yield* claimCommandTurn(commandID)
-      }
-      if (claimed.state !== "ready") return
-      const command = claimed.command
-      if (!(yield* waitForExecutionTurn(commandID, command.session_id))) return
-      const admitted = yield* db
-        .select({ id: SessionCommandTable.id })
-        .from(SessionCommandTable)
-        .where(
-          and(
-            eq(SessionCommandTable.id, commandID),
-            eq(SessionCommandTable.status, "running"),
-            eq(SessionCommandTable.owner_id, commandOwner),
-            eq(SessionCommandTable.claim_generation, command.claim_generation),
-          ),
-        )
-        .get()
-        .pipe(Effect.orDie)
-      if (!admitted) return
-
-      const heartbeat = yield* Effect.sleep(Math.floor(commandLeaseMillis / 3)).pipe(
-        Effect.andThen(
-          db
-            .update(SessionCommandTable)
-            .set({ lease_expires_at: Date.now() + commandLeaseMillis, time_updated: Date.now() })
-            .where(
-              and(
-                eq(SessionCommandTable.id, commandID),
-                eq(SessionCommandTable.status, "running"),
-                eq(SessionCommandTable.owner_id, commandOwner),
-                eq(SessionCommandTable.claim_generation, command.claim_generation),
-              ),
-            )
-            .run()
-            .pipe(Effect.orDie),
-        ),
-        Effect.repeat(Schedule.forever),
-        Effect.forkIn(scope),
-      )
-      const exit = yield* loop({ sessionID: command.session_id }).pipe(
-        Effect.exit,
-        Effect.ensuring(Fiber.interrupt(heartbeat)),
-      )
-      const completedAt = Date.now()
-      if (Exit.isSuccess(exit)) {
-        yield* db
-          .update(SessionCommandTable)
-          .set({
-            status: "succeeded",
-            owner_id: null,
-            lease_expires_at: null,
-            completed_at: completedAt,
-            time_updated: completedAt,
-          })
-          .where(
-            and(
-              eq(SessionCommandTable.id, commandID),
-              eq(SessionCommandTable.status, "running"),
-              eq(SessionCommandTable.owner_id, commandOwner),
-              eq(SessionCommandTable.claim_generation, command.claim_generation),
-            ),
-          )
-          .run()
-          .pipe(Effect.orDie)
-        return
-      }
-
-      const error = Cause.pretty(exit.cause)
-      yield* db
-        .update(SessionCommandTable)
-        .set({
-          status: "failed",
-          owner_id: null,
-          lease_expires_at: null,
-          error,
-          completed_at: completedAt,
-          time_updated: completedAt,
-        })
-        .where(
-          and(
-            eq(SessionCommandTable.id, commandID),
-            eq(SessionCommandTable.status, "running"),
-            eq(SessionCommandTable.owner_id, commandOwner),
-            eq(SessionCommandTable.claim_generation, command.claim_generation),
-          ),
-        )
-        .run()
-        .pipe(Effect.orDie)
-      yield* Effect.logError("prompt_async failed").pipe(
-        Effect.annotateLogs({ sessionID: command.session_id, cause: exit.cause }),
-      )
-      yield* events.publish(Session.Event.Error, {
-        sessionID: command.session_id,
-        error: new NamedError.Unknown({ message: error }).toObject(),
-      })
-    })
-
-    const launchCommand = Effect.fn("SessionPrompt.launchCommand")(function* (commandID: string) {
-      yield* executeCommand(commandID).pipe(
-        Effect.catchCause((cause) => Effect.logError("prompt_async recovery failed", { commandID, cause })),
-        Effect.forkIn(scope, { startImmediately: true }),
-      )
+    const { launchCommand, recover } = yield* PromptClaim.make({
+      database,
+      events,
+      scope,
+      loop: (input) => loop(input),
     })
 
     const promptAsync = Effect.fn("SessionPrompt.promptAsync")(function* (input: PromptInput) {
@@ -2156,31 +835,6 @@ export const layer = Layer.effect(
         )
         .pipe(Effect.orDie)
       if (input.noReply !== true) yield* launchCommand(acceptedCommandID)
-    })
-
-    const recover = Effect.fn("SessionPrompt.recover")(function* () {
-      const ctx = yield* InstanceState.context
-      const commands = yield* db
-        .select({ id: SessionCommandTable.id })
-        .from(SessionCommandTable)
-        .where(
-          and(
-            eq(SessionCommandTable.directory, ctx.directory),
-            inArray(SessionCommandTable.status, ["queued", "running"]),
-          ),
-        )
-        .all()
-        .pipe(Effect.orDie)
-      yield* Effect.forEach(commands, (command) => launchCommand(command.id), { discard: true })
-    })
-    const unregisterRecovery = SessionPromptRecovery.register(() => recover())
-    yield* Effect.addFinalizer(() => Effect.sync(unregisterRecovery))
-
-    const shell: (input: ShellInput) => Effect.Effect<SessionLegacy.WithParts, Session.BusyError> = Effect.fn(
-      "SessionPrompt.shell",
-    )(function* (input: ShellInput) {
-      const ready = yield* Latch.make()
-      return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
@@ -2353,108 +1007,5 @@ export const defaultLayer = Layer.suspend(() =>
     ),
   ),
 )
-const ModelRef = Schema.Struct({
-  providerID: ProviderV2.ID,
-  modelID: ProviderV2.ModelID,
-})
-
-export const PromptInput = Schema.Struct({
-  sessionID: SessionID,
-  messageID: Schema.optional(MessageID),
-  model: Schema.optional(ModelRef),
-  agent: Schema.optional(Schema.String),
-  noReply: Schema.optional(Schema.Boolean),
-  tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
-    description:
-      "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",
-  }),
-  format: Schema.optional(SessionLegacy.Format),
-  system: Schema.optional(Schema.String),
-  variant: Schema.optional(Schema.String),
-  parts: Schema.Array(
-    Schema.Union([
-      SessionLegacy.TextPartInput,
-      SessionLegacy.FilePartInput,
-      SessionLegacy.AgentPartInput,
-      SessionLegacy.SubtaskPartInput,
-    ]).annotate({ discriminator: "type" }),
-  ),
-})
-export type PromptInput = Schema.Schema.Type<typeof PromptInput>
-
-export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
-  sessionID: SessionID,
-}) {}
-
-export const ShellInput = Schema.Struct({
-  sessionID: SessionID,
-  messageID: Schema.optional(MessageID),
-  agent: Schema.String,
-  model: Schema.optional(ModelRef),
-  command: Schema.String,
-})
-export type ShellInput = Schema.Schema.Type<typeof ShellInput>
-
-export const CommandInput = Schema.Struct({
-  messageID: Schema.optional(MessageID),
-  sessionID: SessionID,
-  agent: Schema.optional(Schema.String),
-  model: Schema.optional(Schema.String),
-  arguments: Schema.String,
-  command: Schema.String,
-  variant: Schema.optional(Schema.String),
-  // Inlined (no identifier annotation) to keep the original SDK output — the
-  // PromptInput call site below references FilePartInput by ref via the
-  // Schema export in message-v2.ts.
-  parts: Schema.optional(
-    Schema.Array(
-      Schema.Union([
-        Schema.Struct({
-          id: Schema.optional(PartID),
-          type: Schema.Literal("file"),
-          mime: Schema.String,
-          filename: Schema.optional(Schema.String),
-          url: Schema.String,
-          source: Schema.optional(SessionLegacy.FilePartSource),
-        }),
-      ]).annotate({ discriminator: "type" }),
-    ),
-  ),
-})
-export type CommandInput = Schema.Schema.Type<typeof CommandInput>
-
-/** @internal Exported for testing */
-export function createStructuredOutputTool(input: {
-  schema: Record<string, any>
-  onSuccess: (output: unknown) => void
-}): AITool {
-  // Remove $schema property if present (not needed for tool input)
-  const { $schema: _, ...toolSchema } = input.schema
-
-  return tool({
-    description: STRUCTURED_OUTPUT_DESCRIPTION,
-    inputSchema: jsonSchema(toolSchema as JSONSchema7),
-    async execute(args) {
-      // AI SDK validates args against inputSchema before calling execute()
-      input.onSuccess(args)
-      return {
-        output: "Structured output captured successfully.",
-        title: "Structured Output",
-        metadata: { valid: true },
-      }
-    },
-    toModelOutput({ output }) {
-      return {
-        type: "text",
-        value: output.output,
-      }
-    },
-  })
-}
-const bashRegex = /!`([^`]+)`/g
-// Match [Image N] as single token, quoted strings, or non-space sequences
-const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
-const placeholderRegex = /\$(\d+)/g
-const quoteTrimRegex = /^["']|["']$/g
 
 export * as SessionPrompt from "./prompt"

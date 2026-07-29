@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { buildDiffFileTree, expandedDirectories, flattenDiffFileTree, moveDiffSelection, nextDiffFile } from "../../src/renderer/src/lib/diff-file-tree"
-import { installPlugin, listPlugins, togglePlugin, type DiffFile, type GuiPlugin } from "../../src/renderer/src/lib/store"
+import { installPlugin, listPlugins, togglePlugin, type DiffFile, type GuiPlugin } from "../../src/renderer/src/lib/session-api"
 import { defaultTranscriptExportOptions, normalizeTranscriptFilename, prepareSessionTranscriptExport } from "../../src/renderer/src/lib/transcript-export"
 import { assistantMessage, gui, provider, session } from "./fixtures"
 

@@ -1,4 +1,4 @@
-import type { DiffFile } from "./store"
+import type { DiffFile } from "./session-api"
 import type { WorkbenchDiffFile, WorkbenchPatchRow } from "./workbench"
 
 type WorkbenchGitFileStatus = {

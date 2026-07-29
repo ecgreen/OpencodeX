@@ -1,4 +1,4 @@
-import type { PromptPart } from "./store"
+import type { PromptPart } from "./session-api"
 
 export type SessionSlashCommandContext = {
   draftPrompt: string

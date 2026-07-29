@@ -18,7 +18,7 @@ import {
   listSkills,
   setProviderApiAuth,
   type GuiSnapshot,
-} from "../lib/store"
+} from "../lib/session-api"
 
 const CUSTOM_PROVIDER_OPTION = "__custom_provider__"
 const CUSTOM_PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/

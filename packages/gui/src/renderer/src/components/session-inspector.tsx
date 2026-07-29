@@ -1,7 +1,7 @@
 import { Button } from "./ui"
 import type { LspStatus, McpStatus, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
-import type { SessionData } from "../lib/store"
+import type { SessionData } from "../lib/session-api"
 import { TodoList } from "./session-todo-list"
 
 type InspectorState = Record<string, boolean>

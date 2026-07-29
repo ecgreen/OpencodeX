@@ -1,6 +1,6 @@
 import type { Part, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { describe, expect, test } from "bun:test"
-import type { MessageBundle } from "../src/renderer/src/lib/store"
+import type { MessageBundle } from "../src/renderer/src/lib/session-api"
 import { formatSessionTranscript } from "../src/renderer/src/lib/transcript"
 import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../src/renderer/src/lib/transcript-visibility"
 

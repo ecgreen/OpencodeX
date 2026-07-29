@@ -10,7 +10,7 @@ import {
   type ClientSessionOrderInput,
   type ClientSessionOrderState,
 } from "@opencode-ai/sdk/v2/session-order"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 import { modelValue } from "./model-selection"
 import { deriveSessionStatus } from "./session-status"
 import { isRenderableSession } from "./session-filter"

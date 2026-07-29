@@ -1,6 +1,6 @@
 import type { AssistantMessage, Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show } from "solid-js"
-import type { MessageBundle } from "../lib/store"
+import type { MessageBundle } from "../lib/session-api"
 import { bundleError, messageErrorDetail, messageErrorProviderID, messageErrorStatusCode, messageErrorTitle } from "../lib/message-error"
 import { formatTokenCount } from "../lib/session-composer-helpers"
 import { OpencodeXLogo } from "./chrome"

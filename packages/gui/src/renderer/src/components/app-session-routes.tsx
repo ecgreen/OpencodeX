@@ -3,7 +3,7 @@ import type { GuiAppModel } from "../controllers/app-model"
 import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
-import { findFiles } from "../lib/store"
+import { findFiles } from "../lib/session-api"
 import { ClaudeTerminalPage } from "./claude-terminal-surface"
 import { Button, ErrorState, LoadingState } from "./ui"
 

@@ -1,6 +1,6 @@
 import type { Part, PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
-import type { MessageBundle } from "./store"
+import type { MessageBundle } from "./session-api"
 import { arrayValue, collapseWhitespace, isRecordValue, numberValue, stringValue } from "./tool-values"
 
 export { arrayValue, collapseWhitespace, fileBasename, formatElapsed, formatToolValue, isRecordValue, numberValue, pluralize, stringValue } from "./tool-values"

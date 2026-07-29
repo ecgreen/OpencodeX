@@ -1,5 +1,5 @@
 import type { OpencodeXSwarm, OpencodeXSwarmRoleInput, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 /**
  * A swarm is used like a model, so its live status is simply whether any

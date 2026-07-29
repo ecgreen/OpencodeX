@@ -1,7 +1,7 @@
 import { TextArea, Button } from "./ui"
 import type { JSX } from "solid-js"
 import { For, Show, createEffect, createSignal, createUniqueId } from "solid-js"
-import type { PromptPart } from "../lib/store"
+import type { PromptPart } from "../lib/session-api"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
 import { partIcon, partLabel, partPreviewURL, partTitle, promptWithoutPart } from "../lib/composer-parts"

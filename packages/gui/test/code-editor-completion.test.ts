@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { CompletionContext } from "@codemirror/autocomplete"
 import { EditorState } from "@codemirror/state"
 import { completionResult, createCodeEditorCompletionSource } from "../src/renderer/src/components/code-editor-completion"
-import type { WorkbenchCompletionResult } from "../src/renderer/src/lib/store"
+import type { WorkbenchCompletionResult } from "../src/renderer/src/lib/session-api"
 
 describe("code editor completion", () => {
   test("maps sorted LSP fields and practical snippets", () => {

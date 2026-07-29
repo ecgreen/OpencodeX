@@ -1,5 +1,5 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 export async function runCreateSwarmAction(input: {
   projects: GuiSnapshot["projects"]

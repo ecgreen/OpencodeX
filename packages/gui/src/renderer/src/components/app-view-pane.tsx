@@ -1,7 +1,7 @@
 import { Show, createMemo, lazy, type Accessor } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { EMPTY_SESSION_DATA } from "../controllers/authoritative-state-controller"
-import { findFiles } from "../lib/store"
+import { findFiles } from "../lib/session-api"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
 import { ClaudeTerminalViewPane } from "./claude-terminal-surface"
 

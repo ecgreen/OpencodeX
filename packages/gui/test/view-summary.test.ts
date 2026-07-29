@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 import { groupedViewSummaries, summarizeView, summarizeViews, viewProjectMeta } from "../src/renderer/src/lib/view-summary"
 import { permission, project, question, session, view } from "./functional/fixtures"
 
