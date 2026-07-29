@@ -1,6 +1,6 @@
 import type { Event, OpencodeXSessionSnapshot, Part, Session } from "./client.js"
 import type { ClientEntityState, ClientSessionDetailState, ClientStateSyncState } from "./client-sync-types.js"
-import { releaseClientSessionState } from "./client-sync-state.js"
+import { isStreamingClientPart, releaseClientSessionState } from "./client-sync-state.js"
 import { isClientSessionRenderable } from "./client-sync-cards.js"
 import { deriveClientSessionDisplayStatus } from "./client-session-status.js"
 
@@ -201,13 +201,15 @@ export function applyClientSessionEvent(
         buffers.get(event.properties.info.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
-      const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.info.sessionID)
+      // Peek, don't create: a message update with nothing buffered must not
+      // grow the buffer map with an empty entry that only a drain removes.
+      const sessionBuffers = buffers.get(event.properties.info.sessionID)
       const messageID = event.properties.info.id
-      const bufferedParts = sessionBuffers.pendingParts.get(messageID) ?? []
-      sessionBuffers.pendingParts.delete(messageID)
+      const bufferedParts = sessionBuffers?.pendingParts.get(messageID) ?? []
+      sessionBuffers?.pendingParts.delete(messageID)
       const next = bufferedParts.reduce(
         (result, part) => {
-          const updated = applyPendingClientPartDeltas(part, sessionBuffers)
+          const updated = sessionBuffers ? applyPendingClientPartDeltas(part, sessionBuffers) : part
           return recordLivePartText(upsertClientPart(result, updated), part, updated)
         },
         {
@@ -282,8 +284,8 @@ export function applyClientSessionEvent(
         buffers.get(event.properties.part.sessionID)?.pendingEvents.push(event)
         return { state: current, handled: true }
       }
-      const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.part.sessionID)
       if (!detail.messages[event.properties.part.messageID]) {
+        const sessionBuffers = getClientSessionEventBuffer(buffers, event.properties.part.sessionID)
         sessionBuffers.pendingParts.set(
           event.properties.part.messageID,
           upsertClientPartList(
@@ -293,7 +295,11 @@ export function applyClientSessionEvent(
         )
         return { state: current, handled: true }
       }
-      const part = applyPendingClientPartDeltas(event.properties.part, sessionBuffers)
+      // Peek, don't create: only the buffering branch above needs an entry.
+      const sessionBuffers = buffers.get(event.properties.part.sessionID)
+      const part = sessionBuffers
+        ? applyPendingClientPartDeltas(event.properties.part, sessionBuffers)
+        : event.properties.part
       const updated = recordLivePartText(upsertClientPart(detail, part), event.properties.part, part)
       return {
         state: clearClientPartTombstone(
@@ -619,7 +625,7 @@ function recordLivePartText(
     !base ||
     (base.type !== "text" && base.type !== "reasoning") ||
     (next.type !== "text" && next.type !== "reasoning") ||
-    next.time?.end !== undefined ||
+    !isStreamingClientPart(next) ||
     base.text === next.text
   )
     return detail
@@ -661,7 +667,7 @@ function rememberPendingClientPartDelta(
 function applyPendingClientPartDeltas(part: Part, buffers: ClientSessionEventBuffer) {
   const deltas = buffers.pendingPartDeltas.get(part.messageID)
   if (!deltas) return part
-  if ((part.type === "text" || part.type === "reasoning") && part.time?.end !== undefined) {
+  if ((part.type === "text" || part.type === "reasoning") && !isStreamingClientPart(part)) {
     Array.from(deltas.keys())
       .filter((key) => key.startsWith(`${part.id}\0`))
       .forEach((key) => deltas.delete(key))

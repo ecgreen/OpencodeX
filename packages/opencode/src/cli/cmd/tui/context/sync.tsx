@@ -185,6 +185,18 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     function clearProjectedState() {
       hydratedSessions.clear()
+      // Warm sessions and pending releases keep an SDK tail alive on purpose.
+      // A reset empties the SDK's projected state but not its tail registry, so
+      // without an explicit release the controller re-tails sessions nothing on
+      // this side retains after reconnect. Deferred to a microtask because
+      // releaseSession commits synchronously and this runs mid-application.
+      const staleTails = [...new Set([...warmSessions, ...sessionReleaseTimers.keys()])].filter(
+        (sessionID) => !retainedSessions.has(sessionID),
+      )
+      if (staleTails.length > 0) {
+        const controller = stateSync
+        queueMicrotask(() => staleTails.forEach((sessionID) => controller?.releaseSession(sessionID)))
+      }
       sessionReleaseTimers.forEach(clearTimeout)
       sessionReleaseTimers.clear()
       warmSessions = []

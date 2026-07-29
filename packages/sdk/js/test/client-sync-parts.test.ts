@@ -189,6 +189,9 @@ function part(messageIndex: number, partIndex: number, text = `text-${partIndex}
     messageID: messageID(messageIndex),
     type: "text",
     text,
+    // Streaming fixtures must carry `time.start`: a part with no timing never
+    // streamed, so the engine treats it as final and drops deltas/overlays.
+    time: { start: 1 },
   }
 }
 

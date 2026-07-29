@@ -5,8 +5,6 @@ export type ClientSessionTranscriptBundle = { info: Message; parts: Part[] }
 
 export type ClientSessionTranscript = {
   messages: ClientSessionTranscriptBundle[]
-  /** Cursor of the oldest page reached, if the walk stopped early. */
-  cursor?: string
   /** The newest page, carrying the session's current todos, diff and metadata. */
   latest: OpencodeXSessionSnapshot
   pages: number

@@ -38,17 +38,24 @@ type MetadataInput = Parameters<Tool.Context["metadata"]>[0]
  * execution, so it is interrupted the moment the tool returns and the durable
  * completion write supersedes whatever was still pending.
  *
- * A semaphore serialises the leading write against the drain so two revisions
- * of the same part can never land out of order.
+ * A semaphore serialises the leading write against the drain, and a sequence
+ * guard drops any frame that loses the permit race to a newer one — the drain
+ * fiber captures `pending` before it queues for the permit, so without the
+ * guard an immediate write could slip in between and be overwritten by the
+ * older captured frame.
  */
 const coalesceMetadata = Effect.fnUntraced(function* (write: (value: MetadataInput) => Effect.Effect<unknown>) {
   const lock = Semaphore.makeUnsafe(1)
-  let pending: MetadataInput | undefined
+  let pending: { value: MetadataInput; seq: number } | undefined
   let last = 0
+  let sequence = 0
+  let written = 0
 
-  const flush = (value: MetadataInput) =>
+  const flush = (value: MetadataInput, seq: number) =>
     lock.withPermit(
       Effect.suspend(() => {
+        if (seq <= written) return Effect.void
+        written = seq
         last = Date.now()
         return write(value)
       }),
@@ -57,9 +64,9 @@ const coalesceMetadata = Effect.fnUntraced(function* (write: (value: MetadataInp
   yield* Effect.sleep(Duration.millis(METADATA_INTERVAL_MS)).pipe(
     Effect.andThen(
       Effect.suspend(() => {
-        const value = pending
+        const item = pending
         pending = undefined
-        return value === undefined ? Effect.void : flush(value)
+        return item === undefined ? Effect.void : flush(item.value, item.seq)
       }),
     ),
     Effect.repeat(Schedule.forever),
@@ -68,11 +75,12 @@ const coalesceMetadata = Effect.fnUntraced(function* (write: (value: MetadataInp
 
   return (value: MetadataInput) =>
     Effect.suspend(() => {
+      const seq = ++sequence
       if (Date.now() - last >= METADATA_INTERVAL_MS) {
         pending = undefined
-        return flush(value)
+        return flush(value, seq)
       }
-      pending = value
+      pending = { value, seq }
       return Effect.void
     })
 })

@@ -31,7 +31,6 @@ export async function loadClientStateSessionTranscript(
   return {
     ...sessionDataFromSnapshot(transcript.latest),
     messages: normalizeMessageText(transcript.messages as MessageBundle[]),
-    messageCursor: transcript.cursor,
     ...(transcript.pages > 1 ? { messageWindowExpanded: true } : {}),
   }
 }

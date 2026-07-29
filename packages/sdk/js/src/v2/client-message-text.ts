@@ -21,7 +21,7 @@
  */
 import type { Part } from "./client.js"
 import type { ClientStateSyncState } from "./client-sync-types.js"
-import { selectClientSessionMessages } from "./client-sync-state.js"
+import { isStreamingClientPart, selectClientSessionMessages } from "./client-sync-state.js"
 
 const VISIBLE_CHANNELS = new Set(["commentary", "final"])
 const HIDDEN_CHANNELS = new Set(["analysis"])
@@ -57,8 +57,7 @@ export function normalizeClientDisplayPart(part: Part): Part {
 
 /** True while a part is mid-stream: it has started but has not been closed out. */
 export function isStreamingClientDisplayPart(part: Part) {
-  if (part.type !== "text" && part.type !== "reasoning") return false
-  return part.time !== undefined && part.time.end === undefined
+  return isStreamingClientPart(part)
 }
 
 /** `selectClientSessionMessages` with every part run through display normalization. */

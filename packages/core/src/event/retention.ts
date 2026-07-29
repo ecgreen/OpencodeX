@@ -176,6 +176,10 @@ export const start = Effect.fnUntraced(function* (
   const interval = Math.max(1, options?.maintenanceIntervalMs ?? MAINTENANCE_INTERVAL_MS)
   yield* Effect.sleep(Duration.millis(interval)).pipe(
     Effect.andThen(retention.compact()),
+    // A failed pass (e.g. SQLITE_BUSY outliving the busy timeout in
+    // multi-process use) must not kill the loop for the life of the process;
+    // log it and try again next interval.
+    Effect.catchCause((cause) => Effect.logWarning("event retention pass failed", { cause })),
     Effect.repeat(Schedule.forever),
     Effect.forkScoped,
   )

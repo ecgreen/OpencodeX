@@ -63,7 +63,10 @@ export function App() {
   createAttentionNotifications({
     items: authoritative.attentionItems,
     enabled: settings.attentionNotifications,
-    ready: () => Boolean(authoritative.state()),
+    // Phase-gated, not `Boolean(state())`: bootstrapping commits carry empty
+    // attention items, and a reset drops the phase out of "ready" — both must
+    // re-seed the baseline instead of announcing every outstanding item.
+    ready: () => authoritative.state()?.phase === "ready",
     isSubagent: (sessionID) => Boolean(authoritative.state()?.sessions.records[sessionID]?.parentID),
     onActivate: (sessionID) => navigation.setRoute({ name: "session", sessionID }),
   })

@@ -245,6 +245,10 @@ export const layer = Layer.effect(
     yield* recover()
     yield* Effect.sleep(Duration.seconds(15)).pipe(
       Effect.andThen(recover()),
+      // A failed sweep (e.g. SQLITE_BUSY outliving the busy timeout) must not
+      // kill the loop for the life of the process; reads still recover inline,
+      // but sessions nobody reads would never reconcile again.
+      Effect.catchCause((cause) => Effect.logWarning("session status sweep failed", { cause })),
       Effect.repeat(Schedule.forever),
       Effect.forkScoped,
     )

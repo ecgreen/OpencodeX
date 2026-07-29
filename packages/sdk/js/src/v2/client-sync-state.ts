@@ -17,6 +17,22 @@ import type {
 import { applyClientSessionCardPage } from "./client-sync-cards.js"
 export { applyClientSessionCardPage } from "./client-sync-cards.js"
 
+/**
+ * True while a text-bearing part is mid-stream: it has started (`time.start`)
+ * but has not been closed out (`time.end`). Parts that never carry timing at
+ * all (user prompts, synthetic parts) are final, never streaming.
+ *
+ * This is the canonical streaming predicate. Display normalization, live-text
+ * overlay retention, and delta buffering all delegate here — the unsafe
+ * `part.time?.end === undefined` form misclassifies timeless parts as
+ * streaming, which exempts them from display normalization and leaks
+ * system-reminder blocks.
+ */
+export function isStreamingClientPart(part: Part) {
+  if (part.type !== "text" && part.type !== "reasoning") return false
+  return part.time !== undefined && part.time.end === undefined
+}
+
 export function applyClientStateSnapshot(
   current: ClientStateSyncState,
   snapshot: OpencodeXStateSnapshot,
@@ -137,7 +153,7 @@ export function applyClientSessionSnapshot(
           }
           if (part.type !== "text" && part.type !== "reasoning") return false
           const previousPart = previous?.parts[part.messageID]?.[partID]
-          return previousPart?.type === part.type && part.time?.end === undefined && part.text === live.base
+          return previousPart?.type === part.type && isStreamingClientPart(part) && part.text === live.base
         }),
       )
   const messageIDs = options.prepend
@@ -203,6 +219,10 @@ export function applyClientSessionSnapshot(
     ? [
         ...deletedMessageIDs.flatMap((messageID) => previous.partIDs[messageID] ?? []),
         ...incomingItems.flatMap((item) => {
+          // Prepend keeps the resident copy of an already-known message (see the
+          // guards on `partIDs`/`parts` above), so a stale older-page copy must
+          // not tombstone parts that remain live in the resident detail.
+          if (options.prepend && previous.messages[item.info.id]) return []
           const currentPartIDs = new Set(item.parts.map((part) => part.id))
           return (previous.partIDs[item.info.id] ?? []).filter((partID) => !currentPartIDs.has(partID))
         }),

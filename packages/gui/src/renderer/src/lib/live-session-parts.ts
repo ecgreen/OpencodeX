@@ -19,7 +19,9 @@ function isTextPart(part: Part): part is Extract<Part, { type: "text" }> | Extra
 }
 
 function textPartEnded(part: Extract<Part, { type: "text" }> | Extract<Part, { type: "reasoning" }>) {
-  return typeof part.time?.end === "number"
+  // A part with no timing never streamed, so it cannot be "not caught up yet" —
+  // treat it as final and let the authoritative reload win.
+  return part.time === undefined || typeof part.time.end === "number"
 }
 
 function sortParts(parts: Part[]) {

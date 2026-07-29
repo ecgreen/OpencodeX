@@ -173,7 +173,9 @@ test("GUI and TUI adapters retain parity for out-of-order parts and interaction 
     id: "part-update",
     type: "message.part.updated",
     properties: {
-      part: { ...part(), id: "part-2", text: "arrived" },
+      // `time.start` marks the part as streaming; buffered deltas are dropped
+      // for timeless parts, which never streamed and are final.
+      part: { ...part(), id: "part-2", text: "arrived", time: { start: 1 } },
     },
   })
   controller.applyEvent({

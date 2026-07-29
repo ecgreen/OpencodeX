@@ -193,7 +193,10 @@ function SessionTextPart(props: { part: TextPart }) {
   // A streaming part re-renders on every delta batch. `trim()` copies the whole
   // accumulated text each time, so only pay for it once the part is finished;
   // while streaming, a regex is enough to answer "is there any content yet".
-  const content = createMemo(() => props.part.time?.end === undefined ? props.part.text : props.part.text.trim())
+  // Timeless parts (user prompts, synthetic) never stream and are final.
+  const content = createMemo(() =>
+    props.part.time !== undefined && props.part.time.end === undefined ? props.part.text : props.part.text.trim(),
+  )
   return (
     <Show when={/\S/.test(content())}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>

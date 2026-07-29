@@ -3191,6 +3191,9 @@ function part(messageID: string, id: string, text: string, sessionID = "session-
     messageID,
     type: "text",
     text,
+    // Streaming fixtures must carry `time.start`: a part with no timing never
+    // streamed, so the engine treats it as final and drops deltas/overlays.
+    time: { start: 1 },
   }
 }
 

@@ -169,6 +169,35 @@ describe("DatabaseMigration", () => {
     )
   })
 
+  test("OPENCODE_SKIP_MIGRATIONS leaves the database untouched and unrecorded", async () => {
+    const saved = process.env.OPENCODE_SKIP_MIGRATIONS
+    process.env.OPENCODE_SKIP_MIGRATIONS = "1"
+    try {
+      await run(
+        Effect.gen(function* () {
+          const db = yield* makeDb
+          yield* DatabaseMigration.applyOnly(db, [
+            {
+              id: "skipped_probe_migration",
+              up: (tx) => tx.run(sql`CREATE TABLE skipped_probe (id TEXT PRIMARY KEY)`).pipe(Effect.asVoid),
+            },
+          ])
+
+          // Skipping must neither run the migration nor record it as applied —
+          // a journal row without the schema change would make every later run
+          // skip the real work.
+          expect(
+            yield* db.all(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'skipped_probe'`),
+          ).toEqual([])
+          expect(yield* db.all(sql`SELECT id FROM migration`)).toEqual([])
+        }),
+      )
+    } finally {
+      if (saved === undefined) delete process.env.OPENCODE_SKIP_MIGRATIONS
+      else process.env.OPENCODE_SKIP_MIGRATIONS = saved
+    }
+  })
+
   test("skips drizzle import when migration table already has state", async () => {
     await run(
       Effect.gen(function* () {

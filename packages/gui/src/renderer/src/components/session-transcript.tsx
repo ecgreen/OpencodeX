@@ -41,7 +41,7 @@ export function activeTranscriptStreamingPartID(messages: MessageBundle[], runni
   if (!message || message.info.role !== "assistant" || typeof message.info.time.completed === "number") return
   const part = message.parts.at(-1)
   if (!part || (part.type !== "text" && part.type !== "reasoning")) return
-  if (!part.text.trim() || typeof part.time?.end === "number") return
+  if (!part.text.trim() || part.time === undefined || part.time.end !== undefined) return
   if (part.type === "text" && (part.synthetic || part.ignored)) return
   return part.id
 }

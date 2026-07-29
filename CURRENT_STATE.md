@@ -32,6 +32,29 @@
 > **divergence ledger** recording every upstream-owned path this branch deleted, moved, or split, so
 > the first sync treats them as deliberate.
 >
+> ### Post-implementation review pass (same day)
+>
+> A five-way adversarial review of the branch (dangling references, backend correctness, client
+> parity, structural fidelity, plan-vs-implementation) confirmed the work and produced one more
+> round of fixes:
+>
+> - **Dead surface the deletions left behind, now removed:** the v2 `/api` auth/routing plumbing
+>   still wired into the live server (`V2Authorization`, `isV2ApiPath`, the `/api/` workspace-routing
+>   branch); the frozen legacy SDK's `Pty` class, `share`/`unshare`, `appendPrompt`, and their
+>   types/config keys (all 404 server-side); ~1,200 lines of scrollback rendering in `cmd/run/tool.ts`
+>   that only the deleted interactive renderer used; the GUI's `session.next.*` classifier arm; stale
+>   `sharedSeams` entries in `upstream/policy.json`.
+> - **Logic gaps closed:** the GUI attention-notification gate now keys on `phase === "ready"` (was
+>   announcing every outstanding item after bootstrap/reset); the streaming-part predicate is
+>   unified behind one SDK helper (`isStreamingClientPart`) instead of three drifting forms; a
+>   prepend page can no longer tombstone live parts of an already-resident message; the metadata
+>   coalescer got a sequence guard against a permit-race reordering; the retention and status
+>   maintenance loops survive a failed pass instead of dying silently; the TUI releases warm SDK
+>   tails on reset.
+> - **Added:** an `OPENCODE_SKIP_MIGRATIONS` regression test; lint baseline ratcheted 2291 → 2286.
+> - **Kept deliberately:** the SDK `./v2/server` export (`v2/index.ts` re-exports it, so it was
+>   never consumer-less as the plan claimed).
+>
 > ### Corrections to this audit
 >
 > Two "dead code" findings in §3 were wrong. Both are live:
@@ -44,7 +67,7 @@
 > - **The upstream sync has still not been executed.** The pin remains `v1.15.13` (2026-05-31) against `v1.18.3` observed 2026-07-18 — three minor versions — and the history is still a snapshot import without a common ancestor, so the first sync is an unrelated-histories merge whose conflict surface keeps growing. This is now the single largest unaddressed risk in the repo.
 > - **Native LLM path is still gated to 3 of 11 provider adapters.** `packages/opencode/src/session/llm/native-runtime.ts` still admits only `openai`, `anthropic`, and `opencode*`; Azure/Google/Bedrock/OpenRouter remain wired but blocked.
 > - **macOS has no CI.** `.github/workflows/ci.yml` runs `ubuntu-latest` and `windows-latest` only, while `release-cli.yml` ships `darwin-arm64` and `darwin-x64` assets. Those binaries are released untested.
-> - **~2,300 lint warnings remain**, baselined rather than fixed. `bun run lint:ci` reports `2329 warning(s), baseline 2630` — the deletions in this branch dropped the real count by ~300 but the ceiling in `.oxlint-baseline.json` was not ratcheted down, so there is ~300 warnings of unearned slack before CI would complain again. Ratcheting it to the current count is a one-line change and would make the gate mean something.
+> - **~2,300 lint warnings remain**, baselined rather than fixed. The ceiling in `.oxlint-baseline.json` is ratcheted to the exact current count (2,286, down from main's 2,630), so any new warning fails CI — but the debt itself is untouched.
 > - **The plugin API is still typed against the v1 SDK frozen at fork inception** (§1.4's second half-finished migration) — untouched by this branch.
 > - Four of the five `BACKEND_SYNC_PROGRESS.md` "Residual architecture follow-ups" remain open (filesystem→event outbox, plugin multi-write journal, one-authority-per-database below the launch paths, process-level restart/soak test). Only the event-journal item was resolved.
 
