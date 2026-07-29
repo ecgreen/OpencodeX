@@ -1,6 +1,5 @@
 export * from "./client.js"
 export * from "./client-sync.js"
-export * from "./legacy-session-sync.js"
 export * from "./session-order.js"
 export * from "./swarm-presentation.js"
 export * from "./work-item.js"

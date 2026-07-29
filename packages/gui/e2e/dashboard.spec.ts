@@ -31,7 +31,6 @@ test("renders through authoritative state and capabilities without legacy or idl
   await expect(createButtons).toHaveCount(4)
   await expect(createButtons.locator(".icon")).toHaveCount(4)
   await expect(page.locator(".error-card")).toHaveCount(0)
-  expect(requests.filter((pathname) => pathname === "/experimental/opencodex/session-sync")).toEqual([])
   expect(requests).toEqual(
     expect.arrayContaining(["/experimental/opencodex/state", "/experimental/opencodex/state/capabilities"]),
   )

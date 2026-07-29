@@ -87,31 +87,6 @@ export const opencodexProjectStateScenarios: Scenario[] = [
     }))
     .json(404, object, "status"),
   http.protected
-    .get("/experimental/opencodex/session-sync", "opencodex.session.sync")
-    .seeded((ctx) => ctx.session({ title: "OpencodeX sync session" }))
-    .at((ctx) => ({
-      path: `/experimental/opencodex/session-sync?${new URLSearchParams({
-        directory: ctx.directory ?? "",
-        roots: "true",
-        limit: "10",
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .json(200, (body, ctx) => {
-      object(body)
-      check(body.changed === true, "initial session sync should return a snapshot")
-      check(typeof body.revision === "string", "session sync should include a revision")
-      object(body.snapshot)
-      array(body.snapshot.sessions)
-      check(
-        body.snapshot.sessions.some((session) => isRecord(session) && session.id === ctx.state.id),
-        "session sync should include the seeded session",
-      )
-      array(body.snapshot.projects)
-      array(body.snapshot.views)
-      object(body.snapshot.sessionUiState)
-    }),
-  http.protected
     .get("/experimental/opencodex/state", "opencodex.state.snapshot")
     .seeded((ctx) => ctx.session({ title: "OpencodeX state session" }))
     .json(200, (body, ctx) => {

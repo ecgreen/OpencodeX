@@ -78,16 +78,6 @@ export const opencodexProjectGroup = HttpApiGroup.make("opencodex").add(
       summary: "Create a session under an OpencodeX project",
     }),
   ),
-  HttpApiEndpoint.get("sessionSync", `${OPENCODEX_ROOT}/session-sync`, {
-    query: SessionSyncQuery,
-    success: described(OpencodeXSessionState.SyncResponse, "OpencodeX session sync snapshot"),
-    error: HttpApiError.BadRequest,
-  }).annotateMerge(
-    OpenApi.annotations({
-      identifier: "opencodex.session.sync",
-      summary: "Get lightweight OpencodeX session sync snapshot",
-    }),
-  ),
   HttpApiEndpoint.get("stateSnapshot", `${OPENCODEX_ROOT}/state`, {
     query: StateQuery,
     success: described(OpencodeXState.OpencodeXStateSnapshot, "Server-authoritative OpencodeX state snapshot"),

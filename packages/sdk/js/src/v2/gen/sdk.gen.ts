@@ -160,8 +160,6 @@ import type {
   OpencodexSessionMoveResponses,
   OpencodexSessionStateUpdateErrors,
   OpencodexSessionStateUpdateResponses,
-  OpencodexSessionSyncErrors,
-  OpencodexSessionSyncResponses,
   OpencodexSettingsGetErrors,
   OpencodexSettingsGetResponses,
   OpencodexSettingsUpdateErrors,
@@ -2702,52 +2700,6 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
-    })
-  }
-
-  /**
-   * Get lightweight OpencodeX session sync snapshot
-   */
-  public sync<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      scope?: "project"
-      path?: string
-      roots?: "true" | "false"
-      start?: string
-      search?: string
-      limit?: string
-      since?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "scope" },
-            { in: "query", key: "path" },
-            { in: "query", key: "roots" },
-            { in: "query", key: "start" },
-            { in: "query", key: "search" },
-            { in: "query", key: "limit" },
-            { in: "query", key: "since" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<
-      OpencodexSessionSyncResponses,
-      OpencodexSessionSyncErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/opencodex/session-sync",
-      ...options,
-      ...params,
     })
   }
 

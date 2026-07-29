@@ -26,5 +26,3 @@ Backend, provider, MCP, plugin, session, SDK, and event-stream paths are upstrea
 - Provider, authentication, MCP, plugin, JavaScript SDK, and standard server contracts do not intentionally break.
 - OpencodeX additions use namespaced overlay routes and additive tables/migrations.
 - GUI and TUI reduce the same session/message/part/status/permission/question events and recover through the same replay/resync contract.
-
-The session-specific verification matrix remains in [`session-sync-compatibility.md`](session-sync-compatibility.md).

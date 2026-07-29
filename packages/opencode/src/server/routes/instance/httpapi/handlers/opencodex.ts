@@ -32,7 +32,6 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("updateProject", sessions.updateProject)
       .handle("reorderProjects", sessions.reorderProjects)
       .handle("createSession", sessions.createSession)
-      .handle("sessionSync", sessions.sessionSync)
       .handle("stateSnapshot", state.stateSnapshot)
       .handle("stateOperations", state.stateOperations)
       .handle("stateCapabilities", state.stateCapabilities)

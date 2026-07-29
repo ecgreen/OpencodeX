@@ -2218,95 +2218,6 @@ export type OpencodeXSessionCreateInput = {
   hidden?: boolean
 }
 
-export type OpencodeXViewMember =
-  | {
-      kind: "session"
-      id: string
-    }
-  | {
-      kind: "terminal"
-      id: string
-    }
-
-export type OpencodeXView = {
-  id: string
-  title: string
-  focusedSessionID?: string
-  focusedItemID?: string
-  layout: string
-  sessions: Array<GlobalSession>
-  terminalSessions: Array<OpencodeXTerminalSession>
-  sessionIDs: Array<string>
-  members: Array<OpencodeXViewMember>
-  metadata?: {
-    [key: string]: unknown
-  }
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type PermissionRequest = {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: Array<string>
-  metadata: {
-    [key: string]: unknown
-  }
-  always: Array<string>
-  tool?: {
-    messageID: string
-    callID: string
-  }
-}
-
-export type QuestionRequest = {
-  id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionInfo>
-  tool?: QuestionTool
-}
-
-export type OpencodeXSessionDisplayStatus = "idle" | "in_progress" | "input_needed" | "needs_review"
-
-export type OpencodeXSessionUiState = {
-  sessionID: string
-  seenAt?: number
-  reviewedAt?: number
-  reviewedFiles: Array<string>
-  displayStatus: OpencodeXSessionDisplayStatus
-  updated: boolean
-}
-
-export type OpencodeXSessionSyncSnapshot = {
-  projects: Array<OpencodeXProject>
-  sessions: Array<Session>
-  terminalSessions: Array<OpencodeXTerminalSession>
-  views: Array<OpencodeXView>
-  sessionStatus: {
-    [key: string]: SessionStatus
-  }
-  permissions: Array<PermissionRequest>
-  questions: Array<QuestionRequest>
-  sessionUiState: {
-    [key: string]: OpencodeXSessionUiState
-  }
-}
-
-export type OpencodeXSessionSyncResponse =
-  | {
-      changed: false
-      revision: string
-    }
-  | {
-      changed: true
-      revision: string
-      snapshot: OpencodeXSessionSyncSnapshot
-    }
-
 export type OpencodeXStateScope = {
   projectID: string
   workspaceID?: string
@@ -2365,6 +2276,17 @@ export type OpencodeXSessionCard = {
 
 export type OpencodeXSessionCardCursor = string
 
+export type OpencodeXSessionDisplayStatus = "idle" | "in_progress" | "input_needed" | "needs_review"
+
+export type OpencodeXSessionUiState = {
+  sessionID: string
+  seenAt?: number
+  reviewedAt?: number
+  reviewedFiles: Array<string>
+  displayStatus: OpencodeXSessionDisplayStatus
+  updated: boolean
+}
+
 export type OpencodeXSessionCardPage = {
   items: Array<OpencodeXSessionCard>
   hasMore: boolean
@@ -2374,6 +2296,16 @@ export type OpencodeXSessionCardPage = {
     [key: string]: OpencodeXSessionUiState
   }
 }
+
+export type OpencodeXViewMember =
+  | {
+      kind: "session"
+      id: string
+    }
+  | {
+      kind: "terminal"
+      id: string
+    }
 
 export type OpencodeXCatalogView = {
   id: string
@@ -2388,6 +2320,31 @@ export type OpencodeXCatalogView = {
   }
   timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type PermissionRequest = {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: Array<string>
+  metadata: {
+    [key: string]: unknown
+  }
+  always: Array<string>
+  tool?: {
+    messageID: string
+    callID: string
+  }
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  /**
+   * Questions to ask
+   */
+  questions: Array<QuestionInfo>
+  tool?: QuestionTool
 }
 
 export type OpencodeXCatalogSnapshot = {
@@ -2787,6 +2744,23 @@ export type OpencodeXTerminalSessionCreateInput = {
   projectID?: string
   directory: string
   installationID: string
+}
+
+export type OpencodeXView = {
+  id: string
+  title: string
+  focusedSessionID?: string
+  focusedItemID?: string
+  layout: string
+  sessions: Array<GlobalSession>
+  terminalSessions: Array<OpencodeXTerminalSession>
+  sessionIDs: Array<string>
+  members: Array<OpencodeXViewMember>
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type OpencodeXViewCreateInput = {
@@ -6032,41 +6006,6 @@ export type OpencodexSessionCreateResponses = {
 }
 
 export type OpencodexSessionCreateResponse = OpencodexSessionCreateResponses[keyof OpencodexSessionCreateResponses]
-
-export type OpencodexSessionSyncData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    scope?: "project"
-    path?: string
-    roots?: "true" | "false"
-    start?: string
-    search?: string
-    limit?: string
-    since?: string
-  }
-  url: "/experimental/opencodex/session-sync"
-}
-
-export type OpencodexSessionSyncErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type OpencodexSessionSyncError = OpencodexSessionSyncErrors[keyof OpencodexSessionSyncErrors]
-
-export type OpencodexSessionSyncResponses = {
-  /**
-   * OpencodeX session sync snapshot
-   */
-  200: OpencodeXSessionSyncResponse
-}
-
-export type OpencodexSessionSyncResponse = OpencodexSessionSyncResponses[keyof OpencodexSessionSyncResponses]
 
 export type OpencodexStateSnapshotData = {
   body?: never
