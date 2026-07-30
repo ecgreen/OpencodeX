@@ -198,6 +198,41 @@ describe("LSPClient interop", () => {
     })
   })
 
+  test("serializes concurrent opens of one document into a single didOpen", async () => {
+    const handle = spawnFakeServer() as any
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "concurrent.ts")
+    const content = "export const value: number = 1\n"
+    await Bun.write(file, content)
+
+    await withTestInstance({
+      directory: tmp.path,
+      fn: async (ctx) => {
+        const client = await LSPClient.create({
+          serverID: "fake",
+          server: handle as unknown as LSPServer.Handle,
+          root: tmp.path,
+          directory: tmp.path,
+          instance: ctx,
+        })
+
+        // The GUI does exactly this when a file tab opens: the diagnostics pass
+        // fires while the editor still reads "Loading file..." (empty content)
+        // and the real content lands a moment later. Both used to see the
+        // document as absent and send didOpen; servers drop the second one, so
+        // tsserver kept the empty text and reported no diagnostics, no hover
+        // and no completion for a file the reader can see has content.
+        await Promise.all([client.notify.open({ path: file, content: "" }), client.notify.open({ path: file, content })])
+
+        const log = await client.connection.sendRequest<{ method: string; text: string }[]>("test/get-sync-log", {})
+        expect(log.filter((entry) => entry.method === "didOpen")).toHaveLength(1)
+        expect(log.at(-1)?.text).toBe(content)
+
+        await client.shutdown()
+      },
+    })
+  })
+
   test("document mode falls back to push diagnostics", async () => {
     const handle = spawnFakeServer() as any
     await using tmp = await tmpdir()

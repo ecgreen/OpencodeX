@@ -3,6 +3,8 @@
 let nextId = 1
 let readBuffer = Buffer.alloc(0)
 let lastChange = null
+/** Every textDocument sync notification, in arrival order, for concurrency assertions. */
+const syncLog = []
 let initializeParams = null
 let diagnosticRequestCount = 0
 let registeredCapability = false
@@ -139,13 +141,20 @@ function handle(raw) {
   }
 
   if (data.method === "textDocument/didOpen") {
+    syncLog.push({ method: "didOpen", text: data.params.textDocument.text })
     maybeRegister("didOpen")
     return
   }
 
   if (data.method === "textDocument/didChange") {
     lastChange = data.params
+    syncLog.push({ method: "didChange", text: (data.params.contentChanges[0] || {}).text })
     maybeRegister("didChange")
+    return
+  }
+
+  if (data.method === "test/get-sync-log") {
+    sendResponse(data.id, syncLog)
     return
   }
 
