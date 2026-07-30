@@ -238,7 +238,7 @@ export function SessionComposer(props: {
             </Show>
           </div>
           <Button appearance="ghost" class="send-button" type="submit" title={props.disconnectedProviderName ? `Connect ${props.disconnectedProviderName} to send` : "Send message"} aria-label="Send message" disabled={props.blocked || Boolean(props.disconnectedProviderName) || (props.draftText.length === 0 && props.draftParts.length === 0)}>
-            <Icon name="arrowUp" />
+            <Icon name="cursorArrow" />
           </Button>
         </div>
       </div>

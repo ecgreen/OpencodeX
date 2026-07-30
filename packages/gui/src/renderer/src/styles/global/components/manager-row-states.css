@@ -1,9 +1,19 @@
 .send-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb,var(--brand) 82%,white 10%);
-  color: var(--brand-contrast);
-  background: color-mix(in srgb,var(--primary) 88%,white 12%);
+  border-color: transparent;
+  color: var(--primary);
+  background: transparent;
   box-shadow: none;
+}
+
+.send-button:active:not(:disabled) {
+  color: color-mix(in srgb,var(--primary) 78%,var(--text));
+  background: transparent;
+}
+
+.send-button:focus-visible {
+  color: var(--primary);
+  outline: 2px solid color-mix(in srgb,var(--primary) 60%,transparent);
+  outline-offset: 1px;
 }
 
 .choice-list button:hover {

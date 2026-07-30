@@ -28,6 +28,19 @@
   text-align: right;
 }
 
+/* The fold and lint columns sit between the numbers and the code and are empty
+   on almost every line, so they are trimmed to what their markers actually
+   need rather than CodeMirror's roomy defaults. */
+/* CodeMirror injects its lint styles unlayered, so they beat anything in our
+   layers no matter how specific. Everything there is sized in `em` - 1.4em
+   column, .2em cell padding, 1em marker - and font-size is the one property it
+   leaves alone, so scaling that shrinks the whole column together. A percentage
+   keeps it relative to the editor's own type rather than pinning a size. */
+.workbench-codemirror .cm-scroller .cm-gutter-lint {
+  min-width: 0;
+  font-size: 70%;
+}
+
 /* CodeMirror's fold markers are bare "⌄" and "›" glyphs, which sit at the
    wrong weight and baseline next to the numbers. Hide the glyph and draw a
    chevron instead, revealed on gutter hover so it stops competing with the
@@ -37,7 +50,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
+  width: 10px;
   height: 100%;
   padding: 0;
   font-size: 0;

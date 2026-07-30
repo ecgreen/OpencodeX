@@ -12,14 +12,16 @@
   }
 }
 
+/* A quiet icon button rather than a filled block: the composer already draws
+   the eye, and submitting is reachable by keyboard anyway. Colour and a soft
+   wash arrive on hover, and the arrow nudges the way it sends. */
 .send-button {
   flex-shrink: 0;
-  border: 1px solid color-mix(in srgb,var(--theme-accent) 50%,transparent);
-  transition: border-color .14s ease,background .14s ease,color .14s ease,transform .14s ease;
-  color: var(--brand-contrast);
-  border-radius: 0;
-  border-color: var(--primary);
-  background: var(--primary);
+  border: 1px solid transparent;
+  transition: border-color .14s ease,background .14s ease,color .14s ease;
+  color: var(--muted);
+  border-radius: var(--ds-radius-control);
+  background: transparent;
   box-shadow: none;
   display: inline-grid;
   place-items: center;
@@ -30,9 +32,16 @@
   padding: 0;
 }
 
+/* Lucide's cursor points up-left; 135deg aims it the way the message goes. */
 .send-button .icon {
-  width: 16px;
-  height: 16px;
+  width: 21px;
+  height: 21px;
   margin: 0;
-  transform: translate(1px);
+  transform: rotate(135deg);
+  transition: color .14s ease;
+}
+
+.send-button:disabled {
+  color: color-mix(in srgb,var(--muted) 45%,transparent);
+  background: transparent;
 }

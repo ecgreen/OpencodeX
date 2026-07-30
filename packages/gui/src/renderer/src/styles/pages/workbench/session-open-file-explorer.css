@@ -247,3 +247,64 @@
     animation: none;
   }
 }
+
+/* Change markers in the tree and search results. Same vocabulary as the tab
+   markers - amber for unsaved edits, a hollow green ring for files this
+   session changed - so one dot means the same thing everywhere. */
+.session-open-file-explorer .workbench-file-marker {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ds-radius-control);
+}
+
+.session-open-file-explorer .workbench-file-marker[data-kind="dirty"] {
+  background: var(--theme-warning);
+}
+
+.session-open-file-explorer .workbench-file-marker[data-kind="session"] {
+  border: 1px solid color-mix(in srgb,var(--theme-success) 82%,var(--text));
+  background: transparent;
+}
+
+/* Three actions need more room than the two most dialogs carry, and they must
+   never be clipped: wrapping is the graceful failure here. */
+.session-open-dirty-dialog .dialog-actions {
+  flex-wrap: wrap;
+}
+
+/* `.dialog-actions button` paints every button the same regardless of tone, so
+   the two consequential actions restate their colour at a specificity that
+   rule cannot flatten. Discard reads as destructive, save as the way out. */
+.session-open-dirty-dialog .dialog-actions button[data-tone="danger"] {
+  border-color: color-mix(in srgb,var(--theme-danger) 46%,transparent);
+  color: var(--theme-danger);
+  background: var(--theme-danger-soft);
+  box-shadow: none;
+}
+
+.session-open-dirty-dialog .dialog-actions button[data-tone="danger"]:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--theme-danger) 70%,transparent);
+  background: color-mix(in srgb,var(--theme-danger) 24%,transparent);
+}
+
+.session-open-dirty-dialog .dialog-actions button[data-tone="accent"] {
+  border-color: color-mix(in srgb,var(--primary) 72%,transparent);
+  color: var(--brand-contrast);
+  background: var(--primary);
+  box-shadow: none;
+}
+
+.session-open-dirty-dialog .dialog-actions button[data-tone="accent"]:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: color-mix(in srgb,var(--primary) 88%,white 12%);
+}
+
+.session-open-dirty-path {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--ds-text-xs);
+}

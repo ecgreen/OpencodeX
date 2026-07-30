@@ -15,7 +15,8 @@ import { SessionSideEmptyState } from "./session-side-empty"
 import { createSessionSideFileController } from "./session-side-file-controller"
 import { SessionSideFileExplorer } from "./session-side-file-explorer"
 import { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
-import { openTabDirty, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
+import { openFileChangeStatus, openTabDirty, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
+import { sidePanelPathKey } from "./session-side-path"
 import { createSessionSideOpenTabActions } from "./session-side-open-tab-actions"
 import { type OpenTab } from "./session-side-open-types"
 import { SessionOpenTerminal, createSessionSideTerminalController } from "./session-side-terminal"
@@ -24,6 +25,7 @@ import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-co
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
 import { SessionSideFileEditor } from "./session-side-file-editor"
 import { SessionSideFileSkeleton } from "./session-side-file-skeleton"
+import { SessionSideOpenDirtyDialog } from "./session-side-open-dirty-dialog"
 
 const EXPLORER_WIDTH_KEY = "opencodex.file-explorer-width"
 
@@ -88,7 +90,7 @@ export function SessionSideOpenPanel(props: {
     terminals: () => terminals,
     files: () => files,
   })
-  const { activeDirectory, addContextTab, addFileTab, addGitTab, addWebTab, closeTab, createTab, disposeTabs, openActiveInput, openFromExplorer, openInputInNewTab, setActiveInput, updateOpenTab } = actions
+  const { activeDirectory, addContextTab, addFileTab, addGitTab, addWebTab, closeTab, createTab, dirtyClose, disposeTabs, openActiveInput, openFromExplorer, openInputInNewTab, resolveDirtyClose, setActiveInput, updateOpenTab } = actions
   browser = createSessionSideBrowserController({
     active: () => props.active,
     tabs,
@@ -227,6 +229,15 @@ export function SessionSideOpenPanel(props: {
     disposeTabs(tabs())
   })
   const dirty = createMemo(() => activeTab() ? openTabDirty(activeTab()!) : false)
+  const changedPathKeys = createMemo(
+    () => new Set(props.diffs.flatMap((file) => (file.file ? [sidePanelPathKey(file.file)] : []))),
+  )
+  const dirtyPathKeys = createMemo(
+    () => new Set(tabs().flatMap((tab) => (openTabDirty(tab) && tab.path ? [sidePanelPathKey(tab.path)] : []))),
+  )
+  const fileStatus = (path: string) =>
+    openFileChangeStatus(path, { dirty: dirtyPathKeys(), session: changedPathKeys() }, sidePanelPathKey)
+
   // A files/picker tab *is* the explorer, so closing it closes the tab; beside
   // a file it is a side pane, so closing only hides it.
   const fileKinds = new Set(["file", "files", "picker"])
@@ -247,6 +258,7 @@ export function SessionSideOpenPanel(props: {
           openPath={activeTab()?.path ?? ""}
           toggleFolder={(file) => void files.toggleFolder(file)}
           openFile={openFromExplorer}
+          fileStatus={fileStatus}
           close={close}
         />
         <div class="session-open-file-resize" role="separator" aria-orientation="vertical" aria-label="Resize file explorer" onPointerDown={startExplorerResize} />
@@ -375,6 +387,10 @@ export function SessionSideOpenPanel(props: {
           />
         </Match>
       </Switch>
+      <SessionSideOpenDirtyDialog
+        tab={tabs().find((item) => item.id === dirtyClose())}
+        resolve={(action) => void resolveDirtyClose(action)}
+      />
     </section>
   )
 }

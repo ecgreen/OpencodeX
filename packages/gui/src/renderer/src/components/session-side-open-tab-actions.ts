@@ -1,4 +1,4 @@
-import type { Accessor, Setter } from "solid-js"
+import { createSignal, type Accessor, type Setter } from "solid-js"
 import { newBrowserID } from "../lib/browser-id"
 import { reserveOpenTabSlot } from "../lib/resource-limits"
 import { workbenchNormalizeBrowserURL } from "../lib/workbench"
@@ -32,6 +32,10 @@ export function createSessionSideOpenTabActions(input: {
   files: Accessor<ReturnType<typeof createSessionSideFileController>>
 }) {
   const activeDirectory = () => input.directory()
+  // Closing a tab with unsaved edits used to leave a message telling the reader
+  // to save or discard, without saying which file or offering either action.
+  // The id parks here instead and the panel asks.
+  const [dirtyClose, setDirtyClose] = createSignal<string>()
 
   function updateOpenTab(id: string, patch: Partial<OpenTab>) {
     input.setTabs((current) => current.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)))
@@ -89,21 +93,43 @@ export function createSessionSideOpenTabActions(input: {
     queueMicrotask(() => document.querySelector<HTMLInputElement>(".session-open-location input")?.focus())
   }
   function closeTab(id: string) {
+    const closing = input.tabs().find((tab) => tab.id === id)
+    if (closing && openTabDirty(closing)) {
+      // Make it visible before asking, so the reader sees the edits the dialog
+      // is about rather than being told about a file they cannot find.
+      input.setActiveID(id)
+      setDirtyClose(id)
+      return
+    }
+    discardTab(id)
+  }
+
+  /** Closes without the unsaved-changes check. Only the dialog resolution reaches this directly. */
+  function discardTab(id: string) {
     const current = input.tabs()
     const index = current.findIndex((tab) => tab.id === id)
     const next = current.filter((tab) => tab.id !== id)
     const closing = current.find((tab) => tab.id === id)
-    if (closing && openTabDirty(closing)) {
-      input.setActiveID(id)
-      updateOpenTab(id, { message: "Save or discard your changes before closing this tab." })
-      return
-    }
     if (closing?.kind === "web") input.browser().close(closing)
     if (closing?.kind === "terminal") input.terminals().close(closing)
     if (closing) input.files().cancelTabs([closing])
     input.setTabs(next)
     if (input.activeID() === id) input.setActiveID(next[Math.min(index, next.length - 1)]?.id ?? next[0]?.id ?? "")
   }
+  /**
+   * Answers the unsaved-changes prompt. A failed save keeps the tab open with
+   * the reason on it - closing anyway would throw away the edits the reader
+   * just asked to keep.
+   */
+  async function resolveDirtyClose(action: "save" | "discard" | "cancel") {
+    const id = dirtyClose()
+    setDirtyClose(undefined)
+    if (!id || action === "cancel") return
+    if (action === "save" && !(await input.files().saveActiveFile())) return
+    if (action === "discard") input.files().discardActiveChanges()
+    discardTab(id)
+  }
+
   async function openActiveInput() {
     const tab = input.activeTab()
     if (!tab) return
@@ -181,6 +207,8 @@ export function createSessionSideOpenTabActions(input: {
     addWebTab,
     closeTab,
     createTab,
+    dirtyClose,
+    resolveDirtyClose,
     disposeTabs,
     openActiveInput,
     openFromExplorer,
