@@ -50,6 +50,8 @@ export function createManagementActionsController(input: {
   refresh: () => Promise<void>
   refreshCapabilities: () => Promise<void>
   alert: (message: string) => void
+  /** Confirms work that already landed. Optional so tests can omit it. */
+  succeed?: (message: string) => void
   setPrompt: Setter<string>
   requestComposerFocus: () => void
   setPendingPinnedSessionRouteKey: Setter<string>
@@ -105,11 +107,13 @@ export function createManagementActionsController(input: {
     await runCreateProjectAction({
       fallbackDirectory: client.directory,
       chooseFolders,
+      askProject: input.dialogs.askProject,
       validateProjectFolders: (folders) => validateProjectFolders(client, { folders }),
       createProject: (name, directory, folders) =>
         createProject(client, { name, directory, folders }).then(() => undefined),
       refresh: input.refresh,
       alert: input.alert,
+      succeed: input.succeed,
     })
   }
 
@@ -126,18 +130,23 @@ export function createManagementActionsController(input: {
       updateProject: (targetProjectID, next) => updateProject(client, targetProjectID, next).then(() => undefined),
       refresh: input.refresh,
       alert: input.alert,
+      succeed: input.succeed,
     })
   }
 
   async function deleteProjectAction(projectID: string, name: string) {
     const client = input.client()
     if (!client) return
+    const project = input.snapshot()?.projects.find((item) => item.id === projectID)
     await runDeleteProjectAction({
       projectID,
       name,
+      sessionCount: project?.sessionIDs.length ?? 0,
+      terminalSessionCount: project?.terminalSessions.length ?? 0,
       confirm: input.dialogs.confirm,
       deleteProject: (targetProjectID) => deleteProject(client, targetProjectID).then(() => undefined),
       refresh: input.refresh,
+      succeed: input.succeed,
     })
   }
 

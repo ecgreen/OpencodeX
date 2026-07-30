@@ -1,15 +1,20 @@
 import { createSignal, onCleanup } from "solid-js"
 
+export type NoticeTone = "info" | "success" | "error"
+
+/** An error is worth reading twice; a confirmation has already been seen happen. */
+const NOTICE_DURATION_MS: Record<NoticeTone, number> = { info: 4_000, success: 3_000, error: 8_000 }
+
 export function createNoticeController() {
-  const [notice, setNotice] = createSignal<{ message: string; tone: "info" | "error" }>()
+  const [notice, setNotice] = createSignal<{ message: string; tone: NoticeTone }>()
   let timer: ReturnType<typeof setTimeout> | undefined
 
   onCleanup(() => clearTimeout(timer))
 
-  function show(message: string, tone: "info" | "error") {
+  function show(message: string, tone: NoticeTone) {
     clearTimeout(timer)
     setNotice({ message, tone })
-    timer = setTimeout(() => setNotice(undefined), tone === "error" ? 8_000 : 4_000)
+    timer = setTimeout(() => setNotice(undefined), NOTICE_DURATION_MS[tone])
   }
 
   async function attempt(action: () => Promise<boolean>) {
@@ -26,6 +31,8 @@ export function createNoticeController() {
     notice,
     show,
     alert: (message: string) => show(message, "info"),
+    /** Confirms work that already succeeded, so it names what changed. */
+    succeed: (message: string) => show(message, "success"),
     attempt,
     clear() {
       clearTimeout(timer)

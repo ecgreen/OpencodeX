@@ -16,6 +16,7 @@ export function createClaudeManagementActions(input: {
   claudeTerminals: ReturnType<typeof createClaudeTerminalController>
   refresh: () => Promise<void>
   alert: (message: string) => void
+  succeed?: (message: string) => void
 }) {
   async function renameClaudeSession(record: OpencodeXTerminalSession) {
     const client = input.client()
@@ -93,6 +94,7 @@ export function createClaudeManagementActions(input: {
     const record = created.data
     if (!record) return input.alert("Claude Code did not return a session.")
     await input.refresh()
+    input.succeed?.(`Launched Claude Code in ${compactPath(directory)}.`)
     input.navigation.setRoute(terminalSessionRoute(record, record.id))
   }
 

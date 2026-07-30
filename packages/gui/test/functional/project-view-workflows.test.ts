@@ -15,6 +15,10 @@ describe("GUI functional project and view workflows", () => {
         calls.push(`choose:${fallback}`)
         return ["C:/Work/OpencodeX", "C:/Work/Docs"]
       },
+      askProject: async (input) => {
+        calls.push(`ask:${input.title}:${input.name}`)
+        return { name: input.name, folders: input.folders }
+      },
       validateProjectFolders: async (folders) => {
         calls.push(`validate:${folders.join(",")}`)
         return { data: { valid: true, folders: [] } }
@@ -26,6 +30,7 @@ describe("GUI functional project and view workflows", () => {
 
     expect(calls).toEqual([
       "choose:C:/Work",
+      "ask:Create project:OpencodeX",
       "validate:C:/Work/OpencodeX,C:/Work/Docs",
       "create:OpencodeX:C:/Work/OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
       "refresh",

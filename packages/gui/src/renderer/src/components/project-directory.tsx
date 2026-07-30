@@ -2,6 +2,7 @@ import { For, Show, createMemo, createSignal } from "solid-js"
 import { createPointerReorder } from "../lib/pointer-reorder"
 import {
   filterProjectSummaries,
+  projectLabel,
   sortProjectSummaries,
   summarizeProjects,
   type ProjectDirectorySort,
@@ -39,6 +40,7 @@ export function ProjectsOverview(props: {
 }) {
   const [sort, setSort] = createSignal<ProjectDirectorySort>("custom")
   const [filter, setFilter] = createSignal<ProjectOverviewFilter>("all")
+  const [announcement, setAnnouncement] = createSignal("")
   const summaries = createMemo(() => summarizeProjects({
     projects: props.projects,
     snapshot: props.snapshot,
@@ -60,6 +62,7 @@ export function ProjectsOverview(props: {
     moveProject: (projectID, offset) => {
       reorder.markMoved(projectID, offset < 0 ? "up" : "down")
       props.moveProject(projectID, offset)
+      announceMove(projectID)
     },
   }
   const reorder = createPointerReorder<ProjectSummary>({
@@ -68,7 +71,10 @@ export function ProjectsOverview(props: {
     rowAttribute: "data-project-row-id",
     layoutAttribute: "data-project-row-layout-id",
     ignoreSelector: ".project-directory-actions",
-    onReorder: (sourceID, target) => props.reorderProject(sourceID, target.id, target.placement),
+    onReorder: (sourceID, target) => {
+      props.reorderProject(sourceID, target.id, target.placement)
+      announceMove(sourceID)
+    },
   })
   const indexOf = (projectID: string) => props.projects.findIndex((project) => project.id === projectID)
 
@@ -122,12 +128,26 @@ export function ProjectsOverview(props: {
           <ProjectDragPreview preview={reorder.preview()} summary={reorder.previewItem()} />
         </div>
       </section>
+      <p class="ds-visually-hidden" role="status" aria-live="polite">{announcement()}</p>
     </div>
   )
 
   function clearFilters() {
     props.setQuery("")
     setFilter("all")
+  }
+
+  /**
+   * Reordering is the one action here with no visible result for a reader who
+   * is not watching the rows move, so the new position is spoken.
+   */
+  function announceMove(projectID: string) {
+    queueMicrotask(() => {
+      const position = props.projects.findIndex((project) => project.id === projectID)
+      const summary = summaries().find((item) => item.project.id === projectID)
+      if (position === -1 || !summary) return
+      setAnnouncement(`${projectLabel(summary.project)} moved to position ${position + 1} of ${props.projects.length}.`)
+    })
   }
 
   /**
