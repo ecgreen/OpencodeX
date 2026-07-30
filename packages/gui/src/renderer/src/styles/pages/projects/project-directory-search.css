@@ -1,23 +1,15 @@
-.project-directory-search {
-  display: grid;
-  grid-template-columns: 18px minmax(180px,280px);
+/* Search and sort travel together, and wrap together on a narrow panel. */
+.project-directory-controls {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: var(--ds-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.project-directory-controls .ui-field {
   min-width: 240px;
-  padding: 0 9px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg);
-}
-
-.project-directory-search .icon {
-  color: var(--muted);
-}
-
-.project-directory-search input {
-  width: 100%;
-  border: 0;
-  background: transparent;
 }
 
 .project-directory-list {

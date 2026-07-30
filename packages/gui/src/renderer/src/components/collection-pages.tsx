@@ -3,13 +3,12 @@ import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/clie
 import type { AttentionItem, WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, title } from "../lib/format"
-import { projectSessions, type SessionOrderState } from "../lib/app-session-lists"
-import { projectSessionStatus } from "../lib/project-summary"
+import { type SessionOrderState } from "../lib/app-session-lists"
 import { type GuiSnapshot } from "../lib/session-api"
 import { StatusPill } from "./status-pill"
 import { CardActionMenu } from "./card-action-menu"
 import { ProjectCommandCenter } from "./project-command-center"
-import { ProjectsOverview, projectLabel } from "./project-directory"
+import { ProjectsOverview } from "./project-directory"
 
 export function SessionCollectionPage(props: {
   sessions: Session[]
@@ -173,32 +172,16 @@ export function ProjectCollectionPage(props: {
   const [query, setQuery] = createSignal("")
   const projects = createMemo(() => props.snapshot?.projects ?? [])
   const activeProject = createMemo(() => props.projectID ? projects().find((project) => project.id === props.projectID) : undefined)
-  const filteredProjects = createMemo(() => {
-    const text = query().trim().toLowerCase()
-    if (!text) return projects()
-    return projects().filter((project) =>
-      projectLabel(project).toLowerCase().includes(text)
-      || project.folders.some((folder) => folder.path.toLowerCase().includes(text)),
-    )
-  })
-  const overview = createMemo(() => {
-    const attention = props.attentionItems.filter((item) => item.projectID && projects().some((project) => project.id === item.projectID)).length
-    const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length, 0)
-    const terminalSessions = projects().reduce((count, project) => count + project.terminalSessions.length, 0)
-    const running = projects().filter((project) => projectSessionStatus(project, props.snapshot, props.sessionOrderState) === "in_progress").length
-    return { attention, running, sessions, terminalSessions }
-  })
 
   return (
     <Show when={activeProject()} fallback={(
       <ProjectsOverview
         projects={projects()}
-        filteredProjects={filteredProjects()}
         query={query()}
         setQuery={setQuery}
         snapshot={props.snapshot}
+        loading={props.snapshot === undefined}
         sessionOrderState={props.sessionOrderState}
-        overview={overview()}
         openProject={props.openProject}
         createProject={props.createProject}
         createSession={props.createSession}
