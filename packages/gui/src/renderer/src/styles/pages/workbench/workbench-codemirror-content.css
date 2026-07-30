@@ -18,6 +18,58 @@
   background-color: var(--theme-info);
 }
 
+/* The gutter only needs room for the digits it actually shows; CodeMirror
+   grows it as the line count does. The old 42px floor left a wide empty
+   channel on short files - the lint markers live in their own gutter and are
+   unaffected by this. */
 .workbench-codemirror .cm-lineNumbers .cm-gutterElement {
-  min-width: 42px;
+  min-width: 0;
+  padding-inline: var(--ds-space-1);
+  text-align: right;
+}
+
+/* CodeMirror's fold markers are bare "⌄" and "›" glyphs, which sit at the
+   wrong weight and baseline next to the numbers. Hide the glyph and draw a
+   chevron instead, revealed on gutter hover so it stops competing with the
+   code, and kept visible while a section is folded because that is state the
+   reader needs to see. */
+.workbench-codemirror .cm-foldGutter span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 100%;
+  padding: 0;
+  font-size: 0;
+  color: color-mix(in srgb, var(--muted) 82%, var(--text));
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.workbench-codemirror .cm-foldGutter span::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.workbench-codemirror .cm-foldGutter span[title="Unfold line"]::before {
+  transform: translateX(-1px) rotate(-45deg);
+}
+
+.workbench-codemirror .cm-gutters:hover .cm-foldGutter span,
+.workbench-codemirror .cm-foldGutter span[title="Unfold line"] {
+  opacity: 1;
+}
+
+.workbench-codemirror .cm-foldGutter span:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-codemirror .cm-foldGutter span {
+    transition: none;
+  }
 }

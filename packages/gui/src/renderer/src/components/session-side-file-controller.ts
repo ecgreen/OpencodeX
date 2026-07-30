@@ -125,9 +125,13 @@ export function createSessionSideFileController(input: {
     onCleanup(() => document.removeEventListener("keydown", save))
   })
 
+  // Opens a file tab that has no content yet - a tab restored from storage, or
+  // one an action created without reading. `loading` is what says a read is
+  // already in flight; without it this re-entered openFile on its own tab
+  // write and span forever.
   createEffect(() => {
     const tab = input.activeTab()
-    if (!input.active() || tab?.kind !== "file" || !tab.path || tab.content || tab.message) return
+    if (!input.active() || tab?.kind !== "file" || !tab.path || tab.content || tab.loading || tab.message) return
     void openFile(tab.id, { path: tab.path, title: tab.title, directory: tab.directory || input.directory(), root: tab.root, readOnly: tab.readOnly })
   })
 
@@ -244,7 +248,10 @@ export function createSessionSideFileController(input: {
     if (target.signal?.aborted) controller.abort()
     fileRequests.set(id, controller)
     input.hideWebTabs()
-    input.updateTab(id, { kind: "file", path, directory, root: target.root, readOnly: target.readOnly, input: path, title: target.title || compactPath(path), message: "Loading file..." })
+    // `loading` drives the skeleton. The previous file's content stays on the
+    // tab until the new one lands, so nothing here clears it - the pane reads
+    // the flag, not the absence of content, and only the file area swaps.
+    input.updateTab(id, { kind: "file", path, directory, root: target.root, readOnly: target.readOnly, input: path, title: target.title || compactPath(path), loading: true, message: "" })
     try {
       const file = await readWorkbenchFile(gui, path, directory, controller.signal, target.root)
       if (!file) throw new Error(`Could not read ${path}.`)
@@ -253,10 +260,17 @@ export function createSessionSideFileController(input: {
       applyFile(id, file, { kind: "file", path, directory, root: target.root, readOnly: target.readOnly, input: path, title: target.title || compactPath(path) })
     } catch (cause) {
       if (isAbort(cause)) return
-      input.updateTab(id, { message: cause instanceof Error ? cause.message : "Failed to open file." })
+      input.updateTab(id, { loading: false, message: cause instanceof Error ? cause.message : "Failed to open file." })
     } finally {
       target.signal?.removeEventListener("abort", abort)
-      if (fileRequests.get(id) === controller) fileRequests.delete(id)
+      // Every exit clears the skeleton, including the identity bail above that
+      // returns without applying anything - otherwise the pane waits forever on
+      // a read that already decided it was stale. Guarded so a newer read that
+      // has taken over the tab keeps its own skeleton up.
+      if (fileRequests.get(id) === controller) {
+        fileRequests.delete(id)
+        input.updateTab(id, { loading: false })
+      }
     }
   }
 
@@ -347,6 +361,7 @@ export function createSessionSideFileController(input: {
       fileBytes: file?.bytes,
       text,
       original: text,
+      loading: false,
       message: file?.mode === "metadata"
         ? `This file is ${formatBytes(file.bytes)}. Preview content is omitted above 2 MiB.`
         : file?.mode === "preview"

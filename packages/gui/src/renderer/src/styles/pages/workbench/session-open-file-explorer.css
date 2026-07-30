@@ -180,3 +180,70 @@
   padding: 5px 8px;
   font-size: 13px;
 }
+
+/* Loading placeholder for the file pane. Only this area swaps while a file is
+   read - the explorer beside it stays mounted - so the shape mirrors the
+   editor's gutter-plus-lines layout to keep the swap visually quiet. */
+.session-open-file-skeleton {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  overflow: hidden;
+}
+
+.session-open-file-skeleton-gutter {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--ds-space-1);
+}
+
+.session-open-file-skeleton-code {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--ds-space-1);
+}
+
+.session-open-file-skeleton span {
+  height: 9px;
+  border-radius: var(--ds-radius-control);
+  background: color-mix(in srgb, var(--muted) 26%, transparent);
+}
+
+.session-open-file-skeleton-gutter span {
+  width: 12px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.session-open-file-skeleton-code span {
+  animation: session-open-file-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.session-open-file-skeleton-code span:nth-child(2n) {
+  animation-delay: 0.12s;
+}
+
+.session-open-file-skeleton-code span:nth-child(3n) {
+  animation-delay: 0.24s;
+}
+
+@keyframes session-open-file-skeleton-pulse {
+  0%, 100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-open-file-skeleton-code span {
+    animation: none;
+  }
+}

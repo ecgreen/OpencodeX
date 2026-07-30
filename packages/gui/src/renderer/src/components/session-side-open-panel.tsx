@@ -23,6 +23,7 @@ import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./s
 import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-controller"
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
 import { SessionSideFileEditor } from "./session-side-file-editor"
+import { SessionSideFileSkeleton } from "./session-side-file-skeleton"
 
 const EXPLORER_WIDTH_KEY = "opencodex.file-explorer-width"
 
@@ -226,6 +227,12 @@ export function SessionSideOpenPanel(props: {
     disposeTabs(tabs())
   })
   const dirty = createMemo(() => activeTab() ? openTabDirty(activeTab()!) : false)
+  // A files/picker tab *is* the explorer, so closing it closes the tab; beside
+  // a file it is a side pane, so closing only hides it.
+  const fileKinds = new Set(["file", "files", "picker"])
+  const explorerVisible = () => activeTab()?.kind !== "file" || explorerOpen()
+  const closeExplorerPane = () => (activeTab()?.kind === "file" ? setExplorerOpen(false) : files.closeExplorer())
+
   function fileExplorerPane(close: () => void) {
     return (
       <div class="session-open-file-pane" style={{ width: `${explorerWidth()}px` }}>
@@ -307,19 +314,21 @@ export function SessionSideOpenPanel(props: {
             refresh={props.git.refresh}
           />
         </Match>
-        <Match when={activeTab()?.kind === "files" || activeTab()?.kind === "picker"}>
+        {/* One branch for the explorer and the file it opens into. Splitting
+            them meant picking a file crossed a Match boundary, unmounting the
+            explorer and remounting it beside the editor - the whole pane
+            flashed for what is really just the content area changing. */}
+        <Match when={fileKinds.has(activeTab()?.kind ?? "")}>
           <div class="session-open-file-split">
-            {fileExplorerPane(files.closeExplorer)}
-            <div class="session-open-file-content">
-              <div class="session-side-empty">Select a file to view it here.</div>
-            </div>
-          </div>
-        </Match>
-        <Match when={activeTab()?.kind === "file"}>
-          <div class="session-open-file-split">
-            <Show when={explorerOpen()}>{fileExplorerPane(() => setExplorerOpen(false))}</Show>
+            <Show when={explorerVisible()}>{fileExplorerPane(closeExplorerPane)}</Show>
             <div class="session-open-file-content">
               <Switch>
+                <Match when={activeTab()?.kind !== "file"}>
+                  <div class="session-side-empty">Select a file to view it here.</div>
+                </Match>
+                <Match when={activeTab()?.loading}>
+                  <SessionSideFileSkeleton />
+                </Match>
                 <Match when={activeTab()?.fileMode === "metadata"}>
                   <div class="session-side-empty">File metadata only. Preview content is omitted above 2 MiB.</div>
                 </Match>
