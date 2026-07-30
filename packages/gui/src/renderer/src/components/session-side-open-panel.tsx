@@ -13,7 +13,6 @@ import { createSessionSideAgentController } from "./session-side-agent-controlle
 import { SessionSideBrowserHost } from "./session-side-browser-host"
 import { SessionSideEmptyState } from "./session-side-empty"
 import { createSessionSideFileController } from "./session-side-file-controller"
-import { SessionSideFileExplorer } from "./session-side-file-explorer"
 import { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
 import { openFileChangeStatus, openTabDirty, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
 import { sidePanelPathKey } from "./session-side-path"
@@ -26,21 +25,8 @@ import { SessionSideOpenChrome } from "./session-side-open-chrome"
 import { SessionSideFileEditor } from "./session-side-file-editor"
 import { SessionSideFileSkeleton } from "./session-side-file-skeleton"
 import { SessionSideOpenDirtyDialog } from "./session-side-open-dirty-dialog"
+import { SessionSideOpenExplorerPane } from "./session-side-open-explorer-pane"
 
-const EXPLORER_WIDTH_KEY = "opencodex.file-explorer-width"
-
-function clampExplorerWidth(value: number) {
-  return Math.max(180, Math.min(480, Math.round(value)))
-}
-
-function storedExplorerWidth() {
-  try {
-    const value = Number(localStorage.getItem(EXPLORER_WIDTH_KEY))
-    return Number.isFinite(value) && value > 0 ? clampExplorerWidth(value) : 240
-  } catch {
-    return 240
-  }
-}
 export function SessionSideOpenPanel(props: {
   sessionID: string; active: boolean
   gui?: GuiClient; directory?: string
@@ -66,7 +52,16 @@ export function SessionSideOpenPanel(props: {
   // File tabs render Git-style: a collapsible explorer beside the file. Opening
   // a file from the explorer keeps the pane open so browsing feels continuous.
   const [explorerOpen, setExplorerOpen] = createSignal(false)
-  const [explorerWidth, setExplorerWidth] = createSignal(storedExplorerWidth())
+  const fileKinds = new Set(["file", "files", "picker"])
+  /**
+   * Whether the explorer pane is on screen. A files or picker tab *is* the
+   * explorer; beside a file tab it is an optional side pane. The file
+   * controller loads the tree and runs searches off this, so it has to mean
+   * "visible" rather than "is the active tab" - a session restored with a file
+   * tab open shows the explorer, and it used to sit there reading "No files
+   * found" because nothing had asked for the listing.
+   */
+  const explorerVisible = () => activeTab()?.kind !== "file" || explorerOpen()
   let handledRequestToken = 0
   let loadedSessionID = props.sessionID
   // The tab actions and these controllers depend on each other: controllers take
@@ -135,6 +130,7 @@ export function SessionSideOpenPanel(props: {
     tabs,
     activeID,
     activeTab,
+    explorerVisible,
     selectTab: tabBar.select,
     createTab,
     updateTab: updateOpenTab,
@@ -240,52 +236,7 @@ export function SessionSideOpenPanel(props: {
 
   // A files/picker tab *is* the explorer, so closing it closes the tab; beside
   // a file it is a side pane, so closing only hides it.
-  const fileKinds = new Set(["file", "files", "picker"])
-  const explorerVisible = () => activeTab()?.kind !== "file" || explorerOpen()
   const closeExplorerPane = () => (activeTab()?.kind === "file" ? setExplorerOpen(false) : files.closeExplorer())
-
-  function fileExplorerPane(close: () => void) {
-    return (
-      <div class="session-open-file-pane" style={{ width: `${explorerWidth()}px` }}>
-        <SessionSideFileExplorer
-          directory={activeDirectory()}
-          filter={files.filter()}
-          setFilter={files.setFilter}
-          searchState={files.searchState()}
-          matches={files.matches()}
-          rows={files.rows()}
-          loading={files.busy()}
-          openPath={activeTab()?.path ?? ""}
-          toggleFolder={(file) => void files.toggleFolder(file)}
-          openFile={openFromExplorer}
-          fileStatus={fileStatus}
-          close={close}
-        />
-        <div class="session-open-file-resize" role="separator" aria-orientation="vertical" aria-label="Resize file explorer" onPointerDown={startExplorerResize} />
-      </div>
-    )
-  }
-  function startExplorerResize(event: PointerEvent) {
-    if (event.button !== 0) return
-    event.preventDefault()
-    const pointerID = event.pointerId
-    const origin = event.clientX
-    const startWidth = explorerWidth()
-    const move = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerID) return
-      setExplorerWidth(clampExplorerWidth(startWidth + (moveEvent.clientX - origin)))
-    }
-    const finish = (finishEvent: PointerEvent) => {
-      if (finishEvent.pointerId !== pointerID) return
-      window.removeEventListener("pointermove", move)
-      window.removeEventListener("pointerup", finish)
-      window.removeEventListener("pointercancel", finish)
-      try { localStorage.setItem(EXPLORER_WIDTH_KEY, String(explorerWidth())) } catch { /* storage unavailable */ }
-    }
-    window.addEventListener("pointermove", move)
-    window.addEventListener("pointerup", finish)
-    window.addEventListener("pointercancel", finish)
-  }
 
   return (
     <section class="session-side-open">
@@ -332,7 +283,22 @@ export function SessionSideOpenPanel(props: {
             flashed for what is really just the content area changing. */}
         <Match when={fileKinds.has(activeTab()?.kind ?? "")}>
           <div class="session-open-file-split">
-            <Show when={explorerVisible()}>{fileExplorerPane(closeExplorerPane)}</Show>
+            <Show when={explorerVisible()}>
+              <SessionSideOpenExplorerPane
+                directory={activeDirectory()}
+                filter={files.filter()}
+                setFilter={files.setFilter}
+                searchState={files.searchState()}
+                matches={files.matches()}
+                rows={files.rows()}
+                loading={files.busy()}
+                openPath={activeTab()?.path ?? ""}
+                toggleFolder={(file) => void files.toggleFolder(file)}
+                openFile={openFromExplorer}
+                fileStatus={fileStatus}
+                close={closeExplorerPane}
+              />
+            </Show>
             <div class="session-open-file-content">
               <Switch>
                 <Match when={activeTab()?.kind !== "file"}>

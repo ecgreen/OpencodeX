@@ -90,15 +90,23 @@
   white-space: nowrap;
 }
 
+/* No chrome on the close control: it is a dismiss affordance next to a heading,
+   not an action worth a box of its own. Colour on hover carries it. */
 .session-open-file-explorer>header button {
   display: grid;
   place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--ds-radius-control);
   color: var(--muted);
-  background: var(--bg);
+  background: transparent;
+  box-shadow: none;
+}
+
+.session-open-file-explorer>header button:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb,var(--muted) 14%,transparent);
 }
 
 .session-open-file-explorer .workbench-filter {

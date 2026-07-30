@@ -12,6 +12,7 @@ import {
   writeWorkbenchFile,
 } from "../lib/session-api"
 import { flattenWorkbenchFileTree, workbenchPathKey } from "../lib/workbench"
+import { createSessionSideFileExternal } from "./session-side-file-external"
 import { openTabFileIdentity } from "./session-side-open-state"
 import type { OpenFileTarget, OpenTab } from "./session-side-open-types"
 import { createSessionSideDefinitionController } from "./session-side-definition-controller"
@@ -23,6 +24,8 @@ export function createSessionSideFileController(input: {
   tabs: Accessor<OpenTab[]>
   activeID: Accessor<string>
   activeTab: Accessor<OpenTab | undefined>
+  /** True while the explorer pane is on screen, including beside an open file. */
+  explorerVisible?: Accessor<boolean>
   selectTab: (id: string) => void
   createTab: (input: Partial<OpenTab>) => string | undefined
   updateTab: (id: string, patch: Partial<OpenTab>) => void
@@ -78,7 +81,18 @@ export function createSessionSideFileController(input: {
     expanded: expandedFolders(),
     filter: filter(),
   }))
-  const filesOpen = createMemo(() => input.activeTab()?.kind === "files" || input.activeTab()?.kind === "picker")
+  const external = createSessionSideFileExternal({
+    gui: input.gui,
+    directory: input.directory,
+    tabs: input.tabs,
+    activeTab: input.activeTab,
+    updateTab: input.updateTab,
+  })
+  // Whether the explorer is on screen, which is not the same as it being the
+  // active tab: it also sits beside an open file. The panel owns that rule.
+  const filesOpen = createMemo(
+    () => input.explorerVisible?.() ?? (input.activeTab()?.kind === "files" || input.activeTab()?.kind === "picker"),
+  )
 
   createEffect(() => {
     const directory = input.directory()
@@ -139,7 +153,7 @@ export function createSessionSideFileController(input: {
     const tab = input.activeTab()
     if (!input.active() || tab?.kind !== "file" || !tab.path || !input.gui() || tab.readOnly) return
     const controller = new AbortController()
-    const check = () => void checkExternalFile(tab.id, controller.signal)
+    const check = () => void external.check(tab.id, controller.signal)
     const visible = () => {
       if (document.visibilityState === "visible") check()
     }
@@ -294,50 +308,6 @@ export function createSessionSideFileController(input: {
     }
   }
 
-  async function checkExternalFile(id: string, signal?: AbortSignal) {
-    const gui = input.gui()
-    const started = input.tabs().find((item) => item.id === id)
-    if (!gui || started?.kind !== "file" || !started.path || started.content?.type !== "text" || started.fileMode !== "editable" || started.externallyChanged || started.readOnly) return
-    const file = await readWorkbenchFile(gui, started.path, started.directory || input.directory(), signal, started.root).catch(() => undefined)
-    const content = file?.content
-    const tab = input.tabs().find((item) => item.id === id)
-    if (content?.type !== "text" || tab?.kind !== "file" || tab.path !== started.path || content.content === tab.original) return
-    if (tab.text === tab.original) {
-      input.updateTab(id, { content, text: content.content, original: content.content, message: "Reloaded after an external change." })
-      return
-    }
-    input.updateTab(id, {
-      externalText: content.content,
-      externallyChanged: true,
-      message: "This file changed on disk while you have unsaved edits.",
-    })
-  }
-
-  function reloadExternalFile() {
-    const tab = input.activeTab()
-    if (tab?.kind !== "file" || tab.externalText === undefined) return
-    const content = tab.content?.type === "text" ? { ...tab.content, content: tab.externalText } : tab.content
-    input.updateTab(tab.id, {
-      content,
-      text: tab.externalText,
-      original: tab.externalText,
-      externalText: undefined,
-      externallyChanged: false,
-      message: "Reloaded the version on disk.",
-    })
-  }
-
-  function keepLocalChanges() {
-    const tab = input.activeTab()
-    if (tab?.kind !== "file" || tab.externalText === undefined) return
-    input.updateTab(tab.id, {
-      original: tab.externalText,
-      externalText: undefined,
-      externallyChanged: false,
-      message: "Keeping your buffer. Saving will replace the version on disk.",
-    })
-  }
-
   function discardActiveChanges() {
     const tab = input.activeTab()
     if (tab?.kind !== "file" || tab.readOnly) return
@@ -377,7 +347,7 @@ export function createSessionSideFileController(input: {
   return {
     busy, filter, setFilter, matches, searchState, rows, openExplorer, openInActiveTab, closeExplorer, toggleFolder,
     openExplorerFile, openFile, saveActiveFile, openDefinition: definition.open, loadHover: definition.hover, loadCompletion: definition.completion, navigation: definition.navigation,
-    reloadExternalFile, keepLocalChanges,
+    reloadExternalFile: external.reload, keepLocalChanges: external.keepLocal,
     discardActiveChanges, cancelTabs,
   }
 }
