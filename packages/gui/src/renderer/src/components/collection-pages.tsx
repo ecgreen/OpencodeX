@@ -4,7 +4,7 @@ import type { AttentionItem, WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, title } from "../lib/format"
 import { projectSessions, type SessionOrderState } from "../lib/app-session-lists"
-import { projectSwarms, projectViews } from "../lib/project-summary"
+import { projectSessionStatus } from "../lib/project-summary"
 import { type GuiSnapshot } from "../lib/session-api"
 import { StatusPill } from "./status-pill"
 import { CardActionMenu } from "./card-action-menu"
@@ -160,7 +160,6 @@ export function ProjectCollectionPage(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
-  createSwarm: (projectID: string) => void
   createProjectView: (projectID: string, sessionIDs: string[]) => void
   createProject: () => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
@@ -184,10 +183,10 @@ export function ProjectCollectionPage(props: {
   })
   const overview = createMemo(() => {
     const attention = props.attentionItems.filter((item) => item.projectID && projects().some((project) => project.id === item.projectID)).length
-    const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length + project.terminalSessions.length, 0)
-    const swarms = projects().reduce((count, project) => count + projectSwarms(project, props.snapshot).length, 0)
-    const views = projects().reduce((count, project) => count + projectViews(project, props.snapshot, props.sessionOrderState).length, 0)
-    return { attention, sessions, swarms, views }
+    const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length, 0)
+    const terminalSessions = projects().reduce((count, project) => count + project.terminalSessions.length, 0)
+    const running = projects().filter((project) => projectSessionStatus(project, props.snapshot, props.sessionOrderState) === "in_progress").length
+    return { attention, running, sessions, terminalSessions }
   })
 
   return (
@@ -222,7 +221,6 @@ export function ProjectCollectionPage(props: {
           openView={props.openView}
           openSwarm={props.openSwarm}
           createSession={props.createSession}
-          createSwarm={props.createSwarm}
           editProject={props.editProject}
           deleteProject={props.deleteProject}
           sessionPinned={props.sessionPinned}

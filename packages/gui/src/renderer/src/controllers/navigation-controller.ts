@@ -21,7 +21,7 @@ export const NAV_ITEMS = [
     label: "Swarms",
     icon: "swarm",
     shortcut: "Ctrl+2",
-    description: "Create, manage, and run agent swarms",
+    description: "Build agent teams you can pick as models",
   },
   {
     name: "views",

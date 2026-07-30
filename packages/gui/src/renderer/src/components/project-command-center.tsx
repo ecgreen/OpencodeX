@@ -2,7 +2,7 @@ import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
 import { clientWorkItemBucket, type AttentionItem, type WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { compactPath, formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
-import { projectSwarms, projectViewSessionCount, projectViews } from "../lib/project-summary"
+import { projectViewSessionCount, projectViews } from "../lib/project-summary"
 import type { GuiSnapshot } from "../lib/session-api"
 import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard, TerminalSessionStatusCard } from "./session-card-list"
 import { Button } from "./ui"
@@ -22,7 +22,6 @@ export function ProjectCommandCenter(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
-  createSwarm: (projectID: string) => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
   sessionPinned: (sessionID: string) => boolean
@@ -40,13 +39,11 @@ export function ProjectCommandCenter(props: {
   }
   const recentSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && (bucket(session) !== "inactive" || isRecentSessionUpdate(session.time.updated))))
   const priorSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && bucket(session) === "inactive" && !isRecentSessionUpdate(session.time.updated)))
-  const swarms = createMemo(() => projectSwarms(props.project, props.snapshot))
   const views = createMemo(() => projectViews(props.project, props.snapshot))
   const primaryFolder = createMemo(() => props.project.folders[0]?.path)
   const terminalSessions = createMemo(() => [...props.project.terminalSessions].sort((a, b) => Number(b.timeUpdated) - Number(a.timeUpdated)))
   const projectName = () => projectLabel(props.project)
   const projectActions = () => [
-    { label: "Create swarm", icon: "swarm" as const, onSelect: () => props.createSwarm(props.project.id) },
     { label: "Edit project", icon: "pencil" as const, onSelect: () => props.editProject(props.project.id, projectName(), props.project.folders.map((folder) => folder.path)) },
     { label: "Delete project", icon: "trash" as const, danger: true, onSelect: () => props.deleteProject(props.project.id, projectName()) },
   ]
@@ -127,17 +124,6 @@ export function ProjectCommandCenter(props: {
                   <Button appearance="ghost" class="project-home-row" onClick={() => props.openView(view.id)}>
                     <strong>{title(view.title)}</strong>
                     <span>{projectViewSessionCount(view)} sessions - {formatRelative(view.timeUpdated)}</span>
-                  </Button>
-                )}
-              </For>
-            </ProjectHomePanel>
-
-            <ProjectHomePanel title="Swarms" count={swarms().length} empty="No swarms for this project.">
-              <For each={swarms().slice(0, 8)}>
-                {(swarm) => (
-                  <Button appearance="ghost" class="project-home-row" onClick={() => props.openSwarm(swarm.id)}>
-                    <strong>{title(swarm.title)}</strong>
-                    <span>{swarm.roles.length} roles - {swarm.runs.length} runs</span>
                   </Button>
                 )}
               </For>

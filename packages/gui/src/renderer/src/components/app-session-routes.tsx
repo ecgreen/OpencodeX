@@ -225,7 +225,6 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
       }
-      createSwarm={(projectID) => void model.notices.run(() => model.management.createSwarm(projectID))}
       createProjectView={(projectID, sessionIDs) =>
         void model.notices.run(() => model.management.createProjectView(projectID, sessionIDs))
       }

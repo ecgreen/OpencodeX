@@ -12,12 +12,6 @@ export type ProjectAttentionItem = {
   tone: "warning" | "danger" | "info"
 }
 
-export function projectSwarms(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
-  return (snapshot?.swarms ?? [])
-    .filter((swarm) => swarm.projectID === project.id)
-    .toSorted((a, b) => timeValue(b.timeUpdated) - timeValue(a.timeUpdated))
-}
-
 export function projectViews(
   project: GuiSnapshot["projects"][number],
   snapshot?: GuiSnapshot,
@@ -104,7 +98,6 @@ export function projectLatestActivity(
     0,
     ...projectSessions(project, snapshot, state).map((session) => timeValue(session.time.updated)),
     ...(project.terminalSessions ?? []).map((session) => timeValue(session.timeUpdated)),
-    ...projectSwarms(project, snapshot).map((swarm) => timeValue(swarm.timeUpdated)),
     ...projectViews(project, snapshot).map((view) => timeValue(view.timeUpdated)),
     timeValue(project.project.time?.updated),
   )

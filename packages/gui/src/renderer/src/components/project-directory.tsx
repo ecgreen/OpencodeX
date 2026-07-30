@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { Portal } from "solid-js/web"
 import { compactPath, formatRelative, title } from "../lib/format"
 import { projectSessions, type SessionOrderState } from "../lib/app-session-lists"
-import { projectLatestActivity, projectSwarms, projectViews } from "../lib/project-summary"
+import { projectLatestActivity, projectViews } from "../lib/project-summary"
 import { moveRelative } from "../lib/reorder"
 import type { GuiSnapshot } from "../lib/session-api"
 import { Icon } from "./icon"
@@ -27,7 +27,7 @@ export function ProjectsOverview(props: {
   setQuery: (value: string) => void
   snapshot?: GuiSnapshot
   sessionOrderState?: SessionOrderState
-  overview: { attention: number; sessions: number; swarms: number; views: number }
+  overview: { attention: number; running: number; sessions: number; terminalSessions: number }
   openProject: (projectID: string) => void
   createProject: () => void
   createSession: (projectID?: string, directory?: string) => void
@@ -88,11 +88,10 @@ export function ProjectsOverview(props: {
       </header>
 
       <section class="project-directory-summary" aria-label="Project summary">
-        <ProjectSummaryItem label="Projects" value={props.projects.length} />
-        <ProjectSummaryItem label="Sessions" value={props.overview.sessions} />
         <ProjectSummaryItem label="Attention" value={props.overview.attention} tone={props.overview.attention > 0 ? "warning" : "neutral"} />
-        <ProjectSummaryItem label="Swarms" value={props.overview.swarms} />
-        <ProjectSummaryItem label="Views" value={props.overview.views} />
+        <ProjectSummaryItem label="Running" value={props.overview.running} />
+        <ProjectSummaryItem label="Sessions" value={props.overview.sessions} />
+        <ProjectSummaryItem label="Claude Code" value={props.overview.terminalSessions} />
       </section>
 
       <section class="project-directory-panel">
@@ -277,8 +276,8 @@ function ProjectDirectoryRow(props: {
 function ProjectDirectoryMeta(props: { project: GuiSnapshot["projects"][number]; snapshot?: GuiSnapshot; sessionOrderState?: SessionOrderState }) {
   return (
     <div class="project-directory-meta">
-      <span>{projectSessions(props.project, props.snapshot, props.sessionOrderState).length + props.project.terminalSessions.length} sessions</span>
-      <span>{projectSwarms(props.project, props.snapshot).length} swarms</span>
+      <span>{projectSessions(props.project, props.snapshot, props.sessionOrderState).length} sessions</span>
+      <span>{props.project.terminalSessions.length} Claude Code</span>
       <span>{projectViews(props.project, props.snapshot, props.sessionOrderState).length} views</span>
       <span>{formatActivity(projectLatestActivity(props.project, props.snapshot, props.sessionOrderState))}</span>
     </div>

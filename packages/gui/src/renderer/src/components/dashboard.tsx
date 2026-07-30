@@ -5,7 +5,7 @@ import { compactPath, formatRelative, title } from "../lib/format"
 import { projectSessions, tuiSidebarSessions, type SessionOrderState } from "../lib/app-session-lists"
 import { deriveSessionStatus, deriveViewStatus, isActiveSessionStatus, sessionStatusLabel, type DerivedSessionStatus } from "../lib/session-status"
 import { type GuiSnapshot } from "../lib/session-api"
-import { projectSwarms, projectViewSessionCount, projectViews } from "../lib/project-summary"
+import { projectViewSessionCount, projectViews } from "../lib/project-summary"
 import { CardActionMenu } from "./card-action-menu"
 import { Button } from "./ui"
 import { CardContextMenu } from "./card-context-menu"
@@ -245,5 +245,5 @@ function viewDashboardMeta(view: GuiSnapshot["views"][number]) {
 }
 
 function projectDashboardMeta(project: GuiSnapshot["projects"][number], snapshot: GuiSnapshot | undefined, sessionCount: number) {
-  return `${compactPath(project.folders[0]?.path ?? "")} · ${sessionCount} sessions · ${projectViews(project, snapshot).length} views · ${projectSwarms(project, snapshot).length} swarms`
+  return `${compactPath(project.folders[0]?.path ?? "")} · ${sessionCount} sessions · ${projectViews(project, snapshot).length} views`
 }
