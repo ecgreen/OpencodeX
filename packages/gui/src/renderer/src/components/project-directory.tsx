@@ -89,7 +89,7 @@ export function ProjectsOverview(props: {
           <ProjectDirectoryHeadline summaries={summaries()} />
         </div>
         <div class="project-directory-header-actions">
-          <Button appearance="solid" tone="accent" icon="session" onClick={() => props.createSession()}>New session</Button>
+          <Button appearance="solid" tone="accent" icon="plus" onClick={() => props.createSession()}>New session</Button>
           <Button appearance="outline" icon="plus" onClick={props.createProject}>Create project</Button>
         </div>
       </header>

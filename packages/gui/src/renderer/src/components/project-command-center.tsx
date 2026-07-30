@@ -1,19 +1,25 @@
 import { For, Show, createEffect, createMemo, createSignal, on, type JSX } from "solid-js"
 import { clientWorkItemBucket, type AttentionItem, type WorkItem } from "@opencode-ai/sdk/v2/work-item"
+import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
 import { projectViewSessionCount, projectViews, summarizeProjects } from "../lib/project-summary"
-import { deriveViewStatus, sessionStatusLabel } from "../lib/session-status"
+import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel } from "../lib/session-status"
 import type { GuiSnapshot } from "../lib/session-api"
-import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard } from "./session-card-list"
-import { Button } from "./ui"
+import { isRecentSessionUpdate, SessionCardBucket } from "./session-card-list"
+import { Button, SessionCard } from "./ui"
 import { AttentionQueue } from "./attention-queue"
-import { ProjectClaudeSection } from "./project-claude-section"
+import { PinButton } from "./pin-button"
 import { ProjectHomeHeader } from "./project-home-header"
 import { ProjectOverviewTiles } from "./project-overview-tiles"
 
 /** Prior sessions arrive in pages so a long-lived project does not render hundreds of cards. */
 const PRIOR_PAGE_SIZE = 12
+
+/** One list, two runtimes: chat sessions and Claude Code terminals ride together. */
+type ProjectWorkItem =
+  | { kind: "session"; session: Session; updated: number }
+  | { kind: "terminal"; terminalSession: OpencodeXTerminalSession; updated: number }
 
 export function ProjectCommandCenter(props: {
   project: GuiSnapshot["projects"][number]
@@ -47,16 +53,26 @@ export function ProjectCommandCenter(props: {
   const workBySessionID = createMemo(() => new Map(props.workItems.filter((item) => item.kind === "session" && item.sessionID).map((item) => [item.sessionID!, item])))
   const attention = createMemo(() => props.attentionItems.filter((item) => item.projectID === props.project.id))
   const attentionSessionIDs = createMemo(() => new Set(attention().flatMap((item) => item.sessionID ? [item.sessionID] : [])))
-  const bucket = (session: ReturnType<typeof sessions>[number]) => {
+  const sessionIsRecent = (session: Session) => {
     const item = workBySessionID().get(session.id)
-    return item ? clientWorkItemBucket(item) : sessionOrderBucket(props.snapshot, session)
+    const bucket = item ? clientWorkItemBucket(item) : sessionOrderBucket(props.snapshot, session)
+    return bucket !== "inactive" || isRecentSessionUpdate(session.time.updated)
   }
-  const recentSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && (bucket(session) !== "inactive" || isRecentSessionUpdate(session.time.updated))))
-  const priorSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && bucket(session) === "inactive" && !isRecentSessionUpdate(session.time.updated)))
-  const visiblePriorSessions = createMemo(() => priorSessions().slice(0, priorPages() * PRIOR_PAGE_SIZE))
+  const terminalIsRecent = (terminalSession: OpencodeXTerminalSession) => {
+    const status = props.terminalStatus(terminalSession.id)
+    return status === "running" || status === "starting" || isRecentSessionUpdate(Number(terminalSession.timeUpdated))
+  }
+  const workItems = createMemo<ProjectWorkItem[]>(() => [
+    ...sessions()
+      .filter((session) => !attentionSessionIDs().has(session.id))
+      .map((session) => ({ kind: "session" as const, session, updated: session.time.updated })),
+    ...props.project.terminalSessions
+      .map((terminalSession) => ({ kind: "terminal" as const, terminalSession, updated: Number(terminalSession.timeUpdated) })),
+  ].sort((a, b) => b.updated - a.updated))
+  const recentItems = createMemo(() => workItems().filter((item) => item.kind === "session" ? sessionIsRecent(item.session) : terminalIsRecent(item.terminalSession)))
+  const priorItems = createMemo(() => workItems().filter((item) => item.kind === "session" ? !sessionIsRecent(item.session) : !terminalIsRecent(item.terminalSession)))
+  const visiblePriorItems = createMemo(() => priorItems().slice(0, priorPages() * PRIOR_PAGE_SIZE))
   const views = createMemo(() => projectViews(props.project, props.snapshot, props.sessionOrderState))
-  const primaryFolder = createMemo(() => props.project.folders[0]?.path)
-  const terminalSessions = createMemo(() => [...props.project.terminalSessions].sort((a, b) => Number(b.timeUpdated) - Number(a.timeUpdated)))
   const toggleSessionBucket = (name: string) => setSessionBucketsCollapsed((value) => ({ ...value, [name]: !value[name] }))
 
   return (
@@ -65,6 +81,7 @@ export function ProjectCommandCenter(props: {
         summary={summary()}
         back={props.back}
         createSession={props.createSession}
+        launchClaudeSession={props.launchClaudeSession}
         editProject={props.editProject}
         deleteProject={props.deleteProject}
       />
@@ -74,54 +91,24 @@ export function ProjectCommandCenter(props: {
           <AttentionQueue items={attention()} openSession={props.openSession} openSwarm={props.openSwarm} empty="No work needs your attention." />
 
           <div class="dashboard-session-groups">
-            <SessionCardBucket title="Recent Sessions" count={recentSessions().length} empty="No recent sessions." collapsed={sessionBucketsCollapsed().recent} onToggle={() => toggleSessionBucket("recent")}>
-              <For each={recentSessions()}>
-                {(session) => (
-                  <SessionStatusCard
-                    session={session}
-                    snapshot={props.snapshot}
-                    openSession={props.openSession}
-                    pinned={props.sessionPinned(session.id)}
-                    togglePinned={() => props.toggleSessionPinned(session.id)}
-                  />
-                )}
+            <SessionCardBucket title="Recent Sessions" count={recentItems().length} empty="No recent sessions." collapsed={sessionBucketsCollapsed().recent} onToggle={() => toggleSessionBucket("recent")}>
+              <For each={recentItems()}>
+                {(item) => <ProjectWorkItemCard item={item} {...cardProps()} />}
               </For>
             </SessionCardBucket>
 
-            <SessionCardBucket title="Prior Sessions" count={priorSessions().length} empty="No prior sessions." collapsed={sessionBucketsCollapsed().prior} onToggle={() => toggleSessionBucket("prior")}>
-              <For each={visiblePriorSessions()}>
-                {(session) => (
-                  <SessionStatusCard
-                    session={session}
-                    snapshot={props.snapshot}
-                    openSession={props.openSession}
-                    compact
-                    pinned={props.sessionPinned(session.id)}
-                    togglePinned={() => props.toggleSessionPinned(session.id)}
-                  />
-                )}
+            <SessionCardBucket title="Prior Sessions" count={priorItems().length} empty="No prior sessions." collapsed={sessionBucketsCollapsed().prior} onToggle={() => toggleSessionBucket("prior")}>
+              <For each={visiblePriorItems()}>
+                {(item) => <ProjectWorkItemCard item={item} {...cardProps()} />}
               </For>
-              <Show when={visiblePriorSessions().length < priorSessions().length}>
+              <Show when={visiblePriorItems().length < priorItems().length}>
                 <Button appearance="ghost" class="project-home-show-more" onClick={() => setPriorPages((value) => value + 1)}>
-                  Show {Math.min(PRIOR_PAGE_SIZE, priorSessions().length - visiblePriorSessions().length)} more
-                  <small>{visiblePriorSessions().length} of {priorSessions().length}</small>
+                  Show {Math.min(PRIOR_PAGE_SIZE, priorItems().length - visiblePriorItems().length)} more
+                  <small>{visiblePriorItems().length} of {priorItems().length}</small>
                 </Button>
               </Show>
             </SessionCardBucket>
           </div>
-
-          <ProjectClaudeSection
-            sessions={terminalSessions()}
-            directory={primaryFolder()}
-            terminalStatus={props.terminalStatus}
-            openSession={props.openTerminalSession}
-            launchSession={() => {
-              const directory = primaryFolder()
-              if (directory) props.launchClaudeSession(props.project.id, directory)
-            }}
-            sessionPinned={props.sessionPinned}
-            toggleSessionPinned={props.toggleSessionPinned}
-          />
         </div>
 
         <aside class="project-home-sidebar">
@@ -150,6 +137,47 @@ export function ProjectCommandCenter(props: {
         </aside>
       </section>
     </div>
+  )
+
+  function cardProps() {
+    return {
+      snapshot: props.snapshot,
+      openSession: props.openSession,
+      openTerminalSession: props.openTerminalSession,
+      terminalStatus: props.terminalStatus,
+      sessionPinned: props.sessionPinned,
+      toggleSessionPinned: props.toggleSessionPinned,
+    }
+  }
+}
+
+/** The standardized session card, fed from whichever runtime the item ran in. */
+function ProjectWorkItemCard(props: {
+  item: ProjectWorkItem
+  snapshot?: GuiSnapshot
+  openSession: (sessionID: string) => void
+  openTerminalSession: (terminalSessionID: string) => void
+  terminalStatus: (terminalSessionID: string) => string
+  sessionPinned: (sessionID: string) => boolean
+  toggleSessionPinned: (sessionID: string) => void
+}) {
+  const id = () => props.item.kind === "session" ? props.item.session.id : props.item.terminalSession.id
+  const name = () => title(props.item.kind === "session" ? props.item.session.title : props.item.terminalSession.title)
+  const status = () => props.item.kind === "session"
+    ? deriveSessionStatus(props.snapshot, props.item.session)
+    : props.terminalStatus(props.item.terminalSession.id)
+  return (
+    <SessionCard
+      title={name()}
+      status={status()}
+      model={props.item.kind === "session" ? props.item.session.model?.id : "Claude Code"}
+      provider={props.item.kind === "session" ? props.item.session.model?.providerID : undefined}
+      variant={props.item.kind === "session" ? props.item.session.model?.variant : undefined}
+      agent={props.item.kind === "session" ? props.item.session.agent : "Claude Code"}
+      meta={[{ label: "Updated", value: formatRelative(props.item.updated) }]}
+      actions={<PinButton pinned={props.sessionPinned(id())} label={name()} onClick={() => props.toggleSessionPinned(id())} />}
+      onOpen={() => props.item.kind === "session" ? props.openSession(id()) : props.openTerminalSession(id())}
+    />
   )
 }
 

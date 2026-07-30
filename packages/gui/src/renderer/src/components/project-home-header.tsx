@@ -1,8 +1,7 @@
-import { For, Show, createSignal } from "solid-js"
+import { For, createSignal } from "solid-js"
 import { compactPath } from "../lib/format"
 import { projectLabel, type ProjectSummary } from "../lib/project-summary"
-import { sessionStatusLabel } from "../lib/session-status"
-import { AgentGlyph, Button, IconButton, StatusBadge } from "./ui"
+import { AgentGlyph, Button, IconButton } from "./ui"
 import { CardActionMenu } from "./card-action-menu"
 
 /** How long a copied chip keeps saying so before it goes back to its path. */
@@ -12,6 +11,7 @@ export function ProjectHomeHeader(props: {
   summary: ProjectSummary
   back: () => void
   createSession: (projectID?: string, directory?: string) => void
+  launchClaudeSession: (projectID: string, directory: string) => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
 }) {
@@ -19,6 +19,9 @@ export function ProjectHomeHeader(props: {
   const name = () => projectLabel(project())
   const folders = () => project().folders.map((folder) => folder.path)
   const actions = () => [
+    ...(folders().length > 0
+      ? [{ label: "Launch Claude Code", icon: "terminal" as const, onSelect: () => props.launchClaudeSession(project().id, folders()[0]) }]
+      : []),
     { label: "Edit project", icon: "pencil" as const, onSelect: () => props.editProject(project().id, name(), folders()) },
     { label: "Delete project", icon: "trash" as const, danger: true, onSelect: () => props.deleteProject(project().id, name()) },
   ]
@@ -33,7 +36,6 @@ export function ProjectHomeHeader(props: {
             <p class="eyebrow">Project</p>
             <h1>{name()}</h1>
           </div>
-          <ProjectHomeStatus summary={props.summary} />
         </div>
         <div class="project-home-folder-strip">
           <For each={project().folders} fallback={<span class="empty-folder">No folders selected</span>}>
@@ -59,7 +61,7 @@ export function ProjectHomeHeader(props: {
         <Button
           appearance="solid"
           tone="accent"
-          icon="session"
+          icon="plus"
           onClick={() => props.createSession(project().id, folders()[0])}
         >
           New session
@@ -67,25 +69,6 @@ export function ProjectHomeHeader(props: {
         <CardActionMenu label={name()} actions={actions()} />
       </div>
     </header>
-  )
-}
-
-function ProjectHomeStatus(props: { summary: ProjectSummary }) {
-  const attention = () => props.summary.attention.length
-  const failing = () => props.summary.attention.some((item) => item.tone === "danger")
-  return (
-    <Show
-      when={attention() > 0}
-      fallback={
-        <StatusBadge status={props.summary.status}>
-          {props.summary.status === "dormant" ? "idle" : sessionStatusLabel(props.summary.status)}
-        </StatusBadge>
-      }
-    >
-      <StatusBadge status="input_needed" tone={failing() ? "danger" : "warning"}>
-        {failing() ? `${attention()} blocked` : `${attention()} needs you`}
-      </StatusBadge>
-    </Show>
   )
 }
 
