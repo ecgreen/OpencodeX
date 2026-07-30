@@ -1,7 +1,8 @@
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createMemo, createSignal } from "solid-js"
 import { Portal } from "solid-js/web"
 import { formatRelative, title } from "../lib/format"
+import { createPointerReorder, type PointerReorderPreview } from "../lib/pointer-reorder"
 import { moveRelative } from "../lib/reorder"
 import { sessionStatusLabel } from "../lib/session-status"
 import type { GuiSnapshot } from "../lib/session-api"
@@ -13,11 +14,6 @@ import {
 } from "../lib/view-summary"
 import { PinButton } from "./pin-button"
 import { Button, IconButton, SearchField } from "./ui"
-
-type ViewDragPreviewState = { id: string; x: number; y: number; width: number; height: number }
-type ViewSummaryRowItem =
-  | { type: "summary"; summary: ViewSummary }
-  | { type: "placeholder"; id: string; height: number }
 
 export function ViewsMissionControl(props: {
   views: ClientCatalogView[]
@@ -32,61 +28,24 @@ export function ViewsMissionControl(props: {
   toggleViewPinned: (viewID: string) => void
 }) {
   const [query, setQuery] = createSignal("")
-  const [movingView, setMovingView] = createSignal<{ id: string; direction: "up" | "down"; token: number }>()
-  const [dragViewID, setDragViewID] = createSignal("")
-  const [dropTarget, setDropTarget] = createSignal<{ id: string; placement: "before" | "after" }>()
-  const [dragPreview, setDragPreview] = createSignal<ViewDragPreviewState>()
-  const [dragPlaceholderHeight, setDragPlaceholderHeight] = createSignal(72)
-  const [suppressedOpenViewID, setSuppressedOpenViewID] = createSignal("")
   const summaries = createMemo(() => summarizeViews({ views: props.views, snapshot: props.snapshot }))
   const summaryIndexes = createMemo(() => new Map(summaries().map((summary, index) => [summary.view.id, index])))
   const filteredSummaries = createMemo(() => filterViewSummaries(summaries(), query()))
-  const viewRows = createMemo<ViewSummaryRowItem[]>(() => {
-    const items = filteredSummaries()
-    const source = dragViewID()
-    const target = dropTarget()
-    if (!source) return items.map((summary) => ({ type: "summary", summary }))
-    const byID = new Map(items.map((summary) => [summary.view.id, summary]))
-    const ids = target ? moveRelative(items.map((summary) => summary.view.id), source, target.id, target.placement) : items.map((summary) => summary.view.id)
-    return (ids.length === 0 ? items.map((summary) => summary.view.id) : ids).flatMap((id): ViewSummaryRowItem[] => {
-      if (id === source) return [{ type: "placeholder", id: source, height: dragPlaceholderHeight() }]
-      const summary = byID.get(id)
-      return summary ? [{ type: "summary", summary }] : []
-    })
+  const reorder = createPointerReorder<ViewSummary>({
+    items: filteredSummaries,
+    getID: (summary) => summary.view.id,
+    rowAttribute: "data-view-summary-row-id",
+    layoutAttribute: "data-view-summary-layout-id",
+    ignoreSelector: ".view-summary-actions",
+    onReorder: (sourceID, target) => {
+      const ids = summaries().map((summary) => summary.view.id)
+      const ordered = moveRelative(ids, sourceID, target.id, target.placement)
+      if (ordered.length > 0) void props.reorderViews(ordered)
+    },
   })
-  const previewSummary = createMemo(() => summaries().find((summary) => summary.view.id === dragPreview()?.id))
-  const pointerDragCleanups = new Set<() => void>()
-  const timers = new Set<number>()
-  let viewRowRects = new Map<string, DOMRect>()
-
-  onCleanup(() => {
-    pointerDragCleanups.forEach((cleanup) => cleanup())
-    timers.forEach((timer) => window.clearTimeout(timer))
-  })
-
-  createEffect(() => {
-    const signature = viewRows().map(viewSummaryRowKey).join("\n")
-    const active = dragViewID() !== ""
-    const frame = requestAnimationFrame(() => {
-      viewRowRects = animateViewSummaryRows(viewRowRects, active)
-      void signature
-    })
-    onCleanup(() => cancelAnimationFrame(frame))
-  })
-
-  function schedule(callback: () => void, delay: number) {
-    const timer = window.setTimeout(() => {
-      timers.delete(timer)
-      callback()
-    }, delay)
-    timers.add(timer)
-  }
 
   function moveView(viewID: string, offset: number) {
-    setMovingView({ id: viewID, direction: offset < 0 ? "up" : "down", token: Date.now() })
-    schedule(() => {
-      setMovingView((current) => current?.id === viewID ? undefined : current)
-    }, 360)
+    reorder.markMoved(viewID, offset < 0 ? "up" : "down")
     return props.moveView(viewID, offset)
   }
 
@@ -102,7 +61,7 @@ export function ViewsMissionControl(props: {
           <Show when={summaries().length > 0} fallback={<EmptyViewCreate onClick={props.createView} />}>
             <Show when={filteredSummaries().length > 0} fallback={<div class="empty">No views match this search.</div>}>
               <div class="view-summary-group-body">
-                <For each={viewRows()}>
+                <For each={reorder.rows()}>
                   {(row) => row.type === "placeholder" ? (
                     <div
                       class="view-summary-drop-placeholder"
@@ -111,26 +70,26 @@ export function ViewsMissionControl(props: {
                     />
                   ) : (
                     <ViewSummaryRow
-                      summary={row.summary}
+                      summary={row.item}
                       openView={(viewID) => {
-                        if (suppressedOpenViewID() === viewID) return
+                        if (reorder.suppressed(viewID)) return
                         props.openView(viewID)
                       }}
                       editView={props.editView}
                       deleteView={props.deleteView}
                       moveView={moveView}
-                      pinned={props.viewPinned(row.summary.view.id)}
-                      togglePinned={() => props.toggleViewPinned(row.summary.view.id)}
-                      moving={movingView()?.id === row.summary.view.id ? movingView()?.direction : undefined}
-                      dragging={dragViewID() === row.summary.view.id}
-                      dropping={dropTarget()?.id === row.summary.view.id ? dropTarget()?.placement : undefined}
-                      startPointerDrag={(event) => startViewPointerDrag(event, row.summary.view.id)}
-                      index={summaryIndexes().get(row.summary.view.id) ?? -1}
+                      pinned={props.viewPinned(row.id)}
+                      togglePinned={() => props.toggleViewPinned(row.id)}
+                      moving={reorder.moving(row.id)}
+                      dragging={reorder.dragging(row.id)}
+                      dropping={reorder.dropping(row.id)}
+                      startPointerDrag={(event) => reorder.startDrag(event, row.id)}
+                      index={summaryIndexes().get(row.id) ?? -1}
                       total={summaries().length}
                     />
                   )}
                 </For>
-                <ViewDragPreview preview={dragPreview()} summary={previewSummary()} />
+                <ViewDragPreview preview={reorder.preview()} summary={reorder.previewItem()} />
               </div>
             </Show>
           </Show>
@@ -139,90 +98,6 @@ export function ViewsMissionControl(props: {
     </>
   )
 
-  function startViewPointerDrag(event: PointerEvent & { currentTarget: HTMLElement }, sourceID: string) {
-    if (event.button !== 0) return
-    if (event.target instanceof Element && event.target.closest(".view-summary-actions")) return
-    const pointerID = event.pointerId
-    const origin = { x: event.clientX, y: event.clientY }
-    const rect = event.currentTarget.getBoundingClientRect()
-    const offset = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-    let dragging = false
-    let target: { id: string; placement: "before" | "after" } | undefined
-    let lastTargetKey = ""
-
-    const move = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerID) return
-      if (!dragging && Math.hypot(moveEvent.clientX - origin.x, moveEvent.clientY - origin.y) < 5) return
-      dragging = true
-      moveEvent.preventDefault()
-      setDragViewID(sourceID)
-      setDragPlaceholderHeight(rect.height)
-      setDragPreview({
-        id: sourceID,
-        x: moveEvent.clientX - offset.x,
-        y: moveEvent.clientY - offset.y,
-        width: rect.width,
-        height: rect.height,
-      })
-      const nextTarget = viewDropTargetFromPointer(sourceID, moveEvent.clientY)
-      if (!nextTarget) {
-        target = undefined
-        if (lastTargetKey !== "") {
-          setDropTarget(undefined)
-          lastTargetKey = ""
-        }
-        return
-      }
-      target = nextTarget
-      const targetKey = `${target.id}:${target.placement}`
-      if (targetKey === lastTargetKey) return
-      lastTargetKey = targetKey
-      setDropTarget(target)
-    }
-
-    const cleanup = () => {
-      window.removeEventListener("pointermove", move)
-      window.removeEventListener("pointerup", up)
-      window.removeEventListener("pointercancel", cancel)
-      pointerDragCleanups.delete(cleanup)
-    }
-
-    const up = (upEvent: PointerEvent) => {
-      if (upEvent.pointerId !== pointerID) return
-      cleanup()
-      if (!dragging) return
-      upEvent.preventDefault()
-      setSuppressedOpenViewID(sourceID)
-      schedule(() => setSuppressedOpenViewID((current) => current === sourceID ? "" : current), 250)
-      setDragViewID("")
-      setDropTarget(undefined)
-      setDragPreview(undefined)
-      if (!target) return
-      const ids = summaries().map((summary) => summary.view.id)
-      const ordered = moveRelative(ids, sourceID, target.id, target.placement)
-      if (ordered.length === 0) return
-      const sourceIndex = ids.indexOf(sourceID)
-      const targetIndex = ordered.indexOf(sourceID)
-      setMovingView({ id: sourceID, direction: targetIndex < sourceIndex ? "up" : "down", token: Date.now() })
-      schedule(() => {
-        setMovingView((current) => current?.id === sourceID ? undefined : current)
-      }, 360)
-      void props.reorderViews(ordered)
-    }
-
-    const cancel = (cancelEvent: PointerEvent) => {
-      if (cancelEvent.pointerId !== pointerID) return
-      cleanup()
-      setDragViewID("")
-      setDropTarget(undefined)
-      setDragPreview(undefined)
-    }
-
-    pointerDragCleanups.add(cleanup)
-    window.addEventListener("pointermove", move)
-    window.addEventListener("pointerup", up)
-    window.addEventListener("pointercancel", cancel)
-  }
 }
 
 function ViewsIndexHeader(props: { createView: () => void; query: string; setQuery: (value: string) => void; count: number }) {
@@ -300,7 +175,7 @@ function ViewSummaryRow(props: {
   )
 }
 
-function ViewDragPreview(props: { preview?: ViewDragPreviewState; summary?: ViewSummary }) {
+function ViewDragPreview(props: { preview?: PointerReorderPreview; summary?: ViewSummary }) {
   return (
     <Show when={props.preview && props.summary}>
       <Portal>
@@ -343,45 +218,4 @@ function viewSessionPreview(summary: ViewSummary) {
     summary.sessionRows.length > 3 ? `${summary.sessionRows.length - 3} more` : "",
     summary.pendingCount > 0 ? `${summary.pendingCount} pending` : "",
   ].filter(Boolean).join(" - ")
-}
-
-function viewSummaryRowKey(row: ViewSummaryRowItem) {
-  return row.type === "summary" ? row.summary.view.id : `placeholder:${row.id}:${row.height}`
-}
-
-function animateViewSummaryRows(previous: Map<string, DOMRect>, enabled: boolean) {
-  const next = new Map<string, DOMRect>()
-  for (const element of document.querySelectorAll<HTMLElement>("[data-view-summary-layout-id]")) {
-    const key = element.dataset.viewSummaryLayoutId
-    if (!key) continue
-    const animations = element.getAnimations()
-    const animatedRect = enabled && animations.length > 0 ? element.getBoundingClientRect() : undefined
-    animations.forEach((animation) => animation.cancel())
-    const rect = element.getBoundingClientRect()
-    next.set(key, rect)
-    const before = animatedRect ?? previous.get(key)
-    if (!enabled || !before) continue
-    const deltaY = before.top - rect.top
-    if (Math.abs(deltaY) < 1) continue
-    element.animate([
-      { transform: `translateY(${deltaY}px)` },
-      { transform: "translateY(0)" },
-    ], {
-      duration: 220,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-    })
-  }
-  return next
-}
-
-function viewDropTargetFromPointer(sourceID: string, clientY: number) {
-  const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-view-summary-row-id]"))
-    .filter((element) => element.dataset.viewSummaryRowId !== sourceID)
-  const before = rows.find((element) => {
-    const rect = element.getBoundingClientRect()
-    return clientY < rect.top + rect.height / 2
-  })
-  if (before?.dataset.viewSummaryRowId) return { id: before.dataset.viewSummaryRowId, placement: "before" as const }
-  const after = rows.at(-1)?.dataset.viewSummaryRowId
-  return after ? { id: after, placement: "after" as const } : undefined
 }

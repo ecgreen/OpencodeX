@@ -34,12 +34,6 @@
   background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 14%,transparent),transparent 48%),color-mix(in srgb,var(--element) 46%,transparent);
 }
 
-/* The action cluster is quiet until the row is the one being looked at. */
-.project-directory-actions {
-  opacity: 0;
-  transition: opacity var(--ds-motion-hover) ease;
-}
-
 .project-directory-row:hover .project-directory-actions,
 .project-directory-row:focus-within .project-directory-actions {
   opacity: 1;

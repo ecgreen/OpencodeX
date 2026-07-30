@@ -104,10 +104,13 @@
   color: var(--purple);
 }
 
+/* Quiet until the row is the one being looked at; see the states sheet. */
 .project-directory-actions {
   display: flex;
   align-items: center;
   gap: var(--ds-space-0);
+  opacity: 0;
+  transition: opacity var(--ds-motion-hover) ease;
 }
 
 .project-directory-divider {

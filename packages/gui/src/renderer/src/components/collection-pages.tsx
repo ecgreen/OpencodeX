@@ -235,17 +235,6 @@ export function StatusPage(props: { snapshot?: GuiSnapshot }) {
   )
 }
 
-export function CollectionPage(props: { title: string; count: number; description: string }) {
-  return (
-    <div class="page placeholder-page">
-      <p class="eyebrow">Parity area</p>
-      <h1>{props.title}</h1>
-      <p>{props.description}</p>
-      <div class="metric-card large"><strong>{props.count}</strong><span>records available through existing backend APIs</span></div>
-    </div>
-  )
-}
-
 function Metric(props: { label: string; value: number }) {
   return <div class="metric-card"><span>{props.label}</span><strong>{props.value}</strong></div>
 }
