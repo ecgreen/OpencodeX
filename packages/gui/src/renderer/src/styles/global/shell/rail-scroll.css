@@ -1,0 +1,35 @@
+.rail .section-new {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+}
+
+.rail-scroll {
+  flex: 1 1 auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-overlay-strong) transparent;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 6px 6px 12px;
+}
+
+.rail-footer {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  margin-top: auto;
+  padding: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rail-collapsed .rail-footer {
+  justify-content: center;
+  padding: 6px 0 2px;
+}

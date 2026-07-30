@@ -1,0 +1,31 @@
+button.project-detail-row:hover {
+  transform: none;
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+button.project-detail-row:focus-visible {
+  transform: none;
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+.project-detail-row.warning {
+  border-color: color-mix(in srgb,var(--amber) 28%,transparent);
+  --card-accent: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 8%,transparent);
+}
+
+.project-detail-row.failed {
+  box-shadow: inset 3px 0 0 var(--error);
+  background: color-mix(in srgb,var(--error) 8%,transparent);
+}

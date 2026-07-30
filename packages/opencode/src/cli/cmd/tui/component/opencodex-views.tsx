@@ -163,7 +163,10 @@ export function OpencodeXViewRoute() {
         throw error
       })
     setLocalFocus(session.id)
-    void sync.session.sync(session.id)
+    // One-shot retainer: the pane that mounts next picks the session up inside
+    // the deferred-release grace period.
+    const release = sync.session.retain(session.id)
+    void sync.session.sync(session.id).finally(release)
     await refetch()
     refreshOpencodeXSidebar()
   }

@@ -1,56 +1,55 @@
+import {
+  clientSessionLikelyActive,
+  clientSessionStatusLabel,
+  deriveClientSessionStatus,
+  deriveClientViewStatus,
+  isActiveClientSessionStatus,
+  type ClientDerivedSessionStatus,
+} from "@opencode-ai/sdk/v2"
+import { Binary } from "@opencode-ai/core/util/binary"
 import type { useSync } from "@tui/context/sync"
 
-export type DerivedStatus = "dormant" | "in_progress" | "input_needed" | "needs_review"
+type Sync = ReturnType<typeof useSync>
+
+export type DerivedStatus = ClientDerivedSessionStatus
 
 export const DERIVED_STATUSES: DerivedStatus[] = ["input_needed", "needs_review", "in_progress", "dormant"]
 
-export function deriveStatus(sessionID: string, sync: ReturnType<typeof useSync>): DerivedStatus {
-  const permissions = sync.data.permission[sessionID] ?? []
-  const questions = sync.data.question[sessionID] ?? []
-  if (permissions.length > 0 || questions.length > 0) return "input_needed"
-  const status = sync.data.session_status[sessionID]
-  if (status?.type === "busy" || status?.type === "retry") return "in_progress"
-  if (sync.data.session_pending_prompt?.[sessionID]) return "in_progress"
-  const uiState = sync.data.session_ui_state[sessionID]
-  if (uiState?.displayStatus === "input_needed") return "input_needed"
-  if (uiState?.displayStatus === "in_progress") return "in_progress"
-  if (isLikelyActiveSession(sessionID, sync)) return "in_progress"
-  if (uiState?.displayStatus === "needs_review" && uiState.updated !== false) return "needs_review"
-  return "dormant"
+/**
+ * Thin adapter: gathers the TUI's inputs and hands them to the shared
+ * derivation the GUI and the sync engine also use.
+ */
+export function deriveStatus(sessionID: string, sync: Sync, now?: number): DerivedStatus {
+  return deriveClientSessionStatus({
+    status: sync.data.session_status[sessionID],
+    uiState: sync.data.session_ui_state[sessionID],
+    hasPendingInteraction:
+      (sync.data.permission[sessionID]?.length ?? 0) > 0 || (sync.data.question[sessionID]?.length ?? 0) > 0,
+    pendingPrompt: Boolean(sync.data.session_pending_prompt?.[sessionID]),
+    likelyActive: likelyActiveSession(sessionID, sync, now),
+  })
 }
 
-export function deriveViewStatus(sessionIDs: readonly string[], sync: ReturnType<typeof useSync>): DerivedStatus {
-  const statuses = sessionIDs.map((sessionID) => deriveStatus(sessionID, sync))
-  if (statuses.includes("input_needed")) return "input_needed"
-  if (statuses.includes("in_progress")) return "in_progress"
-  if (statuses.includes("needs_review")) return "needs_review"
-  return "dormant"
+export function deriveViewStatus(sessionIDs: readonly string[], sync: Sync): DerivedStatus {
+  return deriveClientViewStatus(sessionIDs.map((sessionID) => deriveStatus(sessionID, sync)))
 }
 
 export function isActive(status: DerivedStatus) {
-  return status !== "dormant"
+  return isActiveClientSessionStatus(status)
 }
 
 export function statusLabel(status: DerivedStatus) {
-  switch (status) {
-    case "in_progress":
-      return "running"
-    case "input_needed":
-      return "needs input"
-    case "needs_review":
-      return "ready for review"
-    case "dormant":
-      return "idle"
-  }
+  return clientSessionStatusLabel(status)
 }
 
-function isLikelyActiveSession(sessionID: string, sync: ReturnType<typeof useSync>) {
-  const messages = sync.data.message[sessionID] ?? []
-  const lastAssistant = messages.toReversed().find((message) => message.role === "assistant")
-  if (!lastAssistant || lastAssistant.time.completed || lastAssistant.finish) return false
-  const parts = sync.data.part[lastAssistant.id] ?? []
-  if (parts.some((part) => part.type === "tool" && part.state.status === "running")) return true
-  if (parts.some((part) => part.type === "step-start") && !parts.some((part) => part.type === "step-finish"))
-    return true
-  return parts.length > 0
+function likelyActiveSession(sessionID: string, sync: Sync, now?: number) {
+  const messages = sync.data.message[sessionID]
+  if (!messages || messages.length === 0) return false
+  const match = Binary.search(sync.data.session, sessionID, (session) => session.id)
+  if (!match.found) return false
+  return clientSessionLikelyActive(
+    messages.map((info) => ({ info, parts: sync.data.part[info.id] })),
+    sync.data.session[match.index]!.time.updated,
+    now,
+  )
 }

@@ -4,7 +4,9 @@ import type { LucideIcon } from "lucide-solid"
 const iconNames = {
   activity: "Activity",
   arrowDown: "ArrowDown",
+  arrowRight: "ArrowRight",
   arrowUp: "ArrowUp",
+  cursorArrow: "MousePointer2",
   branch: "GitBranch",
   brain: "Brain",
   browser: "PanelTop",
@@ -59,6 +61,8 @@ const iconNames = {
 const iconLoaders: Record<string, () => Promise<{ default: LucideIcon }>> = {
   Activity: () => import("lucide-solid/icons/activity"),
   ArrowDown: () => import("lucide-solid/icons/arrow-down"),
+  ArrowRight: () => import("lucide-solid/icons/arrow-right"),
+  MousePointer2: () => import("lucide-solid/icons/mouse-pointer-2"),
   ArrowUp: () => import("lucide-solid/icons/arrow-up"),
   Brain: () => import("lucide-solid/icons/brain"),
   Check: () => import("lucide-solid/icons/check"),

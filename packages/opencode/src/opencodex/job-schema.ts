@@ -148,7 +148,8 @@ export type TerminalOutcome =
   | { status: "cancelled" }
 
 export interface Interface {
-  readonly list: () => Effect.Effect<Info[]>
+  readonly list: (input?: { statuses?: readonly Status[] }) => Effect.Effect<Info[]>
+  readonly getMany: (jobIDs: readonly string[]) => Effect.Effect<Info[]>
   readonly get: (jobID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError | TransitionError>

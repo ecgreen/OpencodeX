@@ -1,4 +1,6 @@
 import { ensureRunID, OPENCODE_PROCESS_ROLE } from "@opencode-ai/core/util/opencode-process"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { fetchCoordinatorHealth } from "@opencode-ai/sdk/coordinator"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect } from "effect"
 import { ServerAuth } from "@/server/auth"
@@ -123,6 +125,11 @@ function startCoordinator(
         password: input.password,
         token: input.token,
         createdAt: new Date().toISOString(),
+        /* Published so an attaching client can refuse SDK/server skew without
+           having to reach the process first. Additive on purpose: the schema
+           number stays at 2 so older readers keep accepting this manifest
+           instead of deleting a live coordinator's claim. */
+        serverVersion: InstallationVersion,
       }
       return yield* Effect.promise(() => writeCoordinatorManifest(manifest)).pipe(
         Effect.as({
@@ -318,17 +325,12 @@ function createClientMonitor(manifest: TuiCoordinatorManifest, stop: (reason: st
 }
 
 async function coordinatorHasDurableActivity(manifest: TuiCoordinatorManifest) {
-  try {
-    const response = await fetch(new URL("/global/health", manifest.url), {
-      headers: ServerAuth.headers({ username: manifest.username, password: manifest.password }),
-    })
-    if (!response.ok) throw new Error(await response.text())
-    const body = (await response.json()) as unknown
-    return typeof body === "object" && body !== null && "active" in body && body.active === true
-  } catch (error) {
-    Log.Default.warn("tui coordinator activity check failed", { error: errorMessage(error) })
-    return true
-  }
+  const health = await fetchCoordinatorHealth(manifest, { timeout: 5_000 })
+  if (health) return health.active === true
+  /* An unreachable coordinator is not evidence of idleness, and shutting down
+     on a failed probe would drop work the server may still be doing. */
+  Log.Default.warn("tui coordinator activity check failed")
+  return true
 }
 
 function requiredEnv(name: string) {

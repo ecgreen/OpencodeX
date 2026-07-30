@@ -1,5 +1,5 @@
 import type { Command } from "@opencode-ai/sdk/v2/client"
-import type { PromptPart } from "./store"
+import type { PromptPart } from "./session-api"
 
 const MAX_DRAFT_CHARS = 50_000
 const MAX_DRAFT_ENTRIES = 200

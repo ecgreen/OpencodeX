@@ -5,6 +5,8 @@ import type {
   ClaudeCodeStatus,
   ContextPath,
   GuiConnection,
+  NotificationActivateEvent,
+  NotificationRequest,
   TerminalDataEvent,
   TerminalExitEvent,
   TerminalResult,
@@ -32,6 +34,10 @@ declare global {
         destroy(id: string): Promise<boolean>
         onData(listener: (event: TerminalDataEvent) => void): () => void
         onExit(listener: (event: TerminalExitEvent) => void): () => void
+      }
+      notifications?: {
+        show(input: NotificationRequest): void
+        onActivate(listener: (event: NotificationActivateEvent) => void): () => void
       }
       window(action: "minimize" | "maximize" | "close"): Promise<void>
       edit?(action: "cut" | "copy" | "paste"): Promise<void>

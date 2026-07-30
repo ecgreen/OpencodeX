@@ -1,0 +1,67 @@
+.session-actions-menu {
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+}
+
+.card-action-menu {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-hover) ease;
+}
+
+.card-action-menu[open] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.card-action-menu summary {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  list-style: none;
+}
+
+.card-action-menu[open] summary {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.card-action-menu>div {
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+  position: absolute;
+  top: 32px;
+  right: 0;
+  display: grid;
+  width: 164px;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+}
+
+.card-action-menu button {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+}

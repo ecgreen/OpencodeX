@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { openFileChangeStatus } from "../src/renderer/src/components/session-side-open-state"
 import { numberedDuplicateOpenTabLabels, openTabLayoutWidth, visibleOpenTabIDs, type OpenTabLayoutMeasurements } from "../src/renderer/src/lib/open-tabs"
 
 describe("GUI open tab overflow layout", () => {
@@ -107,5 +108,25 @@ describe("flexible tab packing", () => {
   test("always keeps the active tab visible", () => {
     const visible = visibleOpenTabIDs({ ids, activeID: "tab-7", width: 594, measurements: flexible })
     expect(visible).toContain("tab-7")
+  })
+})
+
+describe("GUI explorer change markers", () => {
+  const key = (value: string) => value.replaceAll("\\", "/").toLowerCase()
+
+  test("marks unsaved edits ahead of session changes, and leaves untouched files unmarked", () => {
+    const keys = { dirty: new Set([key("src/app.tsx")]), session: new Set([key("src/app.tsx"), key("src/other.tsx")]) }
+
+    // The dirty file is in both sets: the edits are what a reader can still
+    // lose, so that marker has to win.
+    expect(openFileChangeStatus(String.raw`src\app.tsx`, keys, key)).toBe("dirty")
+    expect(openFileChangeStatus("src/other.tsx", keys, key)).toBe("session")
+    expect(openFileChangeStatus("src/untouched.tsx", keys, key)).toBeUndefined()
+  })
+
+  test("matches paths that differ only by separator or case", () => {
+    const keys = { dirty: new Set([key("C:/work/app/src/app.tsx")]), session: new Set<string>() }
+
+    expect(openFileChangeStatus(String.raw`C:\Work\App\src\App.tsx`, keys, key)).toBe("dirty")
   })
 })

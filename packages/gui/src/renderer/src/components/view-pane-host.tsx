@@ -2,7 +2,7 @@ import type { Agent, FileNode, OpencodeXSwarm, PermissionRequest, Provider, Ques
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { GuiSnapshot, SessionData } from "../lib/store"
+import type { GuiSnapshot, SessionData } from "../lib/session-api"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
@@ -61,6 +61,7 @@ export function ViewPaneHost(props: {
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
   loadOlderMessages: (sessionID: string, cursor: string) => Promise<void>
+  collapseMessageWindow: (sessionID: string) => void
   onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
 }) {
   const session = () => viewItemSession(props.item)
@@ -120,6 +121,7 @@ export function ViewPaneHost(props: {
       toggleScrollbar={props.toggleScrollbar}
       toggleGenericToolOutput={props.toggleGenericToolOutput}
       loadOlderMessages={(cursor) => props.loadOlderMessages(id(), cursor)}
+      collapseMessageWindow={() => props.collapseMessageWindow(id())}
       onMessageAction={props.onMessageAction}
     />
   )

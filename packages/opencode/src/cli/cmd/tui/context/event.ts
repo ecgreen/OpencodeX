@@ -1,4 +1,4 @@
-import type { Event } from "@opencode-ai/sdk/v2"
+import { normalizeClientGlobalEventPayload, type Event } from "@opencode-ai/sdk/v2"
 import { useProject } from "./project"
 import { useSDK } from "./sdk"
 
@@ -62,16 +62,7 @@ export function useEvent() {
   }
 }
 
+/** Delegates to the shared envelope normalizer so both clients unwrap sync frames identically. */
 function normalizeGlobalPayload(payload: unknown): Event | undefined {
-  if (!isRecord(payload)) return
-  if (payload.type === "sync") {
-    const name = typeof payload.name === "string" ? payload.name.replace(/\.\d+$/, "") : undefined
-    if (!name) return
-    return { id: payload.id, type: name, properties: payload.data } as Event
-  }
-  return payload as Event
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
+  return normalizeClientGlobalEventPayload(payload)
 }

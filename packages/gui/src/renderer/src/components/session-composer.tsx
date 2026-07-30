@@ -1,7 +1,7 @@
 import { TextArea, Button } from "./ui"
 import type { JSX } from "solid-js"
 import { For, Show, createEffect, createSignal, createUniqueId } from "solid-js"
-import type { PromptPart } from "../lib/store"
+import type { PromptPart } from "../lib/session-api"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
 import { partIcon, partLabel, partPreviewURL, partTitle, promptWithoutPart } from "../lib/composer-parts"
@@ -238,7 +238,7 @@ export function SessionComposer(props: {
             </Show>
           </div>
           <Button appearance="ghost" class="send-button" type="submit" title={props.disconnectedProviderName ? `Connect ${props.disconnectedProviderName} to send` : "Send message"} aria-label="Send message" disabled={props.blocked || Boolean(props.disconnectedProviderName) || (props.draftText.length === 0 && props.draftParts.length === 0)}>
-            <Icon name="arrowUp" />
+            <Icon name="cursorArrow" />
           </Button>
         </div>
       </div>

@@ -15,8 +15,8 @@ import {
   activeSessionRouteKey,
   selectedSessionForRoute,
 } from "../lib/route-selection"
-import { shouldShowSelectedSessionLoading } from "../lib/session-hydration"
-import type { GuiSnapshot } from "../lib/store"
+import { shouldShowSelectedSessionLoading } from "../lib/session-hydration-policy"
+import type { GuiSnapshot } from "../lib/session-api"
 import { EMPTY_SESSION_DATA } from "./authoritative-state-controller"
 
 export function createSessionSelectionController(input: {

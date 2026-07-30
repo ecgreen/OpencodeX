@@ -5,7 +5,7 @@ import { keyboardHelpGroups } from "../../src/renderer/src/components/keyboard-h
 import { filterGuiPluginPagePlugins, filterPluginPagePlugins, guiPluginPageStats, pluginPageGroups, pluginPageStats } from "../../src/renderer/src/components/plugins-page"
 import type { InstalledGuiPlugin } from "../../src/renderer/src/lib/gui-plugins"
 import { sessionInspectorModel } from "../../src/renderer/src/components/session-inspector"
-import type { GuiPlugin, SessionData } from "../../src/renderer/src/lib/store"
+import type { GuiPlugin, SessionData } from "../../src/renderer/src/lib/session-api"
 import { assistantMessage, provider, session } from "./fixtures"
 
 describe("GUI functional UI model workflows", () => {

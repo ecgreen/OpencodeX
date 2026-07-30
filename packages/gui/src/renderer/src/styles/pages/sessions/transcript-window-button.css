@@ -1,0 +1,19 @@
+.transcript-window-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 0 12px;
+  color: var(--text);
+  background: linear-gradient(180deg,var(--theme-overlay-subtle),transparent),var(--surface-raised);
+  box-shadow: var(--shadow-button);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-decoration: none;
+  transition: transform .16s cubic-bezier(.16,1,.3,1),border-color .16s ease,background .16s ease,color .16s ease,box-shadow .16s ease,opacity .16s ease;
+}

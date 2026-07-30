@@ -1,4 +1,4 @@
-import type { MessageBundle, SessionData } from "./store"
+import type { MessageBundle, SessionData } from "./session-api"
 
 export type MessageWindow = {
   count: number
@@ -19,15 +19,34 @@ export function prependOlderMessages(data: SessionData, page: MessagePage): Sess
   }
 }
 
+/**
+ * A reader who pressed "Load more" gets a far larger window than the live tail,
+ * but not an unbounded one: without a ceiling an expanded transcript keeps every
+ * message the session ever streams and the renderer degrades with it.
+ */
+export const EXPANDED_MESSAGE_WINDOW: MessageWindow = { count: 384, budget: 300_000 }
+
 export function trimToLiveTail(data: SessionData, limit: number | MessageWindow): SessionData {
-  if (data.messageWindowExpanded) return data
-  const window = messagesFromEnd(data.messages, limit)
+  const window = messagesFromEnd(data.messages, data.messageWindowExpanded ? EXPANDED_MESSAGE_WINDOW : limit)
   if (!window.trimmed) return data
   return {
     ...data,
     messages: window.messages,
     messageCursor: window.messages[0] ? messageCursorBefore(window.messages[0]) : data.messageCursor,
   }
+}
+
+/**
+ * Drops the reader's "Load more" expansion so the live tail budget applies
+ * again. Callers use this once the reader has returned to the bottom and is
+ * following new activity - the older pages they scrolled up for are no longer
+ * on screen, and "Load more" brings them straight back.
+ */
+export function collapseMessageWindow(data: SessionData, limit: number | MessageWindow): SessionData {
+  if (!data.messageWindowExpanded) return data
+  const collapsed: SessionData = { messages: data.messages, todos: data.todos, diffs: data.diffs }
+  if (data.messageCursor !== undefined) collapsed.messageCursor = data.messageCursor
+  return trimToLiveTail(collapsed, limit)
 }
 
 export function selectLiveTailMessages(messages: MessageBundle[], limit: number | MessageWindow) {

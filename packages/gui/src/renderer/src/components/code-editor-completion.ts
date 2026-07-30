@@ -7,7 +7,7 @@ import {
   type CompletionSource,
 } from "@codemirror/autocomplete"
 import type { Extension } from "@codemirror/state"
-import type { WorkbenchCompletionItem, WorkbenchCompletionResult } from "../lib/store"
+import type { WorkbenchCompletionItem, WorkbenchCompletionResult } from "../lib/session-api"
 
 export type CodeEditorCompletionLoad = (
   position: { line: number; column: number },

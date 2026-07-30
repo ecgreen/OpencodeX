@@ -298,6 +298,51 @@ export async function create(input: {
   }
 
   const files: Record<string, { version: number; text: string }> = {}
+  const openDocumentQueue = new Map<string, Promise<number>>()
+
+  /** Sends the didOpen/didChange pair for one document. Serialized by `notify.open`. */
+  async function openDocument(target: string, content?: string) {
+    const text = content ?? (await Filesystem.readText(target))
+    const languageId = LANGUAGE_EXTENSIONS[path.extname(target)] ?? "plaintext"
+    const document = files[target]
+
+    if (document !== undefined) {
+      // Do not wipe diagnostics on didChange. Some servers (e.g. clangd) only
+      // re-emit diagnostics when the content actually changes, so clearing
+      // here would lose errors for no-op touchFile calls. Let the server's
+      // next push/pull overwrite naturally.
+      logger.info("workspace/didChangeWatchedFiles", { path: target })
+      await connection.sendNotification("workspace/didChangeWatchedFiles", {
+        changes: [{ uri: pathToFileURL(target).href, type: FILE_CHANGE_CHANGED }],
+      })
+
+      const next = document.version + 1
+      files[target] = { version: next, text }
+      logger.info("textDocument/didChange", { path: target, version: next })
+      await connection.sendNotification("textDocument/didChange", {
+        textDocument: { uri: pathToFileURL(target).href, version: next },
+        contentChanges:
+          syncKind === TEXT_DOCUMENT_SYNC_INCREMENTAL
+            ? [{ range: { start: { line: 0, character: 0 }, end: endPosition(document.text) }, text }]
+            : [{ text }],
+      })
+      return next
+    }
+
+    logger.info("workspace/didChangeWatchedFiles", { path: target })
+    await connection.sendNotification("workspace/didChangeWatchedFiles", {
+      changes: [{ uri: pathToFileURL(target).href, type: FILE_CHANGE_CREATED }],
+    })
+
+    logger.info("textDocument/didOpen", { path: target })
+    pushDiagnostics.delete(target)
+    pullDiagnostics.delete(target)
+    await connection.sendNotification("textDocument/didOpen", {
+      textDocument: { uri: pathToFileURL(target).href, languageId, version: 0, text },
+    })
+    files[target] = { version: 0, text }
+    return 0
+  }
 
   // --- Diagnostic helpers ---
 
@@ -583,80 +628,33 @@ export async function create(input: {
       return connection
     },
     notify: {
-      async open(request: { path: string; content?: string }) {
-        request.path = Filesystem.normalizePath(
+      /**
+       * Opens (or updates) a document on the server.
+       *
+       * Calls are serialized per path. `openDocument` awaits between reading
+       * `files[path]` and populating it - to read the file and to send the
+       * notification - so two concurrent opens of the same document would both
+       * see it as absent and both send `didOpen`. A second `didOpen` for an
+       * already-open document is a protocol violation that servers are free to
+       * drop, and tsserver does: it keeps whichever text arrived first. When
+       * the first caller is the diagnostics pass that fires while the editor
+       * still reads "Loading file...", that text is empty, and the document is
+       * stranded empty for the life of the server - no diagnostics, no hover,
+       * no completion, for a file the user can plainly see has content.
+       */
+      open(request: { path: string; content?: string }) {
+        const target = Filesystem.normalizePath(
           path.isAbsolute(request.path) ? request.path : path.resolve(input.directory, request.path),
         )
-        const text = request.content ?? await Filesystem.readText(request.path)
-        const extension = path.extname(request.path)
-        const languageId = LANGUAGE_EXTENSIONS[extension] ?? "plaintext"
-
-        const document = files[request.path]
-        if (document !== undefined) {
-          // Do not wipe diagnostics on didChange. Some servers (e.g. clangd) only
-          // re-emit diagnostics when the content actually changes, so clearing
-          // here would lose errors for no-op touchFile calls. Let the server's
-          // next push/pull overwrite naturally.
-          logger.info("workspace/didChangeWatchedFiles", request)
-          await connection.sendNotification("workspace/didChangeWatchedFiles", {
-            changes: [
-              {
-                uri: pathToFileURL(request.path).href,
-                type: FILE_CHANGE_CHANGED,
-              },
-            ],
-          })
-
-          const next = document.version + 1
-          files[request.path] = { version: next, text }
-          logger.info("textDocument/didChange", {
-            path: request.path,
-            version: next,
-          })
-          await connection.sendNotification("textDocument/didChange", {
-            textDocument: {
-              uri: pathToFileURL(request.path).href,
-              version: next,
-            },
-            contentChanges:
-              syncKind === TEXT_DOCUMENT_SYNC_INCREMENTAL
-                ? [
-                    {
-                      range: {
-                        start: { line: 0, character: 0 },
-                        end: endPosition(document.text),
-                      },
-                      text,
-                    },
-                  ]
-                : [{ text }],
-          })
-          return next
-        }
-
-        logger.info("workspace/didChangeWatchedFiles", request)
-        await connection.sendNotification("workspace/didChangeWatchedFiles", {
-          changes: [
-            {
-              uri: pathToFileURL(request.path).href,
-              type: FILE_CHANGE_CREATED,
-            },
-          ],
+        const previous = openDocumentQueue.get(target)
+        const task = (previous ?? Promise.resolve(0)).then(
+          () => openDocument(target, request.content),
+          () => openDocument(target, request.content),
+        )
+        openDocumentQueue.set(target, task)
+        return task.finally(() => {
+          if (openDocumentQueue.get(target) === task) openDocumentQueue.delete(target)
         })
-
-        logger.info("textDocument/didOpen", request)
-        pushDiagnostics.delete(request.path)
-        pullDiagnostics.delete(request.path)
-        await connection.sendNotification("textDocument/didOpen", {
-          textDocument: {
-            uri: pathToFileURL(request.path).href,
-            languageId,
-            version: 0,
-            text,
-          },
-        })
-        files[request.path] = { version: 0, text }
-        return 0
       },
     },
     get diagnostics() {

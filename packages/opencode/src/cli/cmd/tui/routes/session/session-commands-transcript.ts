@@ -33,11 +33,12 @@ export function createSessionTranscriptCommands(controller: ReturnType<typeof cr
       value: "session.copy",
       category: "Session",
       slash: { name: "copy" },
-      run: () => Clipboard.copy(transcript(controller, {
+      run: () => transcript(controller, {
         thinking: controller.showThinking(),
         toolDetails: controller.showDetails(),
         assistantMetadata: controller.showAssistantMetadata(),
-      }))
+      })
+        .then(Clipboard.copy)
         .then(() => controller.toast.show({ message: "Session transcript copied to clipboard!", variant: "success" }))
         .catch(() => controller.toast.show({ message: "Failed to copy session transcript", variant: "error" }))
         .finally(controller.dialog.clear),
@@ -103,17 +104,17 @@ function commandError(controller: ReturnType<typeof createSessionRouteController
   controller.dialog.clear()
 }
 
-function transcript(
+// The rendered transcript is a bounded window; an export has to cover the whole
+// session. It reads the history straight from the server so the export never
+// drags the full transcript back into resident state.
+async function transcript(
   controller: ReturnType<typeof createSessionRouteController>,
   options: { thinking: boolean; toolDetails: boolean; assistantMetadata: boolean },
 ) {
   const session = controller.session()
   if (!session) throw new Error("Session not found")
-  return formatTranscript(
-    session,
-    controller.messages().map((message) => ({ info: message, parts: controller.sync.data.part[message.id] ?? [] })),
-    { ...options, providers: controller.sync.data.provider },
-  )
+  const messages = await controller.sync.session.transcriptMessages(session.id)
+  return formatTranscript(session, messages, { ...options, providers: controller.sync.data.provider })
 }
 
 async function exportTranscript(controller: ReturnType<typeof createSessionRouteController>) {
@@ -128,7 +129,7 @@ async function exportTranscript(controller: ReturnType<typeof createSessionRoute
     false,
   )
   if (!options) return
-  const content = transcript(controller, options)
+  const content = await transcript(controller, options)
   if (options.openWithoutSaving) {
     await Editor.open({ value: content, renderer: controller.renderer, cwd: editorDirectory(controller) })
     return

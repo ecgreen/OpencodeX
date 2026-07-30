@@ -12,9 +12,9 @@ import {
   markPerformance,
   measurePerformance,
 } from "../lib/performance"
-import { shouldShowConnectionWarning } from "../lib/connection-warning"
 import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
 import { AppLoadingSkeleton } from "./app-loading"
+import { AppShellBanners } from "./app-shell-banners"
 import { AppRoutes } from "./app-routes"
 import { RouteLoadingSkeleton } from "./route-loading"
 import { Titlebar } from "./chrome"
@@ -276,22 +276,7 @@ export function AppShell(props: { model: GuiAppModel }) {
         moveView={(viewID, offset) => void model.notices.run(() => model.rail.moveView(viewID, offset))}
       />
       <main class="stage" data-layout={model.navigation.layoutMode()}>
-        <Show
-          when={shouldShowConnectionWarning(model.authoritative.state()?.lifecycle)}
-        >
-          <div class="sync-status-banner" role="status" aria-live="polite">
-            <span>
-              <strong>Connection interrupted.</strong> Showing the last authoritative state while OpencodeX reconnects.
-            </span>
-            <Button
-              appearance="outline"
-              type="button"
-              onClick={() => void model.notices.run(model.authoritative.retry)}
-            >
-              Retry now
-            </Button>
-          </div>
-        </Show>
+        <AppShellBanners model={model} />
         <div class={`stage-content ${model.navigation.layoutMode()}`}>
           <Show when={model.authoritative.loading()}>
             <AppLoadingSkeleton />

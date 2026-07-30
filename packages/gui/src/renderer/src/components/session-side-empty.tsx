@@ -1,7 +1,7 @@
 import { Button } from "./ui"
 import { compactPath } from "../lib/format"
 import { Icon } from "./icon"
-import type { DiffFile } from "../lib/store"
+import type { DiffFile } from "../lib/session-api"
 import { For, Show } from "solid-js"
 
 export function SessionSideEmptyState(props: {

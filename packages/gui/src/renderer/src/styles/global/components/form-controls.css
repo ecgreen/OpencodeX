@@ -1,0 +1,45 @@
+.output-chevron {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform .14s ease,color .14s ease;
+}
+
+.output-chevron .icon {
+  width: 14px;
+  height: 14px;
+}
+
+details[open]>summary .output-chevron {
+  transform: rotate(90deg);
+}
+
+.inline-checkbox {
+  grid-template-columns: auto auto;
+  align-items: center;
+  padding: 9px 0;
+}
+
+.inline-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes workbench-tree-row-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[role=button] {
+  -webkit-tap-highlight-color: transparent;
+}

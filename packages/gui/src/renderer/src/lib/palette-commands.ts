@@ -26,7 +26,6 @@ export type PaletteCommandActions = {
   cycleVariant: () => void | Promise<void>
   switchVariant: () => void | Promise<void>
   connectProvider: () => void | Promise<void>
-  switchOrg: () => void | Promise<void>
   switchTheme: () => void | Promise<void>
   showHelp: () => void | Promise<void>
   showKeyboardHelp: () => void | Promise<void>
@@ -233,12 +232,6 @@ export function buildPaletteCommands(input: {
       title: "Connect provider",
       category: "Provider",
       run: input.actions.connectProvider,
-    },
-    {
-      name: "console.org.switch",
-      title: "Switch org",
-      category: "Provider",
-      run: input.actions.switchOrg,
     },
     {
       name: "opencode.status",

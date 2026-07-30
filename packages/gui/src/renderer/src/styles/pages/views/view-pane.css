@@ -1,0 +1,44 @@
+.composer-context-preview-image {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-subtle);
+  object-fit: cover;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.view-pane {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-basis: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  border-color: var(--border);
+}
+
+.view-card-actions button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  color: var(--muted);
+  background: var(--panel);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.views-manager-page.has-active-view .views-page {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 9px 18px 18px;
+}

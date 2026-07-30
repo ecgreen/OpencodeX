@@ -1,0 +1,69 @@
+.workbench-menu {
+  position: relative;
+}
+
+.workbench-menu>summary {
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  min-width: 25px;
+  height: 25px;
+  min-height: 25px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--workbench-muted);
+  padding: 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.workbench-menu-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 210px;
+  border: 1px solid var(--workbench-border);
+  border-radius: 6px;
+  background: var(--theme-surface-raised);
+  box-shadow: 0 14px 36px var(--theme-shadow-medium);
+  padding: 5px;
+}
+
+.workbench-menu-popover button {
+  justify-content: flex-start;
+  min-height: 29px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--workbench-text);
+  padding: 6px 8px;
+}
+
+.workbench-git-message-slot .notice {
+  margin: 7px 8px;
+}
+
+.workbench-menu-field {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.workbench-menu-field span {
+  color: var(--workbench-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.workbench-menu-field input {
+  min-width: 180px;
+  border: 1px solid var(--workbench-border);
+  border-radius: 4px;
+  background: var(--theme-surface-hover);
+  color: var(--workbench-text);
+  padding: 6px 7px;
+}

@@ -1,6 +1,6 @@
 import type { Part } from "@opencode-ai/sdk/v2/client"
 import { describe, expect, mock, test } from "bun:test"
-import type { MessageBundle } from "../src/renderer/src/lib/store"
+import type { MessageBundle } from "../src/renderer/src/lib/session-api"
 
 // Isolate pure exports from UI modules that load Vite worker URLs unsupported by Bun tests.
 mock.module("@opencode-ai/ui/file", () => ({ File: () => null }))

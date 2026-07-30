@@ -10,24 +10,31 @@ We want to make it easy for you to contribute to OpencodeX. Here are the most co
 - Missing standard behavior
 - Documentation improvements
 
-However, any UI or core product feature must go through a design review with the core team before implementation.
+However, any UI or core product feature must be discussed with the maintainer before implementation.
 
-If you are unsure if a PR would be accepted, feel free to ask a maintainer or look for issues with any of the following labels:
+If you are unsure if a PR would be accepted, open an issue and ask, or look for existing issues with any of the following labels:
 
-- [`help wanted`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Ahelp-wanted)
-- [`good first issue`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22)
-- [`bug`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Abug)
-- [`perf`](https://github.com/anomalyco/opencode/issues?q=is%3Aopen%20is%3Aissue%20label%3A%22perf%22)
+- [`help wanted`](https://github.com/ecgreen/OpencodeX/issues?q=is%3Aissue+state%3Aopen+label%3A%22help+wanted%22)
+- [`good first issue`](https://github.com/ecgreen/OpencodeX/issues?q=is%3Aissue+state%3Aopen+label%3A%22good+first+issue%22)
+- [`bug`](https://github.com/ecgreen/OpencodeX/issues?q=is%3Aissue+state%3Aopen+label%3Abug)
+- [`perf`](https://github.com/ecgreen/OpencodeX/issues?q=is%3Aissue+state%3Aopen+label%3Aperf)
 
 > [!NOTE]
 > PRs that ignore these guardrails will likely be closed.
 
-Want to take on an issue? Leave a comment and a maintainer may assign it to you unless it is something we are already working on.
+Want to take on an issue? Leave a comment and the maintainer may assign it to you unless it is already being worked on.
+
+Note that OpencodeX is a fork of [opencode](https://github.com/anomalyco/opencode). If your change is
+to shared upstream behavior rather than to something this fork added, it will usually land faster
+upstream — this fork picks up upstream releases through the sync process in
+[`docs/UPSTREAM.md`](docs/UPSTREAM.md). Report bugs and feature requests for OpencodeX itself here,
+not upstream.
 
 ## Adding New Providers
 
-New providers shouldn't require many if ANY code changes, but if you want to add support for a new provider first make a PR to:
-https://github.com/anomalyco/models.dev
+New providers shouldn't require many if ANY code changes. Provider and model metadata is loaded from
+[models.dev](https://models.dev), not from this repo, so to add support for a new provider make a PR to
+<https://github.com/anomalyco/models.dev> — it will then appear in OpencodeX on the next fetch.
 
 ## Developing OpencodeX
 
@@ -41,13 +48,13 @@ https://github.com/anomalyco/models.dev
 
 ### Running against a different directory
 
-By default, `bun dev` runs OpenCode in the `packages/opencode` directory. To run it against a different directory or repository:
+By default, `bun dev` runs OpencodeX in the directory you invoked it from. To run it against a different directory or repository:
 
 ```bash
 bun dev <directory>
 ```
 
-To run OpenCode in the root of the opencode repo itself:
+To run OpencodeX in the root of this repo itself:
 
 ```bash
 bun dev .
@@ -55,7 +62,7 @@ bun dev .
 
 ### Building a "localcode"
 
-To compile a standalone executable:
+To compile a standalone executable for your current platform:
 
 ```bash
 ./packages/opencode/script/build.ts --single
@@ -67,13 +74,19 @@ Then run it with:
 ./packages/opencode/dist/opencode-<platform>/bin/opencode
 ```
 
-Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
+Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`, `windows-x64`).
+
+Add `--skip-install` to skip the `bun install` the build runs inside `dist/`, and `--no-minify` if
+you hit a Bun compile quirk. For cross-compiling and the Windows pipeline, see
+[`DEV_README.md`](DEV_README.md).
 
 - Core pieces:
-  - `packages/opencode`: OpencodeX core business logic & server.
+  - `packages/opencode`: OpencodeX CLI, TUI, and server.
   - `packages/opencode/src/cli/cmd/tui/`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
+  - `packages/core`: agent runtime, SQLite schema, and migrations.
   - `packages/gui`: Electron desktop GUI public preview.
   - `packages/plugin`: Source for `@opencode-ai/plugin`
+  - `github/`: the published GitHub Action.
 
 ### Developing the GUI preview
 
@@ -120,7 +133,7 @@ opencode <directory>     # Start TUI in specific directory
 
 ### Running the API Server
 
-To start the OpenCode headless API server:
+To start the OpencodeX headless API server:
 
 ```bash
 bun dev serve
@@ -133,24 +146,34 @@ bun dev serve --port 8080
 ```
 
 > [!NOTE]
-> If you make changes to the API or SDK (e.g. `packages/opencode/src/server/server.ts`), run `./script/generate.ts` to regenerate the SDK and related files.
+> If you make changes to the API or SDK (e.g. `packages/opencode/src/server/server.ts`), run `./packages/sdk/js/script/build.ts` to regenerate the SDK and related files.
 
 Please try to follow the [style guide](./AGENTS.md)
+
+### Before you push
+
+```bash
+bun run typecheck
+bun run lint:ci
+bun run surface:audit
+```
+
+`bun run lint` reports the full oxlint warning set, most of which is baselined; `bun run lint:ci` is
+the gate that actually fails on regressions. `surface:audit` enforces `upstream/policy.json` — run it
+whenever you add, move, or delete a workspace or an upstream-owned path.
 
 ### Setting up a Debugger
 
 Bun debugging is currently rough around the edges. We hope this guide helps you get set up and avoid some pain points.
 
-The most reliable way to debug OpenCode is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
+The most reliable way to debug OpencodeX is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
 your debugger via that URL. Other methods can result in breakpoints being mapped incorrectly, at least in VSCode (YMMV).
 
 Caveats:
 
-- If you want to run the OpenCode TUI and have breakpoints triggered in the server code, you might need to run `bun dev spawn` instead of
-  the usual `bun dev`. This is because `bun dev` runs the server in a worker thread and breakpoints might not work there.
-- If `spawn` does not work for you, you can debug the server separately:
+- If you want breakpoints to trigger in the **server** code, debug the two processes separately. `bun dev` with any of `--port`, `--hostname`, or `--mdns` moves the server into a `Worker` (see `packages/opencode/src/cli/cmd/tui/thread.ts`), where breakpoints frequently do not bind.
   - Debug server: `bun run --inspect=ws://localhost:6499/ --cwd packages/opencode ./src/index.ts serve --port 4096`,
-    then attach TUI with `opencode attach http://localhost:4096`
+    then attach the TUI with `opencode attach http://localhost:4096`
   - Debug TUI: `bun run --inspect=ws://localhost:6499/ --cwd packages/opencode --conditions=browser ./src/index.ts`
 
 Other tips and tricks:
@@ -165,7 +188,7 @@ If you use VSCode, you can use our example configurations [.vscode/settings.exam
 Some debug methods that can be problematic:
 
 - Debug configurations with `"request": "launch"` can have breakpoints incorrectly mapped and thus unusable
-- The same problem arises when running OpenCode in the VSCode `JavaScript Debug Terminal`
+- The same problem arises when running OpencodeX in the VSCode `JavaScript Debug Terminal`
 
 With that said, you may want to try these methods, as they might work for you.
 
@@ -243,50 +266,31 @@ These are not strictly enforced, they are just general guidelines:
 
 ## Feature Requests
 
-For net-new functionality, start with a design conversation. Open an issue describing the problem, your proposed approach (optional), and why it belongs in OpenCode. The core team will help decide whether it should move forward; please wait for that approval instead of opening a feature PR directly.
-
-## Trust & Vouch System
-
-This project uses [vouch](https://github.com/mitchellh/vouch) to manage contributor trust. The vouch list is maintained in [`.github/VOUCHED.td`](.github/VOUCHED.td).
-
-### How it works
-
-- **Vouched users** are explicitly trusted contributors.
-- **Denounced users** are explicitly blocked. Issues and pull requests from denounced users are automatically closed. If you have been denounced, you can request to be unvouched by reaching out to a maintainer on [Discord](https://opencode.ai/discord)
-- **Everyone else** can participate normally — you don't need to be vouched to open issues or PRs.
-
-### For maintainers
-
-Collaborators with write access can manage the vouch list by commenting on any issue:
-
-- `vouch` — vouch for the issue author
-- `vouch @username` — vouch for a specific user
-- `denounce` — denounce the issue author
-- `denounce @username` — denounce a specific user
-- `denounce @username <reason>` — denounce with a reason
-- `unvouch` / `unvouch @username` — remove someone from the list
-
-Changes are committed automatically to `.github/VOUCHED.td`.
-
-### Denouncement policy
-
-Denouncement is reserved for users who repeatedly submit low-quality AI-generated contributions, spam, or otherwise act in bad faith. It is not used for disagreements or honest mistakes.
+For net-new functionality, start with a design conversation. Open an issue describing the problem, your proposed approach (optional), and why it belongs in OpencodeX. The maintainer will help decide whether it should move forward; please wait for that decision instead of opening a feature PR directly.
 
 ## Issue Requirements
 
-All issues **must** use one of our issue templates:
+Blank issues are disabled. Every issue must use one of the templates in
+[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE):
 
-- **Bug report** — for reporting bugs (requires a description)
-- **Feature request** — for suggesting enhancements (requires verification checkbox and description)
-- **Question** — for asking questions (requires the question)
+- **Bug report** — general bugs (requires a description)
+- **Feature request** — suggesting enhancements
+- **Question** — asking questions
+- **Install failure** — installer or upgrade problems
+- **Provider / model issue** — a specific provider or model misbehaving
+- **TUI rendering issue** — terminal rendering, layout, or theme problems
+- **GUI sidecar failure** — the desktop preview failing to reach its local coordinator
 
-Blank issues are not allowed. When a new issue is opened, an automated check verifies that it follows a template and meets our contributing guidelines. If an issue doesn't meet the requirements, you'll receive a comment explaining what needs to be fixed and have **2 hours** to edit the issue. After that, it will be automatically closed.
-
-Issues may be flagged for:
+Issues may be closed for:
 
 - Not using a template
 - Required fields left empty or filled with placeholder text
 - AI-generated walls of text
 - Missing meaningful content
 
-If you believe your issue was incorrectly flagged, let a maintainer know.
+If you believe your issue was closed in error, say so in a comment and it will be reopened.
+
+## Security Issues
+
+Do not open a public issue for a security vulnerability. Follow [`SECURITY.md`](SECURITY.md) — report
+privately through the repository's Security tab.

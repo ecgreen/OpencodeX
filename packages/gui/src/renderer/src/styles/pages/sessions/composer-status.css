@@ -1,0 +1,97 @@
+.composer-context-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.composer-context-preview span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-context-preview .icon {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.composer-running {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 16px;
+  padding: 0 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-running-left {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.composer-running-placeholder {
+  display: block;
+  width: 1px;
+  height: 12px;
+}
+
+.composer-running-right {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  overflow: hidden;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.composer-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb,var(--secondary) 24%,transparent);
+  border-top-color: var(--secondary);
+  border-right-color: var(--secondary);
+  border-radius: 999px;
+  color: var(--secondary);
+  animation: composer-spinner .76s linear infinite;
+  box-shadow: 0 0 16px color-mix(in srgb,var(--secondary) 42%,transparent);
+}
+
+.composer-interrupt {
+  flex: 0 0 auto;
+  letter-spacing: .01em;
+}
+
+.composer-interrupt-key {
+  color: var(--text);
+}
+
+.composer-interrupt-action {
+  color: var(--muted);
+}
+
+.composer-token-usage {
+  color: var(--muted);
+}
+
+.composer-command-hint span {
+  color: var(--text);
+}
+
+.composer-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}

@@ -1,0 +1,60 @@
+.workbench-diagnostics-bar {
+  display: flex;
+  flex: 0 0 28px;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  min-width: 0;
+  border-top: 1px solid var(--workbench-border-soft);
+  padding-left: 8px;
+  color: var(--theme-text-muted);
+  background: var(--panel);
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.workbench-diagnostics-bar>span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-diagnostics-bar>button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.workbench-editor-find {
+  position: absolute;
+  z-index: 8;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: minmax(120px,220px) minmax(66px,auto) repeat(3,24px);
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 16px);
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--theme-surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+  padding: 3px;
+}
+
+.workbench-editor-find>.ui-input {
+  min-width: 0;
+}
+
+.workbench-editor-find-count {
+  overflow: hidden;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

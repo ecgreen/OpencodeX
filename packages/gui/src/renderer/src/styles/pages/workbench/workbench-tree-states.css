@@ -1,0 +1,22 @@
+.workbench-search-row:hover {
+  background: color-mix(in srgb,var(--primary) 14%,transparent);
+}
+
+.workbench-search-row.selected {
+  background: color-mix(in srgb,var(--primary) 14%,transparent);
+}
+
+.workbench-search-row span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-file-row:hover {
+  background: var(--workbench-row-hover);
+}
+
+.workbench-file-row.selected {
+  background: color-mix(in srgb,var(--workbench-accent) 24%,transparent);
+  color: var(--theme-text);
+}

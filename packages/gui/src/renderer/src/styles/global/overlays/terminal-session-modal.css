@@ -1,0 +1,26 @@
+.terminal-session-modal {
+  width: min(560px,calc(100vw - 36px));
+}
+
+.terminal-session-form {
+  display: grid;
+  gap: var(--ds-space-3);
+}
+
+.terminal-session-cli {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid color-mix(in srgb, var(--ds-success) 30%, transparent);
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-text-muted);
+  background: color-mix(in srgb, var(--ds-success) 8%, transparent);
+  font-size: 12px;
+}
+
+.terminal-session-cli .icon {
+  width: 13px;
+  height: 13px;
+  color: var(--ds-success);
+}

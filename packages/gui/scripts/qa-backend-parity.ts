@@ -3,7 +3,7 @@ import path from "node:path"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createClientStateSync } from "@opencode-ai/sdk/v2/client-sync"
 import { emptyGuiSnapshot, reconcileGuiAuthoritativeState } from "../src/renderer/src/lib/gui-state"
-import { createProject, createSession, createSwarm, createView } from "../src/renderer/src/lib/store"
+import { createProject, createSession, createSwarm, createView } from "../src/renderer/src/lib/session-api"
 import type { GuiClient } from "../src/renderer/src/lib/client"
 
 const url = process.env.OPENCODEX_GUI_QA_URL ?? process.env.VITE_OPENCODEX_SERVER_URL

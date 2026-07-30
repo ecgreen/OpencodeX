@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import type { MessageBundle, SessionData } from "../src/renderer/src/lib/store"
-import { prependOlderMessages, trimToLiveTail } from "../src/renderer/src/lib/message-window"
+import type { MessageBundle, SessionData } from "../src/renderer/src/lib/session-api"
+import {
+  EXPANDED_MESSAGE_WINDOW,
+  collapseMessageWindow,
+  prependOlderMessages,
+  trimToLiveTail,
+} from "../src/renderer/src/lib/message-window"
 
 describe("message window helpers", () => {
   test("prepends older pages without reordering messages", () => {
@@ -64,6 +69,50 @@ describe("message window helpers", () => {
 
     expect(messageIDs(result)).toEqual(["m1", "m2", "m3", "m4"])
     expect(result.messageWindowExpanded).toBe(true)
+  })
+
+  test("trims expanded windows at the expanded message cap instead of never trimming", () => {
+    const messages = Array.from({ length: EXPANDED_MESSAGE_WINDOW.count + 16 }, (_, index) =>
+      bundle(`m${index}`, index + 1),
+    )
+    const result = trimToLiveTail(sessionData(messages, { messageWindowExpanded: true }), 2)
+
+    expect(result.messages.length).toBe(EXPANDED_MESSAGE_WINDOW.count)
+    expect(result.messages.at(-1)?.info.id).toBe(`m${EXPANDED_MESSAGE_WINDOW.count + 15}`)
+    expect(result.messages[0]?.info.id).toBe("m16")
+    expect(result.messageWindowExpanded).toBe(true)
+    expect(result.messageCursor).toBeTruthy()
+  })
+
+  test("trims expanded windows at the expanded content budget", () => {
+    // Each message weighs 600 plus its text, so 9_600 apiece: the 300_000 byte
+    // expanded budget stops after 31 of them.
+    const messages = Array.from({ length: 60 }, (_, index) => bundle(`m${index}`, index + 1, "x".repeat(9_000)))
+    const result = trimToLiveTail(sessionData(messages, { messageWindowExpanded: true }), 2)
+
+    expect(result.messages.length).toBe(31)
+    expect(result.messages.at(-1)?.info.id).toBe("m59")
+  })
+
+  test("collapses an expanded window back onto the live tail budget", () => {
+    const result = collapseMessageWindow(
+      sessionData([bundle("m1", 1), bundle("m2", 2), bundle("m3", 3), bundle("m4", 4)], {
+        messageCursor: "older",
+        messageWindowExpanded: true,
+      }),
+      2,
+    )
+
+    expect(messageIDs(result)).toEqual(["m3", "m4"])
+    expect(result.messageWindowExpanded).toBeUndefined()
+    expect(result.messageCursor).toBeTruthy()
+    expect(result.messageCursor).not.toBe("older")
+  })
+
+  test("leaves a window that was never expanded untouched when collapsing", () => {
+    const data = sessionData([bundle("m1", 1), bundle("m2", 2)])
+
+    expect(collapseMessageWindow(data, 1)).toBe(data)
   })
 
   test("keeps the newest heavy message when following the live content budget", () => {

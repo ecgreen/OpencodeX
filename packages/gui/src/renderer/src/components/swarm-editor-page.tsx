@@ -8,7 +8,7 @@ import {
   roleInput,
   swarmRolePresetBySkill,
 } from "../lib/swarm-actions"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { SwarmEditorTeam } from "./swarm-editor-team"
 import { SwarmPageHeader } from "./swarm-page-header"
 import { SwarmRoleModelPicker } from "./swarm-role-model-picker"

@@ -1,0 +1,73 @@
+.view-editor-page textarea {
+  min-height: 96px;
+  resize: vertical;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--element);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 10px;
+}
+
+.view-editor-page {
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.view-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.view-editor-header h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.view-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(280px,340px) minmax(0,920px);
+  gap: 16px;
+  align-content: start;
+  min-height: 0;
+  max-width: 1320px;
+  overflow: hidden;
+  padding: 0 18px 18px;
+}
+
+.view-editor-submit-panel {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb,var(--primary) 38%,var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--panel) 86%,var(--primary) 6%);
+  box-shadow: 0 -12px 24px color-mix(in srgb,var(--theme-shadow-medium) 28%,transparent);
+}
+
+.view-editor-page .full-width-field>span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.view-editor-page .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 12px 0 0;
+  background: var(--bg);
+}

@@ -1,0 +1,49 @@
+.workbench-search-results {
+  display: grid;
+  max-height: min(260px,34vh);
+  overflow: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 56%,transparent);
+}
+
+.workbench-search-results>header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb,var(--panel) 95%,transparent);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.workbench-search-results>header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-search-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.workbench-search-row.directory {
+  color: var(--primary);
+}

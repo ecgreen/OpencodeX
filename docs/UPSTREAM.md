@@ -18,3 +18,41 @@ The initial OpencodeX repository is a snapshot import without a Git merge-base. 
 10. Update `upstream/lock.json` only after all gates pass and the sync PR merges.
 
 The monthly `Upstream status` workflow edits one tracking issue only when the upstream release marker changes. `Upstream sync report` is manual and produces a report artifact; it never commits conflict resolutions unattended.
+
+## Divergence ledger
+
+Because the first sync has not run yet, upstream-owned files that this fork **deliberately** deleted
+or moved would otherwise look like accidental drops during merge conflict resolution. Record them
+here as they happen. During a sync, a conflict against any path below is resolved by **keeping the
+fork's removal**, not by restoring upstream's file — unless the entry says otherwise.
+
+`upstream/policy.json` (`permanentlyPrunedPaths`) is the machine-enforced half of this and is
+checked by `bun run surface:audit`. This section is the human-readable half: it also covers files
+that were *moved or split* rather than pruned, which policy.json cannot express.
+
+### 2026-07 — cleanup branch (pre-first-sync)
+
+Deleted, upstream-owned (do not restore on merge):
+
+| Path | Note |
+| --- | --- |
+| `packages/opencode/src/cli/cmd/run/` (33 files) + `packages/opencode/test/cli/run/` (18 files) | The `run --interactive` second TUI. `cmd/run.ts` (non-interactive `opencode run`) is **kept**; only the interactive front end is gone, along with the `--interactive` flag. |
+| `packages/opencode/src/share/`, `packages/core/src/share/sql.ts`, `test/share/` | Share pipeline (`opncd.ai` egress) and its `/share` surface. |
+| `packages/opencode/src/account/`, `packages/core/src/account*`, `cli/cmd/account.ts`, `component/dialog-console-org.tsx` | Console/account login. |
+| `packages/opencode/src/server/shared/ui.ts`, `public-ui.ts`, `test/server/httpapi-ui.test.ts` | The `app.opencode.ai` web-UI reverse proxy and the `web` command. |
+| `packages/opencode/src/pty/`, `httpapi/handlers/pty.ts`, `server/shared/pty-ticket.ts`, `test/pty/` | The PTY HTTP surface. |
+| `httpapi/groups/v2/`, `httpapi/handlers/v2/`, `cli/cmd/tui/context/sync-v2.tsx`, `feature-plugins/system/session-v2*` , `packages/sdk/js/src/v2/data.ts` | The experimental v2 event/session system. |
+| `packages/sdk/js/src/v2/legacy-session-sync.ts`, `script/check-legacy-session-sync.ts`, `docs/session-sync-compatibility.md` | The legacy session-sync endpoint and its compatibility gate. |
+| ~76% of `packages/ui/src` — all of `theme/`, `hooks/`, `storybook/`, `styles/tailwind/`, the icon/favicon/image asset sets, most of `components/`, `v2/`, `i18n/`, `context/` | Upstream web-frontend residue. `packages/ui` survives only as the Solid components the GUI still imports (`file`, `markdown`, `code-block`, `popover`, `logo`, `session-diff`, `tool-output-preview`, `context/marked`, four `v2/components/*-v2`) plus the five notification `.mp3`s the TUI imports. Anything outside that set is intentionally gone; re-adding a file here needs a live importer. |
+| `packages/{containers,identity,extensions,effect-sqlite-node}`, `script/{publish.ts,release,generate.ts}`, `packages/plugin/src/example*.ts` | Vestigial upstream packages and scripts. Also in `permanentlyPrunedPaths`. |
+| `packages/opencode/script/publish.ts`, `packages/plugin/script/publish.ts`, `packages/sdk/js/script/publish.ts` | Upstream's release pipeline: Docker push to `ghcr.io/anomalyco/opencode`, AUR PKGBUILDs, a Homebrew tap, and `npm publish` to the `@opencode-ai` scope this fork does not own. The fork releases via `.github/workflows/release-cli.yml` + `script/build.ts` only. Also in `permanentlyPrunedPaths`. |
+
+Moved or split (a merge conflict here means upstream edited the *old* path — port the change into the new one):
+
+| Upstream path | Now |
+| --- | --- |
+| `packages/opencode/src/session/prompt.ts` (monolith) | Split into `prompt.ts` + `prompt-{claim,schema,shell,structured-output,subtask,swarm,user-message}.ts` in the same directory. |
+| `packages/opencode/src/util/filesystem.ts` (pure path helpers) | Path helpers now live in `@opencode-ai/core/util/fs-path` and are re-exported from `util/filesystem.ts`, so the namespace API is unchanged for callers. |
+| `packages/gui/src/renderer/src/lib/store.ts` | `lib/session-api.ts` (fork-owned; renamed for accuracy — it is an API facade, not a store). |
+| `packages/gui/src/renderer/src/lib/message-text.ts` | `packages/sdk/js/src/v2/client-message-text.ts` (unified with the TUI's copy). |
+| Numbered GUI stylesheets (`styles/**/base-N.css`, `states-N.css`) | Renamed to semantic names (fork-owned; listed in `git log -M --diff-filter=R`). |

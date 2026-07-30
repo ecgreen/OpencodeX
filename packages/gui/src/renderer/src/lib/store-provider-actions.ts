@@ -13,14 +13,6 @@ export async function disconnectMcp(gui: GuiClient, name: string) {
   return gui.client.mcp.disconnect({ name, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function listConsoleOrgs(gui: GuiClient) {
-  return gui.client.experimental.console.listOrgs({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
-export async function switchConsoleOrg(gui: GuiClient, accountID: string, orgID: string) {
-  return gui.client.experimental.console.switchOrg({ accountID, orgID, directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
-}
-
 export async function syncWorkspaces(gui: GuiClient) {
   return gui.client.experimental.workspace.syncList({ directory: gui.directory || undefined }, { headers: authHeaders(gui), throwOnError: true })
 }

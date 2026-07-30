@@ -1,7 +1,7 @@
 import type { Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createMemo } from "solid-js"
 import { formatRelative } from "../lib/format"
-import type { SessionData } from "../lib/store"
+import type { SessionData } from "../lib/session-api"
 import { defaultTeamRun, type SwarmTeamRun, type SwarmTeamView } from "../lib/swarm-team"
 import { Icon } from "./icon"
 import type { SessionPageProps } from "./session-page-types"

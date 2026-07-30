@@ -3,7 +3,7 @@ import type { GuiAppModel } from "../controllers/app-model"
 import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
-import { findFiles } from "../lib/store"
+import { findFiles } from "../lib/session-api"
 import { ClaudeTerminalPage } from "./claude-terminal-surface"
 import { Button, ErrorState, LoadingState } from "./ui"
 
@@ -128,6 +128,10 @@ export function SessionRoute(props: { model: GuiAppModel }) {
           ? model.notices.run(() => model.authoritative.loadOlderSessionMessages(session()!.id, cursor))
           : Promise.resolve()
       }
+      collapseMessageWindow={() => {
+        const current = session()
+        if (current) model.authoritative.collapseSessionMessageWindow(current.id)
+      }}
       onMessageAction={(action, context) => model.notices.run(() => model.sessionSlash.messageAction(action, context))}
       gui={model.authoritative.client()}
       subscribeGlobalEvents={model.authoritative.subscribeGlobalEvents}

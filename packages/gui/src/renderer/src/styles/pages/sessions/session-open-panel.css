@@ -1,0 +1,305 @@
+.session-side-patch header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.session-side-open {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg);
+}
+
+.session-side-open.hidden {
+  display: none;
+}
+
+.session-open-chrome {
+  position: relative;
+  z-index: 20;
+  min-width: 0;
+  border-bottom: 1px solid color-mix(in srgb,var(--border-subtle) 82%,transparent);
+  background: color-mix(in srgb,var(--panel) 92%,var(--theme-canvas) 8%);
+  box-shadow: 0 1px color-mix(in srgb,var(--text) 4%,transparent);
+}
+
+.session-open-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  overflow: hidden;
+  gap: 4px;
+  padding: 7px 48px 6px 8px;
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 2%,transparent),transparent 56%),color-mix(in srgb,var(--bg) 74%,var(--panel));
+}
+
+.session-open-tab-shell {
+  position: relative;
+  /* Flexible: visible tabs stretch to use the full row, and the layout math
+     packs as many as fit at the minimum width - no dead space before the
+     overflow chip. */
+  flex: 1 1 150px;
+  min-width: 120px;
+  max-width: 224px;
+  height: 31px;
+}
+
+.session-open-tab-button {
+  position: relative;
+  width: 100%;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 7px;
+  min-width: 0;
+  max-width: none;
+  height: 31px;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  color: color-mix(in srgb,var(--muted) 88%,var(--text));
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 3%,transparent),transparent),color-mix(in srgb,var(--panel) 54%,transparent);
+  padding: 0 30px 0 10px;
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 3%,transparent);
+  transition: border-color .14s ease,background .14s ease,color .14s ease,box-shadow .14s ease,transform .14s ease;
+}
+
+.session-open-tab-button>span:first-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.session-open-tab-placeholder {
+  flex: 0 0 auto;
+  height: 31px;
+  border: 1px dashed color-mix(in srgb,var(--accent) 34%,var(--border));
+  border-radius: 8px 8px 0 0;
+  background: color-mix(in srgb,var(--accent) 10%,transparent);
+}
+
+.session-open-tab-drag-preview {
+  position: fixed;
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 126px;
+  max-width: 230px;
+  border: 1px solid color-mix(in srgb,var(--accent) 44%,var(--border));
+  border-radius: 9px;
+  color: var(--text);
+  background: color-mix(in srgb,var(--bg) 94%,var(--accent) 6%);
+  padding: 0 10px;
+  box-shadow: 0 14px 32px color-mix(in srgb,var(--theme-shadow-medium) 36%,transparent),inset 0 1px color-mix(in srgb,var(--text) 7%,transparent);
+  pointer-events: none;
+}
+
+.session-open-tab-drag-preview span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-tab-close {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.session-open-overflow-trigger {
+  grid-template-columns: auto auto;
+  width: auto;
+  min-width: 72px;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.session-open-new-tab-panel {
+  min-width: 184px;
+  overflow: visible;
+}
+
+.session-open-overflow-tab-panel {
+  overflow-y: hidden;
+}
+
+.session-open-overflow-tab-panel.scrollable {
+  overflow-y: auto;
+}
+
+.session-open-overflow-tab-panel button {
+  grid-template-columns: 18px minmax(0,1fr);
+}
+
+.session-open-new-tab-panel button .icon {
+  grid-row: auto;
+}
+
+.session-open-new-tab-panel button span {
+  font-weight: 650;
+}
+
+.session-open-new-tab-panel button {
+  min-height: 30px;
+  padding-block: 5px;
+}
+
+.session-open-bar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto auto minmax(120px,1fr) auto auto auto auto;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  background: linear-gradient(180deg,color-mix(in srgb,var(--panel) 80%,transparent),var(--bg));
+  padding: 7px 8px 8px;
+  transition: border-color .14s ease,box-shadow .14s ease;
+}
+
+.session-open-bar .ui-icon-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-color: color-mix(in srgb,var(--border-subtle) 72%,transparent);
+  border-radius: 8px;
+  color: color-mix(in srgb,var(--muted) 84%,var(--text));
+  background: color-mix(in srgb,var(--panel) 82%,transparent);
+  box-shadow: none;
+}
+
+.session-open-location {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  color: var(--muted);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--text) 3%,transparent),transparent),color-mix(in srgb,var(--panel) 92%,var(--bg));
+  padding: 0 10px;
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 4%,transparent);
+  transition: border-color .14s ease,background .14s ease,color .14s ease,box-shadow .14s ease;
+}
+
+.session-open-file-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border-bottom: 0;
+  background: var(--bg);
+  padding: 7px 8px 8px;
+}
+
+.session-open-file-bar span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-open-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* Quiet, borderless icon actions - color and a soft wash on hover are the
+   entire affordance. */
+.session-open-file-bar .session-open-file-action {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  transition: color .12s ease, background .12s ease;
+}
+
+.session-open-file-bar .session-open-file-action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--element);
+}
+
+.session-open-file-bar .session-open-file-action:disabled {
+  opacity: .35;
+}
+
+.session-open-file-bar .session-open-file-action[data-selected="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* An enabled save is the one action that matters - let it carry the accent. */
+.session-open-file-bar .session-open-file-save:not(:disabled) {
+  color: var(--accent);
+}
+
+.session-open-file-readonly {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.session-open-large-file {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  background: var(--theme-surface-raised);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}

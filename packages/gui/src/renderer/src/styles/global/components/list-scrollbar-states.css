@@ -1,0 +1,31 @@
+.manager-page-header p:not(.eyebrow) {
+  margin: 6px 0 0;
+  color: var(--muted);
+  max-width: 760px;
+}
+
+.choice-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.choice-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.choice-list::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.choice-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.choice-list::-webkit-scrollbar-corner {
+  background: transparent;
+}

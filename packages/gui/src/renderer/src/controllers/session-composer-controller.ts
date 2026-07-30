@@ -3,9 +3,10 @@ import type { createAuthoritativeStateController } from "./authoritative-state-c
 import type { createNavigationController } from "./navigation-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
 import type { createSessionState } from "./session-state"
+import { createPlanModeFollow } from "../lib/plan-mode-follow"
 import { activeSessionRouteKey } from "../lib/route-selection"
 import { runSessionPromptAction } from "../lib/session-prompt"
-import { runShellCommand, runSessionCommand, sendPrompt } from "../lib/store"
+import { runShellCommand, runSessionCommand, sendPrompt } from "../lib/session-api"
 import { workbenchPromptTarget } from "../lib/workbench"
 
 export function createSessionComposerController(input: {
@@ -16,6 +17,11 @@ export function createSessionComposerController(input: {
   pinSession: (sessionID: string) => void
   rememberModel: (value: string) => void
 }) {
+  createPlanModeFollow({
+    subscribe: input.authoritative.subscribeGlobalEvents,
+    activeSessionID: input.selection.activeSessionID,
+    setAgent: input.state.setSelectedAgent,
+  })
   async function submit(event: SubmitEvent, value?: string | GuiPromptInfo) {
     event.preventDefault()
     const client = input.authoritative.client()
@@ -54,6 +60,8 @@ export function createSessionComposerController(input: {
           : Promise.resolve(),
       serverCommands: input.authoritative.snapshot()?.commands ?? [],
       rememberModel: input.rememberModel,
+      markPendingPrompt: input.authoritative.markSessionPromptPending,
+      releasePendingPrompt: input.authoritative.releaseSessionPromptPending,
       syncSession: (sessionID) => input.authoritative.syncSession(sessionID, { force: true }),
       refresh: input.authoritative.refresh,
       openCreatedSession: (sessionID, session) => {

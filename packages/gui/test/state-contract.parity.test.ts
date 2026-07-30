@@ -2,21 +2,32 @@ import { expect, test } from "bun:test"
 import type {
   Message,
   OpencodeXSessionSnapshot,
+  OpencodeXSessionUiState,
   OpencodeXStateSnapshot,
   Part,
+  PermissionRequest,
+  QuestionRequest,
   Session,
+  SessionStatus,
 } from "@opencode-ai/sdk/v2/client"
 import {
   applyClientStateSnapshot,
+  clientPlanModeSwitch,
   createClientStateSync,
   type ClientCapabilitiesSnapshot,
+  type ClientDerivedSessionStatus,
   type ClientStateSyncState,
   type ClientStateSyncTransport,
 } from "@opencode-ai/sdk/v2/client-sync"
 import { projectTuiClientState } from "../../opencode/src/cli/cmd/tui/context/sync-state"
+import { deriveStatus as deriveTuiStatus } from "../../opencode/src/cli/cmd/tui/component/opencodex-session-status-core"
 import { clientWorkItems } from "@opencode-ai/sdk/v2/work-item"
 import { emptyGuiSnapshot, reconcileGuiAuthoritativeState } from "../src/renderer/src/lib/gui-state"
-import { sessionDataFromClientState } from "../src/renderer/src/lib/store"
+import { deriveSessionStatus } from "../src/renderer/src/lib/session-status"
+import { sessionDataFromClientState } from "../src/renderer/src/lib/session-api"
+
+const HARMONY_ENVELOPE = JSON.stringify({ channel: "final", content: "done" })
+const REMINDER_TEXT = "keep this\n<system-reminder>drop this</system-reminder>"
 
 test("GUI and TUI adapters project the same shared root, capabilities, interactions, and transcript", async () => {
   const controller = createClientStateSync({ transport: transport() })
@@ -162,7 +173,9 @@ test("GUI and TUI adapters retain parity for out-of-order parts and interaction 
     id: "part-update",
     type: "message.part.updated",
     properties: {
-      part: { ...part(), id: "part-2", text: "arrived" },
+      // `time.start` marks the part as streaming; buffered deltas are dropped
+      // for timeless parts, which never streamed and are final.
+      part: { ...part(), id: "part-2", text: "arrived", time: { start: 1 } },
     },
   })
   controller.applyEvent({
@@ -339,6 +352,259 @@ test("GUI and TUI adapters retain parity after a retention reset replaces canoni
   expect(controller.getMetrics()).toMatchObject({ resets: 1, streamConnections: 2, rootSnapshots: 2 })
   controller.stop()
 })
+
+test("GUI and TUI render the same display text, raw while streaming and normalized once complete", async () => {
+  const controller = createClientStateSync({ transport: envelopeTransport() })
+  await controller.start()
+  await controller.refreshSessionTail("session-1")
+
+  const streaming = controller.getState()
+  expect(guiParts(streaming)).toEqual(tuiParts(streaming))
+  expect(guiParts(streaming).map((part) => part.text)).toEqual([HARMONY_ENVELOPE, REMINDER_TEXT])
+
+  completeEnvelopeParts(controller)
+
+  const complete = controller.getState()
+  expect(guiParts(complete)).toEqual(tuiParts(complete))
+  expect(guiParts(complete).map((part) => part.text)).toEqual(["done", "keep this\n"])
+  controller.stop()
+})
+
+test("GUI and TUI adapters derive the same session status from the shared core", () => {
+  const now = 1_000_000_000
+  const stale = now - 20 * 60 * 1000
+  const cases: {
+    name: string
+    expected: ClientDerivedSessionStatus
+    updated?: number
+    status?: SessionStatus
+    uiState?: OpencodeXSessionUiState
+    permissions?: PermissionRequest[]
+    questions?: QuestionRequest[]
+    pendingPrompt?: boolean
+    incompleteTurn?: boolean
+  }[] = [
+    { name: "idle", expected: "dormant" },
+    { name: "permission wins over everything", expected: "input_needed", permissions: [statusPermission()], status: { type: "busy" } },
+    { name: "question", expected: "input_needed", questions: [statusQuestion()] },
+    { name: "persisted input_needed", expected: "input_needed", uiState: statusUiState("input_needed") },
+    { name: "backend busy", expected: "in_progress", status: { type: "busy" } },
+    { name: "backend retry", expected: "in_progress", status: { type: "retry", attempt: 1, message: "retrying", next: 1 } },
+    { name: "optimistic pending prompt", expected: "in_progress", pendingPrompt: true },
+    { name: "persisted in_progress", expected: "in_progress", uiState: statusUiState("in_progress") },
+    { name: "recent incomplete turn", expected: "in_progress", incompleteTurn: true, updated: now - 60_000 },
+    {
+      name: "incomplete turn stale past the activity window",
+      expected: "dormant",
+      incompleteTurn: true,
+      updated: stale,
+    },
+    {
+      name: "stale incomplete turn still falls back to needs_review",
+      expected: "needs_review",
+      incompleteTurn: true,
+      updated: stale,
+      uiState: statusUiState("needs_review", true),
+    },
+    { name: "needs_review while unseen", expected: "needs_review", uiState: statusUiState("needs_review", true) },
+    { name: "needs_review gated by updated:false", expected: "dormant", uiState: statusUiState("needs_review", false) },
+  ]
+
+  cases.forEach((item) => {
+    const session = statusSession(item.updated ?? now - 60_000)
+    const messages = item.incompleteTurn ? [incompleteAssistantTurn()] : []
+    const snapshot = {
+      ...emptyGuiSnapshot(),
+      sessions: [session],
+      sessionStatus: item.status ? { [session.id]: item.status } : {},
+      sessionUiState: item.uiState ? { [session.id]: item.uiState } : {},
+      sessionPendingPrompt: item.pendingPrompt ? { [session.id]: true } : {},
+      permissions: item.permissions ?? [],
+      questions: item.questions ?? [],
+    }
+    const gui = deriveSessionStatus(snapshot, session, { messages, now })
+    const tui = deriveTuiStatus(session.id, tuiStatusSync(snapshot, messages), now)
+
+    expect(tui, item.name).toBe(item.expected)
+    expect(gui, item.name).toBe(item.expected === "needs_review" ? "ready_for_review" : item.expected)
+  })
+})
+
+test("clientPlanModeSwitch classifies only completed plan tool calls", () => {
+  expect(clientPlanModeSwitch(planEvent("plan_enter", "completed"))).toEqual({
+    sessionID: "session-1",
+    partID: "part-plan",
+    agent: "plan",
+  })
+  expect(clientPlanModeSwitch(planEvent("plan_exit", "completed"))).toEqual({
+    sessionID: "session-1",
+    partID: "part-plan",
+    agent: "build",
+  })
+  expect(clientPlanModeSwitch(planEvent("plan_enter", "running"))).toBeUndefined()
+  expect(clientPlanModeSwitch(planEvent("bash", "completed"))).toBeUndefined()
+  expect(
+    clientPlanModeSwitch({ id: "other", type: "session.idle", properties: { sessionID: "session-1" } }),
+  ).toBeUndefined()
+})
+
+function guiParts(state: ClientStateSyncState) {
+  return (sessionDataFromClientState(state, "session-1")?.messages.at(-1)?.parts ?? []) as { text: string }[]
+}
+
+function tuiParts(state: ClientStateSyncState) {
+  return (projectTuiClientState(state)?.details["session-1"]?.messages.at(-1)?.parts ?? []) as { text: string }[]
+}
+
+function completeEnvelopeParts(controller: ReturnType<typeof createClientStateSync>) {
+  envelopeParts().forEach((part) => {
+    controller.applyEvent({
+      id: `complete-${part.id}`,
+      type: "message.part.updated",
+      properties: { part: { ...part, time: { start: 1, end: 2 } } },
+    })
+  })
+}
+
+function envelopeParts(): Part[] {
+  return [
+    {
+      id: "part-envelope",
+      sessionID: "session-1",
+      messageID: "message-envelope",
+      type: "text",
+      text: HARMONY_ENVELOPE,
+      time: { start: 1 },
+    },
+    {
+      id: "part-reminder",
+      sessionID: "session-1",
+      messageID: "message-envelope",
+      type: "text",
+      text: REMINDER_TEXT,
+      time: { start: 1 },
+    },
+  ]
+}
+
+function envelopeTransport(): ClientStateSyncTransport {
+  return {
+    ...transport(),
+    session: async () => ({
+      ...sessionSnapshot(),
+      digest: "session-envelope",
+      messages: {
+        items: [
+          {
+            info: { ...message(), id: "message-envelope", role: "assistant", time: { created: 2, completed: 3 } },
+            parts: envelopeParts(),
+          },
+        ],
+        coverage: { firstMessageID: "message-envelope", lastMessageID: "message-envelope" },
+        boundary: { hasMore: false },
+      },
+    }),
+  }
+}
+
+function planEvent(tool: string, status: "completed" | "running") {
+  return {
+    id: "plan-part",
+    type: "message.part.updated" as const,
+    properties: {
+      part: {
+        id: "part-plan",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool" as const,
+        tool,
+        callID: "call-1",
+        state:
+          status === "completed"
+            ? { status, input: {}, output: "", title: tool, metadata: {}, time: { start: 1, end: 2 } }
+            : { status, input: {}, time: { start: 1 } },
+      },
+    },
+  }
+}
+
+function statusSession(updated: number): Session {
+  return { ...session(), time: { created: 1, updated } }
+}
+
+function statusUiState(
+  displayStatus: NonNullable<OpencodeXSessionUiState["displayStatus"]>,
+  updated?: boolean,
+): OpencodeXSessionUiState {
+  return {
+    sessionID: "session-1",
+    reviewedAt: 1,
+    reviewedFiles: [],
+    displayStatus,
+    ...(updated === undefined ? {} : { updated }),
+  }
+}
+
+function statusPermission(): PermissionRequest {
+  return {
+    id: "permission-1",
+    sessionID: "session-1",
+    permission: "edit",
+    patterns: ["src/**"],
+    metadata: {},
+    always: [],
+  }
+}
+
+function statusQuestion(): QuestionRequest {
+  return {
+    id: "question-1",
+    sessionID: "session-1",
+    questions: [{ header: "Choice", question: "Continue?", options: [{ label: "Yes", description: "Go on." }] }],
+  }
+}
+
+function incompleteAssistantTurn() {
+  return {
+    info: {
+      id: "message-turn",
+      sessionID: "session-1",
+      role: "assistant" as const,
+      time: { created: 1 },
+      system: [],
+      modelID: "claude",
+      providerID: "anthropic",
+      mode: "build",
+      path: { cwd: "C:/Work/OpencodeX", root: "C:/Work/OpencodeX" },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+    parts: [{ id: "part-step", sessionID: "session-1", messageID: "message-turn", type: "step-start" as const }],
+  }
+}
+
+function tuiStatusSync(snapshot: ReturnType<typeof emptyGuiSnapshot>, messages: ReturnType<typeof incompleteAssistantTurn>[]) {
+  return {
+    data: {
+      permission: groupBySessionID(snapshot.permissions),
+      question: groupBySessionID(snapshot.questions),
+      session: snapshot.sessions,
+      session_status: snapshot.sessionStatus,
+      session_ui_state: snapshot.sessionUiState,
+      session_pending_prompt: snapshot.sessionPendingPrompt ?? {},
+      message: messages.length > 0 ? { "session-1": messages.map((item) => item.info) } : {},
+      part: Object.fromEntries(messages.map((item) => [item.info.id, item.parts])),
+    },
+    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- the TUI adapter only reads these slices
+  } as unknown as Parameters<typeof deriveTuiStatus>[1]
+}
+
+function groupBySessionID<T extends { sessionID: string }>(items: readonly T[]) {
+  return items.reduce<Record<string, T[]>>(
+    (result, item) => ({ ...result, [item.sessionID]: [...(result[item.sessionID] ?? []), item] }),
+    {},
+  )
+}
 
 function transport(): ClientStateSyncTransport {
   return {

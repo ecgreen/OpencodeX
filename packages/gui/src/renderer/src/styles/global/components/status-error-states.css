@@ -1,0 +1,30 @@
+.section-collapse:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.section-collapse:focus-visible {
+  background: var(--surface);
+}
+
+.status.failed {
+  border-color: color-mix(in srgb,var(--danger) 36%,var(--line));
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+:root[data-theme=light] body {
+  background: var(--bg);
+}
+
+.error-card {
+  padding: 18px;
+  border-color: var(--error);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

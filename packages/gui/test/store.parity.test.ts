@@ -18,7 +18,7 @@ import {
   updateProject,
   updateProjectFolders,
   validateProjectFolders,
-} from "../src/renderer/src/lib/store"
+} from "../src/renderer/src/lib/session-api"
 
 describe("GUI store backend parity", () => {
   test("sends create and prompt payloads through existing APIs", async () => {

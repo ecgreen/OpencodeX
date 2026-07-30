@@ -1,0 +1,61 @@
+.brand {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 8px;
+  transition:
+    border-color 0.22s ease,
+    background 0.22s ease,
+    padding var(--ds-motion-route) cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 56px;
+  padding: 10px 10px 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-color: var(--line);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--brand);
+}
+
+.brand-copy strong {
+  font-size: 13px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+.brand-copy span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.rail-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-left: 0;
+  border-color: var(--line);
+  box-shadow: none;
+  transition:
+    color 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: transparent;
+}

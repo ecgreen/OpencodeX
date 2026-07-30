@@ -2,7 +2,7 @@ import type { Agent, Config, FileNode, LspStatus, McpStatus, McpResource, Openco
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { SessionData } from "../lib/store"
+import type { SessionData } from "../lib/session-api"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
 import { SessionPage } from "./session-page"
@@ -61,6 +61,7 @@ export function ViewPane(props: {
   toggleGenericToolOutput: () => void
   toggleCodeConceal?: () => void
   loadOlderMessages: (cursor: string) => Promise<void>
+  collapseMessageWindow: () => void
   onMessageAction?: (action: SessionMessageActionKind, context: SessionMessageActionContext) => void | Promise<void>
 }) {
   const handlePointerDown = (event: PointerEvent) => {
@@ -124,6 +125,7 @@ export function ViewPane(props: {
         sidePanelEnabled={false}
         openSidePanelTarget={props.openSidePanelTarget}
         loadOlderMessages={props.loadOlderMessages}
+        collapseMessageWindow={props.collapseMessageWindow}
         onMessageAction={props.onMessageAction}
       />
     </article>

@@ -1,6 +1,5 @@
 export * from "./client.js"
 export * from "./client-sync.js"
-export * from "./legacy-session-sync.js"
 export * from "./session-order.js"
 export * from "./swarm-presentation.js"
 export * from "./work-item.js"
@@ -9,8 +8,6 @@ export * from "./server.js"
 import { createOpencodeClient } from "./client.js"
 import { createOpencodeServer } from "./server.js"
 import type { ServerOptions } from "./server.js"
-
-export * as data from "./data.js"
 
 export async function createOpencode(options?: ServerOptions) {
   const server = await createOpencodeServer({

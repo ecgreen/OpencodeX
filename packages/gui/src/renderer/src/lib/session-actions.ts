@@ -1,5 +1,5 @@
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 export type TextDialogInput = { title: string; message?: string; value?: string; multiline?: boolean }
 export type ConfirmDialogInput = { title: string; message: string; confirm?: string; scope?: string }

@@ -1,0 +1,56 @@
+.transcript::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.model-picker-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.model-picker-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.transcript::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.model-picker-list::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-overlay-strong);
+  background-clip: content-box;
+}
+
+.transcript::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.model-picker-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb,var(--theme-accent) 42%,transparent);
+  background-clip: content-box;
+}
+
+.transcript::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.model-picker-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.transcript.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}

@@ -2,7 +2,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { For, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { title } from "../lib/format"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { Icon } from "./icon"
 
 export type ProjectDragPreviewState = { id: string; x: number; y: number; width: number; height: number }

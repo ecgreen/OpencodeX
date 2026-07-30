@@ -1,5 +1,5 @@
 import type { Provider, Session } from "@opencode-ai/sdk/v2/client"
-import type { MessageBundle } from "./store"
+import type { MessageBundle } from "./session-api"
 import { toolDisplayTitle, toolError, toolMetadata, toolOutput, toolStateInput } from "./tool-display"
 
 export type GuiTranscriptOptions = {

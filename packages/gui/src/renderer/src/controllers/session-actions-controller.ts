@@ -25,7 +25,7 @@ import {
   updateSessionUiState,
   type GuiSnapshot,
   type SessionData,
-} from "../lib/store"
+} from "../lib/session-api"
 
 type TranscriptAction = "first" | "last" | "next" | "previous" | "last-user"
 

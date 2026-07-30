@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Part, PermissionRequest } from "@opencode-ai/sdk/v2/client"
-import type { MessageBundle } from "../src/renderer/src/lib/store"
+import type { MessageBundle } from "../src/renderer/src/lib/session-api"
 import {
   collapseOutput,
   copyFullToolText,

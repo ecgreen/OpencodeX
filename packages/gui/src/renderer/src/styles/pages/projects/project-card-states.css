@@ -1,0 +1,45 @@
+.project-empty button:hover {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.project-empty button:focus-visible {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.project-heading:active {
+  cursor: grabbing;
+}
+
+.project-group:hover .drag-handle {
+  opacity: 1;
+}
+
+.project-group.dropping.drop-after {
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.dashboard-item-card.project-card:hover .row-actions button {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dashboard-item-card.project-card:focus-within .row-actions button {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dashboard-project-open:hover strong {
+  color: var(--brand);
+}
+
+.dashboard-project-open:focus-visible strong {
+  color: var(--brand);
+}

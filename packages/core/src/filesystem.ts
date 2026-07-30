@@ -1,11 +1,11 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
-import { realpathSync } from "fs"
+import { dirname, join } from "path"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
 import { Context, Effect, FileSystem, Layer, Schema } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { Glob } from "./util/glob"
+import { FsPath } from "./util/fs-path"
 import { serviceUse } from "./effect/service-use"
 
 export namespace AppFileSystem {
@@ -197,52 +197,12 @@ export namespace AppFileSystem {
     return lookup(p) || "application/octet-stream"
   }
 
-  export function normalizePath(p: string): string {
-    if (process.platform !== "win32") return p
-    const resolved = pathResolve(windowsPath(p))
-    try {
-      return realpathSync.native(resolved)
-    } catch {
-      return resolved
-    }
-  }
-
-  export function normalizePathPattern(p: string): string {
-    if (process.platform !== "win32") return p
-    if (p === "*") return p
-    const match = p.match(/^(.*)[\\/]\*$/)
-    if (!match) return normalizePath(p)
-    const dir = /^[A-Za-z]:$/.test(match[1]) ? match[1] + "\\" : match[1]
-    return join(normalizePath(dir), "*")
-  }
-
-  export function resolve(p: string): string {
-    const resolved = pathResolve(windowsPath(p))
-    try {
-      return normalizePath(realpathSync(resolved))
-    } catch (e: any) {
-      if (e?.code === "ENOENT") return normalizePath(resolved)
-      throw e
-    }
-  }
-
-  export function windowsPath(p: string): string {
-    if (process.platform !== "win32") return p
-    return p
-      .replace(/^\/([a-zA-Z]):(?:[\\/]|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      .replace(/^\/cygdrive\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-  }
-
-  export function overlaps(a: string, b: string) {
-    const relA = relative(a, b)
-    const relB = relative(b, a)
-    return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
-  }
-
-  export function contains(parent: string, child: string) {
-    const result = relative(parent, child)
-    return result === "" || (!isAbsolute(result) && result !== ".." && !result.startsWith(`..${sep}`))
-  }
+  // Path canonicalization/comparison lives in one place (util/fs-path) so this
+  // namespace and opencode's `Filesystem` namespace cannot drift apart.
+  export const normalizePath = FsPath.normalizePath
+  export const normalizePathPattern = FsPath.normalizePathPattern
+  export const resolve = FsPath.resolve
+  export const windowsPath = FsPath.windowsPath
+  export const overlaps = FsPath.overlaps
+  export const contains = FsPath.contains
 }

@@ -13,8 +13,6 @@ inputs:
     description: "Agent to use. Must be a primary agent. Falls back to default_agent from config or 'build' if not found."
     required: false
 
-  share:
-    description: "Share the opencode session (defaults to true for public repos)"
     required: false
 
   prompt:
@@ -82,7 +80,6 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
         MODEL: ${{ inputs.model }}
         AGENT: ${{ inputs.agent }}
-        SHARE: ${{ inputs.share }}
         PROMPT: ${{ inputs.prompt }}
         USE_GITHUB_TOKEN: ${{ inputs.use_github_token }}
         MENTIONS: ${{ inputs.mentions }}

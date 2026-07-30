@@ -282,3 +282,71 @@ describe("Session", () => {
     }),
   )
 })
+
+describe("transient part updates", () => {
+  it.instance("broadcast the same payload without touching the journal", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const events = yield* EventV2Bridge.Service
+      const { db } = yield* Database.Service
+      const info = yield* Effect.acquireRelease(session.create({ title: "transient" }), (created) =>
+        session.remove(created.id).pipe(Effect.ignore),
+      )
+      const messageID = MessageID.ascending()
+      yield* session.updateMessage({
+        id: messageID,
+        sessionID: info.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "user",
+        model: { providerID: "test", modelID: "test" },
+      } as unknown as SessionLegacy.Info)
+
+      const seen: EventV2.Payload[] = []
+      const unsub = yield* events.listen((event) =>
+        Effect.sync(() => {
+          if (event.type === MessageV2.Event.PartUpdated.type) seen.push(event)
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsub)
+
+      const part = {
+        id: PartID.ascending(),
+        messageID,
+        sessionID: info.id,
+        type: "text" as const,
+        text: "durable",
+      }
+      yield* session.updatePart(part)
+      const rowsAfterDurable = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, info.id))
+        .all()
+        .pipe(Effect.orDie)
+
+      yield* session.updatePart({ ...part, text: "transient" }, { transient: true })
+      const rowsAfterTransient = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, info.id))
+        .all()
+        .pipe(Effect.orDie)
+
+      // Both revisions reach subscribers, and the wire payload is the same
+      // shape either way - only the durable one lands in the journal.
+      expect(seen).toHaveLength(2)
+      expect(Object.keys(seen[1]!).sort()).toEqual(Object.keys(seen[0]!).sort())
+      expect(seen[1]!.version).toBe(seen[0]!.version)
+      expect(seen[1]!.location).toEqual(seen[0]!.location)
+      expect((seen[1]!.data as { part: { text: string } }).part.text).toBe("transient")
+      expect(rowsAfterTransient.map((row) => row.seq)).toEqual(rowsAfterDurable.map((row) => row.seq))
+
+      // The durable projection still shows the last journaled revision, which
+      // is exactly what makes a dropped intermediate revision unobservable
+      // once the terminal write lands.
+      const stored = yield* session.getPart({ sessionID: info.id, messageID, partID: part.id })
+      expect(stored?.type === "text" ? stored.text : undefined).toBe("durable")
+    }),
+  )
+})

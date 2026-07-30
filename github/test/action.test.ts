@@ -14,7 +14,10 @@ describe("OpencodeX GitHub Action", () => {
       new URL("../../packages/opencode/src/cli/cmd/github.ts", import.meta.url),
     ).text()
     expect(source).toContain("`opencodex/${type}${issueId}-${timestamp}`")
-    expect(source).toContain("[OpencodeX session]")
+    // The footer used to lead with a share link. Sharing is gone, so all that
+    // remains is the run link - but it must still be there on every comment.
+    expect(source).toContain("[GitHub run](${runUrl})")
     expect(source).not.toContain("social-cards.sst.dev")
+    expect(source).not.toContain("opncd.ai")
   })
 })

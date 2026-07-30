@@ -4,9 +4,7 @@ import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { GlobalBus } from "@/bus/global"
 import { EventV2 } from "@opencode-ai/core/event"
 import { AbsolutePath } from "@opencode-ai/core/schema"
-import "@opencode-ai/core/account"
 import "@opencode-ai/core/catalog"
-import "@opencode-ai/core/session/event"
 import { Context, Effect, Layer } from "effect"
 
 export class Service extends Context.Service<Service, EventV2.Interface>()("@opencode/EventV2Bridge") {}
@@ -37,6 +35,11 @@ export const layer = Layer.effect(
       withLocation((located) => events.publish(definition, data, located), options)
     const commit: EventV2.Interface["commit"] = (definition, data, options) =>
       withLocation((located) => events.commit(definition, data, located), options)
+    // Routed location has to be attached here too: `/global/event` filters the
+    // stream by `location.directory`, so a payload built without it would be
+    // dropped before it reached any client.
+    const payload: EventV2.Interface["payload"] = (definition, data, options) =>
+      withLocation((located) => events.payload(definition, data, located), options)
 
     const unsubscribe = yield* events.listen((event) =>
       Effect.gen(function* () {
@@ -52,7 +55,7 @@ export const layer = Layer.effect(
     )
     yield* Effect.addFinalizer(() => unsubscribe)
 
-    return Service.of({ ...events, publish, commit })
+    return Service.of({ ...events, publish, commit, payload })
   }),
 )
 

@@ -160,9 +160,11 @@ In GitHub:
 2. Select `release-cli`.
 3. Choose **Run workflow**.
 4. Select the `main` branch, or the exact branch/commit ref that should ship.
-5. Enter `0.0.1` for `version`, or leave it blank to use `packages/opencode/package.json`.
+5. Enter `0.0.1` for `version`, or leave it blank to use `packages/opencode/package.json`. If you enter a version, it **must** equal the manifest version — `release-cli` compares the two and fails the run otherwise.
 6. Leave `prerelease` enabled for public preview.
 7. Run the workflow.
+
+`release-cli` runs a quality gate first (`bun run typecheck`, `bun run test:ci`, `bun run lint:ci`, `git diff --check`) and does not build anything if that job fails.
 
 The workflow creates or updates:
 
@@ -202,7 +204,13 @@ Release files are uploaded to:
 https://github.com/ecgreen/OpencodeX/releases/tag/v0.0.1
 ```
 
-CLI files are produced under `packages/opencode/dist` during CI and uploaded as release assets. Expected assets include platform-specific `opencode-*` archives plus `SHA256SUMS`.
+CLI files are produced under `packages/opencode/dist` during CI, renamed from `opencode-*` to `opencodex-*`, and uploaded as release assets. Expected assets:
+
+- `opencodex-windows-*.zip` (containing `opencodex.exe`)
+- `opencodex-darwin-*.zip`
+- `opencodex-linux-*.tar.gz`
+- `install` and `install-windows.ps1` — the installer scripts the README's `curl`/`irm` one-liners fetch from `releases/latest/download/`. A release missing these breaks the documented install path.
+- `SHA256SUMS`
 
 GUI files are produced under `packages/gui/release` during CI and uploaded as release assets. Expected assets include:
 
@@ -261,7 +269,7 @@ Local builds are useful for preview testing but should not be the primary public
 From `packages/opencode`:
 
 ```bash
-bun run script/build.ts --target linux-x64 --skip-embed-web-ui --no-minify
+bun run script/build.ts --target linux-x64 --no-minify
 ```
 
 Replace `linux-x64` with the target platform. Local output goes to:

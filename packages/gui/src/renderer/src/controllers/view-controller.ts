@@ -13,7 +13,7 @@ import { modelValue } from "../lib/model-selection"
 import { projectNameForID, projectNameForSession } from "../lib/project-name"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import { activeViewForRoute, focusedViewItemID } from "../lib/route-selection"
-import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus } from "../lib/store"
+import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus } from "../lib/session-api"
 import {
   orderedViewItems,
   viewItemID,
@@ -187,6 +187,8 @@ export function createViewController(input: {
       modelForSession: (session) => modelValueForPane(paneID, session),
       variantForSession: (session) => variantValue(paneID, session),
       setDraftLoading: input.authoritative.setViewPaneLoading,
+      markPendingPrompt: input.authoritative.markSessionPromptPending,
+      releasePendingPrompt: input.authoritative.releaseSessionPromptPending,
       setFocusedSessionID,
       alert: input.alert,
       sendPrompt: (sessionID, text, options) =>

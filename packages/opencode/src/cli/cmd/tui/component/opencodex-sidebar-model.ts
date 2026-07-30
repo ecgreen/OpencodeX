@@ -24,7 +24,7 @@ export function isSwarmSession(session: Session) {
 }
 
 export function isEmptyPlaceholderSession(session: Session) {
-  if (session.parentID || session.model || session.summary || session.share || session.revert) return false
+  if (session.parentID || session.model || session.summary || session.revert) return false
   const tokens = session.tokens
   if (tokens && tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write > 0) return false
   if ((session.cost ?? 0) > 0) return false

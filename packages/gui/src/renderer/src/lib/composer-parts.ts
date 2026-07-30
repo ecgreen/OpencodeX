@@ -1,4 +1,4 @@
-import type { PromptPart } from "./store"
+import type { PromptPart } from "./session-api"
 
 /** Presentation of the attachment chips above the composer input. */
 export function partLabel(part: PromptPart) {

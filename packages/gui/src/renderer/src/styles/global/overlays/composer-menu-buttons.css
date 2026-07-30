@@ -1,0 +1,36 @@
+.composer-add-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.composer-add-menu button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+}
+
+.variant-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.variant-menu button {
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  padding: 8px 9px;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+}

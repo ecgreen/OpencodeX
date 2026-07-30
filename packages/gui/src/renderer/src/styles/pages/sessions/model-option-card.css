@@ -1,0 +1,30 @@
+.model-option-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  grid-template-rows: 1fr;
+  gap: 0;
+  min-height: 52px;
+  padding: 0;
+  color: var(--text);
+  border: 1px solid var(--line);
+  transition: border-color .15s ease,background .15s ease,transform .15s ease;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.model-option-select {
+  display: grid;
+  grid-template-rows: minmax(0,1fr) auto auto minmax(0,1fr);
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}

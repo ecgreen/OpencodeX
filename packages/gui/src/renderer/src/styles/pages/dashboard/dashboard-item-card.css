@@ -1,0 +1,36 @@
+.dashboard-item-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  position: relative;
+  min-height: 92px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: none;
+  transform: none;
+  transition: border-color var(--motion-hover) ease,background var(--motion-hover) ease;
+}
+
+.dashboard-card-open {
+  display: grid;
+  align-content: space-between;
+  gap: 5px;
+  height: 100%;
+  min-width: 0;
+  width: 100%;
+  min-height: 90px;
+  align-items: stretch;
+  padding: 14px 42px 12px 14px;
+  border: 0;
+  border-radius: var(--radius-card);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+}

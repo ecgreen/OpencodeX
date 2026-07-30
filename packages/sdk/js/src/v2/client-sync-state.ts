@@ -10,11 +10,28 @@ import type {
 import type {
   ClientCatalogSnapshot,
   ClientEntityState,
+  ClientSessionDetailState,
   ClientSessionLoadState,
   ClientStateSyncState,
 } from "./client-sync-types.js"
 import { applyClientSessionCardPage } from "./client-sync-cards.js"
 export { applyClientSessionCardPage } from "./client-sync-cards.js"
+
+/**
+ * True while a text-bearing part is mid-stream: it has started (`time.start`)
+ * but has not been closed out (`time.end`). Parts that never carry timing at
+ * all (user prompts, synthetic parts) are final, never streaming.
+ *
+ * This is the canonical streaming predicate. Display normalization, live-text
+ * overlay retention, and delta buffering all delegate here — the unsafe
+ * `part.time?.end === undefined` form misclassifies timeless parts as
+ * streaming, which exempts them from display normalization and leaks
+ * system-reminder blocks.
+ */
+export function isStreamingClientPart(part: Part) {
+  if (part.type !== "text" && part.type !== "reasoning") return false
+  return part.time !== undefined && part.time.end === undefined
+}
 
 export function applyClientStateSnapshot(
   current: ClientStateSyncState,
@@ -131,11 +148,12 @@ export function applyClientSessionSnapshot(
         Object.entries(previous?.livePartText ?? {}).filter(([partID, live]) => {
           const part = incomingParts.get(partID)
           if (!part) {
-            const previousPart = previous?.parts[partID]
+            const previousPart = findClientDetailPart(previous, partID)
             return previousPart ? preservedIDs.includes(previousPart.messageID) : false
           }
           if (part.type !== "text" && part.type !== "reasoning") return false
-          return previous?.parts[partID]?.type === part.type && part.time?.end === undefined && part.text === live.base
+          const previousPart = previous?.parts[part.messageID]?.[partID]
+          return previousPart?.type === part.type && isStreamingClientPart(part) && part.text === live.base
         }),
       )
   const messageIDs = options.prepend
@@ -166,20 +184,18 @@ export function applyClientSessionSnapshot(
   const parts = reconcileRecord(
     previous?.parts ?? {},
     Object.fromEntries(
-      messageIDs.flatMap((messageID) => {
-        if (options.prepend && previous?.messages[messageID]) {
-          return (previous.partIDs[messageID] ?? []).flatMap((partID) => {
-            const part = previous.parts[partID]
-            return part ? [[partID, part] as const] : []
-          })
-        }
-        const bundle = incoming.get(messageID)
-        if (bundle)
-          return bundle.parts.map((part) => [part.id, applyLivePartText(part, livePartText[part.id])] as const)
-        return (previous?.partIDs[messageID] ?? []).flatMap((partID) => {
-          const part = previous?.parts[partID]
-          return part ? [[partID, part] as const] : []
-        })
+      messageIDs.map((messageID) => {
+        const previousParts = previous?.parts[messageID] ?? {}
+        const nextParts = (() => {
+          if (options.prepend && previous?.messages[messageID]) return previousParts
+          const bundle = incoming.get(messageID)
+          if (bundle)
+            return Object.fromEntries(
+              bundle.parts.map((part) => [part.id, applyLivePartText(part, livePartText[part.id])] as const),
+            )
+          return previousParts
+        })()
+        return [messageID, reconcileRecord(previousParts, nextParts)] as const
       }),
     ),
   )
@@ -203,6 +219,10 @@ export function applyClientSessionSnapshot(
     ? [
         ...deletedMessageIDs.flatMap((messageID) => previous.partIDs[messageID] ?? []),
         ...incomingItems.flatMap((item) => {
+          // Prepend keeps the resident copy of an already-known message (see the
+          // guards on `partIDs`/`parts` above), so a stale older-page copy must
+          // not tombstone parts that remain live in the resident detail.
+          if (options.prepend && previous.messages[item.info.id]) return []
           const currentPartIDs = new Set(item.parts.map((part) => part.id))
           return (previous.partIDs[item.info.id] ?? []).filter((partID) => !currentPartIDs.has(partID))
         }),
@@ -211,7 +231,7 @@ export function applyClientSessionSnapshot(
   const dirtySessions = { ...current.dirtySessions }
   if (!options.prepend) delete dirtySessions[snapshot.session.id]
   const liveMessageIDs = Object.keys(messages)
-  const livePartIDs = Object.keys(parts)
+  const livePartIDs = Object.values(parts).flatMap((messageParts) => Object.keys(messageParts))
   const messageTombstones = deletedMessageIDs.reduce(
     (result, messageID) => ({ ...result, [messageID]: true as const }),
     withoutRecordKeys(current.tombstones.messages, liveMessageIDs),
@@ -330,10 +350,27 @@ export function applyClientStateEvent(
 export function selectClientSessionMessages(state: ClientStateSyncState, sessionID: string) {
   const detail = state.sessionDetails[sessionID]
   if (!detail) return []
-  return detail.messageIDs.map((messageID) => ({
-    info: detail.messages[messageID],
-    parts: (detail.partIDs[messageID] ?? []).flatMap((partID) => detail.parts[partID] ?? []),
-  }))
+  return detail.messageIDs.map((messageID) => {
+    const messageParts = detail.parts[messageID]
+    return {
+      info: detail.messages[messageID],
+      parts: (detail.partIDs[messageID] ?? []).flatMap((partID) => messageParts?.[partID] ?? []),
+    }
+  })
+}
+
+/**
+ * Looks a part up without its message ID. Costs one hash probe per loaded
+ * message, so it stays cheap for the handful of live-streaming part IDs that
+ * need it - never use it on a per-part hot path.
+ */
+export function findClientDetailPart(detail: ClientSessionDetailState | undefined, partID: string) {
+  if (!detail) return undefined
+  for (const messageParts of Object.values(detail.parts)) {
+    const part = messageParts[partID]
+    if (part) return part
+  }
+  return undefined
 }
 
 export function selectClientSessionChildren(state: ClientStateSyncState, sessionID: string) {

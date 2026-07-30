@@ -1,0 +1,33 @@
+.dashboard-item-card:hover .card-action-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dashboard-item-card:focus-within .card-action-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.card-action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.card-action-menu summary:hover {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.card-action-menu summary:focus-visible {
+  border-color: var(--border-subtle);
+  color: var(--text);
+  background: var(--element-2);
+}
+
+.card-action-menu button:hover {
+  background: var(--element-2);
+}
+
+.card-action-menu button:focus-visible {
+  background: var(--element-2);
+}

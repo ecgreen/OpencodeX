@@ -1,0 +1,96 @@
+.status.dormant {
+  color: var(--muted);
+}
+
+.chip.strong {
+  color: var(--primary);
+  border-color: color-mix(in srgb,var(--theme-accent) 44%,transparent);
+}
+
+.inspector-metrics {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 6px;
+}
+
+.inspector-metrics div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--element);
+}
+
+.inspector-status {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--element);
+}
+
+.inspector-file {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--element);
+}
+
+.inspector-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inspector-status small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inspector-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inspector-metrics strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspector-status span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspector-file span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspector-status.connected {
+  border-color: color-mix(in srgb,var(--success) 45%,var(--border-subtle));
+}
+
+.inspector-status.needs_client_registration {
+  border-color: color-mix(in srgb,var(--error) 45%,var(--border-subtle));
+}
+
+.inspector-status.needs_auth {
+  border-color: color-mix(in srgb,var(--warning) 45%,var(--border-subtle));
+}
+
+.inspector-file small {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+}

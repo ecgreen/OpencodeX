@@ -67,7 +67,6 @@ test("renders the complete OpencodeX dashboard without idle state polling", asyn
   expect(frame).not.toContain("undefined")
   expect(frame).not.toContain("[object Object]")
   expect(normalizeFrame(frame)).toMatchSnapshot()
-  expect(app.requests.filter((url) => url.pathname === "/experimental/opencodex/session-sync")).toHaveLength(0)
   expect(app.requests.map((url) => url.pathname)).toEqual(
     expect.arrayContaining(["/experimental/opencodex/state", "/experimental/opencodex/state/capabilities"]),
   )

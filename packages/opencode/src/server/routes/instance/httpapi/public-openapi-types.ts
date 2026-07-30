@@ -66,14 +66,10 @@ export const QueryParameterSchemas: Record<string, OpenApiSchema> = {
   "GET /session/{sessionID}/message limit": { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
   "GET /session/{sessionID}/message renderBudget": { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
   "GET /vcs/diff context": { type: "integer", minimum: 0 },
-  "GET /api/session limit": { type: "number" },
-  "GET /api/session start": { type: "number" },
-  "GET /api/session roots": QueryBooleanOpenApi,
-  "GET /api/session/{sessionID}/message limit": { type: "number" },
 }
 
 export const LegacyComponentDescriptions: Record<string, string> = {
   LogLevel: "Log level",
-  ServerConfig: "Server configuration for opencode serve and web commands",
+  ServerConfig: "Server configuration for the opencode serve command",
   LayoutConfig: "@deprecated Always uses stretch layout.",
 }

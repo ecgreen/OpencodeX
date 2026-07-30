@@ -16,6 +16,8 @@ export function SessionSideFileExplorer(props: {
   openPath: string
   toggleFolder: (node: FileNode) => void
   openFile: (path: string) => void
+  /** Marks files the session changed, or that have edits open and unsaved. */
+  fileStatus?: (path: string) => "dirty" | "session" | undefined
   close: () => void
 }) {
   return (
@@ -50,6 +52,16 @@ export function SessionSideFileExplorer(props: {
               >
                 <Icon name={match.type === "directory" ? "folder" : "file"} />
                 <span>{match.path}</span>
+                <Show when={match.type !== "directory" && props.fileStatus?.(match.path)}>
+                  {(status) => (
+                    <span
+                      class="workbench-file-marker"
+                      data-kind={status()}
+                      title={status() === "dirty" ? "Unsaved changes" : "Changed in this session"}
+                      aria-label={status() === "dirty" ? "Unsaved changes" : "Changed in this session"}
+                    />
+                  )}
+                </Show>
               </Button>
             )}
           </For>
@@ -72,6 +84,16 @@ export function SessionSideFileExplorer(props: {
               </Show>
               <Icon name={row.node.type === "directory" ? row.expanded ? "folder-open" : "folder" : "file"} />
               <span>{row.node.name}</span>
+              <Show when={row.node.type !== "directory" && props.fileStatus?.(row.node.path)}>
+                {(status) => (
+                  <span
+                    class="workbench-file-marker"
+                    data-kind={status()}
+                    title={status() === "dirty" ? "Unsaved changes" : "Changed in this session"}
+                    aria-label={status() === "dirty" ? "Unsaved changes" : "Changed in this session"}
+                  />
+                )}
+              </Show>
               <Show when={row.node.type === "directory" && row.expanded && !row.loaded}>
                 <span class="workbench-loading">...</span>
               </Show>

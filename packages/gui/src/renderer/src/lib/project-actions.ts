@@ -1,4 +1,4 @@
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
 type ConfirmDialogInput = { title: string; message: string; confirm?: string }
 type ProjectDialogInput = { title: string; message?: string; name: string; folders: string[] }

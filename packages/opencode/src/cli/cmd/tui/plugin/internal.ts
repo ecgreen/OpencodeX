@@ -8,7 +8,6 @@ import SidebarFiles from "../feature-plugins/sidebar/files"
 import SidebarFooter from "../feature-plugins/sidebar/footer"
 import PluginManager from "../feature-plugins/system/plugins"
 import Notifications from "../feature-plugins/system/notifications"
-import SessionV2Debug from "../feature-plugins/system/session-v2"
 import WhichKey from "../feature-plugins/system/which-key"
 import DiffViewer from "../feature-plugins/system/diff-viewer"
 import SessionSwitcher from "../feature-plugins/session"
@@ -22,7 +21,7 @@ export type InternalTuiPlugin = Omit<TuiPluginModule, "id"> & {
   enabled?: boolean
 }
 
-export function internalTuiPlugins(flags: Pick<RuntimeFlags.Info, "experimentalEventSystem">): InternalTuiPlugin[] {
+export function internalTuiPlugins(): InternalTuiPlugin[] {
   const implementations = {
     "internal:home-footer": HomeFooter,
     "internal:home-tips": HomeTips,
@@ -36,9 +35,8 @@ export function internalTuiPlugins(flags: Pick<RuntimeFlags.Info, "experimentalE
     "internal:plugin-manager": PluginManager,
     "which-key": WhichKey,
     "diff-viewer": DiffViewer,
-    "internal:session-v2-debug": SessionV2Debug,
     "internal:session-switcher": SessionSwitcher,
   } satisfies Record<InternalTuiPluginID, InternalTuiPlugin>
 
-  return internalTuiPluginManifest(flags).map((item) => ({ ...implementations[item.id], ...item }))
+  return internalTuiPluginManifest().map((item) => ({ ...implementations[item.id], ...item }))
 }

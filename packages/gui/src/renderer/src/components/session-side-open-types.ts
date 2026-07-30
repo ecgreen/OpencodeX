@@ -19,6 +19,8 @@ export type OpenTab = {
   text: string
   original: string
   terminalStatus?: "connecting" | "open" | "closed" | "error"
+  /** A read is in flight for this tab, so the pane shows a skeleton instead of stale or empty content. */
+  loading?: boolean
   message?: string
   externalText?: string
   externallyChanged?: boolean

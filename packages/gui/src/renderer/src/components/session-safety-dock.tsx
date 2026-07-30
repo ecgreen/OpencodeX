@@ -2,7 +2,7 @@ import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@openco
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { buildSafetyQueue, moveSafetyQueueIndex, safetyQueueGroup } from "../lib/safety-present"
 import { permissionToolPart } from "../lib/tool-display"
-import type { MessageBundle } from "../lib/store"
+import type { MessageBundle } from "../lib/session-api"
 import { SessionPermissionCard } from "./session-permission-card"
 import { SessionQuestionCard } from "./session-question-card"
 

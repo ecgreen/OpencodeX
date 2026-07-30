@@ -1,6 +1,5 @@
 import type { createTuiAppController } from "./app-controller"
 import { DialogAgent } from "./component/dialog-agent"
-import { DialogConsoleOrg } from "./component/dialog-console-org"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogModel } from "./component/dialog-model"
 import { DialogProviderList } from "./component/dialog-provider"
@@ -101,15 +100,6 @@ export function createTuiAppAgentCommands(controller: ReturnType<typeof createTu
       category: "Provider",
       run: () => controller.dialog.replace(() => <DialogProviderList />),
     },
-    ...(controller.sync.data.console_state.switchableOrgCount > 1 ? [{
-      name: "console.org.switch",
-      title: "Switch org",
-      suggested: Boolean(controller.sync.data.console_state.activeOrgName),
-      slashName: "org",
-      slashAliases: ["orgs", "switch-org"],
-      category: "Provider",
-      run: () => controller.dialog.replace(() => <DialogConsoleOrg />),
-    }] : []),
   ]
 }
 

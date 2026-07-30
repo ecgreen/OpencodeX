@@ -1,0 +1,20 @@
+.diff-subbar select {
+  border: 1px solid var(--border-subtle);
+  background: var(--element);
+  color: var(--text);
+  min-height: 30px;
+  max-width: 320px;
+  padding: 0 8px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.diff-file-tree-toolbar button {
+  flex: 1 1 0;
+  min-height: 28px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text);
+  background: var(--element);
+  border-radius: 0;
+  box-shadow: none;
+}

@@ -1,7 +1,7 @@
 import { Show, createMemo, lazy, type Accessor } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
 import { EMPTY_SESSION_DATA } from "../controllers/authoritative-state-controller"
-import { findFiles } from "../lib/store"
+import { findFiles } from "../lib/session-api"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
 import { ClaudeTerminalViewPane } from "./claude-terminal-surface"
 
@@ -176,6 +176,7 @@ function OpenCodeViewPane(props: {
       loadOlderMessages={(sessionID, cursor) =>
         run(() => props.model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
       }
+      collapseMessageWindow={(sessionID) => props.model.authoritative.collapseViewSessionMessageWindow(sessionID)}
       onMessageAction={(action, context) => run(() => props.model.sessionSlash.messageAction(action, context))}
     />
   )

@@ -1,0 +1,89 @@
+.session-toolbar .overflow-menu {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  line-height: 0;
+}
+
+.session-toolbar .overflow-menu summary {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 4px;
+  padding: 0;
+  border-color: color-mix(in srgb,var(--line-strong) 84%,transparent);
+  color: color-mix(in srgb,var(--muted) 82%,var(--text));
+  background: linear-gradient(180deg,var(--theme-overlay-subtle),transparent),color-mix(in srgb,var(--surface-raised) 82%,var(--bg));
+}
+
+.session-toolbar .overflow-menu[open] summary {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  color: var(--text);
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  outline: none;
+}
+
+.session-toolbar .session-actions-menu {
+  top: 34px;
+  display: grid;
+  gap: 5px;
+  width: min(238px,calc(100vw - 26px));
+  padding: 7px;
+  border-color: var(--line-strong);
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--surface-glass) 88%,var(--bg));
+  box-shadow: 0 18px 44px var(--theme-shadow-medium);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  line-height: 1.2;
+}
+
+.session-toolbar .session-actions-menu-group {
+  display: grid;
+  gap: 2px;
+}
+
+.session-toolbar .session-actions-menu hr {
+  width: auto;
+  margin: 2px 4px;
+  border-color: var(--line);
+}
+
+.session-toolbar .session-actions-menu button {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr);
+  justify-content: normal;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: left;
+  transform: none;
+}
+
+.session-toolbar .session-actions-menu .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.session-toolbar .session-actions-menu-indicator {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: transparent;
+  background: color-mix(in srgb,var(--surface-raised) 64%,transparent);
+}

@@ -1,0 +1,22 @@
+.dashboard-section>header>div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.dashboard-section h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.dashboard-section .section-chevron {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.dashboard-section-content.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}

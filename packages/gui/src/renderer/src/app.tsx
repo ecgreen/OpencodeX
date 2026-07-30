@@ -23,7 +23,9 @@ import { createSessionSwitcherController } from "./controllers/session-switcher-
 import { createSettingsController } from "./controllers/settings-controller"
 import { createSwarmTeamController } from "./controllers/swarm-team-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
+import { createUpdateNoticeController } from "./controllers/update-notice-controller"
 import { createViewController } from "./controllers/view-controller"
+import { createAttentionNotifications } from "./lib/attention-notifications"
 import { AppShell } from "./components/app-shell"
 
 export function App() {
@@ -56,6 +58,17 @@ export function App() {
     dialogs,
     transcript: transcriptPreferences,
     alert: notices.alert,
+  })
+  const updateNotice = createUpdateNoticeController({ authoritative, alert: notices.alert })
+  createAttentionNotifications({
+    items: authoritative.attentionItems,
+    enabled: settings.attentionNotifications,
+    // Phase-gated, not `Boolean(state())`: bootstrapping commits carry empty
+    // attention items, and a reset drops the phase out of "ready" — both must
+    // re-seed the baseline instead of announcing every outstanding item.
+    ready: () => authoritative.state()?.phase === "ready",
+    isSubagent: (sessionID) => Boolean(authoritative.state()?.sessions.records[sessionID]?.parentID),
+    onActivate: (sessionID) => navigation.setRoute({ name: "session", sessionID }),
   })
   const claudeTerminals = createClaudeTerminalController({
     client: authoritative.client,
@@ -228,6 +241,7 @@ export function App() {
     settings,
     swarmTeam,
     transcriptPreferences,
+    updateNotice,
     view,
   }
   return <AppShell model={model} />

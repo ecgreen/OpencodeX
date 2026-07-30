@@ -3,7 +3,7 @@ import type { GuiClient } from "../lib/client"
 import {
   workbenchFileDiagnostics,
   type WorkbenchFileDiagnosticsResult,
-} from "../lib/store"
+} from "../lib/session-api"
 
 export function createWorkbenchDiagnosticsController(input: {
   gui: Accessor<GuiClient | undefined>

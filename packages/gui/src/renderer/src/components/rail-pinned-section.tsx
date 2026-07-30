@@ -1,7 +1,7 @@
 import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { For, createMemo } from "solid-js"
 import { title } from "../lib/format"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { RailSection } from "./rail-section"
 import { sectionDrag } from "./rail-sidebar-drag"
 import { SidebarSessionLink, SidebarTerminalSessionLink, SidebarViewLink } from "./rail-sidebar-links"

@@ -1,0 +1,64 @@
+.session-loading-skeleton-message[data-kind=user] {
+  width: min(760px,88%);
+  max-width: 92%;
+  min-height: 70px;
+  justify-self: end;
+  margin-left: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--element) 72%,transparent);
+  box-shadow: inset 0 1px color-mix(in srgb,var(--text) 4%,transparent);
+}
+
+.session-loading-skeleton-message[data-kind=assistant] .session-loading-skeleton-line:nth-child(2) {
+  width: min(72%,860px);
+}
+
+.session-loading-skeleton-message[data-kind=assistant] .session-loading-skeleton-line:nth-child(3) {
+  width: min(94%,1120px);
+}
+
+.session-loading-skeleton-message[data-kind=assistant] .session-loading-skeleton-line:nth-child(4) {
+  width: min(68%,760px);
+}
+
+.session-loading-skeleton-line:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--text) 16%,transparent),transparent);
+  transform: translate(-110%);
+  animation: transcript-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.session-loading-skeleton-message:nth-child(2) .session-loading-skeleton-line {
+  width: 74%;
+}
+
+.session-loading-skeleton-message:nth-child(2) .session-loading-skeleton-line.title {
+  width: 28%;
+}
+
+.session-loading-skeleton-message:nth-child(3) .session-loading-skeleton-line {
+  width: 92%;
+}
+
+.session-loading-skeleton-message:nth-child(3) .session-loading-skeleton-line.short {
+  width: 46%;
+}
+
+.session-loading-skeleton-message:nth-child(4) {
+  min-height: 108px;
+}
+
+.session-loading-skeleton-message:nth-child(5) {
+  min-height: 128px;
+}
+
+.session-loading-skeleton-message:nth-child(6) {
+  min-height: 92px;
+}
+
+.session-loading-skeleton-message:nth-child(7) {
+  min-height: 116px;
+}

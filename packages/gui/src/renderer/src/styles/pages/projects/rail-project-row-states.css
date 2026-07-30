@@ -1,0 +1,11 @@
+.rail-project-row:hover {
+  color: var(--text);
+  background: var(--element);
+  box-shadow: none;
+}
+
+.rail-project-row:focus-within {
+  color: var(--text);
+  background: var(--element);
+  box-shadow: none;
+}

@@ -1,5 +1,5 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import type { MessageBundle, PromptPart, SessionData } from "../lib/store"
+import type { MessageBundle, PromptPart, SessionData } from "../lib/session-api"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 
 export function createComposerPromptRestore(input: {

@@ -443,9 +443,9 @@ describe("client state sync", () => {
     expect(second.sessionDetails["session-1"]?.messages["message-1"]).toBe(
       first.sessionDetails["session-1"]?.messages["message-1"],
     )
-    expect(second.sessionDetails["session-1"]?.parts["part-1"]).toBe(first.sessionDetails["session-1"]?.parts["part-1"])
-    expect(second.sessionDetails["session-1"]?.parts["part-2"]).not.toBe(
-      first.sessionDetails["session-1"]?.parts["part-2"],
+    expect(second.sessionDetails["session-1"]?.parts["message-1"]?.["part-1"]).toBe(first.sessionDetails["session-1"]?.parts["message-1"]?.["part-1"])
+    expect(second.sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]).not.toBe(
+      first.sessionDetails["session-1"]?.parts["message-2"]?.["part-2"],
     )
     expect(selectClientSessionMessages(second, "session-1")[1]?.parts[0]).toMatchObject({
       id: "part-2",
@@ -497,7 +497,7 @@ describe("client state sync", () => {
     const stale = applyClientSessionSnapshot(tombstoned, sessionSnapshot("cursor-2", "detail-2", "stale"))
 
     expect(stale.sessionDetails["session-1"]?.messages["message-2"]).toBeUndefined()
-    expect(stale.sessionDetails["session-1"]?.parts["part-1"]).toBeUndefined()
+    expect(stale.sessionDetails["session-1"]?.parts["message-1"]?.["part-1"]).toBeUndefined()
     expect(stale.tombstones.messages["message-2"]).toBe(true)
     expect(stale.tombstones.parts["part-1"]).toBe(true)
   })
@@ -2407,7 +2407,7 @@ describe("client state sync", () => {
     await controller.start()
     await controller.refreshSessionTail("session-1")
     releaseEvent.resolve()
-    await waitFor(() => controller.getState().sessionDetails["session-1"]?.parts["part-2"]?.text === "recovered")
+    await waitFor(() => controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]?.text === "recovered")
 
     expect(sessionLoads).toBe(3)
     expect(controller.getState().dirtySessions["session-1"]).toBeUndefined()
@@ -2476,7 +2476,7 @@ describe("client state sync", () => {
     await controller.refreshSessionTail("session-1")
 
     version = 2
-    await waitFor(() => controller.getState().sessionDetails["session-1"]?.parts["part-2"]?.text === "polled")
+    await waitFor(() => controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]?.text === "polled")
 
     expect(sessionLoads).toBe(2)
     expect(controller.getState().sessions.records["session-1"]?.time.updated).toBe(2)
@@ -2590,7 +2590,7 @@ describe("client state sync", () => {
       }),
     ).toBe(true)
     await controller.refreshSessionTail("session-1")
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-2"]).toMatchObject({
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]).toMatchObject({
       text: "first line\n",
     })
     expect(controller.getState().sessionDetails["session-1"]?.livePartText?.["part-2"]).toEqual({
@@ -2598,7 +2598,7 @@ describe("client state sync", () => {
       text: "first line\n",
     })
     await controller.refreshSessionTail("session-1")
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-2"]).toMatchObject({
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]).toMatchObject({
       text: "first line\n",
     })
 
@@ -2613,13 +2613,13 @@ describe("client state sync", () => {
         delta: "second line",
       },
     })
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-2"]).toMatchObject({
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]).toMatchObject({
       text: "first line\nsecond line",
     })
 
     completed = true
     await controller.refreshSessionTail("session-1")
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-2"]).toMatchObject({
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]).toMatchObject({
       text: "",
       time: { start: 1, end: 2 },
     })
@@ -2660,7 +2660,7 @@ describe("client state sync", () => {
 
     await controller.refreshSessionTail("session-1")
 
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-2"]).toMatchObject({ text: "corrected" })
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]).toMatchObject({ text: "corrected" })
     expect(controller.getState().sessionDetails["session-1"]?.livePartText).toBeUndefined()
     controller.stop()
   })
@@ -2814,7 +2814,7 @@ describe("client state sync", () => {
       type: "message.updated",
       properties: { sessionID: "session-1", info: message("message-4", 4) },
     })
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-4"]).toMatchObject({
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-4"]?.["part-4"]).toMatchObject({
       text: "buffered live",
     })
     expect(controller.getState().sessionDetails["session-1"]?.livePartText?.["part-4"]).toEqual({
@@ -2851,7 +2851,7 @@ describe("client state sync", () => {
       type: "message.updated",
       properties: { sessionID: "session-1", info: message("message-5", 5) },
     })
-    expect(controller.getState().sessionDetails["session-1"]?.parts["part-5"]).toEqual(completedBufferedPart)
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-5"]?.["part-5"]).toEqual(completedBufferedPart)
     expect(controller.getState().sessionDetails["session-1"]?.livePartText?.["part-5"]).toBeUndefined()
     expect(controller.getMetrics().sessionSnapshots).toBe(1)
     expect(controller.getMetrics().liveEvents).toBe(9)
@@ -3191,6 +3191,9 @@ function part(messageID: string, id: string, text: string, sessionID = "session-
     messageID,
     type: "text",
     text,
+    // Streaming fixtures must carry `time.start`: a part with no timing never
+    // streamed, so the engine treats it as final and drops deltas/overlays.
+    time: { start: 1 },
   }
 }
 

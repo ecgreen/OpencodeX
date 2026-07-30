@@ -28,7 +28,7 @@ import type {
   ClientCatalogView,
   OpencodeXSessionUiState,
 } from "@opencode-ai/sdk/v2"
-import { createClientStateSync } from "@opencode-ai/sdk/v2"
+import { createClientStateSync, loadClientSessionTranscript, normalizeClientDisplayPart } from "@opencode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
@@ -39,7 +39,6 @@ import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import * as Log from "@opencode-ai/core/util/log"
-import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
@@ -47,10 +46,23 @@ import {
   changedTuiSessionDetails,
   collectTuiLiveDetailChanges,
   projectTuiClientState,
-  projectTuiSessionDetail,
   type TuiLiveDetailChange,
   tuiClientStateChanges,
 } from "./sync-state"
+import {
+  EMPTY_TUI_TRANSCRIPT_WINDOW,
+  TUI_SESSION_PAGE_LIMIT,
+  TUI_SESSION_RELEASE_DELAY_MS,
+  TUI_SESSION_TAIL_LIMIT,
+  TUI_SESSION_TRANSCRIPT_PAGE_LIMIT,
+  sameTuiTranscriptWindow,
+  tuiTranscriptAfterOlderPage,
+  tuiTranscriptFromTail,
+  tuiTranscriptTrim,
+  tuiWarmSessions,
+  tuiWarmSessionsWithout,
+  type TuiTranscriptWindow,
+} from "./sync-transcript"
 
 const PENDING_PROMPT_IDLE_RELEASE_MS = 500
 
@@ -63,7 +75,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       provider: Provider[]
       provider_default: Record<string, string>
       provider_next: ProviderListResponse
-      console_state: ConsoleState
       provider_auth: Record<string, ProviderAuthMethod[]>
       agent: Agent[]
       command: Command[]
@@ -87,6 +98,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       }
       session_pending_prompt: {
         [sessionID: string]: string | undefined
+      }
+      session_transcript: {
+        [sessionID: string]: TuiTranscriptWindow
       }
       session_sync_revision: string | undefined
       session_diff: {
@@ -116,7 +130,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         default: {},
         connected: [],
       },
-      console_state: emptyConsoleState,
       provider_auth: {},
       config: {},
       status: "loading",
@@ -135,6 +148,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       session_status: {},
       session_ui_state: {},
       session_pending_prompt: {},
+      session_transcript: {},
       session_sync_revision: undefined,
       session_diff: {},
       todo: {},
@@ -152,7 +166,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const sdk = useSDK()
     const kv = useKV()
 
-    const fullSyncedSessions = new Set<string>()
+    // Retention: a session's transcript stays resident while something on screen
+    // holds a retainer, then for a grace period after, then only while it is one
+    // of the few most recently visited. Everything else is dropped from both the
+    // TUI store and the SDK's canonical state.
+    const retainedSessions = new Map<string, number>()
+    const hydratedSessions = new Set<string>()
+    const sessionReleaseTimers = new Map<string, Timer>()
+    let warmSessions: string[] = []
     const appliedSessionVersions = new Map<string, string>()
     let stateSync: ClientStateSyncController | undefined
     let stateSyncStart: Promise<void> | undefined
@@ -163,7 +184,22 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const pendingPromptReleaseTimers = new Map<string, Timer>()
 
     function clearProjectedState() {
-      fullSyncedSessions.clear()
+      hydratedSessions.clear()
+      // Warm sessions and pending releases keep an SDK tail alive on purpose.
+      // A reset empties the SDK's projected state but not its tail registry, so
+      // without an explicit release the controller re-tails sessions nothing on
+      // this side retains after reconnect. Deferred to a microtask because
+      // releaseSession commits synchronously and this runs mid-application.
+      const staleTails = [...new Set([...warmSessions, ...sessionReleaseTimers.keys()])].filter(
+        (sessionID) => !retainedSessions.has(sessionID),
+      )
+      if (staleTails.length > 0) {
+        const controller = stateSync
+        queueMicrotask(() => staleTails.forEach((sessionID) => controller?.releaseSession(sessionID)))
+      }
+      sessionReleaseTimers.forEach(clearTimeout)
+      sessionReleaseTimers.clear()
+      warmSessions = []
       appliedSessionVersions.clear()
       appliedStateSync = undefined
       batch(() => {
@@ -185,6 +221,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         setStore("session_ui_state", reconcile({}))
         setStore("session_sync_revision", undefined)
         setStore("session_diff", reconcile({}))
+        setStore("session_transcript", reconcile({}))
         setStore("todo", reconcile({}))
         setStore("message", reconcile({}))
         setStore("part", reconcile({}))
@@ -195,12 +232,20 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       })
     }
 
-    function pruneSessionDetails(sessionIDs: ReadonlySet<string>) {
-      const removed = new Set(
-        [...Object.keys(store.message), ...Object.keys(store.todo), ...Object.keys(store.session_diff)].filter(
-          (sessionID) => !sessionIDs.has(sessionID),
+    function pruneSessionDetails(keep: ReadonlySet<string>) {
+      removeSessionDetails(
+        new Set(
+          [
+            ...Object.keys(store.message),
+            ...Object.keys(store.todo),
+            ...Object.keys(store.session_diff),
+            ...Object.keys(store.session_transcript),
+          ].filter((sessionID) => !keep.has(sessionID)),
         ),
       )
+    }
+
+    function removeSessionDetails(removed: ReadonlySet<string>) {
       if (removed.size === 0) return
       const messageIDs = new Set(
         [...removed].flatMap((sessionID) => (store.message[sessionID] ?? []).map((item) => item.id)),
@@ -222,15 +267,82 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         produce((draft) => removed.forEach((sessionID) => delete draft[sessionID])),
       )
       setStore(
+        "session_transcript",
+        produce((draft) => removed.forEach((sessionID) => delete draft[sessionID])),
+      )
+      setStore(
         "part",
         produce((draft) => messageIDs.forEach((messageID) => delete draft[messageID])),
       )
       removed.forEach((sessionID) => {
         clearTimeout(pendingPromptReleaseTimers.get(sessionID))
         pendingPromptReleaseTimers.delete(sessionID)
-        fullSyncedSessions.delete(sessionID)
+        hydratedSessions.delete(sessionID)
         appliedSessionVersions.delete(sessionID)
+        // A session that is gone must not keep a warm slot; still-retained ones
+        // simply have not hydrated yet, so they stay.
+        if (!retainedSessions.has(sessionID)) warmSessions = tuiWarmSessionsWithout(warmSessions, sessionID)
       })
+    }
+
+    /**
+     * Refcounted retainer. Every screen that renders a session's transcript
+     * holds one for as long as it is mounted; the returned dispose releases it.
+     */
+    function retainSession(sessionID: string) {
+      retainedSessions.set(sessionID, (retainedSessions.get(sessionID) ?? 0) + 1)
+      clearTimeout(sessionReleaseTimers.get(sessionID))
+      sessionReleaseTimers.delete(sessionID)
+      const promoted = tuiWarmSessions(warmSessions, sessionID)
+      warmSessions = promoted.warm
+      promoted.evicted.forEach(scheduleSessionRelease)
+      let disposed = false
+      return () => {
+        if (disposed) return
+        disposed = true
+        const count = (retainedSessions.get(sessionID) ?? 1) - 1
+        if (count > 0) {
+          retainedSessions.set(sessionID, count)
+          return
+        }
+        retainedSessions.delete(sessionID)
+        scheduleSessionRelease(sessionID)
+      }
+    }
+
+    function scheduleSessionRelease(sessionID: string) {
+      if (retainedSessions.has(sessionID) || sessionReleaseTimers.has(sessionID)) return
+      const timer = setTimeout(() => {
+        sessionReleaseTimers.delete(sessionID)
+        releaseSessionState(sessionID)
+      }, TUI_SESSION_RELEASE_DELAY_MS)
+      timer.unref?.()
+      sessionReleaseTimers.set(sessionID, timer)
+    }
+
+    function releaseSessionState(sessionID: string) {
+      if (retainedSessions.has(sessionID) || warmSessions.includes(sessionID)) return
+      stateSync?.releaseSession(sessionID)
+      batch(() => removeSessionDetails(new Set([sessionID])))
+    }
+
+    /**
+     * Applies the render cap and publishes the resulting window. Returns the
+     * message IDs the transcript should actually mount.
+     */
+    function transcriptWindowIDs(sessionID: string, detail: ClientSessionDetailState) {
+      const current = store.session_transcript[sessionID] ?? EMPTY_TUI_TRANSCRIPT_WINDOW
+      const trimmed = tuiTranscriptTrim(detail.messageIDs, (messageID) => detail.messages[messageID], current)
+      // Copy: `trimmed.window` can be the shared default, and the store takes
+      // ownership of whatever object it is given.
+      if (!sameTuiTranscriptWindow(store.session_transcript[sessionID], trimmed.window))
+        setStore("session_transcript", sessionID, reconcile({ ...trimmed.window }))
+      // A message ID the detail has no message for is unrenderable. Dropping it
+      // here keeps the window aligned with the projected store array, which the
+      // incremental update path indexes into.
+      return trimmed.ids.every((messageID) => detail.messages[messageID])
+        ? trimmed.ids
+        : trimmed.ids.filter((messageID) => detail.messages[messageID])
     }
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
@@ -348,39 +460,40 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           (detail.partIDs[response.id]?.length ?? 0) > 0)
       )
         updatePendingPrompt(sessionID, undefined)
+      const windowIDs = transcriptWindowIDs(sessionID, detail)
       const messages = store.message[sessionID]
-      if (
-        !previous ||
-        !messages ||
-        messages.length !== detail.messageIDs.length ||
-        previous.messageIDs !== detail.messageIDs
-      ) {
+      if (!previous || !messages || messages.length !== windowIDs.length || previous.messageIDs !== detail.messageIDs) {
         replaceSessionDetail(state, sessionID)
         return
       }
-      const messageIDs = hinted ? [...(hint?.messageIDs ?? [])] : detail.messageIDs
+      const messageIDs = hinted ? [...(hint?.messageIDs ?? [])] : windowIDs
       messageIDs.forEach((messageID) => {
-        const messageIndex = detail.messageIDs.indexOf(messageID)
+        const messageIndex = windowIDs.indexOf(messageID)
         if (messageIndex === -1) return
         const message = detail.messages[messageID]
         if (message && previous.messages[messageID] !== message)
           setStore("message", sessionID, messageIndex, reconcile(message))
         const partIDs = detail.partIDs[messageID] ?? []
+        const detailParts = detail.parts[messageID]
+        const previousParts = previous.parts[messageID]
         const parts = store.part[messageID] ?? []
         if (previous.partIDs[messageID] !== partIDs || parts.length !== partIDs.length) {
-          setStore("part", messageID, reconcile(partIDs.flatMap((partID) => detail.parts[partID] ?? [])))
+          setStore(
+            "part",
+            messageID,
+            reconcile(partIDs.flatMap((partID) => (detailParts?.[partID] ? [displayPart(detailParts[partID])] : []))),
+          )
           return
         }
         const changedPartIDs = hinted
-          ? [...(hint?.partIDs ?? [])].filter(
-              (partID) => (detail.parts[partID] ?? previous.parts[partID])?.messageID === messageID,
-            )
+          ? [...(hint?.partIDs ?? [])].filter((partID) => Boolean(detailParts?.[partID] ?? previousParts?.[partID]))
           : partIDs
         changedPartIDs.forEach((partID) => {
           const partIndex = partIDs.indexOf(partID)
           if (partIndex === -1) return
-          const part = detail.parts[partID]
-          if (part && previous.parts[partID] !== part) setStore("part", messageID, partIndex, reconcile(part))
+          const part = detailParts?.[partID]
+          if (part && previousParts?.[partID] !== part)
+            setStore("part", messageID, partIndex, reconcile(displayPart(part)))
         })
       })
       if (previous.snapshot.todos !== detail.snapshot.todos)
@@ -390,10 +503,23 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       if (previous.snapshot.session !== detail.snapshot.session) upsertSession(detail.snapshot.session)
     }
 
+    /**
+     * Transcript parts land in the store display-ready, so the TUI renders the
+     * same prose the GUI does instead of the raw provider envelope. Streaming
+     * parts pass through untouched and are normalized once they complete.
+     */
+    function displayPart(part: Part) {
+      return normalizeClientDisplayPart(part)
+    }
+
     function replaceSessionDetail(state: ClientStateSyncState, sessionID: string) {
-      const detail = projectTuiSessionDetail(state, sessionID)
+      const detail = state.sessionDetails[sessionID]
       if (!detail) return
-      const messageIDs = new Set(detail.messages.map((message) => message.info.id))
+      // Only the windowed slice is projected: building message bundles for
+      // history that will never be mounted is the cost this window exists to
+      // avoid.
+      const messages = transcriptWindowIDs(sessionID, detail).flatMap((messageID) => detail.messages[messageID] ?? [])
+      const messageIDs = new Set(messages.map((message) => message.id))
       ;(store.message[sessionID] ?? []).forEach((message) => {
         if (messageIDs.has(message.id)) return
         setStore(
@@ -403,11 +529,22 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           }),
         )
       })
-      setStore("message", sessionID, reconcile(detail.messages.map((message) => message.info)))
-      detail.messages.forEach((message) => setStore("part", message.info.id, reconcile(message.parts)))
-      setStore("todo", sessionID, reconcile(detail.todos))
-      setStore("session_diff", sessionID, reconcile(detail.diff))
-      upsertSession(detail.session)
+      setStore("message", sessionID, reconcile(messages))
+      messages.forEach((message) =>
+        setStore(
+          "part",
+          message.id,
+          reconcile(
+            (detail.partIDs[message.id] ?? []).flatMap((partID) => {
+              const part = detail.parts[message.id]?.[partID]
+              return part ? [displayPart(part)] : []
+            }),
+          ),
+        ),
+      )
+      setStore("todo", sessionID, reconcile(detail.snapshot.todos))
+      setStore("session_diff", sessionID, reconcile(detail.snapshot.diff))
+      upsertSession(detail.snapshot.session)
     }
 
     function startStateSync() {
@@ -459,6 +596,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     onCleanup(() => {
       pendingPromptReleaseTimers.forEach(clearTimeout)
       pendingPromptReleaseTimers.clear()
+      sessionReleaseTimers.forEach(clearTimeout)
+      sessionReleaseTimers.clear()
       unsubscribeStateSync?.()
       stateSync?.stop()
     })
@@ -549,9 +688,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       rawEventGeneration = generation
       if (previous === 0 || !stateSync || stateSync.getState().phase !== "ready") return
       const controller = stateSync
+      // Only sessions something is actually holding get re-tailed. Re-tailing
+      // every session ever visited was the reconnect thundering herd.
       void Promise.all([
         controller.refresh(),
-        ...[...fullSyncedSessions].map((sessionID) => controller.refreshSessionTail(sessionID, { limit: 100 })),
+        ...[...retainedSessions.keys()].map((sessionID) =>
+          controller.refreshSessionTail(sessionID, { limit: TUI_SESSION_TAIL_LIMIT }),
+        ),
       ]).catch((error) => {
         Log.Default.warn("tui reconnect correction failed", {
           error: error instanceof Error ? error.message : String(error),
@@ -572,10 +715,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         ])
       })
 
-      const consoleStatePromise = sdk.client.experimental.console
-        .get({ workspace }, { throwOnError: true })
-        .then((x) => x.data)
-        .catch(() => emptyConsoleState)
       const blockingRequests: { name: string; promise: Promise<unknown> }[] = [
         { name: "project.sync", promise: projectPromise },
         { name: "opencodex.state", promise: stateSyncPromise },
@@ -593,7 +732,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
           void Promise.all([
-            consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
@@ -663,35 +801,26 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const controller = await requireStateSync()
           await controller.refresh()
         },
-        status(sessionID: string) {
-          const session = result.session.get(sessionID)
-          if (!session) return "idle"
-          if (session.time.compacting) return "compacting"
-          const messages = store.message[sessionID] ?? []
-          const last = messages.at(-1)
-          if (!last) return "idle"
-          if (last.role === "user") return "working"
-          return last.time.completed ? "idle" : "working"
-        },
         setPendingPrompt(sessionID: string, messageID: string | undefined) {
           updatePendingPrompt(sessionID, messageID)
         },
+        /**
+         * Loads the newest page of a session. Older history stays behind
+         * "load older" - walking every page here is what made opening a long
+         * transcript cost the whole session.
+         */
         async sync(sessionID: string) {
-          if (fullSyncedSessions.has(sessionID)) return
+          if (hydratedSessions.has(sessionID)) return
           const controller = await requireStateSync()
           await controller
-            .refreshSessionTail(sessionID, { limit: 100 })
-            .then(async (snapshot) => {
-              const cursors = new Set<string>()
-              for (let boundary = snapshot.messages.boundary; boundary.hasMore; ) {
-                if (!boundary.next || cursors.has(boundary.next)) {
-                  throw new Error("Authoritative session pagination did not advance")
-                }
-                cursors.add(boundary.next)
-                boundary = (await controller.loadOlderSessionPage(sessionID, { before: boundary.next, limit: 100 }))
-                  .messages.boundary
-              }
-              fullSyncedSessions.add(sessionID)
+            .refreshSessionTail(sessionID, { limit: TUI_SESSION_TAIL_LIMIT })
+            .then((snapshot) => {
+              hydratedSessions.add(sessionID)
+              setStore(
+                "session_transcript",
+                sessionID,
+                reconcile(tuiTranscriptFromTail(snapshot.messages.boundary, store.session_transcript[sessionID])),
+              )
             })
             .catch((error) => {
               Log.Default.warn("tui session hydration failed", {
@@ -699,6 +828,55 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
                 error: error instanceof Error ? error.message : String(error),
               })
             })
+        },
+        retain(sessionID: string) {
+          return retainSession(sessionID)
+        },
+        transcript(sessionID: string): TuiTranscriptWindow {
+          return store.session_transcript[sessionID] ?? EMPTY_TUI_TRANSCRIPT_WINDOW
+        },
+        async loadOlder(sessionID: string) {
+          const current = store.session_transcript[sessionID]
+          if (!current?.hasOlder || current.loadingOlder || !current.olderCursor) return false
+          const cursor = current.olderCursor
+          const controller = await requireStateSync()
+          // `expanded` goes up front: the page lands through the subscriber
+          // before this promise resolves, and the render cap would otherwise
+          // trim away exactly what was just asked for.
+          setStore("session_transcript", sessionID, reconcile({ ...current, loadingOlder: true, expanded: true }))
+          try {
+            const page = await controller.loadOlderSessionPage(sessionID, {
+              before: cursor,
+              limit: TUI_SESSION_PAGE_LIMIT,
+            })
+            setStore(
+              "session_transcript",
+              sessionID,
+              reconcile(
+                tuiTranscriptAfterOlderPage(store.session_transcript[sessionID] ?? current, page.messages.boundary),
+              ),
+            )
+            return true
+          } catch (error) {
+            Log.Default.warn("tui session older page failed", {
+              sessionID,
+              error: error instanceof Error ? error.message : String(error),
+            })
+            setStore("session_transcript", sessionID, reconcile({ ...current, loadingOlder: false }))
+            return false
+          }
+        },
+        /**
+         * Reads a session's full history without hydrating it. For export,
+         * copy and timeline search, which need every message but must not drag
+         * the transcript back into resident state.
+         */
+        async transcriptMessages(sessionID: string) {
+          const controller = await requireStateSync()
+          const transcript = await loadClientSessionTranscript(controller, sessionID, {
+            pageLimit: TUI_SESSION_TRANSCRIPT_PAGE_LIMIT,
+          })
+          return transcript.messages
         },
       },
       stateSync: {

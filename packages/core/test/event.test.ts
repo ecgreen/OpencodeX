@@ -422,9 +422,10 @@ describe("EventV2", () => {
     }),
   )
 
-  it.effect("replay defects on sequence mismatch", () =>
+  it.effect("replay accepts gaps left behind by compaction", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
       const aggregateID = EventV2.ID.create()
 
       yield* events.replay({
@@ -434,17 +435,113 @@ describe("EventV2", () => {
         aggregateID,
         data: { id: aggregateID, text: "first" },
       })
+      yield* events.replay({
+        id: EventV2.ID.create(),
+        type: EventV2.versionedType(SyncMessage.type, 1),
+        seq: 5,
+        aggregateID,
+        data: { id: aggregateID, text: "after gap" },
+      })
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, aggregateID))
+        .all()
+        .pipe(Effect.orDie)
+
+      expect(rows.map((row) => row.seq)).toEqual([0, 5])
+    }),
+  )
+
+  it.effect("replay still skips sequences that do not advance", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = EventV2.ID.create()
+
+      yield* events.replay({
+        id: EventV2.ID.create(),
+        type: EventV2.versionedType(SyncMessage.type, 1),
+        seq: 5,
+        aggregateID,
+        data: { id: aggregateID, text: "first" },
+      })
+      yield* events.replay({
+        id: EventV2.ID.create(),
+        type: EventV2.versionedType(SyncMessage.type, 1),
+        seq: 2,
+        aggregateID,
+        data: { id: aggregateID, text: "stale" },
+      })
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, aggregateID))
+        .all()
+        .pipe(Effect.orDie)
+
+      expect(rows.map((row) => row.seq)).toEqual([5])
+    }),
+  )
+
+  it.effect("replayAll defects when sequences do not strictly increase", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const aggregateID = EventV2.ID.create()
       const exit = yield* events
-        .replay({
-          id: EventV2.ID.create(),
-          type: EventV2.versionedType(SyncMessage.type, 1),
-          seq: 5,
-          aggregateID,
-          data: { id: aggregateID, text: "bad" },
-        })
+        .replayAll([
+          {
+            id: EventV2.ID.create(),
+            type: EventV2.versionedType(SyncMessage.type, 1),
+            seq: 4,
+            aggregateID,
+            data: { id: aggregateID, text: "one" },
+          },
+          {
+            id: EventV2.ID.create(),
+            type: EventV2.versionedType(SyncMessage.type, 1),
+            seq: 4,
+            aggregateID,
+            data: { id: aggregateID, text: "two" },
+          },
+        ])
         .pipe(Effect.exit)
 
-      expect(String(exit)).toContain("Sequence mismatch")
+      expect(String(exit)).toContain("Replay sequence must increase")
+    }),
+  )
+
+  it.effect("replayAll accepts sparse aggregate events", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = EventV2.ID.create()
+
+      const source = yield* events.replayAll([
+        {
+          id: EventV2.ID.create(),
+          type: EventV2.versionedType(SyncMessage.type, 1),
+          seq: 0,
+          aggregateID,
+          data: { id: aggregateID, text: "one" },
+        },
+        {
+          id: EventV2.ID.create(),
+          type: EventV2.versionedType(SyncMessage.type, 1),
+          seq: 9,
+          aggregateID,
+          data: { id: aggregateID, text: "two" },
+        },
+      ])
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, aggregateID))
+        .all()
+        .pipe(Effect.orDie)
+
+      expect(source).toBe(aggregateID)
+      expect(rows.map((row) => row.seq)).toEqual([0, 9])
     }),
   )
 

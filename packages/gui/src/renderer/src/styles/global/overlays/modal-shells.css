@@ -1,0 +1,59 @@
+.dialog-card {
+  display: grid;
+  gap: 12px;
+  width: min(560px,100%);
+  padding: 18px;
+  border-color: var(--line-strong);
+  border: 1px solid var(--border-active);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+}
+
+.command-palette-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0,1fr);
+  gap: 9px;
+  max-height: min(640px,calc(100vh - 48px));
+  padding: 12px;
+  border-color: var(--line-strong);
+  border: 1px solid var(--border-active);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  width: min(820px,calc(100vw - 36px));
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+}
+
+.keyboard-help-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0,1fr);
+  width: min(820px,calc(100vw - 32px));
+  max-height: min(760px,calc(100vh - 48px));
+  border-color: var(--line-strong);
+  border: 1px solid var(--border-active);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+}
+
+.model-picker-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0,1fr);
+  gap: 12px;
+  max-height: min(760px,calc(100vh - 48px));
+  padding: 18px;
+  border-color: var(--line-strong);
+  border: 1px solid var(--border-active);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  width: min(820px,calc(100vw - 36px));
+  border-radius: var(--ds-radius-overlay);
+  background: var(--ds-surface-raised);
+  box-shadow: var(--ds-shadow-overlay);
+}

@@ -1,9 +1,29 @@
 import { Database } from "@opencode-ai/core/database/database"
 import { Global } from "@opencode-ai/core/global"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import * as Log from "@opencode-ai/core/util/log"
 import { Flock } from "@opencode-ai/core/util/flock"
-import { Hash } from "@opencode-ai/core/util/hash"
 import { ensureRunID, OPENCODE_PROCESS_ROLE, OPENCODE_RUN_ID } from "@opencode-ai/core/util/opencode-process"
-import { ServerAuth } from "@/server/auth"
+import {
+  checkCoordinatorCompatibility,
+  coordinatorClientDir as coordinatorClientDirIn,
+  coordinatorDatabaseIdentity as coordinatorDatabaseIdentityOf,
+  coordinatorHeaders as coordinatorHeadersFor,
+  coordinatorKey as coordinatorKeyOf,
+  coordinatorManifestPath as coordinatorManifestPathIn,
+  coordinatorRoot,
+  fetchCoordinatorHealth,
+  isCoordinatorClientLease,
+  isCoordinatorProcessAlive,
+  isMissingCoordinatorFile,
+  readCoordinatorManifestFile,
+  readCoordinatorManifestToken,
+  removeCoordinatorManifest as removeCoordinatorManifestIn,
+  startCoordinatorClientLease as startCoordinatorClientLeaseIn,
+  writeCoordinatorManifest as writeCoordinatorManifestIn,
+  type CoordinatorClientLease,
+  type CoordinatorManifest,
+} from "@opencode-ai/sdk/coordinator"
 import { errorMessage } from "@/util/error"
 import { randomBytes } from "crypto"
 import { spawn } from "child_process"
@@ -11,162 +31,52 @@ import fs from "fs/promises"
 import path from "path"
 import { discoverBackendDatabase } from "./database-discovery"
 
-export type TuiCoordinatorManifest = {
-  version: 2
-  key: string
-  directory: string
-  database: string
-  pid: number
-  url: string
-  username: string
-  password: string
-  token: string
-  createdAt: string
-}
+export type TuiCoordinatorManifest = CoordinatorManifest
+export type TuiCoordinatorClientLease = CoordinatorClientLease
 
-export type TuiCoordinatorClientLease = {
-  version: 1
-  key: string
-  pid: number
-  updatedAt: number
-}
-
-const ROOT = path.join(Global.Path.state, "tui-coordinators")
-const BACKEND_AUTHORITY = path.join(Global.Path.state, "backend-authority.json")
+const STATE_ROOT = Global.Path.state
+const ROOT = coordinatorRoot(STATE_ROOT)
+const BACKEND_AUTHORITY = path.join(STATE_ROOT, "backend-authority.json")
 const USERNAME = "opencodex-local"
 const START_TIMEOUT = 15_000
-const CLIENT_HEARTBEAT_INTERVAL = 2_000
 const CLIENT_STALE_MS = 10_000
 
 export const COORDINATOR_STARTUP_LOCK_HELD = "OPENCODE_TUI_COORDINATOR_STARTUP_LOCK_HELD"
 
 export function coordinatorDatabaseIdentity(database = Database.path()) {
-  if (database === ":memory:") return database
-  const resolved = path.resolve(database)
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  return coordinatorDatabaseIdentityOf(database)
 }
 
 export function coordinatorKey(database = coordinatorDatabaseIdentity()) {
-  return Hash.fast(coordinatorDatabaseIdentity(database))
+  return coordinatorKeyOf(database)
 }
 
 export function coordinatorManifestPath(key: string) {
-  return path.join(ROOT, `${key}.json`)
+  return coordinatorManifestPathIn(STATE_ROOT, key)
 }
 
 export function coordinatorClientDir(key: string) {
-  return path.join(ROOT, `${key}.clients`)
+  return coordinatorClientDirIn(STATE_ROOT, key)
 }
 
 export function coordinatorHeaders(manifest: TuiCoordinatorManifest) {
-  return ServerAuth.headers({ username: manifest.username, password: manifest.password })
+  return coordinatorHeadersFor(manifest)
 }
 
-async function readManifestPath(file: string) {
-  const raw = await fs.readFile(file, "utf8")
-  const parsed = JSON.parse(raw) as Partial<TuiCoordinatorManifest>
-  if (
-    parsed.version !== 2 ||
-    typeof parsed.key !== "string" ||
-    typeof parsed.directory !== "string" ||
-    typeof parsed.database !== "string" ||
-    typeof parsed.pid !== "number" ||
-    typeof parsed.url !== "string" ||
-    !isLoopbackCoordinatorURL(parsed.url) ||
-    typeof parsed.username !== "string" ||
-    typeof parsed.password !== "string" ||
-    typeof parsed.token !== "string" ||
-    typeof parsed.createdAt !== "string"
-  ) {
-    throw new Error("Invalid TUI coordinator manifest")
-  }
-  return parsed as TuiCoordinatorManifest
-}
-
-function isLoopbackCoordinatorURL(value: string) {
-  try {
-    const url = new URL(value)
-    return url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname)
-  } catch {
-    return false
-  }
-}
-
-export async function readCoordinatorManifest(key: string) {
-  try {
-    return await readManifestPath(coordinatorManifestPath(key))
-  } catch {
-    return undefined
-  }
-}
-
-export async function writeCoordinatorManifest(manifest: TuiCoordinatorManifest) {
-  await fs.mkdir(ROOT, { recursive: true })
-  const file = coordinatorManifestPath(manifest.key)
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(manifest, null, 2), { mode: 0o600 })
-  await fs.rename(tmp, file)
+export function writeCoordinatorManifest(manifest: TuiCoordinatorManifest) {
+  return writeCoordinatorManifestIn(STATE_ROOT, manifest)
 }
 
 export async function removeCoordinatorManifest(key: string, token: string) {
-  const file = coordinatorManifestPath(key)
-  if ((await readManifestToken(file)) !== token) return
-  await fs.rm(file, { force: true })
-}
-
-async function readManifestToken(file: string) {
-  return fs
-    .readFile(file, "utf8")
-    .then((raw) => JSON.parse(raw) as Partial<TuiCoordinatorManifest>)
-    .then((manifest) => (typeof manifest.token === "string" ? manifest.token : undefined))
-    .catch(() => undefined)
+  await removeCoordinatorManifestIn(STATE_ROOT, key, token)
 }
 
 export function startCoordinatorClientLease(key: string) {
-  const dir = coordinatorClientDir(key)
-  const file = path.join(dir, `${process.pid}.json`)
-  let disposed = false
-  let writing = Promise.resolve()
-  const write = () => {
-    const next = writing.catch(() => {}).then(async () => {
-      if (disposed) return
-      await fs.mkdir(dir, { recursive: true })
-      if (disposed) return
-      const temporary = `${file}.${randomBytes(4).toString("hex")}.tmp`
-      try {
-        await fs.writeFile(
-          temporary,
-          JSON.stringify({
-            version: 1,
-            key,
-            pid: process.pid,
-            updatedAt: Date.now(),
-          } satisfies TuiCoordinatorClientLease),
-          { mode: 0o600 },
-        )
-        if (disposed) return
-        await fs.rename(temporary, file)
-        if (disposed) await fs.rm(file, { force: true })
-      } finally {
-        await fs.rm(temporary, { force: true }).catch(() => {})
-      }
-    })
-    writing = next
-    return next
-  }
-  const timer = setInterval(() => {
-    void write().catch(() => {})
-  }, CLIENT_HEARTBEAT_INTERVAL)
-  timer.unref?.()
-  const ready = write()
-
+  const lease = startCoordinatorClientLeaseIn({ stateRoot: STATE_ROOT, key })
   return {
-    ready,
+    ready: lease.ready,
     dispose() {
-      if (disposed) return
-      disposed = true
-      clearInterval(timer)
-      void fs.rm(file, { force: true }).catch(() => {})
+      void lease.dispose().catch(() => {})
     },
   }
 }
@@ -185,7 +95,7 @@ export async function readActiveCoordinatorClientLeases(key: string) {
           recovered !== undefined &&
           recovered.key === key &&
           Date.now() - recovered.updatedAt <= CLIENT_STALE_MS &&
-          isProcessAlive(recovered.pid)
+          isCoordinatorProcessAlive(recovered.pid)
         if (active) return recovered
         await fs.rm(file, { force: true }).catch(() => {})
         return undefined
@@ -196,7 +106,7 @@ export async function readActiveCoordinatorClientLeases(key: string) {
 
 async function recoverReplacingClientLease(file: string, name: string, key: string) {
   const pid = Number(name.split(".")[0])
-  if (!Number.isInteger(pid) || pid <= 0 || !isProcessAlive(pid)) return undefined
+  if (!Number.isInteger(pid) || pid <= 0 || !isCoordinatorProcessAlive(pid)) return undefined
   const stat = await fs.stat(file).catch(() => undefined)
   if (!stat || Date.now() - stat.mtimeMs > CLIENT_STALE_MS) return undefined
   return {
@@ -208,51 +118,21 @@ async function recoverReplacingClientLease(file: string, name: string, key: stri
 }
 
 async function readClientLease(file: string) {
-  const parsed = JSON.parse(await fs.readFile(file, "utf8")) as Partial<TuiCoordinatorClientLease>
-  if (
-    parsed.version !== 1 ||
-    typeof parsed.key !== "string" ||
-    typeof parsed.pid !== "number" ||
-    typeof parsed.updatedAt !== "number"
-  ) {
-    throw new Error("Invalid TUI coordinator client lease")
-  }
-  return parsed as TuiCoordinatorClientLease
+  const parsed = JSON.parse(await fs.readFile(file, "utf8")) as unknown
+  if (!isCoordinatorClientLease(parsed)) throw new Error("Invalid TUI coordinator client lease")
+  return parsed
 }
 
-function isProcessAlive(pid: number) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM"
-  }
-}
-
-async function fetchWithTimeout(url: URL, init: RequestInit, timeout: number) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeout)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-export async function isCoordinatorHealthy(manifest: TuiCoordinatorManifest) {
-  try {
-    const response = await fetchWithTimeout(
-      new URL("/global/health", manifest.url),
-      {
-        headers: coordinatorHeaders(manifest),
-      },
-      1_500,
-    )
-    if (!response.ok) return false
-    const body = (await response.json()) as { healthy?: unknown }
-    return body.healthy === true
-  } catch {
-    return false
+/**
+ * A live coordinator whose server version this client cannot verify is left
+ * strictly alone: no manifest deletion, no process kill. Another client may be
+ * attached and happy with it, and replacing it would put two writers on the
+ * same database.
+ */
+export class CoordinatorVersionMismatchError extends Error {
+  constructor(readonly manifest: TuiCoordinatorManifest, message: string) {
+    super(message)
+    this.name = "CoordinatorVersionMismatchError"
   }
 }
 
@@ -266,8 +146,22 @@ export async function readActiveCoordinator(key = coordinatorKey(), database = c
     await removeCoordinatorManifest(key, manifest.token)
     return undefined
   }
-  if (await isCoordinatorHealthy(manifest)) return manifest
-  if (isProcessAlive(manifest.pid)) {
+  const health = await fetchCoordinatorHealth(manifest)
+  if (health?.healthy === true) {
+    const compatibility = checkCoordinatorCompatibility({
+      manifest,
+      clientVersion: InstallationVersion,
+      healthVersion: health.version,
+    })
+    if (!compatibility.compatible) {
+      throw new CoordinatorVersionMismatchError(manifest, compatibility.message ?? "Coordinator version mismatch")
+    }
+    if (compatibility.reason === "local" && compatibility.message) {
+      Log.Default.warn("tui coordinator version unverified", { detail: compatibility.message })
+    }
+    return manifest
+  }
+  if (isCoordinatorProcessAlive(manifest.pid)) {
     throw new Error(`TUI coordinator process ${manifest.pid} is alive but unhealthy; refusing to replace it`)
   }
   await removeCoordinatorManifest(key, manifest.token)
@@ -282,23 +176,14 @@ export async function readPreferredCoordinator() {
 async function readActiveManifest(key: string) {
   const file = coordinatorManifestPath(key)
   try {
-    return await readManifestPath(file)
+    return await readCoordinatorManifestFile(file)
   } catch (error) {
-    if (isMissingFile(error)) return undefined
-    const token = await readManifestToken(file)
+    if (isMissingCoordinatorFile(error)) return undefined
+    const token = await readCoordinatorManifestToken(file)
     if (!token) throw new Error("Invalid TUI coordinator manifest cannot be removed safely")
     await removeCoordinatorManifest(key, token)
     return undefined
   }
-}
-
-function isMissingFile(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error.code === "ENOENT" || error.code === "ENOTDIR")
-  )
 }
 
 export function withCoordinatorStartupLock<T>(key: string, fn: () => Promise<T>) {
@@ -352,6 +237,7 @@ async function waitForCoordinator(key: string, database: string) {
   let lastError = "coordinator did not publish a manifest"
   while (Date.now() - started < START_TIMEOUT) {
     const manifest = await readActiveCoordinator(key, database).catch((error) => {
+      if (error instanceof CoordinatorVersionMismatchError) throw error
       lastError = errorMessage(error)
       return undefined
     })
@@ -420,14 +306,14 @@ export async function discoverActiveGuiCoordinatorDatabase(root = ROOT) {
   const manifests = await Promise.all(
     (await fs.readdir(root).catch(() => []))
       .filter((file) => file.endsWith(".json"))
-      .map((file) => readManifestPath(path.join(root, file)).catch(() => undefined)),
+      .map((file) => readCoordinatorManifestFile(path.join(root, file)).catch(() => undefined)),
   )
   const databases = await Promise.all(
     manifests.flatMap((manifest) =>
       manifest
         ? [
             hasActiveGuiClient(manifest.key, root).then(async (active) => {
-              if (!active || !(await isCoordinatorHealthy(manifest))) return undefined
+              if (!active || (await fetchCoordinatorHealth(manifest))?.healthy !== true) return undefined
               return coordinatorDatabaseIdentity(manifest.database)
             }),
           ]
@@ -450,7 +336,7 @@ async function hasActiveGuiClient(key: string, root: string) {
           lease !== undefined &&
           lease.key === key &&
           Date.now() - lease.updatedAt <= CLIENT_STALE_MS &&
-          isProcessAlive(lease.pid)
+          isCoordinatorProcessAlive(lease.pid)
         if (!active) await fs.rm(file, { force: true }).catch(() => {})
         return active
       }),

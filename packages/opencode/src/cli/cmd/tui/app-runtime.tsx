@@ -17,7 +17,6 @@ import { PromptRefProvider } from "@tui/context/prompt"
 import { RouteProvider } from "@tui/context/route"
 import { SDKProvider, type EventSource } from "@tui/context/sdk"
 import { SyncProvider } from "@tui/context/sync"
-import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { ThemeProvider } from "@tui/context/theme"
 import { TuiConfigProvider } from "@tui/context/tui-config"
 import { DialogProvider } from "@tui/ui/dialog"
@@ -111,27 +110,25 @@ async function mountTui(input: TuiInput & { keymap: ReturnType<typeof createDefa
                     <SDKProvider url={input.url} directory={input.directory} fetch={input.fetch} headers={input.headers} events={input.events}>
                       <ProjectProvider>
                         <SyncProvider>
-                          <SyncProviderV2>
-                            <ThemeProvider mode={mode}>
-                              <LocalProvider>
-                                <PromptStashProvider>
-                                  <PromptDraftsProvider>
-                                    <DialogProvider>
-                                      <FrecencyProvider>
-                                        <PromptHistoryProvider>
-                                          <PromptRefProvider>
-                                            <EditorContextProvider>
-                                              <TuiApp onSnapshot={input.onSnapshot} />
-                                            </EditorContextProvider>
-                                          </PromptRefProvider>
-                                        </PromptHistoryProvider>
-                                      </FrecencyProvider>
-                                    </DialogProvider>
-                                  </PromptDraftsProvider>
-                                </PromptStashProvider>
-                              </LocalProvider>
-                            </ThemeProvider>
-                          </SyncProviderV2>
+                          <ThemeProvider mode={mode}>
+                            <LocalProvider>
+                              <PromptStashProvider>
+                                <PromptDraftsProvider>
+                                  <DialogProvider>
+                                    <FrecencyProvider>
+                                      <PromptHistoryProvider>
+                                        <PromptRefProvider>
+                                          <EditorContextProvider>
+                                            <TuiApp onSnapshot={input.onSnapshot} />
+                                          </EditorContextProvider>
+                                        </PromptRefProvider>
+                                      </PromptHistoryProvider>
+                                    </FrecencyProvider>
+                                  </DialogProvider>
+                                </PromptDraftsProvider>
+                              </PromptStashProvider>
+                            </LocalProvider>
+                          </ThemeProvider>
                         </SyncProvider>
                       </ProjectProvider>
                     </SDKProvider>

@@ -1,7 +1,7 @@
 import type { Part } from "@opencode-ai/sdk/v2/client"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { For } from "solid-js"
-import type { MessageBundle } from "../../lib/store"
+import type { MessageBundle } from "../../lib/session-api"
 import { DisplayPartView, groupTranscriptParts } from "../session-transcript"
 import { TranscriptChromeProvider } from "../session-part-chrome"
 import { Section } from "./lab-shared"

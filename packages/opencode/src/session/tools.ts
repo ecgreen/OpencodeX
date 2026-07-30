@@ -12,7 +12,7 @@ import { Truncate } from "@/tool/truncate"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Duration, Effect, Schedule, Semaphore } from "effect"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
 import { SessionProcessor } from "./processor"
@@ -22,6 +22,68 @@ import { EffectBridge } from "@/effect/bridge"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 
 const log = Log.create({ service: "session.tools" })
+
+const METADATA_INTERVAL_MS = 100
+
+type MetadataInput = Parameters<Tool.Context["metadata"]>[0]
+
+/**
+ * Rate limiter for `ctx.metadata`, one instance per tool call.
+ *
+ * Tools call it per output chunk - the shell tool does it for every stdout
+ * read - and each call used to be a broadcast plus a durable revision. The
+ * first call of a window still writes immediately so the UI reacts instantly;
+ * anything that arrives inside the window overwrites a single `pending` slot
+ * that a forked fiber drains once per interval. The fiber is scoped to the tool
+ * execution, so it is interrupted the moment the tool returns and the durable
+ * completion write supersedes whatever was still pending.
+ *
+ * A semaphore serialises the leading write against the drain, and a sequence
+ * guard drops any frame that loses the permit race to a newer one — the drain
+ * fiber captures `pending` before it queues for the permit, so without the
+ * guard an immediate write could slip in between and be overwritten by the
+ * older captured frame.
+ */
+const coalesceMetadata = Effect.fnUntraced(function* (write: (value: MetadataInput) => Effect.Effect<unknown>) {
+  const lock = Semaphore.makeUnsafe(1)
+  let pending: { value: MetadataInput; seq: number } | undefined
+  let last = 0
+  let sequence = 0
+  let written = 0
+
+  const flush = (value: MetadataInput, seq: number) =>
+    lock.withPermit(
+      Effect.suspend(() => {
+        if (seq <= written) return Effect.void
+        written = seq
+        last = Date.now()
+        return write(value)
+      }),
+    )
+
+  yield* Effect.sleep(Duration.millis(METADATA_INTERVAL_MS)).pipe(
+    Effect.andThen(
+      Effect.suspend(() => {
+        const item = pending
+        pending = undefined
+        return item === undefined ? Effect.void : flush(item.value, item.seq)
+      }),
+    ),
+    Effect.repeat(Schedule.forever),
+    Effect.forkScoped,
+  )
+
+  return (value: MetadataInput) =>
+    Effect.suspend(() => {
+      const seq = ++sequence
+      if (Date.now() - last >= METADATA_INTERVAL_MS) {
+        pending = undefined
+        return flush(value, seq)
+      }
+      pending = { value, seq }
+      return Effect.void
+    })
+})
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
@@ -41,40 +103,52 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
-    sessionID: input.session.id,
-    directory: input.session.directory,
-    workspaceID: input.session.workspaceID,
-    abort: options.abortSignal!,
-    messageID: input.processor.message.id,
-    callID: options.toolCallId,
-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
-    agent: input.agent.name,
-    messages: input.messages,
-    metadata: (val) =>
-      input.processor.updateToolCall(options.toolCallId, (match) => {
-        if (!["running", "pending"].includes(match.state.status)) return match
-        return {
-          ...match,
-          state: {
-            title: val.title,
-            metadata: val.metadata,
-            status: "running",
-            input: args,
-            time: { start: Date.now() },
+  const context = (args: Record<string, unknown>, options: ToolExecutionOptions) =>
+    Effect.gen(function* () {
+      // In-flight progress only, so it is published transiently: the durable
+      // completion (or failure) revision that follows is what has to survive a
+      // crash.
+      const metadata = yield* coalesceMetadata((val) =>
+        input.processor.updateToolCall(
+          options.toolCallId,
+          (match) => {
+            if (!["running", "pending"].includes(match.state.status)) return match
+            return {
+              ...match,
+              state: {
+                title: val.title,
+                metadata: val.metadata,
+                status: "running",
+                input: args,
+                time: { start: Date.now() },
+              },
+            }
           },
-        }
-      }),
-    ask: (req) =>
-      permission
-        .ask({
-          ...req,
-          sessionID: input.session.id,
-          tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
-        })
-        .pipe(Effect.orDie),
-  })
+          { transient: true },
+        ),
+      )
+      return {
+        sessionID: input.session.id,
+        directory: input.session.directory,
+        workspaceID: input.session.workspaceID,
+        abort: options.abortSignal!,
+        messageID: input.processor.message.id,
+        callID: options.toolCallId,
+        extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
+        agent: input.agent.name,
+        messages: input.messages,
+        metadata,
+        ask: (req) =>
+          permission
+            .ask({
+              ...req,
+              sessionID: input.session.id,
+              tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+              ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+            })
+            .pipe(Effect.orDie),
+      } satisfies Tool.Context
+    })
 
   for (const item of yield* registry.tools({
     modelID: ProviderV2.ModelID.make(input.model.api.id),
@@ -86,9 +160,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       description: item.description,
       inputSchema: jsonSchema(schema),
       execute(args, options) {
+        // Scoped so the metadata coalescer's drain fiber dies with the call.
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = yield* context(args, options)
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -113,7 +188,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               yield* input.processor.completeToolCall(options.toolCallId, output)
             }
             return output
-          }),
+          }).pipe(Effect.scoped),
         )
       },
     })
@@ -129,7 +204,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          const ctx = yield* context(args, opts)
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
@@ -201,7 +276,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             yield* input.processor.completeToolCall(opts.toolCallId, output)
           }
           return output
-        }),
+        }).pipe(Effect.scoped),
       )
     tools[key] = item
   }

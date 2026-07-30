@@ -78,28 +78,12 @@ export function createFetch(override?: FetchHandler) {
           return json({})
         case "/config/providers":
           return json({ providers: {}, default: {} })
-        case "/experimental/console":
-          return json({ consoleManagedProviders: [], switchableOrgCount: 0 })
         case "/path":
           return json({ home: "", state: "", config: "", worktree, directory })
         case "/project/current":
           return json({ id: "proj_test" })
         case "/provider":
           return json({ all: [], default: {}, connected: [] })
-        case "/experimental/opencodex/session-sync":
-          return json({
-            changed: true,
-            revision: "empty",
-            snapshot: {
-              projects: [],
-              sessions: [],
-              views: [],
-              sessionStatus: {},
-              permissions: [],
-              questions: [],
-              sessionUiState: {},
-            },
-          })
         case "/experimental/opencodex/state":
           return json({
             scope: { projectID: "proj_test", directory },

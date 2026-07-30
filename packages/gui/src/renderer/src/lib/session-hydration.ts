@@ -7,8 +7,19 @@ import {
   refreshClientStateSessionTail,
 } from "./client-session-loader"
 import { mergeLiveSessionData } from "./live-session-patch"
-import { prependOlderMessages, trimToLiveTail } from "./message-window"
+import { collapseMessageWindow, prependOlderMessages, trimToLiveTail } from "./message-window"
 import type { Route } from "./routes"
+import {
+  ignoreAbortedSessionLoad,
+  sessionLoadedTime,
+  shouldApplySessionSyncResult,
+  shouldClearSessionSyncLoading,
+  shouldHandleSessionSyncFailure,
+  shouldShowViewSessionLoading,
+  shouldSkipSessionSync,
+  shouldSkipViewSessionSync,
+  viewSessionLoadKey,
+} from "./session-hydration-policy"
 import type { SessionPresentationController } from "./session-presentation"
 import type { GuiSnapshot, SessionData } from "./store-types"
 import { setRecordEntry } from "./view-pane-state"
@@ -20,6 +31,8 @@ type CachedSessionData = Record<string, { data: SessionData; loadedTime: number 
 export const SESSION_MESSAGE_PAGE_LIMIT = 128
 export const VIEW_MESSAGE_PAGE_LIMIT = 48
 export const LOAD_MORE_MESSAGE_MULTIPLIER = 3
+export const SESSION_MESSAGE_WINDOW = { count: 128, budget: 100_000 }
+export const VIEW_MESSAGE_WINDOW = { count: 48, budget: 28_000 }
 
 export async function runSelectedSessionSync(input: {
   force?: boolean
@@ -148,7 +161,7 @@ export function createSessionHydrationController(input: {
                   ? input.sessionData()
                   : input.selectedData()[targetSessionID]?.data,
               ),
-              { count: 128, budget: 100_000 },
+              SESSION_MESSAGE_WINDOW,
             ),
         ),
       canonicalUpdatedTime: () => controller().getState().sessionDetails[sessionID]?.snapshot.session.time.updated,
@@ -193,7 +206,7 @@ export function createSessionHydrationController(input: {
       input.presentation.load(session.id, loadKey, async (signal) =>
         trimToLiveTail(
           await loadTail(session.id, VIEW_MESSAGE_PAGE_LIMIT, signal, input.viewData()[session.id]),
-          { count: 48, budget: 28_000 },
+          VIEW_MESSAGE_WINDOW,
         ),
       ),
     )
@@ -232,6 +245,30 @@ export function createSessionHydrationController(input: {
       input.setSessionData(next)
       input.rememberSelectedData(sessionID, next, input.loadedTime())
     })
+  }
+
+  /**
+   * Returns an expanded transcript to the live tail window. The panel calls this
+   * once the reader is following the bottom again, so an expanded session cannot
+   * keep growing for the rest of its life.
+   */
+  function collapseSessionMessageWindow(sessionID: string) {
+    if (input.sessionDataSessionID() !== sessionID) return
+    const current = input.sessionData()
+    const next = collapseMessageWindow(current, SESSION_MESSAGE_WINDOW)
+    if (next === current) return
+    batch(() => {
+      input.setSessionData(next)
+      input.rememberSelectedData(sessionID, next, input.loadedTime())
+    })
+  }
+
+  function collapseViewSessionMessageWindow(sessionID: string) {
+    const current = input.viewData()[sessionID]
+    if (!current) return
+    const next = collapseMessageWindow(current, VIEW_MESSAGE_WINDOW)
+    if (next === current) return
+    input.setViewData((value) => setRecordEntry(value, sessionID, next))
   }
 
   async function loadOlderViewSessionMessages(sessionID: string, before: string) {
@@ -312,85 +349,8 @@ export function createSessionHydrationController(input: {
     syncViewSessions,
     loadOlderSessionMessages,
     loadOlderViewSessionMessages,
+    collapseSessionMessageWindow,
+    collapseViewSessionMessageWindow,
     setVisibleSessionIDs,
   }
-}
-
-export function shouldSkipSessionSync(input: {
-  force?: boolean
-  sessionID: string
-  loadedSessionID: string
-  loadedTime: number
-  session?: Session
-}) {
-  if (input.force || input.loadedSessionID !== input.sessionID || !input.session) return false
-  return input.loadedTime >= input.session.time.updated
-}
-
-export function shouldSkipViewSessionSync(input: {
-  force?: boolean
-  session: Session
-  data?: SessionData
-  loadedTime?: number
-}) {
-  if (input.force || !input.data) return false
-  return (input.loadedTime ?? 0) >= input.session.time.updated
-}
-
-export function shouldShowViewSessionLoading(data?: SessionData) {
-  return data === undefined
-}
-
-export function sessionLoadedTime(
-  current: number | undefined,
-  card: number | undefined,
-  canonical: number | undefined,
-  fallback = Date.now(),
-) {
-  const values = [current, card, canonical].filter((value): value is number => value !== undefined && value > 0)
-  return values.length > 0 ? Math.max(...values) : fallback
-}
-
-export function shouldShowSelectedSessionLoading(input: {
-  sessionID?: string
-  materializingSessionID?: string
-  loadedSessionID: string
-  cachedData?: SessionData
-}) {
-  if (!input.sessionID || input.sessionID === input.materializingSessionID) return false
-  return input.loadedSessionID !== input.sessionID && input.cachedData === undefined
-}
-
-export function ignoreAbortedSessionLoad<T>(load: Promise<T>) {
-  return load.catch((cause) => {
-    if (cause instanceof Error && cause.name === "AbortError") return undefined
-    throw cause
-  })
-}
-
-export function viewSessionLoadKey(session: Session) {
-  return `${session.id}\n${session.directory ?? ""}\n${session.time.updated}`
-}
-
-export function shouldApplySessionSyncResult(input: {
-  requestID: number
-  latestRequestID: number
-  route: { name: string; sessionID?: string }
-  sessionID: string
-}) {
-  if (input.requestID !== input.latestRequestID) return false
-  return input.route.name === "session" && input.route.sessionID === input.sessionID
-}
-
-export function shouldHandleSessionSyncFailure(input: { requestID: number; latestRequestID: number }) {
-  return input.requestID === input.latestRequestID
-}
-
-export function shouldClearSessionSyncLoading(input: {
-  requestID: number
-  latestRequestID: number
-  loadingSessionID: string
-  sessionID: string
-}) {
-  return input.requestID === input.latestRequestID && input.loadingSessionID === input.sessionID
 }

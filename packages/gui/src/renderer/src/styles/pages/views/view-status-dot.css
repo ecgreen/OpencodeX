@@ -1,0 +1,39 @@
+.view-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--view-row-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb,var(--view-row-accent) 20%,transparent);
+}
+
+.view-status-dot.status-in-progress {
+  background: var(--secondary);
+}
+
+.status-in-progress .view-status-dot {
+  background: var(--secondary);
+}
+
+.view-status-dot.status-input-needed {
+  background: var(--warning);
+}
+
+.status-input-needed .view-status-dot {
+  background: var(--warning);
+}
+
+.view-status-dot.status-ready-for-review {
+  background: var(--info);
+}
+
+.status-ready-for-review .view-status-dot {
+  background: var(--info);
+}
+
+.view-status-dot.status-failed {
+  background: var(--error);
+}
+
+.status-failed .view-status-dot {
+  background: var(--error);
+}

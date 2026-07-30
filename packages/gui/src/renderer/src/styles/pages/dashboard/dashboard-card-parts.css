@@ -1,0 +1,98 @@
+.dashboard-item-card>div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-item-card.empty-create {
+  position: relative;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  background: color-mix(in srgb,var(--surface) 46%,transparent);
+  box-shadow: none;
+  transform: none;
+}
+
+.dashboard-item-card.empty-create strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--brand);
+}
+
+.dashboard-item-card.compact {
+  min-height: 92px;
+}
+
+.dashboard-card-open>div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-card-open footer {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-status-card .mini-spinner {
+  color: var(--session-state-color);
+}
+
+.dashboard-status-card .status-glyph {
+  right: 14px;
+  bottom: 16px;
+}
+
+.dashboard-status-card.status-input-needed .status-glyph {
+  animation: sidebar-attention 1.3s infinite ease-in-out;
+}
+
+.dashboard-item-card footer small {
+  min-width: 0;
+}
+
+.dashboard-status-card footer small {
+  max-width: 100%;
+}
+
+.dashboard-status-card .pin-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 9px;
+}
+
+.dashboard-card-grid>.empty {
+  grid-column: 1 / -1;
+  padding: 8px 0;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  background: transparent;
+}
+
+.dashboard-action-card.info {
+  --action-color: var(--purple) ;
+}
+
+.dashboard-section .section-collapse strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 820;
+}
+
+.dashboard-section header span {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 720;
+}
+
+.dashboard-status-card .dashboard-card-open {
+  border-radius: 0;
+}

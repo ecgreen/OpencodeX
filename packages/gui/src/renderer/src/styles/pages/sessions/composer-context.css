@@ -1,0 +1,35 @@
+.composer-add-context {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  min-height: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+
+.composer-add-context .icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.8;
+}
+
+.composer-context-preview button {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(360px,100%);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 0;
+  background: var(--element);
+}

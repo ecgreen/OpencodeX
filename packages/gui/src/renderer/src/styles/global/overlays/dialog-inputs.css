@@ -1,0 +1,77 @@
+/* Legacy styling for bare dialog inputs only. Field-embedded inputs draw their
+   chrome on .ui-field-control; restyling them here doubles every border. */
+.dialog-card input:not([data-embedded="true"]) {
+  width: 100%;
+  padding: 10px 12px;
+  outline: none;
+  border: 1px solid var(--line);
+  color: var(--text);
+  transition: border-color .15s ease,background .15s ease,box-shadow .15s ease;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.dialog-card textarea {
+  width: 100%;
+  padding: 10px 12px;
+  outline: none;
+  min-height: 140px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  transition: border-color .15s ease,background .15s ease,box-shadow .15s ease;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.command-palette-modal>input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  transition: border-color .15s ease,background .15s ease,box-shadow .15s ease;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.keyboard-help-modal>input {
+  margin: 12px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  transition: border-color .15s ease,background .15s ease,box-shadow .15s ease;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.model-picker-modal input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  transition: border-color .15s ease,background .15s ease,box-shadow .15s ease;
+  border-radius: 0;
+  background: var(--element);
+  box-shadow: none;
+}
+
+.dialog-card.text-dialog-card>input {
+  margin: 18px 20px 0;
+  width: calc(100% - 40px);
+  border-color: color-mix(in srgb,var(--primary) 28%,var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--bg) 86%,var(--element));
+  font-size: 14px;
+}
+
+.dialog-card.text-dialog-card>textarea {
+  margin: 18px 20px 0;
+  width: calc(100% - 40px);
+  border-color: color-mix(in srgb,var(--primary) 28%,var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--bg) 86%,var(--element));
+  font-size: 14px;
+}

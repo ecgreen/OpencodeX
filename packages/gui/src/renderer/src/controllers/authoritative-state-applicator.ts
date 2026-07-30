@@ -9,7 +9,7 @@ import {
   reconcileGuiOperations,
 } from "../lib/gui-state"
 import { mergeLiveSessionData } from "../lib/live-session-patch"
-import { sessionLoadedTime } from "../lib/session-hydration"
+import { sessionLoadedTime } from "../lib/session-hydration-policy"
 import {
   RENDERER_PERFORMANCE_MARKS,
   RENDERER_PERFORMANCE_MEASURES,
@@ -20,7 +20,7 @@ import {
   recordPerformanceDetail,
   startPerformance,
 } from "../lib/performance"
-import { sessionDataFromClientState, type GuiSnapshot, type SessionData } from "../lib/store"
+import { sessionDataFromClientState, type GuiSnapshot, type SessionData } from "../lib/session-api"
 import { setRecordEntry } from "../lib/view-pane-state"
 
 type CachedSessionData = Record<string, { data: SessionData; loadedTime: number }>

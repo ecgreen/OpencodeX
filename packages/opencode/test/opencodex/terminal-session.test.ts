@@ -9,7 +9,6 @@ import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
 import { OpencodeXView } from "@/opencodex/view"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
-import { SessionShare } from "@/share/session"
 import { resetDatabase } from "../fixture/db"
 import { testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -21,7 +20,6 @@ const dependencies = Layer.mergeAll(
   EventV2Bridge.defaultLayer,
   Project.defaultLayer,
   Session.defaultLayer,
-  SessionShare.defaultLayer,
   testInstanceStoreLayer,
 )
 const projects = OpencodeXProject.layer.pipe(Layer.provideMerge(dependencies))

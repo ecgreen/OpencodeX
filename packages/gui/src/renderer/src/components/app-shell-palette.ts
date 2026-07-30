@@ -2,7 +2,7 @@ import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/clie
 import { title } from "../lib/format"
 import { projectNameForSession } from "../lib/project-name"
 import { deriveSessionStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import type { PaletteTarget } from "./command-palette"
 
 export function sessionPaletteTarget(snapshot: GuiSnapshot, session: Session, open: (sessionID: string) => void): PaletteTarget {

@@ -1,0 +1,91 @@
+.dashboard-action-card.primary {
+  --action-color: var(--brand);
+  color: var(--blue);
+}
+
+.dashboard-action-card.blue {
+  --action-color: var(--blue);
+  color: var(--blue);
+}
+
+.dashboard-action-card.primary .action-plus {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.dashboard-action-card.blue .action-plus {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.dashboard-actions {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(150px,1fr));
+  gap: 8px;
+}
+
+.dashboard-action-card.session {
+  --action-color: var(--primary);
+  color: var(--text);
+}
+
+.dashboard-action-card.view {
+  --action-color: var(--info);
+  color: var(--text);
+}
+
+.dashboard-action-card .action-plus {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: inline-grid;
+  place-items: center;
+  align-self: center;
+  justify-self: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 0;
+  color: var(--action-color);
+  background: transparent;
+}
+
+.dashboard-action-card .action-plus .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard-action-card strong {
+  letter-spacing: 0;
+  align-self: end;
+  font-weight: 840;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  color: var(--action-color);
+  font-size: 13px;
+}
+
+.dashboard-action-card small {
+  letter-spacing: 0;
+  text-transform: none;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: end;
+  display: inline-flex;
+  place-items: center;
+  justify-content: flex-end;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0 0 9px;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb,var(--action-color) 42%,var(--border));
+  border-radius: 0;
+  color: var(--action-color);
+  background: transparent;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  line-height: 1;
+  box-shadow: none;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Agent, Config, FileNode, McpResource } from "@opencode-ai/sdk/v2/client"
-import type { PromptPart } from "../src/renderer/src/lib/store"
+import type { PromptPart } from "../src/renderer/src/lib/session-api"
 import { buildPromptMentionOptions, prunePromptPartsForInput, referenceSearch, restorePromptPartsFromEditedText } from "../src/renderer/src/lib/prompt-autocomplete"
 
 describe("GUI prompt autocomplete helpers", () => {

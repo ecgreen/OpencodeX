@@ -64,6 +64,23 @@ export function openTabDirty(tab: OpenTab) {
   return tab.kind === "file" && !tab.readOnly && workbenchBufferDirty({ content: tab.text, original: tab.original })
 }
 
+/**
+ * How a file should be marked in the explorer.
+ *
+ * Unsaved edits win over a session change: they are the ones that will be lost,
+ * and the only ones the reader can act on from the explorer.
+ */
+export function openFileChangeStatus(
+  path: string,
+  keys: { dirty: ReadonlySet<string>; session: ReadonlySet<string> },
+  pathKey: (value: string) => string,
+) {
+  const key = pathKey(path)
+  if (keys.dirty.has(key)) return "dirty" as const
+  if (keys.session.has(key)) return "session" as const
+  return undefined
+}
+
 export function openTabFileIdentity(tab: Pick<OpenTab, "directory" | "path" | "root">, fallbackDirectory = "") {
   const directory = workbenchPathKey(tab.directory || fallbackDirectory)
   return [directory, workbenchPathKey(tab.root ?? directory), workbenchPathKey(tab.path)].join("\0")

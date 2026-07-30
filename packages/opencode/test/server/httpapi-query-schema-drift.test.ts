@@ -23,9 +23,6 @@ import {
   MessagesQuery,
   SessionPaths,
 } from "../../src/server/routes/instance/httpapi/groups/session"
-import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
-import { MessagesQuery as V2MessagesQuery } from "../../src/server/routes/instance/httpapi/groups/v2/message"
-import { SessionsQuery as V2SessionsQuery } from "../../src/server/routes/instance/httpapi/groups/v2/session"
 import { QueryBoolean, QueryBooleanOpenApi } from "../../src/server/routes/instance/httpapi/groups/query"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
@@ -55,8 +52,6 @@ const openApiDriftRoutes = [
   { method: "get", path: ExperimentalPaths.session, query: ExperimentalSessionListQuery },
   { method: "get", path: ExperimentalPaths.tool, query: ToolListQuery },
   { method: "get", path: InstancePaths.vcsDiff, query: VcsDiffQuery },
-  { method: "get", path: "/api/session", query: V2SessionsQuery },
-  { method: "get", path: "/api/session/:sessionID/message", query: V2MessagesQuery },
 ] satisfies Array<{ method: Method; path: string; query: QuerySchema }>
 
 const numericSdkQueryParams = [
@@ -72,16 +67,12 @@ const numericSdkQueryParams = [
     name: "limit",
     schema: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
   },
-  { method: "get", path: "/api/session", name: "limit", schema: { type: "number" } },
-  { method: "get", path: "/api/session", name: "start", schema: { type: "number" } },
-  { method: "get", path: "/api/session/:sessionID/message", name: "limit", schema: { type: "number" } },
 ] satisfies Array<{ method: Method; path: string; name: string; schema: OpenApiSchema }>
 
 const booleanSdkQueryParams = [
   { method: "get", path: ExperimentalPaths.session, name: "roots" },
   { method: "get", path: ExperimentalPaths.session, name: "archived" },
   { method: "get", path: SessionPaths.list, name: "roots" },
-  { method: "get", path: "/api/session", name: "roots" },
 ] satisfies Array<{ method: Method; path: string; name: string }>
 
 const queryParamPatterns = [
@@ -95,7 +86,6 @@ const pathParamPatterns = [
   { method: "post", path: SessionPaths.permissions, name: "permissionID", pattern: "^per" },
   { method: "post", path: "/permission/:requestID/reply", name: "requestID", pattern: "^per" },
   { method: "post", path: "/question/:requestID/reply", name: "requestID", pattern: "^que" },
-  { method: "put", path: PtyPaths.update, name: "ptyID", pattern: "^pty" },
   { method: "delete", path: WorkspacePaths.remove, name: "id", pattern: "^wrk" },
 ] satisfies Array<{ method: Method; path: string; name: string; pattern: string }>
 

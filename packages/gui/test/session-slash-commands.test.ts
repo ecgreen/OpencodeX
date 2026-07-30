@@ -4,7 +4,6 @@ import { buildSessionSlashCommands } from "../src/renderer/src/lib/session-slash
 describe("GUI session slash command catalog", () => {
   test("includes the TUI session slash commands and aliases", () => {
     const commands = buildSessionSlashCommands({
-      shared: true,
       canRedo: true,
       variantCount: 2,
       actions: actions([]),
@@ -30,7 +29,6 @@ describe("GUI session slash command catalog", () => {
       "mcps",
       "variants",
       "connect",
-      "org",
       "status",
       "themes",
       "help",
@@ -39,11 +37,9 @@ describe("GUI session slash command catalog", () => {
       "skills",
       "warp",
       "diff",
-      "share",
       "rename",
       "fork",
       "compact",
-      "unshare",
       "undo",
       "redo",
       "conceal",
@@ -69,7 +65,6 @@ describe("GUI session slash command catalog", () => {
   test("routes implemented command actions through injected handlers", async () => {
     const calls: string[] = []
     const commands = buildSessionSlashCommands({
-      shared: false,
       canRedo: false,
       variantCount: 0,
       actions: actions(calls),
@@ -79,7 +74,6 @@ describe("GUI session slash command catalog", () => {
     await command(commands, "agents")?.run()
     await command(commands, "connect")?.run()
     await command(commands, "mcps")?.run()
-    await command(commands, "org")?.run()
     await command(commands, "rename")?.run()
     await command(commands, "conceal")?.run()
     await command(commands, "actions")?.run()
@@ -87,10 +81,9 @@ describe("GUI session slash command catalog", () => {
     await command(commands, "generic-output")?.run()
     await command(commands, "copy")?.run()
 
-    expect(command(commands, "unshare")?.disabled).toBe("This session is not shared.")
     expect(command(commands, "redo")?.disabled).toBe("No message to redo.")
     expect(command(commands, "variants")?.disabled).toBe("The selected model does not expose variants.")
-    expect(calls).toEqual(["model", "agent", "connect", "mcps", "org", "rename", "conceal", "actions", "scrollbar", "generic-output", "copy"])
+    expect(calls).toEqual(["model", "agent", "connect", "mcps", "rename", "conceal", "actions", "scrollbar", "generic-output", "copy"])
   })
 })
 
@@ -119,7 +112,6 @@ function actions(calls: string[]) {
     toggleMcps: () => calls.push("mcps"),
     switchVariant: () => calls.push("variants"),
     connectProvider: () => calls.push("connect"),
-    switchOrg: () => calls.push("org"),
     viewStatus: () => calls.push("status"),
     switchTheme: () => calls.push("themes"),
     showHelp: () => calls.push("help"),
@@ -128,11 +120,9 @@ function actions(calls: string[]) {
     openSkills: () => calls.push("skills"),
     warpWorkspace: () => calls.push("warp"),
     openDiff: () => calls.push("diff"),
-    shareSession: () => calls.push("share"),
     renameSession: () => calls.push("rename"),
     forkSession: () => calls.push("fork"),
     compactSession: () => calls.push("compact"),
-    unshareSession: () => calls.push("unshare"),
     undoMessage: () => calls.push("undo"),
     redoMessage: () => calls.push("redo"),
     toggleCodeConceal: () => calls.push("conceal"),

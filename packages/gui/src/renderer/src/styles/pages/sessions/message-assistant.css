@@ -1,0 +1,49 @@
+.message {
+  position: relative;
+  border-left: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  margin: 0 0 10px;
+  /* Deliberately no `content-visibility: auto` here. Skipping layout for
+     off-screen messages means each one reports its `contain-intrinsic-size`
+     placeholder instead of its real height, and "Load more" prepends a page of
+     messages *above* the viewport - so the scroll correction is computed from
+     estimates that the browser then revises, drifting the anchor by thousands
+     of pixels (e2e-performance budget: 1px). Restore only alongside anchoring
+     that measures the anchor element after layout settles. */
+}
+
+.message.assistant {
+  border-left: 0;
+  padding-left: 24px;
+  display: grid;
+  /* See .message.user: the implicit column must never track max-content. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+}
+
+.assistant-thinking-message {
+  margin-top: -2px;
+}
+
+.assistant-thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  min-height: 26px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.assistant-thinking-indicator span {
+  color: transparent;
+  background: linear-gradient(110deg,color-mix(in srgb,var(--muted) 82%,var(--text) 18%) 0%,color-mix(in srgb,var(--muted) 48%,var(--text) 52%) 36%,var(--text) 50%,color-mix(in srgb,var(--muted) 42%,var(--text) 58%) 64%,color-mix(in srgb,var(--muted) 82%,var(--text) 18%) 100%);
+  background-size: 340% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  letter-spacing: .01em;
+  animation: thinking-gradient 3.4s cubic-bezier(.45,0,.2,1) infinite;
+}

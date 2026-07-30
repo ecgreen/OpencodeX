@@ -1,0 +1,33 @@
+.session-git-modal-status span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.session-git-modal-status span:last-child {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-git-modal-body select:focus {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-git-modal-body input:focus {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--secondary) 18%,transparent);
+}
+
+.session-git-modal-body textarea:focus {
+  border-color: color-mix(in srgb,var(--secondary) 62%,var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--secondary) 18%,transparent);
+}

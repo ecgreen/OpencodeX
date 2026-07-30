@@ -1,0 +1,62 @@
+.rail-project {
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.dashboard-action-card.project {
+  --action-color: var(--secondary);
+  color: var(--text);
+}
+
+.dashboard-project-view {
+  display: grid;
+  gap: 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  --card-accent: var(--primary);
+  padding: 10px 0 0;
+}
+
+.dashboard-project-view>header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.project-title {
+  overflow: hidden;
+  justify-content: flex-start;
+  border-radius: 6px;
+  padding: 6px 7px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 780;
+  border: 0;
+  background: transparent;
+}
+
+.project-toggle {
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  width: 24px;
+  height: 26px;
+  color: var(--muted);
+  border: 0;
+  background: transparent;
+}
+
+.project-new {
+  justify-self: end;
+  flex: none;
+}

@@ -1,0 +1,86 @@
+.composer-add-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  display: grid;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.slash-command-menu {
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-overlay-strong) transparent;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 14;
+  display: grid;
+  gap: 4px;
+  max-height: min(360px,42vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.variant-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  display: grid;
+  min-width: 170px;
+  max-width: 240px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.overflow-menu>div {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  top: 36px;
+  display: grid;
+  min-width: 170px;
+  padding: 6px;
+  border: 1px solid var(--border-active);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.slash-command-menu button {
+  display: grid;
+  grid-template-columns: minmax(92px,auto) minmax(0,1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 9px;
+  color: var(--text);
+  text-align: left;
+  border: 1px solid var(--line);
+  transition: border-color .15s ease,background .15s ease,transform .15s ease;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}

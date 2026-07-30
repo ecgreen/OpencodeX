@@ -1,0 +1,16 @@
+.notice {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

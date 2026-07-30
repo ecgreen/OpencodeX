@@ -9,45 +9,6 @@ import { DialogTimeline } from "./dialog-timeline"
 export function createSessionLifecycleCommands(controller: ReturnType<typeof createSessionRouteController>) {
   return [
     {
-      title: controller.session()?.share?.url ? "Copy share link" : "Share session",
-      value: "session.share",
-      suggested: true,
-      category: "Session",
-      enabled: controller.sync.data.config.share !== "disabled",
-      slash: { name: "share" },
-      run: async () => {
-        const copy = (url: string) =>
-          Clipboard.copy(url)
-            .then(() => controller.toast.show({ message: "Share URL copied to clipboard!", variant: "success" }))
-            .catch(() => controller.toast.show({ message: "Failed to copy URL to clipboard", variant: "error" }))
-        const url = controller.session()?.share?.url
-        if (url) {
-          await copy(url)
-          controller.dialog.clear()
-          return
-        }
-        if (!controller.kv.get("share_consent", false)) {
-          const confirmed = await DialogConfirm.show(
-            controller.dialog,
-            "Share Session",
-            "Are you sure you want to share it?",
-          )
-          if (confirmed !== true) return
-          controller.kv.set("share_consent", true)
-        }
-        await controller.sdk.client.session
-          .share({ sessionID: controller.route.sessionID })
-          .then((result) => copy(result.data!.share!.url))
-          .catch((error) =>
-            controller.toast.show({
-              message: error instanceof Error ? error.message : "Failed to share session",
-              variant: "error",
-            }),
-          )
-        controller.dialog.clear()
-      },
-    },
-    {
       title: "Rename session",
       value: "session.rename",
       category: "Session",
@@ -101,25 +62,6 @@ export function createSessionLifecycleCommands(controller: ReturnType<typeof cre
           modelID: model.modelID,
           providerID: model.providerID,
         })
-        controller.dialog.clear()
-      },
-    },
-    {
-      title: "Unshare session",
-      value: "session.unshare",
-      category: "Session",
-      enabled: Boolean(controller.session()?.share?.url),
-      slash: { name: "unshare" },
-      run: async () => {
-        await controller.sdk.client.session
-          .unshare({ sessionID: controller.route.sessionID })
-          .then(() => controller.toast.show({ message: "Session unshared successfully", variant: "success" }))
-          .catch((error) =>
-            controller.toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
-              variant: "error",
-            }),
-          )
         controller.dialog.clear()
       },
     },

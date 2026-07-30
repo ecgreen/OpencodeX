@@ -29,96 +29,48 @@
 }
 
 @media (max-width:960px) {
-  .workbench-files {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:960px) {
-  .workbench-git-main {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:960px) {
-  .workbench-repository-bar {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:960px) {
-  .workbench-github-link-grid {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 @media (max-width:960px) {
-  .workbench-sidebar {
-    max-height: 240px;
-  }
 }
 
 @media (max-width:960px) {
-  .workbench-change-row {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:760px) {
-  .workbench-open-file-results button {
-    grid-template-columns: 18px minmax(0,1fr);
-  }
 }
 
 @media (max-width:760px) {
-  .workbench-open-file-results small {
-    grid-column: 2;
-  }
 }
 
 @media (max-width:1100px) {
-  .swarm-editor-layout {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:1100px) {
-  .swarm-editor-sidebar {
-    grid-template-columns: repeat(2,minmax(0,1fr));
-  }
 }
 
 @media (max-width:760px) {
-  .swarm-editor-sidebar {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:760px) {
-  .project-browser-card {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:760px) {
-  .project-browser-panel>header {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 
 @media (max-width:760px) {
-  .project-browser-panel input {
-    max-width: none;
-  }
 }
 
 @media (max-width:760px) {
-  .project-browser-card>.row-actions {
-    grid-column: 1;
-    grid-row: auto;
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width:760px) {

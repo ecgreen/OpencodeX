@@ -3,7 +3,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { OpencodeXJobTable } from "@opencode-ai/core/opencodex/sql"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { Effect } from "effect"
-import { and, eq, type SQL } from "drizzle-orm"
+import { and, eq, inArray, type SQL } from "drizzle-orm"
 import { encode, hydrate, transitions } from "./job-model"
 import {
   Event,
@@ -62,15 +62,27 @@ export const insertJob = Effect.fnUntraced(function* (
 })
 
 export function createJobStore(db: Database.Interface["db"], events: EventV2.Interface) {
-  const list = Effect.fn("OpencodeXJob.list")(function* () {
-    return (yield* db
-      .select()
-      .from(OpencodeXJobTable)
+  // The dispatcher wakes on a timer and only ever cares about queued work, so
+  // it passes a status filter instead of hydrating the whole table each tick.
+  const list = Effect.fn("OpencodeXJob.list")(function* (input?: { statuses?: readonly Status[] }) {
+    const statuses = input?.statuses
+    const query = db.select().from(OpencodeXJobTable)
+    return (yield* (statuses ? query.where(inArray(OpencodeXJobTable.status, [...statuses])) : query)
       .orderBy(OpencodeXJobTable.time_updated)
       .all()
       .pipe(Effect.orDie))
       .map(hydrate)
       .toReversed()
+  })
+
+  const getMany = Effect.fn("OpencodeXJob.getMany")(function* (jobIDs: readonly string[]) {
+    if (jobIDs.length === 0) return [] as Info[]
+    return (yield* db
+      .select()
+      .from(OpencodeXJobTable)
+      .where(inArray(OpencodeXJobTable.id, [...jobIDs]))
+      .all()
+      .pipe(Effect.orDie)).map(hydrate)
   })
 
   const get = Effect.fn("OpencodeXJob.get")(function* (jobID: string) {
@@ -203,7 +215,7 @@ export function createJobStore(db: Database.Interface["db"], events: EventV2.Int
     return committed.result
   })
 
-  return { list, get, transition, create, update }
+  return { list, getMany, get, transition, create, update }
 }
 
 export type JobStore = ReturnType<typeof createJobStore>

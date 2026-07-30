@@ -1,0 +1,118 @@
+.plugin-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.plugin-runtime-layout {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+}
+
+.plugin-marketplace-layout {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  grid-template-columns: minmax(220px,.45fr) minmax(0,1fr);
+  align-items: start;
+}
+
+.plugin-marketplace-copy {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: var(--theme-surface);
+}
+
+.plugin-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: var(--theme-surface);
+}
+
+.plugin-marketplace-copy h2 {
+  margin: 0;
+}
+
+.plugin-marketplace-copy p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.plugin-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.plugin-share-layout {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+}
+
+.plugin-panel header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plugin-panel header>div {
+  display: grid;
+  gap: 3px;
+}
+
+.plugin-panel header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.plugin-panel textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  background: var(--element);
+  color: var(--text);
+  min-height: 280px;
+  padding: 10px;
+  font-family: Cascadia Code,JetBrains Mono,SFMono-Regular,Consolas,monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.plugin-panel select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  background: var(--element);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.plugin-file-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  background: var(--theme-surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plugin-file-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}

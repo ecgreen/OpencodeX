@@ -1,0 +1,11 @@
+.card-context-menu button:hover {
+  border-color: color-mix(in srgb,var(--brand) 22%,transparent);
+  background: color-mix(in srgb,var(--surface-hover) 78%,transparent);
+  outline: none;
+}
+
+.card-context-menu button:focus-visible {
+  border-color: color-mix(in srgb,var(--brand) 22%,transparent);
+  background: color-mix(in srgb,var(--surface-hover) 78%,transparent);
+  outline: none;
+}

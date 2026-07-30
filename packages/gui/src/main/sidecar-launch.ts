@@ -1,8 +1,19 @@
-import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { app } from "electron"
+import {
+  COORDINATOR_LOCAL_VERSION,
+  coordinatorClientDir as coordinatorClientDirIn,
+  coordinatorDatabaseIdentity as coordinatorDatabaseIdentityOf,
+  coordinatorHeaders as coordinatorHeadersFor,
+  coordinatorKey as coordinatorKeyOf,
+  coordinatorManifestPath as coordinatorManifestPathIn,
+  coordinatorRoot,
+  coordinatorStartupLogPath as coordinatorStartupLogPathIn,
+  type CoordinatorCredentials,
+  type CoordinatorManifest,
+} from "@opencode-ai/sdk/coordinator"
 
 export type SidecarLaunch = {
   command: string
@@ -12,55 +23,76 @@ export type SidecarLaunch = {
   startupLog?: string
 }
 
-export type CoordinatorManifest = {
-  version: 2
-  key: string
-  directory: string
-  database: string
-  pid: number
-  url: string
-  username: string
-  password: string
-  token: string
-  createdAt: string
-}
+export type { CoordinatorManifest }
 
 const DATA_ROOT = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode")
-const COORDINATOR_ROOT = path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "opencode", "tui-coordinators")
+/* Electron main cannot import the backend's Global paths, so the XDG state root
+   is recomputed here. It must keep matching `Global.Path.state`, or the GUI and
+   the TUI would look for each other's coordinators in different directories. */
+const STATE_ROOT = path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "opencode")
+const COORDINATOR_ROOT = coordinatorRoot(STATE_ROOT)
 
 export const COORDINATOR_USERNAME = "opencodex-local"
+export const COORDINATOR_STATE_ROOT = STATE_ROOT
 
 export function normalizeDirectory(directory: string) {
   const resolved = path.resolve(directory)
   return process.platform === "win32" ? resolved.toLowerCase() : resolved
 }
 
+/** A bare database name here means "in the GUI's data root", not the cwd. */
 export function coordinatorDatabaseIdentity(database: string) {
-  if (database === ":memory:") return database
-  const resolved = path.isAbsolute(database) ? path.resolve(database) : path.resolve(DATA_ROOT, database)
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  return coordinatorDatabaseIdentityOf(database, DATA_ROOT)
 }
 
 export function coordinatorKey(database: string) {
-  return createHash("sha1").update(coordinatorDatabaseIdentity(database)).digest("hex")
+  return coordinatorKeyOf(database, DATA_ROOT)
 }
 
 export function coordinatorManifestPath(key: string) {
-  return path.join(COORDINATOR_ROOT, `${key}.json`)
+  return coordinatorManifestPathIn(STATE_ROOT, key)
 }
 
 export function coordinatorStartupLogPath(key: string) {
-  return path.join(COORDINATOR_ROOT, `${key}.startup.log`)
+  return coordinatorStartupLogPathIn(STATE_ROOT, key)
 }
 
 export function coordinatorClientDir(key: string) {
-  return path.join(COORDINATOR_ROOT, `${key}.clients`)
+  return coordinatorClientDirIn(STATE_ROOT, key)
 }
 
-export function coordinatorHeaders(manifest: Pick<CoordinatorManifest, "username" | "password">) {
-  return {
-    authorization: `Basic ${Buffer.from(`${manifest.username}:${manifest.password}`).toString("base64")}`,
+export function coordinatorHeaders(manifest: CoordinatorCredentials) {
+  return coordinatorHeadersFor(manifest)
+}
+
+/**
+ * Version of the backend this GUI ships, used as the client half of the
+ * coordinator handshake. A dev build spawns the coordinator with `bun run` over
+ * the worktree, which is exactly the `"local"` case the policy allows through
+ * with a warning; a packaged build reads the stamp `copy-sidecar.ts` wrote next
+ * to the binary.
+ */
+export function sidecarVersion(): string {
+  if (!app.isPackaged) return COORDINATOR_LOCAL_VERSION
+  try {
+    const stamp: unknown = JSON.parse(
+      fs.readFileSync(path.join(process.resourcesPath, "sidecar", "version.json"), "utf8"),
+    )
+    const version = stampedVersion(stamp)
+    if (version) return version
+  } catch {
+    // Fall through to the unverified case below.
   }
+  /* Packaging should always produce the stamp. Without it the bundled server
+     version is genuinely unknown, so degrade to the same "unverified" path a
+     dev build takes rather than refusing to attach to anything. */
+  console.warn("Missing packaged sidecar version stamp; coordinator version handshake will not be enforced")
+  return COORDINATOR_LOCAL_VERSION
+}
+
+function stampedVersion(stamp: unknown) {
+  if (typeof stamp !== "object" || stamp === null || !("version" in stamp)) return undefined
+  return typeof stamp.version === "string" && stamp.version.length > 0 ? stamp.version : undefined
 }
 
 export function createSidecarLaunch(directory: string, key: string, database: string): SidecarLaunch {

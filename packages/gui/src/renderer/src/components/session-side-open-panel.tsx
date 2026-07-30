@@ -1,10 +1,9 @@
 import type { LspStatus } from "@opencode-ai/sdk/v2/client"
 import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import type { DiffFile } from "../lib/store"
-import { isWorkbenchImageContent, workbenchNormalizeBrowserURL } from "../lib/workbench"
-import { newBrowserID } from "../lib/browser-id"
-import { reserveOpenTabSlot, sessionReplacementCleanupTabs } from "../lib/resource-limits"
+import type { DiffFile } from "../lib/session-api"
+import { isWorkbenchImageContent } from "../lib/workbench"
+import { sessionReplacementCleanupTabs } from "../lib/resource-limits"
 import { Select } from "./ui"
 import { SessionContextPanel, sessionInspectorModel } from "./session-inspector"
 import { SessionSideDiffPanel } from "./session-side-git-view"
@@ -14,31 +13,20 @@ import { createSessionSideAgentController } from "./session-side-agent-controlle
 import { SessionSideBrowserHost } from "./session-side-browser-host"
 import { SessionSideEmptyState } from "./session-side-empty"
 import { createSessionSideFileController } from "./session-side-file-controller"
-import { SessionSideFileExplorer } from "./session-side-file-explorer"
 import { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
-import { openTabDefaults, openTabDirty, openTabFileIdentity, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
-import { OPEN_PANEL_TAB_LIMIT, type OpenTab } from "./session-side-open-types"
-import { filePathFromInput, inputLabel, isBrowserInput, webInputURL } from "./session-side-path"
+import { openFileChangeStatus, openTabDirty, restoreOpenPanelState, saveOpenPanelState } from "./session-side-open-state"
+import { sidePanelPathKey } from "./session-side-path"
+import { createSessionSideOpenTabActions } from "./session-side-open-tab-actions"
+import { type OpenTab } from "./session-side-open-types"
 import { SessionOpenTerminal, createSessionSideTerminalController } from "./session-side-terminal"
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
 import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-controller"
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
 import { SessionSideFileEditor } from "./session-side-file-editor"
+import { SessionSideFileSkeleton } from "./session-side-file-skeleton"
+import { SessionSideOpenDirtyDialog } from "./session-side-open-dirty-dialog"
+import { SessionSideOpenExplorerPane } from "./session-side-open-explorer-pane"
 
-const EXPLORER_WIDTH_KEY = "opencodex.file-explorer-width"
-
-function clampExplorerWidth(value: number) {
-  return Math.max(180, Math.min(480, Math.round(value)))
-}
-
-function storedExplorerWidth() {
-  try {
-    const value = Number(localStorage.getItem(EXPLORER_WIDTH_KEY))
-    return Number.isFinite(value) && value > 0 ? clampExplorerWidth(value) : 240
-  } catch {
-    return 240
-  }
-}
 export function SessionSideOpenPanel(props: {
   sessionID: string; active: boolean
   gui?: GuiClient; directory?: string
@@ -64,10 +52,41 @@ export function SessionSideOpenPanel(props: {
   // File tabs render Git-style: a collapsible explorer beside the file. Opening
   // a file from the explorer keeps the pane open so browsing feels continuous.
   const [explorerOpen, setExplorerOpen] = createSignal(false)
-  const [explorerWidth, setExplorerWidth] = createSignal(storedExplorerWidth())
+  const fileKinds = new Set(["file", "files", "picker"])
+  /**
+   * Whether the explorer pane is on screen. A files or picker tab *is* the
+   * explorer; beside a file tab it is an optional side pane. The file
+   * controller loads the tree and runs searches off this, so it has to mean
+   * "visible" rather than "is the active tab" - a session restored with a file
+   * tab open shows the explorer, and it used to sit there reading "No files
+   * found" because nothing had asked for the listing.
+   */
+  const explorerVisible = () => activeTab()?.kind !== "file" || explorerOpen()
   let handledRequestToken = 0
   let loadedSessionID = props.sessionID
-  const browser = createSessionSideBrowserController({
+  // The tab actions and these controllers depend on each other: controllers take
+  // action callbacks at construction, actions drive the controllers at call time.
+  // Actions are built first and reach the controllers through accessors.
+  let browser!: ReturnType<typeof createSessionSideBrowserController>
+  let tabBar!: ReturnType<typeof createSessionSideTabBarController>
+  let terminals!: ReturnType<typeof createSessionSideTerminalController>
+  let files!: ReturnType<typeof createSessionSideFileController>
+  const actions = createSessionSideOpenTabActions({
+    tabs,
+    setTabs,
+    activeID,
+    setActiveID,
+    activeTab,
+    directory: () => props.directory || props.gui?.directory || "",
+    directoryOnly: () => props.directoryOnly === true,
+    setExplorerOpen,
+    browser: () => browser,
+    tabBar: () => tabBar,
+    terminals: () => terminals,
+    files: () => files,
+  })
+  const { activeDirectory, addContextTab, addFileTab, addGitTab, addWebTab, closeTab, createTab, dirtyClose, disposeTabs, openActiveInput, openFromExplorer, openInputInNewTab, resolveDirtyClose, setActiveInput, updateOpenTab } = actions
+  browser = createSessionSideBrowserController({
     active: () => props.active,
     tabs,
     activeID,
@@ -75,7 +94,7 @@ export function SessionSideOpenPanel(props: {
     menuOpen,
     updateTab: updateOpenTab,
   })
-  const tabBar = createSessionSideTabBarController({
+  tabBar = createSessionSideTabBarController({
     tabs,
     setTabs,
     activeID,
@@ -86,7 +105,7 @@ export function SessionSideOpenPanel(props: {
     parkBrowser: browser.parkActive,
     setMenuOpen,
   })
-  const terminals = createSessionSideTerminalController({
+  terminals = createSessionSideTerminalController({
     active: () => props.active,
     tabs,
     activeTab,
@@ -104,13 +123,14 @@ export function SessionSideOpenPanel(props: {
     path: activeFilePath,
     content: () => activeTab()?.kind === "file" ? activeTab()?.text ?? "" : "",
   })
-  const files = createSessionSideFileController({
+  files = createSessionSideFileController({
     active: () => props.active,
     gui: () => props.gui,
     directory: activeDirectory,
     tabs,
     activeID,
     activeTab,
+    explorerVisible,
     selectTab: tabBar.select,
     createTab,
     updateTab: updateOpenTab,
@@ -204,182 +224,19 @@ export function SessionSideOpenPanel(props: {
     saveOpenPanelState(loadedSessionID, tabs(), activeID())
     disposeTabs(tabs())
   })
-  function setActiveInput(value: string) { updateOpenTab(activeID(), { input: value }) }
-  function createTab(input: Partial<OpenTab>) {
-    const slot = reserveOpenTabSlot({ tabs: tabs(), active: activeTab(), clean: (tab) => !openTabDirty(tab), limit: OPEN_PANEL_TAB_LIMIT })
-    if (!slot.available) {
-      const active = activeTab()
-      if (active) updateOpenTab(active.id, { message: "Close or save an inactive tab before opening another." })
-      return undefined
-    }
-    const id = newBrowserID()
-    if (activeTab()?.kind === "web") browser.hideAll()
-    disposeTabs(slot.evicted)
-    setTabs([...slot.tabs, { ...openTabDefaults(id), ...input }])
-    setActiveID(id)
-    return id
-  }
-  function selectSingletonTab(kind: "context" | "files" | "git", title: string) {
-    const existing = tabs().find((tab) => tab.kind === kind)
-    if (existing) {
-      if (activeTab()?.kind === "web" && existing.id !== activeID()) browser.hideAll()
-      setActiveID(existing.id)
-      tabBar.closeNewMenu()
-      return existing.id
-    }
-    const id = createTab({ kind, title })
-    if (!id) return undefined
-    tabBar.closeNewMenu()
-    return id
-  }
-  function addContextTab() {
-    if (props.directoryOnly) return
-    selectSingletonTab("context", "Context")
-  }
-  function addGitTab() { selectSingletonTab("git", "Git") }
-  // Deliberately not a singleton: "+ Files" always opens a fresh explorer tab.
-  function addFileTab() {
-    createTab({ kind: "files", title: "Files" })
-    tabBar.closeNewMenu()
-  }
-  function addWebTab() {
-    createTab({ kind: "web", input: "https://", title: "New webpage" })
-    tabBar.closeNewMenu()
-    queueMicrotask(() => document.querySelector<HTMLInputElement>(".session-open-location input")?.focus())
-  }
-  function closeTab(id: string) {
-    const current = tabs()
-    const index = current.findIndex((tab) => tab.id === id)
-    const next = current.filter((tab) => tab.id !== id)
-    const closing = current.find((tab) => tab.id === id)
-    if (closing && openTabDirty(closing)) {
-      setActiveID(id)
-      updateOpenTab(id, { message: "Save or discard your changes before closing this tab." })
-      return
-    }
-    if (closing?.kind === "web") browser.close(closing)
-    if (closing?.kind === "terminal") terminals.close(closing)
-    if (closing) files.cancelTabs([closing])
-    setTabs(next)
-    if (activeID() === id) setActiveID(next[Math.min(index, next.length - 1)]?.id ?? next[0]?.id ?? "")
-  }
-  async function openActiveInput() {
-    const tab = activeTab()
-    if (!tab) return
-    await openInput(tab.id, tab.kind === "web" ? webInputURL(tab.input) : tab.input)
-  }
-  async function openInputInNewTab(value: string, title?: string) {
-    const trimmed = value.trim()
-    const path = trimmed && !trimmed.startsWith("opencodex://") && !isBrowserInput(trimmed) ? filePathFromInput(trimmed, activeDirectory()) : ""
-    const identity = path ? openTabFileIdentity({ path, directory: activeDirectory() }) : ""
-    const existing = identity ? tabs().find((tab) => tab.kind === "file" && openTabFileIdentity(tab, activeDirectory()) === identity) : undefined
-    if (existing) tabBar.select(existing.id)
-    if (existing && !existing.content) await files.openFile(existing.id, { path, title, directory: activeDirectory() })
-    if (existing) return
-    const id = createTab({ input: value, title: title || inputLabel(value, activeDirectory()) })
-    if (!id) return
-    await openInput(id, value, title)
-  }
-  async function openInput(id: string, value: string, title?: string) {
-    const trimmed = value.trim()
-    if (!trimmed) return
-    if (trimmed === "opencodex://files") {
-      closeTab(id)
-      addFileTab()
-      return
-    }
-    if (trimmed === "opencodex://terminal") {
-      closeTab(id)
-      terminals.create()
-      return
-    }
-    if (isBrowserInput(trimmed)) {
-      const url = workbenchNormalizeBrowserURL(trimmed)
-      updateOpenTab(id, {
-        input: url,
-        url,
-        kind: "web",
-        title: title || inputLabel(url),
-        directory: undefined,
-        content: undefined,
-        text: "",
-        original: "",
-        message: "",
-      })
-      queueMicrotask(() => void browser.navigate(id, url))
-      return
-    }
-    await files.openFile(id, { path: filePathFromInput(trimmed, activeDirectory()), title, directory: activeDirectory() })
-  }
-  function updateOpenTab(id: string, patch: Partial<OpenTab>) { setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...patch } : tab)) }
-  function disposeTabs(items: readonly OpenTab[]) {
-    browser.closeAll(items)
-    terminals.closeAll(items)
-    files.cancelTabs(items)
-  }
-  function activeDirectory() { return props.directory || props.gui?.directory || "" }
   const dirty = createMemo(() => activeTab() ? openTabDirty(activeTab()!) : false)
-  function openFromExplorer(path: string) {
-    setExplorerOpen(true)
-    const tab = activeTab()
-    // The explorer navigates the tab it lives in, like the Git view: a Files
-    // tab converts into the picked file in place, and a file tab swaps its
-    // file. Two guards: a dirty buffer is never replaced (a new tab opens
-    // instead), and a file already open elsewhere is focused, not duplicated.
-    const inPlace = tab && (tab.kind === "files" || tab.kind === "picker" || (tab.kind === "file" && !openTabDirty(tab)))
-    if (inPlace) {
-      const identity = openTabFileIdentity({ path, directory: activeDirectory() })
-      const existing = tabs().find((item) => item.kind === "file" && openTabFileIdentity(item, activeDirectory()) === identity)
-      if (existing && existing.id !== tab.id) {
-        tabBar.select(existing.id)
-        return
-      }
-      void files.openFile(tab.id, { path, directory: activeDirectory() })
-      return
-    }
-    void files.openExplorerFile(path)
-  }
-  function fileExplorerPane(close: () => void) {
-    return (
-      <div class="session-open-file-pane" style={{ width: `${explorerWidth()}px` }}>
-        <SessionSideFileExplorer
-          directory={activeDirectory()}
-          filter={files.filter()}
-          setFilter={files.setFilter}
-          searchState={files.searchState()}
-          matches={files.matches()}
-          rows={files.rows()}
-          loading={files.busy()}
-          openPath={activeTab()?.path ?? ""}
-          toggleFolder={(file) => void files.toggleFolder(file)}
-          openFile={openFromExplorer}
-          close={close}
-        />
-        <div class="session-open-file-resize" role="separator" aria-orientation="vertical" aria-label="Resize file explorer" onPointerDown={startExplorerResize} />
-      </div>
-    )
-  }
-  function startExplorerResize(event: PointerEvent) {
-    if (event.button !== 0) return
-    event.preventDefault()
-    const pointerID = event.pointerId
-    const origin = event.clientX
-    const startWidth = explorerWidth()
-    const move = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerID) return
-      setExplorerWidth(clampExplorerWidth(startWidth + (moveEvent.clientX - origin)))
-    }
-    const finish = (finishEvent: PointerEvent) => {
-      if (finishEvent.pointerId !== pointerID) return
-      window.removeEventListener("pointermove", move)
-      window.removeEventListener("pointerup", finish)
-      window.removeEventListener("pointercancel", finish)
-      try { localStorage.setItem(EXPLORER_WIDTH_KEY, String(explorerWidth())) } catch { /* storage unavailable */ }
-    }
-    window.addEventListener("pointermove", move)
-    window.addEventListener("pointerup", finish)
-    window.addEventListener("pointercancel", finish)
-  }
+  const changedPathKeys = createMemo(
+    () => new Set(props.diffs.flatMap((file) => (file.file ? [sidePanelPathKey(file.file)] : []))),
+  )
+  const dirtyPathKeys = createMemo(
+    () => new Set(tabs().flatMap((tab) => (openTabDirty(tab) && tab.path ? [sidePanelPathKey(tab.path)] : []))),
+  )
+  const fileStatus = (path: string) =>
+    openFileChangeStatus(path, { dirty: dirtyPathKeys(), session: changedPathKeys() }, sidePanelPathKey)
+
+  // A files/picker tab *is* the explorer, so closing it closes the tab; beside
+  // a file it is a side pane, so closing only hides it.
+  const closeExplorerPane = () => (activeTab()?.kind === "file" ? setExplorerOpen(false) : files.closeExplorer())
 
   return (
     <section class="session-side-open">
@@ -420,19 +277,36 @@ export function SessionSideOpenPanel(props: {
             refresh={props.git.refresh}
           />
         </Match>
-        <Match when={activeTab()?.kind === "files" || activeTab()?.kind === "picker"}>
+        {/* One branch for the explorer and the file it opens into. Splitting
+            them meant picking a file crossed a Match boundary, unmounting the
+            explorer and remounting it beside the editor - the whole pane
+            flashed for what is really just the content area changing. */}
+        <Match when={fileKinds.has(activeTab()?.kind ?? "")}>
           <div class="session-open-file-split">
-            {fileExplorerPane(files.closeExplorer)}
-            <div class="session-open-file-content">
-              <div class="session-side-empty">Select a file to view it here.</div>
-            </div>
-          </div>
-        </Match>
-        <Match when={activeTab()?.kind === "file"}>
-          <div class="session-open-file-split">
-            <Show when={explorerOpen()}>{fileExplorerPane(() => setExplorerOpen(false))}</Show>
+            <Show when={explorerVisible()}>
+              <SessionSideOpenExplorerPane
+                directory={activeDirectory()}
+                filter={files.filter()}
+                setFilter={files.setFilter}
+                searchState={files.searchState()}
+                matches={files.matches()}
+                rows={files.rows()}
+                loading={files.busy()}
+                openPath={activeTab()?.path ?? ""}
+                toggleFolder={(file) => void files.toggleFolder(file)}
+                openFile={openFromExplorer}
+                fileStatus={fileStatus}
+                close={closeExplorerPane}
+              />
+            </Show>
             <div class="session-open-file-content">
               <Switch>
+                <Match when={activeTab()?.kind !== "file"}>
+                  <div class="session-side-empty">Select a file to view it here.</div>
+                </Match>
+                <Match when={activeTab()?.loading}>
+                  <SessionSideFileSkeleton />
+                </Match>
                 <Match when={activeTab()?.fileMode === "metadata"}>
                   <div class="session-side-empty">File metadata only. Preview content is omitted above 2 MiB.</div>
                 </Match>
@@ -479,6 +353,10 @@ export function SessionSideOpenPanel(props: {
           />
         </Match>
       </Switch>
+      <SessionSideOpenDirtyDialog
+        tab={tabs().find((item) => item.id === dirtyClose())}
+        resolve={(action) => void resolveDirtyClose(action)}
+      />
     </section>
   )
 }

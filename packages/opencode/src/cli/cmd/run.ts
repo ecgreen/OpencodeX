@@ -1,12 +1,9 @@
 // CLI entry point for `opencode run`.
 //
-// Handles three modes:
-//   1. Non-interactive (default): sends a single prompt, streams events to
-//      stdout, and exits when the session goes idle.
-//   2. Interactive local (`--interactive`): boots the split-footer direct mode
-//      with an in-process server (no external HTTP).
-//   3. Interactive attach (`--interactive --attach`): connects to a running
-//      opencode server and runs interactive mode against it.
+// Non-interactive only: sends a single prompt (or slash command) to a session,
+// streams the resulting events to stdout, and exits when the session goes idle.
+// By default the prompt runs against an in-process server; `--attach` targets a
+// running opencode server instead.
 //
 // Also supports `--command` for slash-command execution, `--format json` for
 // raw event streaming, `--continue` / `--session` for session resumption,
@@ -23,12 +20,9 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceRef } from "@/effect/instance-ref"
 import { FormatError, FormatUnknownError } from "../error"
-import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
 
-const runtimeTask = import("./run/runtime")
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
 function pick(value: string | undefined): ModelInput | undefined {
@@ -159,10 +153,6 @@ export const RunCommand = effectCmd({
         describe: "fork the session before continuing (requires --continue or --session)",
         type: "boolean",
       })
-      .option("share", {
-        type: "boolean",
-        describe: "share the session",
-      })
       .option("model", {
         type: "string",
         alias: ["m"],
@@ -218,94 +208,20 @@ export const RunCommand = effectCmd({
         type: "boolean",
         describe: "show thinking blocks",
       })
-      .option("replay", {
-        type: "boolean",
-        default: false,
-        describe: "replay visible session history on interactive resume",
-      })
-      .option("replay-limit", {
-        type: "number",
-        describe: "cap visible interactive replay to the newest N messages",
-      })
-      .option("interactive", {
-        alias: ["i"],
-        type: "boolean",
-        describe: "run in direct interactive split-footer mode",
-        default: false,
-      })
       .option("dangerously-skip-permissions", {
         type: "boolean",
         describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
         default: false,
-      })
-      .option("demo", {
-        type: "boolean",
-        default: false,
-        describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
     const agentSvc = yield* Agent.Service
-    const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
-      const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
-      const thinking = args.interactive ? (args.thinking ?? true) : (args.thinking ?? false)
-      const die = (message: string): never => {
-        UI.error(message)
-        process.exit(1)
-      }
-      const dieInteractive = (error: unknown): never => {
-        if (error instanceof Error && error.message === INTERACTIVE_INPUT_ERROR) {
-          die(error.message)
-        }
-
-        throw error
-      }
+      const thinking = args.thinking ?? false
 
       let message = [...args.message, ...(args["--"] || [])]
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
         .join(" ")
-
-      if (args.interactive && args.command) {
-        die("--interactive cannot be used with --command")
-      }
-
-      if (args.demo && !args.interactive) {
-        die("--demo requires --interactive")
-      }
-
-      if (args.interactive && args.format === "json") {
-        die("--interactive cannot be used with --format json")
-      }
-
-      if (args.replay && !args.interactive) {
-        die("--replay requires --interactive")
-      }
-
-      if (args["replay-limit"] !== undefined && !args.interactive) {
-        die("--replay-limit requires --interactive")
-      }
-
-      if (
-        args["replay-limit"] !== undefined &&
-        (!Number.isInteger(args["replay-limit"]) || args["replay-limit"] <= 0)
-      ) {
-        die("--replay-limit must be a positive integer")
-      }
-
-      if (args.interactive && !process.stdout.isTTY) {
-        die("--interactive requires a TTY stdout")
-      }
-
-      if (args.interactive) {
-        try {
-          resolveInteractiveStdin().cleanup?.()
-        } catch (error) {
-          dieInteractive(error)
-        }
-      }
-
-      const replay = args.replay || args["replay-limit"] !== undefined
 
       const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
       const directory = (() => {
@@ -355,9 +271,8 @@ export const RunCommand = effectCmd({
 
       const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
       message = resolveRunInput(message, piped) ?? ""
-      const initialInput = resolveRunInput(rawMessage, piped)
 
-      if (message.trim().length === 0 && !args.command && !args.interactive) {
+      if (message.trim().length === 0 && !args.command) {
         UI.error("You must provide a message or a command")
         process.exit(1)
       }
@@ -367,25 +282,23 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      const rules: Permission.Ruleset = args.interactive
-        ? []
-        : [
-            {
-              permission: "question",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_enter",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_exit",
-              action: "deny",
-              pattern: "*",
-            },
-          ]
+      const rules: Permission.Ruleset = [
+        {
+          permission: "question",
+          action: "deny",
+          pattern: "*",
+        },
+        {
+          permission: "plan_enter",
+          action: "deny",
+          pattern: "*",
+        },
+        {
+          permission: "plan_exit",
+          action: "deny",
+          pattern: "*",
+        },
+      ]
 
       function title() {
         if (args.title === undefined) return
@@ -469,49 +382,6 @@ export const RunCommand = effectCmd({
           id,
           title: result.data?.title ?? name,
           directory: result.data?.directory,
-        }
-      }
-
-      async function share(sdk: OpencodeClient, sessionID: string) {
-        const cfg = await sdk.config.get()
-        if (!cfg.data) return
-        if (cfg.data.share !== "auto" && !flags.autoShare && !args.share) return
-        const res = await sdk.session.share({ sessionID }).catch((error) => {
-          if (error instanceof Error && error.message.includes("disabled")) {
-            UI.println(UI.Style.TEXT_DANGER_BOLD + "!  " + error.message)
-          }
-          return { error }
-        })
-        if (!res.error && "data" in res && res.data?.share?.url) {
-          UI.println(UI.Style.TEXT_INFO_BOLD + "~  " + res.data.share.url)
-        }
-      }
-
-      async function createFreshSession(
-        sdk: OpencodeClient,
-        input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
-      ): Promise<SessionInfo> {
-        const result = await sdk.session.create({
-          title: args.title !== undefined && args.title !== "" ? args.title : undefined,
-          agent: input.agent,
-          model: input.model
-            ? {
-                providerID: input.model.providerID,
-                id: input.model.modelID,
-                variant: input.variant,
-              }
-            : undefined,
-          permission: [...rules],
-        })
-        const id = result.data?.id
-        if (!id) {
-          throw new Error("Failed to create session")
-        }
-
-        void share(sdk, id).catch(() => {})
-        return {
-          id,
-          title: result.data?.title,
         }
       }
 
@@ -763,38 +633,20 @@ export const RunCommand = effectCmd({
         // Validate agent if specified
         const agent = await pickAgent(client)
 
-        await share(client, sessionID)
+        const events = await client.event.subscribe()
+        loop(client, events).catch((e) => {
+          console.error(e)
+          process.exit(1)
+        })
 
-        if (!args.interactive) {
-          const events = await client.event.subscribe()
-          loop(client, events).catch((e) => {
-            console.error(e)
-            process.exit(1)
-          })
-
-          if (args.command) {
-            const result = await client.session.command({
-              sessionID,
-              agent,
-              model: args.model,
-              command: args.command,
-              arguments: message,
-              variant: args.variant,
-            })
-            if (result.error) {
-              if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
-              process.exitCode = 1
-            }
-            return
-          }
-
-          const model = pick(args.model)
-          const result = await client.session.prompt({
+        if (args.command) {
+          const result = await client.session.command({
             sessionID,
             agent,
-            model,
+            model: args.model,
+            command: args.command,
+            arguments: message,
             variant: args.variant,
-            parts: [...files, { type: "text", text: message }],
           })
           if (result.error) {
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
@@ -804,60 +656,16 @@ export const RunCommand = effectCmd({
         }
 
         const model = pick(args.model)
-        const { runInteractiveMode } = await runtimeTask
-        try {
-          await runInteractiveMode({
-            sdk: client,
-            directory: cwd,
-            sessionID,
-            sessionTitle: sess.title,
-            resume: Boolean(args.session || args.continue) && !args.fork,
-            replay,
-            replayLimit: args["replay-limit"],
-            agent,
-            model,
-            variant: args.variant,
-            files,
-            initialInput,
-            createSession: createFreshSession,
-            thinking,
-            demo: args.demo,
-          })
-        } catch (error) {
-          dieInteractive(error)
-        }
-        return
-      }
-
-      if (args.interactive && !args.attach && !args.session && !args.continue) {
-        const model = pick(args.model)
-        const { runInteractiveLocalMode } = await runtimeTask
-        const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-          const { Server } = await import("@/server/server")
-          const request = new Request(input, init)
-          return Server.Default().app.fetch(request)
-        }) as typeof globalThis.fetch
-
-        try {
-          return await runInteractiveLocalMode({
-            directory: directory ?? root,
-            fetch: fetchFn,
-            resolveAgent: localAgent,
-            session,
-            share,
-            createSession: createFreshSession,
-            agent: args.agent,
-            model,
-            variant: args.variant,
-            replay,
-            replayLimit: args["replay-limit"],
-            files,
-            initialInput,
-            thinking,
-            demo: args.demo,
-          })
-        } catch (error) {
-          dieInteractive(error)
+        const result = await client.session.prompt({
+          sessionID,
+          agent,
+          model,
+          variant: args.variant,
+          parts: [...files, { type: "text", text: message }],
+        })
+        if (result.error) {
+          if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
+          process.exitCode = 1
         }
       }
 

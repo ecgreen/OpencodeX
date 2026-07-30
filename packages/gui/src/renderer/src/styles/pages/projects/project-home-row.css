@@ -1,0 +1,62 @@
+.project-home-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  transition: background .15s ease,box-shadow .15s ease;
+}
+
+.project-home-row.input-needed {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 9%,transparent);
+}
+
+.project-home-row.ready-for-review {
+  box-shadow: inset 3px 0 0 var(--purple);
+  background: color-mix(in srgb,var(--purple) 9%,transparent);
+}
+
+.project-home-row.needs-review {
+  box-shadow: inset 3px 0 0 var(--purple);
+  background: color-mix(in srgb,var(--purple) 9%,transparent);
+}
+
+.project-home-row.in-progress {
+  box-shadow: inset 3px 0 0 var(--blue);
+  background: color-mix(in srgb,var(--blue) 8%,transparent);
+}
+
+.project-home-row.busy {
+  box-shadow: inset 3px 0 0 var(--blue);
+  background: color-mix(in srgb,var(--blue) 8%,transparent);
+}
+
+.project-home-row.danger {
+  box-shadow: inset 3px 0 0 var(--error);
+  background: color-mix(in srgb,var(--error) 9%,transparent);
+}
+
+.project-home-panel .empty {
+  margin: 12px;
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb,var(--border) 80%,transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+  background: color-mix(in srgb,var(--bg) 78%,transparent);
+}
+
+.project-home-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border-subtle);
+}

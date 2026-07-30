@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import type { PromptPart } from "../lib/store"
+import type { PromptPart } from "../lib/session-api"
 import { EMPTY_VIEW_PANE_RUNTIME_STATE } from "../lib/view-pane-state"
 import type { SessionPageProps } from "./session-page-types"
 

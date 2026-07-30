@@ -1,0 +1,94 @@
+.app-loading-skeleton {
+  isolation: isolate;
+}
+
+.app-loading-sections {
+  opacity: .94;
+}
+
+.app-loading-panel {
+  --app-loading-accent: var(--theme-info);
+  --app-loading-accent-muted: var(--theme-info);
+  overflow: hidden;
+}
+
+.app-loading-card {
+  --card-accent: color-mix(in srgb, var(--app-loading-accent-muted) 48%, transparent);
+  pointer-events: none;
+}
+
+.app-loading-line {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--app-loading-accent-muted) 16%,transparent);
+  color: transparent;
+}
+
+.app-loading-title {
+  width: min(72%,360px);
+  height: 10px;
+}
+
+.app-loading-detail {
+  width: min(88%,520px);
+  height: 8px;
+}
+
+.app-loading-card .app-loading-detail {
+  margin-top: 2px;
+}
+
+.app-loading-meta {
+  width: min(52%,260px);
+  height: 8px;
+  background: color-mix(in srgb,var(--app-loading-accent) 13%,transparent);
+}
+
+.app-loading-control {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb,var(--app-loading-accent-muted) 16%,transparent);
+  color: transparent;
+  width: 70px;
+  height: 28px;
+  border-radius: 4px;
+}
+
+.app-loading-icon-control {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb,var(--app-loading-accent-muted) 16%,transparent);
+  color: transparent;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.app-loading-pin {
+  overflow: hidden;
+  background: color-mix(in srgb,var(--app-loading-accent-muted) 16%,transparent);
+  color: transparent;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.app-loading-bucket-chevron {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb,var(--app-loading-accent-muted) 16%,transparent);
+  color: transparent;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+@keyframes app-loading-skeleton-shimmer {
+  to {
+    transform: translate(115%);
+  }
+}

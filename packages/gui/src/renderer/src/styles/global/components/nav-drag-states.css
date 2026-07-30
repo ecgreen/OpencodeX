@@ -1,0 +1,17 @@
+.nav button:hover .icon {
+  color: var(--theme-text);
+}
+
+.nav button:focus-visible .icon {
+  color: var(--theme-text);
+}
+
+.draggable-row.dropping {
+  box-shadow: inset 0 2px 0 var(--primary);
+  border-radius: 0;
+}
+
+.draggable-row.dragging {
+  cursor: grabbing;
+  border-radius: 0;
+}

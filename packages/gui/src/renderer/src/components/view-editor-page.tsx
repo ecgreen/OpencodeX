@@ -3,7 +3,7 @@ import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { JSX } from "solid-js"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, formatRelative, title } from "../lib/format"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import {
   addPendingViewSessions,
   groupViewSessionsByProject,

@@ -2,7 +2,6 @@ import type { SessionSlashCommand, SessionSlashCommandActions } from "./session-
 export type { SessionSlashCommand, SessionSlashCommandActions, SessionSlashCommandContext } from "./session-slash-command-types"
 
 export function buildSessionSlashCommands(input: {
-  shared: boolean
   canRedo: boolean
   variantCount: number
   actions: SessionSlashCommandActions
@@ -154,14 +153,6 @@ export function buildSessionSlashCommands(input: {
       run: input.actions.connectProvider,
     },
     {
-      name: "org",
-      title: "Switch org",
-      detail: "Change the active console organization",
-      category: "Provider",
-      aliases: ["orgs", "switch-org"],
-      run: input.actions.switchOrg,
-    },
-    {
       name: "status",
       title: "View status",
       detail: "Open provider and runtime status",
@@ -220,13 +211,6 @@ export function buildSessionSlashCommands(input: {
       run: input.actions.openDiff,
     },
     {
-      name: "share",
-      title: input.shared ? "Copy share link" : "Share session",
-      detail: input.shared ? "Copy the existing share URL" : "Create a share URL",
-      category: "Session",
-      run: input.actions.shareSession,
-    },
-    {
       name: "rename",
       title: "Rename session",
       detail: "Change the current session title",
@@ -247,14 +231,6 @@ export function buildSessionSlashCommands(input: {
       category: "Session",
       aliases: ["summarize"],
       run: input.actions.compactSession,
-    },
-    {
-      name: "unshare",
-      title: "Unshare session",
-      detail: "Disable the current share URL",
-      category: "Session",
-      disabled: input.shared ? undefined : "This session is not shared.",
-      run: input.actions.unshareSession,
     },
     {
       name: "undo",

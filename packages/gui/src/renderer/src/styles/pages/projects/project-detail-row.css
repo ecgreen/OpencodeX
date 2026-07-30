@@ -1,0 +1,82 @@
+.project-command-layout {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(320px,.42fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.project-command-main {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.project-command-sidebar {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.project-detail-list>div {
+  display: grid;
+  gap: 0;
+  padding: 0;
+}
+
+.project-detail-row {
+  box-shadow: none;
+  transform: none;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  transition: background .15s ease,box-shadow .15s ease,color .15s ease;
+}
+
+.project-detail-row.input-needed {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 8%,transparent);
+}
+
+.project-detail-row.ready-for-review {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 8%,transparent);
+}
+
+.project-detail-row.danger {
+  box-shadow: inset 3px 0 0 var(--error);
+  background: color-mix(in srgb,var(--error) 8%,transparent);
+}
+
+.project-detail-row.in-progress {
+  box-shadow: inset 3px 0 0 var(--info);
+  background: color-mix(in srgb,var(--info) 7%,transparent);
+}
+
+.project-detail-row.info {
+  box-shadow: inset 3px 0 0 var(--info);
+  background: color-mix(in srgb,var(--info) 7%,transparent);
+}
+
+.project-detail-list .empty {
+  margin: 12px;
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb,var(--border) 80%,transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+  background: color-mix(in srgb,var(--bg) 78%,transparent);
+}
+
+.project-detail-actions {
+  justify-content: flex-end;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border-subtle);
+}

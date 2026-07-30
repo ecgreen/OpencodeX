@@ -2,7 +2,7 @@ import type { Command, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
-import { createSession, deleteSession, updateView, type PromptPart } from "./store"
+import { createSession, deleteSession, updateView, type PromptPart } from "./session-api"
 import { promptPartsForSubmit, serverCommandMatch, textPrompt, type GuiPromptInfo } from "./prompt-state"
 import { pendingViewSessions, replacePendingViewPane, viewItemID, viewItemSession, type ViewItem } from "./view-items"
 
@@ -40,6 +40,9 @@ export async function runViewPromptAction(input: {
   runShell?: (sessionID: string, command: string, options: ViewPromptSendTarget["options"]) => Promise<void>
   serverCommands?: Command[]
   rememberModel: (model: string) => void
+  /** Marks the target session as running the moment the prompt leaves, before the backend reports busy. */
+  markPendingPrompt?: (sessionID: string) => void
+  releasePendingPrompt?: (sessionID: string) => void
   syncViewSession: (session: Session) => Promise<void>
   refresh: () => Promise<void>
   prepareTarget?: (gui: GuiClient, item: ViewItem, view?: ClientCatalogView) => Promise<PreparedViewPromptTarget>
@@ -65,9 +68,15 @@ export async function runViewPromptAction(input: {
       prompt: submission.prompt,
     })
     const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
-    if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
-    else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
-    else await input.sendPrompt(target.sessionID, submission.prompt.input, target.options)
+    input.markPendingPrompt?.(target.sessionID)
+    try {
+      if (submission.prompt.mode === "shell" && input.runShell) await input.runShell(target.sessionID, submission.prompt.input, target.options)
+      else if (command && input.runCommand) await input.runCommand(target.sessionID, command.command.name, command.arguments, target.options)
+      else await input.sendPrompt(target.sessionID, submission.prompt.input, target.options)
+    } catch (error) {
+      input.releasePendingPrompt?.(target.sessionID)
+      throw error
+    }
     if (target.modelToRemember) input.rememberModel(target.modelToRemember)
     await input.syncViewSession(prepared.target)
     await input.refresh()

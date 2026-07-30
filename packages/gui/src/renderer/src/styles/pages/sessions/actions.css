@@ -127,69 +127,6 @@
   height: 13px;
 }
 
-/* The alternate path: hand this workspace to the official CLI. */
-.session-claude-launch {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-3);
-  width: min(400px, calc(100vw - 48px));
-  margin-top: var(--ds-space-3);
-  padding: var(--ds-space-3) var(--ds-space-4);
-  border-color: color-mix(in srgb, var(--ds-accent-agent) 30%, transparent);
-  border-radius: var(--ds-radius-card);
-  background: color-mix(in srgb, var(--ds-accent-agent) 7%, transparent);
-  text-align: left;
-  pointer-events: auto;
-  transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, transform var(--ds-motion-hover) ease;
-}
-
-.session-claude-launch:hover {
-  border-color: color-mix(in srgb, var(--ds-accent-agent) 52%, transparent);
-  background: color-mix(in srgb, var(--ds-accent-agent) 11%, transparent);
-  transform: translateY(-1px);
-}
-
-.session-claude-launch-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--ds-radius-control);
-  color: var(--ds-accent-agent);
-  background: color-mix(in srgb, var(--ds-accent-agent) 15%, transparent);
-}
-
-.session-claude-launch-icon .icon {
-  width: 16px;
-  height: 16px;
-}
-
-.session-claude-launch-copy {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-
-.session-claude-launch-copy strong {
-  color: var(--ds-text);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.session-claude-launch-copy small {
-  color: var(--ds-text-muted);
-  font-size: 11px;
-}
-
-.session-claude-launch-chevron {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  color: var(--ds-text-muted);
-}
-
 .session-empty-state-hints {
   display: flex;
   gap: 16px;

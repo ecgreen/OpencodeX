@@ -10,24 +10,33 @@ import { afterAll } from "bun:test"
 const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
+  // A retained Windows handle surfaces under several codes depending on which
+  // layer notices it, so treat the whole family as "still locked, try again".
   const busy = (error: unknown) =>
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    (error.code === "EBUSY" || (process.platform === "win32" && error.code === "EFAULT"))
+    (error.code === "EBUSY" ||
+      (process.platform === "win32" && (error.code === "EFAULT" || error.code === "EACCES" || error.code === "EPERM")))
   const rm = async (left: number): Promise<void> => {
     Bun.gc(true)
     await sleep(100)
     return fs.rm(dir, { recursive: true, force: true }).catch((error) => {
-      if (!busy(error)) throw error
-      if (left <= 1) throw error
+      if (!busy(error) || left <= 1) throw error
       return rm(left - 1)
     })
   }
 
-  // Bun can report retained Windows SQLite handles as EBUSY or EFAULT, so force
-  // GC and retry teardown without hiding persistent or unrelated failures.
-  await rm(30)
+  // Bun can report retained Windows SQLite handles as EBUSY, EFAULT or EACCES,
+  // so force GC and retry teardown without hiding persistent or unrelated
+  // failures. If Windows still holds the directory after every retry, say so
+  // and move on: the tests themselves have already passed, the path is under
+  // the OS temp directory, and failing the run over a leftover directory
+  // reports an environment quirk as a product failure.
+  await rm(30).catch((error) => {
+    if (process.platform !== "win32" || !busy(error)) throw error
+    console.warn(`test teardown could not remove ${dir}: ${String(error)}`)
+  })
 })
 
 process.env["XDG_DATA_HOME"] = path.join(dir, "share")
@@ -35,7 +44,6 @@ process.env["XDG_CACHE_HOME"] = path.join(dir, "cache")
 process.env["XDG_CONFIG_HOME"] = path.join(dir, "config")
 process.env["XDG_STATE_HOME"] = path.join(dir, "state")
 process.env["OPENCODE_MODELS_PATH"] = path.join(import.meta.dir, "tool", "fixtures", "models-api.json")
-process.env["OPENCODE_EXPERIMENTAL_EVENT_SYSTEM"] = "true"
 process.env["OPENCODE_EXPERIMENTAL_WORKSPACES"] = "true"
 
 // Set test home directory to isolate tests from user's actual home directory

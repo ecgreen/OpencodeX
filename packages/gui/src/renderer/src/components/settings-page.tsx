@@ -116,6 +116,27 @@ export function SettingsPage(props: { controller: ReturnType<typeof createSettin
           </div>
         </section>
 
+        <section class="settings-section" aria-labelledby="settings-notifications">
+          <header>
+            <div>
+              <h2 id="settings-notifications">Notifications</h2>
+              <p>Desktop alerts only fire while the OpencodeX window is in the background.</p>
+            </div>
+          </header>
+          <div class="settings-list">
+            <Switch
+              class="settings-row"
+              checked={props.controller.attentionNotifications()}
+              onChange={props.controller.setAttentionNotifications}
+            >
+              <span>
+                <strong>Notify when work needs you</strong>
+                <small>Raise a system notification for new permission, input, review, and failure items.</small>
+              </span>
+            </Switch>
+          </div>
+        </section>
+
         <section class="settings-section" aria-labelledby="settings-security">
           <header>
             <div>

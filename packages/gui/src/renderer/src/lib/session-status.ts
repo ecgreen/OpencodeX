@@ -1,31 +1,50 @@
 import type { OpencodeXSessionUiState, Session } from "@opencode-ai/sdk/v2/client"
-import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
+import {
+  clientSessionLikelyActive,
+  deriveClientSessionDisplayStatus,
+  deriveClientSessionStatus,
+  deriveClientViewStatus,
+  isActiveClientSessionStatus,
+  type ClientCatalogView,
+  type ClientDerivedSessionStatus,
+  type ClientSessionActivityMessage,
+} from "@opencode-ai/sdk/v2/client-sync"
 import { statusLabel, statusTone } from "./status-system"
-import type { GuiSnapshot } from "./store"
+import type { GuiSnapshot } from "./session-api"
 
-export type DerivedSessionStatus = "dormant" | "in_progress" | "input_needed" | "ready_for_review" | "failed"
+/**
+ * The GUI's spelling of the shared status vocabulary. `needs_review` is called
+ * `ready_for_review` here because that is what the stylesheets, the status
+ * table and the rest of the renderer already say; it is a rename at the
+ * boundary, not a second derivation.
+ */
+export type DerivedSessionStatus = "dormant" | "in_progress" | "input_needed" | "ready_for_review"
 
-export function isActiveSessionStatus(status: DerivedSessionStatus) {
-  return status === "in_progress" || status === "input_needed" || status === "ready_for_review"
+export type SessionStatusOptions = {
+  /** The session's transcript, when the caller has it, for the activity heuristic. */
+  messages?: readonly ClientSessionActivityMessage[]
+  now?: number
 }
 
-export function deriveSessionStatus(snapshot: GuiSnapshot | undefined, session: Session): DerivedSessionStatus {
-  if (sessionNeedsInput(snapshot, session.id)) return "input_needed"
-  if (isRunningBackendStatus(snapshot?.sessionStatus[session.id]?.type)) return "in_progress"
-  const displayStatus = snapshot?.sessionUiState[session.id]?.displayStatus
-  if (displayStatus === "input_needed") return "input_needed"
-  if (displayStatus === "in_progress") return "in_progress"
-  if (displayStatus === "needs_review" && snapshot?.sessionUiState[session.id]?.updated !== false) return "ready_for_review"
-  return "dormant"
+export function isActiveSessionStatus(status: DerivedSessionStatus) {
+  return isActiveClientSessionStatus(clientStatusName(status))
+}
+
+export function deriveSessionStatus(
+  snapshot: GuiSnapshot | undefined,
+  session: Session,
+  options?: SessionStatusOptions,
+): DerivedSessionStatus {
+  return guiStatusName(deriveClientStatus(snapshot, session, options))
 }
 
 export function deriveViewStatus(view: ClientCatalogView, snapshot: GuiSnapshot | undefined): DerivedSessionStatus {
   const sessions = new Map((snapshot?.sessions ?? []).map((session) => [session.id, session]))
-  const statuses = view.sessionIDs.map((sessionID) => sessions.get(sessionID)).filter((session): session is Session => Boolean(session)).map((session) => deriveSessionStatus(snapshot, session))
-  if (statuses.includes("input_needed")) return "input_needed"
-  if (statuses.includes("in_progress")) return "in_progress"
-  if (statuses.includes("ready_for_review")) return "ready_for_review"
-  return "dormant"
+  const statuses = view.sessionIDs
+    .map((sessionID) => sessions.get(sessionID))
+    .filter((session): session is Session => Boolean(session))
+    .map((session) => deriveClientStatus(snapshot, session))
+  return guiStatusName(deriveClientViewStatus(statuses))
 }
 
 export function reconcileSessionUiState(snapshot: GuiSnapshot, sessionID: string): GuiSnapshot {
@@ -62,9 +81,31 @@ export function deriveSessionUiState(snapshot: GuiSnapshot, session: Session): O
     ...(state?.seenAt === undefined ? {} : { seenAt: state.seenAt }),
     ...(state?.reviewedAt === undefined ? {} : { reviewedAt: state.reviewedAt }),
     reviewedFiles: state?.reviewedFiles ?? [],
-    displayStatus: sessionUiDisplayStatus(snapshot, session, state),
+    displayStatus: deriveClientSessionDisplayStatus({
+      status: snapshot.sessionStatus[session.id],
+      hasPendingInteraction: sessionNeedsInput(snapshot, session.id),
+      updatedAt: session.time.updated,
+      reviewedAt: state?.reviewedAt,
+    }),
     updated: session.time.updated > (state?.seenAt ?? 0),
   }
+}
+
+/**
+ * Optimistic "the prompt is away" flag. The reader pressed Enter, so the
+ * session reads as running immediately instead of staying idle until the
+ * backend reports `busy`, which is what the TUI has always done.
+ */
+export function markSessionPromptPendingInSnapshot(snapshot: GuiSnapshot, sessionID: string): GuiSnapshot {
+  if (snapshot.sessionPendingPrompt?.[sessionID]) return snapshot
+  return { ...snapshot, sessionPendingPrompt: { ...snapshot.sessionPendingPrompt, [sessionID]: true } }
+}
+
+export function releaseSessionPromptPendingInSnapshot(snapshot: GuiSnapshot, sessionID: string): GuiSnapshot {
+  if (!snapshot.sessionPendingPrompt?.[sessionID]) return snapshot
+  const sessionPendingPrompt = { ...snapshot.sessionPendingPrompt }
+  delete sessionPendingPrompt[sessionID]
+  return { ...snapshot, sessionPendingPrompt }
 }
 
 /** Lowercase presentation of the canonical label, for inline sentence use. */
@@ -73,20 +114,33 @@ export function sessionStatusLabel(status: string) {
 }
 
 /** Delegates to the canonical status table so the GUI has one status mapping. */
-export function sessionStatusTone(status: DerivedSessionStatus): "info" | "warning" | "success" | "danger" | "neutral" {
+export function sessionStatusTone(status: string): "info" | "warning" | "success" | "danger" | "neutral" {
   const tone = statusTone(status)
   return tone === "accent" || tone === "special" ? "info" : tone
 }
 
-function isRunningBackendStatus(status: string | undefined) {
-  return status === "busy" || status === "retry"
+function deriveClientStatus(
+  snapshot: GuiSnapshot | undefined,
+  session: Session,
+  options?: SessionStatusOptions,
+): ClientDerivedSessionStatus {
+  return deriveClientSessionStatus({
+    status: snapshot?.sessionStatus[session.id],
+    uiState: snapshot?.sessionUiState[session.id],
+    hasPendingInteraction: sessionNeedsInput(snapshot, session.id),
+    pendingPrompt: snapshot?.sessionPendingPrompt?.[session.id] === true,
+    likelyActive: options?.messages
+      ? clientSessionLikelyActive(options.messages, session.time.updated, options.now)
+      : undefined,
+  })
 }
 
-function sessionUiDisplayStatus(snapshot: GuiSnapshot, session: Session, state: OpencodeXSessionUiState | undefined) {
-  if (sessionNeedsInput(snapshot, session.id)) return "input_needed"
-  if (isRunningBackendStatus(snapshot.sessionStatus[session.id]?.type)) return "in_progress"
-  if (session.time.updated > (state?.reviewedAt ?? 0)) return "needs_review"
-  return "idle"
+function guiStatusName(status: ClientDerivedSessionStatus): DerivedSessionStatus {
+  return status === "needs_review" ? "ready_for_review" : status
+}
+
+function clientStatusName(status: DerivedSessionStatus): ClientDerivedSessionStatus {
+  return status === "ready_for_review" ? "needs_review" : status
 }
 
 function sessionNeedsInput(snapshot: GuiSnapshot | undefined, sessionID: string) {

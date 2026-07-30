@@ -4,7 +4,7 @@ import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/clie
 import type { createNavigationController } from "./navigation-controller"
 import type { createSessionActionsController } from "./session-actions-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
-import { displayMessageText } from "../lib/message-text"
+import { displayClientMessageText } from "@opencode-ai/sdk/v2/client-sync"
 import { isTerminalSessionRecordID } from "./claude-terminal-controller"
 import { initialMruCursor, loadMruSessions, moveMruCursor, mruSessionCandidates, pruneMruSessions, saveMruSessions, touchMruSession } from "../lib/mru-sessions"
 import { textPart } from "../lib/session-composer-helpers"
@@ -184,6 +184,6 @@ function persist(list: readonly string[]) {
 
 function previewText(parts: MessageBundle["parts"]) {
   const text = parts.map(textPart).filter(Boolean).join("\n")
-  const display = displayMessageText(text).replace(/\s+/g, " ").trim()
+  const display = displayClientMessageText(text).replace(/\s+/g, " ").trim()
   return display.length > PREVIEW_TEXT_LIMIT ? `${display.slice(0, PREVIEW_TEXT_LIMIT)}…` : display
 }

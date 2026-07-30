@@ -1,7 +1,7 @@
 import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { For, Match, Show, Switch, createEffect, createMemo } from "solid-js"
 import { moveRelative } from "../lib/reorder"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { IconButton } from "./ui"
 import { RailResizeHandle } from "./rail-resize-handle"
 import { RailBrand, RailNav } from "./rail-sidebar-header"

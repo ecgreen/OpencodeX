@@ -1,6 +1,5 @@
 import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { ProjectTable } from "../project/sql"
-import type { SessionMessage } from "./message"
 import type { Snapshot } from "../snapshot"
 import { PermissionV2 } from "../permission"
 import { ProjectV2 } from "../project"
@@ -9,7 +8,6 @@ import type { MessageID, PartID, Info as LegacyMessageInfo, Part as LegacyMessag
 import { WorkspaceV2 } from "../workspace"
 import { Timestamps } from "../database/schema.sql"
 
-type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
 type LegacyMessageData = Omit<LegacyMessageInfo, "id" | "sessionID">
 type LegacyPartData = Omit<LegacyMessagePart, "id" | "sessionID" | "messageID">
 
@@ -28,7 +26,6 @@ export const SessionTable = sqliteTable(
     path: text(),
     title: text().notNull(),
     version: text().notNull(),
-    share_url: text(),
     summary_additions: integer(),
     summary_deletions: integer(),
     summary_files: integer(),
@@ -108,25 +105,6 @@ export const TodoTable = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.session_id, table.position] }),
     index("todo_session_idx").on(table.session_id),
-  ],
-)
-
-export const SessionMessageTable = sqliteTable(
-  "session_message",
-  {
-    id: text().$type<SessionMessage.ID>().primaryKey(),
-    session_id: text()
-      .$type<SessionSchema.ID>()
-      .notNull()
-      .references(() => SessionTable.id, { onDelete: "cascade" }),
-    type: text().$type<SessionMessage.Type>().notNull(),
-    ...Timestamps,
-    data: text({ mode: "json" }).notNull().$type<SessionMessageData>(),
-  },
-  (table) => [
-    index("session_message_session_idx").on(table.session_id),
-    index("session_message_session_type_idx").on(table.session_id, table.type),
-    index("session_message_time_created_idx").on(table.time_created),
   ],
 )
 

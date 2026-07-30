@@ -29,7 +29,6 @@ import { Session } from "@/session/session"
 import {
   SessionCommandTable,
   SessionExecutionTable,
-  SessionMessageTable,
   SessionTable,
 } from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
@@ -44,7 +43,6 @@ import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
-import { SessionV2 } from "@opencode-ai/core/session"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
 import { Shell } from "../../src/shell/shell"
@@ -103,6 +101,32 @@ function withSh<A, E, R>(fx: () => Effect.Effect<A, E, R>) {
 function toolPart(parts: SessionLegacy.Part[]) {
   return parts.find((part): part is SessionLegacy.ToolPart => part.type === "tool")
 }
+
+/**
+ * In-flight tool revisions are broadcast rather than journaled, so the durable
+ * projection only ever shows terminal state. Real clients read progress off the
+ * event stream; these tests do the same. Keyed by part id so the map always
+ * holds the newest revision of each part.
+ */
+const liveToolParts = Effect.fnUntraced(function* () {
+  const events = yield* EventV2Bridge.Service
+  const live = new Map<string, SessionLegacy.ToolPart>()
+  const unsubscribe = yield* events.listen((event) =>
+    Effect.sync(() => {
+      if (event.type !== SessionLegacy.Event.PartUpdated.type) return
+      const part = (event.data as { part: SessionLegacy.Part }).part
+      if (part.type === "tool") live.set(part.id, part)
+    }),
+  )
+  yield* Effect.addFinalizer(() => unsubscribe)
+  return {
+    running: (messageID: MessageID) =>
+      [...live.values()].find(
+        (part) =>
+          part.messageID === messageID && part.state.status === "running" && part.state.metadata?.sessionId !== undefined,
+      ),
+  }
+})
 
 type CompletedToolPart = SessionLegacy.ToolPart & { state: SessionLegacy.ToolStateCompleted }
 type ErrorToolPart = SessionLegacy.ToolPart & { state: SessionLegacy.ToolStateError }
@@ -209,7 +233,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provide(Layer.mock(OpencodeXProject.Service)({})),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
@@ -222,11 +246,11 @@ function makePrompt(input?: { processor?: "blocking" }) {
       : SessionProcessor.layer.pipe(
           Layer.provide(summary),
           Layer.provide(Image.defaultLayer),
-          Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+          Layer.provide(RuntimeFlags.layer({})),
           Layer.provideMerge(deps),
         )
   const compact = SessionCompaction.layer.pipe(
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
@@ -244,7 +268,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(todo),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )
@@ -680,50 +704,6 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
-noLLMServer.instance.skip(
-  "prompt emits v2 prompted and synthetic events (v2 projector disabled)",
-  () =>
-    Effect.gen(function* () {
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Pinned" })
-
-      yield* prompt.prompt({
-        sessionID: chat.id,
-        agent: "build",
-        noReply: true,
-        parts: [
-          { type: "text", text: "hello v2" },
-          {
-            type: "file",
-            mime: "text/plain",
-            filename: "note.txt",
-            url: "data:text/plain;base64,bm90ZSBjb250ZW50",
-          },
-        ],
-      })
-
-      const messages = yield* SessionV2.Service.use((session) => session.messages({ sessionID: chat.id })).pipe(
-        Effect.provide(SessionV2.defaultLayer),
-      )
-      const { db } = yield* Database.Service
-      const row = yield* db
-        .select()
-        .from(SessionMessageTable)
-        .where(eq(SessionMessageTable.session_id, chat.id))
-        .get()
-        .pipe(Effect.orDie)
-      expect(messages.find((message) => message.type === "user")).toMatchObject({ type: "user", text: "hello v2" })
-      expect(typeof row?.data.time.created).toBe("number")
-      expect(messages).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: "synthetic", text: expect.stringContaining("Called the Read tool") }),
-          expect.objectContaining({ type: "synthetic", text: "note content" }),
-        ]),
-      )
-    }),
-  { config: cfg },
-)
 
 it.instance("static loop returns assistant text through local provider", () =>
   Effect.gen(function* () {
@@ -1030,6 +1010,7 @@ it.instance(
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const chat = yield* sessions.create({ title: "Pinned" })
+      const live = yield* liveToolParts()
       yield* llm.hang
       const msg = yield* user(chat.id, "hello")
       yield* addSubtask(chat.id, msg.id)
@@ -1040,8 +1021,7 @@ it.instance(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
-          const tool = taskMsg?.parts.find((part): part is SessionLegacy.ToolPart => part.type === "tool")
-          if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
+          return taskMsg && live.running(taskMsg.info.id)
         }),
         "timed out waiting for running subtask metadata",
       )
@@ -1068,6 +1048,7 @@ it.instance(
         title: "Pinned",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
+      const live = yield* liveToolParts()
       yield* llm.tool("task", {
         description: "inspect bug",
         prompt: "look into the cache key path",
@@ -1082,10 +1063,8 @@ it.instance(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
-          const tool = assistant?.parts.find(
-            (part): part is SessionLegacy.ToolPart => part.type === "tool" && part.tool === "task",
-          )
-          if (tool?.state.status === "running" && tool.state.metadata?.sessionId) return tool
+          const running = assistant && live.running(assistant.info.id)
+          return running?.tool === "task" ? running : undefined
         }),
         "timed out waiting for running task metadata",
       )
@@ -1324,6 +1303,7 @@ it.instance(
       const sessions = yield* Session.Service
       const status = yield* SessionStatus.Service
       const chat = yield* sessions.create({ title: "Pinned" })
+      const live = yield* liveToolParts()
       yield* llm.hang
       const msg = yield* user(chat.id, "hello")
       yield* addSubtask(chat.id, msg.id)
@@ -1331,10 +1311,15 @@ it.instance(
       const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* llm.wait(1)
 
-      const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-      const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
-      const tool = taskMsg ? toolPart(taskMsg.parts) : undefined
-      const sessionID = tool?.state.status === "running" ? tool.state.metadata?.sessionId : undefined
+      const tool = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const taskMsg = msgs.find((item) => item.info.role === "assistant" && item.info.agent === "general")
+          return taskMsg && live.running(taskMsg.info.id)
+        }),
+        "timed out waiting for running subtask metadata",
+      )
+      const sessionID = tool.state.status === "running" ? tool.state.metadata?.sessionId : undefined
       expect(typeof sessionID).toBe("string")
       if (typeof sessionID !== "string") throw new Error("missing child session id")
       const childID = SessionID.make(sessionID)
@@ -1935,6 +1920,7 @@ unix(
       const { dir, llm } = yield* useServerConfig(providerCfg)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
+      const afs = yield* AppFileSystem.Service
       const chat = yield* sessions.create({
         title: "Interrupted bash truncation",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
@@ -1949,7 +1935,7 @@ unix(
 
       yield* llm.tool("bash", {
         command:
-          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; sleep 30',
+          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; : > .bash-lines-done; sleep 30',
         description: "Print many lines",
         timeout: 30_000,
         workdir: path.resolve(dir),
@@ -1959,17 +1945,18 @@ unix(
       yield* llm.wait(1)
       /*
        * The case is about what cancel does to output that already overflowed,
-       * so the shell has to get through all 4000 lines first. Sleeping 150ms
-       * only guessed that it had: on a loaded runner the cancel landed early,
-       * nothing had overflowed, and `truncated` came back false. Wait for the
-       * last line the loop prints instead of for a duration.
+       * so the shell has to get through all 4000 lines first. Polling the
+       * stored part for the last line no longer works: in-flight tool metadata
+       * is broadcast transiently and only the terminal revision is durable.
+       * The marker file bash touches after the loop is the observable signal -
+       * and since 4000 lines (~424 KB) dwarf both the 50 KB truncation limit
+       * and any pipe buffer, the reader must have consumed past the limit
+       * before bash can finish the loop.
        */
+      const marker = path.join(dir, ".bash-lines-done")
       yield* pollWithTimeout(
         Effect.gen(function* () {
-          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-          const assistant = msgs.find((item) => item.info.role === "assistant")
-          const running = assistant ? toolPart(assistant.parts) : undefined
-          if (running?.state.status === "running" && running.state.metadata?.output.includes("03999")) return true
+          if (yield* afs.existsSafe(marker)) return true
         }),
         "bash never printed enough output to overflow the truncation limit",
         "20 seconds",

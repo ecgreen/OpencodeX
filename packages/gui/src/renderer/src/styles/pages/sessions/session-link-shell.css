@@ -1,0 +1,46 @@
+.session-link-shell {
+  position: relative;
+  width: calc(100% - 10px);
+  margin: 2px 5px;
+}
+
+.session-link-shell.nested {
+  margin: 2px 0;
+  width: 100%;
+}
+
+.session-link.status-dormant {
+  --session-state-color: var(--theme-text-muted);
+  border-left-color: var(--session-state-color);
+}
+
+.session-link small {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+}
+
+.session-link.status-input-needed .status-glyph {
+  animation: sidebar-attention 1.3s infinite ease-in-out;
+}
+
+.session-page .composer {
+  z-index: 2;
+  padding-bottom: 8px;
+}
+
+.session-titleline {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.session-actions.compact {
+  flex-wrap: nowrap;
+  gap: 6px;
+}

@@ -16,6 +16,7 @@ export function emptyGuiSnapshot(): GuiSnapshot {
     terminalSessions: [],
     sessionStatus: {},
     sessionUiState: {},
+    sessionPendingPrompt: {},
     permissions: [],
     questions: [],
     providers: [],

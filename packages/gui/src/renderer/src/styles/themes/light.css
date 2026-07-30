@@ -17,6 +17,11 @@
   --theme-surface: #d4dae1;
   --theme-surface-raised: #e2e6ec;
   --theme-surface-hover: #c9d0d9;
+  /* The composer is a large surface: the raised token reads too bright at that
+     size, so it sits one step down on the slate ramp with a slightly softer
+     border than --theme-border. Light mode only; dark uses the raised token. */
+  --theme-surface-composer: #d6dade;
+  --theme-border-composer: rgba(16, 21, 28, 0.24);
   --theme-surface-selected: #b8c1cc;
   --theme-surface-strong: #99a5b3;
   --theme-text: #10151c;

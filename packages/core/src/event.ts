@@ -3,6 +3,7 @@ export * as EventV2 from "./event"
 import { Context, Effect, Layer, Option, PubSub, Schema, Semaphore, Stream } from "effect"
 import { eq } from "drizzle-orm"
 import { Database } from "./database/database"
+import { EventRetention } from "./event/retention"
 import { EventSequenceTable, EventTable } from "./event/sql"
 import { Location } from "./location"
 import { withStatics } from "./schema"
@@ -121,6 +122,16 @@ export interface Interface {
     data: Data<D>,
     options?: PublishOptions,
   ) => Effect.Effect<Payload<D>>
+  /**
+   * Builds the exact payload `publish` would emit — same id shape, version and
+   * resolved location — without touching the journal. Pair it with `broadcast`
+   * to emit a transient revision of an otherwise durable event.
+   */
+  readonly payload: <D extends Definition>(
+    definition: D,
+    data: Data<D>,
+    options?: PublishOptions,
+  ) => Effect.Effect<Payload<D>>
   readonly broadcast: <D extends Definition>(event: Payload<D>) => Effect.Effect<Payload<D>>
   readonly subscribe: <D extends Definition>(definition: D) => Stream.Stream<Payload<D>>
   readonly all: () => Stream.Stream<Payload>
@@ -181,7 +192,18 @@ export const layer = Layer.effect(
         const definition = registry.get(event.type)
         const sync = definition?.sync
         if (!sync) {
-          for (const item of handlers) yield* item.handler(event)
+          if (handlers.length === 0) return true
+          // Handlers can write several rows (the state log does), so they still
+          // need to land atomically even though there is no journal row to add.
+          yield* db
+            .transaction(
+              () =>
+                Effect.gen(function* () {
+                  for (const item of handlers) yield* item.handler(event)
+                }),
+              { behavior: "immediate" },
+            )
+            .pipe(Effect.orDie)
           return true
         }
         if (event.version !== sync.version) {
@@ -213,17 +235,13 @@ export const layer = Layer.effect(
                   .get()
                   .pipe(Effect.orDie)
                 const latest = row?.seq ?? -1
+                // Sequences only have to be strictly increasing, not dense.
+                // Retention compaction deletes superseded revisions, so a
+                // replayed stream legitimately contains gaps; the check below
+                // is what enforces the "strictly increasing" half.
                 if (input && input.seq <= latest) return false
                 if (input && row?.ownerID && row.ownerID !== input.ownerID) return false
                 const seq = input?.seq ?? latest + 1
-                if (input && seq !== latest + 1) {
-                  return yield* Effect.die(
-                    new InvalidSyncEventError({
-                      type: event.type,
-                      message: `Sequence mismatch for aggregate ${aggregateID}: expected ${latest + 1}, got ${seq}`,
-                    }),
-                  )
-                }
                 for (const item of handlers) yield* item.handler(event)
                 for (const projector of list) yield* projector(event as Payload)
                 yield* db
@@ -269,9 +287,9 @@ export const layer = Layer.effect(
     ) {
       const handlers = syncHandlers.filter((item) => item.filter?.(event as Payload) ?? true)
       if (handlers.length === 0 && registry.get(event.type)?.sync === undefined) return Effect.succeed(true)
-      return db
-        .transaction(() => commitSyncEvent(event as Payload, input, handlers), { behavior: "immediate" })
-        .pipe(Effect.orDie)
+      // commitSyncEvent opens its own immediate transaction on both paths.
+      // Wrapping it in a second one only bought a savepoint per event.
+      return commitSyncEvent(event as Payload, input, handlers)
     }
 
     function broadcastEvent<D extends Definition>(event: Payload<D>) {
@@ -365,17 +383,21 @@ export const layer = Layer.effect(
               }),
             )
           }
-          const start = events[0]?.seq ?? 0
+          // Compaction removes superseded revisions, so a replayed batch is
+          // sparse. Only the ordering invariant survives: sequences must be
+          // strictly increasing so the dedupe check in commitSyncEvent stays
+          // meaningful.
+          let previous: number | undefined
           for (const [index, event] of events.entries()) {
-            const seq = start + index
-            if (event.seq !== seq) {
+            if (previous !== undefined && event.seq <= previous) {
               yield* Effect.die(
                 new InvalidSyncEventError({
                   type: event.type,
-                  message: `Replay sequence mismatch at index ${index}: expected ${seq}, got ${event.seq}`,
+                  message: `Replay sequence must increase at index ${index}: got ${event.seq} after ${previous}`,
                 }),
               )
             }
+            previous = event.seq
           }
           for (const event of events) {
             yield* replay(event, options)
@@ -404,6 +426,11 @@ export const layer = Layer.effect(
         .run()
         .pipe(Effect.orDie)
     }
+
+    // Superseded revisions are dead weight the journal never has to keep. The
+    // loop is scoped to this layer, mirroring how the state log starts its own
+    // maintenance loop.
+    yield* EventRetention.start(db, barrier)
 
     const subscribe = <D extends Definition>(definition: D): Stream.Stream<Payload<D>> =>
       Stream.unwrap(getOrCreate(definition).pipe(Effect.map((pubsub) => Stream.fromPubSub(pubsub)))).pipe(
@@ -441,6 +468,7 @@ export const layer = Layer.effect(
     return Service.of({
       publish,
       commit,
+      payload,
       broadcast,
       subscribe,
       all: streamAll,

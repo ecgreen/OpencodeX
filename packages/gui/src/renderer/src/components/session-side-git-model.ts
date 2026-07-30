@@ -1,4 +1,4 @@
-import type { WorkbenchChangeFile, WorkbenchChangesPage } from "../lib/store"
+import type { WorkbenchChangeFile, WorkbenchChangesPage } from "../lib/session-api"
 import { sidePanelPathKey } from "./session-side-path"
 
 export type WorkbenchChangeSummary = WorkbenchChangesPage["summary"]

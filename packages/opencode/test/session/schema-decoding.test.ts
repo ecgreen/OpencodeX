@@ -61,7 +61,6 @@ describe("Session.Info", () => {
         files: 2,
         diffs: [{ additions: 1, deletions: 0, file: "a.ts", patch: "--- a/a.ts" }],
       },
-      share: { url: "https://share.example.com/s/1" },
       title: "Full session",
       version: "1.0.0",
       metadata: { source: "test" },
@@ -229,19 +228,11 @@ describe("SessionStatus.Info", () => {
     expect(decode({ type: "busy" })).toEqual({ type: "busy" })
   })
 
-  test("retry carries attempt/message/action/next", () => {
+  test("retry carries attempt/message/next", () => {
     const input = {
       type: "retry" as const,
       attempt: 1,
       message: "transient",
-      action: {
-        reason: "free_tier_limit",
-        provider: "opencode",
-        title: "Free limit reached",
-        message: "Subscribe to OpenCode Go.",
-        label: "subscribe",
-        link: "https://opencode.ai/go",
-      },
       next: 500,
     }
     expect(decode(input)).toEqual(input)

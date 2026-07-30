@@ -5,6 +5,10 @@ import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
 import type { AssistantMessage, GlobalEvent, TextPart, UserMessage } from "@opencode-ai/sdk/v2"
 import { deriveStatus } from "../../../../src/cli/cmd/tui/component/opencodex-session-status"
+import {
+  TUI_SESSION_PAGE_LIMIT,
+  TUI_SESSION_TAIL_LIMIT,
+} from "../../../../src/cli/cmd/tui/context/sync-transcript"
 
 function branchEvent(branch: string, workspace?: string): GlobalEvent {
   return {
@@ -100,7 +104,7 @@ function sessionSnapshot(
 }
 
 describe("tui sync", () => {
-  test("hydrates every authoritative message page before marking a session synchronized", async () => {
+  test("loads only the tail and pages older history on demand", async () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
@@ -143,14 +147,37 @@ describe("tui sync", () => {
     try {
       await sync.session.sync(sessionID)
 
+      expect(sync.data.message[sessionID]?.map((message) => message.id)).toEqual(["message-3", "message-4"])
+      expect(requests.map((url) => url.searchParams.get("limit"))).toEqual([String(TUI_SESSION_TAIL_LIMIT)])
+      expect(requests.map((url) => url.searchParams.get("before"))).toEqual([null])
+      expect(sync.session.transcript(sessionID)).toMatchObject({
+        hasOlder: true,
+        olderCursor: "before-3",
+        loadingOlder: false,
+        expanded: false,
+      })
+
+      expect(await sync.session.loadOlder(sessionID)).toBe(true)
+
       expect(sync.data.message[sessionID]?.map((message) => message.id)).toEqual([
         "message-1",
         "message-2",
         "message-3",
         "message-4",
       ])
-      expect(requests.map((url) => url.searchParams.get("limit"))).toEqual(["100", "100"])
+      expect(requests.map((url) => url.searchParams.get("limit"))).toEqual([
+        String(TUI_SESSION_TAIL_LIMIT),
+        String(TUI_SESSION_PAGE_LIMIT),
+      ])
       expect(requests.map((url) => url.searchParams.get("before"))).toEqual([null, "before-3"])
+      expect(sync.session.transcript(sessionID)).toMatchObject({
+        hasOlder: false,
+        loadingOlder: false,
+        expanded: true,
+      })
+      // Nothing left to page: a second request must not be issued.
+      expect(await sync.session.loadOlder(sessionID)).toBe(false)
+      expect(requests.length).toBe(2)
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

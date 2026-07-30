@@ -8,7 +8,7 @@ OpencodeX is a compatibility fork of opencode with two fork-owned clients: the c
 - `packages/core`: shared schemas, durable storage, database migrations, events, and cross-client contracts.
 - `packages/gui`: the fork-owned Electron main/preload processes and Solid renderer.
 - `packages/sdk/js`: generated JavaScript client for the retained server contract.
-- `packages/ui`: shared components, generated icon sprites/types, fonts, and the five production notification sounds.
+- `packages/ui`: the Solid components the GUI imports, a small shared stylesheet set, and the five production notification sounds the TUI imports. The upstream icon sprites, fonts, themes, i18n catalogue, and web-frontend components were pruned — see the divergence ledger in [`UPSTREAM.md`](UPSTREAM.md).
 - `packages/plugin`, `packages/llm`, `packages/script`, the Effect SQLite adapters, and HTTP recorder support.
 - `github`: the versioned OpencodeX GitHub Action.
 
@@ -26,5 +26,3 @@ Backend, provider, MCP, plugin, session, SDK, and event-stream paths are upstrea
 - Provider, authentication, MCP, plugin, JavaScript SDK, and standard server contracts do not intentionally break.
 - OpencodeX additions use namespaced overlay routes and additive tables/migrations.
 - GUI and TUI reduce the same session/message/part/status/permission/question events and recover through the same replay/resync contract.
-
-The session-specific verification matrix remains in [`session-sync-compatibility.md`](session-sync-compatibility.md).

@@ -43,6 +43,11 @@ export function applyOnly(db: Database, input: Migration[]) {
       }
     }
 
+    // Skipping means "leave this database untouched", so it must not record the
+    // migrations as applied either - otherwise the journal claims a schema the
+    // database never received and every later run skips the real work.
+    if (process.env.OPENCODE_SKIP_MIGRATIONS) return
+
     for (const migration of input) {
       if (completed.has(migration.id)) continue
       yield* db.transaction(
@@ -52,7 +57,7 @@ export function applyOnly(db: Database, input: Migration[]) {
               sql`SELECT id FROM ${sql.identifier("migration")} WHERE id = ${migration.id}`,
             )
             if (applied) return
-            if (!process.env.OPENCODE_SKIP_MIGRATIONS) yield* migration.up(tx)
+            yield* migration.up(tx)
             yield* tx.run(
               sql`INSERT INTO ${sql.identifier("migration")} (id, time_completed) VALUES (${migration.id}, ${Date.now()})`,
             )

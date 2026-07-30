@@ -37,7 +37,6 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
     for (const method of ["get", "post", "put", "delete", "patch"] as const) {
       const operation = item[method]
       if (!operation) continue
-      const isV2Api = isV2ApiPath(path)
       if (operation.requestBody) {
         // The legacy OpenAPI surface never marked request bodies as required.
         // Keep that SDK surface stable while the HttpApi spec is tightened.
@@ -74,14 +73,12 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
           if (content.schema) content.schema = stripOptionalNull(structuredClone(content.schema))
         }
       }
-      if (!isV2Api) {
-        // Auth is still runtime middleware outside the legacy public OpenAPI
-        // metadata, so the legacy SDK should not expose auth schemes or
-        // generated 401 error unions.
-        delete operation.security
-        delete operation.responses?.["401"]
-        normalizeLegacyErrorResponses(operation)
-      }
+      // Auth is still runtime middleware outside the legacy public OpenAPI
+      // metadata, so the legacy SDK should not expose auth schemes or
+      // generated 401 error unions.
+      delete operation.security
+      delete operation.responses?.["401"]
+      normalizeLegacyErrorResponses(operation)
       normalizeLegacyOperation(operation, path, method)
       if ((path === "/event" || path === "/global/event") && method === "get") {
         // HttpApi has no first-class SSE response schema, and these handlers are
@@ -104,10 +101,6 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
   }
   deleteUnusedLegacyErrorComponents(spec)
   return input
-}
-
-function isV2ApiPath(path: string) {
-  return path === "/api" || path.startsWith("/api/")
 }
 
 function addLegacyErrorSchemas(spec: OpenApiSpec) {
@@ -220,10 +213,6 @@ function normalizeComponentDescriptions(spec: OpenApiSpec) {
 
 function makePropertiesNullable(properties: Record<string, OpenApiSchema>) {
   for (const [key, value] of Object.entries(properties)) {
-    if (key === "share" && value.properties?.url) {
-      value.properties.url = nullable(value.properties.url)
-      continue
-    }
     if (key === "time" && value.properties) {
       makePropertiesNullable(value.properties)
       continue
@@ -302,7 +291,6 @@ function referencesComponent(input: unknown, name: string): boolean {
 }
 
 function normalizeLegacyOperation(operation: OpenApiOperation, path: string, method: string) {
-  if (path === "/experimental/console/switch" && method === "post") delete operation.responses?.["400"]
   if ((path !== "/session/{sessionID}/message" && path !== "/session/{sessionID}/command") || method !== "post") return
   const response = operation.responses?.["200"]?.content?.["application/json"]
   if (!response) return

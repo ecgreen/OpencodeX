@@ -4,7 +4,7 @@ import { For, Show, createEffect, createMemo, createResource, createSignal } fro
 import type { GuiClient } from "../lib/client"
 import { flattenWorkbenchChangeTree, reconcileWorkbenchChangeRows, type WorkbenchChangeTreeRow } from "../lib/diff-file-tree"
 import { shouldVirtualizeDiff } from "../lib/tool-display"
-import { workbenchGitBranches, workbenchGitOperation } from "../lib/store"
+import { workbenchGitBranches, workbenchGitOperation } from "../lib/session-api"
 import { Button, LoadingState, Select, TextArea, TextInput } from "./ui"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"

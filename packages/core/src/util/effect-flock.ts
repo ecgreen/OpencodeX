@@ -1,12 +1,10 @@
-import path from "path"
 import os from "os"
-import { randomUUID } from "crypto"
 import { Context, Effect, Function, Layer, Option, Schedule, Schema } from "effect"
 import type { FileSystem, Scope } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { AppFileSystem } from "../filesystem"
 import { Global } from "../global"
-import { Hash } from "./hash"
+import { LockProtocol } from "./lock-protocol"
 
 export namespace EffectFlock {
   // ---------------------------------------------------------------------------
@@ -36,23 +34,21 @@ export namespace EffectFlock {
   export type LockError = LockTimeoutError | LockCompromisedError
 
   // ---------------------------------------------------------------------------
-  // Timing (baked in — no caller ever overrides these)
+  // Timing (baked in — no caller ever overrides these; the values themselves
+  // come from LockProtocol so Flock and EffectFlock age locks identically)
   // ---------------------------------------------------------------------------
 
-  const STALE_MS = 60_000
-  const TIMEOUT_MS = 5 * 60_000
-  const BASE_DELAY_MS = 100
-  const MAX_DELAY_MS = 2_000
-  const HEARTBEAT_MS = Math.max(100, Math.floor(STALE_MS / 3))
+  const STALE_MS = LockProtocol.STALE_MS
+  const HEARTBEAT_MS = LockProtocol.heartbeatIntervalMs()
 
-  const retrySchedule = Schedule.exponential(BASE_DELAY_MS, 1.7).pipe(
-    Schedule.either(Schedule.spaced(MAX_DELAY_MS)),
+  const retrySchedule = Schedule.exponential(LockProtocol.BASE_DELAY_MS, LockProtocol.BACKOFF_FACTOR).pipe(
+    Schedule.either(Schedule.spaced(LockProtocol.MAX_DELAY_MS)),
     Schedule.jittered,
-    Schedule.while((meta) => meta.elapsed < TIMEOUT_MS),
+    Schedule.while((meta) => meta.elapsed < LockProtocol.TIMEOUT_MS),
   )
 
   // ---------------------------------------------------------------------------
-  // Lock metadata schema
+  // Lock metadata schema — the `LockProtocol.Meta` shape, decoded strictly.
   // ---------------------------------------------------------------------------
 
   const LockMetaJson = Schema.fromJsonString(
@@ -98,7 +94,7 @@ export namespace EffectFlock {
     Effect.gen(function* () {
       const global = yield* Global.Service
       const fs = yield* AppFileSystem.Service
-      const lockRoot = path.join(global.state, "locks")
+      const lockRoot = LockProtocol.rootDir(global.state)
       const hostname = os.hostname()
       const ensuredDirs = new Set<string>()
 
@@ -114,7 +110,7 @@ export namespace EffectFlock {
 
       /** Atomic mkdir — returns true if created, false if already exists, dies on other errors. */
       const atomicMkdir = (dir: string) =>
-        fs.makeDirectory(dir, { mode: 0o700 }).pipe(
+        fs.makeDirectory(dir, { mode: LockProtocol.DIR_MODE }).pipe(
           Effect.as(true),
           Effect.catchIf(
             (e) => e.reason._tag === "AlreadyExists",
@@ -167,9 +163,9 @@ export namespace EffectFlock {
 
       const tryAcquireLockDir = (lockDir: string, key: string) =>
         Effect.gen(function* () {
-          const token = randomUUID()
-          const metaPath = path.join(lockDir, "meta.json")
-          const heartbeatPath = path.join(lockDir, "heartbeat")
+          const token = LockProtocol.createToken()
+          const metaPath = LockProtocol.metaPath(lockDir)
+          const heartbeatPath = LockProtocol.heartbeatPath(lockDir)
 
           // Atomic mkdir — the POSIX lock primitive
           const created = yield* atomicMkdir(lockDir)
@@ -178,9 +174,9 @@ export namespace EffectFlock {
             if (!(yield* isStale(lockDir, heartbeatPath, metaPath))) return yield* new NotAcquired()
 
             // Stale — race for breaker ownership
-            const breakerPath = lockDir + ".breaker"
+            const breakerPath = LockProtocol.breakerPath(lockDir)
 
-            const claimed = yield* fs.makeDirectory(breakerPath, { mode: 0o700 }).pipe(
+            const claimed = yield* fs.makeDirectory(breakerPath, { mode: LockProtocol.DIR_MODE }).pipe(
               Effect.as(true),
               Effect.catchIf(
                 (e) => e.reason._tag === "AlreadyExists",
@@ -205,7 +201,7 @@ export namespace EffectFlock {
           // We own the lock dir — write heartbeat + meta with exclusive create
           yield* exclusiveWrite(heartbeatPath, "", lockDir, "heartbeat already existed")
 
-          const metaJson = encodeMeta({ token, pid: process.pid, hostname, createdAt: new Date().toISOString() })
+          const metaJson = encodeMeta(LockProtocol.meta({ token, hostname }))
           yield* exclusiveWrite(metaPath, metaJson, lockDir, "meta.json already existed")
 
           return { token, metaPath, heartbeatPath, lockDir } satisfies Handle
@@ -253,7 +249,7 @@ export namespace EffectFlock {
         const lockDir = dir ?? lockRoot
         yield* ensureDir(lockDir)
 
-        const lockfile = path.join(lockDir, Hash.fast(key) + ".lock")
+        const lockfile = LockProtocol.lockDir(lockDir, key)
 
         // acquireRelease: acquire is uninterruptible, release is guaranteed
         const handle = yield* Effect.acquireRelease(acquireHandle(lockfile, key), (handle) => release(handle))

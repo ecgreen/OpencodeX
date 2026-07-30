@@ -1,0 +1,40 @@
+.project-directory-header p:not(.eyebrow) {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-home-header p:not(.eyebrow) {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-summary-item[data-tone=warning] {
+  border-color: color-mix(in srgb,var(--warning) 42%,var(--border));
+  background: color-mix(in srgb,var(--warning) 8%,var(--theme-surface));
+}
+
+.project-home-session-panel>header button:hover {
+  color: var(--primary);
+  background: transparent;
+  outline: none;
+}
+
+.project-home-session-panel>header button:focus-visible {
+  color: var(--primary);
+  background: transparent;
+  outline: none;
+}
+
+.project-home-session-panel>header button:hover .icon {
+  color: var(--primary);
+}
+
+.project-home-session-panel>header button:focus-visible .icon {
+  color: var(--primary);
+}

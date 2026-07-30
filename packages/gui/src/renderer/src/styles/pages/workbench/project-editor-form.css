@@ -1,0 +1,110 @@
+.project-editor-form {
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px 6px;
+}
+
+.project-editor-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.project-editor-form label>span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.project-editor-form input {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.project-editor-form textarea {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--bg);
+  min-height: 150px;
+  resize: vertical;
+}
+
+.project-editor-form p {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-editor-folders {
+  display: grid;
+  gap: 10px;
+}
+
+.project-editor-folders>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-editor-folders>header div {
+  display: grid;
+  gap: 3px;
+}
+
+.project-editor-folders strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.project-editor-folders span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.project-editor-folder-list {
+  display: grid;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.project-editor-folder-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 8px 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.project-editor-folder-row>span {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-editor-empty {
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.project-editor-manual {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 8px;
+}
+
+.project-editor-error {
+  margin: 0;
+  color: var(--warning);
+}

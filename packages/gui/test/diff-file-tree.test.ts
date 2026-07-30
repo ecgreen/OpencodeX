@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { buildDiffFileTree, expandedDirectories, flattenDiffFileTree, flattenWorkbenchChangeTree, moveDiffSelection, nextDiffFile, reconcileWorkbenchChangeRows } from "../src/renderer/src/lib/diff-file-tree"
-import type { DiffFile } from "../src/renderer/src/lib/store"
+import type { DiffFile } from "../src/renderer/src/lib/session-api"
 
 describe("GUI diff file tree helpers", () => {
   test("builds and flattens nested directory rows before files", () => {

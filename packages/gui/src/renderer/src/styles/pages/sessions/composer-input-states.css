@@ -1,0 +1,14 @@
+.composer-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.composer .composer-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+:root[data-theme=light] .session-page .opencodex-logo {
+  opacity: 1;
+  filter: brightness(.3) saturate(1.4) contrast(1.3);
+}

@@ -1,0 +1,61 @@
+.dialog-card>header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: start;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 20px 15px;
+}
+
+.dialog-card>header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.dialog-card>header p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.dialog-card>header .ui-icon-button {
+  margin-top: -5px;
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Edge-to-edge card: the header, body and action bar each carry their own
+   inset, so the shared .dialog-card padding has to be cleared here. */
+.dialog-card.text-dialog-card {
+  gap: 0;
+  width: min(520px,calc(100vw - 36px));
+  padding: 0;
+  overflow: hidden;
+  border-color: color-mix(in srgb,var(--primary) 34%,var(--border-active));
+  border-radius: 10px;
+  background: linear-gradient(180deg,color-mix(in srgb,var(--element) 34%,transparent),transparent 42%),var(--panel);
+  box-shadow: 0 24px 80px var(--theme-backdrop);
+}
+
+.dialog-card.session-edit-modal>header {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.dialog-card.session-edit-modal>input {
+  min-height: 44px;
+  padding-inline: 13px;
+}
+
+.dialog-card.text-dialog-card .dialog-actions {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb,var(--element) 32%,transparent);
+  padding: 14px 20px 18px;
+}

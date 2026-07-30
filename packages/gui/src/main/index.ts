@@ -11,9 +11,11 @@ import {
   shell,
   type MessageBoxOptions,
 } from "electron"
-import { isSidecarConnectionHealthy, type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
+import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
+import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
 import { editorCommand } from "./editor-command.js"
 import { registerBrowserIpc, secureSession } from "./browser-ipc.js"
+import { registerNotificationIpc } from "./notification-ipc.js"
 import { registerTerminalIpc } from "./terminal-ipc.js"
 import { validString } from "./ipc-validation.js"
 import { MAIN_PERFORMANCE_MILESTONES, markMainPerformance } from "./performance.js"
@@ -36,7 +38,7 @@ const RENDERER_CSP = [
 let authorizedSidecar: { origin: string; header: string } | undefined
 const sidecarLifecycle = createSidecarLifecycle({
   start: startSidecar,
-  health: isSidecarConnectionHealthy,
+  health: isCoordinatorHealthy,
   install: authorizeSidecar,
   reset: () => {
     authorizedSidecar = undefined
@@ -300,6 +302,7 @@ ipcMain.handle("opencodex:editor", async (_event, raw: unknown) => {
 
 registerTerminalIpc()
 registerBrowserIpc(openExternalURL)
+registerNotificationIpc()
 
 async function runSmokeCheck(window: BrowserWindow) {
   await ensureSidecar()

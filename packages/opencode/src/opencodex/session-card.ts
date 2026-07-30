@@ -73,7 +73,6 @@ const selection = {
   tokens_reasoning: SessionTable.tokens_reasoning,
   tokens_cache_read: SessionTable.tokens_cache_read,
   tokens_cache_write: SessionTable.tokens_cache_write,
-  share_url: SessionTable.share_url,
   time_created: SessionTable.time_created,
   time_updated: SessionTable.time_updated,
   time_compacting: SessionTable.time_compacting,
@@ -102,7 +101,6 @@ type CardRow = Pick<
   | "tokens_reasoning"
   | "tokens_cache_read"
   | "tokens_cache_write"
-  | "share_url"
   | "time_created"
   | "time_updated"
   | "time_compacting"
@@ -251,7 +249,6 @@ function hydrate(row: CardRow): Card {
       reasoning: row.tokens_reasoning,
       cache: { read: row.tokens_cache_read, write: row.tokens_cache_write },
     },
-    share: row.share_url ? { url: row.share_url } : undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,

@@ -6,7 +6,7 @@ import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { SessionExecutionTable, SessionStatusTable } from "@opencode-ai/core/session/sql"
 import { ensureRunID } from "@opencode-ai/core/util/opencode-process"
 import { and, eq } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { SessionID } from "./schema"
 import { SessionExecutionOwner } from "./execution-owner"
 
@@ -18,16 +18,6 @@ export const Info = Schema.Union([
     type: Schema.Literal("retry"),
     attempt: NonNegativeInt,
     message: Schema.String,
-    action: Schema.optional(
-      Schema.Struct({
-        reason: Schema.String,
-        provider: Schema.String,
-        title: Schema.String,
-        message: Schema.String,
-        label: Schema.String,
-        link: Schema.optional(Schema.String),
-      }),
-    ),
     next: NonNegativeInt,
   }),
   Schema.Struct({
@@ -81,18 +71,31 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     const processRunID = ensureRunID()
 
-    const recover = Effect.fn("SessionStatus.recover")(function* () {
+    // `sessionID` scopes the scan to one row. Reads take that path so a status
+    // lookup stays an indexed point query instead of two full table scans in an
+    // immediate transaction under the event barrier; the periodic sweep below
+    // still covers sessions nobody is looking at.
+    const recover = Effect.fn("SessionStatus.recover")(function* (sessionID?: SessionID) {
       const now = Date.now()
       const broadcasts = yield* events.barrier(
         db.transaction(
           (transaction) =>
             Effect.gen(function* () {
-              const statuses = (yield* transaction.select().from(SessionStatusTable).all()).filter((row) => {
+              const statusQuery = transaction.select().from(SessionStatusTable)
+              const statuses = (yield* (sessionID
+                ? statusQuery.where(eq(SessionStatusTable.session_id, sessionID))
+                : statusQuery
+              ).all()).filter((row) => {
                 const status = Option.getOrUndefined(decode(row.status))
                 return status?.type === "busy" || status?.type === "retry"
               })
+              if (statuses.length === 0) return [] as EventV2.Payload[]
+              const executionQuery = transaction.select().from(SessionExecutionTable)
               const executions = new Map(
-                (yield* transaction.select().from(SessionExecutionTable).all()).map((row) => [row.session_id, row]),
+                (yield* (sessionID
+                  ? executionQuery.where(eq(SessionExecutionTable.session_id, sessionID))
+                  : executionQuery
+                ).all()).map((row) => [row.session_id, row]),
               )
               const stale = statuses.filter((row) => {
                 const execution = executions.get(row.session_id)
@@ -141,7 +144,7 @@ export const layer = Layer.effect(
     })
 
     const get = Effect.fn("SessionStatus.get")(function* (sessionID: SessionID) {
-      yield* recover()
+      yield* recover(sessionID)
       const row = yield* db
         .select({ status: SessionStatusTable.status })
         .from(SessionStatusTable)
@@ -232,6 +235,23 @@ export const layer = Layer.effect(
       }
       yield* write(sessionID, status)
     })
+
+    // Recovery reconciles rows whose owning execution died. It used to run on
+    // every read, which meant two full table scans inside an immediate
+    // transaction under the event barrier for something as routine as painting
+    // the sidebar. A dead owner's status can now be stale for at most one
+    // interval, which no reader can distinguish from the process dying a moment
+    // later anyway.
+    yield* recover()
+    yield* Effect.sleep(Duration.seconds(15)).pipe(
+      Effect.andThen(recover()),
+      // A failed sweep (e.g. SQLITE_BUSY outliving the busy timeout) must not
+      // kill the loop for the life of the process; reads still recover inline,
+      // but sessions nobody reads would never reconcile again.
+      Effect.catchCause((cause) => Effect.logWarning("session status sweep failed", { cause })),
+      Effect.repeat(Schedule.forever),
+      Effect.forkScoped,
+    )
 
     return Service.of({ get, list, set, setForGeneration })
   }),

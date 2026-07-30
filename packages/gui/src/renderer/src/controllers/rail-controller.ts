@@ -12,7 +12,7 @@ import {
   readSidebarPreferences,
   writeSidebarPreferences,
 } from "../lib/sidebar-preferences"
-import { reorderProjects, reorderViews, type GuiSnapshot } from "../lib/store"
+import { reorderProjects, reorderViews, type GuiSnapshot } from "../lib/session-api"
 
 export function createRailController(input: {
   client: Accessor<GuiClient | undefined>

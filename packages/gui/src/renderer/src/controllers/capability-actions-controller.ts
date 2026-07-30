@@ -12,15 +12,13 @@ import {
   deleteView,
   disconnectMcp,
   disposeInstance,
-  listConsoleOrgs,
   listMcpStatus,
   listProviderAuthMethods,
   listProviders,
   listSkills,
   setProviderApiAuth,
-  switchConsoleOrg,
   type GuiSnapshot,
-} from "../lib/store"
+} from "../lib/session-api"
 
 const CUSTOM_PROVIDER_OPTION = "__custom_provider__"
 const CUSTOM_PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
@@ -93,29 +91,6 @@ export function createCapabilityActionsController(input: {
     await connectMcp(client, name)
     await input.refreshCapabilities()
     input.alert(`Connected ${name}.`)
-  }
-
-  async function switchOrg() {
-    const client = input.client()
-    if (!client) return
-    const orgs = (await listConsoleOrgs(client)).data?.orgs ?? []
-    if (orgs.length === 0) return input.alert("No Console organizations are available.")
-    const value = await input.dialogs.askChoice({
-      title: "Switch Org",
-      options: orgs.map((org) => ({
-        value: `${org.accountID}:${org.orgID}`,
-        title: org.orgName,
-        meta: org.active ? "active" : org.accountEmail,
-        description: org.accountUrl,
-      })),
-    })
-    const org = orgs.find((item) => `${item.accountID}:${item.orgID}` === value)
-    if (!org) return
-    if (org.active) return input.alert(`${org.orgName} is already active.`)
-    await switchConsoleOrg(client, org.accountID, org.orgID)
-    await disposeInstance(client).catch(() => undefined)
-    await input.refreshAll()
-    input.alert(`Switched to ${org.orgName}.`)
   }
 
   async function connectProvider(preselectedProviderID?: string) {
@@ -238,7 +213,6 @@ export function createCapabilityActionsController(input: {
     skills,
     editor,
     toggleMcp,
-    switchOrg,
     connectProvider,
     editView: async () => {
       const view = await chooseView("Edit View")

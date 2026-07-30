@@ -1,0 +1,40 @@
+.view-list-card {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 84px;
+  height: auto;
+  padding: 12px 10px;
+  border-left-color: var(--secondary);
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}
+
+.view-session-card {
+  display: grid;
+  grid-template-columns: 22px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 9px 10px;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent, var(--border-active));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  --card-hover-duration: .18s;
+  --card-hover-ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  transition: background var(--card-hover-duration) var(--card-hover-ease),border-color var(--card-hover-duration) var(--card-hover-ease),box-shadow var(--card-hover-duration) var(--card-hover-ease),color .14s ease;
+}

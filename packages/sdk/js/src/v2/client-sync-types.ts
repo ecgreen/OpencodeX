@@ -41,7 +41,12 @@ export type ClientSessionDetailState = {
   messageCoverage: Record<string, "older" | "tail">
   messages: Record<string, Message>
   partIDs: Record<string, string[]>
-  parts: Record<string, Part>
+  /**
+   * Two-level keying: `parts[messageID][partID]`. A streaming delta only has to
+   * copy the outer record (bounded by the number of loaded messages) plus the
+   * one message it touches, instead of every part in the session.
+   */
+  parts: Record<string, Record<string, Part>>
   livePartText?: Record<string, { base: string; text: string }>
 }
 

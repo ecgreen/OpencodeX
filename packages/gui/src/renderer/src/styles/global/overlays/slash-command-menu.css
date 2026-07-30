@@ -1,0 +1,27 @@
+.slash-command-menu strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  grid-column: 1;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.slash-command-menu span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  grid-column: 2;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.slash-command-menu p {
+  margin: 0;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}

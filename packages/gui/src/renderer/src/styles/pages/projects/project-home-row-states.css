@@ -1,0 +1,37 @@
+.project-home-folder-strip button:hover {
+  border-color: color-mix(in srgb,var(--primary) 58%,var(--border));
+  color: var(--text);
+  outline: none;
+}
+
+.project-home-folder-strip button:focus-visible {
+  border-color: color-mix(in srgb,var(--primary) 58%,var(--border));
+  color: var(--text);
+  outline: none;
+}
+
+.project-home-panel>div>.project-home-row:first-child {
+  border-top: 0;
+}
+
+button.project-home-row:hover {
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+button.project-home-row:focus-visible {
+  background: color-mix(in srgb,var(--element) 58%,transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  outline: none;
+}
+
+.project-home-row.warning {
+  box-shadow: inset 3px 0 0 var(--warning);
+  background: color-mix(in srgb,var(--warning) 9%,transparent);
+}
+
+.project-home-row.failed {
+  box-shadow: inset 3px 0 0 var(--error);
+  background: color-mix(in srgb,var(--error) 9%,transparent);
+}

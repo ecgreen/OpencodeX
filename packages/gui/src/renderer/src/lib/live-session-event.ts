@@ -1,5 +1,6 @@
 import type { Event, GlobalEvent, OpencodeXSessionState } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "./store"
+import { clientGlobalEventData, clientGlobalEventKind } from "@opencode-ai/sdk/v2/client-sync"
+import type { GuiSnapshot } from "./session-api"
 
 export function globalEventID(event: GlobalEvent) {
   const id = (event.payload as { id?: string }).id
@@ -51,14 +52,14 @@ export function eventMessageID(event: GlobalEvent) {
   return messageIDFrom(eventData(event))
 }
 
+/** Delegates to the shared envelope normalizer so both clients unwrap sync frames identically. */
 export function eventKind(event: GlobalEvent) {
-  const payload = event.payload as { type: string; name?: string }
-  return payload.type === "sync" && payload.name ? payload.name.replace(/\.\d+$/, "") : payload.type
+  return clientGlobalEventKind(event.payload)
 }
 
+/** Delegates to the shared envelope normalizer so both clients unwrap sync frames identically. */
 export function eventData(event: GlobalEvent) {
-  const payload = event.payload as { properties?: Record<string, unknown>; data?: Record<string, unknown> }
-  return payload.properties ?? payload.data
+  return clientGlobalEventData(event.payload)
 }
 
 function sessionIDFrom(value: unknown) {

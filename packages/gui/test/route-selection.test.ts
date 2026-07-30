@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 import { abortSessionIDForRoute, activeProjectForRoute, activeSessionIDForRoute, activeSessionRouteKey, activeViewForRoute, focusedViewItemID, selectedSessionForRoute } from "../src/renderer/src/lib/route-selection"
 import { viewItemsMembershipKey, viewSessionsSyncKey, type ViewItem } from "../src/renderer/src/lib/view-items"
 

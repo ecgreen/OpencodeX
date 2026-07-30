@@ -1,0 +1,78 @@
+.dashboard-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 118px;
+  width: 100%;
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb,var(--border) 78%,transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+  background: color-mix(in srgb,var(--bg) 86%,var(--panel) 14%);
+}
+
+.dashboard-empty-state>span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: color-mix(in srgb,var(--text) 72%,var(--muted));
+  background: var(--bg);
+}
+
+.dashboard-empty-state strong {
+  width: min(100%,28ch);
+  max-width: 28ch;
+  color: color-mix(in srgb,var(--text) 74%,var(--muted));
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.dashboard-empty-state>span+strong+span {
+  width: min(100%,34ch);
+  min-width: min(100%,18ch);
+  max-width: 34ch;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.dashboard-empty-action {
+  cursor: pointer;
+}
+
+.dashboard-empty-action>span {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-empty-action strong {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-empty-action>span+strong+span {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

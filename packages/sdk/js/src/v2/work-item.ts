@@ -194,6 +194,27 @@ export function clientAttentionItems(items: readonly WorkItem[]): AttentionItem[
     .sort((left, right) => left.priority - right.priority || right.updatedAt - left.updatedAt)
 }
 
+/**
+ * Attention items present in `next` but not in `previous`, by id.
+ *
+ * Both clients already project `clientAttentionItems`, so this is the shared
+ * "something new needs a human" trigger: the TUI notifies from it and the GUI
+ * raises OS notifications from it, instead of each hand-rolling a diff that
+ * could disagree about what counts as newly appeared.
+ *
+ * Callers that hold no previous projection yet (a freshly connected client)
+ * should seed with the first snapshot rather than pass an empty array, or every
+ * pre-existing item reads as new.
+ */
+export function clientAttentionTransitions(
+  previous: readonly AttentionItem[],
+  next: readonly AttentionItem[],
+): AttentionItem[] {
+  if (next.length === 0) return []
+  const seen = new Set(previous.map((item) => item.id))
+  return next.filter((item) => !seen.has(item.id))
+}
+
 export function clientWorkItemBucket(item: WorkItem | undefined) {
   if (!item) return "inactive" as const
   if (item.state === "waiting_input" || item.state === "waiting_permission") return "input_needed" as const

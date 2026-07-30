@@ -6,15 +6,13 @@ This note tracks TUI slash commands that were present in the GUI menu but did no
 
 Implemented in this pass:
 
-- `/share`, `/unshare`, `/compact`, `/undo`, `/redo`, `/fork`, `/copy`, `/export`
+- `/compact`, `/undo`, `/redo`, `/fork`, `/copy`, `/export`
 - `/mcps`, `/org`, `/connect`, `/workspaces`, `/warp`
 - `/edit-view`, `/delete-view`, `/timeline`, `/timestamps`, `/thinking`, `/skills`, `/swarm`
 - `/diff`, `/themes`, `/editor`
 
 ## Backend-backed session commands
 
-- `/share`: TUI copies an existing `session.share.url` or calls `session.share({ sessionID })`, then copies the returned URL. GUI plan: call the same backend method, copy with `navigator.clipboard`, refresh cards.
-- `/unshare`: TUI calls `session.unshare({ sessionID })`. GUI plan: call the same backend method, then refresh cards.
 - `/compact` (`/summarize`): TUI requires the current model and calls `session.summarize({ sessionID, providerID, modelID })`. GUI plan: parse the selected GUI model and call the same backend method.
 - `/undo`: TUI aborts active work if needed, finds the previous user message, calls `session.revert({ sessionID, messageID })`, and restores the reverted prompt text/files into the prompt. GUI plan: call the same backend method and restore text into the main composer when available.
 - `/redo`: TUI calls `session.unrevert` when there is no later user message, otherwise calls `session.revert` to advance the revert marker. GUI plan: mirror that behavior with loaded message data.

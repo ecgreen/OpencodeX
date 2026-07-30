@@ -1,0 +1,15 @@
+.workbench-open-file-modal {
+  width: min(720px,calc(100vw - 32px));
+  min-height: min(620px,calc(100vh - 112px));
+  max-height: calc(100vh - 112px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0,1fr);
+  overflow: hidden;
+  transform: translateZ(0);
+  border: 1px solid var(--border-active);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 0;
+  background: var(--panel);
+  box-shadow: none;
+}

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { runCreateProjectSessionAction, runCreateSwarmAction, runCreateViewAction } from "../../src/renderer/src/lib/creation-actions"
 import { runCreateProjectAction, runCreateSessionRouteAction, runEditProjectAction } from "../../src/renderer/src/lib/project-actions"
 import { addPendingViewSessions, groupViewSessionsByProject, selectedPendingViewSessions, selectedViewSessionIDs, viewTitle } from "../../src/renderer/src/lib/view-actions"
-import type { GuiSnapshot } from "../../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../../src/renderer/src/lib/session-api"
 import { project, session } from "./fixtures"
 
 describe("GUI functional project and view workflows", () => {

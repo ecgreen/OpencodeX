@@ -3,13 +3,16 @@ import type { createAppearanceController } from "./appearance-controller"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createDialogController } from "./dialog-controller"
 import type { createTranscriptPreferences } from "./transcript-preferences"
-import { authHeaders } from "../lib/store"
+import { authHeaders } from "../lib/session-api"
+import { readBoolPreference, writeBoolPreference } from "../lib/app-preferences"
 import {
   isPermissionMode,
   permissionModeOption,
   PERMISSION_MODE_OPTIONS,
   type PermissionMode,
 } from "../lib/permission-mode"
+
+const ATTENTION_NOTIFICATIONS_KEY = "opencodex.gui.notifications.attention"
 
 export function createSettingsController(input: {
   appearance: ReturnType<typeof createAppearanceController>
@@ -18,6 +21,9 @@ export function createSettingsController(input: {
   transcript: ReturnType<typeof createTranscriptPreferences>
   alert: (message: string) => void
 }) {
+  const [attentionNotifications, setAttentionNotificationsSignal] = createSignal(
+    readBoolPreference(ATTENTION_NOTIFICATIONS_KEY, true),
+  )
   const [permissionMode, setPermissionMode] = createSignal<PermissionMode>()
   const [savingPermissionMode, setSavingPermissionMode] = createSignal(false)
   const [permissionModeError, setPermissionModeError] = createSignal<string>()
@@ -97,9 +103,16 @@ export function createSettingsController(input: {
     }
   }
 
+  function setAttentionNotifications(value: boolean) {
+    setAttentionNotificationsSignal(value)
+    writeBoolPreference(ATTENTION_NOTIFICATIONS_KEY, value)
+  }
+
   return {
     themeMode: input.appearance.themeMode,
     setThemeMode: input.appearance.setThemeMode,
+    attentionNotifications,
+    setAttentionNotifications,
     lifecycle: () => input.authoritative.state()?.lifecycle,
     retry: input.authoritative.retry,
     permissionMode,

@@ -1,6 +1,6 @@
 import { batch, type Accessor, type Setter } from "solid-js"
 import type { GuiClient } from "../lib/client"
-import { workbenchChangeMetricsPage, type WorkbenchChangeFile } from "../lib/store"
+import { workbenchChangeMetricsPage, type WorkbenchChangeFile } from "../lib/session-api"
 import { displayWorkbenchChangeSummary, isWorkbenchAbort, mergeWorkbenchFileMetrics, type WorkbenchChangeSummary } from "./session-side-git-model"
 
 export function createSelectedWorkbenchMetricsController(input: {

@@ -1,0 +1,107 @@
+.dashboard-summary-card {
+  --card-accent: var(--border-active);
+  display: grid;
+  min-height: 42px;
+  gap: 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--card-accent);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in srgb,var(--element) 34%,var(--panel));
+}
+
+.dashboard-project-card {
+  --card-accent: var(--primary);
+}
+
+.dashboard-swarm-card {
+  --card-accent: var(--theme-special);
+}
+
+.dashboard-view-card {
+  --session-state-color: var(--theme-text-muted);
+  --card-accent: var(--session-state-color);
+}
+
+.dashboard-view-card.status-in-progress {
+  --session-state-color: var(--blue);
+}
+
+.dashboard-view-card.status-input-needed {
+  --session-state-color: var(--amber);
+}
+
+.dashboard-view-card.status-ready-for-review {
+  --session-state-color: var(--info);
+  background: linear-gradient(90deg,var(--blue-soft),color-mix(in srgb,var(--element) 34%,var(--panel)) 58%);
+}
+
+.dashboard-view-card.status-failed {
+  --session-state-color: var(--danger);
+}
+
+.dashboard-summary-card>:is(.dashboard-card-open,.dashboard-card-copy) {
+  display: grid;
+  align-content: center;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  min-height: 40px;
+  gap: 1px;
+  color: var(--text);
+  text-align: left;
+}
+
+.dashboard-summary-card .dashboard-card-open {
+  padding: 5px 40px 5px 8px;
+}
+
+.dashboard-view-card .dashboard-card-open {
+  padding-right: 56px;
+}
+
+.dashboard-summary-card>.dashboard-card-copy {
+  padding: 5px 10px 5px 8px;
+}
+
+.dashboard-summary-card strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.dashboard-summary-card small,
+.dashboard-summary-card small>span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 470;
+}
+
+.dashboard-summary-card .mini-spinner {
+  right: 40px;
+  color: var(--session-state-color);
+}
+
+.dashboard-summary-card .status-glyph {
+  right: 40px;
+  color: var(--session-state-color);
+}
+
+.dashboard-summary-card.status-ready-for-review .status-glyph {
+  right: 10px;
+  bottom: 8px;
+}
+
+.dashboard-status-card.status-ready-for-review .status-glyph {
+  right: 10px;
+  bottom: 10px;
+}
+
+.dashboard-summary-card .card-action-menu {
+  top: 6px;
+  right: 6px;
+}
+
+.dashboard-summary-card.app-loading-card {
+  --card-accent: color-mix(in srgb,var(--app-loading-accent-muted) 48%,transparent);
+}

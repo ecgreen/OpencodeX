@@ -63,68 +63,6 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
     return yield* mapProjectErrors(projects.createSession(ctx.payload))
   })
 
-  const sessionSync = Effect.fn("OpencodeXHttpApi.sessionSync")(function* (ctx: {
-    query: typeof SessionSyncQuery.Type
-  }) {
-    const [projectList, listed, terminalSessionList, viewList, statusMap, permissionList, questionList] = yield* Effect.all(
-      [
-        projects.list(),
-        sessions.list({
-          directory: ctx.query.scope === "project" ? undefined : ctx.query.directory,
-          scope: ctx.query.scope,
-          path: ctx.query.path,
-          roots: ctx.query.roots,
-          start: ctx.query.start,
-          search: ctx.query.search,
-          limit: ctx.query.limit,
-        }),
-        terminalSessions.list(),
-        views.list(),
-        statuses.list(),
-        permissions.list(),
-        questions.list(),
-      ],
-      { concurrency: "unbounded" },
-    )
-    const lightProjects: OpencodeXProject.Info[] = projectList.map((project) => ({
-      ...project,
-      sessions: project.sessions.map(stripSessionSummaryDiffs),
-    }))
-    const lightViews: OpencodeXView.Info[] = viewList.map((view) => ({
-      ...view,
-      sessions: view.sessions.map(stripSessionSummaryDiffs),
-    }))
-    const lightSessions = mergeSessions(listed.map(stripSessionSummaryDiffs), lightProjects)
-    const sessionStatus = sessionStatusSnapshot(statusMap)
-    const states = yield* sessionState.list(lightSessions.map((session) => session.id))
-    const permissionsBySession = groupBySession(permissionList)
-    const questionsBySession = groupBySession(questionList)
-    const snapshot = {
-      projects: lightProjects,
-      sessions: lightSessions,
-      terminalSessions: terminalSessionList,
-      views: lightViews,
-      sessionStatus,
-      permissions: permissionList.toSorted((left, right) => String(left.id).localeCompare(String(right.id))),
-      questions: questionList.toSorted((left, right) => String(left.id).localeCompare(String(right.id))),
-      sessionUiState: Object.fromEntries(
-        lightSessions.map((session) => [
-          session.id,
-          OpencodeXSessionState.deriveUiState({
-            session,
-            status: sessionStatus[session.id],
-            permissions: permissionsBySession[session.id] ?? [],
-            questions: questionsBySession[session.id] ?? [],
-            state: states[session.id],
-          }),
-        ]),
-      ),
-    }
-    const revision = Bun.hash(JSON.stringify(snapshot)).toString(36)
-    if (ctx.query.since === revision) return { changed: false as const, revision }
-    return { changed: true as const, revision, snapshot }
-  })
-
   const updateSessionState = Effect.fn("OpencodeXHttpApi.updateSessionState")(function* (ctx: {
     params: { sessionID: SessionID }
     payload: typeof UpdateSessionStatePayload.Type
@@ -178,7 +116,6 @@ export const makeOpencodeXSessionHandlers = Effect.fn("OpencodeXHttpApi.makeSess
     updateProject,
     reorderProjects,
     createSession,
-    sessionSync,
     updateSessionState,
     moveSession,
     removeSession,

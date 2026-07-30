@@ -1,7 +1,7 @@
 import { Mark } from "@opencode-ai/ui/logo"
 import { For, Show } from "solid-js"
 import { title } from "../lib/format"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { Icon } from "./icon"
 import type { RailNavItem, RailRouteName } from "./rail-sidebar-types"
 import { Button, IconButton } from "./ui"

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { runSelectedSessionSync, sessionLoadedTime, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowSelectedSessionLoading, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-hydration"
+import { runSelectedSessionSync } from "../src/renderer/src/lib/session-hydration"
+import { sessionLoadedTime, shouldApplySessionSyncResult, shouldClearSessionSyncLoading, shouldHandleSessionSyncFailure, shouldShowSelectedSessionLoading, shouldShowViewSessionLoading, shouldSkipSessionSync, shouldSkipViewSessionSync, viewSessionLoadKey } from "../src/renderer/src/lib/session-hydration-policy"
 import { syncColdLinkedSession } from "../src/renderer/src/controllers/session-selection-controller"
-import type { SessionData } from "../src/renderer/src/lib/store"
+import type { SessionData } from "../src/renderer/src/lib/session-api"
 
 describe("GUI session sync decisions", () => {
   test("skips selected session sync only when the loaded data is fresh for that session", () => {

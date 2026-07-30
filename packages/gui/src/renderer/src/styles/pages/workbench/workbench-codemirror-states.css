@@ -1,0 +1,14 @@
+.workbench-codemirror .cm-content ::selection {
+  background-color: var(--theme-info);
+  color: inherit;
+}
+
+.workbench-codemirror .cm-line::selection {
+  background-color: var(--theme-info);
+  color: inherit;
+}
+
+.workbench-codemirror .cm-line *::selection {
+  background-color: var(--theme-info);
+  color: inherit;
+}

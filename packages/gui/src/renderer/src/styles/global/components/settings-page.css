@@ -1,0 +1,50 @@
+.settings-page {
+  width: min(100%,1080px);
+  margin: 0 auto;
+  padding: 32px clamp(20px,4vw,48px) 64px;
+  animation: settings-enter var(--motion-route) var(--ease-out-expo);
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 32px;
+}
+
+.settings-header h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(24px,3vw,32px);
+  letter-spacing: -.035em;
+}
+
+.settings-layout {
+  display: grid;
+  gap: 28px;
+}
+
+.settings-section {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-section>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-section h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  letter-spacing: -.012em;
+}
+
+.settings-section header p {
+  max-width: 660px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 13px;
+}

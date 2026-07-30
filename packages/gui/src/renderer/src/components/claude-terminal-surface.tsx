@@ -3,7 +3,7 @@ import { Match, Show, Switch, createEffect, createSignal, on, onCleanup, onMount
 import type { createClaudeTerminalController } from "../controllers/claude-terminal-controller"
 import type { GuiClient } from "../lib/client"
 import { compactPath } from "../lib/format"
-import type { GuiSnapshot } from "../lib/store"
+import type { GuiSnapshot } from "../lib/session-api"
 import { claudeCanStart, claudeStartLabel, claudeStatusLabel } from "../lib/terminal-presentation"
 import { Button, ErrorState, LoadingState, EmptyState, StatusBadge } from "./ui"
 import { CardActionMenu } from "./card-action-menu"

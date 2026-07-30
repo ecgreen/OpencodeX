@@ -6,7 +6,7 @@ import {
   workbenchFileHover,
   type WorkbenchCompletionResult,
   type WorkbenchDefinitionLocation,
-} from "../lib/store"
+} from "../lib/session-api"
 import { compactPath } from "../lib/format"
 import { workbenchPathKey } from "../lib/workbench"
 import { openTabFileIdentity } from "./session-side-open-state"

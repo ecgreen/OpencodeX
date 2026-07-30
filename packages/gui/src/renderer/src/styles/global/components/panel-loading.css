@@ -1,0 +1,66 @@
+@keyframes transcript-skeleton-shimmer {
+  to {
+    transform: translate(110%);
+  }
+}
+
+.workspace-panel-loading {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-panel-loading-resize {
+  pointer-events: none;
+}
+
+.panel-loading-state {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: 42px minmax(0,1fr) auto;
+  opacity: 0;
+  transition: opacity var(--motion-control) ease;
+}
+
+.panel-loading-state.visible {
+  opacity: 1;
+}
+
+.panel-loading-toolbar {
+  display: grid;
+  grid-template-columns: minmax(72px,.7fr) minmax(96px,1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-loading-content {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 12px;
+}
+
+.panel-loading-toolbar span {
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--element-2);
+}
+
+.panel-loading-content span {
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--element-2);
+}
+
+.panel-loading-label {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--muted);
+  font-size: 12px;
+}

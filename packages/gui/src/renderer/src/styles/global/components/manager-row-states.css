@@ -1,0 +1,59 @@
+.send-button:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--primary);
+  background: transparent;
+  box-shadow: none;
+}
+
+.send-button:active:not(:disabled) {
+  color: color-mix(in srgb,var(--primary) 78%,var(--text));
+  background: transparent;
+}
+
+.send-button:focus-visible {
+  color: var(--primary);
+  outline: 2px solid color-mix(in srgb,var(--primary) 60%,transparent);
+  outline-offset: 1px;
+}
+
+.choice-list button:hover {
+  border-color: var(--border-active);
+  background: var(--element);
+  transform: none;
+}
+
+.manager-row :is(p,span,small,strong) {
+  transition: color .14s ease;
+}
+
+.manager-row:hover {
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 12%,transparent),transparent 46%),color-mix(in srgb,var(--panel) 90%,var(--card-accent, var(--primary)) 10%);
+  box-shadow: inset 4px 0 0 var(--card-accent, var(--primary)),inset 0 0 0 1px color-mix(in srgb,var(--card-accent, var(--primary)) 20%,transparent);
+}
+
+.manager-row:focus-within {
+  border-color: color-mix(in srgb,var(--card-accent, var(--primary)) 42%,var(--border));
+  border-left-color: var(--card-accent, var(--primary));
+  color: var(--text);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 12%,transparent),transparent 46%),color-mix(in srgb,var(--panel) 90%,var(--card-accent, var(--primary)) 10%);
+  box-shadow: inset 4px 0 0 var(--card-accent, var(--primary)),inset 0 0 0 1px color-mix(in srgb,var(--card-accent, var(--primary)) 20%,transparent);
+}
+
+.manager-row:hover :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.manager-row:focus-within :is(p,span,small) {
+  color: color-mix(in srgb,var(--text) 76%,var(--muted));
+}
+
+.manager-row:hover strong {
+  color: var(--text);
+}
+
+.manager-row:focus-within strong {
+  color: var(--text);
+}

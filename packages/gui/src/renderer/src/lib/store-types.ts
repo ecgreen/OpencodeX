@@ -208,6 +208,8 @@ export type GuiSnapshot = {
   terminalSessions: OpencodeXTerminalSession[]
   sessionStatus: Record<string, SessionStatus>
   sessionUiState: Record<string, OpencodeXSessionUiState>
+  /** Optimistic, client-local: prompts sent from here that the backend has not reported busy for yet. */
+  sessionPendingPrompt?: Record<string, boolean>
   stateRevision?: string
   permissions: PermissionRequest[]
   questions: QuestionRequest[]

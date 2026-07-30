@@ -1,4 +1,4 @@
-import type { PromptPart } from "./store"
+import type { PromptPart } from "./session-api"
 
 export type SessionSlashCommandContext = {
   draftPrompt: string
@@ -38,7 +38,6 @@ export type SessionSlashCommandActions = {
   toggleMcps: (context?: SessionSlashCommandContext) => void | Promise<void>
   switchVariant: (context?: SessionSlashCommandContext) => void | Promise<void>
   connectProvider: (context?: SessionSlashCommandContext) => void | Promise<void>
-  switchOrg: (context?: SessionSlashCommandContext) => void | Promise<void>
   viewStatus: (context?: SessionSlashCommandContext) => void | Promise<void>
   switchTheme: (context?: SessionSlashCommandContext) => void | Promise<void>
   showHelp: (context?: SessionSlashCommandContext) => void | Promise<void>
@@ -47,11 +46,9 @@ export type SessionSlashCommandActions = {
   openSkills: (context?: SessionSlashCommandContext) => void | Promise<void>
   warpWorkspace: (context?: SessionSlashCommandContext) => void | Promise<void>
   openDiff: (context?: SessionSlashCommandContext) => void | Promise<void>
-  shareSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   renameSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   forkSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   compactSession: (context?: SessionSlashCommandContext) => void | Promise<void>
-  unshareSession: (context?: SessionSlashCommandContext) => void | Promise<void>
   undoMessage: (context?: SessionSlashCommandContext) => void | Promise<void>
   redoMessage: (context?: SessionSlashCommandContext) => void | Promise<void>
   toggleCodeConceal: (context?: SessionSlashCommandContext) => void | Promise<void>

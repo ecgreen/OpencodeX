@@ -1,10 +1,7 @@
-import type { OpencodeXSessionSnapshot, Part } from "@opencode-ai/sdk/v2/client"
-import type { ClientStateSyncState } from "@opencode-ai/sdk/v2/client-sync"
+import type { OpencodeXSessionSnapshot } from "@opencode-ai/sdk/v2/client"
+import { normalizeClientDisplayPart, type ClientStateSyncState } from "@opencode-ai/sdk/v2/client-sync"
 import { messageCursorBefore } from "./message-window"
-import { displayMessageText } from "./message-text"
 import type { MessageBundle, SessionData } from "./store-types"
-
-const normalizedPartCache = new WeakMap<Part, Part>()
 
 export function sessionDataFromClientState(
   state: ClientStateSyncState,
@@ -18,19 +15,20 @@ export function sessionDataFromClientState(
     const info = detail.messages[messageID]
     if (!info) return []
     const partIDs = detail.partIDs[messageID] ?? []
+    const messageParts = detail.parts[messageID]
     const existing = currentMessages.get(messageID)
     if (
       existing?.info === info &&
       existing.parts.length === partIDs.length &&
       partIDs.every((partID, index) => {
-        const part = detail.parts[partID]
-        return part ? normalizeMessagePart(part) === existing.parts[index] : false
+        const part = messageParts?.[partID]
+        return part ? normalizeClientDisplayPart(part) === existing.parts[index] : false
       })
     )
       return [existing]
     const parts = partIDs.flatMap((partID) => {
-      const part = detail.parts[partID]
-      return part ? [normalizeMessagePart(part)] : []
+      const part = messageParts?.[partID]
+      return part ? [normalizeClientDisplayPart(part)] : []
     })
     return [{ info, parts }]
   })
@@ -72,17 +70,8 @@ export function sessionDataFromSnapshot(snapshot: OpencodeXSessionSnapshot): Ses
 export function normalizeMessageText(messages: readonly MessageBundle[]) {
   return messages.map((message) => ({
     ...message,
-    parts: message.parts.map(normalizeMessagePart),
+    parts: message.parts.map(normalizeClientDisplayPart),
   }))
-}
-
-function normalizeMessagePart(part: Part) {
-  if (part.type !== "text" && part.type !== "reasoning") return part
-  const cached = normalizedPartCache.get(part)
-  if (cached) return cached
-  const normalized = { ...part, text: displayMessageText(part.text) } as Part
-  normalizedPartCache.set(part, normalized)
-  return normalized
 }
 
 /**

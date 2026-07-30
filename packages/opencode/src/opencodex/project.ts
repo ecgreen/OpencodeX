@@ -19,7 +19,6 @@ import { Project } from "@/project/project"
 import { InstanceStore } from "@/project/instance-store"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
-import { SessionShare } from "@/share/session"
 import { OpencodeXProjectFolder } from "./project-folder"
 import { OpencodeXTerminalSession } from "./terminal-session"
 
@@ -187,7 +186,6 @@ export const layer = Layer.effect(
     const fs = yield* AppFileSystem.Service
     const project = yield* Project.Service
     const sessions = yield* Session.Service
-    const share = yield* SessionShare.Service
     const store = yield* InstanceStore.Service
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
@@ -547,7 +545,7 @@ export const layer = Layer.effect(
       }
       const result = yield* store.provide(
         { directory },
-        share.create({
+        sessions.create({
           id: input.sessionID,
           title: input.title,
           agent: input.agent,
@@ -688,7 +686,6 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Database.defaultLayer),
   Layer.provide(Project.defaultLayer),
   Layer.provide(Session.defaultLayer),
-  Layer.provide(SessionShare.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))),
 )

@@ -1,0 +1,97 @@
+.titlebar-drag small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: none;
+  opacity: .6;
+}
+
+.brand-copy {
+  min-width: 0;
+  opacity: 1;
+  transform: translate(0);
+  transition: opacity var(--ds-motion-control) ease,transform var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
+}
+
+.brand-mark svg {
+  width: 18px;
+  height: 23px;
+}
+
+.brand strong {
+  display: block;
+  font-size: 15px;
+  letter-spacing: -.02em;
+}
+
+.brand span {
+  display: block;
+  color: var(--muted);
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.brand-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  transition: gap var(--ds-motion-route) cubic-bezier(.16,1,.3,1),margin var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
+}
+
+.rail-collapsed .brand-mark {
+  display: none;
+}
+
+.rail-collapsed .rail {
+  position: relative;
+  z-index: 20;
+  overflow: visible;
+}
+
+.rail-section.section-slot-placeholder>header {
+  opacity: 0;
+}
+
+.rail-section.section-slot-placeholder>.rail-section-content {
+  opacity: 0;
+}
+
+.rail-section header.no-action {
+  grid-template-columns: minmax(0,1fr);
+}
+
+.rail-section .section-toggle small {
+  font-size: 11px;
+}
+
+.rail-section-drag-preview strong {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-controls button {
+  border: 0;
+  background: transparent;
+  width: 42px;
+  color: var(--muted);
+  transition: background .14s ease,color .14s ease;
+}
+
+.rail-section .section-toggle strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 780;
+}

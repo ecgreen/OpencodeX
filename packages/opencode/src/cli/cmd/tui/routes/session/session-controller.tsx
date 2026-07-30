@@ -1,10 +1,9 @@
 import { ScrollBoxRenderable } from "@opentui/core"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { clientPlanModeSwitch } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { Locale } from "@/util/locale"
 import { UI } from "@/cli/ui"
-import { SessionRetry } from "@/session/retry"
-import { DialogRetryAction } from "@tui/component/dialog-retry-action"
 import { OPENCODEX_SIDEBAR_WIDTH } from "@tui/component/opencodex-sidebar"
 import { type PromptRef } from "@tui/component/prompt"
 import { useEditorContext } from "@tui/context/editor"
@@ -29,19 +28,7 @@ import { getRevertDiffFiles } from "@tui/util/revert-diff"
 import { getScrollAcceleration } from "@tui/util/scroll"
 import { index } from "@tui/util/model"
 
-const GO_UPSELL_FREE_TIER_LAST_SEEN_AT = "go_upsell_last_seen_at"
-const GO_UPSELL_FREE_TIER_DONT_SHOW = "go_upsell_dont_show"
-const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_last_seen_at"
-const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
-const GO_UPSELL_WINDOW = 86_400_000
-const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 const SESSION_VIEWED_MARK_DELAY_MS = 2_000
-
-function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
-  if (!action || !GO_UPSELL_PROVIDERS.has(action.provider)) return
-  if (action.reason === "free_tier_limit") return { lastSeenAt: GO_UPSELL_FREE_TIER_LAST_SEEN_AT, dontShow: GO_UPSELL_FREE_TIER_DONT_SHOW }
-  if (action.reason === "account_rate_limit") return { lastSeenAt: GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT, dontShow: GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW }
-}
 
 export function createSessionRouteController() {
   const route = useRouteData("session")
@@ -117,6 +104,9 @@ export function createSessionRouteController() {
 
   createEffect(() => {
     const sessionID = route.sessionID
+    // Holds the transcript resident while this route is on screen; leaving it
+    // hands the session to the deferred-release grace period.
+    onCleanup(sync.session.retain(sessionID))
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
@@ -155,20 +145,10 @@ export function createSessionRouteController() {
 
   let lastSwitch: string | undefined = undefined
   onCleanup(event.on("message.part.updated", (evt) => {
-    const part = evt.properties.part
-    if (part.type !== "tool") return
-    if (part.sessionID !== route.sessionID) return
-    if (part.state.status !== "completed") return
-    if (part.id === lastSwitch) return
-
-    if (part.tool === "plan_exit") {
-      local.agent.set("build")
-      lastSwitch = part.id
-      return
-    }
-    if (part.tool !== "plan_enter") return
-    local.agent.set("plan")
-    lastSwitch = part.id
+    const change = clientPlanModeSwitch(evt)
+    if (!change || change.sessionID !== route.sessionID || change.partID === lastSwitch) return
+    local.agent.set(change.agent)
+    lastSwitch = change.partID
   }))
 
   let seeded = false
@@ -184,26 +164,6 @@ export function createSessionRouteController() {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
-
-  onCleanup(event.on("session.status", (evt) => {
-    if (evt.properties.sessionID !== route.sessionID) return
-    if (evt.properties.status.type !== "retry") return
-    if (!evt.properties.status.action) return
-    if (dialog.stack.length > 0) return
-
-    const keys = goUpsellKeys(evt.properties.status.action)
-    if (!keys) return
-
-    const seen = kv.get(keys.lastSeenAt)
-    if (typeof seen === "number" && Date.now() - seen < GO_UPSELL_WINDOW) return
-
-    if (kv.get(keys.dontShow)) return
-
-    void DialogRetryAction.show(dialog, evt.properties.status.action).then((dontShowAgain) => {
-      if (dontShowAgain) kv.set(keys.dontShow, true)
-      kv.set(keys.lastSeenAt, Date.now())
-    })
-  }))
 
   const exit = useExit()
 
@@ -344,6 +304,35 @@ export function createSessionRouteController() {
     }
   })
 
+  // The revert marker is rendered against the message it points at. When that
+  // message is older than the loaded window there is nothing to attach to, so
+  // the transcript shows a compact banner at the top instead of nothing.
+  const revertBeforeWindow = createMemo(() => {
+    const messageID = revertMessageID()
+    if (!messageID) return false
+    return !messages().some((message) => message.id === messageID)
+  })
+
+  const transcript = createMemo(() => sync.session.transcript(route.sessionID))
+
+  async function loadOlderMessages() {
+    const current = transcript()
+    if (!current.hasOlder || current.loadingOlder) return
+    const box = scroll
+    const before = box && !box.isDestroyed ? { height: box.scrollHeight, top: box.scrollTop } : undefined
+    const atBottom = box && before ? before.top >= before.height - box.height - 1 : false
+    const loaded = await sync.session.loadOlder(route.sessionID)
+    if (!loaded || !box || !before) return
+    // Prepending grows the content above the viewport, so hold the reader's
+    // place by re-applying the recorded offset once layout has settled.
+    const anchor = () => {
+      if (box.isDestroyed) return
+      box.scrollTo(atBottom ? box.scrollHeight : before.top + (box.scrollHeight - before.height))
+    }
+    setTimeout(anchor, 0)
+    setTimeout(anchor, 50)
+  }
+
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
   return {
@@ -354,7 +343,8 @@ export function createSessionRouteController() {
     showGenericToolOutput, setShowGenericToolOutput, wide, sidebarVisible, showTimestamps, contentWidth, providers,
     scrollAcceleration, toast, sdk, editor, bind, keymap, dialog, renderer, exit, findNextVisibleMessage,
     scrollToMessage, toBottom, local, enterChild, moveFirstChild, moveChild, childSessionHandler, revertInfo,
-    revertMessageID, revertDiffFiles, revertRevertedMessages, revert,
+    revertMessageID, revertDiffFiles, revertRevertedMessages, revert, revertBeforeWindow,
+    transcript, loadOlderMessages,
     scroll: () => scroll,
     prompt: () => prompt,
     setScroll: (value: ScrollBoxRenderable) => {

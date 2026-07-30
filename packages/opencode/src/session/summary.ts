@@ -114,12 +114,12 @@ export const layer = Layer.effect(
       })
       yield* events.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: [] })
       if ((yield* config.get()).snapshot === false) return
-      const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      if (!all.length) return
+      const messages = yield* sessions.messageWithChildren({
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+      })
+      if (!messages.length) return
 
-      const messages = all.filter(
-        (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
-      )
       const target = messages.find((m) => m.info.id === input.messageID)
       if (!target || target.info.role !== "user") return
       const msgDiffs = yield* computeDiff({ messages })
@@ -129,9 +129,9 @@ export const layer = Layer.effect(
 
     const diff = Effect.fn("SessionSummary.diff")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
       if (!input.messageID) return []
-      const message = (yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
-        (item) => item.info.id === input.messageID,
-      )
+      const message = (
+        yield* sessions.messageWithChildren({ sessionID: input.sessionID, messageID: input.messageID })
+      ).find((item) => item.info.id === input.messageID)
       if (!message || message.info.role !== "user") return []
       const diffs = message.info.summary?.diffs ?? []
       return diffs.map((item) => {

@@ -1,0 +1,71 @@
+.session-inspector {
+  flex: 0 0 min(280px,30vw);
+  width: min(280px,30vw);
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb,var(--panel) 88%,transparent);
+}
+
+.session-inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.session-inspector-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text);
+  background: color-mix(in srgb,var(--panel) 92%,transparent);
+  width: 26px;
+  height: 26px;
+}
+
+.session-inspector-restore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text);
+  background: color-mix(in srgb,var(--panel) 92%,transparent);
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  min-height: 30px;
+  padding: 0 10px;
+  box-shadow: 0 4px 12px var(--theme-shadow-soft);
+}
+
+.session-inspector-section {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 0;
+}
+
+.session-inspector-section>button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 4px 0 8px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.session-inspector-section>div {
+  display: grid;
+  gap: 8px;
+}

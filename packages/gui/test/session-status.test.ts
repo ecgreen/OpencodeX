@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { GlobalSession, OpencodeXView, PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 import { deriveSessionStatus, deriveViewStatus, isActiveSessionStatus, markSessionViewedInSnapshot, reconcileSessionUiState, type DerivedSessionStatus } from "../src/renderer/src/lib/session-status"
 import { deriveStatus as deriveTuiStatus } from "../../opencode/src/cli/cmd/tui/component/opencodex-session-status-core"
 
@@ -15,7 +15,6 @@ describe("GUI session status parity", () => {
       "ready_for_review",
     ])
     expect(isActiveSessionStatus("dormant")).toBe(false)
-    expect(isActiveSessionStatus("failed")).toBe(false)
   })
 
   test("derives the same backend states as the TUI", () => {
@@ -166,8 +165,10 @@ function tuiSync(snapshot: GuiSnapshot): Parameters<typeof deriveTuiStatus>[1] {
     data: {
       permission: groupBySession(snapshot.permissions),
       question: groupBySession(snapshot.questions),
+      session: snapshot.sessions,
       session_status: snapshot.sessionStatus,
       session_ui_state: snapshot.sessionUiState,
+      session_pending_prompt: {},
       message: {},
       part: {},
     },

@@ -10,7 +10,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
-import { SessionV2 } from "@opencode-ai/core/session"
+import { SessionProjector } from "@opencode-ai/core/session/projector"
 
 import { NotFoundError } from "@/storage/storage"
 import { eq } from "drizzle-orm"
@@ -23,7 +23,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { MessageTable, PartTable, SessionMessageTable, SessionTable, TodoTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionTable, TodoTable } from "@opencode-ai/core/session/sql"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
@@ -37,7 +37,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
 import { Global } from "@opencode-ai/core/global"
-import { Effect, Layer, Option, Context, Schema, Types } from "effect"
+import { Duration, Effect, Layer, Option, Context, Schedule, Schema, Types } from "effect"
 import { AbsolutePath, NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -48,6 +48,7 @@ const runtime = makeRuntime(Database.Service, Database.defaultLayer)
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
 const emptySessionCleanupAge = 4 * 60 * 60 * 1000
+const emptySessionCleanupInterval = 10 * 60 * 1000
 
 function createDefaultTitle(isChild = false) {
   return (isChild ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString()
@@ -71,7 +72,6 @@ export function fromRow(row: SessionRow): Info {
           diffs: row.summary_diffs ?? undefined,
         }
       : undefined
-  const share = row.share_url ? { url: row.share_url } : undefined
   const revert = row.revert ?? undefined
   return {
     id: row.id,
@@ -102,7 +102,6 @@ export function fromRow(row: SessionRow): Info {
         write: row.tokens_cache_write,
       },
     },
-    share,
     metadata: row.metadata ?? undefined,
     revert,
     permission: row.permission ? [...row.permission] : undefined,
@@ -135,7 +134,6 @@ export function toRow(info: Info) {
     agent: info.agent,
     model: info.model,
     version: info.version,
-    share_url: info.share?.url,
     summary_additions: info.summary?.additions,
     summary_deletions: info.summary?.deletions,
     summary_files: info.summary?.files,
@@ -189,10 +187,6 @@ const Tokens = Schema.Struct({
 
 const EmptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 
-const Share = Schema.Struct({
-  url: Schema.String,
-})
-
 // Legacy HTTP accepted negative values here. Keep archive timestamps permissive
 // while excluding non-finite values that cannot round-trip through JSON.
 export const ArchivedTimestamp = Schema.Finite
@@ -232,7 +226,6 @@ export const Info = Schema.Struct({
   summary: optionalOmitUndefined(Summary),
   cost: optionalOmitUndefined(Schema.Finite),
   tokens: optionalOmitUndefined(Tokens),
-  share: optionalOmitUndefined(Share),
   title: Schema.String,
   agent: optionalOmitUndefined(Schema.String),
   model: optionalOmitUndefined(Model),
@@ -327,10 +320,6 @@ const CreatedEventSchema = Schema.Struct({
   info: Info,
 })
 
-const UpdatedShare = Schema.Struct({
-  url: Schema.optional(Schema.NullOr(Schema.String)),
-})
-
 const UpdatedTime = Schema.Struct({
   created: Schema.optional(Schema.NullOr(NonNegativeInt)),
   updated: Schema.optional(Schema.NullOr(NonNegativeInt)),
@@ -349,7 +338,6 @@ const UpdatedInfo = Schema.Struct({
   summary: Schema.optional(Schema.NullOr(Summary)),
   cost: Schema.optional(Schema.Finite),
   tokens: Schema.optional(Tokens),
-  share: Schema.optional(UpdatedShare),
   title: Schema.optional(Schema.NullOr(Schema.String)),
   agent: Schema.optional(Schema.NullOr(Schema.String)),
   model: Schema.optional(Schema.NullOr(Model)),
@@ -497,13 +485,16 @@ export interface Interface {
   }) => Effect.Effect<void>
   readonly clearRevert: (sessionID: SessionID) => Effect.Effect<void>
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
-  readonly setShare: (input: { sessionID: SessionID; share: Info["share"] }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
   readonly messages: (input: {
     sessionID: SessionID
     limit?: number
   }) => Effect.Effect<SessionLegacy.WithParts[], NotFound>
+  readonly messageWithChildren: (input: {
+    sessionID: SessionID
+    messageID: MessageID
+  }) => Effect.Effect<SessionLegacy.WithParts[]>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends SessionLegacy.Info>(msg: T) => Effect.Effect<T>
@@ -514,7 +505,14 @@ export interface Interface {
     messageID: MessageID
     partID: PartID
   }) => Effect.Effect<SessionLegacy.Part | undefined>
-  readonly updatePart: <T extends SessionLegacy.Part>(part: T) => Effect.Effect<T>
+  /**
+   * `transient` publishes the revision to live subscribers without journaling
+   * it. Use it for in-flight progress only - terminal state must stay durable.
+   */
+  readonly updatePart: <T extends SessionLegacy.Part>(
+    part: T,
+    options?: { transient?: boolean },
+  ) => Effect.Effect<T>
   readonly updatePartDelta: (input: {
     sessionID: SessionID
     messageID: MessageID
@@ -533,9 +531,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 
 export const use = serviceUse(Service)
 
-export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" | "permission"> & {
+export type Patch = Omit<Partial<Info>, "time" | "summary" | "revert" | "permission"> & {
   time?: Partial<Info["time"]>
-  share?: Partial<NonNullable<Info["share"]>> | null
   summary?: Info["summary"] | null
   revert?: Info["revert"] | null
   permission?: Info["permission"] | null
@@ -619,6 +616,19 @@ export const layer: Layer.Layer<
       return fromRow(row)
     })
 
+    // Reaping abandoned default-titled sessions costs three unindexable LIKE
+    // scans plus five probe queries per candidate. It used to run on every list
+    // call, so every sidebar refresh paid for it. An empty session lingering a
+    // few extra minutes is invisible, so amortize it instead.
+    // Zero so the first list of a process still reaps, matching the old
+    // behaviour on startup; only the repeats are throttled.
+    let lastCleanup = 0
+    const maybeCleanupEmpty = Effect.fn("Session.maybeCleanupEmpty")(function* () {
+      if (Date.now() - lastCleanup < emptySessionCleanupInterval) return
+      lastCleanup = Date.now()
+      yield* cleanupEmpty()
+    })
+
     const cleanupEmpty = Effect.fn("Session.cleanupEmpty")(function* () {
       const rows = yield* db
         .select({ id: SessionTable.id, title: SessionTable.title })
@@ -641,7 +651,7 @@ export const layer: Layer.Layer<
         rows.filter((row) => row.title === "New session" || isDefaultTitle(row.title)),
         (row) =>
           Effect.gen(function* () {
-            const [message, part, sessionMessage, todo, child] = yield* Effect.all(
+            const [message, part, todo, child] = yield* Effect.all(
               [
                 db
                   .select({ id: MessageTable.id })
@@ -650,12 +660,6 @@ export const layer: Layer.Layer<
                   .limit(1)
                   .get(),
                 db.select({ id: PartTable.id }).from(PartTable).where(eq(PartTable.session_id, row.id)).limit(1).get(),
-                db
-                  .select({ id: SessionMessageTable.id })
-                  .from(SessionMessageTable)
-                  .where(eq(SessionMessageTable.session_id, row.id))
-                  .limit(1)
-                  .get(),
                 db
                   .select({ sessionID: TodoTable.session_id })
                   .from(TodoTable)
@@ -671,7 +675,7 @@ export const layer: Layer.Layer<
               ],
               { concurrency: "unbounded" },
             ).pipe(Effect.orDie)
-            if (message || part || sessionMessage || todo || child) return
+            if (message || part || todo || child) return
             yield* remove(row.id).pipe(Effect.ignore)
           }),
         { concurrency: "unbounded", discard: true },
@@ -680,7 +684,7 @@ export const layer: Layer.Layer<
 
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
       const ctx = yield* InstanceState.context
-      yield* cleanupEmpty()
+      yield* maybeCleanupEmpty()
       return yield* listByProject(db, {
         projectID: ctx.project.id,
         experimentalWorkspaces: flags.experimentalWorkspaces,
@@ -710,7 +714,7 @@ export const layer: Layer.Layer<
     })
 
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
-      yield* cleanupEmpty()
+      yield* maybeCleanupEmpty()
       const conditions: SQL[] = []
       if (input?.directory) conditions.push(eq(SessionTable.directory, input.directory))
       if (input?.projectID) conditions.push(eq(SessionTable.project_id, input.projectID))
@@ -786,18 +790,28 @@ export const layer: Layer.Layer<
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
-    const updatePart = <T extends SessionLegacy.Part>(part: T): Effect.Effect<T> =>
+    const updatePart = <T extends SessionLegacy.Part>(part: T, options?: { transient?: boolean }): Effect.Effect<T> =>
       Effect.gen(function* () {
         const location = yield* locationForSession(part.sessionID)
-        yield* events.publish(
-          SessionLegacy.Event.PartUpdated,
-          {
-            sessionID: part.sessionID,
-            part: structuredClone(part),
-            time: Date.now(),
-          },
-          { location },
-        )
+        const data = {
+          sessionID: part.sessionID,
+          part: structuredClone(part),
+          time: Date.now(),
+        }
+        // A transient revision is an in-flight progress frame: the wire payload
+        // is byte-identical to a durable one, but it skips the journal append,
+        // the sequence bump and the state-log invalidation. Safe because the
+        // state log is invalidate-then-refetch and the durable terminal write
+        // that follows still triggers that refetch, so a dropped intermediate
+        // revision is unobservable. Same shape as `message.part.delta`, which
+        // has always been broadcast-only.
+        if (options?.transient) {
+          yield* events.broadcast(
+            yield* events.payload(SessionLegacy.Event.PartUpdated, data, { location }),
+          )
+          return part
+        }
+        yield* events.publish(SessionLegacy.Event.PartUpdated, data, { location })
         return part
       }).pipe(Effect.withSpan("Session.updatePart"))
 
@@ -903,8 +917,6 @@ export const layer: Layer.Layer<
                   ...current,
                   ...info,
                   time: info.time ? { ...current.time, ...info.time } : current.time,
-                  share:
-                    info.share === null ? undefined : info.share ? { ...current.share, ...info.share } : current.share,
                   summary: info.summary === null ? undefined : (info.summary ?? current.summary),
                   revert: info.revert === null ? undefined : (info.revert ?? current.revert),
                   permission: info.permission === null ? undefined : (info.permission ?? current.permission),
@@ -977,10 +989,6 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { time: { updated: Date.now() }, summary: input.summary }).pipe(Effect.orDie)
     })
 
-    const setShare = Effect.fn("Session.setShare")(function* (input: { sessionID: SessionID; share: Info["share"] }) {
-      yield* patch(input.sessionID, { share: input.share ?? null, time: { updated: Date.now() } }).pipe(Effect.orDie)
-    })
-
     const setWorkspace = Effect.fn("Session.setWorkspace")(function* (input: {
       sessionID: SessionID
       workspaceID: Info["workspaceID"]
@@ -1019,6 +1027,12 @@ export const layer: Layer.Layer<
       }
       return result.reverse()
     })
+
+    const messageWithChildren: Interface["messageWithChildren"] = Effect.fn("Session.messageWithChildren")(
+      function* (input) {
+        return yield* MessageV2.messageWithChildren(input).pipe(Effect.provideService(Database.Service, database))
+      },
+    )
 
     const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
       sessionID: SessionID
@@ -1100,10 +1114,10 @@ export const layer: Layer.Layer<
       setRevert,
       clearRevert,
       setSummary,
-      setShare,
       setWorkspace,
       diff,
       messages,
+      messageWithChildren,
       children,
       remove,
       updateMessage,
@@ -1121,7 +1135,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(BackgroundJob.defaultLayer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
-  Layer.provide(SessionV2.defaultLayer),
+  Layer.provide(SessionProjector.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
 )
 

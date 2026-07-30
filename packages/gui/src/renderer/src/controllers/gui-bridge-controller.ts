@@ -8,7 +8,7 @@ import {
   guiBridgeRequestFromEvent,
   type GuiBridgeRequest,
 } from "../lib/gui-bridge"
-import { authHeaders } from "../lib/store"
+import { authHeaders } from "../lib/session-api"
 import { openSessionWorkspace, requestSessionWorkspace, type SessionWorkspaceResult } from "../lib/session-workspace-bridge"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createNavigationController } from "./navigation-controller"

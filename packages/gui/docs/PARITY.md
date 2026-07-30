@@ -14,7 +14,7 @@ This package is intentionally frontend-only. It must preserve TUI compatibility 
 
 - App shell, keyboard navigation, command palette, dialogs, themes, help, and settings.
 - Prompt composer with shell mode, slash commands, drafts, history, stash, attachments, editor context, and interrupt.
-- Session transcript with tool parts, todos, diffs, permissions, questions, timeline, fork, compact, share, export, undo, and scroll controls.
+- Session transcript with tool parts, todos, diffs, permissions, questions, timeline, fork, compact, export, undo, and scroll controls.
 - OpencodeX project management, project-scoped sessions, moving/deleting sessions, pinning, and folder validation.
 - Operations dashboard for projects, attention needed, recent sessions, swarms, and views.
 - Swarm create/edit/start/cancel/task workflows with role model/provider/agent/skill configuration.

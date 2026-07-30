@@ -21,8 +21,8 @@ body:
   - type: input
     id: opencode-version
     attributes:
-      label: OpenCode version
-      description: What version of OpenCode are you using?
+      label: OpencodeX version
+      description: What version of OpencodeX are you using?
     validations:
       required: false
 
@@ -41,9 +41,9 @@ body:
   - type: textarea
     id: screenshot-or-link
     attributes:
-      label: Screenshot and/or share link
-      description: Run `/share` to get a share link, or attach a screenshot
-      placeholder: Paste link or drag and drop screenshot here
+      label: Screenshot and/or session export
+      description: Run `/export` to save the conversation as Markdown, or attach a screenshot
+      placeholder: Paste the export or drag and drop a screenshot here
     validations:
       required: false
 

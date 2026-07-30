@@ -50,7 +50,6 @@ export function groupBySession<T extends { sessionID: string }>(items: readonly 
 export function durableDomain(event: EventV2.Payload) {
   if (
     event.type === MessageV2.Event.PartDelta.type ||
-    event.type.startsWith("session.next.") ||
     event.type.startsWith("tui.") ||
     event.type.startsWith("terminal.")
   )

@@ -1,0 +1,64 @@
+.app-shell {
+  display: grid;
+  grid-template-rows: 36px 1fr;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  overflow: hidden;
+  grid-template-columns: var(--rail-width,300px) minmax(0,1fr);
+  transition: grid-template-columns var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
+  background: var(--bg);
+}
+
+.app-shell.rail-resizing {
+  transition: none;
+}
+
+.rail-section {
+  margin-top: 12px;
+  position: relative;
+  transition: transform .18s cubic-bezier(.16,1,.3,1);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rail-header {
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.rail nav {
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.rail button {
+  border-radius: 0;
+}
+
+.rail a {
+  border-radius: 0;
+}
+
+.rail-section .section-toggle {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+  min-height: 26px;
+  padding: 2px 4px;
+  letter-spacing: .08em;
+  color: var(--text);
+  border: 0;
+  background: transparent;
+}
+
+.rail-toggle .icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  transition: color var(--ds-motion-route) cubic-bezier(.16,1,.3,1),stroke var(--ds-motion-route) cubic-bezier(.16,1,.3,1),transform var(--ds-motion-route) cubic-bezier(.16,1,.3,1),filter var(--ds-motion-route) cubic-bezier(.16,1,.3,1);
+}

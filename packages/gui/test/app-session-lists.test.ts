@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { GuiSnapshot } from "../src/renderer/src/lib/store"
+import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 import { emptySessionOrderState, reconcileSessionOrderState, tuiSidebarSessions } from "../src/renderer/src/lib/app-session-lists"
 import { permission, question, session } from "./functional/fixtures"
 

@@ -22,7 +22,7 @@ import { OpenApi } from "effect/unstable/httpapi"
 import { TestLLMServer } from "../../lib/llm-server"
 import path from "path"
 import { array, boolean, check, isRecord, message, object, stable } from "./assertions"
-import { controlledPtyInput, http, route } from "./dsl"
+import { http, route } from "./dsl"
 import {
   cleanupExercisePaths,
   exerciseConfigDirectory,
@@ -43,10 +43,6 @@ import { opencodexWorkbenchFileScenarios } from "./opencodex-workbench-file-scen
 import { opencodexWorkbenchGitScenarios } from "./opencodex-workbench-git-scenarios"
 
 void (await import("@opencode-ai/core/util/log")).init({ print: false })
-
-function cursor(input: Record<string, unknown>) {
-  return Buffer.from(JSON.stringify(input)).toString("base64url")
-}
 
 const scenarios: Scenario[] = [
   ...guiBridgeScenarios,
@@ -381,72 +377,6 @@ const scenarios: Scenario[] = [
     .mutating()
     .at((ctx) => ({ path: route("/mcp/{name}/disconnect", { name: "httpapi-missing" }), headers: ctx.headers() }))
     .json(404, object, "status"),
-  http.protected.get("/pty/shells", "pty.shells").json(200, array),
-  http.protected.get("/pty", "pty.list").json(200, array),
-  http.protected
-    .post("/pty", "pty.create")
-    .mutating()
-    .at((ctx) => ({ path: "/pty", headers: ctx.headers(), body: controlledPtyInput("HTTP API PTY") }))
-    .json(
-      200,
-      (body, ctx) => {
-        object(body)
-        check(body.title === "HTTP API PTY", "PTY create should return requested title")
-        const command = controlledPtyInput(undefined).command
-        check(
-          typeof body.command === "string" &&
-            (process.platform === "win32"
-              ? body.command.toLowerCase() === command.toLowerCase()
-              : body.command === command),
-          "PTY create should use controlled shell command",
-        )
-        check(body.cwd === ctx.directory, "PTY create should default cwd to scenario directory")
-      },
-      "status",
-    ),
-  http.protected
-    .post("/pty", "pty.create.invalid")
-    .at((ctx) => ({ path: "/pty", headers: ctx.headers(), body: { command: 1 } }))
-    .status(400),
-  http.protected
-    .post("/pty/{ptyID}/connect-token", "pty.connectToken.invalid")
-    .at((ctx) => ({
-      path: route("/pty/{ptyID}/connect-token", { ptyID: "pty_httpapi_missing" }),
-      headers: ctx.headers(),
-    }))
-    .status(403, undefined, "status"),
-  http.protected
-    .get("/pty/{ptyID}", "pty.get")
-    .at((ctx) => ({ path: route("/pty/{ptyID}", { ptyID: "pty_httpapi_missing" }), headers: ctx.headers() }))
-    .status(404),
-  http.protected
-    .put("/pty/{ptyID}", "pty.update")
-    .mutating()
-    .at((ctx) => ({
-      path: route("/pty/{ptyID}", { ptyID: "pty_httpapi_missing" }),
-      headers: ctx.headers(),
-      body: { size: { rows: 0, cols: 0 } },
-    }))
-    .status(400),
-  http.protected
-    .delete("/pty/{ptyID}", "pty.remove")
-    .mutating()
-    .at((ctx) => ({ path: route("/pty/{ptyID}", { ptyID: "pty_httpapi_missing" }), headers: ctx.headers() }))
-    .json(404, object, "status"),
-  http.protected
-    .get("/pty/{ptyID}/connect", "pty.connect")
-    .at((ctx) => ({ path: route("/pty/{ptyID}/connect", { ptyID: "pty_httpapi_missing" }), headers: ctx.headers() }))
-    .status(404, undefined, "none"),
-  http.protected.get("/experimental/console", "experimental.console.get").json(),
-  http.protected.get("/experimental/console/orgs", "experimental.console.listOrgs").json(),
-  http.protected
-    .post("/experimental/console/switch", "experimental.console.switchOrg")
-    .at((ctx) => ({
-      path: "/experimental/console/switch",
-      headers: ctx.headers(),
-      body: { accountID: "httpapi-account", orgID: "httpapi-org" },
-    }))
-    .status(400, undefined, "none"),
   http.protected.get("/experimental/workspace/adapter", "experimental.workspace.adapter.list").json(200, array),
   http.protected.get("/experimental/workspace", "experimental.workspace.list").json(200, array),
   http.protected.get("/experimental/workspace/status", "experimental.workspace.status").json(200, array),
@@ -592,149 +522,6 @@ const scenarios: Scenario[] = [
         check(auth.test === undefined, "auth remove should delete provider from isolated auth file")
       }),
     ),
-  http.protected.get("/api/model", "v2.model.list").json(200, array),
-  http.protected.get("/api/provider", "v2.provider.list").json(200, array),
-  http.protected
-    .get("/api/provider/{providerID}", "v2.provider.get")
-    .at((ctx) => ({ path: route("/api/provider/{providerID}", { providerID: "missing" }), headers: ctx.headers() }))
-    .json(404, object, "status"),
-  http.protected
-    .get("/api/session", "v2.session.list")
-    .at((ctx) => ({ path: "/api/session?roots=true", headers: ctx.headers() }))
-    .json(
-      200,
-      (body) => {
-        object(body)
-        array(body.items)
-        object(body.cursor)
-      },
-      "none",
-    ),
-  http.protected
-    .get("/api/session", "v2.session.list.filters")
-    .at((ctx) => ({
-      path: `/api/session?${new URLSearchParams({
-        limit: "2",
-        order: "asc",
-        path: ".",
-        roots: "false",
-        start: "0",
-        search: "missing",
-        directory: ctx.directory ?? "",
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .json(
-      200,
-      (body) => {
-        object(body)
-        array(body.items)
-        object(body.cursor)
-      },
-      "none",
-    ),
-  http.protected
-    .get("/api/session", "v2.session.list.cursor")
-    .at((ctx) => ({
-      path: `/api/session?${new URLSearchParams({
-        limit: "2",
-        directory: ctx.directory ?? "",
-        cursor: cursor({
-          id: "ses_httpapi_missing",
-          time: 0,
-          order: "desc",
-          direction: "next",
-          directory: ctx.directory,
-        }),
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .json(
-      200,
-      (body) => {
-        object(body)
-        array(body.items)
-        object(body.cursor)
-      },
-      "none",
-    ),
-  http.protected
-    .get("/api/session", "v2.session.list.cursor.invalid")
-    .at((ctx) => ({
-      path: `/api/session?${new URLSearchParams({
-        cursor: cursor({ id: "ses_httpapi_missing", time: 0, order: "desc", direction: "next" }),
-        search: "not-allowed-with-cursor",
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .status(400, undefined, "none"),
-  http.protected
-    .get("/api/session/{sessionID}/context", "v2.session.context")
-    .at((ctx) => ({
-      path: route("/api/session/{sessionID}/context", { sessionID: "ses_httpapi_missing" }),
-      headers: ctx.headers(),
-    }))
-    .json(404, object, "status"),
-  http.protected
-    .get("/api/session/{sessionID}/message", "v2.session.messages")
-    .at((ctx) => ({
-      path: route("/api/session/{sessionID}/message", { sessionID: "ses_httpapi_missing" }),
-      headers: ctx.headers(),
-    }))
-    .json(404, object, "status"),
-  http.protected
-    .get("/api/session/{sessionID}/message", "v2.session.messages.params")
-    .at((ctx) => ({
-      path: `${route("/api/session/{sessionID}/message", { sessionID: "ses_httpapi_missing" })}?${new URLSearchParams({
-        limit: "2",
-        order: "asc",
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .json(404, object, "status"),
-  http.protected
-    .get("/api/session/{sessionID}/message", "v2.session.messages.cursor")
-    .at((ctx) => ({
-      path: `${route("/api/session/{sessionID}/message", { sessionID: "ses_httpapi_missing" })}?${new URLSearchParams({
-        limit: "2",
-        directory: ctx.directory ?? "",
-        cursor: cursor({ id: "msg_httpapi_missing", time: 0, order: "desc", direction: "next" }),
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .json(404, object, "status"),
-  http.protected
-    .get("/api/session/{sessionID}/message", "v2.session.messages.cursor.invalid")
-    .at((ctx) => ({
-      path: `${route("/api/session/{sessionID}/message", { sessionID: "ses_httpapi_missing" })}?${new URLSearchParams({
-        cursor: cursor({ id: "msg_httpapi_missing", time: 0, order: "desc", direction: "next" }),
-        order: "asc",
-      })}`,
-      headers: ctx.headers(),
-    }))
-    .status(400, undefined, "none"),
-  http.protected
-    .post("/api/session/{sessionID}/prompt", "v2.session.prompt.invalid")
-    .at((ctx) => ({
-      path: route("/api/session/{sessionID}/prompt", { sessionID: "ses_httpapi_missing" }),
-      headers: ctx.headers(),
-      body: {},
-    }))
-    .status(400, undefined, "none"),
-  http.protected
-    .post("/api/session/{sessionID}/compact", "v2.session.compact")
-    .at((ctx) => ({
-      path: route("/api/session/{sessionID}/compact", { sessionID: "ses_httpapi_missing" }),
-      headers: ctx.headers(),
-    }))
-    .status(404, undefined, "status"),
-  http.protected
-    .post("/api/session/{sessionID}/wait", "v2.session.wait")
-    .at((ctx) => ({
-      path: route("/api/session/{sessionID}/wait", { sessionID: "ses_httpapi_missing" }),
-      headers: ctx.headers(),
-    }))
-    .status(404, undefined, "status"),
   http.protected
     .get("/session", "session.list")
     .seeded((ctx) => ctx.session({ title: "List me" }))
@@ -1249,36 +1036,6 @@ const scenarios: Scenario[] = [
       body: { response: "once" },
     }))
     .json(404, object, "status"),
-  http.protected
-    .post("/session/{sessionID}/share", "session.share")
-    .mutating()
-    .seeded((ctx) => ctx.session({ title: "Share session" }))
-    .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .json(
-      200,
-      (body, ctx) => {
-        object(body)
-        check(body.id === ctx.state.id, "share should return the session")
-      },
-      "status",
-    ),
-  http.protected
-    .delete("/session/{sessionID}/share", "session.unshare")
-    .mutating()
-    .seeded((ctx) => ctx.session({ title: "Unshare session" }))
-    .at((ctx) => ({ path: route("/session/{sessionID}/share", { sessionID: ctx.state.id }), headers: ctx.headers() }))
-    .json(
-      200,
-      (body, ctx) => {
-        object(body)
-        check(body.id === ctx.state.id, "unshare should return the session")
-      },
-      "status",
-    ),
-  http.protected
-    .post("/tui/append-prompt", "tui.appendPrompt")
-    .at((ctx) => ({ path: "/tui/append-prompt", headers: ctx.headers(), body: { text: "hello" } }))
-    .json(200, boolean, "status"),
   http.protected
     .post("/tui/select-session", "tui.selectSession.invalid")
     .at((ctx) => ({ path: "/tui/select-session", headers: ctx.headers(), body: { sessionID: "invalid" } }))

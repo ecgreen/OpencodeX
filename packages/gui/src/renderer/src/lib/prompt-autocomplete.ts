@@ -1,5 +1,5 @@
 import type { Agent, Config, FileNode, McpResource } from "@opencode-ai/sdk/v2/client"
-import type { PromptPart } from "./store"
+import type { PromptPart } from "./session-api"
 
 export type PromptMentionOption = {
   label: string

@@ -1,0 +1,69 @@
+.overflow-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.routing-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.overflow-menu button:hover {
+  background: var(--theme-surface-raised);
+}
+
+.workbench-menu>summary:hover {
+  background: var(--workbench-row-hover);
+  color: var(--workbench-text);
+}
+
+.workbench-menu>summary::-webkit-details-marker {
+  display: none;
+}
+
+.workbench-menu-popover button:hover {
+  background: var(--workbench-row-hover);
+}
+
+.dialog-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-1px);
+}
+
+.overflow-menu button:hover:not(:disabled) {
+  border-color: color-mix(in srgb,var(--brand) 42%,var(--line-strong));
+  background: linear-gradient(180deg,var(--theme-overlay-soft),transparent),var(--surface-hover);
+  box-shadow: var(--shadow-button-hover);
+  transform: translateY(-1px);
+}
+
+.dialog-actions button:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--surface-active);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+}
+
+.model-menu:active:not(:disabled) {
+  transform: translateY(0);
+  background: var(--surface-active);
+  box-shadow: inset 0 1px var(--theme-overlay-subtle);
+}
+
+.dialog-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.model-menu:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none;
+}
+
+.overflow-menu summary:hover {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--surface-hover);
+  box-shadow: none;
+}

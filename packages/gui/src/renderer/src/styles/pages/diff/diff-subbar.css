@@ -1,0 +1,18 @@
+.diff-subbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  justify-content: flex-start;
+  padding: 8px 18px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.diff-working-tree {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}

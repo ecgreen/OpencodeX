@@ -76,26 +76,12 @@
 }
 
 @media (max-width:860px) {
-  .session-header {
-    display: grid;
-  }
 }
 
 @media (max-width:1180px) {
-  .composer-controls {
-    width: min(640px,calc(100vw - 310px));
-  }
 }
 
 @media (max-width:860px) {
-  .composer-controls {
-    position: fixed;
-    left: 10px;
-    right: 10px;
-    bottom: 116px;
-    width: auto;
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width:860px) {

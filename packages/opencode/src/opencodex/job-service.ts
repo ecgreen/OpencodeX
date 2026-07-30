@@ -14,6 +14,7 @@ export const layer = Layer.effect(
     const lifecycle = createJobLifecycle(database.db, events, store)
     return Service.of({
       list: store.list,
+      getMany: store.getMany,
       get: store.get,
       create: store.create,
       update: store.update,
