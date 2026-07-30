@@ -8,11 +8,24 @@ import {
   roleInput,
   swarmRolePresetBySkill,
 } from "../lib/swarm-actions"
+import {
+  readSwarmRoleTemplates,
+  removeSwarmRoleTemplate,
+  templateRoleInput,
+  unusedSwarmRoleTemplates,
+  upsertSwarmRoleTemplate,
+  writeSwarmRoleTemplates,
+  type SwarmRoleTemplate,
+} from "../lib/swarm-role-templates"
 import type { GuiSnapshot } from "../lib/session-api"
 import { SwarmEditorTeam } from "./swarm-editor-team"
 import { SwarmPageHeader } from "./swarm-page-header"
 import { SwarmRoleModelPicker } from "./swarm-role-model-picker"
+import { SwarmRoleTemplateEditor } from "./swarm-role-template-editor"
 import { Button, Select, TextInput } from "./ui"
+
+/** What the template modal is editing: an existing template, or a fresh draft. */
+type TemplateEditorState = { template?: SwarmRoleTemplate; initial?: { name: string; instructions: string } }
 
 /**
  * The one swarm surface: creating, viewing, and editing are the same page.
@@ -58,6 +71,35 @@ export function SwarmEditorPage(props: {
     const used = new Set(roles().map((role) => role.skill ?? role.name.trim().toLowerCase().replace(/\s+/g, "-")))
     return SWARM_ROLE_PRESETS.filter((preset) => !used.has(preset.skill))
   })
+  const [templates, setTemplates] = createSignal(readSwarmRoleTemplates())
+  const [templateEditor, setTemplateEditor] = createSignal<TemplateEditorState>()
+  const unusedTemplates = createMemo(() => unusedSwarmRoleTemplates(templates(), roles()))
+
+  function saveTemplate(template: SwarmRoleTemplate) {
+    const next = upsertSwarmRoleTemplate(templates(), template)
+    setTemplates(next)
+    writeSwarmRoleTemplates(next)
+  }
+
+  function deleteTemplate(templateID: string) {
+    const next = removeSwarmRoleTemplate(templates(), templateID)
+    setTemplates(next)
+    writeSwarmRoleTemplates(next)
+  }
+
+  function addTemplate(templateID: string) {
+    const template = templates().find((item) => item.id === templateID)
+    if (!template) return
+    setRoles((current) => [...current, templateRoleInput(template)])
+    setSelectedIndex(roles().length - 1)
+  }
+
+  /** Turns the roster role the user is looking at into a reusable template. */
+  function saveRoleAsTemplate(index: number) {
+    const role = roles()[index]
+    if (!role) return
+    setTemplateEditor({ initial: { name: role.name, instructions: role.instructions ?? "" } })
+  }
 
   async function save(event: SubmitEvent) {
     event.preventDefault()
@@ -147,6 +189,11 @@ export function SwarmEditorPage(props: {
           remove={removeRole}
           addPreset={addPreset}
           unusedPresets={unusedPresets()}
+          templates={unusedTemplates()}
+          addTemplate={addTemplate}
+          editTemplate={(template) => setTemplateEditor({ template })}
+          createTemplate={() => setTemplateEditor({})}
+          saveRoleAsTemplate={saveRoleAsTemplate}
           openModelPicker={setModelPickerIndex}
         />
         <Show when={error()}>
@@ -176,6 +223,17 @@ export function SwarmEditorPage(props: {
             </Button>
           </div>
         </footer>
+      </Show>
+      <Show when={templateEditor()}>
+        {(state) => (
+          <SwarmRoleTemplateEditor
+            template={state().template}
+            initial={state().initial}
+            save={saveTemplate}
+            remove={deleteTemplate}
+            close={() => setTemplateEditor(undefined)}
+          />
+        )}
       </Show>
       <Show when={modelPickerIndex() !== undefined}>
         <SwarmRoleModelPicker

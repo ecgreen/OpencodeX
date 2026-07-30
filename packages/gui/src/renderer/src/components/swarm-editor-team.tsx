@@ -5,8 +5,9 @@ import {
   swarmRolePresetBySkill,
   type SwarmRolePreset,
 } from "../lib/swarm-actions"
+import type { SwarmRoleTemplate } from "../lib/swarm-role-templates"
 import { Icon } from "./icon"
-import { Button, Select, TextArea, TextInput } from "./ui"
+import { Button, IconButton, Select, TextArea, TextInput } from "./ui"
 
 type SkillChoice = { id: string; label: string }
 
@@ -24,6 +25,11 @@ export function SwarmEditorTeam(props: {
   remove: (index: number) => void
   addPreset: (skill?: string) => void
   unusedPresets: SwarmRolePreset[]
+  templates: SwarmRoleTemplate[]
+  addTemplate: (templateID: string) => void
+  editTemplate: (template: SwarmRoleTemplate) => void
+  createTemplate: () => void
+  saveRoleAsTemplate: (index: number) => void
   openModelPicker: (index: number) => void
 }) {
   const selected = createMemo(() => props.roles[props.selectedIndex])
@@ -108,6 +114,34 @@ export function SwarmEditorTeam(props: {
               </span>
             </Button>
           </div>
+          <span>Your roles</span>
+          <div class="swarm-roster-add-list">
+            <For each={props.templates}>
+              {(template) => (
+                <div class="swarm-roster-template-row">
+                  <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={() => props.addTemplate(template.id)}>
+                    <span class="swarm-roster-add-copy">
+                      <strong><Icon name="plus" />{template.name}</strong>
+                      <small>{template.description || template.instructions}</small>
+                    </span>
+                  </Button>
+                  <IconButton
+                    appearance="ghost"
+                    size="compact"
+                    icon="pencil"
+                    label={`Edit the ${template.name} role`}
+                    onClick={() => props.editTemplate(template)}
+                  />
+                </div>
+              )}
+            </For>
+            <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={props.createTemplate}>
+              <span class="swarm-roster-add-copy">
+                <strong><Icon name="pencil" />New reusable role</strong>
+                <small>Name a role once, give it a pre-prompt, and use it in any swarm.</small>
+              </span>
+            </Button>
+          </div>
         </div>
       </aside>
       <Show when={selected()}>
@@ -123,9 +157,21 @@ export function SwarmEditorTeam(props: {
                 </span>
               </div>
               <Show when={props.selectedIndex > 0}>
-                <Button appearance="ghost" tone="danger" size="compact" icon="trash" type="button" onClick={() => props.remove(props.selectedIndex)}>
-                  Remove
-                </Button>
+                <div class="swarm-role-detail-actions">
+                  <Button
+                    appearance="ghost"
+                    size="compact"
+                    icon="save"
+                    type="button"
+                    title="Save this role's name and instructions as a reusable role"
+                    onClick={() => props.saveRoleAsTemplate(props.selectedIndex)}
+                  >
+                    Save as role
+                  </Button>
+                  <Button appearance="ghost" tone="danger" size="compact" icon="trash" type="button" onClick={() => props.remove(props.selectedIndex)}>
+                    Remove
+                  </Button>
+                </div>
               </Show>
             </header>
             <div class="swarm-role-fields">
