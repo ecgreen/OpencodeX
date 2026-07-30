@@ -2,6 +2,7 @@ import type { OpencodeXSwarmRoleInput, Provider } from "@opencode-ai/sdk/v2/clie
 import { For, Show, createMemo } from "solid-js"
 import {
   SWARM_ROLE_PRESET_OPTIONS,
+  isCustomizedSwarmRoleName,
   swarmRolePresetBySkill,
   type SwarmRolePreset,
 } from "../lib/swarm-actions"
@@ -28,7 +29,6 @@ export function SwarmEditorTeam(props: {
   templates: SwarmRoleTemplate[]
   addTemplate: (templateID: string) => void
   editTemplate: (template: SwarmRoleTemplate) => void
-  createTemplate: () => void
   saveRoleAsTemplate: (index: number) => void
   openModelPicker: (index: number) => void
 }) {
@@ -52,7 +52,8 @@ export function SwarmEditorTeam(props: {
     const preset = swarmRolePresetBySkill(skill)
     props.update(index, (current) => ({
       ...current,
-      name: preset?.name ?? current.name,
+      // The preset name fills a default; a name the user wrote stays theirs.
+      name: preset && !isCustomizedSwarmRoleName(current.name) ? preset.name : current.name,
       skill: skill || undefined,
     }))
   }
@@ -110,38 +111,34 @@ export function SwarmEditorTeam(props: {
             <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={() => props.addPreset()}>
               <span class="swarm-roster-add-copy">
                 <strong><Icon name="plus" />Custom role</strong>
-                <small>Start from a blank specialist.</small>
+                <small>Start from a blank specialist, then "Save as role" to reuse it.</small>
               </span>
             </Button>
           </div>
-          <span>Your roles</span>
-          <div class="swarm-roster-add-list">
-            <For each={props.templates}>
-              {(template) => (
-                <div class="swarm-roster-template-row">
-                  <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={() => props.addTemplate(template.id)}>
-                    <span class="swarm-roster-add-copy">
-                      <strong><Icon name="plus" />{template.name}</strong>
-                      <small>{template.description || template.instructions}</small>
-                    </span>
-                  </Button>
-                  <IconButton
-                    appearance="ghost"
-                    size="compact"
-                    icon="pencil"
-                    label={`Edit the ${template.name} role`}
-                    onClick={() => props.editTemplate(template)}
-                  />
-                </div>
-              )}
-            </For>
-            <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={props.createTemplate}>
-              <span class="swarm-roster-add-copy">
-                <strong><Icon name="pencil" />New reusable role</strong>
-                <small>Name a role once, give it a pre-prompt, and use it in any swarm.</small>
-              </span>
-            </Button>
-          </div>
+          <Show when={props.templates.length > 0}>
+            <span>Your roles</span>
+            <div class="swarm-roster-add-list">
+              <For each={props.templates}>
+                {(template) => (
+                  <div class="swarm-roster-template-row">
+                    <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={() => props.addTemplate(template.id)}>
+                      <span class="swarm-roster-add-copy">
+                        <strong><Icon name="plus" />{template.name}</strong>
+                        <small>{template.description || template.instructions}</small>
+                      </span>
+                    </Button>
+                    <IconButton
+                      appearance="ghost"
+                      size="compact"
+                      icon="pencil"
+                      label={`Edit the ${template.name} role`}
+                      onClick={() => props.editTemplate(template)}
+                    />
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
       </aside>
       <Show when={selected()}>

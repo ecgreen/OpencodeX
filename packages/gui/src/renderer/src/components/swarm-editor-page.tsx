@@ -135,7 +135,9 @@ export function SwarmEditorPage(props: {
     const preset = skill ? swarmRolePresetBySkill(skill) : undefined
     setRoles((current) => [
       ...current,
-      preset ? presetRoleInput(preset) : roleInput({ name: `Specialist ${current.length}`, skill: "specialist" }),
+      // A blank role carries no skill: "specialist" resolved to nothing in the
+      // skill registry, so it was a dangling slug, not a base prompt.
+      preset ? presetRoleInput(preset) : roleInput({ name: `Specialist ${current.length}` }),
     ])
     // The new role still needs a model, so it becomes the roster selection.
     setSelectedIndex(roles().length - 1)
@@ -192,7 +194,6 @@ export function SwarmEditorPage(props: {
           templates={unusedTemplates()}
           addTemplate={addTemplate}
           editTemplate={(template) => setTemplateEditor({ template })}
-          createTemplate={() => setTemplateEditor({})}
           saveRoleAsTemplate={saveRoleAsTemplate}
           openModelPicker={setModelPickerIndex}
         />

@@ -175,6 +175,7 @@ function makeHttp() {
     SessionPrompt.layer.pipe(
       Layer.provide(OpencodeXClaudeDriver.defaultLayer),
       Layer.provide(SessionRevert.defaultLayer),
+      Layer.provide(Skill.defaultLayer),
       Layer.provide(Image.defaultLayer),
       Layer.provide(Reference.defaultLayer),
       Layer.provide(SessionSummary.defaultLayer),

@@ -257,6 +257,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
   return SessionPrompt.layer.pipe(
     Layer.provide(OpencodeXClaudeDriver.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
+    Layer.provide(Skill.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(summary),

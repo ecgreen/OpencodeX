@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { isCustomizedSwarmRoleName } from "../src/renderer/src/lib/swarm-actions"
 import {
   removeSwarmRoleTemplate,
   swarmRoleTemplateFromDraft,
@@ -45,6 +46,15 @@ describe("GUI swarm role templates", () => {
     expect(role.instructions).toBe("Do the work.")
     expect(role.skill).toBeUndefined()
     expect(role.providerID).toBeUndefined()
+  })
+
+  test("protects user-written role names from the skill picker's rename", () => {
+    expect(isCustomizedSwarmRoleName("Data Migration Expert")).toBe(true)
+    expect(isCustomizedSwarmRoleName("")).toBe(false)
+    expect(isCustomizedSwarmRoleName("  ")).toBe(false)
+    expect(isCustomizedSwarmRoleName("Specialist 3")).toBe(false)
+    expect(isCustomizedSwarmRoleName("Code Reviewer")).toBe(false)
+    expect(isCustomizedSwarmRoleName("Orchestrator")).toBe(false)
   })
 
   test("hides templates already sitting in the roster", () => {

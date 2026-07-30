@@ -136,6 +136,17 @@ export function swarmRolePresetBySkill(skill: string | undefined) {
   return SWARM_ROLE_PRESET_OPTIONS.find((preset) => preset.skill === skill)
 }
 
+/**
+ * A role name is the user's own unless it is blank, a "Specialist N" default,
+ * or exactly a preset's name. Picking a skill fills a default name but never
+ * overwrites one the user wrote.
+ */
+export function isCustomizedSwarmRoleName(name: string) {
+  const value = name.trim()
+  if (!value || /^Specialist \d+$/.test(value)) return false
+  return !SWARM_ROLE_PRESET_OPTIONS.some((preset) => preset.name === value)
+}
+
 export function presetRoleInput(preset: SwarmRolePreset, model: { providerID?: string; modelID?: string } = {}): OpencodeXSwarmRoleInput {
   return roleInput({
     name: preset.name,

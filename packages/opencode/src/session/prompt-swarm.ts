@@ -7,6 +7,7 @@ import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/
 import { Image } from "@/image/image"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { SwarmBriefing } from "@/opencodex/swarm-briefing"
+import { Skill } from "@/skill"
 import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
 import { isSwarmProvider } from "@/provider/swarm-provider"
 import { PartID, SessionID } from "./schema"
@@ -27,6 +28,7 @@ export interface Deps {
   readonly claudeDriver: Context.Service.Shape<typeof OpencodeXClaudeDriver.Service>
   readonly database: Context.Service.Shape<typeof Database.Service>
   readonly sessions: Context.Service.Shape<typeof Session.Service>
+  readonly skills: Context.Service.Shape<typeof Skill.Service>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
 }
 
@@ -36,7 +38,7 @@ export interface Deps {
  * last user message, which is why they sit together.
  */
 export function make(deps: Deps) {
-  const { claudeDriver, database, sessions, prompt } = deps
+  const { claudeDriver, database, sessions, skills, prompt } = deps
   const { db } = database
 
   /**
@@ -144,7 +146,15 @@ export function make(deps: Deps) {
         ...(parent.permission ? { permission: parent.permission } : {}),
       })
       .pipe(Effect.orDie)
-    const text = [role.instructions?.trim(), input.prompt.trim()].filter(Boolean).join("\n\n")
+    // The role's skill is its base definition; the built-in role skills carry
+    // the full role prompt. The task-tool path gets it through the specialist
+    // loading the skill itself, but a delegated specialist never sees the
+    // skill tool's inventory - so the body is delivered here, ahead of the
+    // per-role instructions and the task.
+    const roleSkill = role.skill ? yield* skills.get(role.skill) : undefined
+    const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
+      .filter(Boolean)
+      .join("\n\n")
     const result = yield* prompt({
       sessionID: child.id,
       model: {

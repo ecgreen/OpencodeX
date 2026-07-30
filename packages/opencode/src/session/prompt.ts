@@ -58,6 +58,7 @@ import * as PromptShell from "./prompt-shell"
 import * as PromptSubtask from "./prompt-subtask"
 import * as PromptSwarm from "./prompt-swarm"
 import * as PromptUserMessage from "./prompt-user-message"
+import { Skill } from "@/skill"
 import { argsRegex, bashRegex, placeholderRegex, quoteTrimRegex } from "./prompt-user-message"
 
 // @ts-ignore
@@ -165,6 +166,7 @@ export const layer = Layer.effect(
     const lsp = yield* LSP.Service
     const registry = yield* ToolRegistry.Service
     const truncate = yield* Truncate.Service
+    const skills = yield* Skill.Service
     const image = yield* Image.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const scope = yield* Scope.Scope
@@ -713,6 +715,7 @@ export const layer = Layer.effect(
       claudeDriver,
       database,
       sessions,
+      skills,
       prompt: (input) => prompt(input),
     })
 
@@ -988,6 +991,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Session.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
     Layer.provide(OpencodeXClaudeDriver.defaultLayer),
+    Layer.provide(Skill.defaultLayer),
   ).pipe(
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(Image.defaultLayer),
