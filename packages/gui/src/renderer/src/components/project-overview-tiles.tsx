@@ -41,7 +41,9 @@ export function ProjectOverviewTiles(props: {
       filter: "running",
       label: "Running",
       icon: "activity",
-      value: props.summaries.filter((summary) => summary.status === "in_progress").length,
+      // Sessions, not projects: like the attention tile, the value counts the
+      // work while the filter narrows to the projects that hold it.
+      value: props.summaries.reduce((count, summary) => count + summary.runningSessionCount, 0),
       tone: "info",
       projects: props.summaries.filter((summary) => summary.status === "in_progress").length,
     },
@@ -79,7 +81,7 @@ export function ProjectOverviewTiles(props: {
               appearance="ghost"
               class="project-summary-item"
               data-metric={tile.tone}
-              aria-pressed={props.filter === tile.filter}
+              aria-pressed={tile.filter === "all" ? undefined : props.filter === tile.filter}
               disabled={tile.projects === 0 && tile.filter !== "all"}
               title={tileHint(tile, props.filter)}
               onClick={() => props.setFilter(props.filter === tile.filter ? "all" : tile.filter)}

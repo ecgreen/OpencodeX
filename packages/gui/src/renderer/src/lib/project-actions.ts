@@ -122,11 +122,12 @@ export function deleteProjectMessage(name: string, sessionCount: number, termina
     sessionCount > 0 ? `${sessionCount} ${sessionCount === 1 ? "session" : "sessions"}` : "",
     terminalSessionCount > 0 ? `${terminalSessionCount} Claude Code ${terminalSessionCount === 1 ? "session" : "sessions"}` : "",
   ].filter(Boolean)
+  const verb = sessionCount + terminalSessionCount === 1 ? "leaves" : "leave"
   return [
     `Delete the OpencodeX project "${name}"?`,
     "",
     holdings.length > 0
-      ? `${holdings.join(" and ")} leave this grouping. The conversations themselves are kept and stay reachable from Sessions.`
+      ? `${holdings.join(" and ")} ${verb} this grouping. The conversations themselves are kept and stay reachable from Sessions.`
       : "This removes the GUI/TUI project grouping.",
   ].join("\n")
 }

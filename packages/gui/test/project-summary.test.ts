@@ -38,10 +38,20 @@ describe("GUI project summaries", () => {
 
     expect(summary.status).toBe("input_needed")
     expect(summary.sessionCount).toBe(3)
+    expect(summary.runningSessionCount).toBe(0)
     expect(summary.terminalSessionCount).toBe(0)
     expect(summary.viewCount).toBe(2)
     expect(summary.attention.map((item) => item.title)).toEqual(["Question", "Blocked", "Needs Review"])
     expect(summary.lastActivity).toBe(50)
+  })
+
+  test("counts busy sessions so running reads as work, not as a flag", () => {
+    const current = snapshot({ jobs: [], permissions: [], questions: [] })
+    current.sessionStatus = { s2: { type: "busy" } as GuiSnapshot["sessionStatus"][string] }
+    const [summary] = summarizeProjects({ projects: current.projects, snapshot: current })
+
+    expect(summary.runningSessionCount).toBe(1)
+    expect(summary.status).toBe("in_progress")
   })
 
   test("separates projects that have gone quiet from the ones still in play", () => {

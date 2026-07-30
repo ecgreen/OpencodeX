@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { createPointerReorder } from "../lib/pointer-reorder"
+import { moveRelative } from "../lib/reorder"
 import {
   filterProjectSummaries,
   projectLabel,
@@ -62,7 +63,7 @@ export function ProjectsOverview(props: {
     moveProject: (projectID, offset) => {
       reorder.markMoved(projectID, offset < 0 ? "up" : "down")
       props.moveProject(projectID, offset)
-      announceMove(projectID)
+      announceMove(projectID, indexOf(projectID) + offset)
     },
   }
   const reorder = createPointerReorder<ProjectSummary>({
@@ -72,8 +73,9 @@ export function ProjectsOverview(props: {
     layoutAttribute: "data-project-row-layout-id",
     ignoreSelector: ".project-directory-actions",
     onReorder: (sourceID, target) => {
+      const ids = moveRelative(ordered().map((summary) => summary.project.id), sourceID, target.id, target.placement)
       props.reorderProject(sourceID, target.id, target.placement)
-      announceMove(sourceID)
+      announceMove(sourceID, ids.indexOf(sourceID))
     },
   })
   const indexOf = (projectID: string) => props.projects.findIndex((project) => project.id === projectID)
@@ -139,15 +141,13 @@ export function ProjectsOverview(props: {
 
   /**
    * Reordering is the one action here with no visible result for a reader who
-   * is not watching the rows move, so the new position is spoken.
+   * is not watching the rows move, so the new position is spoken. The position
+   * is the intended one, computed before the backend round-trip lands.
    */
-  function announceMove(projectID: string) {
-    queueMicrotask(() => {
-      const position = props.projects.findIndex((project) => project.id === projectID)
-      const summary = summaries().find((item) => item.project.id === projectID)
-      if (position === -1 || !summary) return
-      setAnnouncement(`${projectLabel(summary.project)} moved to position ${position + 1} of ${props.projects.length}.`)
-    })
+  function announceMove(projectID: string, targetIndex: number) {
+    const summary = summaries().find((item) => item.project.id === projectID)
+    if (targetIndex < 0 || !summary) return
+    setAnnouncement(`${projectLabel(summary.project)} moved to position ${targetIndex + 1} of ${props.projects.length}.`)
   }
 
   /**
@@ -161,12 +161,22 @@ export function ProjectsOverview(props: {
     reorderable: boolean
   }) {
     const quietIDs = createMemo(() => new Set(inner.quiet.map((summary) => summary.project.id)))
-    const split = createMemo(() => inner.active.length > 0 && inner.quiet.length > 0)
+    /**
+     * The divider claims everything below it is quiet, so it renders only when
+     * that is true: the quiet rows form the tail of the list. A custom order
+     * that interleaves the groups gets no divider rather than a lying one.
+     */
+    const dividerRowID = createMemo(() => {
+      if (inner.active.length === 0 || inner.quiet.length === 0) return undefined
+      const first = inner.rows.findIndex((row) => quietIDs().has(row.id))
+      if (first === -1) return undefined
+      return inner.rows.slice(first).every((row) => quietIDs().has(row.id)) ? inner.rows[first].id : undefined
+    })
     return (
       <For each={inner.rows}>
-        {(row, position) => (
+        {(row) => (
           <>
-            <Show when={split() && quietIDs().has(row.id) && !quietIDs().has(inner.rows[position() - 1]?.id ?? "")}>
+            <Show when={dividerRowID() === row.id}>
               <p class="project-directory-divider">Quiet</p>
             </Show>
             <Show
@@ -201,7 +211,7 @@ export function ProjectsOverview(props: {
 }
 
 function ProjectDirectoryHeadline(props: { summaries: ProjectSummary[] }) {
-  const running = () => props.summaries.filter((summary) => summary.status === "in_progress").length
+  const running = () => props.summaries.reduce((count, summary) => count + summary.runningSessionCount, 0)
   const attention = () => props.summaries.reduce((count, summary) => count + summary.attention.length, 0)
   return (
     <p class="project-directory-headline">

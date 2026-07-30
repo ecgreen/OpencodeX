@@ -38,7 +38,8 @@
   color: var(--purple);
 }
 
-.project-summary-item:hover:not(:disabled) {
+/* `:enabled` keeps the read-only div variant of the tile out of hover styling. */
+.project-summary-item:enabled:hover {
   border-color: color-mix(in srgb,var(--border-active) 60%,transparent);
   background: var(--surface-raised);
 }

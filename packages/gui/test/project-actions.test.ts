@@ -217,8 +217,9 @@ describe("GUI project action decisions", () => {
 
   test("tells the reader what the grouping holds before deleting it", () => {
     expect(deleteProjectMessage("Project", 12, 3)).toContain("12 sessions and 3 Claude Code sessions leave this grouping")
-    expect(deleteProjectMessage("Project", 1, 0)).toContain("1 session leave")
-    expect(deleteProjectMessage("Project", 0, 1)).toContain("1 Claude Code session leave")
+    expect(deleteProjectMessage("Project", 1, 0)).toContain("1 session leaves this grouping")
+    expect(deleteProjectMessage("Project", 0, 1)).toContain("1 Claude Code session leaves this grouping")
+    expect(deleteProjectMessage("Project", 1, 1)).toContain("1 session and 1 Claude Code session leave this grouping")
     expect(deleteProjectMessage("Project", 0, 0)).toContain("This removes the GUI/TUI project grouping.")
   })
 

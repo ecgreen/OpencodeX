@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, type JSX } from "solid-js"
 import { clientWorkItemBucket, type AttentionItem, type WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
@@ -36,6 +36,8 @@ export function ProjectCommandCenter(props: {
 }) {
   const [sessionBucketsCollapsed, setSessionBucketsCollapsed] = createSignal<Record<string, boolean>>({ prior: true })
   const [priorPages, setPriorPages] = createSignal(1)
+  // The component instance survives switching projects, so paging starts over.
+  createEffect(on(() => props.project.id, () => setPriorPages(1), { defer: true }))
   const summary = createMemo(() => summarizeProjects({
     projects: [props.project],
     snapshot: props.snapshot,
@@ -186,20 +188,32 @@ function ProjectModelsPanel(props: {
     <ProjectHomePanel title="Models" count={models().length} empty="No sessions have run here yet.">
       <For each={models()}>
         {(model) => (
-          <Button
-            appearance="ghost"
-            class="project-home-row"
-            disabled={!model.swarmID}
-            onClick={() => model.swarmID && props.openSwarm(model.swarmID)}
+          <Show
+            when={model.swarmID}
+            fallback={
+              <div class="project-home-row">
+                <ProjectModelRowBody model={model} />
+              </div>
+            }
           >
-            <span>
-              <strong>{model.label}</strong>
-              <span>{model.swarmID ? "swarm" : model.providerID} - {model.count} {model.count === 1 ? "session" : "sessions"}</span>
-            </span>
-          </Button>
+            {(swarmID) => (
+              <Button appearance="ghost" class="project-home-row" onClick={() => props.openSwarm(swarmID())}>
+                <ProjectModelRowBody model={model} />
+              </Button>
+            )}
+          </Show>
         )}
       </For>
     </ProjectHomePanel>
+  )
+}
+
+function ProjectModelRowBody(props: { model: { label: string; providerID: string; count: number; swarmID?: string } }) {
+  return (
+    <span>
+      <strong>{props.model.label}</strong>
+      <span>{props.model.swarmID ? "swarm" : props.model.providerID} - {props.model.count} {props.model.count === 1 ? "session" : "sessions"}</span>
+    </span>
   )
 }
 

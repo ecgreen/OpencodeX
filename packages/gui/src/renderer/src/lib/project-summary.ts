@@ -35,6 +35,8 @@ export type ProjectSummary = {
   attention: ProjectAttentionItem[]
   group: ProjectSummaryGroup
   sessionCount: number
+  /** Sessions currently in progress, so "running" can be a count, not a flag. */
+  runningSessionCount: number
   terminalSessionCount: number
   viewCount: number
   lastActivity: number
@@ -51,6 +53,7 @@ export function summarizeProjects(input: {
     const lastActivity = projectLatestActivity(project, input.snapshot, input.state)
     const attention = projectAttentionItems(project, input.snapshot, input.state)
     const status = projectSessionStatus(project, input.snapshot, input.state)
+    const sessions = projectSessions(project, input.snapshot, input.state)
     return {
       project,
       status,
@@ -58,7 +61,8 @@ export function summarizeProjects(input: {
       group: attention.length > 0 || status !== "dormant" || now - lastActivity < QUIET_PROJECT_WINDOW_MS
         ? "active"
         : "quiet",
-      sessionCount: projectSessions(project, input.snapshot, input.state).length,
+      sessionCount: sessions.length,
+      runningSessionCount: sessions.filter((session) => deriveSessionStatus(input.snapshot, session) === "in_progress").length,
       terminalSessionCount: (project.terminalSessions ?? []).length,
       viewCount: projectViews(project, input.snapshot, input.state).length,
       lastActivity,

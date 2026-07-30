@@ -1,6 +1,6 @@
-import { For, Show } from "solid-js"
+import { Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { compactPath, formatRelative, title } from "../lib/format"
+import { compactPath, formatRelative } from "../lib/format"
 import { projectLabel, type ProjectSummary } from "../lib/project-summary"
 import type { PointerReorderPreview } from "../lib/pointer-reorder"
 import { sessionStatusLabel } from "../lib/session-status"
@@ -125,16 +125,6 @@ export function ProjectDragPreview(props: { preview?: PointerReorderPreview; sum
         </div>
       </Portal>
     </Show>
-  )
-}
-
-export function ProjectFolderStrip(props: { folders: string[]; empty: string }) {
-  return (
-    <div class="project-home-folder-strip">
-      <For each={props.folders} fallback={<span>{props.empty}</span>}>
-        {(folder) => <span title={folder}>{compactPath(folder)}</span>}
-      </For>
-    </div>
   )
 }
 

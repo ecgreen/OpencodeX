@@ -109,6 +109,8 @@
   width: 100%;
   padding: var(--ds-space-3);
   color: var(--muted);
+  /* Lives inside the card grid, but reads as the list's footer, not a card. */
+  grid-column: 1 / -1;
 }
 
 .project-home-panel>div {
