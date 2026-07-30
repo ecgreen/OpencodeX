@@ -16,7 +16,7 @@ export function SessionCardBucket(props: { title: string; count: number; empty: 
         <small>{props.count}</small>
       </header>
       <div class="dashboard-bucket-content" classList={{ collapsed: props.collapsed }}>
-        <div class="dashboard-card-grid compact">
+        <div class="dashboard-active-sessions">
           <Show when={!props.collapsed}>
             <Show when={props.count > 0} fallback={<Empty text={props.empty} />}>
               {props.children}

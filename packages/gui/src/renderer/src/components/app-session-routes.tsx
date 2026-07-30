@@ -238,6 +238,10 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       deleteProject={(projectID, name) =>
         void model.notices.run(() => model.management.deleteProject(projectID, name))
       }
+      renameSession={(session) => void model.notices.run(() => model.sessionActions.rename(session))}
+      deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
+      renameTerminalSession={(session) => void model.notices.run(() => model.management.renameClaudeSession(session))}
+      removeTerminalSession={(session) => void model.notices.run(() => model.management.removeClaudeSession(session))}
       moveProject={(projectID, offset) => void model.notices.run(() => model.rail.moveProject(projectID, offset))}
       reorderProject={(sourceID, targetID, placement) =>
         void model.notices.run(() => model.rail.reorderProject(sourceID, targetID, placement))

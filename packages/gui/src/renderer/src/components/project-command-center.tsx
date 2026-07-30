@@ -4,12 +4,12 @@ import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/clie
 import { formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
 import { projectViewSessionCount, projectViews, summarizeProjects } from "../lib/project-summary"
-import { deriveSessionStatus, deriveViewStatus, sessionStatusLabel } from "../lib/session-status"
+import { deriveViewStatus, sessionStatusLabel } from "../lib/session-status"
 import type { GuiSnapshot } from "../lib/session-api"
 import { isRecentSessionUpdate, SessionCardBucket } from "./session-card-list"
-import { Button, SessionCard } from "./ui"
+import { Button } from "./ui"
 import { AttentionQueue } from "./attention-queue"
-import { PinButton } from "./pin-button"
+import { SidebarSessionLink, SidebarTerminalSessionLink } from "./rail-sidebar-links"
 import { ProjectHomeHeader } from "./project-home-header"
 import { ProjectOverviewTiles } from "./project-overview-tiles"
 
@@ -36,6 +36,10 @@ export function ProjectCommandCenter(props: {
   launchClaudeSession: (projectID: string, directory: string) => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
   terminalStatus: (terminalSessionID: string) => string
@@ -145,39 +149,63 @@ export function ProjectCommandCenter(props: {
       openSession: props.openSession,
       openTerminalSession: props.openTerminalSession,
       terminalStatus: props.terminalStatus,
+      renameSession: props.renameSession,
+      deleteSession: props.deleteSession,
+      renameTerminalSession: props.renameTerminalSession,
+      removeTerminalSession: props.removeTerminalSession,
       sessionPinned: props.sessionPinned,
       toggleSessionPinned: props.toggleSessionPinned,
     }
   }
 }
 
-/** The standardized session card, fed from whichever runtime the item ran in. */
+/** Exactly the dashboard's session rows, fed from whichever runtime the item ran in. */
 function ProjectWorkItemCard(props: {
   item: ProjectWorkItem
   snapshot?: GuiSnapshot
   openSession: (sessionID: string) => void
   openTerminalSession: (terminalSessionID: string) => void
   terminalStatus: (terminalSessionID: string) => string
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
   sessionPinned: (sessionID: string) => boolean
   toggleSessionPinned: (sessionID: string) => void
 }) {
-  const id = () => props.item.kind === "session" ? props.item.session.id : props.item.terminalSession.id
-  const name = () => title(props.item.kind === "session" ? props.item.session.title : props.item.terminalSession.title)
-  const status = () => props.item.kind === "session"
-    ? deriveSessionStatus(props.snapshot, props.item.session)
-    : props.terminalStatus(props.item.terminalSession.id)
   return (
-    <SessionCard
-      title={name()}
-      status={status()}
-      model={props.item.kind === "session" ? props.item.session.model?.id : "Claude Code"}
-      provider={props.item.kind === "session" ? props.item.session.model?.providerID : undefined}
-      variant={props.item.kind === "session" ? props.item.session.model?.variant : undefined}
-      agent={props.item.kind === "session" ? props.item.session.agent : "Claude Code"}
-      meta={[{ label: "Updated", value: formatRelative(props.item.updated) }]}
-      actions={<PinButton pinned={props.sessionPinned(id())} label={name()} onClick={() => props.toggleSessionPinned(id())} />}
-      onOpen={() => props.item.kind === "session" ? props.openSession(id()) : props.openTerminalSession(id())}
-    />
+    <Show
+      when={props.item.kind === "session" ? props.item.session : undefined}
+      fallback={
+        <Show when={props.item.kind === "terminal" ? props.item.terminalSession : undefined}>
+          {(terminalSession) => (
+            <SidebarTerminalSessionLink
+              terminalSession={terminalSession()}
+              status={props.terminalStatus(terminalSession().id)}
+              active={false}
+              pinned={props.sessionPinned(terminalSession().id)}
+              onClick={() => props.openTerminalSession(terminalSession().id)}
+              togglePinned={() => props.toggleSessionPinned(terminalSession().id)}
+              renameSession={() => props.renameTerminalSession(terminalSession())}
+              removeSession={() => props.removeTerminalSession(terminalSession())}
+            />
+          )}
+        </Show>
+      }
+    >
+      {(session) => (
+        <SidebarSessionLink
+          session={session()}
+          snapshot={props.snapshot}
+          active={false}
+          pinned={props.sessionPinned(session().id)}
+          onClick={() => props.openSession(session().id)}
+          togglePinned={() => props.toggleSessionPinned(session().id)}
+          renameSession={() => props.renameSession(session())}
+          deleteSession={() => props.deleteSession(session())}
+        />
+      )}
+    </Show>
   )
 }
 

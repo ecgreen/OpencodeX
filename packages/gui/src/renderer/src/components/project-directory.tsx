@@ -84,7 +84,6 @@ export function ProjectsOverview(props: {
     <div class="page project-command-page">
       <header class="project-directory-header">
         <div>
-          <p class="eyebrow">Projects</p>
           <h1>Projects</h1>
           <ProjectDirectoryHeadline summaries={summaries()} />
         </div>

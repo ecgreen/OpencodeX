@@ -164,6 +164,10 @@ export function ProjectCollectionPage(props: {
   createProject: () => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
   moveProject: (projectID: string, offset: number) => void
   reorderProject: (sourceID: string, targetID: string, placement: "before" | "after") => void
   sessionPinned: (sessionID: string) => boolean
@@ -208,6 +212,10 @@ export function ProjectCollectionPage(props: {
           launchClaudeSession={props.launchClaudeSession}
           editProject={props.editProject}
           deleteProject={props.deleteProject}
+          renameSession={props.renameSession}
+          deleteSession={props.deleteSession}
+          renameTerminalSession={props.renameTerminalSession}
+          removeTerminalSession={props.removeTerminalSession}
           sessionPinned={props.sessionPinned}
           toggleSessionPinned={props.toggleSessionPinned}
           terminalStatus={props.terminalStatus}
