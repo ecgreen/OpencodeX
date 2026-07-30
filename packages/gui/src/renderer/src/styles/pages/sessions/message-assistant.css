@@ -6,12 +6,13 @@
   border-radius: 0;
   background: transparent;
   margin: 0 0 10px;
-  /* Chromium skips layout, style, and paint for messages scrolled out of the
-     transcript viewport. The intrinsic size keeps the scrollbar stable while a
-     message is skipped, and `auto` lets the real height replace it once it has
-     been rendered at least once. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
+  /* Deliberately no `content-visibility: auto` here. Skipping layout for
+     off-screen messages means each one reports its `contain-intrinsic-size`
+     placeholder instead of its real height, and "Load more" prepends a page of
+     messages *above* the viewport - so the scroll correction is computed from
+     estimates that the browser then revises, drifting the anchor by thousands
+     of pixels (e2e-performance budget: 1px). Restore only alongside anchoring
+     that measures the anchor element after layout settles. */
 }
 
 .message.assistant {
