@@ -16,6 +16,15 @@ function spawnFakeServer() {
   }
 }
 
+/**
+ * The fake server implements only the stdio surface LSPClient touches, which is
+ * the point of the fixture rather than a gap in the types.
+ */
+function fakeServerHandle() {
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- fixture double, stdio surface only
+  return spawnFakeServer() as unknown as LSPServer.Handle
+}
+
 describe("LSPClient interop", () => {
   beforeEach(async () => {
     await Log.init({ print: true })
@@ -199,7 +208,7 @@ describe("LSPClient interop", () => {
   })
 
   test("serializes concurrent opens of one document into a single didOpen", async () => {
-    const handle = spawnFakeServer() as any
+    const handle = fakeServerHandle()
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "concurrent.ts")
     const content = "export const value: number = 1\n"
@@ -210,7 +219,7 @@ describe("LSPClient interop", () => {
       fn: async (ctx) => {
         const client = await LSPClient.create({
           serverID: "fake",
-          server: handle as unknown as LSPServer.Handle,
+          server: handle,
           root: tmp.path,
           directory: tmp.path,
           instance: ctx,
