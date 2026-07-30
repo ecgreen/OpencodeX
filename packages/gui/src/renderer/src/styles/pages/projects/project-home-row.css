@@ -1,15 +1,46 @@
 .project-home-row {
   display: grid;
-  gap: 3px;
+  grid-template-columns: auto minmax(0,1fr);
+  align-items: center;
+  gap: var(--ds-space-0) var(--ds-space-2);
   width: 100%;
   min-width: 0;
-  padding: 12px 14px;
+  padding: var(--ds-space-3) var(--ds-space-4);
   border: 0;
   border-top: 1px solid var(--border-subtle);
   color: var(--text);
   text-align: left;
   background: transparent;
   transition: background .15s ease,box-shadow .15s ease;
+}
+
+/* A row with no dot keeps its text in the same place as one that has it. */
+.project-home-row>span:only-child {
+  grid-column: 1 / -1;
+}
+
+.project-home-row>span {
+  display: grid;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.project-home-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.project-home-row span span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
 }
 
 .project-home-row.input-needed {

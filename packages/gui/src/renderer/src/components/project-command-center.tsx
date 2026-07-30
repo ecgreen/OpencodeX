@@ -1,14 +1,19 @@
 import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
 import { clientWorkItemBucket, type AttentionItem, type WorkItem } from "@opencode-ai/sdk/v2/work-item"
-import { compactPath, formatRelative, title } from "../lib/format"
+import { formatRelative, title } from "../lib/format"
 import { projectSessions, sessionOrderBucket, type SessionOrderState } from "../lib/app-session-lists"
-import { projectViewSessionCount, projectViews } from "../lib/project-summary"
+import { projectViewSessionCount, projectViews, summarizeProjects } from "../lib/project-summary"
+import { deriveViewStatus, sessionStatusLabel } from "../lib/session-status"
 import type { GuiSnapshot } from "../lib/session-api"
-import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard, TerminalSessionStatusCard } from "./session-card-list"
+import { isRecentSessionUpdate, SessionCardBucket, SessionStatusCard } from "./session-card-list"
 import { Button } from "./ui"
-import { projectLabel } from "./project-directory"
-import { CardActionMenu } from "./card-action-menu"
 import { AttentionQueue } from "./attention-queue"
+import { ProjectClaudeSection } from "./project-claude-section"
+import { ProjectHomeHeader } from "./project-home-header"
+import { ProjectOverviewTiles } from "./project-overview-tiles"
+
+/** Prior sessions arrive in pages so a long-lived project does not render hundreds of cards. */
+const PRIOR_PAGE_SIZE = 12
 
 export function ProjectCommandCenter(props: {
   project: GuiSnapshot["projects"][number]
@@ -22,6 +27,7 @@ export function ProjectCommandCenter(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
+  launchClaudeSession: (projectID: string, directory: string) => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
   sessionPinned: (sessionID: string) => boolean
@@ -29,6 +35,12 @@ export function ProjectCommandCenter(props: {
   terminalStatus: (terminalSessionID: string) => string
 }) {
   const [sessionBucketsCollapsed, setSessionBucketsCollapsed] = createSignal<Record<string, boolean>>({ prior: true })
+  const [priorPages, setPriorPages] = createSignal(1)
+  const summary = createMemo(() => summarizeProjects({
+    projects: [props.project],
+    snapshot: props.snapshot,
+    state: props.sessionOrderState,
+  })[0])
   const sessions = createMemo(() => projectSessions(props.project, props.snapshot, props.sessionOrderState))
   const workBySessionID = createMemo(() => new Map(props.workItems.filter((item) => item.kind === "session" && item.sessionID).map((item) => [item.sessionID!, item])))
   const attention = createMemo(() => props.attentionItems.filter((item) => item.projectID === props.project.id))
@@ -39,36 +51,23 @@ export function ProjectCommandCenter(props: {
   }
   const recentSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && (bucket(session) !== "inactive" || isRecentSessionUpdate(session.time.updated))))
   const priorSessions = createMemo(() => sessions().filter((session) => !attentionSessionIDs().has(session.id) && bucket(session) === "inactive" && !isRecentSessionUpdate(session.time.updated)))
-  const views = createMemo(() => projectViews(props.project, props.snapshot))
+  const visiblePriorSessions = createMemo(() => priorSessions().slice(0, priorPages() * PRIOR_PAGE_SIZE))
+  const views = createMemo(() => projectViews(props.project, props.snapshot, props.sessionOrderState))
   const primaryFolder = createMemo(() => props.project.folders[0]?.path)
   const terminalSessions = createMemo(() => [...props.project.terminalSessions].sort((a, b) => Number(b.timeUpdated) - Number(a.timeUpdated)))
-  const projectName = () => projectLabel(props.project)
-  const projectActions = () => [
-    { label: "Edit project", icon: "pencil" as const, onSelect: () => props.editProject(props.project.id, projectName(), props.project.folders.map((folder) => folder.path)) },
-    { label: "Delete project", icon: "trash" as const, danger: true, onSelect: () => props.deleteProject(props.project.id, projectName()) },
-  ]
-  const toggleSessionBucket = (bucket: string) => setSessionBucketsCollapsed((value) => ({ ...value, [bucket]: !value[bucket] }))
+  const toggleSessionBucket = (name: string) => setSessionBucketsCollapsed((value) => ({ ...value, [name]: !value[name] }))
 
   return (
     <div class="page project-command-page">
-      <header class="project-home-header">
-        <div>
-          <Button size="compact" appearance="ghost" icon="chevronLeft" onClick={props.back}>Projects</Button>
-          <p class="eyebrow">Project home</p>
-          <h1>{projectName()}</h1>
-          <div class="project-home-folder-strip">
-            <For each={props.project.folders} fallback={<span>No folders selected</span>}>
-              {(folder) => <span title={folder.path}>{compactPath(folder.path)}</span>}
-            </For>
-          </div>
-        </div>
-        <div class="project-home-actions">
-          <Button appearance="solid" tone="accent" icon="session" onClick={() => props.createSession(props.project.id, primaryFolder())}>New session</Button>
-          <CardActionMenu label={projectName()} actions={projectActions()} />
-        </div>
-      </header>
+      <ProjectHomeHeader
+        summary={summary()}
+        back={props.back}
+        createSession={props.createSession}
+        editProject={props.editProject}
+        deleteProject={props.deleteProject}
+      />
 
-      <section class="project-home-layout project-home-layout-single">
+      <section class="project-home-layout">
         <div class="project-home-main">
           <AttentionQueue items={attention()} openSession={props.openSession} openSwarm={props.openSwarm} empty="No work needs your attention." />
 
@@ -88,7 +87,7 @@ export function ProjectCommandCenter(props: {
             </SessionCardBucket>
 
             <SessionCardBucket title="Prior Sessions" count={priorSessions().length} empty="No prior sessions." collapsed={sessionBucketsCollapsed().prior} onToggle={() => toggleSessionBucket("prior")}>
-              <For each={priorSessions()}>
+              <For each={visiblePriorSessions()}>
                 {(session) => (
                   <SessionStatusCard
                     session={session}
@@ -100,40 +99,108 @@ export function ProjectCommandCenter(props: {
                   />
                 )}
               </For>
-            </SessionCardBucket>
-
-            <SessionCardBucket title="Claude Code" count={terminalSessions().length} empty="No Claude Code sessions." collapsed={sessionBucketsCollapsed().terminal} onToggle={() => toggleSessionBucket("terminal")}>
-              <For each={terminalSessions()}>
-                {(session) => (
-                  <TerminalSessionStatusCard
-                    terminalSession={session}
-                    status={props.terminalStatus(session.id)}
-                    openSession={props.openTerminalSession}
-                    pinned={props.sessionPinned(session.id)}
-                    togglePinned={() => props.toggleSessionPinned(session.id)}
-                  />
-                )}
-              </For>
+              <Show when={visiblePriorSessions().length < priorSessions().length}>
+                <Button appearance="ghost" class="project-home-show-more" onClick={() => setPriorPages((value) => value + 1)}>
+                  Show {Math.min(PRIOR_PAGE_SIZE, priorSessions().length - visiblePriorSessions().length)} more
+                  <small>{visiblePriorSessions().length} of {priorSessions().length}</small>
+                </Button>
+              </Show>
             </SessionCardBucket>
           </div>
 
-          <div class="project-home-split">
-            <ProjectHomePanel title="Views" count={views().length} empty="No views include this project.">
-              <For each={views().slice(0, 8)}>
-                {(view) => (
-                  <Button appearance="ghost" class="project-home-row" onClick={() => props.openView(view.id)}>
-                    <strong>{title(view.title)}</strong>
-                    <span>{projectViewSessionCount(view)} sessions - {formatRelative(view.timeUpdated)}</span>
-                  </Button>
-                )}
-              </For>
-            </ProjectHomePanel>
-          </div>
+          <ProjectClaudeSection
+            sessions={terminalSessions()}
+            directory={primaryFolder()}
+            terminalStatus={props.terminalStatus}
+            openSession={props.openTerminalSession}
+            launchSession={() => {
+              const directory = primaryFolder()
+              if (directory) props.launchClaudeSession(props.project.id, directory)
+            }}
+            sessionPinned={props.sessionPinned}
+            toggleSessionPinned={props.toggleSessionPinned}
+          />
         </div>
+
+        <aside class="project-home-sidebar">
+          <ProjectOverviewTiles summaries={[summary()]} filter="all" setFilter={() => {}} readOnly />
+
+          <ProjectHomePanel title="Views" count={views().length} empty="No views include this project.">
+            <For each={views().slice(0, 8)}>
+              {(view) => (
+                <Button
+                  appearance="ghost"
+                  class="project-home-row"
+                  classList={{ [`status-${deriveViewStatus(view, props.snapshot).replaceAll("_", "-")}`]: true }}
+                  onClick={() => props.openView(view.id)}
+                >
+                  <span class="view-status-dot" aria-label={sessionStatusLabel(deriveViewStatus(view, props.snapshot))} />
+                  <span>
+                    <strong>{title(view.title)}</strong>
+                    <span>{projectViewSessionCount(view)} panes - {formatRelative(view.timeUpdated)}</span>
+                  </span>
+                </Button>
+              )}
+            </For>
+          </ProjectHomePanel>
+
+          <ProjectModelsPanel project={props.project} snapshot={props.snapshot} openSwarm={props.openSwarm} />
+        </aside>
       </section>
     </div>
   )
+}
 
+/**
+ * What this project actually runs on, counted from its sessions. Swarms show up
+ * here the way they show up everywhere else now: as a model you can pick.
+ */
+function ProjectModelsPanel(props: {
+  project: GuiSnapshot["projects"][number]
+  snapshot?: GuiSnapshot
+  openSwarm: (swarmID: string) => void
+}) {
+  const models = createMemo(() => {
+    const counts = new Map<string, { providerID: string; modelID: string; label: string; count: number; swarmID?: string }>()
+    for (const session of props.project.sessions ?? []) {
+      const model = session.model
+      if (!model) continue
+      const key = `${model.providerID}/${model.id}`
+      const swarm = model.providerID === "swarm"
+        ? (props.snapshot?.swarms ?? []).find((item) => item.id === model.id)
+        : undefined
+      const entry = counts.get(key) ?? {
+        providerID: model.providerID,
+        modelID: model.id,
+        label: swarm ? title(swarm.title) : model.id,
+        count: 0,
+        swarmID: swarm?.id,
+      }
+      entry.count += 1
+      counts.set(key, entry)
+    }
+    return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 6)
+  })
+
+  return (
+    <ProjectHomePanel title="Models" count={models().length} empty="No sessions have run here yet.">
+      <For each={models()}>
+        {(model) => (
+          <Button
+            appearance="ghost"
+            class="project-home-row"
+            disabled={!model.swarmID}
+            onClick={() => model.swarmID && props.openSwarm(model.swarmID)}
+          >
+            <span>
+              <strong>{model.label}</strong>
+              <span>{model.swarmID ? "swarm" : model.providerID} - {model.count} {model.count === 1 ? "session" : "sessions"}</span>
+            </span>
+          </Button>
+        )}
+      </For>
+    </ProjectHomePanel>
+  )
 }
 
 function ProjectHomePanel(props: { title: string; count: number; empty: string; children: JSX.Element }) {

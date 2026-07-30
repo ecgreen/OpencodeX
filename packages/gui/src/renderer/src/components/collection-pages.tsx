@@ -159,6 +159,7 @@ export function ProjectCollectionPage(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
+  launchClaudeSession: (projectID: string, directory: string) => void
   createProjectView: (projectID: string, sessionIDs: string[]) => void
   createProject: () => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
@@ -204,6 +205,7 @@ export function ProjectCollectionPage(props: {
           openView={props.openView}
           openSwarm={props.openSwarm}
           createSession={props.createSession}
+          launchClaudeSession={props.launchClaudeSession}
           editProject={props.editProject}
           deleteProject={props.deleteProject}
           sessionPinned={props.sessionPinned}

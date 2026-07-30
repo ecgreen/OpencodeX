@@ -295,6 +295,7 @@ export function createManagementActionsController(input: {
     },
     createPinnedSession,
     createSwarm: createSwarmAction,
+    launchClaudeSession: claude.launchClaudeSession,
     renameClaudeSession: claude.renameClaudeSession,
     moveClaudeSession: claude.moveClaudeSession,
     removeClaudeSession: claude.removeClaudeSession,

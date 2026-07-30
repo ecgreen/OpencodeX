@@ -55,6 +55,20 @@ export async function createSession(gui: GuiClient, input: { projectID?: string;
   }, { headers: authHeaders(gui), throwOnError: true })
 }
 
+export async function createTerminalSession(
+  gui: GuiClient,
+  input: { projectID?: string; directory: string; installationID: string; title?: string },
+) {
+  return gui.client.opencodex.terminalSession.create({
+    opencodeXTerminalSessionCreateInput: {
+      projectID: input.projectID,
+      directory: input.directory,
+      installationID: input.installationID,
+      title: input.title,
+    },
+  }, { headers: authHeaders(gui), throwOnError: true })
+}
+
 export async function renameSession(gui: GuiClient, sessionID: string, title: string, directory?: string) {
   return gui.client.session.update({ sessionID, directory: directory || gui.directory || undefined, title }, { headers: authHeaders(gui), throwOnError: true })
 }

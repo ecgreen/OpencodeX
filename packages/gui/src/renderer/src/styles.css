@@ -152,6 +152,7 @@
 @import "./styles/pages/projects/project-directory-row.css" layer(features);
 @import "./styles/pages/projects/project-directory-copy.css" layer(features);
 @import "./styles/pages/projects/project-home-layout.css" layer(features);
+@import "./styles/pages/projects/project-claude-section.css" layer(features);
 @import "./styles/pages/projects/project-home-row.css" layer(features);
 @import "./styles/pages/projects/project-rail-rows.css" layer(features);
 @import "./styles/pages/projects/responsive.css" layer(features);

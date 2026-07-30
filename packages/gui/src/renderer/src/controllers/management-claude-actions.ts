@@ -3,7 +3,8 @@ import type { Accessor } from "solid-js"
 import type { GuiClient } from "../lib/client"
 import { compactPath, title } from "../lib/format"
 import type { GuiSnapshot } from "../lib/session-api"
-import type { createClaudeTerminalController } from "./claude-terminal-controller"
+import { terminalSessionRoute, type createClaudeTerminalController } from "./claude-terminal-controller"
+import { createTerminalSession } from "../lib/store-opencodex-actions"
 import type { createDialogController } from "./dialog-controller"
 import type { createNavigationController } from "./navigation-controller"
 
@@ -76,7 +77,26 @@ export function createClaudeManagementActions(input: {
     input.navigation.setRoute({ name: "sessions" })
   }
 
-  return { renameClaudeSession, moveClaudeSession, removeClaudeSession }
+  /**
+   * Starts a Claude Code session in a project folder. The record is created
+   * first and the terminal attaches when the route opens, which is the same
+   * order the driver uses when it adopts a session it did not start.
+   */
+  async function launchClaudeSession(projectID: string, directory: string) {
+    const client = input.client()
+    if (!client) return
+    const installationID = input.claudeTerminals.installationID()
+    if (!installationID) {
+      return input.alert("Claude Code sessions need the OpencodeX desktop app, which supplies the installation this machine runs under.")
+    }
+    const created = await createTerminalSession(client, { projectID, directory, installationID })
+    const record = created.data
+    if (!record) return input.alert("Claude Code did not return a session.")
+    await input.refresh()
+    input.navigation.setRoute(terminalSessionRoute(record, record.id))
+  }
+
+  return { renameClaudeSession, moveClaudeSession, removeClaudeSession, launchClaudeSession }
 }
 
 async function updateTerminalSessionProject(

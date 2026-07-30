@@ -1,0 +1,62 @@
+/*
+ * Claude Code runs in its own runtime, so its section carries the purple the
+ * rest of the app already uses for it rather than the neutral panel chrome.
+ */
+.project-claude-section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb,var(--purple) 26%,var(--border));
+  border-radius: var(--ds-radius-card);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--purple) 6%,transparent),transparent var(--ds-space-9)),var(--theme-surface);
+}
+
+.project-claude-section>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  min-height: var(--ds-space-9);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.project-claude-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.project-claude-title .icon {
+  color: var(--purple);
+}
+
+.project-claude-title strong {
+  color: var(--text);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.project-claude-title small {
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.project-claude-body {
+  padding: var(--ds-space-3);
+}
+
+.project-claude-empty {
+  margin: 0;
+  padding: var(--ds-space-4);
+  border: 1px dashed color-mix(in srgb,var(--purple) 30%,var(--border));
+  border-radius: var(--ds-radius-card);
+  color: var(--muted);
+  text-align: center;
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
+  background: color-mix(in srgb,var(--bg) 78%,transparent);
+}

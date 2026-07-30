@@ -23,6 +23,8 @@ export function ProjectOverviewTiles(props: {
   summaries: ProjectSummary[]
   filter: ProjectOverviewFilter
   setFilter: (filter: ProjectOverviewFilter) => void
+  /** On a single project the tiles are a readout: there is nothing to narrow to. */
+  readOnly?: boolean
 }) {
   const attentionItems = () => props.summaries.reduce((count, summary) => count + summary.attention.length, 0)
   const failing = () => props.summaries.some((summary) => summary.attention.some((item) => item.tone === "danger"))
@@ -62,30 +64,47 @@ export function ProjectOverviewTiles(props: {
   ]
 
   return (
-    <section class="project-directory-summary" aria-label="Project summary">
+    <section class="project-directory-summary" classList={{ readonly: props.readOnly }} aria-label="Project summary">
       <For each={tiles()}>
         {(tile) => (
-          <Button
-            appearance="ghost"
-            class="project-summary-item"
-            data-metric={tile.tone}
-            aria-pressed={props.filter === tile.filter}
-            disabled={tile.projects === 0 && tile.filter !== "all"}
-            title={tileHint(tile, props.filter)}
-            onClick={() => props.setFilter(props.filter === tile.filter ? "all" : tile.filter)}
+          <Show
+            when={!props.readOnly}
+            fallback={
+              <div class="project-summary-item" data-metric={tile.tone}>
+                <TileFace tile={tile} />
+              </div>
+            }
           >
-            <span class="project-summary-label">
-              <Icon name={tile.icon} />
-              {tile.label}
-            </span>
-            <strong>{tile.value}</strong>
-            <Show when={tile.filter === "running" && tile.value > 0}>
-              <span class="mini-spinner" aria-hidden="true" />
-            </Show>
-          </Button>
+            <Button
+              appearance="ghost"
+              class="project-summary-item"
+              data-metric={tile.tone}
+              aria-pressed={props.filter === tile.filter}
+              disabled={tile.projects === 0 && tile.filter !== "all"}
+              title={tileHint(tile, props.filter)}
+              onClick={() => props.setFilter(props.filter === tile.filter ? "all" : tile.filter)}
+            >
+              <TileFace tile={tile} />
+            </Button>
+          </Show>
         )}
       </For>
     </section>
+  )
+}
+
+function TileFace(props: { tile: Tile }) {
+  return (
+    <>
+      <span class="project-summary-label">
+        <Icon name={props.tile.icon} />
+        {props.tile.label}
+      </span>
+      <strong>{props.tile.value}</strong>
+      <Show when={props.tile.filter === "running" && props.tile.value > 0}>
+        <span class="mini-spinner" aria-hidden="true" />
+      </Show>
+    </>
   )
 }
 

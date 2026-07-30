@@ -225,6 +225,9 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
       }
+      launchClaudeSession={(projectID, directory) =>
+        void model.notices.run(() => model.management.launchClaudeSession(projectID, directory))
+      }
       createProjectView={(projectID, sessionIDs) =>
         void model.notices.run(() => model.management.createProjectView(projectID, sessionIDs))
       }
