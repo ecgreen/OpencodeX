@@ -29,6 +29,13 @@ test("provides TSX hover and completion from a hoisted dependency", async ({ pag
   await result.click()
   await expect(page.locator(".workbench-codemirror .cm-content")).toContainText("console.log(answer)")
 
+  // Opening from the explorer leaves it beside the editor, which squeezes the
+  // code column to roughly 80px and wraps every line several times over. Hover
+  // still works there, but the geometry the assertions below depend on becomes
+  // a font-metrics coin flip. Collapse it so the editor gets the full pane.
+  await page.getByRole("button", { name: "Hide file explorer" }).click()
+  await expect(page.locator(".session-open-file-pane")).toHaveCount(0)
+
   const hover = page.locator(".cm-tooltip-hover .code-editor-hover")
   await expect(async () => {
     await page.mouse.move(0, 0)
@@ -122,7 +129,11 @@ async function clickAfterLine(page: Page, line: number) {
       const range = document.createRange()
       range.setStart(node, node.textContent.length - 1)
       range.setEnd(node, node.textContent.length)
-      const rect = range.getBoundingClientRect()
+      // Last client rect: a single character cannot wrap, but the range still
+      // reports one rect per visual row it touches, and the caret we want is on
+      // the final one.
+      const rects = range.getClientRects()
+      const rect = rects[rects.length - 1] ?? range.getBoundingClientRect()
       return { x: rect.right - 1, y: rect.top + rect.height / 2 }
     })
   if (!point) throw new Error(`Could not find editor line ${line + 1}`)
@@ -142,7 +153,11 @@ async function textPoint(page: Page, text: string, line: number) {
         const range = document.createRange()
         range.setStart(node, offset)
         range.setEnd(node, offset + value.length)
-        const rect = range.getBoundingClientRect()
+        // First client rect, not the bounding box: when the editor is narrow
+        // enough for the word itself to wrap, the bounding box spans both
+        // visual rows and its centre can land in the empty tail of the shorter
+        // one - a point that is not on the word at all, so no hover fires.
+        const rect = range.getClientRects()[0] ?? range.getBoundingClientRect()
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
       }
     }, text)
