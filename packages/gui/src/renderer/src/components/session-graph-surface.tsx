@@ -2,7 +2,6 @@ import { Show, createMemo, onCleanup, onMount } from "solid-js"
 import { formatRelative } from "../lib/format"
 import type { SessionData } from "../lib/session-api"
 import { sessionGraphNodeAt } from "../lib/session-graph"
-import { Icon } from "./icon"
 import type { SessionPageProps } from "./session-page-types"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { Button, IconButton } from "./ui"
@@ -10,8 +9,9 @@ import { Button, IconButton } from "./ui"
 const EMPTY_NODE_DATA: SessionData = { messages: [], todos: [], diffs: [] }
 
 /**
- * The graph's presence inside the session view: an invitation to open the
- * canvas, and the child session a graph node opens into.
+ * The graph's presence inside the session view: the child session a graph node
+ * opens into. The way *into* the graph is a toolbar button, not a banner here -
+ * a standing invitation does not deserve a row of the transcript's height.
  *
  * Mirrors `SessionSwarmTeam`, which does the same job for the swarm strip. The
  * two are mutually exclusive - the composition layer clears one when the other
@@ -19,27 +19,9 @@ const EMPTY_NODE_DATA: SessionData = { messages: [], todos: [], diffs: [] }
  */
 export function SessionGraphSurface(props: { page: SessionPageProps }) {
   return (
-    <>
-      <Show when={props.page.graphPromptVisible && !props.page.graphNodeSessionID}>
-        <aside class="session-graph-prompt" role="status">
-          <Icon name="graph" />
-          <p>This session is running work across several agents.</p>
-          <Button appearance="outline" size="compact" icon="graph" onClick={() => props.page.openGraphTab?.()}>
-            View graph
-          </Button>
-          <IconButton
-            appearance="ghost"
-            size="compact"
-            icon="x"
-            label="Dismiss the graph suggestion for this session"
-            onClick={() => props.page.dismissGraphPrompt?.()}
-          />
-        </aside>
-      </Show>
-      <Show when={props.page.graphNodeSessionID}>
-        {(sessionID) => <SessionGraphNodePane page={props.page} sessionID={sessionID()} />}
-      </Show>
-    </>
+    <Show when={props.page.graphNodeSessionID}>
+      {(sessionID) => <SessionGraphNodePane page={props.page} sessionID={sessionID()} />}
+    </Show>
   )
 }
 

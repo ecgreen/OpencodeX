@@ -29,9 +29,7 @@ export type SessionPageProps = {
   teamMemberLoading?: boolean
   /** The session's workflow graph, for the canvas and the opened-node header. */
   graph?: SessionGraph
-  /** Whether to invite the reader into the graph tab from the session view. */
-  graphPromptVisible?: boolean
-  dismissGraphPrompt?: () => void
+  /** Opens the workspace Graph tab; offered from the toolbar for any session. */
   openGraphTab?: () => void
   /** Child session opened from a graph node, "" for the top session. */
   graphNodeSessionID?: string

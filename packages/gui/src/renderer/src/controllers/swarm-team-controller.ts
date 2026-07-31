@@ -1,6 +1,7 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { mergeSessionLists } from "../lib/session-graph-fetch"
+import { createStableEffect } from "../lib/stable-effect"
 import {
   sessionSwarm,
   swarmTeamChildren,
@@ -52,7 +53,9 @@ export function createSwarmTeamController(input: {
   })
 
   // Leaving the session (or the run disappearing) closes the member view.
-  createEffect(() => {
+  // Guarded: this writes the signal it reads, and `team()` re-derives from live
+  // authoritative state, so two runs disagreeing would spin the update queue.
+  createStableEffect("swarmTeam.closeMissingMember", () => {
     const active = input.selection.activeSessionID()
     const current = memberSessionID()
     if (!current) return

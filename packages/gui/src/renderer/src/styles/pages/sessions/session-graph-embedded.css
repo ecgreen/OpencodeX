@@ -1,52 +1,17 @@
-/* --- The graph inside the session view: prompt chip + opened node pane --- */
+/* --- The graph inside the session view: the opened node's pane --- */
 
 /*
  * The workspace grid names one flexible row and leaves the rest automatic, so
  * each combination of optional headers has to be spelled out. The swarm strip
- * can be on screen alongside either graph surface, which is why the paired
- * selectors exist and why they outrank the strip's own rule in swarm-team.css.
+ * can be on screen alongside the opened node, which is why the paired selector
+ * exists and why it outranks the strip's own rule in swarm-team.css.
  */
-.session-workspace:has(.session-graph-prompt) {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-
-.session-workspace:has(.swarm-team-strip):has(.session-graph-prompt) {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
 .session-workspace:has(.session-graph-embedded) {
   grid-template-rows: minmax(0, 1fr);
 }
 
 .session-workspace:has(.swarm-team-strip):has(.session-graph-embedded) {
   grid-template-rows: auto minmax(0, 1fr);
-}
-
-.session-graph-prompt {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle));
-  border-radius: var(--ds-radius-card);
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 55%), var(--panel);
-}
-
-.session-graph-prompt p {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--ds-text-xs);
-  line-height: var(--ds-leading-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-graph-prompt > .icon {
-  flex: none;
-  color: var(--accent);
 }
 
 /* --- Opened node --- */

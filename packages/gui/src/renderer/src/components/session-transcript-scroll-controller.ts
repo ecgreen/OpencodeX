@@ -13,6 +13,7 @@ import {
   type TranscriptFollowState,
 } from "../lib/transcript-scroll"
 import { observeTranscriptScrollGeometry } from "../lib/transcript-viewport"
+import { createStableEffect } from "../lib/stable-effect"
 import { isScrollbarPointer } from "./session-transcript-presentation"
 
 /**
@@ -241,7 +242,11 @@ export function createTranscriptScrollController(input: {
     input.trackScrollDependencies()
     scheduleScrollUpdate()
   })
-  createEffect(() => {
+  // Guarded: the decision reads `loadingSkeletonVisible` and then writes it, and
+  // it also consults `forceBottomScroll`, which is plain mutable state the
+  // tracker cannot see. Two runs reading different values of it is precisely the
+  // shape that spins the update queue, and this runs on every session swap.
+  createStableEffect("transcript.loadingSkeleton", () => {
     input.trackSkeletonDependencies()
     updateLoadingSkeleton()
   })

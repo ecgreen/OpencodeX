@@ -340,3 +340,19 @@ Fixes, all on `feat/graph-eng-visualizer`:
 - **Task tool** (`packages/opencode/src/tool/task.ts`): (a) a swarm session's specialists keep their own `task` tool, so a role can fan work out to subagents of itself — their children do not inherit it, keeping default fan-out one level deep; (b) the result extraction now skips synthetic parts, surfaces assistant errors (`The subagent failed: ...`), and labels empty output explicitly instead of returning `""` — the silent-empty-result failure mode observed in testing.
 
 Delegation-path note for testers: a Claude Code orchestrator delegates via `mcp__opencodex_swarm__delegate` (children titled `<Role> (swarm role)`, tagged with `swarmRole`); any other orchestrator is briefed to use the task tool (children titled `... (@<agent> subagent)`, tagged with `swarmID` only — role bucketing falls back to title matching, so briefed orchestrators should lead the description with the role name, which the briefing already instructs).
+
+### Round 3: a standing invitation is not worth a screen row, and freezes get a floor
+
+Two things came back from live use.
+
+**The "View graph" banner was sized by a grid bug.** `.session-workspace` spells out `grid-template-rows` for each combination of optional headers. With the swarm strip *and* a member pane on screen, the prompt landed in the `minmax(0, 1fr)` track and stretched to roughly half the viewport. Rather than patch the track list a fourth time, the invitation moved to where a standing action belongs: an icon button in the session toolbar (`session-toolbar.tsx`), always present for any session, no longer gated on `sessionGraphAvailable` and with no dismissal state to remember — a session with one node opens a graph that says so. `graphPromptVisible` / `dismissGraphPrompt` and the `promptDismissed` localStorage key are gone; `SessionGraphSurface` now owns only the opened-node pane.
+
+**The freeze got a structural floor rather than another point fix.** The round-2 freeze was a genuine cycle (an effect that both read and wrote the viewport). This round's report — clicking a second specialist in the strip — could not be reproduced: a Playwright fixture driving a real backend through a real swarm (three roles, a multi-run specialist, seeded transcripts, a second-generation child, live churn) holds a steady ~60 fps across every switch, with and without the graph canvas mounted (`e2e/swarm-team-strip.spec.ts`, which now asserts painted frames, not just that locators resolve). What a probe *did* confirm is the mechanism: an effect whose two runs disagree spins Solid's queue synchronously, with no ceiling, and the renderer stops painting entirely.
+
+So the guarantee is now enforced instead of argued. `lib/stable-effect.ts` bounds synchronous re-runs per flush (a microtask cannot fire mid-spin, which is exactly what makes the counter a reliable spin detector), stops the body past the limit, reports the offending effect by name, and wakes it on a *timer* with geometric backoff — a microtask resume would starve the event loop just as thoroughly as the spin. Waking matters as much as stopping: skipping the body permanently would drop the effect's subscriptions and leave its pane dead. `createStableEffect` now wraps the effects on these flows that legitimately write state they also depend on:
+
+`sessionGraph.closeMissingNode`, `swarmTeam.closeMissingMember`, `sessionPage.clearMemberWhenBlocked`, `transcript.loadingSkeleton`, `transcript.collapseWindow`, `transcript.warmSession`.
+
+Separately, `app.tsx` now `untrack`s the embedded-pane hydration call. `syncViewSession` synchronously reads the very pane state it then writes (loading flags, loaded timestamps, cached transcripts), so tracking those reads subscribed the effect to its own writes; what it must react to is *which* sessions are embedded, which is still tracked.
+
+The breaker is a floor, not a diagnosis: if a freeze recurs, the console now names the effect that caused it.

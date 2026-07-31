@@ -75,8 +75,6 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}
       teamMemberLoading={model.authoritative.viewPaneState(model.swarmTeam.memberSessionID()).loading}
       graph={model.sessionGraph.graph()}
-      graphPromptVisible={model.sessionGraph.promptVisible()}
-      dismissGraphPrompt={model.sessionGraph.dismissPrompt}
       openGraphTab={() => {
         const current = session()
         if (current) openSessionWorkspace(current.id, { tab: "graph" })

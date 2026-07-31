@@ -1,4 +1,4 @@
-import { createEffect, on, onCleanup } from "solid-js"
+import { createEffect, on, onCleanup, untrack } from "solid-js"
 import type { GuiAppModel } from "./controllers/app-model"
 import { sessionErrorNotice } from "./lib/message-error"
 import { createAppearanceController } from "./controllers/appearance-controller"
@@ -215,7 +215,14 @@ export function App() {
           ? [sessionSelection.activeSessionID(), ...embedded.map((session) => session.id)]
           : [],
     )
-    for (const session of embedded) void authoritative.syncViewSession(session)
+    // Untracked: hydration reads the very pane state it then writes (loading
+    // flags, loaded timestamps, cached transcripts). Tracking those reads here
+    // would subscribe this effect to its own writes, which is how a pane swap
+    // turns into a synchronous re-run loop. What this effect must react to is
+    // *which* sessions are embedded, and that is read above.
+    untrack(() => {
+      for (const session of embedded) void authoritative.syncViewSession(session)
+    })
   })
 
   createEffect(

@@ -32,6 +32,7 @@ export function SessionPageToolbar(input: {
             toggleGenericToolOutput={input.props.toggleGenericToolOutput}
             sidePanelOpen={input.sidePanel.enabled() ? input.sidePanel.open() : undefined}
             toggleSidePanel={input.sidePanel.enabled() ? input.sidePanel.toggle : undefined}
+            openGraph={input.props.openGraphTab}
           />
         )}
       </Show>

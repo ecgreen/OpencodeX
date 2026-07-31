@@ -16,10 +16,9 @@ import {
   sessionGraphEventTouchesTree,
 } from "../lib/session-graph-fetch"
 import { setGraphVisibleSessions } from "../lib/session-graph-visibility"
+import { createStableEffect } from "../lib/stable-effect"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
-
-const DISMISSED_KEY = "opencodex.gui.sessionGraph.promptDismissed.v1"
 
 /**
  * State for the workflow graph: the graph itself, the delegation tree behind
@@ -37,7 +36,6 @@ export function createSessionGraphController(input: {
   selection: ReturnType<typeof createSessionSelectionController>
 }) {
   const [nodeSessionID, setNodeSessionID] = createSignal("")
-  const [dismissed, setDismissed] = createSignal(readDismissed())
   const [descendants, setDescendants] = createSignal<readonly Session[]>([])
 
   const mergedSessions = createMemo(() =>
@@ -153,22 +151,11 @@ export function createSessionGraphController(input: {
     setNodeSessionID("")
   }
 
-  const promptVisible = createMemo(() => {
-    const session = input.selection.selectedSession()
-    return Boolean(session) && available() && !dismissed().has(session!.id)
-  })
-
-  function dismissPrompt() {
-    const session = input.selection.selectedSession()
-    if (!session) return
-    const next = new Set([...dismissed(), session.id])
-    setDismissed(next)
-    writeDismissed(next)
-  }
-
   // The opened node leaving the graph (or the reader leaving the session) closes
   // the embedded view rather than stranding a transcript with no way back.
-  createEffect(() => {
+  // Guarded: this writes the signal it reads, so a disagreement between two runs
+  // would otherwise be a synchronous spin.
+  createStableEffect("sessionGraph.closeMissingNode", () => {
     const current = nodeSessionID()
     if (!current) return
     if (!input.selection.activeSessionID() || !graph().nodes.some((node) => node.sessionID === current))
@@ -187,27 +174,5 @@ export function createSessionGraphController(input: {
     selectedNodeID,
     openNode,
     back,
-    promptVisible,
-    dismissPrompt,
-  }
-}
-
-function readDismissed(): ReadonlySet<string> {
-  if (typeof localStorage === "undefined") return new Set()
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]") as unknown
-    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [])
-  } catch {
-    return new Set()
-  }
-}
-
-function writeDismissed(value: ReadonlySet<string>) {
-  if (typeof localStorage === "undefined") return
-  try {
-    // Bounded: this is a per-session "I have seen it" flag, not a history.
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...value].slice(-200)))
-  } catch {
-    return
   }
 }

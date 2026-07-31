@@ -11,6 +11,7 @@ import {
   writeComposerStash,
 } from "../lib/session-composer-helpers"
 import { readClaudeDriverMarker } from "../lib/claude-driver-marker"
+import { createStableEffect } from "../lib/stable-effect"
 import { Button, InlineNotice } from "./ui"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
@@ -212,7 +213,8 @@ export function SessionPage(props: SessionPageProps) {
   })
   // A permission or question needs an answer; snap back to the orchestrator
   // view so the safety dock is never hidden behind a team-member pane.
-  createEffect(() => {
+  // Guarded: it writes the member selection it reads.
+  createStableEffect("sessionPage.clearMemberWhenBlocked", () => {
     if (blocked() && props.teamMemberSessionID) props.selectTeamMember?.("")
   })
   createEffect(() => {

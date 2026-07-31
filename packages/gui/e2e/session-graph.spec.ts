@@ -49,8 +49,8 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   await page.locator(".session-link-shell", { hasText: rootTitle }).first().locator(".session-link").click()
   await expect(page.locator(".session-page")).toBeVisible()
 
-  // The workflow invitation appears once the delegation tree is known.
-  await page.getByRole("button", { name: "View graph" }).click()
+  // The graph is always one toolbar click away, whatever shape the tree is in.
+  await page.getByRole("button", { name: "View workflow graph" }).click()
   await expect(page.locator(".session-graph-canvas")).toBeVisible()
 
   // All four steps render - including the catalog-hidden swarm child - plus
