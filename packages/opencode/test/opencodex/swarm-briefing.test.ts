@@ -16,10 +16,13 @@ describe("swarm briefing", () => {
     expect(briefing.startsWith(SWARM_BRIEFING_MARK)).toBe(true)
     expect(briefing).toContain('orchestrator of the "Feature Team" swarm')
     expect(briefing).toContain("Your orchestrator instructions:\nCoordinate carefully.")
-    // Specialists are listed with everything the task tool call needs.
-    expect(briefing).toContain('- Designer; subagent_type="general"; model="openai/gpt-5.2"; skill: designer; instructions: Review flows. Be strict.')
+    // Specialists are listed with everything the task tool call needs,
+    // including the swarm_role that ties each child back to its team member.
+    expect(briefing).toContain('- Designer; swarm_role="Designer"; subagent_type="general"; model="openai/gpt-5.2"; skill: designer; instructions: Review flows. Be strict.')
     // A role naming a real agent delegates to that agent.
-    expect(briefing).toContain('- QA Engineer; subagent_type="explore"; model="anthropic/claude-haiku-4-5"')
+    expect(briefing).toContain('- QA Engineer; swarm_role="QA Engineer"; subagent_type="explore"; model="anthropic/claude-haiku-4-5"')
+    // Fanning a role out into several parallel copies is explicitly allowed.
+    expect(briefing).toContain("delegate that role several times in parallel")
     // The orchestrator itself is never listed as a delegate.
     expect(briefing).not.toContain('- Orchestrator;')
   })
@@ -76,7 +79,7 @@ describe("claude subscription roles", () => {
         { name: "Reviewer", providerID: "claude-code", modelID: "sonnet" },
       ],
     })!
-    expect(briefing).toContain('- Reviewer; subagent_type="general"; model="claude-code/sonnet"')
+    expect(briefing).toContain('- Reviewer; swarm_role="Reviewer"; subagent_type="general"; model="claude-code/sonnet"')
   })
 
   test("an orchestrator on the Claude subscription keeps its route", () => {

@@ -94,39 +94,47 @@
   }
 }
 
-/* --- Edge labels: what the step downstream was asked to resolve --- */
+/* --- Edge markers: a small diamond; the intent text lives in its tooltip --- */
 
 .session-graph-edge-anchor {
   position: absolute;
   transform: translate(-50%, -50%);
-  max-width: 148px;
   pointer-events: none;
 }
 
-.session-graph-edge-label {
+.session-graph-edge-marker {
   display: block;
-  max-width: 148px;
-  padding: var(--ds-space-0) var(--ds-space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ds-radius-full);
-  color: var(--muted);
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--border);
   background: var(--panel);
-  font-size: var(--ds-text-2xs);
-  font-weight: var(--ds-weight-semibold);
-  line-height: var(--ds-leading-2xs);
+  /* A diamond, and a generous hit area around it: 9px alone is too small a
+     hover target, and targets must never shrink below usable. */
+  transform: rotate(45deg);
+  outline: var(--ds-space-2) solid transparent;
   pointer-events: auto;
   cursor: help;
+  transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease;
 }
 
-.session-graph-edge-label:hover {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
-  color: var(--text);
+.session-graph-edge-marker:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
 }
 
-.session-graph-edge-label[data-graph-status="failed"],
-.session-graph-edge-label[data-graph-status="cancelled"] {
-  border-color: color-mix(in srgb, var(--danger) 40%, var(--border-subtle));
-  color: color-mix(in srgb, var(--danger) 75%, var(--text));
+.session-graph-edge-marker[data-graph-status="running"] {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+}
+
+.session-graph-edge-marker[data-graph-status="completed"] {
+  border-color: color-mix(in srgb, var(--success) 60%, var(--border));
+  background: color-mix(in srgb, var(--success) 16%, var(--panel));
+}
+
+.session-graph-edge-marker[data-graph-status="failed"],
+.session-graph-edge-marker[data-graph-status="cancelled"] {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+  background: color-mix(in srgb, var(--danger) 16%, var(--panel));
 }
 
 /* --- Nodes --- */
@@ -224,103 +232,6 @@
   gap: 0;
 }
 
-/* --- Node status: tone plus a badge, never color alone --- */
-
-.session-graph-node[data-graph-status="running"] {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
-}
-
-/*
- * Status text mixes its tone toward --text rather than using the raw token.
- * The raw success and danger tokens are tuned to sit on the plain panel; on
- * their own tinted node background they fall under 4.5:1 in the light theme,
- * and this is body-size text, not a large-text exemption.
- */
-.session-graph-node[data-graph-status="running"] .session-graph-node-status {
-  color: color-mix(in srgb, var(--accent) 62%, var(--text));
-}
-
-.session-graph-node[data-graph-status="input_needed"] {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
-  background: color-mix(in srgb, var(--warning) 8%, var(--panel));
-}
-
-.session-graph-node[data-graph-status="input_needed"] .session-graph-node-status {
-  color: color-mix(in srgb, var(--warning) 62%, var(--text));
-}
-
-.session-graph-node[data-graph-status="completed"] {
-  border-color: color-mix(in srgb, var(--success) 46%, var(--border-subtle));
-  background: color-mix(in srgb, var(--success) 9%, var(--panel));
-}
-
-.session-graph-node[data-graph-status="completed"] .session-graph-node-status {
-  color: color-mix(in srgb, var(--success) 62%, var(--text));
-}
-
-.session-graph-node[data-graph-status="failed"],
-.session-graph-node[data-graph-status="cancelled"] {
-  border-color: color-mix(in srgb, var(--danger) 50%, var(--border-subtle));
-  background: color-mix(in srgb, var(--danger) 9%, var(--panel));
-}
-
-.session-graph-node[data-graph-status="failed"] .session-graph-node-status,
-.session-graph-node[data-graph-status="cancelled"] .session-graph-node-status {
-  color: color-mix(in srgb, var(--danger) 62%, var(--text));
-}
-
-.session-graph-node[data-graph-status="queued"] {
-  border-style: dashed;
-}
-
-/* Only for work genuinely in flight. */
-.session-graph-node[data-graph-status="running"]::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
-  border-radius: var(--ds-radius-card);
-  animation: sessionGraphPulse 1800ms var(--ds-ease-smooth) infinite;
-  pointer-events: none;
-}
-
-@keyframes sessionGraphPulse {
-  0%,
-  100% {
-    opacity: .15;
-  }
-
-  50% {
-    opacity: .75;
-  }
-}
-
-.session-graph-node-badge {
-  position: absolute;
-  right: calc(var(--ds-space-1) * -1);
-  bottom: calc(var(--ds-space-1) * -1);
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--bg);
-  border-radius: var(--ds-radius-full);
-  color: var(--bg);
-}
-
-.session-graph-node-badge[data-graph-badge="success"] {
-  background: var(--success);
-}
-
-.session-graph-node-badge[data-graph-badge="failure"] {
-  background: var(--danger);
-}
-
-.session-graph-node-badge .icon {
-  width: 12px;
-  height: 12px;
-}
-
 /* --- Tooltip body --- */
 
 .session-graph-tooltip {
@@ -377,8 +288,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .session-graph-edge-path[data-graph-status="running"],
-  .session-graph-node[data-graph-status="running"]::after {
+  .session-graph-edge-path[data-graph-status="running"] {
     animation: none;
   }
 }

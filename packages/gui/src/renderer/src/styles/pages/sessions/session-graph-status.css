@@ -1,0 +1,127 @@
+/* --- Workflow graph node status: tones, badges, and merge-node presentation --- */
+
+/* --- Node status: tone plus a badge, never color alone --- */
+
+.session-graph-node[data-graph-status="running"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+}
+
+/*
+ * Status text mixes its tone toward --text rather than using the raw token.
+ * The raw success and danger tokens are tuned to sit on the plain panel; on
+ * their own tinted node background they fall under 4.5:1 in the light theme,
+ * and this is body-size text, not a large-text exemption.
+ */
+.session-graph-node[data-graph-status="running"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--accent) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="input_needed"] {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--warning) 8%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="input_needed"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--warning) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="completed"] {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--border-subtle));
+  background: color-mix(in srgb, var(--success) 9%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="completed"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--success) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="failed"],
+.session-graph-node[data-graph-status="cancelled"] {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 9%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="failed"] .session-graph-node-status,
+.session-graph-node[data-graph-status="cancelled"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--danger) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="queued"] {
+  border-style: dashed;
+}
+
+/* Merge nodes are presentation, not sessions: lighter, so the real steps lead. */
+.session-graph-node[data-graph-kind="join"] {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+
+.session-graph-node[data-graph-kind="join"] .session-graph-node-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  color: var(--muted);
+}
+
+.session-graph-node[data-graph-kind="join"] .session-graph-node-title .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--accent);
+}
+
+.session-graph-node[data-graph-kind="join"][data-graph-status="completed"] {
+  background: color-mix(in srgb, var(--success) 5%, transparent);
+}
+
+/* Only for work genuinely in flight. */
+.session-graph-node[data-graph-status="running"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: var(--ds-radius-card);
+  animation: sessionGraphPulse 1800ms var(--ds-ease-smooth) infinite;
+  pointer-events: none;
+}
+
+@keyframes sessionGraphPulse {
+  0%,
+  100% {
+    opacity: .15;
+  }
+
+  50% {
+    opacity: .75;
+  }
+}
+
+.session-graph-node-badge {
+  position: absolute;
+  right: calc(var(--ds-space-1) * -1);
+  bottom: calc(var(--ds-space-1) * -1);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--bg);
+  border-radius: var(--ds-radius-full);
+  color: var(--bg);
+}
+
+.session-graph-node-badge[data-graph-badge="success"] {
+  background: var(--success);
+}
+
+.session-graph-node-badge[data-graph-badge="failure"] {
+  background: var(--danger);
+}
+
+.session-graph-node-badge .icon {
+  width: 12px;
+  height: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-graph-node[data-graph-status="running"]::after {
+    animation: none;
+  }
+}

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, on } from "solid-js"
 import { sessionGraphSummary, type SessionGraph, type SessionGraphNode } from "../lib/session-graph"
 import { paddedBounds } from "../lib/session-graph-layout"
 import { graphTransform } from "../lib/session-graph-viewport"
@@ -25,10 +25,18 @@ export function SessionSideGraph(props: {
   const frame = createMemo(() => paddedBounds(controller.layout().bounds))
 
   // Selecting a node elsewhere (or restoring a selection) should not leave the
-  // reader looking at an empty part of the canvas.
-  createEffect(() => {
-    if (props.selectedNodeID) controller.reveal(props.selectedNodeID)
-  })
+  // reader looking at an empty part of the canvas. `on` keeps reveal's own
+  // viewport reads out of the tracking scope: reveal writes the viewport, and
+  // an effect that both tracked and wrote it would re-run on its own write -
+  // forever, if the node can never fit the pane at the current zoom.
+  createEffect(
+    on(
+      () => props.selectedNodeID,
+      (selected) => {
+        if (selected) controller.reveal(selected)
+      },
+    ),
+  )
 
   return (
     <section class="session-graph">
@@ -94,9 +102,9 @@ export function SessionSideGraph(props: {
                       </span>
                     }
                   >
-                    <span class="session-graph-edge-label ds-truncate" data-graph-status={edge.edge.status}>
-                      {edge.edge.label}
-                    </span>
+                    {/* Pointer-only marker: the same intent text is in the
+                        target node's focusable tooltip for keyboard readers. */}
+                    <span class="session-graph-edge-marker" data-graph-status={edge.edge.status} aria-hidden="true" />
                   </Tooltip>
                 </div>
               )}

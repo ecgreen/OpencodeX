@@ -56,7 +56,12 @@ export function SessionGraphNodeCard(props: {
           onClick={(event) => (event.metaKey || event.ctrlKey ? props.openFullPage(node()) : props.open(node()))}
         >
           <span class="session-graph-node-head">
-            <span class="session-graph-node-title ds-truncate">{node().title}</span>
+            <span class="session-graph-node-title ds-truncate">
+              <Show when={node().kind === "join"}>
+                <Icon name="merge" />
+              </Show>
+              {node().title}
+            </span>
             <Show when={node().role}>
               {(role) => <span class="session-graph-node-role ds-truncate">{role()}</span>}
             </Show>

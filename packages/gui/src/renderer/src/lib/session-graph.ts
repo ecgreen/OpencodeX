@@ -1,5 +1,6 @@
 import type { OpencodeXJob, OpencodeXSwarm, Session } from "@opencode-ai/sdk/v2/client"
 import type { WorkItem } from "@opencode-ai/sdk/v2/work-item"
+import { appendSessionGraphJoins } from "./session-graph-join"
 import {
   jobGraphEdge,
   jobGraphNode,
@@ -29,7 +30,7 @@ export type SessionGraphStatus =
 
 export type SessionGraphNode = {
   id: string
-  kind: "session" | "job"
+  kind: "session" | "job" | "join"
   sessionID?: string
   jobID?: string
   /** Layer index: how many spawn hops from the root. */
@@ -154,12 +155,13 @@ export function buildSessionGraph(input: SessionGraphInput): SessionGraph {
   }
 
   placeJobs({ input, roles, items, placed, depths, nodes, edges, rootSessionID, sessionsByID })
+  appendSessionGraphJoins({ nodes, edges, sessionStatus: input.sessionStatus })
   return { rootID: `session:${rootSessionID}`, rootSessionID, nodes, edges, counts: countNodes(nodes) }
 }
 
 /** Whether this session is driving a workflow worth drawing. */
 export function sessionGraphAvailable(graph: SessionGraph) {
-  return graph.nodes.length > 1
+  return graph.counts.total > 1
 }
 
 export function sessionGraphSummary(graph: SessionGraph) {
@@ -236,7 +238,9 @@ function jobParentID(
   return undefined
 }
 
-function countNodes(nodes: readonly SessionGraphNode[]) {
+/** Merge nodes are presentation, not steps, so they stay out of the counts. */
+function countNodes(all: readonly SessionGraphNode[]) {
+  const nodes = all.filter((node) => node.kind !== "join")
   return nodes.reduce(
     (counts, node) => ({
       total: counts.total + 1,

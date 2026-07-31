@@ -17,12 +17,10 @@ describe("session graph model", () => {
       }),
     )
     expect(graph.rootSessionID).toBe("root")
-    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "session:child-1", "session:child-2"])
-    expect(graph.nodes.map((node) => node.depth)).toEqual([0, 1, 1])
-    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toEqual([
-      "session:root->session:child-1",
-      "session:root->session:child-2",
-    ])
+    expect(steps(graph).map((node) => node.id)).toEqual(["session:root", "session:child-1", "session:child-2"])
+    expect(steps(graph).map((node) => node.depth)).toEqual([0, 1, 1])
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toContain("session:root->session:child-1")
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toContain("session:root->session:child-2")
     expect(sessionGraphAvailable(graph)).toBe(true)
   })
 
@@ -128,16 +126,16 @@ describe("session graph jobs", () => {
     const sessions = [swarmRoot()]
     const jobs = [job({ id: "job-1", status: "queued", swarmID: "swarm-1", title: "Review the diff" })]
     const graph = buildSessionGraph(input({ sessions, jobs, swarms: [swarm()] }))
-    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "job:job-1"])
-    expect(graph.nodes[1]).toMatchObject({ kind: "job", depth: 1, status: "queued", title: "Review the diff" })
+    expect(steps(graph).map((node) => node.id)).toEqual(["session:root", "job:job-1"])
+    expect(steps(graph)[1]).toMatchObject({ kind: "job", depth: 1, status: "queued", title: "Review the diff" })
   })
 
   test("folds a claimed job into the child session it runs, with no duplicate node", () => {
     const sessions = [swarmRoot(), child("child-1", "Review the diff")]
     const jobs = [job({ id: "job-1", sessionID: "child-1", status: "running", swarmID: "swarm-1" })]
     const graph = buildSessionGraph(input({ sessions, jobs, swarms: [swarm()] }))
-    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "session:child-1"])
-    expect(graph.nodes[1]?.status).toBe("running")
+    expect(steps(graph).map((node) => node.id)).toEqual(["session:root", "session:child-1"])
+    expect(steps(graph)[1]?.status).toBe("running")
   })
 
   test("places a child job listed before its parent job", () => {
@@ -145,7 +143,7 @@ describe("session graph jobs", () => {
     const parent = job({ id: "job-1", status: "running", swarmID: "swarm-1" })
     const nested = job({ id: "job-2", status: "queued", parentJobID: "job-1" })
     const graph = buildSessionGraph(input({ sessions, jobs: [nested, parent], swarms: [swarm()] }))
-    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "job:job-1", "job:job-2"])
+    expect(steps(graph).map((node) => node.id)).toEqual(["session:root", "job:job-1", "job:job-2"])
     expect(graph.nodes.find((node) => node.id === "job:job-2")?.depth).toBe(2)
   })
 
@@ -154,6 +152,7 @@ describe("session graph jobs", () => {
       input({ sessions: [swarmRoot()], jobs: [job({ id: "job-1", swarmID: "other" })], swarms: [swarm()] }),
     )
     expect(graph.nodes.map((node) => node.id)).toEqual(["session:root"])
+    expect(sessionGraphAvailable(graph)).toBe(false)
   })
 })
 
@@ -179,7 +178,7 @@ describe("session graph with a fetched swarm delegation tree", () => {
 
   test("draws the swarm children and the role's own subagents", () => {
     const graph = buildSessionGraph(input({ sessions }))
-    expect(graph.nodes.map((node) => `${node.depth}:${node.id}`)).toEqual([
+    expect(steps(graph).map((node) => `${node.depth}:${node.id}`)).toEqual([
       "0:session:root",
       "1:session:child-1",
       "1:session:child-2",
@@ -207,6 +206,79 @@ describe("session graph with a fetched swarm delegation tree", () => {
     expect(graph.nodes.find((node) => node.id === "session:child-1a")?.status).toBe("running")
     expect(graph.nodes.find((node) => node.id === "session:child-1b")?.status).toBe("idle")
     expect(graph.counts.running).toBe(2)
+  })
+})
+
+describe("session graph consolidation", () => {
+  const sessions = [root(), child("child-1", "Research"), child("child-2", "Migrate")]
+
+  test("every delegating node gains a merge node its branches report into", () => {
+    const graph = buildSessionGraph(input({ sessions }))
+    const join = graph.nodes.find((node) => node.id === "join:session:root")
+    expect(join).toMatchObject({ kind: "join", depth: 2, sessionID: "root", title: "Merge results" })
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toEqual(
+      expect.arrayContaining(["session:child-1->join:session:root", "session:child-2->join:session:root"]),
+    )
+    const detail = graph.edges.find((edge) => edge.from === "session:child-1" && edge.to === "join:session:root")
+    expect(detail?.detail).toBe("Research reports back into Ship the migration.")
+  })
+
+  test("waits on branches, merges while the parent is busy, completes when it is not", () => {
+    const jobs = [
+      job({ id: "job-1", sessionID: "child-1", status: "succeeded" }),
+      job({ id: "job-2", sessionID: "child-2", status: "running" }),
+    ]
+    const waiting = buildSessionGraph(input({ sessions, jobs }))
+    expect(waiting.nodes.find((node) => node.kind === "join")).toMatchObject({
+      status: "queued",
+      statusLabel: "Waiting on branches",
+      progress: { completed: 1, failed: 0, total: 2 },
+      badge: undefined,
+    })
+
+    const done = [
+      job({ id: "job-1", sessionID: "child-1", status: "succeeded" }),
+      job({ id: "job-2", sessionID: "child-2", status: "failed" }),
+    ]
+    const merging = buildSessionGraph({
+      ...input({ sessions, jobs: done }),
+      sessionStatus: { root: { type: "busy" } },
+    })
+    expect(merging.nodes.find((node) => node.kind === "join")).toMatchObject({
+      status: "running",
+      statusLabel: "Merging",
+    })
+
+    const merged = buildSessionGraph(input({ sessions, jobs: done }))
+    expect(merged.nodes.find((node) => node.kind === "join")).toMatchObject({
+      status: "completed",
+      statusLabel: "Merged",
+      badge: "success",
+      progress: { completed: 1, failed: 1, total: 2 },
+    })
+  })
+
+  test("nested delegation chains merge nodes: a branch's merge feeds its parent's", () => {
+    const grandchildren = [
+      { ...child("child-1a", "Worker A"), parentID: "child-1", time: { created: 5, updated: 6 } },
+      { ...child("child-1b", "Worker B"), parentID: "child-1", time: { created: 6, updated: 7 } },
+    ]
+    const graph = buildSessionGraph(input({ sessions: [...sessions, ...grandchildren] }))
+    const inner = graph.nodes.find((node) => node.id === "join:session:child-1")
+    const outer = graph.nodes.find((node) => node.id === "join:session:root")
+    expect(inner?.depth).toBe(3)
+    expect(outer?.depth).toBe(4)
+    // The root's merge collects the branch's own merge, not the branch node.
+    expect(graph.edges.some((edge) => edge.from === "join:session:child-1" && edge.to === "join:session:root")).toBe(
+      true,
+    )
+    expect(graph.edges.some((edge) => edge.from === "session:child-1" && edge.to === "join:session:root")).toBe(false)
+  })
+
+  test("merge nodes never count as workflow steps", () => {
+    const graph = buildSessionGraph(input({ sessions }))
+    expect(graph.counts.total).toBe(3)
+    expect(sessionGraphSummary(graph)).toBe("Workflow graph: 3 steps")
   })
 })
 
@@ -251,6 +323,11 @@ describe("session graph edge labels", () => {
     expect(graph.edges[0]?.detail).toBe("swarm job: Review (attempt 2 of 3)")
   })
 })
+
+/** The real workflow steps: everything except the presentation-only merge nodes. */
+function steps(graph: ReturnType<typeof buildSessionGraph>) {
+  return graph.nodes.filter((node) => node.kind !== "join")
+}
 
 function input(overrides: Partial<SessionGraphInput> = {}): SessionGraphInput {
   return {

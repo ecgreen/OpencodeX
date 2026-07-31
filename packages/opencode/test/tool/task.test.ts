@@ -20,6 +20,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ProjectV2 } from "@opencode-ai/core/project"
+import { ProjectTable } from "@opencode-ai/core/project/sql"
+import { OpencodeXProjectTable, OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -497,6 +500,81 @@ describe("tool.task", () => {
       const child = yield* sessions.get(result.metadata.sessionId)
       expect(child.parentID).toBe(swarm.chat.id)
       expect(child.metadata?.opencodex).toEqual({ swarmID: "swarm-1" })
+    }),
+  )
+
+  it.instance("resolves the swarm role, tags the child with it, and uses the role's model", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const database = yield* Database.Service
+      // The role lookup joins through real rows: project -> swarm -> roles.
+      yield* database.db
+        .insert(ProjectTable)
+        .values({ id: ProjectV2.ID.make("prj_task_test"), worktree: "/tmp", sandboxes: [] })
+      yield* database.db.insert(OpencodeXProjectTable).values({ id: "opx_task_test", project_id: ProjectV2.ID.make("prj_task_test") })
+      yield* database.db.insert(OpencodeXSwarmTable).values({
+        id: "swm_task_test",
+        opencodex_project_id: "opx_task_test",
+        title: "Feature Team",
+        prompt: "Ship it",
+        status: "running",
+        source: "manual",
+      })
+      yield* database.db.insert(OpencodeXSwarmRoleTable).values([
+        { id: "role_orch", swarm_id: "swm_task_test", name: "Orchestrator", status: "running", instructions: "", sort_order: 0 },
+        {
+          id: "role_eng",
+          swarm_id: "swm_task_test",
+          name: "Senior Engineer",
+          status: "running",
+          instructions: "",
+          sort_order: 1,
+          provider_id: "anthropic",
+          model_id: "claude-fable-5",
+        },
+      ])
+      const { chat, assistant } = yield* seed("Swarm chat", {
+        model: { id: ProviderV2.ModelID.make("swm_task_test"), providerID: ProviderV2.ID.make("swarm") },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+      const promptOps = stubOps({ onPrompt: (input) => prompts.push(input) })
+      const exec = (input: { description: string; swarm_role?: string }) =>
+        def.execute(
+          { ...input, prompt: "do the work", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      // The explicit parameter wins even when the description says nothing
+      // useful, and running the same role twice makes a second tagged copy.
+      const first = yield* exec({ description: "build module A", swarm_role: "senior engineer" })
+      const second = yield* exec({ description: "build module B", swarm_role: "Senior Engineer" })
+      // Older orchestrators that only lead the description with the role name
+      // still resolve through the prefix fallback.
+      const third = yield* exec({ description: "Senior Engineer: build module C" })
+
+      for (const result of [first, second, third]) {
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.metadata?.opencodex).toEqual({ swarmID: "swm_task_test", swarmRole: "Senior Engineer" })
+      }
+      expect(new Set([first, second, third].map((result) => result.metadata.sessionId)).size).toBe(3)
+      // No explicit model was passed, so the role's configured model routes it.
+      expect(prompts.map((input) => `${input.model?.providerID}/${input.model?.modelID}`)).toEqual([
+        "anthropic/claude-fable-5",
+        "anthropic/claude-fable-5",
+        "anthropic/claude-fable-5",
+      ])
     }),
   )
 

@@ -28,8 +28,13 @@ const KEYBOARD_PAN_STEP = 48
  */
 export function createSessionGraphViewController(input: { graph: Accessor<SessionGraph> }) {
   const [canvas, setCanvas] = createSignal<HTMLDivElement>()
-  const [size, setSize] = createSignal({ width: 0, height: 0 })
-  const [viewport, setViewport] = createSignal(IDENTITY_VIEWPORT)
+  const [size, setSize] = createSignal({ width: 0, height: 0 }, { equals: (a, b) => a.width === b.width && a.height === b.height })
+  // Value equality, not identity: every transform helper returns a fresh
+  // object, and a same-valued write must not notify - a subscriber that
+  // re-derives the same viewport would otherwise loop the app into a freeze.
+  const [viewport, setViewport] = createSignal(IDENTITY_VIEWPORT, {
+    equals: (a, b) => a.x === b.x && a.y === b.y && a.scale === b.scale,
+  })
   const [hoveredEdgeID, setHoveredEdgeID] = createSignal("")
   const [hoveredNodeID, setHoveredNodeID] = createSignal("")
   const [panning, setPanning] = createSignal(false)

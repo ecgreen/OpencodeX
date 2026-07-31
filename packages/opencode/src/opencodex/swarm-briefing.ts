@@ -58,11 +58,12 @@ export function buildSwarmBriefing(input: BriefingInput): string | undefined {
           "- Do not use the built-in Task tool; it is unavailable here and would bypass the team's model routing.",
         ]
       : [
-          `- Delegate with the task tool: subagent_type as listed, the role name in the description, and a prompt containing the role's instructions plus the exact scope, expected output, and whether files may be edited.`,
+          `- Delegate with the task tool: subagent_type and swarm_role exactly as listed, the role name leading the description, and a prompt containing the role's instructions plus the exact scope, expected output, and whether files may be edited.`,
           `- Pass the listed model value on each task call so every specialist runs on its configured model.`,
           "- Each specialist runs in its own subagent session that the user can open from the transcript; keep prompts self-contained.",
         ]),
     "- Run independent roles in parallel by making several calls in one turn; sequence only where outputs depend on each other.",
+    "- When one role's work splits cleanly, delegate that role several times in parallel - each call runs a fresh copy of the role (for example, four engineers on four independent modules).",
     "- Synthesize the team's results yourself: reconcile conflicts, state decisions, risks, and next actions in your final reply.",
     "- Skip delegation entirely when the request is trivial or conversational.",
     "</swarm-briefing>",
@@ -74,8 +75,9 @@ function specialistLine(role: BriefingRole, viaDelegateTool: boolean) {
   return [
     `- ${role.name}`,
     // The delegate tool resolves the agent and model from the role itself, so
-    // only the task tool needs them spelled out on every call.
-    ...(viaDelegateTool ? [] : [`subagent_type="${role.agent?.trim() || DEFAULT_SUBAGENT}"`]),
+    // only the task tool needs them spelled out on every call. swarm_role is
+    // what ties the child session back to this role in the team view.
+    ...(viaDelegateTool ? [] : [`swarm_role="${role.name}"`, `subagent_type="${role.agent?.trim() || DEFAULT_SUBAGENT}"`]),
     ...(model && !viaDelegateTool ? [`model="${model}"`] : []),
     ...(role.skill ? [`skill: ${role.skill}`] : []),
     ...(role.instructions?.trim() ? [`instructions: ${collapse(role.instructions)}`] : []),

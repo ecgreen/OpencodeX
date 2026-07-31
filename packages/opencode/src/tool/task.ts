@@ -12,9 +12,12 @@ import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Cause, Effect, Exit, Schema, Scope } from "effect"
+import { asc, eq } from "drizzle-orm"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
+import { OpencodeXSwarmRoleTable } from "@opencode-ai/core/opencodex/sql"
+import { SwarmBriefing } from "@/opencodex/swarm-briefing"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -45,6 +48,10 @@ const BaseParameterFields = {
   task_id: Schema.optional(Schema.String).annotate({
     description:
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
+  }),
+  swarm_role: Schema.optional(Schema.String).annotate({
+    description:
+      "For swarm sessions only: the swarm role this delegation runs as, exactly as listed in the briefing. Repeat the same role across parallel calls to run several copies of it.",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
 }
@@ -100,6 +107,12 @@ function errorText(error: unknown) {
   return String(error)
 }
 
+/** A resolved swarm role's configured model, when it has a complete one. */
+function swarmRoleModel(role: { provider_id: string | null; model_id: string | null } | undefined) {
+  if (!role?.provider_id || !role.model_id) return undefined
+  return { providerID: ProviderV2.ID.make(role.provider_id), modelID: ProviderV2.ModelID.make(role.model_id) }
+}
+
 /**
  * Parses a "providerID/modelID" override. Malformed values fall back to the
  * agent default rather than failing the delegation; a wrong-but-well-formed
@@ -126,6 +139,31 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+
+    /**
+     * The swarm role a delegation runs as, resolved against the swarm's own
+     * roster. The explicit swarm_role parameter wins; older orchestrators that
+     * lead the description with the role name still match through the prefix.
+     * No match is not an error - the child stays a plain swarm subtask.
+     */
+    const resolveSwarmRole = Effect.fn("TaskTool.resolveSwarmRole")(function* (
+      swarmID: string,
+      params: Schema.Schema.Type<typeof Parameters>,
+    ) {
+      const roles = yield* database.db
+        .select({
+          name: OpencodeXSwarmRoleTable.name,
+          provider_id: OpencodeXSwarmRoleTable.provider_id,
+          model_id: OpencodeXSwarmRoleTable.model_id,
+        })
+        .from(OpencodeXSwarmRoleTable)
+        .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
+        .orderBy(asc(OpencodeXSwarmRoleTable.sort_order))
+        .all()
+        .pipe(Effect.orElseSucceed(() => []))
+      const requested = params.swarm_role?.trim() || params.description.split(":")[0]
+      return SwarmBriefing.matchSwarmRole(roles, requested ?? "")
+    })
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
@@ -161,6 +199,7 @@ export const TaskTool = Tool.define(
         : undefined
       const parent = yield* sessions.get(ctx.sessionID)
       const parentIsSwarm = parent.model?.providerID === "swarm"
+      const swarmRole = parentIsSwarm ? yield* resolveSwarmRole(parent.model!.id, params) : undefined
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
@@ -170,8 +209,19 @@ export const TaskTool = Tool.define(
           parentID: ctx.sessionID,
           title: params.description + ` (@${next.name} subagent)`,
           // A swarm session's subtasks are its team at work; tagging them lets
-          // the GUI group each child under the swarm's team view.
-          ...(parentIsSwarm ? { metadata: { opencodex: { swarmID: parent.model!.id } } } : {}),
+          // the GUI group each child under the swarm's team view. The role is
+          // resolved here rather than trusted from the model, so the same role
+          // delegated four times lands in the same bucket every time.
+          ...(parentIsSwarm
+            ? {
+                metadata: {
+                  opencodex: {
+                    swarmID: parent.model!.id,
+                    ...(swarmRole ? { swarmRole: swarmRole.name } : {}),
+                  },
+                },
+              }
+            : {}),
           permission: [
             ...deriveSubagentSessionPermission({
               parentSessionPermission: parent.permission ?? [],
@@ -193,8 +243,10 @@ export const TaskTool = Tool.define(
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 
       // Explicit override first (a swarm briefing pins each role's model),
-      // then the agent's configured model, then the caller's model.
+      // then the resolved swarm role's own model, then the agent's configured
+      // model, then the caller's model.
       const model = parseModelOverride(params.model) ??
+        swarmRoleModel(swarmRole) ??
         next.model ?? {
           modelID: msg.info.modelID,
           providerID: msg.info.providerID,

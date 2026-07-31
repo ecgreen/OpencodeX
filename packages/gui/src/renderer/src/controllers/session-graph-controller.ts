@@ -140,7 +140,9 @@ export function createSessionGraphController(input: {
   function openNode(node: SessionGraphNode) {
     // A queued job has no session to read yet; the canvas already disables it,
     // and this keeps a stale selection from surviving a programmatic call.
-    if (!node.sessionID || node.root) {
+    // The root's own nodes (the top card and its merge node) mean "back to the
+    // top session" - its transcript is already the page behind the graph.
+    if (!node.sessionID || node.root || node.sessionID === graph().rootSessionID) {
       setNodeSessionID("")
       return
     }
