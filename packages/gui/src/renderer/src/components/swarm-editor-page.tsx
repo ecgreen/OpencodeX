@@ -4,7 +4,6 @@ import {
   SWARM_ROLE_PRESETS,
   defaultSwarmRoles,
   presetRoleInput,
-  projectLabel,
   roleInput,
   swarmRolePresetBySkill,
 } from "../lib/swarm-actions"
@@ -12,7 +11,7 @@ import type { GuiSnapshot } from "../lib/session-api"
 import { SwarmEditorTeam } from "./swarm-editor-team"
 import { SwarmPageHeader } from "./swarm-page-header"
 import { SwarmRoleModelPicker } from "./swarm-role-model-picker"
-import { Button, Select, TextInput } from "./ui"
+import { Button, TextInput } from "./ui"
 
 /**
  * The one swarm surface: creating, viewing, and editing are the same page.
@@ -31,7 +30,12 @@ export function SwarmEditorPage(props: {
   deleteSwarm?: (swarmID: string, title: string) => void | Promise<void>
   startSession?: (swarm: OpencodeXSwarm) => void
 }) {
-  const [projectID, setProjectID] = createSignal(props.swarm?.projectID ?? props.initialProjectID ?? props.projects[0]?.id ?? "")
+  // A swarm is a team definition, not a per-project artifact, so no project is
+  // asked for. The backend still records one; it resolves silently: the swarm's
+  // own, else the project the editor was opened from, else the first project.
+  const projectID = createMemo(
+    () => props.swarm?.projectID ?? props.initialProjectID ?? props.projects[0]?.id ?? "",
+  )
   const [swarmTitle, setSwarmTitle] = createSignal(props.swarm?.title ?? "")
   const [roles, setRoles] = createSignal<OpencodeXSwarmRoleInput[]>(
     props.swarm
@@ -63,7 +67,7 @@ export function SwarmEditorPage(props: {
     event.preventDefault()
     setError("")
     if (!projectID()) {
-      setError("Select an OpencodeX project first.")
+      setError("Create an OpencodeX project first.")
       return
     }
     const normalizedRoles = roles().map(roleInput)
@@ -125,17 +129,6 @@ export function SwarmEditorPage(props: {
             <span>Name</span>
             <TextInput value={swarmTitle()} onInput={(event) => setSwarmTitle(event.currentTarget.value)} placeholder="e.g. Feature Team, Bug Triage, Release Crew" />
           </label>
-          <div class="swarm-editor-field">
-            <Select<(typeof props.projects)[number]>
-              label="Project"
-              options={props.projects}
-              current={props.projects.find((project) => project.id === projectID())}
-              optionValue={(project) => project.id}
-              optionLabel={projectLabel}
-              disabled={editing()}
-              onSelect={(project) => project && setProjectID(project.id)}
-            />
-          </div>
         </div>
         <SwarmEditorTeam
           roles={roles()}
@@ -159,7 +152,7 @@ export function SwarmEditorPage(props: {
                 ? "Add at least one specialist"
                 : configuredRoleCount() < roles().length
                   ? `${configuredRoleCount()} of ${roles().length} roles have a model`
-                  : "Select an OpencodeX project"}
+                  : "Create an OpencodeX project first"}
             </span>
           </Show>
           <div>
