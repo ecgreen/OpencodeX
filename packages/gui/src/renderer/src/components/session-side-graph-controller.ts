@@ -12,8 +12,6 @@ import {
   wheelZoomFactor,
   zoomGraphViewportAt,
   zoomGraphViewportCenter,
-  type SessionGraphSize,
-  type SessionGraphViewport,
 } from "../lib/session-graph-viewport"
 
 const KEYBOARD_PAN_STEP = 48
