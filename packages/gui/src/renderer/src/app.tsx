@@ -76,8 +76,14 @@ export function App() {
     refresh: authoritative.refresh,
   })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
-  const swarmTeam = createSwarmTeamController({ authoritative, selection: sessionSelection })
   const sessionGraph = createSessionGraphController({ authoritative, selection: sessionSelection })
+  // The graph's fetched delegation tree also feeds the team strip: the catalog
+  // hides swarm-delegated children, so the strip cannot see them on its own.
+  const swarmTeam = createSwarmTeamController({
+    authoritative,
+    selection: sessionSelection,
+    extraChildren: sessionGraph.descendants,
+  })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
   const rail = createRailController({
     client: authoritative.client,

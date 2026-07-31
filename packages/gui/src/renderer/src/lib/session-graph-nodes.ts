@@ -67,8 +67,10 @@ export function sessionGraphNode(input: {
   job: OpencodeXJob | undefined
   depth: number
   root: boolean
+  /** The session's live status event type ("busy" | "retry" | ...), if any. */
+  busyType?: string
 }): SessionGraphNode {
-  const status = resolveStatus(input.item?.state, input.job)
+  const status = resolveStatus(input.item?.state, input.job, input.busyType)
   return {
     id: `session:${input.session.id}`,
     kind: "session",
@@ -157,9 +159,16 @@ export function jobGraphEdge(from: string, node: SessionGraphNode, job: Opencode
   }
 }
 
-function resolveStatus(state: WorkItemState | undefined, job: OpencodeXJob | undefined): SessionGraphStatus {
+function resolveStatus(
+  state: WorkItemState | undefined,
+  job: OpencodeXJob | undefined,
+  busyType?: string,
+): SessionGraphStatus {
   const live = state ? LIVE_STATUS[state] : undefined
   if (live) return live
+  // A busy status event outranks any recorded outcome: the session is doing
+  // something right now, even if a previous run of it already succeeded.
+  if (busyType === "busy" || busyType === "retry") return "running"
   const terminal = state ? TERMINAL_STATUS[state] : undefined
   if (terminal) return terminal
   // A finished delegation leaves its session `idle`; the job it ran under is

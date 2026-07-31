@@ -89,7 +89,18 @@ export function SessionRoute(props: { model: GuiAppModel }) {
         model.sessionGraph.openNode(node)
       }}
       openGraphNodeFullPage={(node) => {
-        if (node.sessionID) model.sessionActions.open(node.sessionID)
+        if (!node.sessionID) return
+        // Swarm-delegated children are not in the catalog, so the full session
+        // route cannot resolve them; those stay in the embedded view.
+        const inCatalog = (model.authoritative.snapshot()?.sessions ?? []).some(
+          (session) => session.id === node.sessionID,
+        )
+        if (inCatalog) {
+          model.sessionActions.open(node.sessionID)
+          return
+        }
+        model.swarmTeam.setMemberSessionID("")
+        model.sessionGraph.openNode(node)
       }}
       closeGraphNode={model.sessionGraph.back}
       connectProvider={(providerID) => void model.notices.run(() => model.capabilities.connectProvider(providerID))}

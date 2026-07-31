@@ -75,6 +75,12 @@ export type SessionGraphInput = {
   sessions: readonly Session[]
   jobs: readonly OpencodeXJob[]
   swarms: readonly OpencodeXSwarm[]
+  /**
+   * Live per-session status. Work items only exist for catalog sessions, and
+   * swarm-delegated children are not in the catalog - but status events are
+   * applied by id regardless, so this is how a fetched child reads as running.
+   */
+  sessionStatus?: Record<string, { type?: string } | undefined>
 }
 
 export const EMPTY_SESSION_GRAPH: SessionGraph = {
@@ -130,7 +136,14 @@ export function buildSessionGraph(input: SessionGraphInput): SessionGraph {
       depths.set(id, entry.depth)
       const job = latestJob(jobsBySession.get(entry.session.id))
       const item = items.get(id)
-      const node = sessionGraphNode({ session: entry.session, item, job, depth: entry.depth, root: entry.depth === 0 })
+      const node = sessionGraphNode({
+        session: entry.session,
+        item,
+        job,
+        depth: entry.depth,
+        root: entry.depth === 0,
+        busyType: input.sessionStatus?.[entry.session.id]?.type,
+      })
       nodes.push(node)
       if (entry.parentID)
         edges.push(sessionGraphEdge({ from: entry.parentID, node, session: entry.session, job, roles }))

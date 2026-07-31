@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import { mergeSessionLists } from "../lib/session-graph-fetch"
 import {
   sessionSwarm,
   swarmTeamChildren,
@@ -18,8 +19,18 @@ import type { createSessionSelectionController } from "./session-selection-contr
 export function createSwarmTeamController(input: {
   authoritative: ReturnType<typeof createAuthoritativeStateController>
   selection: ReturnType<typeof createSessionSelectionController>
+  /**
+   * Delegation-tree sessions fetched outside the catalog (the workflow graph
+   * controller's descendants). The catalog hides swarm-delegated children by
+   * design, so without these the strip's roles would never gain a run.
+   */
+  extraChildren?: Accessor<readonly Session[]>
 }) {
   const [memberSessionID, setMemberSessionID] = createSignal("")
+
+  const allSessions = createMemo(() =>
+    mergeSessionLists(input.authoritative.snapshot()?.sessions ?? [], input.extraChildren?.() ?? []),
+  )
 
   const team: Accessor<SwarmTeamView | undefined> = createMemo(() => {
     const session = input.selection.selectedSession()
@@ -29,7 +40,7 @@ export function createSwarmTeamController(input: {
     if (!swarm) return undefined
     return swarmTeamView({
       swarm,
-      children: swarmTeamChildren(snapshot.sessions, session.id),
+      children: swarmTeamChildren(allSessions(), session.id),
       sessionStatus: snapshot.sessionStatus,
     })
   })
@@ -37,7 +48,7 @@ export function createSwarmTeamController(input: {
   const memberSession: Accessor<Session | undefined> = createMemo(() => {
     const sessionID = memberSessionID()
     if (!sessionID) return undefined
-    return input.authoritative.snapshot()?.sessions.find((session) => session.id === sessionID)
+    return allSessions().find((session) => session.id === sessionID)
   })
 
   // Leaving the session (or the run disappearing) closes the member view.

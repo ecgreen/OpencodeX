@@ -326,3 +326,17 @@ Implemented on `feat/graph-eng-visualizer`. Gates at time of writing: typecheck 
 ### Carried forward unchanged
 
 The §2 hydration landmine was real: opened nodes are registered through `setVisibleSessionIDs` / `syncViewSession` in `app.tsx`, without which the embedded transcript stays empty. Edges are built from `parentID` with swarm roles as enrichment, exactly as specified. Everything in §10 remains future work; node dragging, collapse, and a top-level route were not built.
+
+### Round 2: the catalog hides the delegation tree
+
+Live testing with a real swarm exposed a wrong assumption in §2: `parentID` does ride on session cards, but **swarm-delegated children never become cards at all**. `renderableSessionWhere()` (server, `packages/opencode/src/opencodex/session-filter.ts`) and `isClientSessionRenderable` (client, `packages/sdk/js/src/v2/client-sync-cards.ts:95`) both drop any session whose `metadata.opencodex.swarmID` is set — including from live `session.created`/`session.updated` events. The graph *and* the swarm team strip were reading only the catalog, so both were blind to exactly the sessions they exist to show.
+
+Fixes, all on `feat/graph-eng-visualizer`:
+
+- **Descendant fetching** (`lib/session-graph-fetch.ts`, `controllers/session-graph-controller.ts`): the graph controller BFS-walks `/session/{id}/children` (unfiltered on the server) from the selected session, bounded at depth 6 / 200 sessions, and merges the result with the catalog (`mergeSessionLists`, newer `time.updated` wins). Structure refetches are event-driven: a `session.created/updated/deleted` whose id or parentID is in the known tree schedules one debounced (400 ms) refetch. Status churn never refetches — `session.status` events are applied into `snapshot.sessionStatus` by id regardless of catalog visibility (`client-sync-events.ts`), so live "running" state flows reactively; `buildSessionGraph` now accepts `sessionStatus` for exactly this.
+- **Team strip shares the tree**: `createSwarmTeamController` takes `extraChildren` (the graph's descendants), so role pills gain runs and light up for real swarm delegations.
+- **Hydration guard** (`lib/session-hydration.ts` + `lib/session-graph-visibility.ts`): the guard that drops loaded transcripts for sessions missing from the snapshot now also accepts graph-fetched sessions — previously an opened swarm-child node loaded its transcript and threw it away.
+- **Full-page open guard** (`app-session-routes.tsx`): ctrl-click on a node whose session is not in the catalog stays embedded instead of routing to a page that cannot resolve it.
+- **Task tool** (`packages/opencode/src/tool/task.ts`): (a) a swarm session's specialists keep their own `task` tool, so a role can fan work out to subagents of itself — their children do not inherit it, keeping default fan-out one level deep; (b) the result extraction now skips synthetic parts, surfaces assistant errors (`The subagent failed: ...`), and labels empty output explicitly instead of returning `""` — the silent-empty-result failure mode observed in testing.
+
+Delegation-path note for testers: a Claude Code orchestrator delegates via `mcp__opencodex_swarm__delegate` (children titled `<Role> (swarm role)`, tagged with `swarmRole`); any other orchestrator is briefed to use the task tool (children titled `... (@<agent> subagent)`, tagged with `swarmID` only — role bucketing falls back to title matching, so briefed orchestrators should lead the description with the role name, which the briefing already instructs).

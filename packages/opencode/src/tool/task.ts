@@ -160,6 +160,7 @@ export const TaskTool = Tool.define(
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
       const parent = yield* sessions.get(ctx.sessionID)
+      const parentIsSwarm = parent.model?.providerID === "swarm"
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
@@ -170,7 +171,7 @@ export const TaskTool = Tool.define(
           title: params.description + ` (@${next.name} subagent)`,
           // A swarm session's subtasks are its team at work; tagging them lets
           // the GUI group each child under the swarm's team view.
-          ...(parent.model?.providerID === "swarm" ? { metadata: { opencodex: { swarmID: parent.model.id } } } : {}),
+          ...(parentIsSwarm ? { metadata: { opencodex: { swarmID: parent.model!.id } } } : {}),
           permission: [
             ...deriveSubagentSessionPermission({
               parentSessionPermission: parent.permission ?? [],
@@ -225,12 +226,25 @@ export const TaskTool = Tool.define(
           agent: next.name,
           tools: {
             ...(next.permission.some((rule) => rule.permission === "todowrite") ? {} : { todowrite: false }),
-            ...(next.permission.some((rule) => rule.permission === id) ? {} : { task: false }),
+            // A swarm role must be able to fan its own work out, so a swarm
+            // session's specialists keep the task tool even when their agent
+            // does not grant it explicitly. Their own children do not inherit
+            // it, which keeps the fan-out one level deep by default.
+            ...(parentIsSwarm || next.permission.some((rule) => rule.permission === id) ? {} : { task: false }),
             ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
           },
           parts,
         })
-        return result.parts.findLast((item) => item.type === "text")?.text ?? ""
+        // The report is the last real text part. Synthetic parts are injected
+        // briefings, and a silent "" for a failed subagent reads as success to
+        // the caller - that is exactly the "completed but empty" confusion.
+        const report =
+          result.parts
+            .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
+            .at(-1) ?? ""
+        if (result.info.role === "assistant" && result.info.error)
+          return [`The subagent failed: ${JSON.stringify(result.info.error)}`, report].filter(Boolean).join("\n")
+        return report || "The subagent completed without producing a text report."
       })
 
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (

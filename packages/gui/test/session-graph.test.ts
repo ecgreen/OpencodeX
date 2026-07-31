@@ -157,6 +157,59 @@ describe("session graph jobs", () => {
   })
 })
 
+describe("session graph with a fetched swarm delegation tree", () => {
+  /**
+   * The shape that motivated descendant fetching: the catalog hides children
+   * tagged with a swarmID, so they arrive merged from the children endpoint.
+   * One role has fanned its own work out to two subagents of itself.
+   */
+  const engineer: Session = {
+    ...child("child-1", "Senior Engineer: build the graph (@general subagent)"),
+    metadata: { opencodex: { swarmID: "swarm-1" } },
+  }
+  const designer: Session = {
+    ...child("child-2", "Designer: brief (@general subagent)"),
+    metadata: { opencodex: { swarmID: "swarm-1" } },
+  }
+  const fanOut: Session[] = [
+    { ...child("child-1a", "Layout worker"), parentID: "child-1", time: { created: 5, updated: 6 } },
+    { ...child("child-1b", "Status worker"), parentID: "child-1", time: { created: 6, updated: 7 } },
+  ]
+  const sessions = [swarmRoot(), engineer, designer, ...fanOut]
+
+  test("draws the swarm children and the role's own subagents", () => {
+    const graph = buildSessionGraph(input({ sessions }))
+    expect(graph.nodes.map((node) => `${node.depth}:${node.id}`)).toEqual([
+      "0:session:root",
+      "1:session:child-1",
+      "1:session:child-2",
+      "2:session:child-1a",
+      "2:session:child-1b",
+    ])
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toContain("session:child-1->session:child-1a")
+    expect(sessionGraphAvailable(graph)).toBe(true)
+  })
+
+  test("cleans the subagent bookkeeping suffix from node titles", () => {
+    const graph = buildSessionGraph(input({ sessions }))
+    expect(graph.nodes.find((node) => node.id === "session:child-1")?.title).toBe(
+      "Senior Engineer: build the graph",
+    )
+  })
+
+  test("a live busy status marks a fetched child running, even over a finished job", () => {
+    const jobs = [job({ id: "job-1", sessionID: "child-1", status: "succeeded" })]
+    const graph = buildSessionGraph({
+      ...input({ sessions, jobs }),
+      sessionStatus: { "child-1": { type: "busy" }, "child-1a": { type: "retry" } },
+    })
+    expect(graph.nodes.find((node) => node.id === "session:child-1")?.status).toBe("running")
+    expect(graph.nodes.find((node) => node.id === "session:child-1a")?.status).toBe("running")
+    expect(graph.nodes.find((node) => node.id === "session:child-1b")?.status).toBe("idle")
+    expect(graph.counts.running).toBe(2)
+  })
+})
+
 describe("session graph edge labels", () => {
   test("prefers the swarm role and its instructions", () => {
     const tagged: Session = {

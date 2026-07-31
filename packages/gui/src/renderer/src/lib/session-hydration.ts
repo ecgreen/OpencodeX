@@ -7,6 +7,7 @@ import {
   refreshClientStateSessionTail,
 } from "./client-session-loader"
 import { mergeLiveSessionData } from "./live-session-patch"
+import { isGraphVisibleSession } from "./session-graph-visibility"
 import { collapseMessageWindow, prependOlderMessages, trimToLiveTail } from "./message-window"
 import type { Route } from "./routes"
 import {
@@ -213,7 +214,12 @@ export function createSessionHydrationController(input: {
       .then((data) => {
         if (!data || sessionLoadPromises.get(session.id)?.generation !== generation) return
         if (!input.presentation.visibleSessionIDs().includes(session.id)) return
-        if (!input.snapshot()?.sessions.some((item) => item.id === session.id)) return
+        // "Still exists" check. The catalog hides swarm-delegated children by
+        // design, so a session the workflow graph fetched itself counts too -
+        // without that, an opened graph node loads its transcript and then
+        // throws it away right here.
+        if (!input.snapshot()?.sessions.some((item) => item.id === session.id) && !isGraphVisibleSession(session.id))
+          return
         input.setViewData((current) =>
           setRecordEntry(current, session.id, mergeLiveSessionData(current[session.id], data)),
         )

@@ -8,7 +8,6 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Session } from "@/session/session"
-import { MessageV2 } from "../../src/session/message-v2"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
@@ -58,9 +57,12 @@ function defer<T>() {
   return { promise, resolve }
 }
 
-const seed = Effect.fn("TaskToolTest.seed")(function* (title = "Pinned") {
+const seed = Effect.fn("TaskToolTest.seed")(function* (
+  title = "Pinned",
+  options?: { model?: { id: ProviderV2.ModelID; providerID: ProviderV2.ID } },
+) {
   const session = yield* Session.Service
-  const chat = yield* session.create({ title })
+  const chat = yield* session.create({ title, ...(options?.model ? { model: options.model } : {}) })
   const user = yield* session.updateMessage({
     id: MessageID.ascending(),
     role: "user",
@@ -452,6 +454,128 @@ describe("tool.task", () => {
         },
       },
     },
+  )
+
+  it.instance("keeps the task tool for a swarm session's specialists and tags them", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const swarm = yield* seed("Swarm chat", {
+        model: { id: ProviderV2.ModelID.make("swarm-1"), providerID: ProviderV2.ID.make("swarm") },
+      })
+      const plain = yield* seed("Plain chat")
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const tools: Record<string, SessionPrompt.PromptInput["tools"]> = {}
+      const exec = (chat: typeof swarm, key: string) =>
+        def.execute(
+          {
+            description: "Senior Engineer: build the graph",
+            prompt: "fan the work out as needed",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.chat.id,
+            messageID: chat.assistant.id,
+            directory: chat.chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (tools[key] = input.tools) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      const result = yield* exec(swarm, "swarm")
+      yield* exec(plain, "plain")
+
+      // A specialist keeps its own task tool so a role can spawn subagents of
+      // itself; an ordinary subagent still loses it unless its agent grants it.
+      expect(tools.swarm?.task).toBeUndefined()
+      expect(tools.plain?.task).toBe(false)
+
+      const child = yield* sessions.get(result.metadata.sessionId)
+      expect(child.parentID).toBe(swarm.chat.id)
+      expect(child.metadata?.opencodex).toEqual({ swarmID: "swarm-1" })
+    }),
+  )
+
+  it.instance("surfaces a subagent failure instead of returning silence", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          Effect.sync(() => {
+            const base = reply(input, "")
+            return {
+              info: {
+                ...base.info,
+                error: {
+                  name: "ProviderAuthError",
+                  data: { providerID: "test", message: "credentials expired" },
+                } as SessionLegacy.Assistant["error"],
+              },
+              parts: [],
+            }
+          }),
+      }
+
+      const result = yield* def.execute(
+        { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("The subagent failed:")
+      expect(result.output).toContain("credentials expired")
+    }),
+  )
+
+  it.instance("labels an empty report instead of returning an empty string", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        // Only a synthetic part: an injected briefing, not a report.
+        prompt: (input) =>
+          Effect.sync(() => {
+            const base = reply(input, "internal briefing")
+            return { info: base.info, parts: [{ ...base.parts[0], synthetic: true }] }
+          }),
+      }
+
+      const result = yield* def.execute(
+        { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("The subagent completed without producing a text report.")
+      expect(result.output).not.toContain("internal briefing")
+    }),
   )
 
   it.instance("rejects background execution when the experiment is disabled", () =>
