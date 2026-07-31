@@ -492,17 +492,16 @@ describe("stall detection", () => {
     expect(isStalled(view)).toBe(false)
   })
 
-  test("work that nothing can advance and nothing can skip is a stall", () => {
-    // A loop body whose loop is already done: not ready (the loop is not
-    // running), not skippable (its dependencies are fine), and nobody is
-    // coming. The dispatcher fails the goal instead of waiting forever.
+  test("a body node whose loop already settled is skipped, not stalled", () => {
+    // Body membership is not an edge, so this is the one case the edge
+    // cascade cannot see on its own.
     const view = graph([
       node("fix", "done", { kind: "loop", loop: { exitCheckNodeID: "tests", maxIterations: 1, iteration: 1 } }),
       node("orphan", "planned", { parentNodeID: "fix" }),
     ])
     expect(readyNodeIDs(view)).toEqual([])
-    expect(cascadeSkipIDs(view)).toEqual([])
-    expect(isStalled(view)).toBe(true)
+    expect(cascadeSkipIDs(view)).toEqual(["orphan"])
+    expect(isStalled(view)).toBe(false)
   })
 })
 

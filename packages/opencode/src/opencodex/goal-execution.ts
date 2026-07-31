@@ -1,9 +1,8 @@
 import { Database } from "@opencode-ai/core/database/database"
-import { OpencodeXSwarmRoleTable } from "@opencode-ai/core/opencodex/sql"
+import { OpencodeXProjectFolderTable, OpencodeXSwarmRoleTable } from "@opencode-ai/core/opencodex/sql"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { InstanceStore } from "@/project/instance-store"
 import { OpencodeXJob } from "@/opencodex/job"
-import { OpencodeXProject } from "@/opencodex/project"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
@@ -47,7 +46,6 @@ export const goalExecutionLayer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const store = yield* GoalStoreService
-    const projects = yield* OpencodeXProject.Service
     const instances = yield* InstanceStore.Service
     const sessions = yield* Session.Service
     const prompt = yield* SessionPrompt.Service
@@ -69,6 +67,16 @@ export const goalExecutionLayer = Layer.effect(
       const fallback = yield* provider.defaultModel().pipe(Effect.option)
       if (fallback._tag === "None") return undefined
       return { providerID: fallback.value.providerID, modelID: fallback.value.modelID }
+    })
+
+    const projectDirectory = Effect.fnUntraced(function* (projectID: string) {
+      const row = yield* db
+        .select({ path: OpencodeXProjectFolderTable.path })
+        .from(OpencodeXProjectFolderTable)
+        .where(eq(OpencodeXProjectFolderTable.opencodex_project_id, projectID))
+        .get()
+        .pipe(Effect.orElseSucceed(() => undefined))
+      return row?.path
     })
 
     const swarmRoles = Effect.fnUntraced(function* (swarmID: string | undefined) {
@@ -108,28 +116,36 @@ export const goalExecutionLayer = Layer.effect(
       const node = goal.nodes.find((item) => item.id === nodeID)
       if (!node) return yield* Effect.fail(new Error(`Goal ${goalID} has no node ${nodeID}`))
 
-      const project = yield* projects.get(goal.projectID).pipe(Effect.orDie)
-      const directory = goal.directory ?? project.folders[0]?.path ?? project.project.worktree
-      const [roles, fallback] = yield* Effect.all([swarmRoles(goal.swarmID), fallbackModel(goal)], {
-        concurrency: "unbounded",
-      })
-      const resolved = resolveExecutor({ executor: node.executor, kind: node.kind, roles, fallback })
-      if ("error" in resolved) return yield* Effect.fail(new Error(resolved.error))
-      const executor = resolved.executor
+      // Read the directory straight from the folder table: resolving it
+      // through the project service would need an instance, and the instance
+      // is the thing the directory selects.
+      const directory = goal.directory ?? (yield* projectDirectory(goal.projectID))
+      if (!directory) return yield* Effect.fail(new Error(`Goal ${goalID} has no directory to run in`))
 
-      const skill = executor.skill ? yield* skills.get(executor.skill).pipe(Effect.orElseSucceed(() => undefined)) : undefined
-      const text = buildNodePrompt({
-        skill: skill?.content,
-        instructions: executor.instructions,
-        goal: { statement: goal.statement, successCriteria: goal.successCriteria },
-        node: { kind: node.kind, title: node.title, brief: node.brief },
-        context: feedsContext(goal, node.id),
-        iteration: iterationContext(goal, node),
-      })
-
+      // Everything from here needs an instance: resolving a default model,
+      // reading the owner session, and creating the child all run against the
+      // directory the goal belongs to.
       return yield* instances.provide(
         { directory },
         Effect.gen(function* () {
+          const [roles, fallback] = yield* Effect.all([swarmRoles(goal.swarmID), fallbackModel(goal)], {
+            concurrency: "unbounded",
+          })
+          const resolved = resolveExecutor({ executor: node.executor, kind: node.kind, roles, fallback })
+          if ("error" in resolved) return yield* Effect.fail(new Error(resolved.error))
+          const executor = resolved.executor
+
+          const skill = executor.skill
+            ? yield* skills.get(executor.skill).pipe(Effect.orElseSucceed(() => undefined))
+            : undefined
+          const text = buildNodePrompt({
+            skill: skill?.content,
+            instructions: executor.instructions,
+            goal: { statement: goal.statement, successCriteria: goal.successCriteria },
+            node: { kind: node.kind, title: node.title, brief: node.brief },
+            context: feedsContext(goal, node.id),
+            iteration: iterationContext(goal, node),
+          })
           const owner = goal.ownerSessionID
             ? yield* sessions.get(SessionID.make(goal.ownerSessionID)).pipe(Effect.option)
             : undefined

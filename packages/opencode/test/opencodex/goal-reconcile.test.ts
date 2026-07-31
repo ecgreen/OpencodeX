@@ -251,7 +251,7 @@ describe("budget", () => {
 })
 
 describe("stalls", () => {
-  test("a graph that cannot progress fails with a reason rather than hanging", () => {
+  test("a settled loop takes its leftover body nodes with it", () => {
     const plan = planReconcile({
       goal: goal([
         node("fix", "done", { kind: "loop", loop: { exitCheckNodeID: "tests", maxIterations: 1, iteration: 1 } }),
@@ -259,9 +259,19 @@ describe("stalls", () => {
       ]),
       now: NOW,
     })
+    expect(plan.skip).toEqual(["orphan"])
     expect(plan.dispatch).toEqual([])
-    expect(plan.goal?.status).toBe("failed")
-    expect(plan.goal?.reason).toContain("cannot progress")
+    expect(plan.goal).toEqual({ status: "completed" })
+  })
+
+  test("a loop whose exit check went missing fails instead of iterating forever", () => {
+    const plan = planReconcile({
+      goal: goal([
+        node("fix", "running", { kind: "loop", loop: { exitCheckNodeID: "missing", maxIterations: 1, iteration: 1 } }),
+      ]),
+      now: NOW,
+    })
+    expect(plan.loops).toEqual([{ type: "finish", nodeID: "fix", status: "failed", report: "Loop has no exit check." }])
   })
 
   test("a gate blocks without being called a stall", () => {

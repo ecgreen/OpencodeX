@@ -142,10 +142,14 @@ export function cascadeSkipIDs(graph: GraphView): string[] {
     for (const node of graph.nodes) {
       if (skipped.has(node.id)) continue
       if (!isPending(status.get(node.id)!)) continue
-      const poisoned = dependencies(index, node.id).some((edge) => {
-        const from = status.get(edge.fromNodeID)
-        return from === undefined || POISONED.includes(from)
-      })
+      const poisoned =
+        dependencies(index, node.id).some((edge) => {
+          const from = status.get(edge.fromNodeID)
+          return from === undefined || POISONED.includes(from)
+        }) ||
+        // Body membership is not an edge, so a loop that will never iterate
+        // again has to settle its body explicitly or it would sit forever.
+        (node.parentNodeID !== undefined && isTerminal(status.get(node.parentNodeID) ?? "failed"))
       if (!poisoned) continue
       skipped.add(node.id)
       status.set(node.id, "skipped")
