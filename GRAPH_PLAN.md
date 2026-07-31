@@ -265,6 +265,13 @@ A post-ship review found five defects, all fixed with tests:
   blocking wait returns only once in-flight branches have landed, so its
   report is not a snapshot mid-stride.
 
+A sixth defect surfaced only in CI: the nine goal HTTP endpoints shipped
+with **no scenarios in the HTTP API exercise harness**, so its
+`--fail-on-missing` gate listed every one as a miss. They are covered now.
+The lesson worth keeping: the harness's `coverage` mode only maps route
+presence, and `effect` mode is the one that actually executes assertions -
+a green coverage run says nothing about whether an endpoint behaves.
+
 Two pieces of §7 remain deliberately unshipped: the **goal composer** (goals
 are created by `graph_plan` or the HTTP API today; `buildPlannerBrief` exists,
 tested, for the composer to seed a planner session with) and a standing goal's
