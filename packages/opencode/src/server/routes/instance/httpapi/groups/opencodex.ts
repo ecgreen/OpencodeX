@@ -2,9 +2,11 @@ import { HttpApi, OpenApi } from "effect/unstable/httpapi"
 import { opencodexGroup } from "./opencodex-operations-group"
 
 export {
+  ApproveGoalNodePayload,
   ClaimJobPayload,
   CompleteJobPayload,
   FailJobPayload,
+  ListGoalsQuery,
   PluginListQuery,
   SessionSyncQuery,
   StartJobPayload,

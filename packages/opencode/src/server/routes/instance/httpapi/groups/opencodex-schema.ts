@@ -17,6 +17,11 @@ export const ClaimJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.ClaimInput
 export const CompleteJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.CompleteInput.fields, ["jobID"]))
 export const FailJobPayload = Schema.Struct(Struct.omit(OpencodeXJob.FailInput.fields, ["jobID"]))
 export const StartJobPayload = Schema.Struct({ owner: Schema.String })
+export const ListGoalsQuery = Schema.Struct({
+  projectID: Schema.optional(Schema.String),
+  sessionID: Schema.optional(Schema.String),
+})
+export const ApproveGoalNodePayload = Schema.Struct({ approved: Schema.Boolean })
 export const UpdateViewPayload = Schema.Struct(Struct.omit(OpencodeXView.UpdateInput.fields, ["id"]))
 export const UpdateTerminalSessionPayload = Schema.Struct(
   Struct.omit(OpencodeXTerminalSession.UpdateInput.fields, ["id"]),

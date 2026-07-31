@@ -12,6 +12,8 @@
  * tools internally during multi-step processing before emitting events.
  */
 import { expect } from "bun:test"
+import { OpencodeXGoal } from "@/opencodex/goal"
+import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
@@ -143,6 +145,8 @@ function makeHttp() {
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
   const registry = ToolRegistry.layer.pipe(
     Layer.provide(GuiBridge.defaultLayer),
+    Layer.provide(OpencodeXGoal.layer),
+    Layer.provide(OpencodeXJob.defaultLayer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),

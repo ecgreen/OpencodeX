@@ -15,6 +15,8 @@ import { Plugin } from "@/plugin"
 import { Question } from "@/question"
 import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
+import { OpencodeXGoal } from "@/opencodex/goal"
+import { OpencodeXJob } from "@/opencodex/job"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
@@ -73,6 +75,12 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Layer.mergeAll(node, Database.defaultLayer)),
     )
     .pipe(
+      // The goal layer goes before its dependencies: a pipe applies outward,
+      // so anything it needs has to be provided after it.
+      Layer.provide(OpencodeXGoal.layer),
+      Layer.provide(OpencodeXJob.defaultLayer),
+      Layer.provide(EventV2Bridge.defaultLayer),
+      Layer.provide(Database.defaultLayer),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
       Layer.provide(Layer.mock(OpencodeXProject.Service)({})),

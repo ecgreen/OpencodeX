@@ -85,7 +85,12 @@ export function eventVisibility(event: EventV2.Payload, domain: NonNullable<Retu
 
 function eventDomain(event: EventV2.Payload): "capabilities" | "catalog" | "operations" | "session" | undefined {
   if (isCapabilitiesEvent(event)) return "capabilities"
-  if (event.type.startsWith("opencodex.job.") || event.type.startsWith("opencodex.swarm.")) return "operations"
+  if (
+    event.type.startsWith("opencodex.job.") ||
+    event.type.startsWith("opencodex.swarm.") ||
+    event.type.startsWith("opencodex.goal.")
+  )
+    return "operations"
   if (event.type.startsWith("message.") || event.type === "todo.updated" || event.type === "session.diff")
     return "session"
   if (

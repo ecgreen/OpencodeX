@@ -1,4 +1,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
+import { OpencodeXGoal } from "@/opencodex/goal"
+import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { Database } from "@opencode-ai/core/database/database"
@@ -225,6 +227,8 @@ function makePrompt(input?: { processor?: "blocking" }) {
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
   const registry = ToolRegistry.layer.pipe(
     Layer.provide(GuiBridge.defaultLayer),
+    Layer.provide(OpencodeXGoal.layer),
+    Layer.provide(OpencodeXJob.defaultLayer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),

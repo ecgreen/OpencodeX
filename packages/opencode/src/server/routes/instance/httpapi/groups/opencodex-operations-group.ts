@@ -1,3 +1,4 @@
+import { OpencodeXGoal } from "@/opencodex/goal"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
@@ -10,9 +11,11 @@ import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 import {
+  ApproveGoalNodePayload,
   ClaimJobPayload,
   CompleteJobPayload,
   FailJobPayload,
+  ListGoalsQuery,
   OPENCODEX_ROOT,
   StartJobPayload,
   UpdateJobPayload,
@@ -138,6 +141,58 @@ export const opencodexGroup = opencodexWorkbenchGroup
       success: described(OpencodeXSwarm.Info, "Updated OpencodeX swarm"),
       error: [HttpApiError.BadRequest, ApiNotFoundError],
     }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.swarm.role.update", summary: "Update OpencodeX swarm role" })),
+    HttpApiEndpoint.get("listGoals", `${OPENCODEX_ROOT}/goal`, {
+      query: ListGoalsQuery,
+      success: described(Schema.Array(OpencodeXGoal.Info), "List OpencodeX goals"),
+      error: HttpApiError.BadRequest,
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.list", summary: "List OpencodeX goals" })),
+    HttpApiEndpoint.post("createGoal", `${OPENCODEX_ROOT}/goal`, {
+      payload: OpencodeXGoal.CreateInput,
+      success: described(OpencodeXGoal.Info, "Created OpencodeX goal"),
+      error: [HttpApiError.BadRequest, ProjectNotFoundError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.create", summary: "Create OpencodeX goal" })),
+    HttpApiEndpoint.get("getGoal", `${OPENCODEX_ROOT}/goal/:goalID`, {
+      params: { goalID: Schema.String },
+      success: described(OpencodeXGoal.Info, "OpencodeX goal"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.get", summary: "Get OpencodeX goal" })),
+    HttpApiEndpoint.post("planGoal", `${OPENCODEX_ROOT}/goal/:goalID/plan`, {
+      params: { goalID: Schema.String },
+      payload: OpencodeXGoal.PlanInput,
+      success: described(OpencodeXGoal.Info, "Planned OpencodeX goal"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.plan", summary: "Replace an OpencodeX goal's graph" })),
+    HttpApiEndpoint.patch("updateGoalPlan", `${OPENCODEX_ROOT}/goal/:goalID/plan`, {
+      params: { goalID: Schema.String },
+      payload: OpencodeXGoal.UpdatePlanInput,
+      success: described(OpencodeXGoal.Info, "Updated OpencodeX goal graph"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({ identifier: "opencodex.goal.plan.update", summary: "Repair a running OpencodeX goal graph" }),
+    ),
+    HttpApiEndpoint.post("startGoal", `${OPENCODEX_ROOT}/goal/:goalID/start`, {
+      params: { goalID: Schema.String },
+      success: described(OpencodeXGoal.Info, "Running OpencodeX goal"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.start", summary: "Start an OpencodeX goal" })),
+    HttpApiEndpoint.post("approveGoalNode", `${OPENCODEX_ROOT}/goal/:goalID/node/:nodeID/approve`, {
+      params: { goalID: Schema.String, nodeID: Schema.String },
+      payload: ApproveGoalNodePayload,
+      success: described(OpencodeXGoal.Info, "Resolved OpencodeX goal gate"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(
+      OpenApi.annotations({ identifier: "opencodex.goal.node.approve", summary: "Approve or reject a goal gate" }),
+    ),
+    HttpApiEndpoint.post("cancelGoal", `${OPENCODEX_ROOT}/goal/:goalID/cancel`, {
+      params: { goalID: Schema.String },
+      success: described(OpencodeXGoal.Info, "Cancelled OpencodeX goal"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.cancel", summary: "Cancel an OpencodeX goal" })),
+    HttpApiEndpoint.delete("removeGoal", `${OPENCODEX_ROOT}/goal/:goalID`, {
+      params: { goalID: Schema.String },
+      success: described(Schema.Boolean, "Deleted OpencodeX goal"),
+      error: [HttpApiError.BadRequest, ApiNotFoundError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.goal.delete", summary: "Delete an OpencodeX goal" })),
     HttpApiEndpoint.get("listTerminalSessions", `${OPENCODEX_ROOT}/terminal-session`, {
       success: described(Schema.Array(OpencodeXTerminalSession.Info), "List OpencodeX terminal sessions"),
       error: HttpApiError.BadRequest,

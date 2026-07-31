@@ -8,6 +8,7 @@ import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { Todo } from "@/session/todo"
 import { Effect } from "effect"
+import { OpencodeXGoal } from "./goal"
 import { OpencodeXJob } from "./job"
 import { OpencodeXProject } from "./project"
 import { OpencodeXSessionCard, makeReader as makeSessionCardReader } from "./session-card"
@@ -34,6 +35,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
   const projects = yield* OpencodeXProject.Service
   const jobs = yield* OpencodeXJob.Service
   const sessions = yield* Session.Service
+  const goals = yield* OpencodeXGoal.ReadService
   const swarms = yield* OpencodeXSwarm.ReadService
   const terminalSessions = yield* OpencodeXTerminalSession.Service
   const views = yield* OpencodeXView.Service
@@ -45,8 +47,10 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
   const sessionCards = makeSessionCardReader(database.db)
 
   const readOperations = Effect.fn("OpencodeXState.readOperations")(function* () {
-    const [jobList, swarmList] = yield* Effect.all([jobs.list(), swarms.list()], { concurrency: "unbounded" })
-    return { jobs: jobList, swarms: swarmList }
+    const [jobList, swarmList, goalList] = yield* Effect.all([jobs.list(), swarms.list(), goals.list()], {
+      concurrency: "unbounded",
+    })
+    return { jobs: jobList, swarms: swarmList, goals: goalList }
   })
 
   const withUiState = Effect.fn("OpencodeXState.withSessionCardUiState")(function* (

@@ -1,3 +1,4 @@
+import { OpencodeXGoal } from "@/opencodex/goal"
 import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXSwarm } from "@/opencodex/swarm"
 import { OpencodeXTerminalSession } from "@/opencodex/terminal-session"
@@ -9,6 +10,7 @@ import { ConflictError, notFound, ProjectNotFoundError } from "../errors"
 import { UpdateJobPayload, UpdateTerminalSessionPayload, UpdateViewPayload } from "../groups/opencodex"
 
 export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeOperationsHandlers")(function* () {
+  const goals = yield* OpencodeXGoal.Service
   const jobs = yield* OpencodeXJob.Service
   const swarms = yield* OpencodeXSwarm.Service
   const terminalSessions = yield* OpencodeXTerminalSession.Service
@@ -128,6 +130,54 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     return yield* mapSwarmErrors(swarms.updateRole(ctx.params.swarmID, ctx.params.roleID, ctx.payload))
   })
 
+  const listGoals = Effect.fn("OpencodeXHttpApi.listGoals")(function* (ctx: {
+    query: { projectID?: string; sessionID?: string }
+  }) {
+    return yield* goals.list({ projectID: ctx.query.projectID, sessionID: ctx.query.sessionID })
+  })
+  const createGoal = Effect.fn("OpencodeXHttpApi.createGoal")(function* (ctx: {
+    payload: OpencodeXGoal.CreateInput
+  }) {
+    return yield* goals.create(ctx.payload).pipe(
+      Effect.catchTag("Project.NotFoundError", (error) =>
+        Effect.fail(
+          new ProjectNotFoundError({ projectID: error.projectID, message: `Project not found: ${error.projectID}` }),
+        ),
+      ),
+      Effect.catchTag("OpencodeX.Goal.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+    )
+  })
+  const getGoal = Effect.fn("OpencodeXHttpApi.getGoal")(function* (ctx: { params: { goalID: string } }) {
+    return yield* mapGoalErrors(goals.get(ctx.params.goalID))
+  })
+  const planGoal = Effect.fn("OpencodeXHttpApi.planGoal")(function* (ctx: {
+    params: { goalID: string }
+    payload: OpencodeXGoal.PlanInput
+  }) {
+    return yield* mapGoalErrors(goals.plan(ctx.params.goalID, ctx.payload))
+  })
+  const updateGoalPlan = Effect.fn("OpencodeXHttpApi.updateGoalPlan")(function* (ctx: {
+    params: { goalID: string }
+    payload: OpencodeXGoal.UpdatePlanInput
+  }) {
+    return yield* mapGoalErrors(goals.updatePlan(ctx.params.goalID, ctx.payload))
+  })
+  const startGoal = Effect.fn("OpencodeXHttpApi.startGoal")(function* (ctx: { params: { goalID: string } }) {
+    return yield* mapGoalErrors(goals.start(ctx.params.goalID))
+  })
+  const approveGoalNode = Effect.fn("OpencodeXHttpApi.approveGoalNode")(function* (ctx: {
+    params: { goalID: string; nodeID: string }
+    payload: { approved: boolean }
+  }) {
+    return yield* mapGoalErrors(goals.approve(ctx.params.goalID, ctx.params.nodeID, ctx.payload.approved))
+  })
+  const cancelGoal = Effect.fn("OpencodeXHttpApi.cancelGoal")(function* (ctx: { params: { goalID: string } }) {
+    return yield* mapGoalErrors(goals.cancel(ctx.params.goalID))
+  })
+  const removeGoal = Effect.fn("OpencodeXHttpApi.removeGoal")(function* (ctx: { params: { goalID: string } }) {
+    return yield* mapGoalErrors(goals.remove(ctx.params.goalID))
+  })
+
   const listTerminalSessions = Effect.fn("OpencodeXHttpApi.listTerminalSessions")(function* () {
     return yield* terminalSessions.list()
   })
@@ -227,6 +277,15 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     removeSwarm,
     addSwarmRole,
     updateSwarmRole,
+    listGoals,
+    createGoal,
+    getGoal,
+    planGoal,
+    updateGoalPlan,
+    startGoal,
+    approveGoalNode,
+    cancelGoal,
+    removeGoal,
     listTerminalSessions,
     createTerminalSession,
     getTerminalSession,
@@ -269,6 +328,22 @@ function mapSwarmErrors<A, R>(
     Effect.catchTag("OpencodeX.Swarm.NotFoundError", (error) => Effect.fail(notFound(`Swarm not found: ${error.swarmID}`))),
     Effect.catchTag("OpencodeX.Swarm.RoleNotFoundError", (error) => Effect.fail(notFound(`Swarm role not found: ${error.roleID}`))),
     Effect.catchTag("OpencodeX.Swarm.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+  )
+}
+
+function mapGoalErrors<A, R>(
+  effect: Effect.Effect<
+    A,
+    OpencodeXGoal.NotFoundError | OpencodeXGoal.NodeNotFoundError | OpencodeXGoal.ValidationError,
+    R
+  >,
+) {
+  return effect.pipe(
+    Effect.catchTag("OpencodeX.Goal.NotFoundError", (error) => Effect.fail(notFound(`Goal not found: ${error.goalID}`))),
+    Effect.catchTag("OpencodeX.Goal.NodeNotFoundError", (error) =>
+      Effect.fail(notFound(`Goal node not found: ${error.nodeID}`)),
+    ),
+    Effect.catchTag("OpencodeX.Goal.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
   )
 }
 
