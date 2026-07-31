@@ -44,7 +44,7 @@ export function goalNodeTone(status: string): GoalNodeTone {
 }
 
 /** The goal this session owns, if any. A session owns at most one at a time. */
-export function sessionGoal(session: Session | undefined, goals: readonly OpencodeXGoal[]) {
+export function sessionGoal(session: Pick<Session, "id"> | undefined, goals: readonly OpencodeXGoal[]) {
   if (!session) return undefined
   const owned = goals.filter((goal) => goal.ownerSessionID === session.id)
   if (owned.length === 0) return undefined

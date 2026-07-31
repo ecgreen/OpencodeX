@@ -8,9 +8,11 @@ import {
   readyNodeIDs,
   validatePlan,
   type EdgeView,
+  type FoldedStatus,
   type GraphView,
   type NodeView,
 } from "../../src/opencodex/goal-graph"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import type { EdgeInput, NodeInput, NodeKind, NodeStatus } from "../../src/opencodex/goal-schema"
 
 /** A planner-authored node, defaulted so each test states only what it means. */
@@ -118,7 +120,7 @@ describe("plan validation", () => {
   test("a bare model executor is legal, half a model pair is not", () => {
     expect(validatePlan({ nodes: [plan("a", { executor: { type: "model" } })] })).toEqual([])
     expect(
-      validatePlan({ nodes: [plan("a", { executor: { type: "model", providerID: "anthropic" as never } })] }),
+      validatePlan({ nodes: [plan("a", { executor: { type: "model", providerID: ProviderV2.ID.make("anthropic") } })] }),
     ).toEqual(['Node "a" needs both providerID and modelID, or neither.'])
   })
 
@@ -322,7 +324,7 @@ describe("readiness", () => {
     // The loop node itself is what becomes ready first.
     expect(readyNodeIDs(graph(nodes))).toEqual(["fix"])
 
-    const running = [{ ...nodes[0]!, status: "running" as const }, nodes[1]!, nodes[2]!]
+    const running = [{ ...nodes[0], status: "running" as const }, nodes[1], nodes[2]]
     expect(readyNodeIDs(graph(running))).toEqual(["patch"])
   })
 
@@ -458,7 +460,7 @@ describe("loop outcome", () => {
 })
 
 describe("status folding", () => {
-  const cases: [string, NodeStatus[], string][] = [
+  const cases: [string, NodeStatus[], FoldedStatus][] = [
     ["work remains", ["done", "planned"], "running"],
     ["everything landed", ["done", "done"], "completed"],
     ["one node failed", ["done", "failed"], "failed"],
@@ -466,7 +468,7 @@ describe("status folding", () => {
   ]
   for (const [name, statuses, expected] of cases) {
     test(name, () => {
-      expect(foldStatus(graph(statuses.map((status, index) => node(`n${index}`, status))))).toBe(expected as never)
+      expect(foldStatus(graph(statuses.map((status, index) => node(`n${index}`, status))))).toBe(expected)
     })
   }
 

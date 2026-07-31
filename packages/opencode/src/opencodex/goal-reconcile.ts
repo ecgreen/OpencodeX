@@ -100,7 +100,8 @@ export function planReconcile(input: { goal: ReconcileGoal; now: number }): Reco
       changed = true
     }
 
-    for (const node of [...working.values()]) {
+    // Snapshot before iterating: the loop mutates `working` as it settles.
+    for (const node of Array.from(working.values())) {
       if (node.kind !== "loop" || node.status !== "running" || !node.loop) continue
       const outcome = loopOutcome({ nodes: [...working.values()], edges }, node.id)
       if (outcome.type === "waiting") continue

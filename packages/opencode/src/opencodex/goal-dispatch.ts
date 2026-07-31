@@ -1,4 +1,3 @@
-import { Database } from "@opencode-ai/core/database/database"
 import { OpencodeXGoalNodeTable, OpencodeXGoalTable } from "@opencode-ai/core/opencodex/sql"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXJob } from "@/opencodex/job"
@@ -37,7 +36,6 @@ export class GoalDispatch extends Context.Service<GoalDispatch, Interface>()("@o
 export const goalDispatchLayer = Layer.effect(
   GoalDispatch,
   Effect.gen(function* () {
-    const { db } = yield* Database.Service
     const events = yield* EventV2Bridge.Service
     const store = yield* GoalStoreService
     const jobs = yield* OpencodeXJob.Service

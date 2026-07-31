@@ -1,3 +1,4 @@
+// oxlint-disable no-unsafe-type-assertion -- fixtures are deliberately partial: only the fields the summaries read
 import { describe, expect, test } from "bun:test"
 import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"

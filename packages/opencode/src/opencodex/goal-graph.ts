@@ -164,8 +164,11 @@ export function cascadeSkipIDs(graph: GraphView): string[] {
  * context - a `requires` edge says "wait for this", not "read this" - and only
  * from work that actually succeeded and said something.
  */
-export function feedsContext<T extends NodeView & { readonly result?: string }>(
-  graph: { readonly nodes: readonly T[]; readonly edges: readonly EdgeView[] },
+export function feedsContext(
+  graph: {
+    readonly nodes: readonly (NodeView & { readonly result?: string })[]
+    readonly edges: readonly EdgeView[]
+  },
   nodeID: string,
 ): { title: string; result: string }[] {
   const byID = new Map(graph.nodes.map((node) => [node.id, node]))

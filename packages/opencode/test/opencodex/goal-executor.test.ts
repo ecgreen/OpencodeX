@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import { resolveExecutor, type SwarmRoleRow } from "../../src/opencodex/goal-executor"
 import { advanceSchedule, scheduleDue } from "../../src/opencodex/goal-reconcile"
 import type { Status } from "../../src/opencodex/goal-schema"
@@ -68,7 +69,12 @@ describe("executor resolution", () => {
     expect(
       resolved(
         resolveExecutor({
-          executor: { type: "agent", agent: "build", providerID: "openai" as never, modelID: "gpt-5.2" as never },
+          executor: {
+            type: "agent",
+            agent: "build",
+            providerID: ProviderV2.ID.make("openai"),
+            modelID: ProviderV2.ModelID.make("gpt-5.2"),
+          },
           kind: "task",
           fallback,
         }),

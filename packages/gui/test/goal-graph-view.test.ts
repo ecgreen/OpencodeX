@@ -78,7 +78,7 @@ describe("node rows", () => {
         { edges: [{ goalID: "g1", fromNodeID: "survey", toNodeID: "api", kind: "feeds" }] },
       ),
     )
-    expect(rows[1]!.detail).toBe("Backend · after Survey the schema")
+    expect(rows[1].detail).toBe("Backend · after Survey the schema")
   })
 
   test("a loop row shows the iteration it is on, counting from one", () => {
@@ -90,13 +90,13 @@ describe("node rows", () => {
         }),
       ]),
     )
-    expect(rows[0]!.detail).toBe("iteration 1 of 5")
+    expect(rows[0].detail).toBe("iteration 1 of 5")
   })
 
   test("a gate says what it is waiting for", () => {
     const rows = goalNodeRows(goal([node("approve", { kind: "gate", status: "awaiting_approval" })]))
-    expect(rows[0]!.detail).toBe("needs your approval")
-    expect(rows[0]!.tone).toBe("attention")
+    expect(rows[0].detail).toBe("needs your approval")
+    expect(rows[0].tone).toBe("attention")
   })
 
   test("every node status maps to a tone", () => {
@@ -165,15 +165,15 @@ describe("selection", () => {
   const other = goal([node("a")], { id: "other", ownerSessionID: "ses_2" })
 
   test("a session shows its live goal even when a finished one is newer", () => {
-    expect(sessionGoal({ id: "ses_1" } as never, [old, live, other])?.id).toBe("live")
+    expect(sessionGoal({ id: "ses_1" }, [old, live, other])?.id).toBe("live")
   })
 
   test("with nothing live, the most recent finished goal still shows", () => {
-    expect(sessionGoal({ id: "ses_1" } as never, [old, other])?.id).toBe("old")
+    expect(sessionGoal({ id: "ses_1" }, [old, other])?.id).toBe("old")
   })
 
   test("a session with no goal gets nothing", () => {
-    expect(sessionGoal({ id: "ses_9" } as never, [old, live])).toBeUndefined()
+    expect(sessionGoal({ id: "ses_9" }, [old, live])).toBeUndefined()
     expect(sessionGoal(undefined, [old, live])).toBeUndefined()
   })
 })

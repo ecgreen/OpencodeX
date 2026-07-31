@@ -7,6 +7,7 @@ import {
 } from "@opencode-ai/core/opencodex/sql"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { SessionID } from "@/session/schema"
 import { and, eq, inArray, type SQL } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { encode, hydrateGoal } from "./goal-model"
@@ -17,7 +18,6 @@ import {
   type CreateInput,
   type EdgeInput,
   type Executor,
-  type Info,
   type NodeInput,
   type NodeStatus,
   type Schedule,
@@ -100,7 +100,7 @@ export function createGoalStore(db: Database.Interface["db"], events: EventV2.In
   const list = Effect.fn("OpencodeXGoal.list")(function* (input?: { projectID?: string; sessionID?: string }) {
     const filters = [
       input?.projectID ? eq(OpencodeXGoalTable.opencodex_project_id, input.projectID) : undefined,
-      input?.sessionID ? eq(OpencodeXGoalTable.owner_session_id, input.sessionID as never) : undefined,
+      input?.sessionID ? eq(OpencodeXGoalTable.owner_session_id, SessionID.make(input.sessionID)) : undefined,
     ].filter((filter): filter is SQL => filter !== undefined)
     return yield* readGoals(filters.length > 0 ? and(...filters) : undefined)
   })
@@ -157,7 +157,7 @@ export function createGoalStore(db: Database.Interface["db"], events: EventV2.In
                   success_criteria_json: [...(input.successCriteria ?? [])],
                   status: "draft",
                   source: input.source ?? "manual",
-                  owner_session_id: (input.ownerSessionID ?? null) as never,
+                  owner_session_id: input.ownerSessionID ? SessionID.make(input.ownerSessionID) : null,
                   swarm_id: input.swarmID ?? null,
                   directory: input.directory ?? null,
                   budget_json: encode(input.budget),
@@ -348,7 +348,7 @@ function insertNodes(
   goalID: string,
   nodes: readonly NodeInput[],
   sortOffset: number,
-): Effect.Effect<void, never, never> {
+): Effect.Effect<void> {
   if (nodes.length === 0) return Effect.void
   const now = Date.now()
   return Effect.forEach(
@@ -388,7 +388,7 @@ function insertEdges(
   transaction: Transaction,
   goalID: string,
   edges: readonly EdgeInput[],
-): Effect.Effect<void, never, never> {
+): Effect.Effect<void> {
   if (edges.length === 0) return Effect.void
   const now = Date.now()
   return Effect.forEach(
@@ -417,7 +417,9 @@ function nodeValues(patch: NodePatch) {
     ...(patch.brief !== undefined ? { brief: patch.brief } : {}),
     ...(patch.executor !== undefined ? { executor_json: encode(patch.executor) } : {}),
     ...(patch.jobID !== undefined ? { job_id: patch.jobID } : {}),
-    ...(patch.sessionID !== undefined ? { session_id: patch.sessionID as never } : {}),
+    ...(patch.sessionID !== undefined
+      ? { session_id: patch.sessionID === null ? null : SessionID.make(patch.sessionID) }
+      : {}),
     ...(patch.deliveredPrompt !== undefined ? { delivered_prompt: patch.deliveredPrompt } : {}),
     ...(patch.result !== undefined ? { result_text: patch.result } : {}),
     ...(patch.verdict !== undefined ? { verdict_json: patch.verdict === null ? null : encode(patch.verdict) } : {}),

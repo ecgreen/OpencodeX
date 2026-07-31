@@ -117,7 +117,7 @@ export function hydrateEdge(row: EdgeRow): Edge {
 export function parseLoop(value: string | null | undefined): StoredLoop | undefined {
   if (!value) return undefined
   try {
-    const parsed = JSON.parse(value) as Partial<StoredLoop>
+    const parsed: Partial<StoredLoop> = JSON.parse(value)
     if (typeof parsed?.exitCheckNodeID !== "string") return undefined
     return {
       exitCheckNodeID: parsed.exitCheckNodeID,
@@ -154,7 +154,7 @@ export function nodeJobKey(goal: Pick<Info, "id" | "metadata">, nodeID: string, 
 export function parseSpend(value: string | null | undefined): Spend {
   if (!value) return EMPTY_SPEND
   try {
-    const parsed = JSON.parse(value) as Partial<Spend>
+    const parsed: Partial<Spend> = JSON.parse(value)
     return {
       nodeRuns: typeof parsed?.nodeRuns === "number" ? parsed.nodeRuns : 0,
       costUsd: typeof parsed?.costUsd === "number" ? parsed.costUsd : 0,

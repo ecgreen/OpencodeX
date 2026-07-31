@@ -113,7 +113,7 @@ function attentionRank(summary: ProjectSummary) {
 export function projectViews(
   project: GuiSnapshot["projects"][number],
   snapshot?: GuiSnapshot,
-  state?: SessionOrderState,
+  _state?: SessionOrderState,
 ) {
   const sessionIDs = new Set(project.sessionIDs)
   const terminalSessionIDs = new Set((project.terminalSessions ?? []).map((session) => session.id))

@@ -97,7 +97,7 @@ export const GraphPlanTool = Tool.define<typeof PlanParameters, PlanMetadata, Op
         "Skip it for a single question or a one-step edit.",
       ].join("\n"),
       parameters: PlanParameters,
-      execute: (params: Schema.Schema.Type<typeof PlanParameters>, ctx: Tool.Context<PlanMetadata>) =>
+      execute: (params: Schema.Schema.Type<typeof PlanParameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           yield* ctx.ask({ permission: "graph_plan", patterns: ["*"], always: ["*"], metadata: {} })
           const project = yield* projectForSession(projects, ctx.sessionID)
@@ -108,7 +108,7 @@ export const GraphPlanTool = Tool.define<typeof PlanParameters, PlanMetadata, Op
               metadata: {},
             }
           }
-          const model = ctx.extra?.model as { providerID?: string; modelID?: string } | undefined
+          const model = sessionModel(ctx.extra?.model)
           const existing = (yield* goals.list({ sessionID: ctx.sessionID })).find(
             (goal) => !OpencodeXGoal.TERMINAL_STATUSES.includes(goal.status),
           )
@@ -160,7 +160,7 @@ export const GraphPlanTool = Tool.define<typeof PlanParameters, PlanMetadata, Op
             metadata: { goalID: settled.id, nodeCount: settled.nodes.length, status: settled.status },
           }
         }),
-    } satisfies Tool.DefWithoutID<typeof PlanParameters, PlanMetadata>
+    } satisfies Tool.DefWithoutID<typeof PlanParameters>
   }),
 )
 
@@ -203,7 +203,7 @@ export const GraphUpdateTool = Tool.define<typeof UpdateParameters, UpdateMetada
         "Works on a finished goal too: adding or re-queueing work reopens it, which is how you remediate a failure.",
       ].join("\n"),
       parameters: UpdateParameters,
-      execute: (params: Schema.Schema.Type<typeof UpdateParameters>, ctx: Tool.Context<UpdateMetadata>) =>
+      execute: (params: Schema.Schema.Type<typeof UpdateParameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           yield* ctx.ask({ permission: "graph_update", patterns: ["*"], always: ["*"], metadata: {} })
           const all = yield* goals.list({ sessionID: ctx.sessionID })
@@ -245,7 +245,7 @@ export const GraphUpdateTool = Tool.define<typeof UpdateParameters, UpdateMetada
             metadata: { goalID: settled.id, status: settled.status },
           }
         }),
-    } satisfies Tool.DefWithoutID<typeof UpdateParameters, UpdateMetadata>
+    } satisfies Tool.DefWithoutID<typeof UpdateParameters>
   }),
 )
 
@@ -265,7 +265,7 @@ export const GraphStatusTool = Tool.define<typeof StatusParameters, StatusMetada
     return {
       description: "Show this session's goal graph: every node's status, and the reports finished nodes produced.",
       parameters: StatusParameters,
-      execute: (params: Schema.Schema.Type<typeof StatusParameters>, ctx: Tool.Context<StatusMetadata>) =>
+      execute: (params: Schema.Schema.Type<typeof StatusParameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const all = yield* goals.list({ sessionID: ctx.sessionID })
           const goal = all.find((item) => !OpencodeXGoal.TERMINAL_STATUSES.includes(item.status)) ?? all[0]
@@ -297,7 +297,7 @@ export const GraphStatusTool = Tool.define<typeof StatusParameters, StatusMetada
             metadata: { goalID: goal.id, status: goal.status },
           }
         }),
-    } satisfies Tool.DefWithoutID<typeof StatusParameters, StatusMetadata>
+    } satisfies Tool.DefWithoutID<typeof StatusParameters>
   }),
 )
 
@@ -326,6 +326,15 @@ function toNodeInput(node: Schema.Schema.Type<typeof NodeParam>) {
     executor: node.executor ? resolveExecutorParam(node.executor) : undefined,
     parentNodeID: node.parentNodeID,
     loop: node.loop,
+  }
+}
+
+/** The session's model out of the tool context, without trusting its shape. */
+function sessionModel(value: unknown): { providerID?: string; modelID?: string } | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  return {
+    providerID: "providerID" in value && typeof value.providerID === "string" ? value.providerID : undefined,
+    modelID: "modelID" in value && typeof value.modelID === "string" ? value.modelID : undefined,
   }
 }
 

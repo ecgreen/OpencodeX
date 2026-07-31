@@ -199,7 +199,7 @@ describe("goal dispatch", () => {
       })
       const dispatched = (yield* jobs.list()).filter((job) => job.kind === "goal.node")
       expect(dispatched).toHaveLength(1)
-      expect(dispatched[0]!.idempotencyKey).toBe(`${goal.id}:survey:0`)
+      expect(dispatched[0].idempotencyKey).toBe(`${goal.id}:survey:0`)
 
       yield* settle({ goalID: goal.id, nodeID: "survey", result: "17 tables" })
       // One settled root frees both branches at once - parallelism is the
