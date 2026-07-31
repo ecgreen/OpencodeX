@@ -234,6 +234,42 @@ verdict is a failure, not a pass), and a node's delivered prompt is persisted
 at dispatch, so auditing an output against its input never depends on
 reconstructing the prompt from a transcript.
 
+A post-ship review found five defects, all fixed with tests:
+
+- **A re-run collided with its own past.** Job idempotency keys were
+  `goal:node:iteration`, so a standing goal's second sweep (and a re-queued
+  failed node) adopted the previous run's *finished* job and hung "dispatched"
+  forever. Keys now carry a run serial (`goal.metadata.runSerial`), bumped on
+  every restart and re-queue; re-queueing also clears the node's old job,
+  session, and result. The original standing-goal test stopped at
+  "dispatched" on run two - which is exactly how the bug hid - so it now
+  drives the second run to completion.
+- **A failing check outside a loop changed nothing.** Its job succeeded, so
+  the node read "done", dependents dispatched, and the goal completed - a
+  verdict with no consequences. A done check whose verdict is a fail is now a
+  failed node (loop exit checks excepted: failing those is how a loop decides
+  to iterate), which skips its cone and fails the goal.
+- **`graph_update` could not reach the goal that most needs repair.** It only
+  looked for a non-terminal goal, but a *failed* goal is the re-planning case
+  (§6.5); it now falls back to the most recent goal, and reopening by adding
+  or re-queueing work is part of its contract.
+- **Cancelling a standing goal skipped one run.** The schedule stayed armed
+  and the sweep resurrected the "cancelled" goal on the next cadence. Cancel
+  now pauses the schedule too.
+- **Goals never reached the attention surfaces.** A parked gate or budget
+  pause was visible only on the session page - and a standing goal has no
+  session, so it was visible nowhere. Goals needing a human (blocked, paused,
+  failed) now project into the shared work-item/attention pipeline (GUI queue,
+  TUI, notifications) and the project overview badges. Approvals also gained a
+  guard: only a node in `awaiting_approval` accepts one, and `graph_plan`'s
+  blocking wait returns only once in-flight branches have landed, so its
+  report is not a snapshot mid-stride.
+
+Two pieces of §7 remain deliberately unshipped: the **goal composer** (goals
+are created by `graph_plan` or the HTTP API today; `buildPlannerBrief` exists,
+tested, for the composer to seed a planner session with) and a standing goal's
+**report artifact** (its results live in the child sessions and node reports).
+
 ## 10. Risks and open questions
 
 - **Planner quality.** A bad graph executes badly, deterministically. Counter:

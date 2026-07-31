@@ -198,18 +198,20 @@ export const GraphUpdateTool = Tool.define<typeof UpdateParameters, UpdateMetada
 
     return {
       description: [
-        "Repair the running graph: add remediation nodes, skip work that is no longer needed, or retarget a node's executor.",
+        "Repair the graph: add remediation nodes, skip work that is no longer needed, re-queue a node with status \"planned\", or retarget a node's executor.",
         "Use this instead of re-planning when the goal is already running - existing nodes and their results are kept.",
+        "Works on a finished goal too: adding or re-queueing work reopens it, which is how you remediate a failure.",
       ].join("\n"),
       parameters: UpdateParameters,
       execute: (params: Schema.Schema.Type<typeof UpdateParameters>, ctx: Tool.Context<UpdateMetadata>) =>
         Effect.gen(function* () {
           yield* ctx.ask({ permission: "graph_update", patterns: ["*"], always: ["*"], metadata: {} })
-          const goal = (yield* goals.list({ sessionID: ctx.sessionID })).find(
-            (item) => !OpencodeXGoal.TERMINAL_STATUSES.includes(item.status),
-          )
+          const all = yield* goals.list({ sessionID: ctx.sessionID })
+          // Prefer the live goal, else the most recent settled one: a failed
+          // goal is exactly the one a planner needs to repair and reopen.
+          const goal = all.find((item) => !OpencodeXGoal.TERMINAL_STATUSES.includes(item.status)) ?? all[0]
           if (!goal) {
-            return { title: "No active goal", output: "This session has no running goal to update.", metadata: {} }
+            return { title: "No goal", output: "This session has no goal to update.", metadata: {} }
           }
           const updated = yield* attempt(
             goals
@@ -338,11 +340,13 @@ function awaitGoal(goals: OpencodeXGoal.Interface, goalID: string, abort: AbortS
   return Effect.gen(function* () {
     while (true) {
       const goal = yield* goals.get(goalID).pipe(Effect.catchTag("OpencodeX.Goal.NotFoundError", Effect.die))
+      if (OpencodeXGoal.TERMINAL_STATUSES.includes(goal.status)) return goal
       // A paused goal is waiting on a human decision, not on more work; a
-      // blocked one is parked at a gate. Neither resolves without the user.
-      if (OpencodeXGoal.TERMINAL_STATUSES.includes(goal.status) || goal.status === "paused" || goal.status === "blocked") {
-        return goal
-      }
+      // blocked one is parked at a gate. Neither resolves without the user -
+      // but parallel branches may still be landing, and their reports belong
+      // in the reply, so return only once nothing is in flight.
+      const busy = goal.nodes.some((node) => node.status === "dispatched" || node.status === "running")
+      if ((goal.status === "paused" || goal.status === "blocked") && !busy) return goal
       if (abort.aborted) return goal
       yield* Effect.sleep(1_000)
     }

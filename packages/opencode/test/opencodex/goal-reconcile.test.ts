@@ -75,7 +75,7 @@ describe("dispatch", () => {
   test("a terminal goal is left alone", () => {
     for (const status of ["completed", "failed", "cancelled"] as Status[]) {
       const plan = planReconcile({ goal: goal([node("a", "planned")], { status }), now: NOW })
-      expect(plan).toEqual({ skip: [], loops: [], gates: [], dispatch: [] })
+      expect(plan).toEqual({ fail: [], skip: [], loops: [], gates: [], dispatch: [] })
     }
   })
 
@@ -204,6 +204,77 @@ describe("loops", () => {
     })
     expect(plan.loops[0]).toMatchObject({ type: "advance", iteration: 2 })
     expect(plan.dispatch).toEqual(["patch"])
+    expect(plan.goal).toBeUndefined()
+  })
+})
+
+describe("check verdicts", () => {
+  test("a failing check outside a loop fails the node and its downstream cone", () => {
+    // The check's job succeeded, so its status is "done" - but its word is the
+    // whole point: dependents must not run and the goal must not read as met.
+    const plan = planReconcile({
+      goal: goal(
+        [
+          node("build", "done"),
+          node("verify", "done", {
+            kind: "check",
+            verdict: { pass: false, summary: "Two criteria unmet.", findings: ["no tests", "lint errors"] },
+          }),
+          node("deploy", "planned"),
+        ],
+        { edges: [link("build", "verify"), link("verify", "deploy")] },
+      ),
+      now: NOW,
+    })
+    expect(plan.fail).toEqual([{ nodeID: "verify", reason: "Two criteria unmet.\n- no tests\n- lint errors" }])
+    expect(plan.skip).toEqual(["deploy"])
+    expect(plan.dispatch).toEqual([])
+    expect(plan.goal).toEqual({ status: "failed" })
+  })
+
+  test("a passing check is left alone", () => {
+    const plan = planReconcile({
+      goal: goal([node("verify", "done", { kind: "check", verdict: { pass: true, summary: "Green." } })]),
+      now: NOW,
+    })
+    expect(plan.fail).toEqual([])
+    expect(plan.goal).toEqual({ status: "completed" })
+  })
+
+  test("a loop's exit check keeps its failing verdict - the loop consumes it", () => {
+    const plan = planReconcile({
+      goal: goal([
+        node("fix", "running", { kind: "loop", loop: { exitCheckNodeID: "tests", maxIterations: 3, iteration: 1 } }),
+        node("patch", "done", { parentNodeID: "fix" }),
+        node("tests", "done", {
+          kind: "check",
+          parentNodeID: "fix",
+          verdict: { pass: false, summary: "Still red." },
+        }),
+      ]),
+      now: NOW,
+    })
+    expect(plan.fail).toEqual([])
+    expect(plan.loops[0]).toMatchObject({ type: "advance", iteration: 2 })
+  })
+
+  test("a failing non-exit check inside a loop body spends an iteration", () => {
+    const plan = planReconcile({
+      goal: goal([
+        node("fix", "running", { kind: "loop", loop: { exitCheckNodeID: "tests", maxIterations: 3, iteration: 1 } }),
+        node("sanity", "done", {
+          kind: "check",
+          parentNodeID: "fix",
+          title: "Sanity check",
+          verdict: { pass: false, summary: "Setup is broken." },
+        }),
+        node("patch", "planned", { parentNodeID: "fix" }),
+        node("tests", "planned", { kind: "check", parentNodeID: "fix" }),
+      ]),
+      now: NOW,
+    })
+    expect(plan.fail).toEqual([{ nodeID: "sanity", reason: "Setup is broken." }])
+    expect(plan.loops[0]).toMatchObject({ type: "advance", iteration: 2 })
     expect(plan.goal).toBeUndefined()
   })
 })

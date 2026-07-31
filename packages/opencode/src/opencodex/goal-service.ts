@@ -6,6 +6,7 @@ import { asc, eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 import { GoalDispatch } from "./goal-dispatch"
 import { validatePlan } from "./goal-graph"
+import { runSerial } from "./goal-model"
 import { GoalStoreService } from "./goal-store"
 import {
   NodeNotFoundError,
@@ -112,10 +113,17 @@ export const goalServiceLayer = Layer.effect(
       // Adding work to a goal that had settled means it is not settled any
       // more. Without this the repair would sit there, since the dispatcher
       // leaves terminal goals alone.
-      if (updated.status === "completed" || updated.status === "failed") {
-        if (updated.nodes.some((node) => node.status === "planned")) {
-          yield* store.patchGoal(goalID, { status: "running", statusReason: null, completedAt: null })
-        }
+      const reopen =
+        (updated.status === "completed" || updated.status === "failed") &&
+        updated.nodes.some((node) => node.status === "planned")
+      // A re-queued node runs again on purpose, so it needs a job key its
+      // previous run is not already holding - see nodeJobKey.
+      const requeued = patches.some((patch) => patch.status === "planned")
+      if (reopen || requeued) {
+        yield* store.patchGoal(goalID, {
+          ...(reopen ? { status: "running", statusReason: null, completedAt: null } : {}),
+          ...(requeued ? { metadata: { ...updated.metadata, runSerial: runSerial(updated) + 1 } } : {}),
+        })
       }
       yield* dispatch.reconcile(goalID)
       return yield* store.get(updated.id)
@@ -160,6 +168,13 @@ export const goalServiceLayer = Layer.effect(
       const goal = yield* store.get(goalID)
       const node = goal.nodes.find((item) => item.id === nodeID)
       if (!node) return yield* new NodeNotFoundError({ goalID, nodeID })
+      // Approval is an answer to a question the graph asked. Writing it onto a
+      // node that is not asking would overwrite real execution state.
+      if (node.status !== "awaiting_approval") {
+        return yield* new ValidationError({
+          message: `Node "${nodeID}" is ${node.status}; only a node awaiting approval can be approved or skipped.`,
+        })
+      }
       yield* store.patchNodes(goalID, [
         {
           nodeID,
@@ -186,7 +201,15 @@ export const goalServiceLayer = Layer.effect(
         goal.nodes
           .filter((node) => !["done", "failed", "skipped", "cancelled"].includes(node.status))
           .map((node) => ({ nodeID: node.id, patch: { status: "cancelled" as const, completedAt: Date.now() } })),
-        { status: "cancelled", completedAt: Date.now(), statusReason: "Cancelled." },
+        {
+          status: "cancelled",
+          completedAt: Date.now(),
+          statusReason: "Cancelled.",
+          // Cancelling a standing goal means stop, not "skip one run": the
+          // schedule pauses too, or the sweep would resurrect it on the next
+          // cadence as if nothing happened.
+          ...(goal.schedule ? { schedule: { ...goal.schedule, paused: true } } : {}),
+        },
       )
       return yield* store.get(goalID)
     })

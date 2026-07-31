@@ -135,6 +135,16 @@ describe("headline", () => {
     expect(goalHeadline(goal([node("a")], { status: "planned" }))).toBe("Planned: 1 step, not started yet.")
   })
 
+  test("a completion with skipped steps does not claim every step finished", () => {
+    // A rejected gate settles its cone without running it.
+    const headline = goalHeadline(
+      goal([node("a", { status: "done" }), node("b", { status: "skipped" }), node("c", { status: "skipped" })], {
+        status: "completed",
+      }),
+    )
+    expect(headline).toBe("1 step ran, 2 skipped.")
+  })
+
   test("a failure names the step and its reason", () => {
     const headline = goalHeadline(
       goal([node("a", { status: "failed", title: "Run tests", failureReason: "2 tests fail" })], { status: "failed" }),
@@ -173,10 +183,12 @@ describe("attention", () => {
     const goals = [
       goal([], { id: "blocked", status: "blocked" }),
       goal([], { id: "paused", status: "paused" }),
+      goal([], { id: "failed", status: "failed" }),
       goal([], { id: "running", status: "running" }),
+      goal([], { id: "completed", status: "completed" }),
       goal([], { id: "elsewhere", status: "blocked", projectID: "p2" }),
     ]
-    expect(attentionGoals(goals, "p1").map((item) => item.id)).toEqual(["blocked", "paused"])
+    expect(attentionGoals(goals, "p1").map((item) => item.id)).toEqual(["blocked", "paused", "failed"])
   })
 
   test("gates are the nodes actually waiting", () => {

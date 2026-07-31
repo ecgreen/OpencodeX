@@ -180,6 +180,28 @@ export function feedsContext<T extends NodeView & { readonly result?: string }>(
     })
 }
 
+export type FailingCheck = { readonly nodeID: string; readonly reason: string }
+
+/**
+ * Done checks whose verdict says the claim does not hold. Outside a loop a
+ * check's word is final: the node failed even though its session succeeded, so
+ * its dependents must not run and the goal must not read as met. A loop's exit
+ * check is the one exception - failing it is how the loop decides to run
+ * another iteration, not a failure of the node.
+ */
+export function failingCheckIDs(graph: GraphView): FailingCheck[] {
+  const index = indexGraph(graph)
+  const failing: FailingCheck[] = []
+  for (const node of graph.nodes) {
+    if (node.kind !== "check" || node.status !== "done") continue
+    if (!node.verdict || node.verdict.pass) continue
+    const parent = node.parentNodeID ? index.byID.get(node.parentNodeID) : undefined
+    if (parent?.loop?.exitCheckNodeID === node.id) continue
+    failing.push({ nodeID: node.id, reason: checkReport(node.verdict) })
+  }
+  return failing
+}
+
 export type LoopOutcome =
   /** The iteration is still in flight. */
   | { readonly type: "waiting" }

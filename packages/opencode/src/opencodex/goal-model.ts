@@ -130,6 +130,27 @@ export function parseLoop(value: string | null | undefined): StoredLoop | undefi
   }
 }
 
+/**
+ * How many times this goal's graph has been re-instantiated: a standing goal's
+ * sweeps and a planner re-queuing settled nodes both bump it. It lives in the
+ * goal's metadata so a run never collides with a previous run's jobs.
+ */
+export function runSerial(goal: Pick<Info, "metadata">): number {
+  const value = goal.metadata?.["runSerial"]
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0
+}
+
+/**
+ * The idempotency key for the job that runs one node once. Stable across
+ * racing reconciles of the same run - that is the point - and different for
+ * every (iteration, run serial) pair, so a node re-run on purpose never finds
+ * a finished job squatting on its key.
+ */
+export function nodeJobKey(goal: Pick<Info, "id" | "metadata">, nodeID: string, iteration: number): string {
+  const run = runSerial(goal)
+  return `${goal.id}:${nodeID}:${iteration}${run > 0 ? `:r${run}` : ""}`
+}
+
 export function parseSpend(value: string | null | undefined): Spend {
   if (!value) return EMPTY_SPEND
   try {

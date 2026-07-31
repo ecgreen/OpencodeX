@@ -322,7 +322,7 @@ export interface Interface {
     goalID: string,
     nodeID: string,
     approved: boolean,
-  ) => Effect.Effect<Info, NotFoundError | NodeNotFoundError>
+  ) => Effect.Effect<Info, NotFoundError | NodeNotFoundError | ValidationError>
   readonly cancel: (goalID: string) => Effect.Effect<Info, NotFoundError>
   readonly remove: (goalID: string) => Effect.Effect<boolean, NotFoundError>
 }

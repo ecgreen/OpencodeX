@@ -1,4 +1,5 @@
 import type {
+  OpencodeXGoal,
   OpencodeXJob,
   OpencodeXSessionUiState,
   PermissionRequest,
@@ -77,7 +78,7 @@ export type RunTimelineEvent = {
 
 export type WorkItem = {
   id: string
-  kind: "session" | "job"
+  kind: "session" | "job" | "goal"
   sourceID: string
   parentID?: string
   projectID?: string
@@ -120,7 +121,7 @@ export type AttentionItem = {
 
 export type WorkItemProjectionInput = Pick<
   ClientStateSyncState,
-  "sessions" | "sessionStatus" | "sessionUiState" | "permissions" | "questions" | "jobs"
+  "sessions" | "sessionStatus" | "sessionUiState" | "permissions" | "questions" | "jobs" | "goals"
 >
 
 export function clientWorkItems(input: WorkItemProjectionInput, now?: number): WorkItem[] {
@@ -146,6 +147,10 @@ export function clientWorkItems(input: WorkItemProjectionInput, now?: number): W
         : []
     }),
     ...jobs.map((job) => jobWorkItem(job, now)),
+    ...(input.goals?.ids ?? []).flatMap((id) => {
+      const goal = input.goals.records[id]
+      return goal ? goalWorkItems(goal, now) : []
+    }),
   ].sort((left, right) => right.updatedAt - left.updatedAt || left.id.localeCompare(right.id))
 }
 
@@ -320,6 +325,57 @@ function jobWorkItem(job: OpencodeXJob, now: number | undefined): WorkItem {
   }
 }
 
+/**
+ * A goal projects a work item only while it needs a human - a parked gate, a
+ * spent budget, or a failure. Running goals already show through their owner
+ * session and node jobs, and a finished goal nagging "review me" would drown
+ * the queue. This is what makes gates and budget pauses reach the attention
+ * surfaces (and notifications) instead of waiting silently for someone to
+ * happen to open the session page - a standing goal has no session at all.
+ */
+function goalWorkItems(goal: OpencodeXGoal, now: number | undefined): WorkItem[] {
+  const state = goalState(goal.status)
+  if (!state) return []
+  const gate = goal.nodes.find((node) => node.status === "awaiting_approval")
+  const failedNode = goal.nodes.find((node) => node.status === "failed")
+  const settled = goal.nodes.filter((node) => ["done", "skipped", "cancelled"].includes(node.status)).length
+  const failed = goal.nodes.filter((node) => node.status === "failed").length
+  return [
+    {
+      id: `goal:${goal.id}`,
+      kind: "goal",
+      sourceID: goal.id,
+      parentID: goal.ownerSessionID ? `session:${goal.ownerSessionID}` : undefined,
+      projectID: goal.projectID,
+      sessionID: goal.ownerSessionID,
+      swarmID: goal.swarmID,
+      title: goal.title,
+      objective: goal.statement,
+      state,
+      statusLabel: workItemStatusLabel(state),
+      executionTarget: { kind: "direct", directory: goal.directory },
+      blocker:
+        goal.statusReason ??
+        (gate ? `Waiting for approval: ${gate.title}` : undefined) ??
+        (failedNode ? `${failedNode.title} failed: ${failedNode.failureReason ?? "no reason recorded"}` : undefined),
+      changedFiles: [],
+      validation: { state: "unknown" },
+      progress: { completed: settled + failed, failed, total: goal.nodes.length },
+      resourceUse: { cost: goal.spend?.costUsd },
+      startedAt: timeOrUndefined(goal.startedAt),
+      completedAt: timeOrUndefined(goal.completedAt),
+      updatedAt: time(goal.timeUpdated),
+      elapsedMs: elapsed(timeOrUndefined(goal.startedAt), timeOrUndefined(goal.completedAt), now),
+    },
+  ]
+}
+
+function goalState(status: OpencodeXGoal["status"]): WorkItemState | undefined {
+  if (status === "blocked" || status === "paused") return "waiting_input"
+  if (status === "failed") return "failed"
+  return undefined
+}
+
 function sessionState(
   status: SessionStatus | undefined,
   ui: OpencodeXSessionUiState | undefined,
@@ -371,7 +427,8 @@ function sameWorkItemSources(left: WorkItemProjectionInput, right: WorkItemProje
     left.sessionUiState === right.sessionUiState &&
     left.permissions === right.permissions &&
     left.questions === right.questions &&
-    left.jobs === right.jobs
+    left.jobs === right.jobs &&
+    left.goals === right.goals
   )
 }
 

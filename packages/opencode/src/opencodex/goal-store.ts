@@ -54,6 +54,7 @@ export type GoalPatch = {
   budget?: Budget
   schedule?: Schedule
   spend?: Spend
+  metadata?: Record<string, unknown>
   startedAt?: number | null
   completedAt?: number | null
 }
@@ -229,6 +230,21 @@ export function createGoalStore(db: Database.Interface["db"], events: EventV2.In
                 ...(patch.brief !== undefined ? { brief: patch.brief } : {}),
                 ...(patch.executor !== undefined ? { executor_json: encode(patch.executor) } : {}),
                 ...(patch.status !== undefined ? { status: patch.status } : {}),
+                // Re-queueing a node means running it again from scratch: the
+                // old job, session, and result belong to the previous attempt
+                // and would otherwise be read as this one's.
+                ...(patch.status === "planned"
+                  ? {
+                      job_id: null,
+                      session_id: null,
+                      delivered_prompt: null,
+                      result_text: null,
+                      verdict_json: null,
+                      failure_reason: null,
+                      started_at: null,
+                      completed_at: null,
+                    }
+                  : {}),
                 time_updated: Date.now(),
               })
               .where(
@@ -423,6 +439,7 @@ function goalValues(patch: GoalPatch) {
     ...(patch.budget !== undefined ? { budget_json: encode(patch.budget) } : {}),
     ...(patch.schedule !== undefined ? { schedule_json: encode(patch.schedule) } : {}),
     ...(patch.spend !== undefined ? { spend_json: encode(patch.spend) } : {}),
+    ...(patch.metadata !== undefined ? { metadata_json: encode(patch.metadata) } : {}),
     ...(patch.startedAt !== undefined ? { started_at: patch.startedAt } : {}),
     ...(patch.completedAt !== undefined ? { completed_at: patch.completedAt } : {}),
     time_updated: Date.now(),

@@ -126,8 +126,15 @@ export function goalHeadline(goal: OpencodeXGoal): string {
   if (goal.statusReason) return goal.statusReason
   const progress = goalProgress(goal)
   switch (goal.status) {
-    case "completed":
+    case "completed": {
+      const skipped = goal.nodes.filter((node) => ["skipped", "cancelled"].includes(node.status)).length
+      // "Every step finished" would be a lie when some were skipped - a
+      // rejected gate settles its cone without running it.
+      if (skipped > 0) {
+        return `${progress.total - skipped} ${progress.total - skipped === 1 ? "step" : "steps"} ran, ${skipped} skipped.`
+      }
       return `Every step finished. ${progress.total} ${progress.total === 1 ? "step" : "steps"} ran.`
+    }
     case "failed":
       return failureReason(goal) ?? "A step failed and the rest could not continue."
     case "cancelled":
@@ -161,7 +168,11 @@ export function goalNodeForSession(goal: OpencodeXGoal | undefined, sessionID: s
   return goal?.nodes.find((node) => node.sessionID === sessionID)
 }
 
-/** Goals that need a human right now, for the project attention surface. */
+/**
+ * Goals that need a human right now, for the project attention surface: a
+ * parked gate, a spent budget, or a failure waiting on re-planning. Standing
+ * goals have no session, so this is the only place they can raise a hand.
+ */
 export function attentionGoals(goals: readonly OpencodeXGoal[], projectID: string) {
-  return goals.filter((goal) => goal.projectID === projectID && ["blocked", "paused"].includes(goal.status))
+  return goals.filter((goal) => goal.projectID === projectID && ["blocked", "paused", "failed"].includes(goal.status))
 }

@@ -312,6 +312,85 @@ describe("goal dispatch", () => {
     }),
   )
 
+  it.live("a check that says no fails the node, its dependents, and the goal", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const goal = yield* goals.create({ projectID: created.id, statement: "Ship it." })
+      yield* goals.plan(goal.id, {
+        nodes: [node("build"), node("verify", { kind: "check" }), node("deploy")],
+        edges: [
+          { from: "build", to: "verify" },
+          { from: "verify", to: "deploy" },
+        ],
+      })
+      yield* goals.start(goal.id)
+      yield* settle({ goalID: goal.id, nodeID: "build" })
+      // The check's job succeeds - the model did its work - but the verdict
+      // is a fail, and the verdict is the whole point of a check.
+      yield* settle({
+        goalID: goal.id,
+        nodeID: "verify",
+        verdict: { pass: false, summary: "Build artifact is missing.", findings: ["dist/ is empty"] },
+      })
+
+      const failed = yield* goals.get(goal.id)
+      expect(statuses(failed)).toEqual({ build: "done", verify: "failed", deploy: "skipped" })
+      expect(failed.status).toBe("failed")
+      expect(failed.nodes.find((item) => item.id === "verify")!.failureReason).toBe(
+        "Build artifact is missing.\n- dist/ is empty",
+      )
+    }),
+  )
+
+  it.live("a re-queued failed node runs again under a fresh job and reopens the goal", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const goal = yield* goals.create({ projectID: created.id, statement: "Ship it." })
+      yield* goals.plan(goal.id, { nodes: [node("a"), node("b")], edges: [{ from: "a", to: "b" }] })
+      yield* goals.start(goal.id)
+      const firstJobID = (yield* goals.get(goal.id)).nodes.find((item) => item.id === "a")!.jobID
+      yield* settle({ goalID: goal.id, nodeID: "a", fail: "flaky infrastructure" })
+      expect((yield* goals.get(goal.id)).status).toBe("failed")
+
+      // The planner's remediation: run it again.
+      const reopened = yield* goals.updatePlan(goal.id, {
+        patchNodes: [
+          { id: "a", status: "planned" },
+          { id: "b", status: "planned" },
+        ],
+      })
+      expect(reopened.status).toBe("running")
+      const requeued = reopened.nodes.find((item) => item.id === "a")!
+      // A fresh job, not the failed one adopted back - that would hang forever.
+      expect(requeued.status).toBe("dispatched")
+      expect(requeued.jobID).toBeDefined()
+      expect(requeued.jobID).not.toBe(firstJobID)
+      expect(requeued.failureReason).toBeUndefined()
+
+      yield* settle({ goalID: goal.id, nodeID: "a" })
+      yield* settle({ goalID: goal.id, nodeID: "b" })
+      expect((yield* goals.get(goal.id)).status).toBe("completed")
+    }),
+  )
+
+  it.live("approval only lands on a node that is actually asking", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const goal = yield* goals.create({ projectID: created.id, statement: "Ship it." })
+      yield* goals.plan(goal.id, { nodes: [node("a")] })
+      yield* goals.start(goal.id)
+
+      const rejected = yield* goals.approve(goal.id, "a", true).pipe(Effect.flip)
+      if (rejected._tag !== "OpencodeX.Goal.ValidationError") throw new Error(`unexpected ${rejected._tag}`)
+      expect(rejected.message).toContain("awaiting approval")
+      // The node's real state survives the stray approval.
+      expect(statuses(yield* goals.get(goal.id)).a).toBe("dispatched")
+    }),
+  )
+
   it.live("cancelling stops the outstanding jobs and settles every node", () =>
     Effect.gen(function* () {
       const created = yield* project
@@ -455,6 +534,7 @@ describe("standing goals", () => {
       expect(running.status).toBe("running")
       expect(statuses(running).triage).toBe("dispatched")
       expect(running.schedule).toEqual({ everyMs: 3_600_000, lastRunAt: 1_000_000, nextRunAt: 4_600_000 })
+      const firstJobID = running.nodes.find((item) => item.id === "triage")!.jobID
 
       yield* settle({ goalID: goal.id, nodeID: "triage", result: "3 new issues" })
       const finished = yield* goals.get(goal.id)
@@ -474,6 +554,37 @@ describe("standing goals", () => {
       expect(triage.status).toBe("dispatched")
       expect(triage.result).toBeUndefined()
       expect(triage.completedAt).toBeUndefined()
+      // A fresh run means a fresh job. Without the run serial the enqueue
+      // would collide with run one's finished job and hang here forever.
+      expect(triage.jobID).toBeDefined()
+      expect(triage.jobID).not.toBe(firstJobID)
+
+      // And the second run can actually finish - the real proof.
+      yield* settle({ goalID: goal.id, nodeID: "triage", result: "1 new issue" })
+      expect((yield* goals.get(goal.id)).status).toBe("completed")
+    }),
+  )
+
+  it.live("cancelling a standing goal pauses its schedule instead of skipping one run", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const dispatch = yield* GoalDispatch
+      const goal = yield* goals.create({
+        projectID: created.id,
+        statement: "Triage nightly.",
+        source: "schedule",
+        schedule: { everyMs: 1_000 },
+      })
+      yield* goals.plan(goal.id, { nodes: [node("triage")] })
+      yield* dispatch.sweepSchedules(10_000)
+
+      const cancelled = yield* goals.cancel(goal.id)
+      expect(cancelled.status).toBe("cancelled")
+      expect(cancelled.schedule?.paused).toBe(true)
+      // The sweep leaves it alone now; "cancelled" would otherwise resurrect
+      // on the next cadence as if nothing happened.
+      expect(yield* dispatch.sweepSchedules(999_999_999)).toEqual([])
     }),
   )
 

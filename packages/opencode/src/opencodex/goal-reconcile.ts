@@ -1,11 +1,13 @@
 import {
   budgetBreach,
   cascadeSkipIDs,
+  failingCheckIDs,
   foldStatus,
   isStalled,
   loopOutcome,
   readyNodeIDs,
   type EdgeView,
+  type FailingCheck,
   type NodeView,
 } from "./goal-graph"
 import { TERMINAL_STATUSES, type Budget, type Schedule, type Spend, type Status } from "./goal-schema"
@@ -45,6 +47,8 @@ export type LoopAction =
   | { readonly type: "finish"; readonly nodeID: string; readonly status: "done" | "failed"; readonly report: string }
 
 export type ReconcilePlan = {
+  /** Checks whose verdict said no: the node failed even though its job succeeded. */
+  readonly fail: readonly FailingCheck[]
   /** Nodes that can never run because an upstream never produced a result. */
   readonly skip: readonly string[]
   readonly loops: readonly LoopAction[]
@@ -66,6 +70,7 @@ export function planReconcile(input: { goal: ReconcileGoal; now: number }): Reco
 
   const working = new Map<string, ReconcileNode>(goal.nodes.map((node) => [node.id, node]))
   const edges = goal.edges
+  const fail: FailingCheck[] = []
   const skip = new Set<string>()
   const loops: LoopAction[] = []
   const gates = new Set<string>()
@@ -74,9 +79,21 @@ export function planReconcile(input: { goal: ReconcileGoal; now: number }): Reco
   const breach = budgetBreach({ budget: goal.budget, spend: goal.spend, startedAt: goal.startedAt, now: input.now })
 
   for (let pass = 0; pass < MAX_PASSES; pass++) {
-    const graph = { nodes: [...working.values()], edges }
     let changed = false
 
+    // A check that ran fine but said "no" fails before anything else settles,
+    // so the same pass's skip cascade already sees its dependents as doomed.
+    for (const failure of failingCheckIDs({ nodes: [...working.values()], edges })) {
+      fail.push(failure)
+      working.set(failure.nodeID, {
+        ...working.get(failure.nodeID)!,
+        status: "failed",
+        failureReason: failure.reason,
+      })
+      changed = true
+    }
+
+    const graph = { nodes: [...working.values()], edges }
     for (const id of cascadeSkipIDs(graph)) {
       skip.add(id)
       working.set(id, { ...working.get(id)!, status: "skipped" })
@@ -163,6 +180,7 @@ export function planReconcile(input: { goal: ReconcileGoal; now: number }): Reco
 
   const graph = { nodes: [...working.values()], edges }
   return {
+    fail,
     skip: [...skip],
     loops,
     gates: [...gates],
@@ -197,7 +215,7 @@ function goalTransition(input: {
 }
 
 function empty(): ReconcilePlan {
-  return { skip: [], loops: [], gates: [], dispatch: [] }
+  return { fail: [], skip: [], loops: [], gates: [], dispatch: [] }
 }
 
 export type StandingGoal = {

@@ -4,7 +4,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXJob } from "@/opencodex/job"
 import { and, eq, inArray } from "drizzle-orm"
 import { Context, Effect, Layer, Semaphore } from "effect"
-import { parseSpend } from "./goal-model"
+import { nodeJobKey, parseSpend, runSerial } from "./goal-model"
 import { advanceSchedule, planReconcile, scheduleDue } from "./goal-reconcile"
 import { GoalStoreService, type NodePatch } from "./goal-store"
 import { StateEvent, TERMINAL_STATUSES, type Info, type NodeStatus } from "./goal-schema"
@@ -60,6 +60,13 @@ export const goalDispatchLayer = Layer.effect(
       const patches: { nodeID: string; patch: NodePatch }[] = []
       const now = Date.now()
 
+      // Before any skips or loop actions, so a later reset can override it.
+      for (const failure of plan.fail) {
+        patches.push({
+          nodeID: failure.nodeID,
+          patch: { status: "failed", completedAt: now, failureReason: failure.reason },
+        })
+      }
       for (const nodeID of plan.skip) {
         patches.push({ nodeID, patch: { status: "skipped", completedAt: now } })
       }
@@ -150,9 +157,13 @@ export const goalDispatchLayer = Layer.effect(
         source: goal.source,
         projectID: goal.projectID,
         ...(goal.swarmID ? { swarmID: goal.swarmID } : {}),
-        // One job per node per iteration: a re-reconcile before the job runs
-        // finds the existing job instead of starting a second one.
-        idempotencyKey: `${goal.id}:${node.id}:${node.iteration}`,
+        // One job per node per iteration per run: a re-reconcile before the
+        // job runs finds the existing job instead of starting a second one.
+        // The run serial is what keeps a standing goal's second sweep, or a
+        // re-queued failed node, from colliding with a previous run's job -
+        // a conflict returns that old terminal job and the node would sit
+        // "dispatched" forever waiting on a job that already finished.
+        idempotencyKey: nodeJobKey(goal, nodeID, node.iteration),
         maxAttempts: node.kind === "check" ? 2 : 3,
         timeoutAt: Date.now() + NODE_TIMEOUT_MS,
         metadata: { goalID: goal.id, nodeID: node.id, iteration: node.iteration },
@@ -276,6 +287,10 @@ export const goalDispatchLayer = Layer.effect(
           completedAt: null,
           spend: { nodeRuns: 0, costUsd: 0 },
           schedule: advanceSchedule(goal.schedule!, now),
+          // A new run serial gives every node a fresh job idempotency key;
+          // without it the second run's enqueues would collide with the first
+          // run's finished jobs and every node would hang "dispatched".
+          metadata: { ...goal.metadata, runSerial: runSerial(goal) + 1 },
         },
       )
       yield* reconcile(goal.id)

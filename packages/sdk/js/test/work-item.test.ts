@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { OpencodeXJob, Session } from "../src/v2/client"
+import type { OpencodeXGoal, OpencodeXJob, Session } from "../src/v2/client"
 import { clientAttentionItems, clientAttentionTransitions, clientWorkItemBucket, clientWorkItems, createClientWorkItemSelector, type AttentionItem, type WorkItemProjectionInput } from "../src/v2/work-item"
 
 describe("shared work item projection", () => {
@@ -32,6 +32,27 @@ describe("shared work item projection", () => {
     expect(clientAttentionTransitions([failure], [permission])).toEqual([permission])
   })
 
+  test("a goal projects only while it needs a human", () => {
+    const items = clientWorkItems({ ...state(), goals: goalEntities() }, 5_000)
+    const blocked = items.find((item) => item.id === "goal:goal-blocked")
+    const failed = items.find((item) => item.id === "goal:goal-failed")
+
+    // Gates and budget pauses have no session, permission, or question of
+    // their own - this projection is the only way they reach attention.
+    expect(blocked).toMatchObject({
+      kind: "goal",
+      state: "waiting_input",
+      blocker: "Waiting for approval: Deploy to production",
+      projectID: "project-1",
+    })
+    expect(failed).toMatchObject({ kind: "goal", state: "failed", sessionID: "session-1" })
+    expect(items.find((item) => item.id === "goal:goal-running")).toBeUndefined()
+
+    const attention = clientAttentionItems(items)
+    expect(attention.map((item) => item.id)).toContain("input:goal:goal-blocked")
+    expect(attention.map((item) => item.id)).toContain("failure:goal:goal-failed")
+  })
+
   test("retains projection identity when transcript-only state changes", () => {
     const input = state()
     const select = createClientWorkItemSelector()
@@ -52,6 +73,57 @@ function attention(id: string): AttentionItem {
     state: "waiting_permission",
     updatedAt: 1_000,
   }
+}
+
+function goalEntities(): WorkItemProjectionInput["goals"] {
+  const base = {
+    projectID: "project-1",
+    statement: "Ship the thing.",
+    successCriteria: [],
+    source: "manual" as const,
+    spend: { nodeRuns: 0, costUsd: 0 },
+    edges: [],
+    timeCreated: 1_000,
+    timeUpdated: 4_000,
+  }
+  const node = (goalID: string, id: string, status: OpencodeXGoal["nodes"][number]["status"], title: string) => ({
+    id,
+    goalID,
+    kind: "gate" as const,
+    title,
+    brief: title,
+    status,
+    sortOrder: 0,
+    iteration: 0,
+    attempt: 0,
+    timeCreated: 1_000,
+    timeUpdated: 4_000,
+  })
+  const goals: OpencodeXGoal[] = [
+    {
+      ...base,
+      id: "goal-blocked",
+      title: "Nightly deploy",
+      status: "blocked",
+      nodes: [node("goal-blocked", "gate", "awaiting_approval", "Deploy to production")],
+    },
+    {
+      ...base,
+      id: "goal-failed",
+      title: "Fix the flake",
+      status: "failed",
+      ownerSessionID: "session-1",
+      nodes: [node("goal-failed", "fix", "failed", "Apply fix")],
+    },
+    {
+      ...base,
+      id: "goal-running",
+      title: "Refactor",
+      status: "running",
+      nodes: [node("goal-running", "work", "running", "Do the work")],
+    },
+  ]
+  return { ids: goals.map((goal) => goal.id), records: Object.fromEntries(goals.map((goal) => [goal.id, goal])) }
 }
 
 function state(): WorkItemProjectionInput {
@@ -86,5 +158,6 @@ function state(): WorkItemProjectionInput {
     permissions: { ids: ["permission-1"], records: { "permission-1": { id: "permission-1", sessionID: session.id, permission: "edit", patterns: [], metadata: {}, always: [] } } },
     questions: { ids: [], records: {} },
     jobs: { ids: [job.id], records: { [job.id]: job } },
+    goals: { ids: [], records: {} },
   }
 }
