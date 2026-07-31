@@ -433,6 +433,71 @@ describe("goal loops", () => {
   )
 })
 
+describe("standing goals", () => {
+  it.live("re-runs its graph when the cadence comes due, and not before", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const dispatch = yield* GoalDispatch
+      const goal = yield* goals.create({
+        projectID: created.id,
+        statement: "Triage new issues nightly.",
+        source: "schedule",
+        schedule: { everyMs: 3_600_000 },
+      })
+      yield* goals.plan(goal.id, { nodes: [node("triage")] })
+
+      // No owner session ever starts it, so the sweep is what does.
+      const due = yield* dispatch.sweepSchedules(1_000_000)
+      expect(due).toEqual([goal.id])
+
+      const running = yield* goals.get(goal.id)
+      expect(running.status).toBe("running")
+      expect(statuses(running).triage).toBe("dispatched")
+      expect(running.schedule).toEqual({ everyMs: 3_600_000, lastRunAt: 1_000_000, nextRunAt: 4_600_000 })
+
+      yield* settle({ goalID: goal.id, nodeID: "triage", result: "3 new issues" })
+      const finished = yield* goals.get(goal.id)
+      expect(finished.status).toBe("completed")
+      expect(finished.spend.nodeRuns).toBe(1)
+
+      // Still inside the cadence: nothing happens.
+      expect(yield* dispatch.sweepSchedules(4_599_999)).toEqual([])
+      expect((yield* goals.get(goal.id)).status).toBe("completed")
+
+      // Due again: the plan is kept, the previous run's state is cleared.
+      expect(yield* dispatch.sweepSchedules(4_600_000)).toEqual([goal.id])
+      const second = yield* goals.get(goal.id)
+      expect(second.status).toBe("running")
+      expect(second.spend).toEqual({ nodeRuns: 0, costUsd: 0 })
+      const triage = second.nodes.find((item) => item.id === "triage")!
+      expect(triage.status).toBe("dispatched")
+      expect(triage.result).toBeUndefined()
+      expect(triage.completedAt).toBeUndefined()
+    }),
+  )
+
+  it.live("never starts a second run on top of one still in flight", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const dispatch = yield* GoalDispatch
+      const goal = yield* goals.create({
+        projectID: created.id,
+        statement: "Watch the build.",
+        source: "schedule",
+        schedule: { everyMs: 1_000 },
+      })
+      yield* goals.plan(goal.id, { nodes: [node("watch")] })
+      yield* dispatch.sweepSchedules(10_000)
+
+      // A cadence shorter than the work takes slips instead of piling up.
+      expect(yield* dispatch.sweepSchedules(99_999)).toEqual([])
+      expect((yield* goals.get(goal.id)).schedule?.lastRunAt).toBe(10_000)
+    }),
+  )
+})
+
 describe("mid-flight repair", () => {
   it.live("adds a remediation node behind work that already finished", () =>
     Effect.gen(function* () {

@@ -18,7 +18,9 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
 
   const requireMutableJob = Effect.fn("OpencodeXHttpApi.requireMutableJob")(function* (jobID: string) {
     const job = yield* mapJobErrors(jobs.get(jobID))
-    if (job.source !== "swarm" && !job.kind.startsWith("swarm.")) return job
+    // Jobs the swarm engine or a goal graph owns are driven by their own
+    // runtime; letting a client settle one would desynchronise the graph.
+    if (job.source !== "swarm" && !job.kind.startsWith("swarm.") && !job.kind.startsWith("goal.")) return job
     return yield* new HttpApiError.BadRequest({})
   })
 
@@ -26,7 +28,7 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     return yield* jobs.list()
   })
   const createJob = Effect.fn("OpencodeXHttpApi.createJob")(function* (ctx: { payload: OpencodeXJob.CreateInput }) {
-    if (ctx.payload.source === "swarm" || ctx.payload.kind.startsWith("swarm.")) {
+    if (ctx.payload.source === "swarm" || ctx.payload.kind.startsWith("swarm.") || ctx.payload.kind.startsWith("goal.")) {
       return yield* new HttpApiError.BadRequest({})
     }
     return yield* jobs.create(ctx.payload)

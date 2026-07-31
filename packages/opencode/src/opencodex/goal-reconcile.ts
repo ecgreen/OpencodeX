@@ -8,7 +8,7 @@ import {
   type EdgeView,
   type NodeView,
 } from "./goal-graph"
-import { TERMINAL_STATUSES, type Budget, type Spend, type Status } from "./goal-schema"
+import { TERMINAL_STATUSES, type Budget, type Schedule, type Spend, type Status } from "./goal-schema"
 
 /**
  * What the dispatcher should do next, decided as a pure function of the goal's
@@ -198,6 +198,32 @@ function goalTransition(input: {
 
 function empty(): ReconcilePlan {
   return { skip: [], loops: [], gates: [], dispatch: [] }
+}
+
+export type StandingGoal = {
+  readonly status: Status
+  readonly schedule?: Schedule
+  readonly nodeCount: number
+}
+
+/**
+ * Whether a standing goal should run its graph again. A run is never started
+ * on top of one already in flight, so a cadence shorter than the work takes
+ * slips rather than piling up.
+ */
+export function scheduleDue(input: { goal: StandingGoal; now: number }): boolean {
+  const schedule = input.goal.schedule
+  if (!schedule || schedule.paused === true) return false
+  if (input.goal.nodeCount === 0) return false
+  if (schedule.everyMs <= 0) return false
+  if (["running", "blocked", "draft"].includes(input.goal.status)) return false
+  // No nextRunAt means it has never run: due immediately.
+  return schedule.nextRunAt === undefined || schedule.nextRunAt <= input.now
+}
+
+/** The schedule after a run starts. Anchored to now, so drift does not stack. */
+export function advanceSchedule(schedule: Schedule, now: number): Schedule {
+  return { ...schedule, lastRunAt: now, nextRunAt: now + schedule.everyMs }
 }
 
 export * as GoalReconcile from "./goal-reconcile"

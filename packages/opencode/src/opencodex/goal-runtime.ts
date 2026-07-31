@@ -9,7 +9,7 @@ import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { Skill } from "@/skill"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schedule, Scope } from "effect"
 import { GOAL_NODE_JOB_KIND, GoalDispatch } from "./goal-dispatch"
 import { GoalExecution, goalExecutionLayer } from "./goal-execution"
 import { OpencodeXGoal } from "./goal"
@@ -21,6 +21,9 @@ import { OpencodeXGoal } from "./goal"
  * for its graph tools. So the executing half lives here, outside that cycle,
  * and is provided once by the process that runs jobs.
  */
+
+/** How often standing goals are checked. Cadences are minutes-and-up. */
+const SCHEDULE_TICK_MS = 30_000
 
 export class GoalRuntime extends Context.Service<GoalRuntime, { readonly kind: string }>()(
   "@opencode/OpencodeXGoalRuntime",
@@ -38,6 +41,14 @@ export const layer = Layer.effect(
     // crash interrupted, because readiness is recomputed from state rather
     // than remembered - a node whose job vanished simply looks ready again.
     yield* dispatch.reconcileAll().pipe(Effect.ignore)
+    // Standing goals have no session to wake them, so a slow tick is what
+    // starts them. The cadence itself lives on each goal.
+    const scope = yield* Scope.Scope
+    yield* Effect.sleep(SCHEDULE_TICK_MS).pipe(
+      Effect.andThen(dispatch.sweepSchedules().pipe(Effect.ignore)),
+      Effect.repeat(Schedule.forever),
+      Effect.forkIn(scope),
+    )
     return GoalRuntime.of({ kind: GOAL_NODE_JOB_KIND })
   }),
 )

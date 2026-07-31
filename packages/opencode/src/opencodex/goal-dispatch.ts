@@ -5,7 +5,7 @@ import { OpencodeXJob } from "@/opencodex/job"
 import { and, eq, inArray } from "drizzle-orm"
 import { Context, Effect, Layer, Semaphore } from "effect"
 import { parseSpend } from "./goal-model"
-import { planReconcile } from "./goal-reconcile"
+import { advanceSchedule, planReconcile, scheduleDue } from "./goal-reconcile"
 import { GoalStoreService, type NodePatch } from "./goal-store"
 import { StateEvent, TERMINAL_STATUSES, type Info, type NodeStatus } from "./goal-schema"
 
@@ -27,6 +27,8 @@ const NODE_TIMEOUT_MS = 60 * 60 * 1_000
 export interface Interface {
   readonly reconcile: (goalID: string) => Effect.Effect<void>
   readonly reconcileAll: () => Effect.Effect<void>
+  /** Re-instantiates the graph of every standing goal whose cadence is due. */
+  readonly sweepSchedules: (now?: number) => Effect.Effect<string[]>
   readonly settleNode: OpencodeXJob.TransactionalSettlement
 }
 
@@ -145,7 +147,7 @@ export const goalDispatchLayer = Layer.effect(
       const job = yield* jobs.create({
         kind: GOAL_NODE_JOB_KIND,
         title: `${goal.title}: ${node.title}`,
-        source: goal.source === "manual" ? "swarm" : goal.source,
+        source: goal.source,
         projectID: goal.projectID,
         ...(goal.swarmID ? { swarmID: goal.swarmID } : {}),
         // One job per node per iteration: a re-reconcile before the job runs
@@ -239,6 +241,51 @@ export const goalDispatchLayer = Layer.effect(
         .run()
     })
 
-    return GoalDispatch.of({ reconcile, reconcileAll, settleNode })
+    /**
+     * A standing goal keeps its plan and runs it again: the nodes reset to
+     * planned, the spend resets with them, and the previous run survives in
+     * the jobs and child sessions it created.
+     */
+    const restart = Effect.fnUntraced(function* (goal: Info, now: number) {
+      yield* store.patchNodes(
+        goal.id,
+        goal.nodes.map((node) => ({
+          nodeID: node.id,
+          patch: {
+            status: "planned" as const,
+            iteration: 0,
+            jobID: null,
+            sessionID: null,
+            deliveredPrompt: null,
+            result: null,
+            verdict: null,
+            failureReason: null,
+            startedAt: null,
+            completedAt: null,
+            ...(node.loop ? { loop: { ...node.loop, iteration: 0, lastReport: undefined } } : {}),
+          },
+        })),
+        {
+          status: "running",
+          statusReason: null,
+          startedAt: now,
+          completedAt: null,
+          spend: { nodeRuns: 0, costUsd: 0 },
+          schedule: advanceSchedule(goal.schedule!, now),
+        },
+      )
+      yield* reconcile(goal.id)
+    })
+
+    const sweepSchedules = Effect.fn("OpencodeXGoal.sweepSchedules")(function* (now = Date.now()) {
+      const goals = yield* store.list()
+      const due = goals.filter((goal) =>
+        scheduleDue({ goal: { status: goal.status, schedule: goal.schedule, nodeCount: goal.nodes.length }, now }),
+      )
+      yield* Effect.forEach(due, (goal) => restart(goal, now).pipe(Effect.ignore), { concurrency: 1, discard: true })
+      return due.map((goal) => goal.id)
+    })
+
+    return GoalDispatch.of({ reconcile, reconcileAll, sweepSchedules, settleNode })
   }),
 )
