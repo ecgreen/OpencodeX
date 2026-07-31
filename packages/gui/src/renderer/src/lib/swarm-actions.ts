@@ -20,7 +20,8 @@ export function projectLabel(project: GuiSnapshot["projects"][number]) {
   return project.name ?? project.project.name ?? project.project.worktree ?? project.id
 }
 
-export function projectLabelByID(projects: GuiSnapshot["projects"], projectID: string) {
+export function projectLabelByID(projects: GuiSnapshot["projects"], projectID: string | undefined) {
+  if (!projectID) return undefined
   const project = projects.find((project) => project.id === projectID)
   return project ? projectLabel(project) : projectID
 }
@@ -163,6 +164,7 @@ export function roleInput(input: Partial<OpencodeXSwarmRoleInput> & { name: stri
     skill: cleanOptional(input.skill),
     providerID: cleanOptional(input.providerID),
     modelID: cleanOptional(input.modelID),
+    variant: cleanOptional(input.variant),
     modelProfile: cleanOptional(input.modelProfile),
     instructions: input.instructions?.trim() ?? "",
     metadata: input.metadata,

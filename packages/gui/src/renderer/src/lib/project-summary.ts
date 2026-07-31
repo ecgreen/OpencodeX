@@ -1,6 +1,7 @@
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { projectSessions, type SessionOrderState } from "./app-session-lists"
 import { deriveSessionStatus, sessionStatusLabel, type DerivedSessionStatus } from "./session-status"
+import { attentionGoals, goalHeadline } from "./goal-graph-view"
 import type { GuiSnapshot } from "./session-api"
 import { pendingViewSessions } from "./view-items"
 import { title } from "./format"
@@ -112,7 +113,7 @@ function attentionRank(summary: ProjectSummary) {
 export function projectViews(
   project: GuiSnapshot["projects"][number],
   snapshot?: GuiSnapshot,
-  state?: SessionOrderState,
+  _state?: SessionOrderState,
 ) {
   const sessionIDs = new Set(project.sessionIDs)
   const terminalSessionIDs = new Set((project.terminalSessions ?? []).map((session) => session.id))
@@ -165,6 +166,16 @@ export function projectAttentionItems(
       detail: request.questions[0]?.question ?? "Agent needs input",
       tone: "warning" as const,
     }))
+  // Gates, budget pauses, and failed goals - a standing goal has no session,
+  // so without this the project surface would never show it raising a hand.
+  const goals = attentionGoals(snapshot?.goals ?? [], project.id)
+    .filter((goal) => !(goal.ownerSessionID && attentionSessionIDs.has(goal.ownerSessionID)))
+    .map((goal) => ({
+      sessionID: goal.ownerSessionID ?? "",
+      title: title(goal.title),
+      detail: goalHeadline(goal),
+      tone: goal.status === "failed" ? ("danger" as const) : ("warning" as const),
+    }))
   const jobs = (snapshot?.jobs ?? []).flatMap((job) => {
     const sessionID = job.sessionID
     if (
@@ -183,7 +194,7 @@ export function projectAttentionItems(
       },
     ]
   })
-  return [...sessions, ...permissions, ...questions, ...jobs]
+  return [...sessions, ...permissions, ...questions, ...goals, ...jobs]
 }
 
 export function projectLatestActivity(

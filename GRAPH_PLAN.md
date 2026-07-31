@@ -199,7 +199,85 @@ Phases 1–2 are the same order of magnitude as the swarm-provider change was;
 phase 4 is the largest GUI piece since the views manager. Each phase ships
 alone and leaves today's behavior intact until phase 6.
 
-## 9. Risks and open questions
+## 9. What shipped, and where it departed from this plan
+
+All six phases are implemented on `task/swarm-graphs`. Five deviations are
+worth recording, because each one is a decision the plan got wrong:
+
+- **`swarm-plan-layer.ts` is not a fossil.** §2 listed it among the dead
+  legacy engine. It is live: it backs the `opencodex_swarm_create` tool. It
+  stays; the rest of the legacy engine goes.
+- **Goals ride the existing `operations` state domain**, alongside jobs and
+  swarms, rather than getting their own. A new domain would have meant a
+  thirteen-file change and five separate literal unions to keep in sync, for
+  no behavioural gain — goals *are* operations.
+- **The goal service is deliberately free of the prompt loop, and its layer
+  leaves dependencies to the caller.** The graph tools live in the tool
+  registry, which the prompt loop builds, so a service that depended on
+  prompting would be an import cycle. Node execution is registered
+  separately (`goal-runtime`). The second half matters as much: a
+  self-provided layer inside the registry stands up a *second* project
+  registry that resolves different config than the loop around it.
+- **`graph_plan` blocks by default and returns every node's report.** The
+  plan implied fire-and-forget. Blocking makes one tool call the whole
+  interaction: state the shape of the work, get all the results back. Pass
+  `wait: false` for standing goals. A `graph_status` tool was added; the
+  planner-facing `graph_report` was not — the dispatcher records results, and
+  annotation turned out to be a service concern, not a tool.
+- **A failed body node retries its loop iteration** rather than failing the
+  goal. The loop is already a bounded retry with feedback; making a body
+  failure spend an iteration reuses that instead of adding a second mechanism.
+
+Two rules are enforced rather than trusted, and both earned their tests: a
+loop never exits unverified (a check that errors, is skipped, or returns no
+verdict is a failure, not a pass), and a node's delivered prompt is persisted
+at dispatch, so auditing an output against its input never depends on
+reconstructing the prompt from a transcript.
+
+A post-ship review found five defects, all fixed with tests:
+
+- **A re-run collided with its own past.** Job idempotency keys were
+  `goal:node:iteration`, so a standing goal's second sweep (and a re-queued
+  failed node) adopted the previous run's *finished* job and hung "dispatched"
+  forever. Keys now carry a run serial (`goal.metadata.runSerial`), bumped on
+  every restart and re-queue; re-queueing also clears the node's old job,
+  session, and result. The original standing-goal test stopped at
+  "dispatched" on run two - which is exactly how the bug hid - so it now
+  drives the second run to completion.
+- **A failing check outside a loop changed nothing.** Its job succeeded, so
+  the node read "done", dependents dispatched, and the goal completed - a
+  verdict with no consequences. A done check whose verdict is a fail is now a
+  failed node (loop exit checks excepted: failing those is how a loop decides
+  to iterate), which skips its cone and fails the goal.
+- **`graph_update` could not reach the goal that most needs repair.** It only
+  looked for a non-terminal goal, but a *failed* goal is the re-planning case
+  (§6.5); it now falls back to the most recent goal, and reopening by adding
+  or re-queueing work is part of its contract.
+- **Cancelling a standing goal skipped one run.** The schedule stayed armed
+  and the sweep resurrected the "cancelled" goal on the next cadence. Cancel
+  now pauses the schedule too.
+- **Goals never reached the attention surfaces.** A parked gate or budget
+  pause was visible only on the session page - and a standing goal has no
+  session, so it was visible nowhere. Goals needing a human (blocked, paused,
+  failed) now project into the shared work-item/attention pipeline (GUI queue,
+  TUI, notifications) and the project overview badges. Approvals also gained a
+  guard: only a node in `awaiting_approval` accepts one, and `graph_plan`'s
+  blocking wait returns only once in-flight branches have landed, so its
+  report is not a snapshot mid-stride.
+
+A sixth defect surfaced only in CI: the nine goal HTTP endpoints shipped
+with **no scenarios in the HTTP API exercise harness**, so its
+`--fail-on-missing` gate listed every one as a miss. They are covered now.
+The lesson worth keeping: the harness's `coverage` mode only maps route
+presence, and `effect` mode is the one that actually executes assertions -
+a green coverage run says nothing about whether an endpoint behaves.
+
+Two pieces of §7 remain deliberately unshipped: the **goal composer** (goals
+are created by `graph_plan` or the HTTP API today; `buildPlannerBrief` exists,
+tested, for the composer to seed a planner session with) and a standing goal's
+**report artifact** (its results live in the child sessions and node reports).
+
+## 10. Risks and open questions
 
 - **Planner quality.** A bad graph executes badly, deterministically. Counter:
   plans are visible before dispatch (phase 1 ships inspection before

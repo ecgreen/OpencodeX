@@ -55,67 +55,26 @@ export type OpencodeXSwarmRole = {
   instructions: string
   providerID?: string
   modelID?: string
+  /** The model variant (effort level) this role runs at, when one is chosen. */
+  variant?: string
   modelProfile?: string
   sessionID?: string
   currentSessionID?: string
   sessionIDs?: string[]
-  runID?: string
   jobID?: string
   timeCreated?: number
-  timeUpdated?: number
-}
-
-export type OpencodeXSwarmAgentRun = {
-  id: string
-  runID: string
-  swarmID: string
-  roleID?: string
-  status: string
-  prompt: string
-  sessionID?: string
-  jobID?: string
-  startedAt?: number
-  completedAt?: number
-  timeCreated?: number
-  timeUpdated?: number
-}
-
-export type OpencodeXSwarmRun = {
-  id: string
-  teamID?: string
-  swarmID?: string
-  title?: string
-  prompt?: string
-  status?: string
-  orchestratorSessionID?: string
-  resultSessionID?: string
-  synthesisSessionID?: string
-  roleSessionIDs?: string[]
-  agents?: OpencodeXSwarmAgentRun[]
-  startedAt?: number
-  completedAt?: number
-  timeCreated?: number
-  timeStarted?: number
-  timeCompleted?: number
   timeUpdated?: number
 }
 
 export type OpencodeXSwarm = {
   id: string
-  projectID: string
+  /** Optional default workspace for its sessions; a swarm is a model. */
+  projectID?: string
   title: string
   prompt: string
   status: string
   source: string
   synthesisSessionID?: string
-  currentRunID?: string
-  latestRunID?: string
-  activeRunID?: string
-  runID?: string
-  runCount?: number
-  currentRun?: OpencodeXSwarmRun
-  latestRun?: OpencodeXSwarmRun
-  runs?: OpencodeXSwarmRun[]
   roles: OpencodeXSwarmRole[]
   events: {
     id: string
@@ -153,6 +112,8 @@ export type SwarmRoleDraft = SwarmRolePreset & {
   customInstructions: string
   providerID?: string
   modelID?: string
+  /** The model variant (effort level) this role runs at, when one is chosen. */
+  variant?: string
   existing?: boolean
 }
 

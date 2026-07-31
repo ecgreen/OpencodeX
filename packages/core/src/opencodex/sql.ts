@@ -261,9 +261,10 @@ export const OpencodeXSwarmTable = sqliteTable(
   "opencodex_swarm",
   {
     id: text().primaryKey(),
-    opencodex_project_id: text()
-      .notNull()
-      .references(() => OpencodeXProjectTable.id, { onDelete: "cascade" }),
+    // A swarm is a model, not a project resource: the project is an optional
+    // default workspace for its sessions, and deleting the project must not
+    // take the team with it.
+    opencodex_project_id: text().references(() => OpencodeXProjectTable.id, { onDelete: "set null" }),
     title: text().notNull(),
     prompt: text().notNull(),
     status: text().notNull(),
@@ -284,38 +285,6 @@ export const OpencodeXSwarmTable = sqliteTable(
   ],
 )
 
-export const OpencodeXSwarmRunTable = sqliteTable(
-  "opencodex_swarm_run",
-  {
-    id: text().primaryKey(),
-    swarm_id: text()
-      .notNull()
-      .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
-    opencodex_project_id: text().references(() => OpencodeXProjectTable.id, { onDelete: "set null" }),
-    title: text().notNull(),
-    prompt: text().notNull(),
-    status: text().notNull(),
-    source: text().notNull(),
-    orchestrator_session_id: text()
-      .$type<SessionSchema.ID>()
-      .references(() => SessionTable.id, { onDelete: "set null" }),
-    result_session_id: text()
-      .$type<SessionSchema.ID>()
-      .references(() => SessionTable.id, { onDelete: "set null" }),
-    started_at: integer(),
-    completed_at: integer(),
-    metadata_json: text(),
-    ...Timestamps,
-  },
-  (table) => [
-    index("opencodex_swarm_run_swarm_idx").on(table.swarm_id),
-    index("opencodex_swarm_run_project_idx").on(table.opencodex_project_id),
-    index("opencodex_swarm_run_orchestrator_session_idx").on(table.orchestrator_session_id),
-    index("opencodex_swarm_run_status_idx").on(table.status),
-    index("opencodex_swarm_run_updated_idx").on(table.time_updated),
-  ],
-)
-
 export const OpencodeXSwarmRoleTable = sqliteTable(
   "opencodex_swarm_role",
   {
@@ -328,6 +297,8 @@ export const OpencodeXSwarmRoleTable = sqliteTable(
     skill: text(),
     provider_id: text(),
     model_id: text(),
+    /** The model variant (effort level) this role runs at, when one is chosen. */
+    variant: text(),
     model_profile: text(),
     status: text().notNull(),
     instructions: text().notNull(),
@@ -347,35 +318,104 @@ export const OpencodeXSwarmRoleTable = sqliteTable(
   ],
 )
 
-export const OpencodeXSwarmAgentRunTable = sqliteTable(
-  "opencodex_swarm_agent_run",
+export const OpencodeXGoalTable = sqliteTable(
+  "opencodex_goal",
   {
     id: text().primaryKey(),
-    run_id: text()
+    opencodex_project_id: text()
       .notNull()
-      .references(() => OpencodeXSwarmRunTable.id, { onDelete: "cascade" }),
-    swarm_id: text()
-      .notNull()
-      .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
-    role_id: text().references(() => OpencodeXSwarmRoleTable.id, { onDelete: "set null" }),
+      .references(() => OpencodeXProjectTable.id, { onDelete: "cascade" }),
+    title: text().notNull(),
+    statement: text().notNull(),
+    success_criteria_json: text({ mode: "json" }).$type<string[]>().notNull(),
     status: text().notNull(),
-    prompt: text().notNull(),
-    session_id: text()
+    source: text().notNull(),
+    // The chat session that owns the goal. Standing goals have none, which is
+    // what makes them standing.
+    owner_session_id: text()
       .$type<SessionSchema.ID>()
       .references(() => SessionTable.id, { onDelete: "set null" }),
-    job_id: text().references(() => OpencodeXJobTable.id, { onDelete: "set null" }),
+    swarm_id: text().references(() => OpencodeXSwarmTable.id, { onDelete: "set null" }),
+    directory: text(),
+    budget_json: text(),
+    spend_json: text(),
+    schedule_json: text(),
+    status_reason: text(),
     metadata_json: text(),
     started_at: integer(),
     completed_at: integer(),
     ...Timestamps,
   },
   (table) => [
-    index("opencodex_swarm_agent_run_run_idx").on(table.run_id),
-    index("opencodex_swarm_agent_run_swarm_idx").on(table.swarm_id),
-    index("opencodex_swarm_agent_run_role_idx").on(table.role_id),
-    index("opencodex_swarm_agent_run_session_idx").on(table.session_id),
-    index("opencodex_swarm_agent_run_job_idx").on(table.job_id),
-    index("opencodex_swarm_agent_run_status_idx").on(table.status),
+    index("opencodex_goal_project_idx").on(table.opencodex_project_id),
+    index("opencodex_goal_session_idx").on(table.owner_session_id),
+    index("opencodex_goal_swarm_idx").on(table.swarm_id),
+    index("opencodex_goal_status_idx").on(table.status),
+    index("opencodex_goal_updated_idx").on(table.time_updated),
+  ],
+)
+
+export const OpencodeXGoalNodeTable = sqliteTable(
+  "opencodex_goal_node",
+  {
+    // Planner-authored and unique within the goal, so edges and briefs can
+    // name nodes with the same ids the planner wrote.
+    id: text().notNull(),
+    goal_id: text()
+      .notNull()
+      .references(() => OpencodeXGoalTable.id, { onDelete: "cascade" }),
+    kind: text().notNull(),
+    title: text().notNull(),
+    brief: text().notNull(),
+    status: text().notNull(),
+    executor_json: text(),
+    // The loop node this node is a body member of.
+    parent_node_id: text(),
+    loop_json: text(),
+    sort_order: integer().notNull().default(0),
+    iteration: integer().notNull().default(0),
+    attempt: integer().notNull().default(0),
+    job_id: text().references(() => OpencodeXJobTable.id, { onDelete: "set null" }),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .references(() => SessionTable.id, { onDelete: "set null" }),
+    // The exact text the executor received, captured at dispatch.
+    delivered_prompt: text(),
+    result_text: text(),
+    verdict_json: text(),
+    failure_reason: text(),
+    metadata_json: text(),
+    started_at: integer(),
+    completed_at: integer(),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.goal_id, table.id] }),
+    index("opencodex_goal_node_goal_idx").on(table.goal_id),
+    index("opencodex_goal_node_parent_idx").on(table.parent_node_id),
+    index("opencodex_goal_node_job_idx").on(table.job_id),
+    index("opencodex_goal_node_session_idx").on(table.session_id),
+    index("opencodex_goal_node_status_idx").on(table.status),
+  ],
+)
+
+export const OpencodeXGoalEdgeTable = sqliteTable(
+  "opencodex_goal_edge",
+  {
+    goal_id: text()
+      .notNull()
+      .references(() => OpencodeXGoalTable.id, { onDelete: "cascade" }),
+    // Node ids are planner keys scoped to the goal, so the goal cascade above
+    // is what keeps edges from outliving the nodes they name.
+    from_node_id: text().notNull(),
+    to_node_id: text().notNull(),
+    kind: text().notNull(),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.goal_id, table.from_node_id, table.to_node_id, table.kind] }),
+    index("opencodex_goal_edge_goal_idx").on(table.goal_id),
+    index("opencodex_goal_edge_to_idx").on(table.to_node_id),
   ],
 )
 
@@ -386,7 +426,6 @@ export const OpencodeXSwarmEventTable = sqliteTable(
     swarm_id: text()
       .notNull()
       .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
-    run_id: text().references(() => OpencodeXSwarmRunTable.id, { onDelete: "set null" }),
     role_id: text().references(() => OpencodeXSwarmRoleTable.id, { onDelete: "set null" }),
     session_id: text()
       .$type<SessionSchema.ID>()
@@ -398,7 +437,6 @@ export const OpencodeXSwarmEventTable = sqliteTable(
   },
   (table) => [
     index("opencodex_swarm_event_swarm_idx").on(table.swarm_id),
-    index("opencodex_swarm_event_run_idx").on(table.run_id),
     index("opencodex_swarm_event_role_idx").on(table.role_id),
     index("opencodex_swarm_event_session_idx").on(table.session_id),
     index("opencodex_swarm_event_created_idx").on(table.time_created),

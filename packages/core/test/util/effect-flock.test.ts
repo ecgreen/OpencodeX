@@ -351,6 +351,35 @@ describe("util.effect-flock", () => {
   )
 
   it.live(
+    "reclaims a crashed owner before its heartbeat goes stale",
+    () =>
+      Effect.promise(async () => {
+        const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eflock-dead-"))
+        const dir = path.join(tmp, "locks")
+        const ready = path.join(tmp, "ready")
+
+        const proc = spawnWorker({ key: "eflock:dead-owner", dir, ready, holdMs: 120_000 })
+
+        try {
+          await waitForFile(ready, 5_000)
+          await stopWorker(proc)
+          await new Promise((resolve) => proc.on("close", resolve))
+
+          // No backdating: the heartbeat is seconds old, well inside STALE_MS.
+          // Only the dead pid in meta.json can free this lock.
+          const done = path.join(tmp, "done.log")
+          const result = await run({ key: "eflock:dead-owner", dir, done, holdMs: 10 })
+          expect(result.code).toBe(0)
+          expect(result.stderr.toString()).toBe("")
+        } finally {
+          await stopWorker(proc).catch(() => {})
+          await fs.rm(tmp, { recursive: true, force: true })
+        }
+      }),
+    30_000,
+  )
+
+  it.live(
     "recovers after a crashed lock owner",
     () =>
       Effect.promise(async () => {

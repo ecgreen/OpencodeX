@@ -32,6 +32,8 @@ const InputObject = Schema.StructWithRest(
     lsp: Schema.optional(Rule),
     doom_loop: Schema.optional(Action),
     skill: Schema.optional(Rule),
+    graph_plan: Schema.optional(Rule),
+    graph_update: Schema.optional(Rule),
     workspace_open: Schema.optional(Rule),
     browser_navigate: Schema.optional(Rule),
     browser_screenshot: Schema.optional(Rule),

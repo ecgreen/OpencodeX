@@ -87,7 +87,7 @@ export async function getSwarm(gui: GuiClient, swarmID: string) {
   return gui.client.opencodex.swarm.get({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function createSwarm(gui: GuiClient, input: { projectID: string; title?: string; prompt?: string; roles?: OpencodeXSwarmRoleInput[] }) {
+export async function createSwarm(gui: GuiClient, input: { projectID?: string; title?: string; prompt?: string; roles?: OpencodeXSwarmRoleInput[] }) {
   return gui.client.opencodex.swarm.create({
     opencodeXSwarmCreateInput: {
       projectID: input.projectID,
@@ -137,4 +137,17 @@ export async function deleteView(gui: GuiClient, viewID: string) {
 
 export async function updateView(gui: GuiClient, viewID: string, input: { expectedTimeUpdated: number; title?: string; sessionIDs?: string[]; members?: OpencodeXViewMember[]; focusedSessionID?: string; focusedItemID?: string; metadata?: Record<string, unknown> }) {
   return gui.client.opencodex.view.update({ viewID, ...input }, { headers: authHeaders(gui), throwOnError: true })
+}
+
+/** Resolves a gate a goal is parked on. Approving lets the graph continue. */
+export function approveGoalNode(gui: GuiClient, goalID: string, nodeID: string, approved: boolean) {
+  return gui.client.opencodex.goal.node.approve(
+    { goalID, nodeID, approved },
+    { headers: authHeaders(gui), throwOnError: true },
+  )
+}
+
+/** Stops a goal: outstanding node jobs are cancelled with it. */
+export function cancelGoal(gui: GuiClient, goalID: string) {
+  return gui.client.opencodex.goal.cancel({ goalID }, { headers: authHeaders(gui), throwOnError: true })
 }

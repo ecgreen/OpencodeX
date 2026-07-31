@@ -186,16 +186,26 @@ async function readActiveManifest(key: string) {
   }
 }
 
+/**
+ * Longer than `START_TIMEOUT` on purpose: a coordinator whose heartbeat has
+ * merely gone quiet may still be running and serving the database, and stealing
+ * its lock would start a second writer. A coordinator that has actually died is
+ * reclaimed immediately by pid — see `LockProtocol.ownerGone` — so a contender
+ * timing out before this window elapses is the correct, conservative outcome
+ * rather than a stuck launch.
+ */
+const LOCK_STALE_TIMEOUT = 30_000
+
 export function withCoordinatorStartupLock<T>(key: string, fn: () => Promise<T>) {
-  return Flock.withLock(`tui-coordinator:${key}`, fn, { timeoutMs: START_TIMEOUT, staleMs: 30_000 })
+  return Flock.withLock(`tui-coordinator:${key}`, fn, { timeoutMs: START_TIMEOUT, staleMs: LOCK_STALE_TIMEOUT })
 }
 
 export function coordinatorStartupLock(key: string) {
-  return Flock.effect(`tui-coordinator:${key}`, { timeoutMs: START_TIMEOUT, staleMs: 30_000 })
+  return Flock.effect(`tui-coordinator:${key}`, { timeoutMs: START_TIMEOUT, staleMs: LOCK_STALE_TIMEOUT })
 }
 
 export function acquireCoordinatorOwnerLock(key: string) {
-  return Flock.acquire(`tui-coordinator-owner:${key}`, { timeoutMs: START_TIMEOUT, staleMs: 30_000 })
+  return Flock.acquire(`tui-coordinator-owner:${key}`, { timeoutMs: START_TIMEOUT, staleMs: LOCK_STALE_TIMEOUT })
 }
 
 function cliCommand() {

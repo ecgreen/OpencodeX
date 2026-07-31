@@ -332,7 +332,7 @@ describe("client state sync", () => {
     expect(result.state.dirtyOperations).toBe(true)
     expect(result.state.dirtyCatalog).toBe(false)
     expect(result.state.dirtySessions).toEqual({})
-    expect(selectClientOperationsSnapshot(current)).toEqual({ jobs: [], swarms: [] })
+    expect(selectClientOperationsSnapshot(current)).toEqual({ jobs: [], swarms: [], goals: [] })
   })
 
   test("refreshes raw job events through the operations domain without reloading the catalog", async () => {

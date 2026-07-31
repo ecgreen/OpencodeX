@@ -31,6 +31,8 @@ export type Event =
   | EventSessionIdle
   | EventSessionCompacted
   | EventLspUpdated
+  | EventOpencodexJobCreated
+  | EventOpencodexJobTransitioned
   | EventTuiPromptAppend2
   | EventTuiCommandExecute2
   | EventTuiToastShow2
@@ -48,6 +50,9 @@ export type Event =
   | EventOpencodexProjectReordered
   | EventOpencodexProjectDeleted
   | EventOpencodexProjectSessionAssigned
+  | EventOpencodexGoalCreated
+  | EventOpencodexGoalUpdated
+  | EventOpencodexGoalDeleted
   | EventOpencodexGuiBridgeRequest
   | EventWorkspaceReady
   | EventWorkspaceFailed
@@ -56,8 +61,6 @@ export type Event =
   | EventWorktreeFailed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
-  | EventOpencodexJobCreated
-  | EventOpencodexJobTransitioned
   | EventOpencodexSwarmCreated
   | EventOpencodexSwarmUpdated
   | EventOpencodexSwarmDeleted
@@ -933,6 +936,22 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.job.created"
+        properties: {
+          jobID: string
+          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.job.transitioned"
+        properties: {
+          jobID: string
+          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+        }
+      }
+    | {
+        id: string
         type: "tui.prompt.append"
         properties: {
           text: string
@@ -1099,6 +1118,27 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.goal.created"
+        properties: {
+          goalID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.goal.updated"
+        properties: {
+          goalID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.goal.deleted"
+        properties: {
+          goalID: string
+        }
+      }
+    | {
+        id: string
         type: "opencodex.gui_bridge.request"
         properties: {
           requestID: string
@@ -1170,22 +1210,6 @@ export type GlobalEvent = {
         type: "installation.update-available"
         properties: {
           version: string
-        }
-      }
-    | {
-        id: string
-        type: "opencodex.job.created"
-        properties: {
-          jobID: string
-          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
-        }
-      }
-    | {
-        id: string
-        type: "opencodex.job.transitioned"
-        properties: {
-          jobID: string
-          status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
         }
       }
     | {
@@ -1276,6 +1300,8 @@ export type GlobalEvent = {
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
     | SyncEventSessionStatus
+    | SyncEventOpencodexJobCreated
+    | SyncEventOpencodexJobTransitioned
     | SyncEventOpencodexTerminalSessionCreated
     | SyncEventOpencodexTerminalSessionUpdated
     | SyncEventOpencodexTerminalSessionDeleted
@@ -1284,8 +1310,9 @@ export type GlobalEvent = {
     | SyncEventOpencodexProjectReordered
     | SyncEventOpencodexProjectDeleted
     | SyncEventOpencodexProjectSessionAssigned
-    | SyncEventOpencodexJobCreated
-    | SyncEventOpencodexJobTransitioned
+    | SyncEventOpencodexGoalCreated
+    | SyncEventOpencodexGoalUpdated
+    | SyncEventOpencodexGoalDeleted
     | SyncEventOpencodexSwarmCreated
     | SyncEventOpencodexSwarmUpdated
     | SyncEventOpencodexSwarmDeleted
@@ -1360,6 +1387,8 @@ export type PermissionConfig =
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
+      graph_plan?: PermissionRuleConfig
+      graph_update?: PermissionRuleConfig
       workspace_open?: PermissionRuleConfig
       browser_navigate?: PermissionRuleConfig
       browser_screenshot?: PermissionRuleConfig
@@ -2411,6 +2440,7 @@ export type OpencodeXSwarmRole = {
   skill?: string
   providerID?: string
   modelID?: string
+  variant?: string
   modelProfile?: string
   status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
   instructions: string
@@ -2424,59 +2454,9 @@ export type OpencodeXSwarmRole = {
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
-export type OpencodeXSwarmAgentRun = {
-  id: string
-  runID: string
-  swarmID: string
-  roleID?: string
-  status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
-  prompt: string
-  sessionID?: string
-  jobID?: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type OpencodeXSwarmRun = {
-  id: string
-  swarmID: string
-  projectID?: string
-  title: string
-  prompt: string
-  status:
-    | "draft"
-    | "planned"
-    | "queued"
-    | "running"
-    | "cancelling"
-    | "approval_needed"
-    | "blocked"
-    | "failed"
-    | "partially_failed"
-    | "completed"
-    | "cancelled"
-  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
-  orchestratorSessionID?: string
-  resultSessionID?: string
-  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  metadata?: {
-    [key: string]: unknown
-  }
-  agents: Array<OpencodeXSwarmAgentRun>
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
 export type OpencodeXSwarmEvent = {
   id: string
   swarmID: string
-  runID?: string
   roleID?: string
   sessionID?: string
   kind: string
@@ -2490,7 +2470,7 @@ export type OpencodeXSwarmEvent = {
 
 export type OpencodeXSwarm = {
   id: string
-  projectID: string
+  projectID?: string
   title: string
   prompt: string
   status:
@@ -2514,10 +2494,132 @@ export type OpencodeXSwarm = {
     [key: string]: unknown
   }
   roles: Array<OpencodeXSwarmRole>
-  runs: Array<OpencodeXSwarmRun>
   events: Array<OpencodeXSwarmEvent>
   timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type OpencodeXGoalBudget = {
+  maxNodeRuns?: number
+  maxWallClockMs?: number
+  maxCostUsd?: number
+}
+
+export type OpencodeXGoalSpend = {
+  nodeRuns: number
+  costUsd: number
+}
+
+export type OpencodeXGoalSchedule = {
+  everyMs: number
+  nextRunAt?: number
+  lastRunAt?: number
+  paused?: boolean
+}
+
+export type OpencodeXGoalExecutor =
+  | {
+      type: "swarm_role"
+      role: string
+    }
+  | {
+      type: "agent"
+      agent: string
+      providerID?: string
+      modelID?: string
+      skill?: string
+      instructions?: string
+    }
+  | {
+      type: "model"
+      providerID?: string
+      modelID?: string
+      skill?: string
+      instructions?: string
+    }
+
+export type OpencodeXGoalLoop = {
+  exitCheckNodeID: string
+  maxIterations: number
+  iteration: number
+  lastReport?: string
+  bodyNodeIDs: Array<string>
+}
+
+export type OpencodeXGoalVerdict = {
+  pass: boolean
+  summary: string
+  findings: Array<string>
+}
+
+export type OpencodeXGoalNode = {
+  id: string
+  goalID: string
+  kind: "task" | "check" | "loop" | "synthesis" | "gate"
+  title: string
+  brief: string
+  status:
+    | "planned"
+    | "ready"
+    | "dispatched"
+    | "running"
+    | "done"
+    | "failed"
+    | "skipped"
+    | "awaiting_approval"
+    | "cancelled"
+  executor?: OpencodeXGoalExecutor
+  parentNodeID?: string
+  loop?: OpencodeXGoalLoop
+  sortOrder: number
+  iteration: number
+  jobID?: string
+  sessionID?: string
+  deliveredPrompt?: string
+  result?: string
+  verdict?: OpencodeXGoalVerdict
+  failureReason?: string
+  attempt: number
+  startedAt?: number
+  completedAt?: number
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number
+  timeUpdated: number
+}
+
+export type OpencodeXGoalEdge = {
+  goalID: string
+  fromNodeID: string
+  toNodeID: string
+  kind: "requires" | "feeds"
+}
+
+export type OpencodeXGoal = {
+  id: string
+  projectID: string
+  title: string
+  statement: string
+  successCriteria: Array<string>
+  status: "draft" | "planned" | "running" | "blocked" | "paused" | "completed" | "failed" | "cancelled"
+  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  ownerSessionID?: string
+  swarmID?: string
+  directory?: string
+  budget?: OpencodeXGoalBudget
+  spend: OpencodeXGoalSpend
+  schedule?: OpencodeXGoalSchedule
+  statusReason?: string
+  nodes: Array<OpencodeXGoalNode>
+  edges: Array<OpencodeXGoalEdge>
+  startedAt?: number
+  completedAt?: number
+  metadata?: {
+    [key: string]: unknown
+  }
+  timeCreated: number
+  timeUpdated: number
 }
 
 export type OpencodeXStateSnapshot = {
@@ -2540,6 +2642,7 @@ export type OpencodeXStateSnapshot = {
     operations: {
       jobs: Array<OpencodeXJob>
       swarms: Array<OpencodeXSwarm>
+      goals: Array<OpencodeXGoal>
     }
   }
 }
@@ -2553,6 +2656,7 @@ export type OpencodeXOperationsSnapshot = {
   payload: {
     jobs: Array<OpencodeXJob>
     swarms: Array<OpencodeXSwarm>
+    goals: Array<OpencodeXGoal>
   }
 }
 
@@ -2688,6 +2792,7 @@ export type OpencodeXSwarmRoleInput = {
   skill?: string
   providerID?: string
   modelID?: string
+  variant?: string
   modelProfile?: string
   instructions: string
   metadata?: {
@@ -2696,7 +2801,7 @@ export type OpencodeXSwarmRoleInput = {
 }
 
 export type OpencodeXSwarmCreateInput = {
-  projectID: string
+  projectID?: string
   title?: string
   prompt?: string
   source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
@@ -2715,13 +2820,6 @@ export type OpencodeXSwarmUpdateInput = {
   }
 }
 
-export type OpencodeXSwarmAssignTaskInput = {
-  prompt: string
-  agent?: string
-  mode?: "build" | "plan"
-  variant?: string
-}
-
 export type OpencodeXSwarmAddRoleInput = {
   role: OpencodeXSwarmRoleInput
 }
@@ -2732,11 +2830,71 @@ export type OpencodeXSwarmUpdateRoleInput = {
   skill?: string
   providerID?: string
   modelID?: string
+  variant?: string
   modelProfile?: string
   instructions?: string
   metadata?: {
     [key: string]: unknown
   }
+}
+
+export type OpencodeXGoalCreateInput = {
+  projectID: string
+  title?: string
+  statement: string
+  successCriteria?: Array<string>
+  ownerSessionID?: string
+  swarmID?: string
+  directory?: string
+  source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
+  budget?: OpencodeXGoalBudget
+  schedule?: OpencodeXGoalSchedule
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXGoalNodeInput = {
+  id: string
+  kind?: "task" | "check" | "loop" | "synthesis" | "gate"
+  title: string
+  brief: string
+  executor?: OpencodeXGoalExecutor
+  parentNodeID?: string
+  loop?: {
+    exitCheckNodeID: string
+    maxIterations?: number
+  }
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type OpencodeXGoalEdgeInput = {
+  from: string
+  to: string
+  kind?: "requires" | "feeds"
+}
+
+export type OpencodeXGoalPlanInput = {
+  nodes: Array<OpencodeXGoalNodeInput>
+  edges?: Array<OpencodeXGoalEdgeInput>
+  successCriteria?: Array<string>
+  budget?: OpencodeXGoalBudget
+}
+
+export type OpencodeXGoalUpdatePlanInput = {
+  addNodes?: Array<OpencodeXGoalNodeInput>
+  addEdges?: Array<OpencodeXGoalEdgeInput>
+  patchNodes?: Array<{
+    id: string
+    title?: string
+    brief?: string
+    executor?: OpencodeXGoalExecutor
+    status?: "planned" | "skipped"
+  }>
+  successCriteria?: Array<string>
+  budget?: OpencodeXGoalBudget
 }
 
 export type OpencodeXTerminalSessionCreateInput = {
@@ -3233,6 +3391,30 @@ export type SyncEventSessionStatus = {
   }
 }
 
+export type SyncEventOpencodexJobCreated = {
+  type: "sync"
+  name: "opencodex.job.created.1"
+  id: string
+  seq: number
+  aggregateID: "jobID"
+  data: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type SyncEventOpencodexJobTransitioned = {
+  type: "sync"
+  name: "opencodex.job.transitioned.1"
+  id: string
+  seq: number
+  aggregateID: "jobID"
+  data: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
 export type SyncEventOpencodexTerminalSessionCreated = {
   type: "sync"
   name: "opencodex.terminal_session.created.1"
@@ -3322,27 +3504,36 @@ export type SyncEventOpencodexProjectSessionAssigned = {
   }
 }
 
-export type SyncEventOpencodexJobCreated = {
+export type SyncEventOpencodexGoalCreated = {
   type: "sync"
-  name: "opencodex.job.created.1"
+  name: "opencodex.goal.created.1"
   id: string
   seq: number
-  aggregateID: "jobID"
+  aggregateID: "goalID"
   data: {
-    jobID: string
-    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+    goalID: string
   }
 }
 
-export type SyncEventOpencodexJobTransitioned = {
+export type SyncEventOpencodexGoalUpdated = {
   type: "sync"
-  name: "opencodex.job.transitioned.1"
+  name: "opencodex.goal.updated.1"
   id: string
   seq: number
-  aggregateID: "jobID"
+  aggregateID: "goalID"
   data: {
-    jobID: string
-    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+    goalID: string
+  }
+}
+
+export type SyncEventOpencodexGoalDeleted = {
+  type: "sync"
+  name: "opencodex.goal.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "goalID"
+  data: {
+    goalID: string
   }
 }
 
@@ -3796,6 +3987,24 @@ export type EventLspUpdated = {
   }
 }
 
+export type EventOpencodexJobCreated = {
+  id: string
+  type: "opencodex.job.created"
+  properties: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
+export type EventOpencodexJobTransitioned = {
+  id: string
+  type: "opencodex.job.transitioned"
+  properties: {
+    jobID: string
+    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
+  }
+}
+
 export type EventMcpToolsChanged = {
   id: string
   type: "mcp.tools.changed"
@@ -3925,6 +4134,30 @@ export type EventOpencodexProjectSessionAssigned = {
   }
 }
 
+export type EventOpencodexGoalCreated = {
+  id: string
+  type: "opencodex.goal.created"
+  properties: {
+    goalID: string
+  }
+}
+
+export type EventOpencodexGoalUpdated = {
+  id: string
+  type: "opencodex.goal.updated"
+  properties: {
+    goalID: string
+  }
+}
+
+export type EventOpencodexGoalDeleted = {
+  id: string
+  type: "opencodex.goal.deleted"
+  properties: {
+    goalID: string
+  }
+}
+
 export type EventOpencodexGuiBridgeRequest = {
   id: string
   type: "opencodex.gui_bridge.request"
@@ -4005,24 +4238,6 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
-  }
-}
-
-export type EventOpencodexJobCreated = {
-  id: string
-  type: "opencodex.job.created"
-  properties: {
-    jobID: string
-    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
-  }
-}
-
-export type EventOpencodexJobTransitioned = {
-  id: string
-  type: "opencodex.job.transitioned"
-  properties: {
-    jobID: string
-    status: "queued" | "claimed" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted"
   }
 }
 
@@ -8339,69 +8554,6 @@ export type OpencodexSwarmUpdateResponses = {
 
 export type OpencodexSwarmUpdateResponse = OpencodexSwarmUpdateResponses[keyof OpencodexSwarmUpdateResponses]
 
-export type OpencodexSwarmStartData = {
-  body?: never
-  path: {
-    swarmID: string
-  }
-  query?: never
-  url: "/experimental/opencodex/swarm/{swarmID}/start"
-}
-
-export type OpencodexSwarmStartErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type OpencodexSwarmStartError = OpencodexSwarmStartErrors[keyof OpencodexSwarmStartErrors]
-
-export type OpencodexSwarmStartResponses = {
-  /**
-   * Started OpencodeX swarm
-   */
-  200: OpencodeXSwarm
-}
-
-export type OpencodexSwarmStartResponse = OpencodexSwarmStartResponses[keyof OpencodexSwarmStartResponses]
-
-export type OpencodexSwarmTaskAssignData = {
-  body?: OpencodeXSwarmAssignTaskInput
-  path: {
-    swarmID: string
-  }
-  query?: never
-  url: "/experimental/opencodex/swarm/{swarmID}/task"
-}
-
-export type OpencodexSwarmTaskAssignErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type OpencodexSwarmTaskAssignError = OpencodexSwarmTaskAssignErrors[keyof OpencodexSwarmTaskAssignErrors]
-
-export type OpencodexSwarmTaskAssignResponses = {
-  /**
-   * Assigned task to OpencodeX swarm
-   */
-  200: OpencodeXSwarm
-}
-
-export type OpencodexSwarmTaskAssignResponse =
-  OpencodexSwarmTaskAssignResponses[keyof OpencodexSwarmTaskAssignResponses]
-
 export type OpencodexSwarmCancelData = {
   body?: never
   path: {
@@ -8496,6 +8648,284 @@ export type OpencodexSwarmRoleUpdateResponses = {
 
 export type OpencodexSwarmRoleUpdateResponse =
   OpencodexSwarmRoleUpdateResponses[keyof OpencodexSwarmRoleUpdateResponses]
+
+export type OpencodexGoalListData = {
+  body?: never
+  path?: never
+  query?: {
+    projectID?: string
+    sessionID?: string
+  }
+  url: "/experimental/opencodex/goal"
+}
+
+export type OpencodexGoalListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type OpencodexGoalListError = OpencodexGoalListErrors[keyof OpencodexGoalListErrors]
+
+export type OpencodexGoalListResponses = {
+  /**
+   * List OpencodeX goals
+   */
+  200: Array<OpencodeXGoal>
+}
+
+export type OpencodexGoalListResponse = OpencodexGoalListResponses[keyof OpencodexGoalListResponses]
+
+export type OpencodexGoalCreateData = {
+  body?: OpencodeXGoalCreateInput
+  path?: never
+  query?: never
+  url: "/experimental/opencodex/goal"
+}
+
+export type OpencodexGoalCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * ProjectNotFoundError
+   */
+  404: ProjectNotFoundError
+}
+
+export type OpencodexGoalCreateError = OpencodexGoalCreateErrors[keyof OpencodexGoalCreateErrors]
+
+export type OpencodexGoalCreateResponses = {
+  /**
+   * Created OpencodeX goal
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalCreateResponse = OpencodexGoalCreateResponses[keyof OpencodexGoalCreateResponses]
+
+export type OpencodexGoalDeleteData = {
+  body?: never
+  path: {
+    goalID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}"
+}
+
+export type OpencodexGoalDeleteErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalDeleteError = OpencodexGoalDeleteErrors[keyof OpencodexGoalDeleteErrors]
+
+export type OpencodexGoalDeleteResponses = {
+  /**
+   * Deleted OpencodeX goal
+   */
+  200: boolean
+}
+
+export type OpencodexGoalDeleteResponse = OpencodexGoalDeleteResponses[keyof OpencodexGoalDeleteResponses]
+
+export type OpencodexGoalGetData = {
+  body?: never
+  path: {
+    goalID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}"
+}
+
+export type OpencodexGoalGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalGetError = OpencodexGoalGetErrors[keyof OpencodexGoalGetErrors]
+
+export type OpencodexGoalGetResponses = {
+  /**
+   * OpencodeX goal
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalGetResponse = OpencodexGoalGetResponses[keyof OpencodexGoalGetResponses]
+
+export type OpencodexGoalPlanUpdateData = {
+  body?: OpencodeXGoalUpdatePlanInput
+  path: {
+    goalID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}/plan"
+}
+
+export type OpencodexGoalPlanUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalPlanUpdateError = OpencodexGoalPlanUpdateErrors[keyof OpencodexGoalPlanUpdateErrors]
+
+export type OpencodexGoalPlanUpdateResponses = {
+  /**
+   * Updated OpencodeX goal graph
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalPlanUpdateResponse = OpencodexGoalPlanUpdateResponses[keyof OpencodexGoalPlanUpdateResponses]
+
+export type OpencodexGoalPlanData = {
+  body?: OpencodeXGoalPlanInput
+  path: {
+    goalID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}/plan"
+}
+
+export type OpencodexGoalPlanErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalPlanError = OpencodexGoalPlanErrors[keyof OpencodexGoalPlanErrors]
+
+export type OpencodexGoalPlanResponses = {
+  /**
+   * Planned OpencodeX goal
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalPlanResponse = OpencodexGoalPlanResponses[keyof OpencodexGoalPlanResponses]
+
+export type OpencodexGoalStartData = {
+  body?: never
+  path: {
+    goalID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}/start"
+}
+
+export type OpencodexGoalStartErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalStartError = OpencodexGoalStartErrors[keyof OpencodexGoalStartErrors]
+
+export type OpencodexGoalStartResponses = {
+  /**
+   * Running OpencodeX goal
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalStartResponse = OpencodexGoalStartResponses[keyof OpencodexGoalStartResponses]
+
+export type OpencodexGoalNodeApproveData = {
+  body?: {
+    approved: boolean
+  }
+  path: {
+    goalID: string
+    nodeID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}/node/{nodeID}/approve"
+}
+
+export type OpencodexGoalNodeApproveErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalNodeApproveError = OpencodexGoalNodeApproveErrors[keyof OpencodexGoalNodeApproveErrors]
+
+export type OpencodexGoalNodeApproveResponses = {
+  /**
+   * Resolved OpencodeX goal gate
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalNodeApproveResponse =
+  OpencodexGoalNodeApproveResponses[keyof OpencodexGoalNodeApproveResponses]
+
+export type OpencodexGoalCancelData = {
+  body?: never
+  path: {
+    goalID: string
+  }
+  query?: never
+  url: "/experimental/opencodex/goal/{goalID}/cancel"
+}
+
+export type OpencodexGoalCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type OpencodexGoalCancelError = OpencodexGoalCancelErrors[keyof OpencodexGoalCancelErrors]
+
+export type OpencodexGoalCancelResponses = {
+  /**
+   * Cancelled OpencodeX goal
+   */
+  200: OpencodeXGoal
+}
+
+export type OpencodexGoalCancelResponse = OpencodexGoalCancelResponses[keyof OpencodexGoalCancelResponses]
 
 export type OpencodexTerminalSessionListData = {
   body?: never

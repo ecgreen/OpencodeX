@@ -1,0 +1,252 @@
+/*
+ * The goal graph on the session page: a collapsible plan above the transcript,
+ * one row per node, indented under the loop that owns it. The node pane
+ * replaces the transcript the way the swarm member pane already does.
+ */
+
+.session-workspace:has(.goal-graph) {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.session-workspace:has(.goal-node-pane) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.goal-graph {
+  display: grid;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}
+
+.goal-graph-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.goal-graph-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.goal-graph-toggle .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.goal-graph-heading {
+  display: grid;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.goal-graph-heading strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-font-size-body);
+  font-weight: 800;
+}
+
+.goal-graph-heading small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-font-size-caption);
+}
+
+.goal-graph-count {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--ds-font-size-caption);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-graph-progress {
+  height: var(--ds-space-1);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--secondary) 16%, transparent);
+}
+
+.goal-graph-progress span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--ds-motion-control) ease;
+}
+
+.goal-graph-nodes {
+  display: grid;
+  gap: var(--ds-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goal-node {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  padding: var(--ds-space-1) var(--ds-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+/* Loop bodies sit under their loop, so the cluster reads as one thing. */
+.goal-node[data-depth="1"] {
+  margin-left: var(--ds-space-5);
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.goal-node-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.goal-node-dot {
+  flex: none;
+  width: var(--ds-space-1);
+  height: var(--ds-space-1);
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+}
+
+.goal-node-copy {
+  display: grid;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.goal-node-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-font-size-caption);
+  font-weight: 700;
+}
+
+.goal-node-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-font-size-micro);
+}
+
+.goal-node-status {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--ds-font-size-micro);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.goal-node-gate {
+  display: flex;
+  flex: none;
+  gap: var(--ds-space-1);
+}
+
+/* --- Node pane: the prompt it received, then what it did --- */
+
+.goal-node-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  min-height: 0;
+}
+
+.goal-node-pane:has(.goal-node-prompt) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.goal-node-pane-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border-subtle));
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}
+
+.goal-node-pane-heading {
+  display: grid;
+  flex: 1;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.goal-node-pane-heading strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-font-size-body);
+  font-weight: 800;
+}
+
+.goal-node-pane-heading span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-font-size-caption);
+}
+
+.goal-node-prompt {
+  max-height: 18em;
+  margin: 0;
+  overflow: auto;
+  padding: var(--ds-space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  background: var(--bg);
+  font-size: var(--ds-font-size-micro);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.goal-node-note {
+  display: flex;
+  justify-content: center;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  font-size: var(--ds-font-size-micro);
+  font-weight: 600;
+}

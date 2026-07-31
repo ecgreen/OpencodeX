@@ -18,6 +18,7 @@ import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
+import { SessionGoalGraph } from "./session-goal-graph"
 import { SessionSwarmTeam } from "./swarm-team-strip"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
@@ -262,8 +263,10 @@ export function SessionPage(props: SessionPageProps) {
       </Show>
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
         <div class="session-workspace">
-          <SessionSwarmTeam page={props} />
-          <Show when={!(props.team && props.teamMemberSessionID)}>
+          <Show when={props.goal} fallback={<SessionSwarmTeam page={props} />}>
+            <SessionGoalGraph page={props} />
+          </Show>
+          <Show when={!((props.team || props.goal) && props.teamMemberSessionID)}>
           <TranscriptPanel
             sessionID={transcriptSessionID()}
             data={props.data}

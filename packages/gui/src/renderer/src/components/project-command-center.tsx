@@ -92,7 +92,17 @@ export function ProjectCommandCenter(props: {
 
       <section class="project-home-layout">
         <div class="project-home-main">
-          <AttentionQueue items={attention()} openSession={props.openSession} openSwarm={props.openSwarm} empty="No work needs your attention." />
+          <AttentionQueue
+            items={attention()}
+            openSession={props.openSession}
+            openSwarm={props.openSwarm}
+            snapshot={props.snapshot}
+            sessionPinned={props.sessionPinned}
+            toggleSessionPinned={props.toggleSessionPinned}
+            renameSession={props.renameSession}
+            deleteSession={props.deleteSession}
+            empty="No work needs your attention."
+          />
 
           <div class="dashboard-session-groups">
             <SessionCardBucket title="Recent Sessions" count={recentItems().length} empty="No recent sessions." collapsed={sessionBucketsCollapsed().recent} onToggle={() => toggleSessionBucket("recent")}>

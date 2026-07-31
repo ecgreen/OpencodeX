@@ -17,7 +17,7 @@ export function authoritativeStateChanges(
       current.questions !== next.questions ||
       current.sessionStatus !== next.sessionStatus ||
       current.sessionUiState !== next.sessionUiState,
-    operations: phase || current.jobs !== next.jobs || current.swarms !== next.swarms,
+    operations: phase || current.jobs !== next.jobs || current.swarms !== next.swarms || current.goals !== next.goals,
     capabilities: current.capabilities !== next.capabilities,
     presentation:
       current.epoch !== next.epoch ||

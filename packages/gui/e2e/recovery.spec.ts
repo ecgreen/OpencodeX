@@ -17,9 +17,9 @@ test("keeps manager pages aligned and shared controls usable", async ({ page }, 
   }
 
   const headingTops = {
-    projects: await managerHeadingTop(page, "Projects", "Workspace directory"),
+    projects: await managerHeadingTop(page, "Projects", "Projects"),
     views: await managerHeadingTop(page, "Views", "Views"),
-    swarms: await managerHeadingTop(page, "Swarms", "Agent teams"),
+    swarms: await managerHeadingTop(page, "Swarms", "Swarms"),
   }
   const topValues = Object.values(headingTops)
   expect(
