@@ -30,8 +30,8 @@ const KEYBOARD_PAN_STEP = 48
  */
 export function createSessionGraphViewController(input: { graph: Accessor<SessionGraph> }) {
   const [canvas, setCanvas] = createSignal<HTMLDivElement>()
-  const [size, setSize] = createSignal<SessionGraphSize>({ width: 0, height: 0 })
-  const [viewport, setViewport] = createSignal<SessionGraphViewport>(IDENTITY_VIEWPORT)
+  const [size, setSize] = createSignal({ width: 0, height: 0 })
+  const [viewport, setViewport] = createSignal(IDENTITY_VIEWPORT)
   const [hoveredEdgeID, setHoveredEdgeID] = createSignal("")
   const [hoveredNodeID, setHoveredNodeID] = createSignal("")
   const [panning, setPanning] = createSignal(false)

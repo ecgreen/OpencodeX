@@ -26,7 +26,7 @@ export function createSessionGraphController(input: {
   selection: ReturnType<typeof createSessionSelectionController>
 }) {
   const [nodeSessionID, setNodeSessionID] = createSignal("")
-  const [dismissed, setDismissed] = createSignal<ReadonlySet<string>>(readDismissed())
+  const [dismissed, setDismissed] = createSignal(readDismissed())
 
   const graph: Accessor<SessionGraph> = createMemo(() => {
     const session = input.selection.selectedSession()
