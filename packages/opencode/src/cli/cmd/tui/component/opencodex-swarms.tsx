@@ -72,7 +72,7 @@ function OpencodeXSwarmsPage() {
                           <text fg={controller.theme.error} onMouseUp={() => void controller.removeSwarm(swarm())}>delete</text>
                         </box>
                       </box>
-                      <text fg={controller.theme.textMuted}>{projectTitle(controller.projects(), swarm().projectID)} - {timeAgo(swarm().timeUpdated)}</text>
+                      <text fg={controller.theme.textMuted}>{swarm().projectID ? projectTitle(controller.projects(), swarm().projectID) : "Any project"} - {timeAgo(swarm().timeUpdated)}</text>
                       <text fg={swarm().prompt ? controller.theme.text : controller.theme.textMuted}>{swarm().prompt ? truncate(swarm().prompt, 48) : "No tasks yet."}</text>
                     </box>
                     <SwarmNewTaskCard width={controller.cardWidth()} selected onSelect={() => controller.newTask(swarm())} />

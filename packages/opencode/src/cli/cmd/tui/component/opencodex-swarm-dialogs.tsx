@@ -41,7 +41,7 @@ export async function selectOpencodeXSwarmDialog(input: {
       options={list.map((swarm) => ({
         title: swarm.title,
         value: swarm.id,
-        description: projectTitle(projects, swarm.projectID),
+        description: swarm.projectID ? projectTitle(projects, swarm.projectID) : "Any project",
         footer: `${clientSwarmDisplayStatus(swarm)} - ${swarm.roles.length} roles - ${timeAgo(swarm.timeUpdated)}`,
         onSelect: () => {
           input.dialog.clear()
@@ -74,7 +74,7 @@ export async function selectOpencodeXSwarmTaskDialog(input: {
       options={list.map((swarm) => ({
         title: swarm.title,
         value: swarm.id,
-        description: projectTitle(projects, swarm.projectID),
+        description: swarm.projectID ? projectTitle(projects, swarm.projectID) : "Any project",
         footer: `${clientSwarmDisplayStatus(swarm)} - ${swarm.roles.length} roles - ${timeAgo(swarm.timeUpdated)}`,
         onSelect: () => {
           input.dialog.clear()

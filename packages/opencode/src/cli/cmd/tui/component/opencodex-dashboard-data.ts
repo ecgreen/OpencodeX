@@ -74,7 +74,7 @@ export function createOpencodeXDashboardData(input: {
         id: `swarm:${swarm.id}`,
         kind: "swarm" as const,
         title: swarm.title,
-        subtitle: projectTitle(input.projects(), swarm.projectID),
+        subtitle: swarm.projectID ? projectTitle(input.projects(), swarm.projectID) : "Any project",
         projectID: swarm.projectID,
         status,
         reason: swarmAttentionReason(status),
