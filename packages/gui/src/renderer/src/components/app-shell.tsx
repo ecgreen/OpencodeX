@@ -341,7 +341,7 @@ export function AppShell(props: { model: GuiAppModel }) {
         {(notice) => (
           <div
             class="app-notice"
-            classList={{ error: notice().tone === "error" }}
+            classList={{ error: notice().tone === "error", success: notice().tone === "success" }}
             role={notice().tone === "error" ? "alert" : "status"}
             aria-live={notice().tone === "error" ? "assertive" : "polite"}
           >

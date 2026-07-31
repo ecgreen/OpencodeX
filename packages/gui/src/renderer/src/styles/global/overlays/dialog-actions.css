@@ -11,3 +11,8 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Pushes what follows to the trailing edge, e.g. a destructive action pinned left. */
+.dialog-actions-spacer {
+  flex: 1;
+}

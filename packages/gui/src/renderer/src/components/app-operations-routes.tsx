@@ -20,11 +20,14 @@ const ViewsManagerPage = lazy(() =>
 )
 
 /** Opens a fresh session with the swarm selected as the model. */
-export function startSwarmSession(model: GuiAppModel, swarm: { id: string; projectID: string }) {
-  const project = model.authoritative.snapshot()?.projects.find((item) => item.id === swarm.projectID)
+export function startSwarmSession(model: GuiAppModel, swarm: { id: string; projectID?: string }) {
+  // The swarm's project, when it has one, is only the session's default home.
+  const project = swarm.projectID
+    ? model.authoritative.snapshot()?.projects.find((item) => item.id === swarm.projectID)
+    : undefined
   model.sessionState.setSelectedModel(swarmModelValue(swarm.id))
   model.sessionState.setSelectedVariant("")
-  model.navigation.setRoute({ name: "new-session", projectID: swarm.projectID, directory: project?.folders[0]?.path })
+  model.navigation.setRoute({ name: "new-session", projectID: project?.id, directory: project?.folders[0]?.path })
   model.sessionState.requestComposerFocus()
 }
 
@@ -52,7 +55,6 @@ export function SwarmEditorRoute(props: { model: GuiAppModel }) {
   }
   return (
     <SwarmEditorPage
-      projects={props.model.authoritative.snapshot()?.projects ?? []}
       providers={props.model.authoritative.snapshot()?.providers ?? []}
       connectedProviderIDs={props.model.authoritative.snapshot()?.connectedProviderIDs ?? []}
       connectProvider={(providerID) => void props.model.notices.run(() => props.model.capabilities.connectProvider(providerID))}

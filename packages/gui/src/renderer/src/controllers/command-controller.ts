@@ -164,10 +164,12 @@ export function createCommandController(input: {
         })
     const swarm = swarms.find((item) => item.id === swarmID)
     if (!swarm) return
-    const project = input.authoritative.snapshot()?.projects.find((item) => item.id === swarm.projectID)
+    const project = swarm.projectID
+      ? input.authoritative.snapshot()?.projects.find((item) => item.id === swarm.projectID)
+      : undefined
     input.state.setSelectedModel(swarmModelValue(swarm.id))
     input.state.setSelectedVariant("")
-    input.navigation.setRoute({ name: "new-session", projectID: swarm.projectID, directory: project?.folders[0]?.path })
+    input.navigation.setRoute({ name: "new-session", projectID: project?.id, directory: project?.folders[0]?.path })
     input.state.requestComposerFocus()
   }
 

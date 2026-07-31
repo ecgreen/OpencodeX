@@ -64,6 +64,11 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       connectedProviderIDs={model.authoritative.snapshot()?.connectedProviderIDs ?? []}
       swarms={model.authoritative.snapshot()?.swarms ?? []}
       team={model.swarmTeam.team()}
+      goal={model.swarmTeam.goal()}
+      approveGoalNode={(goalID, nodeID, approved) =>
+        void model.notices.run(() => model.management.approveGoalNode(goalID, nodeID, approved))
+      }
+      cancelGoal={(goalID) => void model.notices.run(() => model.management.cancelGoal(goalID))}
       teamMemberSessionID={model.swarmTeam.memberSessionID()}
       selectTeamMember={model.swarmTeam.setMemberSessionID}
       teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}
@@ -225,7 +230,9 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       createSession={(projectID, directory) =>
         void model.notices.run(() => model.management.createSession(projectID, directory))
       }
-      createSwarm={(projectID) => void model.notices.run(() => model.management.createSwarm(projectID))}
+      launchClaudeSession={(projectID, directory) =>
+        void model.notices.run(() => model.management.launchClaudeSession(projectID, directory))
+      }
       createProjectView={(projectID, sessionIDs) =>
         void model.notices.run(() => model.management.createProjectView(projectID, sessionIDs))
       }
@@ -236,6 +243,10 @@ export function ProjectsRoute(props: { model: GuiAppModel }) {
       deleteProject={(projectID, name) =>
         void model.notices.run(() => model.management.deleteProject(projectID, name))
       }
+      renameSession={(session) => void model.notices.run(() => model.sessionActions.rename(session))}
+      deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
+      renameTerminalSession={(session) => void model.notices.run(() => model.management.renameClaudeSession(session))}
+      removeTerminalSession={(session) => void model.notices.run(() => model.management.removeClaudeSession(session))}
       moveProject={(projectID, offset) => void model.notices.run(() => model.rail.moveProject(projectID, offset))}
       reorderProject={(sourceID, targetID, placement) =>
         void model.notices.run(() => model.rail.reorderProject(sourceID, targetID, placement))

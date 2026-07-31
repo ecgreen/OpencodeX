@@ -83,4 +83,52 @@ export namespace LockProtocol {
       createdAt: new Date().toISOString(),
     }
   }
+
+  /** `meta.json`, or undefined if it is absent, truncated, or not our shape. */
+  export function parseMeta(raw: string): Meta | undefined {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (typeof parsed !== "object" || parsed === null) return
+      const { token, pid, hostname, createdAt } = parsed as Partial<Meta>
+      if (typeof token !== "string" || typeof pid !== "number") return
+      if (typeof hostname !== "string" || typeof createdAt !== "string") return
+      return { token, pid, hostname, createdAt }
+    } catch {
+      return
+    }
+  }
+
+  /**
+   * Conservative liveness check: anything short of a definitive "no such
+   * process" counts as alive, because the only use of this is deciding whether
+   * to evict someone else's lock.
+   */
+  function alive(pid: number) {
+    if (!Number.isInteger(pid) || pid <= 0) return true
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (err) {
+      // EPERM: the pid exists, it just belongs to another user.
+      return typeof err === "object" && err !== null && "code" in err && err.code === "EPERM"
+    }
+  }
+
+  /**
+   * True when `meta` names a process on this host that no longer exists — the
+   * one signal that a lock is *definitively* abandoned rather than merely quiet.
+   *
+   * Staleness alone cannot say this. A heartbeat that has stopped may belong to
+   * an owner that is wedged but still running, and evicting it would put two
+   * writers behind one lock, so `STALE_MS` is deliberately generous. That leaves
+   * a crashed owner holding its lock for the whole stale window, which a
+   * contender with a shorter timeout can never outwait; checking the pid closes
+   * that gap without shortening the window for a live owner.
+   *
+   * Only meaningful for a lock taken on this host: a pid from another machine
+   * says nothing about a process here, so those fall back to staleness.
+   */
+  export function ownerGone(meta: Meta, hostname: string) {
+    return meta.hostname === hostname && !alive(meta.pid)
+  }
 }

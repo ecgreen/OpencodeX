@@ -15,6 +15,28 @@ const swarmRoles = [
     name: "Engineer",
     skill: "engineer",
     instructions: "Implement the HTTP API exercise.",
+    // Roles carry the effort level their model runs at.
+    variant: "high",
+  },
+]
+
+/**
+ * A gate-first graph: starting it parks on the gate without dispatching real
+ * work, which keeps these scenarios from needing a model to answer a node.
+ */
+const goalNodes = [
+  {
+    id: "gate",
+    kind: "gate",
+    title: "Approve the exercise",
+    brief: "A human decides whether the exercise proceeds.",
+  },
+  {
+    id: "survey",
+    kind: "task",
+    title: "Survey the exercise",
+    brief: "Report what the HTTP API exercise covers.",
+    executor: { type: "agent", agent: "build" },
   },
 ]
 
@@ -187,21 +209,33 @@ export const opencodexOperationScenarios: Scenario[] = [
   http.protected
     .post("/experimental/opencodex/swarm", "opencodex.swarm.create")
     .mutating()
-    .seeded((ctx) => seedOpencodeXProject(ctx, "swarm-create"))
     .at((ctx) => ({
       path: "/experimental/opencodex/swarm",
       headers: ctx.headers(),
+      // No projectID: a swarm is a model, usable from any session, so it must
+      // create without belonging to a project.
       body: {
-        projectID: ctx.state.id,
         title: "HTTP API created swarm",
         roles: swarmRoles,
       },
     }))
-    .json(200, (body, ctx) => {
+    .json(200, (body) => {
       object(body)
-      check(body.projectID === ctx.state.id, "created swarm should belong to the seeded project")
+      // An absent optional comes back as an explicit null over the wire, not as
+      // a missing key, so this is a loose check on purpose.
+      check(
+        body.projectID == null,
+        `a swarm created without a project should stay project-independent, got ${JSON.stringify(body.projectID)}`,
+      )
       check(body.title === "HTTP API created swarm", "created swarm should preserve its title")
       check(body.status === "planned", "created swarm should be planned")
+      const roles = body.roles
+      array(roles)
+      const engineer = roles.find((role) => isRecord(role) && role.name === "Engineer")
+      check(
+        isRecord(engineer) && engineer.variant === "high",
+        "a role's effort level should round-trip through create",
+      )
     }),
   http.protected
     .get("/experimental/opencodex/swarm/{swarmID}", "opencodex.swarm.get")
@@ -229,25 +263,6 @@ export const opencodexOperationScenarios: Scenario[] = [
       check(body.title === "Updated HTTP API swarm", "swarm update should apply the title")
     }),
   http.protected
-    .post("/experimental/opencodex/swarm/{swarmID}/start", "opencodex.swarm.start.no-task")
-    .mutating()
-    .seeded((ctx) => seedSwarm(ctx, "start"))
-    .at((ctx) => ({
-      path: route("/experimental/opencodex/swarm/{swarmID}/start", { swarmID: ctx.state.id }),
-      headers: ctx.headers(),
-    }))
-    .status(400),
-  http.protected
-    .post("/experimental/opencodex/swarm/{swarmID}/task", "opencodex.swarm.task.assign.empty")
-    .mutating()
-    .seeded((ctx) => seedSwarm(ctx, "task"))
-    .at((ctx) => ({
-      path: route("/experimental/opencodex/swarm/{swarmID}/task", { swarmID: ctx.state.id }),
-      headers: ctx.headers(),
-      body: { prompt: " " },
-    }))
-    .status(400),
-  http.protected
     .post("/experimental/opencodex/swarm/{swarmID}/cancel", "opencodex.swarm.cancel")
     .mutating()
     .seeded((ctx) => seedSwarm(ctx, "cancel"))
@@ -258,7 +273,7 @@ export const opencodexOperationScenarios: Scenario[] = [
     .json(200, (body, ctx) => {
       object(body)
       check(body.id === ctx.state.id, "swarm cancel should return the seeded swarm")
-      check(body.status === "cancelling", "planned swarm cancellation should be acknowledged")
+      check(body.status === "cancelled", "planned swarm cancellation should be acknowledged")
     }),
   http.protected
     .delete("/experimental/opencodex/swarm/{swarmID}", "opencodex.swarm.delete")
@@ -313,6 +328,136 @@ export const opencodexOperationScenarios: Scenario[] = [
         body.roles.some((item) => isRecord(item) && item.id === ctx.state.roleID && item.name === "Updated Engineer"),
         "swarm role update should apply the new name",
       )
+    }),
+
+  http.protected
+    .get("/experimental/opencodex/goal", "opencodex.goal.list")
+    .seeded((ctx) => seedGoal(ctx, "list"))
+    .json(200, (body, ctx) => {
+      array(body)
+      check(
+        body.some((item) => isRecord(item) && item.id === ctx.state.id),
+        "goal list should include seeded goal",
+      )
+    }),
+  http.protected
+    .post("/experimental/opencodex/goal", "opencodex.goal.create")
+    .mutating()
+    .seeded((ctx) => seedOpencodeXProject(ctx, "goal-create"))
+    .at((ctx) => ({
+      path: "/experimental/opencodex/goal",
+      headers: ctx.headers(),
+      body: {
+        projectID: ctx.state.id,
+        statement: "Ship the HTTP API exercise.",
+        successCriteria: ["The exercise passes"],
+      },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.projectID === ctx.state.id, "created goal should belong to the seeded project")
+      check(body.statement === "Ship the HTTP API exercise.", "created goal should preserve its statement")
+      check(body.status === "draft", "a goal with no plan yet should be a draft")
+    }),
+  http.protected
+    .get("/experimental/opencodex/goal/{goalID}", "opencodex.goal.get")
+    .seeded((ctx) => seedGoal(ctx, "get"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}", { goalID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.id === ctx.state.id, "goal get should return the seeded goal")
+    }),
+  http.protected
+    .post("/experimental/opencodex/goal/{goalID}/plan", "opencodex.goal.plan")
+    .mutating()
+    .seeded((ctx) => seedGoal(ctx, "plan"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}/plan", { goalID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { nodes: goalNodes, edges: [{ from: "gate", to: "survey" }] },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "planned", "a goal with a graph should be planned")
+      array(body.nodes)
+      check(body.nodes.length === goalNodes.length, "plan should persist every node")
+    }),
+  http.protected
+    .patch("/experimental/opencodex/goal/{goalID}/plan", "opencodex.goal.plan.update")
+    .mutating()
+    .seeded((ctx) => seedPlannedGoal(ctx, "plan-update"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}/plan", { goalID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { patchNodes: [{ id: "survey", title: "Surveyed the exercise" }] },
+    }))
+    .json(200, (body) => {
+      object(body)
+      array(body.nodes)
+      check(
+        body.nodes.some((item) => isRecord(item) && item.id === "survey" && item.title === "Surveyed the exercise"),
+        "plan update should apply the patched title",
+      )
+    }),
+  http.protected
+    .post("/experimental/opencodex/goal/{goalID}/start", "opencodex.goal.start")
+    .mutating()
+    .seeded((ctx) => seedPlannedGoal(ctx, "start"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}/start", { goalID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      // The graph's first node is a gate, so starting parks the goal on it.
+      check(body.status === "blocked", "starting a graph that opens with a gate should block on it")
+    }),
+  http.protected
+    .post("/experimental/opencodex/goal/{goalID}/node/{nodeID}/approve", "opencodex.goal.node.approve")
+    .mutating()
+    .seeded((ctx) => seedStartedGoal(ctx, "approve"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}/node/{nodeID}/approve", {
+        goalID: ctx.state.id,
+        nodeID: "gate",
+      }),
+      headers: ctx.headers(),
+      body: { approved: false },
+    }))
+    .json(200, (body) => {
+      object(body)
+      array(body.nodes)
+      check(
+        body.nodes.some((item) => isRecord(item) && item.id === "gate" && item.status === "skipped"),
+        "rejecting a gate should skip it",
+      )
+    }),
+  http.protected
+    .post("/experimental/opencodex/goal/{goalID}/cancel", "opencodex.goal.cancel")
+    .mutating()
+    .seeded((ctx) => seedPlannedGoal(ctx, "cancel"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}/cancel", { goalID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.id === ctx.state.id, "goal cancel should return the seeded goal")
+      check(body.status === "cancelled", "goal cancellation should be acknowledged")
+    }),
+  http.protected
+    .delete("/experimental/opencodex/goal/{goalID}", "opencodex.goal.delete")
+    .mutating()
+    .seeded((ctx) => seedGoal(ctx, "delete"))
+    .at((ctx) => ({
+      path: route("/experimental/opencodex/goal/{goalID}", { goalID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(body === true, "goal delete should remove the goal")
     }),
 
   http.protected
@@ -531,6 +676,41 @@ function seedSwarm(ctx: ScenarioContext, name: string) {
       return yield* Effect.die(new Error("seeded swarm did not return a worker role"))
     }
     return { id: body.id, roleID: role.id }
+  })
+}
+
+function seedGoal(ctx: ScenarioContext, name: string) {
+  return Effect.gen(function* () {
+    const project = yield* seedOpencodeXProject(ctx, `goal-${name}`)
+    const body = yield* seedRequest(ctx, "POST", "/experimental/opencodex/goal", {
+      projectID: project.id,
+      title: `HTTP API ${name} goal`,
+      statement: `Exercise the ${name} goal endpoint.`,
+    })
+    object(body)
+    if (typeof body.id !== "string") return yield* Effect.die(new Error("seeded goal did not return an id"))
+    return { id: body.id, projectID: project.id }
+  })
+}
+
+/** A goal whose graph exists, for the endpoints that need nodes to act on. */
+function seedPlannedGoal(ctx: ScenarioContext, name: string) {
+  return Effect.gen(function* () {
+    const goal = yield* seedGoal(ctx, name)
+    yield* seedRequest(ctx, "POST", `/experimental/opencodex/goal/${goal.id}/plan`, {
+      nodes: goalNodes,
+      edges: [{ from: "gate", to: "survey" }],
+    })
+    return goal
+  })
+}
+
+/** A started goal, parked on its gate - the only state approval is legal in. */
+function seedStartedGoal(ctx: ScenarioContext, name: string) {
+  return Effect.gen(function* () {
+    const goal = yield* seedPlannedGoal(ctx, name)
+    yield* seedRequest(ctx, "POST", `/experimental/opencodex/goal/${goal.id}/start`, undefined)
+    return goal
   })
 }
 

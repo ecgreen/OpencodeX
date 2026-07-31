@@ -126,7 +126,7 @@ function rootSnapshot(): OpencodeXStateSnapshot {
         questions: [],
         sessionUiState: {},
       },
-      operations: { jobs: [], swarms: [] },
+      operations: { jobs: [], swarms: [], goals: [] },
     },
   }
 }

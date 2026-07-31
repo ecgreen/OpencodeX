@@ -1,0 +1,53 @@
+/* --- User-defined role templates --- */
+
+.swarm-roster-template-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.swarm-roster-template-row>.swarm-roster-add-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.swarm-role-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+}
+
+.swarm-role-template-fields {
+  display: grid;
+  gap: var(--ds-space-3);
+}
+
+.swarm-role-template-fields label {
+  display: grid;
+  gap: var(--ds-space-1);
+}
+
+.swarm-role-template-fields label>span {
+  color: var(--muted);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.swarm-role-template-fields label em {
+  color: var(--text-subtle);
+  font-style: normal;
+  font-weight: var(--ds-weight-regular);
+}
+
+.swarm-role-template-fields textarea {
+  resize: vertical;
+}
+
+.swarm-role-template-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
+}

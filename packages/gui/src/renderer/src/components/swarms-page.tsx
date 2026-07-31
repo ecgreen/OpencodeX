@@ -25,9 +25,8 @@ export function SwarmsPage(props: {
   return (
     <div class="page swarms-page">
       <SwarmPageHeader
-        eyebrow="Swarms"
-        title="Agent teams"
-        description="Build a reusable team, then use it like a model: pick it in any session's model selector and the orchestrator coordinates the specialists for you."
+        title="Swarms"
+        description="A swarm is a reusable agent team you use like a model: pick it in any session's model selector and the orchestrator coordinates the specialists for you."
         actions={[{ label: "New swarm", icon: "plus", onClick: props.createSwarm }]}
       />
       <Show when={swarms().length > 0} fallback={<SwarmEmptyState createSwarm={props.createSwarm} />}>
@@ -79,7 +78,7 @@ function SwarmCard(props: {
           </Show>
         </div>
         <div class="swarm-card-meta">
-          <small>{projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID)}</small>
+          <small>{projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID) ?? "Any project"}</small>
           <small>
             {orchestrator()?.modelID ? `Led by ${orchestrator()?.modelID}` : "Orchestrator needs a model"}
             {" · "}

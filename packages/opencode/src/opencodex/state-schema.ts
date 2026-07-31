@@ -10,6 +10,7 @@ import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { Snapshot } from "@/snapshot"
 import { Context, Effect, Schema } from "effect"
+import { Info as OpencodeXGoalInfo } from "./goal-schema"
 import { OpencodeXJob } from "./job"
 import { OpencodeXProject } from "./project"
 import { OpencodeXSessionCard } from "./session-card"
@@ -50,6 +51,7 @@ const StateDomainRevision = Schema.Struct({ revision: Schema.String, digest: Sch
 const OperationsPayload = Schema.Struct({
   jobs: Schema.Array(OpencodeXJob.Info),
   swarms: Schema.Array(OpencodeXSwarm.Info),
+  goals: Schema.Array(OpencodeXGoalInfo),
 })
 
 export const OpencodeXCatalogSnapshot = Schema.Struct({

@@ -40,12 +40,6 @@ export function opencodeXProjectTitle(project: OpencodeXPromptProject) {
   return project.name ?? project.project.name ?? project.project.worktree
 }
 
-export function latestSwarmSessionID(swarm: OpencodeXPromptSwarm) {
-  const run = (swarm.runs ?? [])
-    .toSorted((a, b) => (b.timeUpdated ?? b.timeCreated ?? 0) - (a.timeUpdated ?? a.timeCreated ?? 0))[0]
-  return run?.resultSessionID ?? run?.synthesisSessionID ?? run?.orchestratorSessionID ?? swarm.synthesisSessionID
-}
-
 export function promptSlash(input: string) {
   const trimmed = input.trim()
   if (!trimmed.startsWith("/")) return

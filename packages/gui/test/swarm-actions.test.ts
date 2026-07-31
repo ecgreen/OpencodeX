@@ -26,6 +26,13 @@ describe("GUI swarm action helpers", () => {
     expect(roleInput({ name: "  Lead  " }).instructions).toBe("")
   })
 
+  test("keeps a role's effort level, and drops a blank one", () => {
+    // The effort level rides with the model the user picked it for.
+    expect(roleInput({ name: "Lead", variant: " high " }).variant).toBe("high")
+    expect(roleInput({ name: "Lead", variant: "  " }).variant).toBeUndefined()
+    expect(roleInput({ name: "Lead" }).variant).toBeUndefined()
+  })
+
   test("starts new swarms with an unconfigured orchestrator", () => {
     // Models are never inherited - the user picks one explicitly per role.
     expect(defaultSwarmRoles().map((role) => [role.name, role.skill, role.providerID, role.modelID])).toEqual([

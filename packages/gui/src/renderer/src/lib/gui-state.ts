@@ -28,6 +28,7 @@ export function emptyGuiSnapshot(): GuiSnapshot {
     mcpResources: {},
     plugins: [],
     swarms: [],
+    goals: [],
     jobs: [],
     views: [],
   }
@@ -51,7 +52,10 @@ export function reconcileGuiOperations(current: GuiSnapshot | undefined, state: 
   const base = current ?? emptyGuiSnapshot()
   const jobs = sameItems(base.jobs, operations.jobs) ? base.jobs : operations.jobs
   const swarms = sameItems(base.swarms, operations.swarms) ? base.swarms : operations.swarms
-  return base.jobs === jobs && base.swarms === swarms ? base : { ...base, jobs, swarms }
+  const goals = sameItems(base.goals, operations.goals) ? base.goals : operations.goals
+  return base.jobs === jobs && base.swarms === swarms && base.goals === goals
+    ? base
+    : { ...base, jobs, swarms, goals }
 }
 
 export function reconcileGuiCapabilityState(current: GuiSnapshot | undefined, state: ClientStateSyncState) {

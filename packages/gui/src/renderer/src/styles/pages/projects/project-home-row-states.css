@@ -1,13 +1,31 @@
-.project-home-folder-strip button:hover {
+/* A folder chip reveals its actions on approach, and widens to make room. */
+.project-home-folder-chip:hover,
+.project-home-folder-chip:focus-within {
   border-color: color-mix(in srgb,var(--primary) 58%,var(--border));
   color: var(--text);
-  outline: none;
 }
 
-.project-home-folder-strip button:focus-visible {
-  border-color: color-mix(in srgb,var(--primary) 58%,var(--border));
-  color: var(--text);
-  outline: none;
+.project-home-folder-chip:hover .project-home-folder-actions,
+.project-home-folder-chip:focus-within .project-home-folder-actions {
+  /* Two compact icon buttons and the hairline gap between them. */
+  width: calc(var(--ds-control-height-compact) * 2 + var(--ds-space-0));
+  opacity: 1;
+}
+
+.project-home-folder-chip.copied {
+  border-color: color-mix(in srgb,var(--success) 58%,var(--border));
+  color: var(--success);
+}
+
+@media (hover: none) {
+  .project-home-folder-actions {
+    width: calc(var(--ds-control-height-compact) * 2 + var(--ds-space-0));
+    opacity: 1;
+  }
+}
+
+.project-home-folder-add {
+  color: var(--muted);
 }
 
 .project-home-panel>div>.project-home-row:first-child {
@@ -16,14 +34,34 @@
 
 button.project-home-row:hover {
   background: color-mix(in srgb,var(--element) 58%,transparent);
-  box-shadow: inset 3px 0 0 var(--primary);
+  box-shadow: inset 3px 0 0 var(--card-accent,var(--primary));
   outline: none;
 }
 
 button.project-home-row:focus-visible {
   background: color-mix(in srgb,var(--element) 58%,transparent);
-  box-shadow: inset 3px 0 0 var(--primary);
+  box-shadow: inset 3px 0 0 var(--card-accent,var(--primary));
   outline: none;
+}
+
+/* View rows carry the same status vocabulary as the views page itself. */
+.project-home-row.status-in-progress {
+  --card-accent: var(--blue);
+  --session-state-color: var(--blue);
+}
+
+.project-home-row.status-input-needed {
+  --card-accent: var(--warning);
+  --session-state-color: var(--warning);
+}
+
+.project-home-row.status-ready-for-review {
+  --card-accent: var(--purple);
+  --session-state-color: var(--purple);
+}
+
+.project-home-row.status-dormant {
+  --session-state-color: var(--muted);
 }
 
 .project-home-row.warning {

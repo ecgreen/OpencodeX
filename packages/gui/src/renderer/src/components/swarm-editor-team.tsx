@@ -2,11 +2,13 @@ import type { OpencodeXSwarmRoleInput, Provider } from "@opencode-ai/sdk/v2/clie
 import { For, Show, createMemo } from "solid-js"
 import {
   SWARM_ROLE_PRESET_OPTIONS,
+  isCustomizedSwarmRoleName,
   swarmRolePresetBySkill,
   type SwarmRolePreset,
 } from "../lib/swarm-actions"
+import type { SwarmRoleTemplate } from "../lib/swarm-role-templates"
 import { Icon } from "./icon"
-import { Button, Select, TextArea, TextInput } from "./ui"
+import { Button, IconButton, Select, TextArea, TextInput } from "./ui"
 
 type SkillChoice = { id: string; label: string }
 
@@ -24,6 +26,10 @@ export function SwarmEditorTeam(props: {
   remove: (index: number) => void
   addPreset: (skill?: string) => void
   unusedPresets: SwarmRolePreset[]
+  templates: SwarmRoleTemplate[]
+  addTemplate: (templateID: string) => void
+  editTemplate: (template: SwarmRoleTemplate) => void
+  saveRoleAsTemplate: (index: number) => void
   openModelPicker: (index: number) => void
 }) {
   const selected = createMemo(() => props.roles[props.selectedIndex])
@@ -41,12 +47,23 @@ export function SwarmEditorTeam(props: {
   }
   const providerDisconnected = (role: OpencodeXSwarmRoleInput) =>
     Boolean(role.providerID) && !props.connectedProviderIDs.includes(role.providerID!)
+  /** The effort levels the chosen model offers; empty means no choice to make. */
+  const modelVariants = (role: OpencodeXSwarmRoleInput) => {
+    if (!role.providerID || !role.modelID) return []
+    const model = props.providers.find((item) => item.id === role.providerID)?.models[role.modelID]
+    return Object.keys(model?.variants ?? {})
+  }
+  const effortChoices = (role: OpencodeXSwarmRoleInput) => ["default", ...modelVariants(role)]
+  const selectedEffort = (role: OpencodeXSwarmRoleInput) =>
+    role.variant && modelVariants(role).includes(role.variant) ? role.variant : "default"
+  const effortLabel = (value: string) => (value === "default" ? "Default" : value.charAt(0).toUpperCase() + value.slice(1))
 
   function updateSkill(index: number, skill: string) {
     const preset = swarmRolePresetBySkill(skill)
     props.update(index, (current) => ({
       ...current,
-      name: preset?.name ?? current.name,
+      // The preset name fills a default; a name the user wrote stays theirs.
+      name: preset && !isCustomizedSwarmRoleName(current.name) ? preset.name : current.name,
       skill: skill || undefined,
     }))
   }
@@ -79,7 +96,7 @@ export function SwarmEditorTeam(props: {
                 <span class="swarm-role-index">{index() === 0 ? <Icon name="swarm" /> : index()}</span>
                 <span class="swarm-roster-copy">
                   <strong>{role.name || (index() === 0 ? "Orchestrator" : `Specialist ${index()}`)}</strong>
-                  <small>{modelSummary(role) ? modelSummary(role)!.model : "Needs model"}</small>
+                  <small>{modelSummary(role) ? `${modelSummary(role)!.model}${role.variant ? ` · ${role.variant}` : ""}` : "Needs model"}</small>
                 </span>
                 <Show when={!role.providerID || !role.modelID}>
                   <span class="swarm-roster-warning" title="This role has no model yet" />
@@ -104,10 +121,34 @@ export function SwarmEditorTeam(props: {
             <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={() => props.addPreset()}>
               <span class="swarm-roster-add-copy">
                 <strong><Icon name="plus" />Custom role</strong>
-                <small>Start from a blank specialist.</small>
+                <small>Start from a blank specialist, then "Save as role" to reuse it.</small>
               </span>
             </Button>
           </div>
+          <Show when={props.templates.length > 0}>
+            <span>Your roles</span>
+            <div class="swarm-roster-add-list">
+              <For each={props.templates}>
+                {(template) => (
+                  <div class="swarm-roster-template-row">
+                    <Button appearance="ghost" class="swarm-roster-add-row" type="button" onClick={() => props.addTemplate(template.id)}>
+                      <span class="swarm-roster-add-copy">
+                        <strong><Icon name="plus" />{template.name}</strong>
+                        <small>{template.description || template.instructions}</small>
+                      </span>
+                    </Button>
+                    <IconButton
+                      appearance="ghost"
+                      size="compact"
+                      icon="pencil"
+                      label={`Edit the ${template.name} role`}
+                      onClick={() => props.editTemplate(template)}
+                    />
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
       </aside>
       <Show when={selected()}>
@@ -123,9 +164,21 @@ export function SwarmEditorTeam(props: {
                 </span>
               </div>
               <Show when={props.selectedIndex > 0}>
-                <Button appearance="ghost" tone="danger" size="compact" icon="trash" type="button" onClick={() => props.remove(props.selectedIndex)}>
-                  Remove
-                </Button>
+                <div class="swarm-role-detail-actions">
+                  <Button
+                    appearance="ghost"
+                    size="compact"
+                    icon="save"
+                    type="button"
+                    title="Save this role's name and instructions as a reusable role"
+                    onClick={() => props.saveRoleAsTemplate(props.selectedIndex)}
+                  >
+                    Save as role
+                  </Button>
+                  <Button appearance="ghost" tone="danger" size="compact" icon="trash" type="button" onClick={() => props.remove(props.selectedIndex)}>
+                    Remove
+                  </Button>
+                </div>
               </Show>
             </header>
             <div class="swarm-role-fields">
@@ -163,6 +216,21 @@ export function SwarmEditorTeam(props: {
                   </Show>
                   <Icon name="chevronRight" />
                 </Button>
+                <Show when={modelVariants(role()).length > 0}>
+                  <Select<string>
+                    label="Effort"
+                    options={effortChoices(role())}
+                    current={selectedEffort(role())}
+                    optionValue={(value) => value}
+                    optionLabel={effortLabel}
+                    onSelect={(value) =>
+                      props.update(props.selectedIndex, (current) => ({
+                        ...current,
+                        variant: value && value !== "default" ? value : undefined,
+                      }))
+                    }
+                  />
+                </Show>
                 <Show when={providerDisconnected(role())}>
                   <small class="swarm-model-warning">Provider not connected - prompts will fail until credentials are added.</small>
                 </Show>

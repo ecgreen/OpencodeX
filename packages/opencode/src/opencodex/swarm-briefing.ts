@@ -63,6 +63,10 @@ export function buildSwarmBriefing(input: BriefingInput): string | undefined {
           "- Each specialist runs in its own subagent session that the user can open from the transcript; keep prompts self-contained.",
         ]),
     "- Run independent roles in parallel by making several calls in one turn; sequence only where outputs depend on each other.",
+    // Delegating one specialist at a time is fine for small work. Past a few
+    // steps the orchestrator should state the shape of the work once and let
+    // the graph run it, which is also what makes the plan visible to the user.
+    "- For work with several parts, prefer the graph_plan tool: declare the whole task graph once and the team is delegated automatically, in parallel where the graph allows, with loops that repeat until their check passes.",
     "- Synthesize the team's results yourself: reconcile conflicts, state decisions, risks, and next actions in your final reply.",
     "- Skip delegation entirely when the request is trivial or conversational.",
     "</swarm-briefing>",

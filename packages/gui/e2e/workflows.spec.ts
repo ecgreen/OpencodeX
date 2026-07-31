@@ -28,7 +28,7 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   await expect(page.getByRole("button", { name: /GUI Acceptance Session/ }).first()).toBeVisible()
 
   await page.getByRole("button", { name: "Projects: Manage project groups and folders", exact: true }).click()
-  await page.getByRole("searchbox", { name: "Search projects or folders" }).fill(projectName)
+  await page.getByRole("searchbox", { name: "Search projects, folders, or sessions" }).fill(projectName)
   await page.locator(".project-directory-row", { hasText: projectName }).locator(".project-directory-open").click()
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible()
   await page.getByRole("button", { name: "New session", exact: true }).click()
@@ -49,7 +49,7 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
   expect(await closeModelPicker.boundingBox()).toMatchObject({ width: 36, height: 36 })
   await closeModelPicker.click()
 
-  await page.getByRole("button", { name: "Swarms: Create, manage, and run agent swarms", exact: true }).click()
+  await page.getByRole("button", { name: "Swarms: Build agent teams you can pick as models", exact: true }).click()
   await page.getByRole("button", { name: "New swarm", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Create Swarm" })).toBeVisible()
   expect(await page.locator(".swarm-editor-page option").count()).toBeLessThan(100)

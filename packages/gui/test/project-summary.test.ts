@@ -1,14 +1,22 @@
+// oxlint-disable no-unsafe-type-assertion -- fixtures are deliberately partial: only the fields the summaries read
 import { describe, expect, test } from "bun:test"
-import type { OpencodeXSwarm, OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXView, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
-import { projectAttentionItems, projectLatestActivity, projectSessionStatus, projectSwarms, projectViews } from "../src/renderer/src/lib/project-summary"
+import {
+  filterProjectSummaries,
+  projectAttentionItems,
+  projectLatestActivity,
+  projectSessionStatus,
+  projectViews,
+  sortProjectSummaries,
+  summarizeProjects,
+} from "../src/renderer/src/lib/project-summary"
 
 describe("GUI project summaries", () => {
-  test("summarizes project sessions, swarms, views, attention, and activity", () => {
+  test("summarizes project sessions, views, attention, and activity", () => {
     const current = snapshot()
     const project = current.projects[0]
 
-    expect(projectSwarms(project, current).map((swarm) => swarm.id)).toEqual(["swarm-1"])
     expect(projectViews(project, current).map((view) => view.id)).toEqual(["view-1", "view-2"])
     expect(projectAttentionItems(project, current).map((item) => item.title)).toEqual(["Question", "Blocked", "Needs Review"])
     expect(projectSessionStatus(project, current)).toBe("input_needed")
@@ -16,20 +24,84 @@ describe("GUI project summaries", () => {
   })
 
   test("handles empty projects", () => {
-    const current = snapshot({ sessions: [], swarms: [], views: [], jobs: [], permissions: [], questions: [] })
+    const current = snapshot({ sessions: [], views: [], jobs: [], permissions: [], questions: [] })
     const project = { ...current.projects[0], sessions: [], sessionIDs: [] }
 
-    expect(projectSwarms(project, current)).toEqual([])
     expect(projectViews(project, current)).toEqual([])
     expect(projectAttentionItems(project, current)).toEqual([])
     expect(projectSessionStatus(project, current)).toBe("dormant")
     expect(projectLatestActivity(project, current)).toBe(1)
   })
+
+  test("rolls each project up to the counts the overview rows and tiles read", () => {
+    const current = snapshot()
+    const [summary] = summarizeProjects({ projects: current.projects, snapshot: current })
+
+    expect(summary.status).toBe("input_needed")
+    expect(summary.sessionCount).toBe(3)
+    expect(summary.runningSessionCount).toBe(0)
+    expect(summary.terminalSessionCount).toBe(0)
+    expect(summary.viewCount).toBe(2)
+    expect(summary.attention.map((item) => item.title)).toEqual(["Question", "Blocked", "Needs Review"])
+    expect(summary.lastActivity).toBe(50)
+  })
+
+  test("counts busy sessions so running reads as work, not as a flag", () => {
+    const current = snapshot({ jobs: [], permissions: [], questions: [] })
+    current.sessionStatus = { s2: { type: "busy" } as GuiSnapshot["sessionStatus"][string] }
+    const [summary] = summarizeProjects({ projects: current.projects, snapshot: current })
+
+    expect(summary.runningSessionCount).toBe(1)
+    expect(summary.status).toBe("in_progress")
+  })
+
+  test("separates projects that have gone quiet from the ones still in play", () => {
+    const current = snapshot({ sessions: [], views: [], jobs: [], permissions: [], questions: [] })
+    const now = 30 * 24 * 60 * 60 * 1000
+    const [quiet] = summarizeProjects({
+      projects: [{ ...current.projects[0], sessions: [], sessionIDs: [] }],
+      snapshot: current,
+      now,
+    })
+    const [active] = summarizeProjects({ projects: current.projects, snapshot: snapshot(), now: 60 })
+
+    expect(quiet.group).toBe("quiet")
+    expect(active.group).toBe("active")
+  })
+
+  test("filters by tile and searches names, folders, and session titles", () => {
+    const current = snapshot()
+    const summaries = summarizeProjects({ projects: current.projects, snapshot: current })
+
+    expect(filterProjectSummaries(summaries, "", "all")).toHaveLength(1)
+    expect(filterProjectSummaries(summaries, "", "attention")).toHaveLength(1)
+    expect(filterProjectSummaries(summaries, "", "terminal")).toHaveLength(0)
+    expect(filterProjectSummaries(summaries, "", "running")).toHaveLength(0)
+    expect(filterProjectSummaries(summaries, "proj", "all")).toHaveLength(1)
+    expect(filterProjectSummaries(summaries, "C:/Project", "all")).toHaveLength(1)
+    expect(filterProjectSummaries(summaries, "Needs Review", "all")).toHaveLength(1)
+    expect(filterProjectSummaries(summaries, "nothing here", "all")).toHaveLength(0)
+  })
+
+  test("orders by activity and by attention, and leaves the reader's own order alone", () => {
+    const current = snapshot()
+    const summaries = [
+      { ...summarizeProjects({ projects: current.projects, snapshot: current })[0], lastActivity: 10, attention: [] },
+      {
+        ...summarizeProjects({ projects: current.projects, snapshot: current })[0],
+        lastActivity: 90,
+        attention: [{ sessionID: "s9", title: "Failed", detail: "failed", tone: "danger" as const }],
+      },
+    ]
+
+    expect(sortProjectSummaries(summaries, "custom").map((item) => item.lastActivity)).toEqual([10, 90])
+    expect(sortProjectSummaries(summaries, "activity").map((item) => item.lastActivity)).toEqual([90, 10])
+    expect(sortProjectSummaries(summaries, "attention").map((item) => item.lastActivity)).toEqual([90, 10])
+  })
 })
 
 function snapshot(input: {
   sessions?: Session[]
-  swarms?: GuiSnapshot["swarms"]
   views?: GuiSnapshot["views"]
   jobs?: GuiSnapshot["jobs"]
   permissions?: GuiSnapshot["permissions"]
@@ -56,7 +128,7 @@ function snapshot(input: {
     questions: input.questions ?? [{ id: "question-1", sessionID: "s3", questions: [{ id: "q1", question: "Continue?" }] }] as GuiSnapshot["questions"],
     providers: [],
     agents: [],
-    swarms: input.swarms ?? [swarm("swarm-1", "p1", 40), swarm("swarm-2", "other", 60)],
+    swarms: [],
     jobs: input.jobs ?? [{ id: "job-1", sessionID: "s2", title: "Fix tests", kind: "task", status: "failed" }] as GuiSnapshot["jobs"],
     views: input.views ?? [view("view-1", ["s1"], 50), view("view-2", [], 45, "p1"), view("view-3", ["missing"], 70)],
   }
@@ -64,10 +136,6 @@ function snapshot(input: {
 
 function session(id: string, name: string, updated: number): Session {
   return { id, title: name, directory: "C:/Project", time: { updated } } as Session
-}
-
-function swarm(id: string, projectID: string, timeUpdated: number): OpencodeXSwarm {
-  return { id, projectID, title: id, roles: [], runs: [], timeUpdated } as OpencodeXSwarm
 }
 
 function view(id: string, sessionIDs: string[], timeUpdated: number, projectID?: string): OpencodeXView {

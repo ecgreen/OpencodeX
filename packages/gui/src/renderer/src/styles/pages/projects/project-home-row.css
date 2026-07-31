@@ -1,15 +1,46 @@
 .project-home-row {
   display: grid;
-  gap: 3px;
+  grid-template-columns: auto minmax(0,1fr);
+  align-items: center;
+  gap: var(--ds-space-0) var(--ds-space-2);
   width: 100%;
   min-width: 0;
-  padding: 12px 14px;
+  padding: var(--ds-space-3) var(--ds-space-4);
   border: 0;
   border-top: 1px solid var(--border-subtle);
   color: var(--text);
   text-align: left;
   background: transparent;
   transition: background .15s ease,box-shadow .15s ease;
+}
+
+/* A row with no dot keeps its text in the same place as one that has it. */
+.project-home-row>span:only-child {
+  grid-column: 1 / -1;
+}
+
+.project-home-row>span {
+  display: grid;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.project-home-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.project-home-row span span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
 }
 
 .project-home-row.input-needed {
@@ -40,6 +71,48 @@
 .project-home-row.danger {
   box-shadow: inset 3px 0 0 var(--error);
   background: color-mix(in srgb,var(--error) 9%,transparent);
+}
+
+.project-home-row.review {
+  box-shadow: inset 3px 0 0 var(--purple);
+  background: color-mix(in srgb,var(--purple) 9%,transparent);
+}
+
+.project-home-row.info {
+  box-shadow: inset 3px 0 0 var(--blue);
+  background: color-mix(in srgb,var(--blue) 8%,transparent);
+}
+
+/* The glyph says which kind of attention this is before the title is read. */
+.attention-queue-glyph {
+  display: grid;
+  place-items: center;
+  width: var(--ds-space-5);
+  height: var(--ds-space-5);
+  border-radius: var(--ds-radius-control);
+  color: var(--card-accent,var(--warning));
+  background: color-mix(in srgb,currentColor 14%,transparent);
+}
+
+.attention-queue-glyph .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.project-home-row.warning .attention-queue-glyph {
+  color: var(--warning);
+}
+
+.project-home-row.failed .attention-queue-glyph {
+  color: var(--error);
+}
+
+.project-home-row.review .attention-queue-glyph {
+  color: var(--purple);
+}
+
+.project-home-row.info .attention-queue-glyph {
+  color: var(--blue);
 }
 
 .project-home-panel .empty {

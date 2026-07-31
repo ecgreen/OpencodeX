@@ -51,6 +51,7 @@ import { memoMap } from "@opencode-ai/core/effect/memo-map"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { OpencodeXGoal } from "@/opencodex/goal"
 import { GuiBridge } from "@/opencodex/gui-bridge"
 import { OpencodeXSettings } from "@/opencodex/settings"
 
@@ -96,6 +97,7 @@ export const AppLayer = Layer.mergeAll(
   McpAuth.defaultLayer,
   Command.defaultLayer,
   Truncate.defaultLayer,
+  OpencodeXGoal.defaultLayer,
   ToolRegistry.defaultLayer,
   Format.defaultLayer,
   Project.defaultLayer,

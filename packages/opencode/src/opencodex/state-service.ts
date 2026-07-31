@@ -6,6 +6,7 @@ import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { Todo } from "@/session/todo"
 import { Effect, Layer } from "effect"
+import { OpencodeXGoal } from "./goal"
 import { OpencodeXJob } from "./job"
 import { OpencodeXProject } from "./project"
 import { makeStateLog } from "./state-log"
@@ -44,6 +45,9 @@ export const defaultLayer = layer.pipe(
   Layer.provide(OpencodeXJob.defaultLayer),
   Layer.provide(Session.defaultLayer),
   Layer.provide(OpencodeXSwarm.readLayer.pipe(Layer.provide(Database.defaultLayer))),
+  Layer.provide(
+    OpencodeXGoal.readLayer.pipe(Layer.provide(Database.defaultLayer), Layer.provide(EventV2Bridge.defaultLayer)),
+  ),
   Layer.provide(OpencodeXTerminalSession.defaultLayer),
   Layer.provide(OpencodeXView.defaultLayer),
   Layer.provide(SessionStatus.defaultLayer),

@@ -1,19 +1,10 @@
 import { TextAttributes } from "@opentui/core"
-import { clientSwarmDisplayStatus, clientSwarmRunUpdated } from "@opencode-ai/sdk/v2/swarm-presentation"
+import { clientSwarmDisplayStatus } from "@opencode-ai/sdk/v2/swarm-presentation"
 import { useRoute } from "@tui/context/route"
 import { useTheme } from "@tui/context/theme"
 import { createMemo, Show } from "solid-js"
-import {
-  defaultTitle,
-  projectTitle,
-  statusColor,
-  statusDot,
-  swarmDisplayTimeUpdated,
-  swarmRunLabel,
-  timeAgo,
-  truncate,
-} from "./opencodex-operation-model"
-import type { OpencodeXProject, OpencodeXSwarm, OpencodeXSwarmRole, OpencodeXSwarmRun } from "./opencodex-operations-types"
+import { projectTitle, statusColor, statusDot, timeAgo, truncate } from "./opencodex-operation-model"
+import type { OpencodeXProject, OpencodeXSwarm, OpencodeXSwarmRole } from "./opencodex-operations-types"
 
 export function SwarmCard(props: {
   swarm: OpencodeXSwarm
@@ -44,9 +35,9 @@ export function SwarmCard(props: {
         <Show when={props.showStatusDot !== false}><text fg={statusColor(status(), theme)}>{statusDot(status())}</text></Show>
         <text attributes={TextAttributes.BOLD} fg={theme.text}>{truncate(props.swarm.title, props.showStatusDot === false ? props.width - 4 : props.width - 7)}</text>
       </box>
-      <text fg={theme.textMuted}>{truncate(`${projectTitle(props.projects, props.swarm.projectID)} - ${swarmRunLabel(props.swarm)}`, props.width - 4)}</text>
+      <text fg={theme.textMuted}>{truncate(projectTitle(props.projects, props.swarm.projectID), props.width - 4)}</text>
       <box width="100%" flexDirection="row" justifyContent="space-between">
-        <text fg={theme.textMuted}>{timeAgo(swarmDisplayTimeUpdated(props.swarm))}</text>
+        <text fg={theme.textMuted}>{timeAgo(props.swarm.timeUpdated)}</text>
         <text fg={statusColor(status(), theme)}>{status()}</text>
       </box>
     </box>
@@ -80,20 +71,6 @@ export function SwarmAgentCard(props: { role: OpencodeXSwarmRole; width: number;
       <box width="100%" flexDirection="row" justifyContent="space-between">
         <text fg={statusColor(props.role.status, theme)}>{props.role.status}</text>
         <text fg={theme.textMuted}>{props.role.timeUpdated ? timeAgo(props.role.timeUpdated) : ""}</text>
-      </box>
-    </box>
-  )
-}
-
-export function SwarmTaskCard(props: { run: OpencodeXSwarmRun; status: string; width: number; selected: boolean; onSelect: () => void }) {
-  const { theme } = useTheme()
-  return (
-    <box width={props.width} flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1} paddingBottom={1} backgroundColor={props.selected ? (theme.backgroundMenu ?? theme.backgroundElement) : theme.backgroundPanel} border={["left"]} borderColor={props.selected ? theme.primary : statusColor(props.status, theme)} onMouseUp={props.onSelect}>
-      <text attributes={TextAttributes.BOLD} fg={theme.text}>{truncate(props.run.title || defaultTitle(props.run.prompt ?? ""), props.width - 4)}</text>
-      <text fg={theme.textMuted}>{truncate(props.run.prompt, props.width - 4)}</text>
-      <box width="100%" flexDirection="row" justifyContent="space-between">
-        <text fg={statusColor(props.status, theme)}>{props.status}</text>
-        <text fg={theme.textMuted}>{timeAgo(clientSwarmRunUpdated(props.run))}</text>
       </box>
     </box>
   )

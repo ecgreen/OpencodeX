@@ -1,22 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiSnapshot } from "./session-api"
 
-export async function runCreateSwarmAction(input: {
-  projects: GuiSnapshot["projects"]
-  alert: (message: string) => void
-  chooseProjectID: (projects: GuiSnapshot["projects"]) => Promise<string | undefined>
-  createSwarm: (projectID: string, title: string, prompt: string) => Promise<void>
-  refresh: () => Promise<void>
-  openSwarms: () => void
-}) {
-  if (input.projects.length === 0) return input.alert("Create or load a project before creating a swarm.")
-  const projectID = await input.chooseProjectID(input.projects)
-  if (!projectID) return
-  await input.createSwarm(projectID, "New swarm", "")
-  await input.refresh()
-  input.openSwarms()
-}
-
 export async function runCreateViewAction(input: {
   sessions: Session[]
   alert: (message: string) => void

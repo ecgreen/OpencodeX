@@ -19,6 +19,7 @@ import type {
   OpencodeXSessionUiState,
   OpencodeXStateScope,
   OpencodeXStateSnapshot,
+  OpencodeXGoal,
   OpencodeXSwarm,
   OpencodeXTerminalSession,
   Part,
@@ -150,6 +151,7 @@ export type ClientStateSyncState = {
   questions: ClientEntityState<QuestionRequest>
   jobs: ClientEntityState<OpencodeXJob>
   swarms: ClientEntityState<OpencodeXSwarm>
+  goals: ClientEntityState<OpencodeXGoal>
   sessionStatus: Record<string, SessionStatus>
   sessionUiState: Record<string, OpencodeXSessionUiState>
   sessionDetails: Record<string, ClientSessionDetailState>

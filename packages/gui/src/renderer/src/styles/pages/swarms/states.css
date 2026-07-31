@@ -51,6 +51,11 @@
   border-color: color-mix(in srgb, var(--accent) 44%, var(--border-subtle));
 }
 
-.stage-content.scroll-page>:is(.placeholder-page,.swarms-page,.plugins-page) {
+.stage-content.scroll-page>:is(.placeholder-page,.plugins-page) {
   padding: 8px;
+}
+
+/* The swarms page keeps the projects pages' gutters, wherever it is mounted. */
+.stage-content.scroll-page>.swarms-page {
+  padding: var(--ds-space-2) var(--ds-space-6) var(--ds-space-4);
 }

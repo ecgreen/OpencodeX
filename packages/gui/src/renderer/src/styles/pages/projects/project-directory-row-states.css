@@ -2,14 +2,47 @@
   border-bottom: 0;
 }
 
+/*
+ * Status drives one variable. The left edge, the wash, the hover, the spinner,
+ * and the review glyph all read it, so a status is described in one place.
+ */
+.project-directory-row.status-in-progress {
+  --card-accent: var(--blue);
+  --session-state-color: var(--blue);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--blue) 9%,transparent),transparent 52%);
+}
+
+.project-directory-row.status-input-needed {
+  --card-accent: var(--warning);
+  --session-state-color: var(--warning);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--warning) 11%,transparent),transparent 52%);
+}
+
+.project-directory-row.status-ready-for-review {
+  --card-accent: var(--purple);
+  --session-state-color: var(--purple);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--purple) 11%,transparent),transparent 52%);
+}
+
 .project-directory-row:hover {
-  background: color-mix(in srgb,var(--element) 46%,transparent);
-  box-shadow: inset 3px 0 0 var(--primary);
+  border-left-color: var(--card-accent, var(--primary));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 14%,transparent),transparent 48%),color-mix(in srgb,var(--element) 46%,transparent);
 }
 
 .project-directory-row:focus-within {
-  background: color-mix(in srgb,var(--element) 46%,transparent);
-  box-shadow: inset 3px 0 0 var(--primary);
+  border-left-color: var(--card-accent, var(--primary));
+  background: linear-gradient(90deg,color-mix(in srgb,var(--card-accent, var(--primary)) 14%,transparent),transparent 48%),color-mix(in srgb,var(--element) 46%,transparent);
+}
+
+.project-directory-row:hover .project-directory-actions,
+.project-directory-row:focus-within .project-directory-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .project-directory-actions {
+    opacity: 1;
+  }
 }
 
 .project-directory-row.dragging {
@@ -19,9 +52,9 @@
 }
 
 .project-directory-row.dropping {
-  box-shadow: inset 0 3px 0 var(--primary),inset 3px 0 0 var(--primary);
+  box-shadow: inset 0 3px 0 var(--primary);
 }
 
 .project-directory-row.dropping.drop-after {
-  box-shadow: inset 0 -3px 0 var(--primary),inset 3px 0 0 var(--primary);
+  box-shadow: inset 0 -3px 0 var(--primary);
 }

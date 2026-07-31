@@ -9,6 +9,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
+import { GraphPlanTool, GraphStatusTool, GraphUpdateTool } from "./graph"
 import { OpencodeXSwarmCreateTool } from "./opencodex_swarm"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -56,6 +57,8 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { OpencodeXGoal } from "@/opencodex/goal"
+import { OpencodeXJob } from "@/opencodex/job"
 import { OpencodeXProject } from "@/opencodex/project"
 import { GuiBridge } from "@/opencodex/gui-bridge"
 import {
@@ -122,6 +125,7 @@ export const layer: Layer.Layer<
   | RuntimeFlags.Service
   | Database.Service
   | OpencodeXProject.Service
+  | OpencodeXGoal.Service
   | GuiBridge.Service
 > = Layer.effect(
   Service,
@@ -154,6 +158,9 @@ export const layer: Layer.Layer<
     const skilltool = yield* SkillTool
     const swarm = yield* Effect.promise(() => import("@/opencodex/swarm"))
     const opencodexSwarmCreate = yield* OpencodeXSwarmCreateTool.pipe(Effect.provide(swarm.planLayer))
+    const graphPlan = yield* GraphPlanTool
+    const graphUpdate = yield* GraphUpdateTool
+    const graphStatus = yield* GraphStatusTool
     const workspaceOpen = yield* WorkspaceOpenTool
     const browserNavigate = yield* BrowserNavigateTool
     const browserScreenshot = yield* BrowserScreenshotTool
@@ -268,6 +275,9 @@ export const layer: Layer.Layer<
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
           opencodex_swarm_create: Tool.init(opencodexSwarmCreate),
+          graph_plan: Tool.init(graphPlan),
+          graph_update: Tool.init(graphUpdate),
+          graph_status: Tool.init(graphStatus),
           workspace_open: Tool.init(workspaceOpen),
           browser_navigate: Tool.init(browserNavigate),
           browser_screenshot: Tool.init(browserScreenshot),
@@ -290,6 +300,9 @@ export const layer: Layer.Layer<
             tool.todo,
             tool.search,
             tool.opencodex_swarm_create,
+            tool.graph_plan,
+            tool.graph_update,
+            tool.graph_status,
             tool.workspace_open,
             tool.browser_navigate,
             tool.browser_screenshot,
@@ -439,7 +452,13 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(CrossSpawnSpawner.defaultLayer),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
+      // Bare layers, so the graph tools share this registry's database, project
+      // registry, and event bus instead of standing up their own. Their
+      // dependencies are provided after them, since a pipe applies outward.
+      Layer.provide(OpencodeXGoal.layer),
+      Layer.provide(OpencodeXJob.layer),
       Layer.provide(OpencodeXProject.defaultLayer),
+      Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(GuiBridge.defaultLayer),
     )
     .pipe(Layer.provide(Database.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer)),

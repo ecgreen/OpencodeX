@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { runCreateProjectSessionAction, runCreateSwarmAction, runCreateViewAction } from "../../src/renderer/src/lib/creation-actions"
+import { runCreateProjectSessionAction, runCreateViewAction } from "../../src/renderer/src/lib/creation-actions"
 import { runCreateProjectAction, runCreateSessionRouteAction, runEditProjectAction } from "../../src/renderer/src/lib/project-actions"
 import { addPendingViewSessions, groupViewSessionsByProject, selectedPendingViewSessions, selectedViewSessionIDs, viewTitle } from "../../src/renderer/src/lib/view-actions"
 import type { GuiSnapshot } from "../../src/renderer/src/lib/session-api"
@@ -15,6 +15,10 @@ describe("GUI functional project and view workflows", () => {
         calls.push(`choose:${fallback}`)
         return ["C:/Work/OpencodeX", "C:/Work/Docs"]
       },
+      askProject: async (input) => {
+        calls.push(`ask:${input.title}:${input.name}`)
+        return { name: input.name, folders: input.folders }
+      },
       validateProjectFolders: async (folders) => {
         calls.push(`validate:${folders.join(",")}`)
         return { data: { valid: true, folders: [] } }
@@ -26,6 +30,7 @@ describe("GUI functional project and view workflows", () => {
 
     expect(calls).toEqual([
       "choose:C:/Work",
+      "ask:Create project:OpencodeX",
       "validate:C:/Work/OpencodeX,C:/Work/Docs",
       "create:OpencodeX:C:/Work/OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
       "refresh",
@@ -60,7 +65,7 @@ describe("GUI functional project and view workflows", () => {
     ])
   })
 
-  test("creates project sessions, swarms, and views from user selections", async () => {
+  test("creates project sessions and views from user selections", async () => {
     const calls: string[] = []
     const projects = [projectCollection()]
     const sessions = [session("session-1"), session("session-2")]
@@ -70,14 +75,6 @@ describe("GUI functional project and view workflows", () => {
       alert: (message) => calls.push(`alert:${message}`),
       chooseProjectID: async () => "project-1",
       createSession: (projectID, directory) => calls.push(`project-session:${projectID}:${directory}`),
-    })
-    await runCreateSwarmAction({
-      projects,
-      alert: (message) => calls.push(`alert:${message}`),
-      chooseProjectID: async () => "project-1",
-      createSwarm: async (projectID, title, prompt) => calls.push(`swarm:${projectID}:${title}:${prompt}`),
-      refresh: async () => calls.push("refresh-swarm"),
-      openSwarms: () => calls.push("open-swarms"),
     })
     await runCreateViewAction({
       sessions,
@@ -90,9 +87,6 @@ describe("GUI functional project and view workflows", () => {
 
     expect(calls).toEqual([
       "project-session:project-1:C:/Work/OpencodeX",
-      "swarm:project-1:New swarm:",
-      "refresh-swarm",
-      "open-swarms",
       "view:New view:session-1,session-2",
       "refresh-view",
       "open-views",

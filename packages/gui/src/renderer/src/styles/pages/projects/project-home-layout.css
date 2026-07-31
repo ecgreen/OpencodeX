@@ -1,8 +1,22 @@
+/*
+ * Two columns once there is room for them: the work on the left, the standing
+ * facts about the project on the right. Below that width it is one column.
+ */
 .project-home-layout {
   display: grid;
-  grid-template-columns: minmax(0,1fr) minmax(310px,380px);
-  gap: 16px;
+  grid-template-columns: minmax(0,1fr) minmax(300px,340px);
+  gap: var(--ds-space-4);
   align-items: start;
+}
+
+/*
+ * The page sits inside the rail, so the viewport overstates the room it has.
+ * Below this the sidebar would squeeze the session grid, so it stacks instead.
+ */
+@media (max-width: 1440px) {
+  .project-home-layout {
+    grid-template-columns: minmax(0,1fr);
+  }
 }
 
 .project-home-layout-single {
@@ -12,59 +26,91 @@
 .project-home-main {
   display: grid;
   min-width: 0;
-  gap: 16px;
+  gap: var(--ds-space-4);
+  align-content: start;
 }
 
 .project-home-sidebar {
   display: grid;
   min-width: 0;
-  gap: 16px;
+  gap: var(--ds-space-4);
+  align-content: start;
 }
 
-.project-home-split {
-  display: grid;
+.project-home-sidebar .project-directory-summary {
   grid-template-columns: repeat(2,minmax(0,1fr));
-  gap: 16px;
+}
+
+.project-home-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  min-width: 0;
+  margin-top: var(--ds-space-2);
+}
+
+.project-home-identity .eyebrow {
+  margin: 0;
+}
+
+.project-home-identity h1 {
+  margin: 0;
 }
 
 .project-home-folder-strip {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-top: 10px;
+  gap: var(--ds-space-1);
+  margin-top: var(--ds-space-3);
 }
 
-.project-home-folder-strip span {
+.project-home-folder-chip {
   display: inline-flex;
   align-items: center;
-  max-width: min(38ch,100%);
-  min-height: 24px;
-  padding: 3px 8px;
+  gap: var(--ds-space-1);
+  max-width: min(42ch,100%);
+  min-height: var(--ds-control-height-compact);
+  padding: var(--ds-space-0) var(--ds-space-0) var(--ds-space-0) var(--ds-space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ds-radius-full);
   color: var(--muted);
   background: var(--bg);
-  font-size: 11px;
-  font-weight: 760;
+  font-size: var(--ds-text-2xs);
+  font-family: var(--ds-font-technical);
+  transition: border-color var(--ds-motion-hover) ease,color var(--ds-motion-hover) ease;
+}
+
+.project-home-folder-path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.project-home-folder-strip button {
+.project-home-folder-strip .empty-folder {
+  color: var(--text-subtle);
+  font-size: var(--ds-text-2xs);
+}
+
+.project-home-folder-actions {
   display: inline-flex;
   align-items: center;
-  max-width: min(38ch,100%);
-  min-height: 24px;
-  padding: 3px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg);
-  font-size: 11px;
-  font-weight: 760;
-  color: var(--primary);
-  cursor: pointer;
+  gap: var(--ds-space-0);
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: width var(--ds-motion-control) var(--ds-ease-smooth),opacity var(--ds-motion-hover) ease;
+}
+
+.project-home-show-more {
+  display: grid;
+  justify-items: center;
+  gap: var(--ds-space-0);
+  width: 100%;
+  padding: var(--ds-space-3);
+  color: var(--muted);
+  /* Lives inside the card grid, but reads as the list's footer, not a card. */
+  grid-column: 1 / -1;
 }
 
 .project-home-panel>div {

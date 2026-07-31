@@ -142,7 +142,17 @@ export namespace EffectFlock {
         ensuredDirs.add(dir)
       })
 
+      /** See `LockProtocol.ownerGone`: a dead local owner is abandoned right now. */
+      const isAbandoned = Effect.fnUntraced(function* (metaPath: string) {
+        const raw = yield* fs.readFileString(metaPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        if (raw === undefined) return false
+        const meta = LockProtocol.parseMeta(raw)
+        return meta !== undefined && LockProtocol.ownerGone(meta, hostname)
+      })
+
       const isStale = Effect.fnUntraced(function* (lockDir: string, heartbeatPath: string, metaPath: string) {
+        if (yield* isAbandoned(metaPath)) return true
+
         const now = wall()
 
         const hb = yield* safeStat(heartbeatPath)
