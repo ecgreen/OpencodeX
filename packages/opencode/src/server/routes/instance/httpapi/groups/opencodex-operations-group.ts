@@ -108,17 +108,6 @@ export const opencodexGroup = opencodexWorkbenchGroup
       success: described(OpencodeXSwarm.Info, "Updated OpencodeX swarm"),
       error: [HttpApiError.BadRequest, ApiNotFoundError],
     }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.swarm.update", summary: "Update OpencodeX swarm" })),
-    HttpApiEndpoint.post("startSwarm", `${OPENCODEX_ROOT}/swarm/:swarmID/start`, {
-      params: { swarmID: Schema.String },
-      success: described(OpencodeXSwarm.Info, "Started OpencodeX swarm"),
-      error: [HttpApiError.BadRequest, ApiNotFoundError],
-    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.swarm.start", summary: "Start OpencodeX swarm" })),
-    HttpApiEndpoint.post("assignSwarmTask", `${OPENCODEX_ROOT}/swarm/:swarmID/task`, {
-      params: { swarmID: Schema.String },
-      payload: OpencodeXSwarm.AssignTaskInput,
-      success: described(OpencodeXSwarm.Info, "Assigned task to OpencodeX swarm"),
-      error: [HttpApiError.BadRequest, ApiNotFoundError],
-    }).annotateMerge(OpenApi.annotations({ identifier: "opencodex.swarm.task.assign", summary: "Assign task to OpencodeX swarm" })),
     HttpApiEndpoint.post("cancelSwarm", `${OPENCODEX_ROOT}/swarm/:swarmID/cancel`, {
       params: { swarmID: Schema.String },
       success: described(OpencodeXSwarm.Info, "Cancelled OpencodeX swarm"),

@@ -104,16 +104,7 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
   }) {
     return yield* mapSwarmErrors(swarms.update(ctx.params.swarmID, ctx.payload))
   })
-  const startSwarm = Effect.fn("OpencodeXHttpApi.startSwarm")(function* (ctx: { params: { swarmID: string } }) {
-    return yield* mapSwarmErrors(swarms.start(ctx.params.swarmID))
-  })
-  const assignSwarmTask = Effect.fn("OpencodeXHttpApi.assignSwarmTask")(function* (ctx: {
-    params: { swarmID: string }
-    payload: OpencodeXSwarm.AssignTaskInput
-  }) {
-    return yield* mapSwarmErrors(swarms.assignTask(ctx.params.swarmID, ctx.payload))
-  })
-  const cancelSwarm = Effect.fn("OpencodeXHttpApi.cancelSwarm")(function* (ctx: { params: { swarmID: string } }) {
+  const cancelSwarm =Effect.fn("OpencodeXHttpApi.cancelSwarm")(function* (ctx: { params: { swarmID: string } }) {
     return yield* mapSwarmErrors(swarms.cancel(ctx.params.swarmID))
   })
   const removeSwarm = Effect.fn("OpencodeXHttpApi.removeSwarm")(function* (ctx: { params: { swarmID: string } }) {
@@ -273,8 +264,6 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     createSwarm,
     getSwarm,
     updateSwarm,
-    startSwarm,
-    assignSwarmTask,
     cancelSwarm,
     removeSwarm,
     addSwarmRole,

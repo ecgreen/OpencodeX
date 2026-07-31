@@ -229,25 +229,6 @@ export const opencodexOperationScenarios: Scenario[] = [
       check(body.title === "Updated HTTP API swarm", "swarm update should apply the title")
     }),
   http.protected
-    .post("/experimental/opencodex/swarm/{swarmID}/start", "opencodex.swarm.start.no-task")
-    .mutating()
-    .seeded((ctx) => seedSwarm(ctx, "start"))
-    .at((ctx) => ({
-      path: route("/experimental/opencodex/swarm/{swarmID}/start", { swarmID: ctx.state.id }),
-      headers: ctx.headers(),
-    }))
-    .status(400),
-  http.protected
-    .post("/experimental/opencodex/swarm/{swarmID}/task", "opencodex.swarm.task.assign.empty")
-    .mutating()
-    .seeded((ctx) => seedSwarm(ctx, "task"))
-    .at((ctx) => ({
-      path: route("/experimental/opencodex/swarm/{swarmID}/task", { swarmID: ctx.state.id }),
-      headers: ctx.headers(),
-      body: { prompt: " " },
-    }))
-    .status(400),
-  http.protected
     .post("/experimental/opencodex/swarm/{swarmID}/cancel", "opencodex.swarm.cancel")
     .mutating()
     .seeded((ctx) => seedSwarm(ctx, "cancel"))
@@ -258,7 +239,7 @@ export const opencodexOperationScenarios: Scenario[] = [
     .json(200, (body, ctx) => {
       object(body)
       check(body.id === ctx.state.id, "swarm cancel should return the seeded swarm")
-      check(body.status === "cancelling", "planned swarm cancellation should be acknowledged")
+      check(body.status === "cancelled", "planned swarm cancellation should be acknowledged")
     }),
   http.protected
     .delete("/experimental/opencodex/swarm/{swarmID}", "opencodex.swarm.delete")

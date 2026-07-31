@@ -6,7 +6,7 @@ import type { useDialog } from "@tui/ui/dialog"
 import { DialogAlert } from "@tui/ui/dialog-alert"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { setPendingOpencodeXProjectSession, setPendingOpencodeXSwarmTask } from "./opencodex-session-state"
-import { projectTitle, swarmDisplayTimeUpdated, swarmRunLabel, timeAgo } from "./opencodex-operation-model"
+import { projectTitle, timeAgo } from "./opencodex-operation-model"
 import type { OpencodeXProject, OpencodeXSwarm } from "./opencodex-operations-types"
 
 export async function createOpencodeXSwarmDialog(input: {
@@ -29,7 +29,7 @@ export async function selectOpencodeXSwarmDialog(input: {
   })
   if (!swarms) return
   const projects = await input.sdk.request<OpencodeXProject[]>("/experimental/opencodex/project").catch(() => [])
-  const list = swarms.toSorted((a, b) => swarmDisplayTimeUpdated(b) - swarmDisplayTimeUpdated(a))
+  const list = swarms.toSorted((a, b) => b.timeUpdated - a.timeUpdated)
   if (list.length === 0) {
     await DialogAlert.show(input.dialog, "Open Swarm", "Create a swarm before opening one.")
     return
@@ -42,7 +42,7 @@ export async function selectOpencodeXSwarmDialog(input: {
         title: swarm.title,
         value: swarm.id,
         description: projectTitle(projects, swarm.projectID),
-        footer: `${clientSwarmDisplayStatus(swarm)} - ${swarmRunLabel(swarm)} - ${swarm.roles.length} roles - ${timeAgo(swarmDisplayTimeUpdated(swarm))}`,
+        footer: `${clientSwarmDisplayStatus(swarm)} - ${swarm.roles.length} roles - ${timeAgo(swarm.timeUpdated)}`,
         onSelect: () => {
           input.dialog.clear()
           input.route.navigate({ type: "opencodex-swarms", swarmID: swarm.id })
@@ -62,7 +62,7 @@ export async function selectOpencodeXSwarmTaskDialog(input: {
   })
   if (!swarms) return
   const projects = await input.sdk.request<OpencodeXProject[]>("/experimental/opencodex/project").catch(() => [])
-  const list = swarms.toSorted((a, b) => swarmDisplayTimeUpdated(b) - swarmDisplayTimeUpdated(a))
+  const list = swarms.toSorted((a, b) => b.timeUpdated - a.timeUpdated)
   if (list.length === 0) {
     await DialogAlert.show(input.dialog, "New Swarm Task", "Create a swarm before assigning a task.")
     return
@@ -75,7 +75,7 @@ export async function selectOpencodeXSwarmTaskDialog(input: {
         title: swarm.title,
         value: swarm.id,
         description: projectTitle(projects, swarm.projectID),
-        footer: `${clientSwarmDisplayStatus(swarm)} - ${swarmRunLabel(swarm)} - ${swarm.roles.length} roles - ${timeAgo(swarmDisplayTimeUpdated(swarm))}`,
+        footer: `${clientSwarmDisplayStatus(swarm)} - ${swarm.roles.length} roles - ${timeAgo(swarm.timeUpdated)}`,
         onSelect: () => {
           input.dialog.clear()
           setPendingOpencodeXProjectSession(undefined)

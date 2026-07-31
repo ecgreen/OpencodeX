@@ -212,9 +212,13 @@ export const goalDispatchLayer = Layer.effect(
         if (!updated) return Effect.void
         yield* chargeSpend(transaction, goalID, job)
         const committed = yield* events.commit(StateEvent.Updated, { goalID })
-        return events
-          .broadcast(committed)
-          .pipe(Effect.andThen(reconcile(goalID)), Effect.ignore)
+        // This runs after the job's transaction commits, so it must not fail
+        // the settlement - but a reconcile that dies silently would stall the
+        // graph with nothing to look at, so it is logged rather than dropped.
+        return events.broadcast(committed).pipe(
+          Effect.andThen(reconcile(goalID)),
+          Effect.catchCause((cause) => Effect.logError("goal reconcile after settlement failed", { goalID, cause })),
+        )
       }).pipe(Effect.orDie)
 
     /** Budgets are only honest if every finished node is charged for. */

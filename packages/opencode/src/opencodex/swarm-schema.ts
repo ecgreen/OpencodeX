@@ -36,7 +36,6 @@ export type RoleStatus = Schema.Schema.Type<typeof RoleStatus>
 export const Event = Schema.Struct({
   id: Schema.String,
   swarmID: Schema.String,
-  runID: Schema.optional(Schema.String),
   roleID: Schema.optional(Schema.String),
   sessionID: Schema.optional(Schema.String),
   kind: Schema.String,
@@ -85,42 +84,6 @@ export const Role = Schema.Struct({
 }).annotate({ identifier: "OpencodeXSwarmRole" })
 export type Role = Schema.Schema.Type<typeof Role>
 
-export const AgentRun = Schema.Struct({
-  id: Schema.String,
-  runID: Schema.String,
-  swarmID: Schema.String,
-  roleID: Schema.optional(Schema.String),
-  status: RoleStatus,
-  prompt: Schema.String,
-  sessionID: Schema.optional(Schema.String),
-  jobID: Schema.optional(Schema.String),
-  metadata: Schema.optional(Metadata),
-  startedAt: Schema.optional(Schema.Number),
-  completedAt: Schema.optional(Schema.Number),
-  timeCreated: Schema.Number,
-  timeUpdated: Schema.Number,
-}).annotate({ identifier: "OpencodeXSwarmAgentRun" })
-export type AgentRun = Schema.Schema.Type<typeof AgentRun>
-
-export const Run = Schema.Struct({
-  id: Schema.String,
-  swarmID: Schema.String,
-  projectID: Schema.optional(Schema.String),
-  title: Schema.String,
-  prompt: Schema.String,
-  status: Status,
-  source: OpencodeXJob.Source,
-  orchestratorSessionID: Schema.optional(Schema.String),
-  resultSessionID: Schema.optional(Schema.String),
-  startedAt: Schema.optional(Schema.Number),
-  completedAt: Schema.optional(Schema.Number),
-  metadata: Schema.optional(Metadata),
-  agents: Schema.Array(AgentRun),
-  timeCreated: Schema.Number,
-  timeUpdated: Schema.Number,
-}).annotate({ identifier: "OpencodeXSwarmRun" })
-export type Run = Schema.Schema.Type<typeof Run>
-
 export const Info = Schema.Struct({
   id: Schema.String,
   projectID: Schema.String,
@@ -134,7 +97,6 @@ export const Info = Schema.Struct({
   completedAt: Schema.optional(Schema.Number),
   metadata: Schema.optional(Metadata),
   roles: Schema.Array(Role),
-  runs: Schema.Array(Run),
   events: Schema.Array(Event),
   timeCreated: Schema.Number,
   timeUpdated: Schema.Number,
@@ -170,14 +132,6 @@ export const UpdateInput = Schema.Struct({
   metadata: Schema.optional(Metadata),
 }).annotate({ identifier: "OpencodeXSwarmUpdateInput" })
 export type UpdateInput = Schema.Schema.Type<typeof UpdateInput>
-
-export const AssignTaskInput = Schema.Struct({
-  prompt: Schema.String,
-  agent: Schema.optional(Schema.String),
-  mode: Schema.optional(Schema.Union([Schema.Literal("build"), Schema.Literal("plan")])),
-  variant: Schema.optional(Schema.String),
-}).annotate({ identifier: "OpencodeXSwarmAssignTaskInput" })
-export type AssignTaskInput = Schema.Schema.Type<typeof AssignTaskInput>
 
 export const AddRoleInput = Schema.Struct({
   role: RoleInput,
@@ -217,8 +171,6 @@ export interface Interface {
   readonly get: (swarmID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info, Project.NotFoundError | ValidationError>
   readonly update: (swarmID: string, input: UpdateInput) => Effect.Effect<Info, NotFoundError | ValidationError>
-  readonly start: (swarmID: string) => Effect.Effect<Info, NotFoundError | ValidationError>
-  readonly assignTask: (swarmID: string, input: AssignTaskInput) => Effect.Effect<Info, NotFoundError | ValidationError>
   readonly cancel: (swarmID: string) => Effect.Effect<Info, NotFoundError>
   readonly remove: (swarmID: string) => Effect.Effect<boolean, NotFoundError>
   readonly addRole: (swarmID: string, input: AddRoleInput) => Effect.Effect<Info, NotFoundError | ValidationError>

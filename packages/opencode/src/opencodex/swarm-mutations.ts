@@ -1,15 +1,10 @@
-import {
-  OpencodeXSwarmAgentRunTable,
-  OpencodeXSwarmRoleTable,
-  OpencodeXSwarmRunTable,
-  OpencodeXSwarmTable,
-} from "@opencode-ai/core/opencodex/sql"
+import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { Identifier } from "@opencode-ai/core/util/identifier"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { OpencodeXJob } from "@/opencodex/job"
 import { Context, Effect, Layer } from "effect"
-import { and, eq, inArray, notInArray } from "drizzle-orm"
+import { and, eq, notInArray } from "drizzle-orm"
 import {
   PlanService,
   ReadService,
@@ -22,7 +17,6 @@ import {
   type UpdateRoleInput,
 } from "./swarm-schema"
 import { serializeMetadata, validateRoles } from "./swarm-model"
-import { SwarmExecution } from "./swarm-execution"
 import { SwarmStatus } from "./swarm-status"
 
 export type Interface = Pick<
@@ -42,7 +36,6 @@ export const swarmMutationsLayer = Layer.effect(
     const jobs = yield* OpencodeXJob.Service
     const plans = yield* PlanService
     const reader = yield* ReadService
-    const execution = yield* SwarmExecution
     const status = yield* SwarmStatus
 
 const create = Effect.fn("OpencodeXSwarm.create")(function* (input: CreateInput) {
@@ -129,11 +122,6 @@ const update = Effect.fn("OpencodeXSwarm.update")(function* (swarmID: string, in
 const cancelUnlocked = Effect.fnUntraced(function* (swarmID: string) {
   const swarm = yield* reader.get(swarmID)
   if (["completed", "partially_failed", "failed", "cancelled"].includes(swarm.status)) return swarm
-  const pendingRuns = swarm.runs.filter((run) => !["completed", "partially_failed", "failed", "cancelled"].includes(run.status))
-  const pendingAgents = pendingRuns.flatMap((run) =>
-    run.agents.filter((agentRun) => !["completed", "failed", "cancelled"].includes(agentRun.status)),
-  )
-  const pendingRoles = swarm.roles.filter((role) => !["completed", "failed", "cancelled"].includes(role.status))
   const now = Date.now()
   const afterCommit = yield* stateEvents.barrier(
     db.transaction(
@@ -141,7 +129,7 @@ const cancelUnlocked = Effect.fnUntraced(function* (swarmID: string) {
         Effect.gen(function* () {
           const updated = yield* transaction
             .update(OpencodeXSwarmTable)
-            .set({ status: "cancelling", time_updated: now })
+            .set({ status: "cancelled", completed_at: now, time_updated: now })
             .where(
               and(
                 eq(OpencodeXSwarmTable.id, swarmID),
@@ -151,79 +139,15 @@ const cancelUnlocked = Effect.fnUntraced(function* (swarmID: string) {
             .returning({ id: OpencodeXSwarmTable.id })
             .get()
           if (!updated) return undefined
-          if (pendingRuns.length > 0) {
-            yield* transaction
-              .update(OpencodeXSwarmRunTable)
-              .set({ status: "cancelling", time_updated: now })
-              .where(inArray(OpencodeXSwarmRunTable.id, pendingRuns.map((run) => run.id)))
-              .run()
-          }
-          if (pendingAgents.length > 0) {
-            yield* transaction
-              .update(OpencodeXSwarmAgentRunTable)
-              .set({ status: "cancelling", time_updated: now })
-              .where(inArray(OpencodeXSwarmAgentRunTable.id, pendingAgents.map((agentRun) => agentRun.id)))
-              .run()
-          }
-          if (pendingRoles.length > 0) {
-            yield* transaction
-              .update(OpencodeXSwarmRoleTable)
-              .set({ status: "cancelling", time_updated: now })
-              .where(inArray(OpencodeXSwarmRoleTable.id, pendingRoles.map((role) => role.id)))
-              .run()
-          }
           return yield* status.commitEvent(transaction, swarmID, {
-            kind: "swarm.cancelling",
-            message: "Swarm cancellation requested",
+            kind: "swarm.cancelled",
+            message: "Swarm cancelled",
           })
         }),
       { behavior: "immediate" },
     ).pipe(Effect.orDie),
   )
-  if (!afterCommit) return yield* reader.get(swarmID)
-  yield* afterCommit
-  const relatedJobs = (yield* jobs.list()).filter(
-    (job) =>
-      job.swarmID === swarmID &&
-      !["succeeded", "cancelled"].includes(job.status) &&
-      (!["failed", "interrupted"].includes(job.status) || job.attempt < job.maxAttempts),
-  )
-  yield* Effect.forEach(
-    relatedJobs,
-    (job) =>
-      jobs
-        .cancel(
-          job.id,
-          job.kind === "swarm.synthesis"
-            ? status.settleSynthesisJob
-            : ["swarm.orchestrator", "swarm.worker"].includes(job.kind)
-              ? status.settleRoleJob
-              : undefined,
-        )
-        .pipe(Effect.ignore),
-    { concurrency: 1, discard: true },
-  )
-  yield* Effect.forEach(
-    [
-      ...new Set(
-        [
-          ...pendingRuns.map((run) => run.orchestratorSessionID),
-          ...pendingAgents.map((agentRun) => agentRun.sessionID),
-          ...pendingRoles.map((role) => role.sessionID),
-        ].filter((sessionID): sessionID is string => sessionID !== undefined),
-      ),
-    ],
-    execution.cancelSessionTree,
-    { concurrency: "unbounded", discard: true },
-  )
-  yield* Effect.forEach(
-    pendingRuns,
-    (run) =>
-      relatedJobs.some((job) => job.metadata?.runID === run.id)
-        ? status.completeIfFinished(swarmID, run.id).pipe(Effect.ignore)
-        : status.updateRunStatus(swarmID, run.id, "cancelled", "Swarm cancellation acknowledged").pipe(Effect.ignore),
-    { concurrency: 1, discard: true },
-  )
+  if (afterCommit) yield* afterCommit
   return yield* reader.get(swarmID)
 })
 

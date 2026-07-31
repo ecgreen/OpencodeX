@@ -1,8 +1,6 @@
 import type {
   OpencodeXJob,
   OpencodeXSessionUiState,
-  OpencodeXSwarm,
-  OpencodeXSwarmRun,
   PermissionRequest,
   QuestionRequest,
   Session,
@@ -79,7 +77,7 @@ export type RunTimelineEvent = {
 
 export type WorkItem = {
   id: string
-  kind: "session" | "job" | "swarm_run"
+  kind: "session" | "job"
   sourceID: string
   parentID?: string
   projectID?: string
@@ -122,7 +120,7 @@ export type AttentionItem = {
 
 export type WorkItemProjectionInput = Pick<
   ClientStateSyncState,
-  "sessions" | "sessionStatus" | "sessionUiState" | "permissions" | "questions" | "jobs" | "swarms"
+  "sessions" | "sessionStatus" | "sessionUiState" | "permissions" | "questions" | "jobs"
 >
 
 export function clientWorkItems(input: WorkItemProjectionInput, now?: number): WorkItem[] {
@@ -148,10 +146,6 @@ export function clientWorkItems(input: WorkItemProjectionInput, now?: number): W
         : []
     }),
     ...jobs.map((job) => jobWorkItem(job, now)),
-    ...input.swarms.ids.flatMap((id) => {
-      const swarm = input.swarms.records[id]
-      return swarm ? swarm.runs.map((run) => swarmRunWorkItem(swarm, run, now)) : []
-    }),
   ].sort((left, right) => right.updatedAt - left.updatedAt || left.id.localeCompare(right.id))
 }
 
@@ -326,34 +320,6 @@ function jobWorkItem(job: OpencodeXJob, now: number | undefined): WorkItem {
   }
 }
 
-function swarmRunWorkItem(swarm: OpencodeXSwarm, run: OpencodeXSwarmRun, now: number | undefined): WorkItem {
-  const state = swarmState(run.status)
-  const completed = run.agents.filter((agent) => agent.status === "completed").length
-  const failed = run.agents.filter((agent) => agent.status === "failed" || agent.status === "cancelled").length
-  return {
-    id: `swarm_run:${run.id}`,
-    kind: "swarm_run",
-    sourceID: run.id,
-    swarmID: swarm.id,
-    projectID: run.projectID ?? swarm.projectID,
-    sessionID: run.resultSessionID ?? run.orchestratorSessionID,
-    title: run.title || swarm.title,
-    objective: run.prompt || swarm.prompt,
-    state,
-    statusLabel: workItemStatusLabel(state),
-    responsibleUser: swarm.createdBy ?? metadataString(run.metadata, "responsibleUser"),
-    executionTarget: target(run.metadata),
-    blocker: metadataString(run.metadata, "blocker"),
-    changedFiles: metadataStrings(run.metadata, "changedFiles"),
-    validation: validation(run.metadata),
-    progress: { completed, failed, total: run.agents.length },
-    startedAt: timeOrUndefined(run.startedAt),
-    completedAt: timeOrUndefined(run.completedAt),
-    updatedAt: time(run.timeUpdated),
-    elapsedMs: elapsed(timeOrUndefined(run.startedAt), timeOrUndefined(run.completedAt), now),
-  }
-}
-
 function sessionState(
   status: SessionStatus | undefined,
   ui: OpencodeXSessionUiState | undefined,
@@ -378,15 +344,6 @@ function jobState(job: OpencodeXJob): WorkItemState {
   if (job.status === "claimed") return "preparing"
   if (job.status === "succeeded") return "completed"
   return job.status
-}
-
-function swarmState(status: OpencodeXSwarmRun["status"]): WorkItemState {
-  if (status === "draft" || status === "planned") return "preparing"
-  if (status === "approval_needed") return "waiting_permission"
-  if (status === "blocked") return "waiting_input"
-  if (status === "partially_failed") return "partially_completed"
-  if (status === "cancelled") return "cancelled"
-  return status
 }
 
 function attentionForState(state: WorkItemState) {
@@ -414,8 +371,7 @@ function sameWorkItemSources(left: WorkItemProjectionInput, right: WorkItemProje
     left.sessionUiState === right.sessionUiState &&
     left.permissions === right.permissions &&
     left.questions === right.questions &&
-    left.jobs === right.jobs &&
-    left.swarms === right.swarms
+    left.jobs === right.jobs
   )
 }
 

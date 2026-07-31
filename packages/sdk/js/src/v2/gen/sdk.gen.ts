@@ -199,7 +199,6 @@ import type {
   OpencodexStateSnapshotErrors,
   OpencodexStateSnapshotResponses,
   OpencodeXSwarmAddRoleInput,
-  OpencodeXSwarmAssignTaskInput,
   OpencodexSwarmCancelErrors,
   OpencodexSwarmCancelResponses,
   OpencodexSwarmCreateErrors,
@@ -215,10 +214,6 @@ import type {
   OpencodexSwarmRoleAddResponses,
   OpencodexSwarmRoleUpdateErrors,
   OpencodexSwarmRoleUpdateResponses,
-  OpencodexSwarmStartErrors,
-  OpencodexSwarmStartResponses,
-  OpencodexSwarmTaskAssignErrors,
-  OpencodexSwarmTaskAssignResponses,
   OpencodexSwarmUpdateErrors,
   OpencodeXSwarmUpdateInput,
   OpencodexSwarmUpdateResponses,
@@ -4554,45 +4549,6 @@ export class Workbench extends HeyApiClient {
   }
 }
 
-export class Task extends HeyApiClient {
-  /**
-   * Assign task to OpencodeX swarm
-   */
-  public assign<ThrowOnError extends boolean = false>(
-    parameters: {
-      swarmID: string
-      opencodeXSwarmAssignTaskInput?: OpencodeXSwarmAssignTaskInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "swarmID" },
-            { key: "opencodeXSwarmAssignTaskInput", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      OpencodexSwarmTaskAssignResponses,
-      OpencodexSwarmTaskAssignErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/opencodex/swarm/{swarmID}/task",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Role extends HeyApiClient {
   /**
    * Add OpencodeX swarm role
@@ -4784,25 +4740,6 @@ export class Swarm extends HeyApiClient {
   }
 
   /**
-   * Start OpencodeX swarm
-   */
-  public start<ThrowOnError extends boolean = false>(
-    parameters: {
-      swarmID: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "swarmID" }] }])
-    return (options?.client ?? this.client).post<OpencodexSwarmStartResponses, OpencodexSwarmStartErrors, ThrowOnError>(
-      {
-        url: "/experimental/opencodex/swarm/{swarmID}/start",
-        ...options,
-        ...params,
-      },
-    )
-  }
-
-  /**
    * Cancel OpencodeX swarm
    */
   public cancel<ThrowOnError extends boolean = false>(
@@ -4821,11 +4758,6 @@ export class Swarm extends HeyApiClient {
       ...options,
       ...params,
     })
-  }
-
-  private _task?: Task
-  get task(): Task {
-    return (this._task ??= new Task({ client: this.client }))
   }
 
   private _role?: Role

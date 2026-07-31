@@ -1,28 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import {
-  activeClientSwarmRun,
   clientSwarmDisplayStatus,
-  clientSwarmRunSessionID,
   clientSwarmStatusLabel,
-  currentClientSwarmRun,
   isActiveSwarmStatus,
   isTerminalSwarmStatus,
 } from "../src/v2/swarm-presentation"
 
 describe("swarm presentation", () => {
-  test("orders and selects the current and active run consistently", () => {
-    const swarm = {
-      status: "running",
-      runs: [
-        { id: "old", status: "completed", timeUpdated: 10, resultSessionID: "result" },
-        { id: "new", status: "cancelling", timeUpdated: 20, orchestratorSessionID: "orchestrator" },
-      ],
-    }
-
-    expect(currentClientSwarmRun(swarm)?.id).toBe("new")
-    expect(activeClientSwarmRun(swarm)?.id).toBe("new")
-    expect(clientSwarmDisplayStatus(swarm)).toBe("cancelling")
-    expect(clientSwarmRunSessionID(swarm.runs[1])).toBe("orchestrator")
+  test("displays the swarm's own status", () => {
+    expect(clientSwarmDisplayStatus({ status: "cancelling" })).toBe("cancelling")
+    expect(clientSwarmDisplayStatus({})).toBe("planned")
   })
 
   test("classifies lifecycle and partial-result states", () => {

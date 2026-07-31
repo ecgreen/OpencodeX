@@ -284,38 +284,6 @@ export const OpencodeXSwarmTable = sqliteTable(
   ],
 )
 
-export const OpencodeXSwarmRunTable = sqliteTable(
-  "opencodex_swarm_run",
-  {
-    id: text().primaryKey(),
-    swarm_id: text()
-      .notNull()
-      .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
-    opencodex_project_id: text().references(() => OpencodeXProjectTable.id, { onDelete: "set null" }),
-    title: text().notNull(),
-    prompt: text().notNull(),
-    status: text().notNull(),
-    source: text().notNull(),
-    orchestrator_session_id: text()
-      .$type<SessionSchema.ID>()
-      .references(() => SessionTable.id, { onDelete: "set null" }),
-    result_session_id: text()
-      .$type<SessionSchema.ID>()
-      .references(() => SessionTable.id, { onDelete: "set null" }),
-    started_at: integer(),
-    completed_at: integer(),
-    metadata_json: text(),
-    ...Timestamps,
-  },
-  (table) => [
-    index("opencodex_swarm_run_swarm_idx").on(table.swarm_id),
-    index("opencodex_swarm_run_project_idx").on(table.opencodex_project_id),
-    index("opencodex_swarm_run_orchestrator_session_idx").on(table.orchestrator_session_id),
-    index("opencodex_swarm_run_status_idx").on(table.status),
-    index("opencodex_swarm_run_updated_idx").on(table.time_updated),
-  ],
-)
-
 export const OpencodeXSwarmRoleTable = sqliteTable(
   "opencodex_swarm_role",
   {
@@ -344,38 +312,6 @@ export const OpencodeXSwarmRoleTable = sqliteTable(
     index("opencodex_swarm_role_session_idx").on(table.session_id),
     index("opencodex_swarm_role_job_idx").on(table.job_id),
     index("opencodex_swarm_role_status_idx").on(table.status),
-  ],
-)
-
-export const OpencodeXSwarmAgentRunTable = sqliteTable(
-  "opencodex_swarm_agent_run",
-  {
-    id: text().primaryKey(),
-    run_id: text()
-      .notNull()
-      .references(() => OpencodeXSwarmRunTable.id, { onDelete: "cascade" }),
-    swarm_id: text()
-      .notNull()
-      .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
-    role_id: text().references(() => OpencodeXSwarmRoleTable.id, { onDelete: "set null" }),
-    status: text().notNull(),
-    prompt: text().notNull(),
-    session_id: text()
-      .$type<SessionSchema.ID>()
-      .references(() => SessionTable.id, { onDelete: "set null" }),
-    job_id: text().references(() => OpencodeXJobTable.id, { onDelete: "set null" }),
-    metadata_json: text(),
-    started_at: integer(),
-    completed_at: integer(),
-    ...Timestamps,
-  },
-  (table) => [
-    index("opencodex_swarm_agent_run_run_idx").on(table.run_id),
-    index("opencodex_swarm_agent_run_swarm_idx").on(table.swarm_id),
-    index("opencodex_swarm_agent_run_role_idx").on(table.role_id),
-    index("opencodex_swarm_agent_run_session_idx").on(table.session_id),
-    index("opencodex_swarm_agent_run_job_idx").on(table.job_id),
-    index("opencodex_swarm_agent_run_status_idx").on(table.status),
   ],
 )
 
@@ -487,7 +423,6 @@ export const OpencodeXSwarmEventTable = sqliteTable(
     swarm_id: text()
       .notNull()
       .references(() => OpencodeXSwarmTable.id, { onDelete: "cascade" }),
-    run_id: text().references(() => OpencodeXSwarmRunTable.id, { onDelete: "set null" }),
     role_id: text().references(() => OpencodeXSwarmRoleTable.id, { onDelete: "set null" }),
     session_id: text()
       .$type<SessionSchema.ID>()
@@ -499,7 +434,6 @@ export const OpencodeXSwarmEventTable = sqliteTable(
   },
   (table) => [
     index("opencodex_swarm_event_swarm_idx").on(table.swarm_id),
-    index("opencodex_swarm_event_run_idx").on(table.run_id),
     index("opencodex_swarm_event_role_idx").on(table.role_id),
     index("opencodex_swarm_event_session_idx").on(table.session_id),
     index("opencodex_swarm_event_created_idx").on(table.time_created),

@@ -1,9 +1,4 @@
-import {
-  clientSwarmRunSessionID,
-  clientSwarmRunUpdated,
-  clientSwarmStatusLabel,
-  currentClientSwarmRun,
-} from "@opencode-ai/sdk/v2/swarm-presentation"
+import { clientSwarmStatusLabel } from "@opencode-ai/sdk/v2/swarm-presentation"
 import type { useSync } from "@tui/context/sync"
 import type { useTheme } from "@tui/context/theme"
 import {
@@ -23,7 +18,6 @@ import type {
   OpencodeXProject,
   OpencodeXSwarm,
   OpencodeXSwarmRole,
-  OpencodeXSwarmRun,
   OpencodeXView,
 } from "./opencodex-operations-types"
 
@@ -62,30 +56,6 @@ export function statusColor(status: string, theme: ReturnType<typeof useTheme>["
   if (status === "failed") return theme.error
   if (status === "completed") return theme.success
   return theme.textMuted
-}
-
-export function swarmRunCount(swarm: OpencodeXSwarm) {
-  return swarm.runCount ?? swarm.runs?.length ?? (swarm.prompt ? 1 : 0)
-}
-
-export function swarmRunLabel(swarm: OpencodeXSwarm) {
-  const count = swarmRunCount(swarm)
-  if (count === 0) return "no tasks"
-  if (count === 1) return "1 task"
-  return `${count} tasks`
-}
-
-export function swarmDisplayPrompt(swarm: OpencodeXSwarm) {
-  return currentClientSwarmRun(swarm)?.prompt ?? swarm.prompt
-}
-
-export function swarmRunStatus(run: OpencodeXSwarmRun, sync: ReturnType<typeof useSync>) {
-  const sessionID = clientSwarmRunSessionID(run)
-  return sessionID ? deriveStatus(sessionID, sync) : run.status ?? "queued"
-}
-
-export function swarmDisplayTimeUpdated(swarm: OpencodeXSwarm) {
-  return clientSwarmRunUpdated(currentClientSwarmRun(swarm) ?? { id: swarm.id, timeUpdated: swarm.timeUpdated }) || swarm.timeUpdated
 }
 
 export function isOrchestratorSwarmRole(role: OpencodeXSwarmRole) {

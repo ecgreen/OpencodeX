@@ -108,8 +108,6 @@ export const opencodexHandlers = HttpApiBuilder.group(InstanceHttpApi, "opencode
       .handle("createSwarm", operations.createSwarm)
       .handle("getSwarm", operations.getSwarm)
       .handle("updateSwarm", operations.updateSwarm)
-      .handle("startSwarm", operations.startSwarm)
-      .handle("assignSwarmTask", operations.assignSwarmTask)
       .handle("cancelSwarm", operations.cancelSwarm)
       .handle("removeSwarm", operations.removeSwarm)
       .handle("addSwarmRole", operations.addSwarmRole)

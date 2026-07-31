@@ -64,14 +64,6 @@ export type OpencodeXPromptSwarm = {
   title: string
   projectID?: string
   synthesisSessionID?: string
-  runs?: {
-    id: string
-    orchestratorSessionID?: string
-    resultSessionID?: string
-    synthesisSessionID?: string
-    timeCreated?: number
-    timeUpdated?: number
-  }[]
 }
 
 export type OpencodeXSwarmExecutionMode = "build" | "plan"

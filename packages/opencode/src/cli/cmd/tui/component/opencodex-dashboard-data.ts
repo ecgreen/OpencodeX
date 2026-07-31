@@ -6,7 +6,7 @@ import {
   recentClientSessionItems,
   reconcileClientSessionOrderState,
 } from "@opencode-ai/sdk/v2/session-order"
-import { clientSwarmDisplayStatus, clientSwarmRunSessionID, clientSwarmRuns, currentClientSwarmRun } from "@opencode-ai/sdk/v2/swarm-presentation"
+import { clientSwarmDisplayStatus } from "@opencode-ai/sdk/v2/swarm-presentation"
 import type { useRoute } from "@tui/context/route"
 import type { useSync } from "@tui/context/sync"
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
@@ -21,9 +21,6 @@ import {
   sessionSwarmID,
   sessionSwarmTitle,
   swarmAttentionReason,
-  swarmDisplayTimeUpdated,
-  swarmRunLabel,
-  swarmRunStatus,
 } from "./opencodex-operation-model"
 import type {
   DashboardProjectSummary,
@@ -34,7 +31,6 @@ import type {
   OpencodeXSwarm,
   OpencodeXView,
 } from "./opencodex-operations-types"
-import { deriveStatus } from "./opencodex-session-status"
 import { viewMemberCount, viewSessionMemberIDs } from "./opencodex-view-model"
 
 export function createOpencodeXDashboardData(input: {
@@ -51,17 +47,7 @@ export function createOpencodeXDashboardData(input: {
     input.sync.data.session.filter(isGenericDashboardSession).forEach((session) => byID.set(session.id, session))
     return [...byID.values()]
   })
-  const displaySwarmStatus = (swarm: OpencodeXSwarm) => {
-    const active = clientSwarmRuns(swarm).find((run) => {
-      const sessionID = clientSwarmRunSessionID(run)
-      return sessionID ? deriveStatus(sessionID, input.sync) !== "dormant" : false
-    })
-    if (active) return swarmRunStatus(active, input.sync)
-    const sessionID = clientSwarmRunSessionID(currentClientSwarmRun(swarm) ?? { id: swarm.id })
-    if (sessionID && deriveStatus(sessionID, input.sync) === "dormant") return "dormant"
-    const status = clientSwarmDisplayStatus(swarm)
-    return status === "running" ? "dormant" : status
-  }
+  const displaySwarmStatus = (swarm: OpencodeXSwarm) => clientSwarmDisplayStatus(swarm)
   const allDashboardRows = createMemo<DashboardRow[]>(() => {
     const sessionByID = new Map(topLevelSessions().map((session) => [session.id, session]))
     const sessionRows = topLevelSessions().map((session) => {
@@ -88,11 +74,11 @@ export function createOpencodeXDashboardData(input: {
         id: `swarm:${swarm.id}`,
         kind: "swarm" as const,
         title: swarm.title,
-        subtitle: `${projectTitle(input.projects(), swarm.projectID)} - ${swarmRunLabel(swarm)}`,
+        subtitle: projectTitle(input.projects(), swarm.projectID),
         projectID: swarm.projectID,
         status,
         reason: swarmAttentionReason(status),
-        timeUpdated: swarmDisplayTimeUpdated(swarm),
+        timeUpdated: swarm.timeUpdated,
         source: swarm.source,
         swarm,
         open: () => input.route.navigate({ type: "opencodex-swarms", swarmID: swarm.id }),

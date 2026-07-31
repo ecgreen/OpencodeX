@@ -2453,59 +2453,9 @@ export type OpencodeXSwarmRole = {
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
-export type OpencodeXSwarmAgentRun = {
-  id: string
-  runID: string
-  swarmID: string
-  roleID?: string
-  status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
-  prompt: string
-  sessionID?: string
-  jobID?: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type OpencodeXSwarmRun = {
-  id: string
-  swarmID: string
-  projectID?: string
-  title: string
-  prompt: string
-  status:
-    | "draft"
-    | "planned"
-    | "queued"
-    | "running"
-    | "cancelling"
-    | "approval_needed"
-    | "blocked"
-    | "failed"
-    | "partially_failed"
-    | "completed"
-    | "cancelled"
-  source: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
-  orchestratorSessionID?: string
-  resultSessionID?: string
-  startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  completedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  metadata?: {
-    [key: string]: unknown
-  }
-  agents: Array<OpencodeXSwarmAgentRun>
-  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
 export type OpencodeXSwarmEvent = {
   id: string
   swarmID: string
-  runID?: string
   roleID?: string
   sessionID?: string
   kind: string
@@ -2543,7 +2493,6 @@ export type OpencodeXSwarm = {
     [key: string]: unknown
   }
   roles: Array<OpencodeXSwarmRole>
-  runs: Array<OpencodeXSwarmRun>
   events: Array<OpencodeXSwarmEvent>
   timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -2867,13 +2816,6 @@ export type OpencodeXSwarmUpdateInput = {
   metadata?: {
     [key: string]: unknown
   }
-}
-
-export type OpencodeXSwarmAssignTaskInput = {
-  prompt: string
-  agent?: string
-  mode?: "build" | "plan"
-  variant?: string
 }
 
 export type OpencodeXSwarmAddRoleInput = {
@@ -8608,69 +8550,6 @@ export type OpencodexSwarmUpdateResponses = {
 }
 
 export type OpencodexSwarmUpdateResponse = OpencodexSwarmUpdateResponses[keyof OpencodexSwarmUpdateResponses]
-
-export type OpencodexSwarmStartData = {
-  body?: never
-  path: {
-    swarmID: string
-  }
-  query?: never
-  url: "/experimental/opencodex/swarm/{swarmID}/start"
-}
-
-export type OpencodexSwarmStartErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type OpencodexSwarmStartError = OpencodexSwarmStartErrors[keyof OpencodexSwarmStartErrors]
-
-export type OpencodexSwarmStartResponses = {
-  /**
-   * Started OpencodeX swarm
-   */
-  200: OpencodeXSwarm
-}
-
-export type OpencodexSwarmStartResponse = OpencodexSwarmStartResponses[keyof OpencodexSwarmStartResponses]
-
-export type OpencodexSwarmTaskAssignData = {
-  body?: OpencodeXSwarmAssignTaskInput
-  path: {
-    swarmID: string
-  }
-  query?: never
-  url: "/experimental/opencodex/swarm/{swarmID}/task"
-}
-
-export type OpencodexSwarmTaskAssignErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type OpencodexSwarmTaskAssignError = OpencodexSwarmTaskAssignErrors[keyof OpencodexSwarmTaskAssignErrors]
-
-export type OpencodexSwarmTaskAssignResponses = {
-  /**
-   * Assigned task to OpencodeX swarm
-   */
-  200: OpencodeXSwarm
-}
-
-export type OpencodexSwarmTaskAssignResponse =
-  OpencodexSwarmTaskAssignResponses[keyof OpencodexSwarmTaskAssignResponses]
 
 export type OpencodexSwarmCancelData = {
   body?: never
