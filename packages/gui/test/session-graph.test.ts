@@ -91,7 +91,7 @@ describe("session graph status", () => {
       ...input({ sessions, jobs }),
       workItems: clientWorkItems({
         sessions: entities(sessions),
-        sessionStatus: { "child-1": { type: "busy" } as never },
+        sessionStatus: { "child-1": { type: "busy" } },
         sessionUiState: {},
         permissions: entities([]),
         questions: entities([]),

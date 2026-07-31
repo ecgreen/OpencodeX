@@ -36,7 +36,7 @@ describe("session graph layout", () => {
     const children = layout.nodes.filter((item) => item.node.depth === 1).map((item) => item.y).sort((l, r) => l - r)
     for (const [index, y] of children.entries()) {
       if (index === 0) continue
-      expect(y - children[index - 1]!).toBeGreaterThanOrEqual(GRAPH_NODE_HEIGHT)
+      expect(y - children[index - 1]).toBeGreaterThanOrEqual(GRAPH_NODE_HEIGHT)
     }
   })
 
@@ -55,7 +55,7 @@ describe("session graph layout", () => {
 
   test("draws an edge from the parent's right edge to the child's left edge", () => {
     const layout = layoutSessionGraph(graph(["a:0", "b:1"]))
-    const edge = layout.edges[0]!
+    const edge = layout.edges[0]
     const from = sessionGraphLayoutNode(layout, "a")!
     const to = sessionGraphLayoutNode(layout, "b")!
     expect(edge.path.startsWith(`M ${from.x + from.width} ${from.y + from.height / 2} C`)).toBe(true)
@@ -185,11 +185,11 @@ function graph(specs: readonly string[], edges?: readonly (readonly [string, str
   const nodes = specs.map((spec): SessionGraphNode => {
     const [id, depth] = spec.split(":")
     return {
-      id: id!,
+      id,
       kind: "session",
       sessionID: id,
       depth: Number(depth),
-      title: id!,
+      title: id,
       status: "idle",
       statusLabel: "Idle",
       updatedAt: 0,
