@@ -1,0 +1,384 @@
+/* --- Workspace Graph tab: agentic workflow as a pannable node graph --- */
+
+.session-graph {
+  display: grid;
+  flex: 1;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.session-graph-empty {
+  align-self: center;
+  justify-self: center;
+  max-width: 42ch;
+}
+
+/*
+ * The canvas clips the scene and owns the pan gesture. It is focusable so the
+ * graph can be driven from the keyboard: arrows pan, +/- zoom, 0 fits.
+ */
+.session-graph-canvas {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 0)
+    0 0 / 24px 24px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.session-graph-canvas.panning {
+  cursor: grabbing;
+}
+
+.session-graph-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Pan and zoom are this one transform; everything inside sits in graph coordinates. */
+.session-graph-scene {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
+.session-graph-edges {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.session-graph-edge-path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--border) 90%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: stroke var(--ds-motion-control) var(--ds-ease-smooth);
+}
+
+.session-graph-edge-path[data-graph-status="running"] {
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+  stroke-dasharray: 5 4;
+  animation: sessionGraphFlow 900ms linear infinite;
+}
+
+.session-graph-edge-path[data-graph-status="input_needed"] {
+  stroke: color-mix(in srgb, var(--warning) 70%, transparent);
+}
+
+.session-graph-edge-path[data-graph-status="completed"] {
+  stroke: color-mix(in srgb, var(--success) 55%, transparent);
+}
+
+.session-graph-edge-path[data-graph-status="failed"],
+.session-graph-edge-path[data-graph-status="cancelled"] {
+  stroke: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+.session-graph-edge-path.hovered {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+@keyframes sessionGraphFlow {
+  from {
+    stroke-dashoffset: 18;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* --- Edge labels: what the step downstream was asked to resolve --- */
+
+.session-graph-edge-anchor {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: 148px;
+  pointer-events: none;
+}
+
+.session-graph-edge-label {
+  display: block;
+  max-width: 148px;
+  padding: var(--ds-space-0) var(--ds-space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ds-radius-full);
+  color: var(--muted);
+  background: var(--panel);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  line-height: var(--ds-leading-2xs);
+  pointer-events: auto;
+  cursor: help;
+}
+
+.session-graph-edge-label:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  color: var(--text);
+}
+
+.session-graph-edge-label[data-graph-status="failed"],
+.session-graph-edge-label[data-graph-status="cancelled"] {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border-subtle));
+  color: color-mix(in srgb, var(--danger) 75%, var(--text));
+}
+
+/* --- Nodes --- */
+
+.session-graph-node-anchor {
+  position: absolute;
+}
+
+.session-graph-node-trigger {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.session-graph-node {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--ds-space-1);
+  width: 100%;
+  height: 100%;
+  /* The status badge deliberately overhangs the corner. */
+  overflow: visible;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ds-radius-card);
+  background: var(--panel);
+  text-align: left;
+  transition:
+    border-color var(--ds-motion-control) var(--ds-ease-smooth),
+    background-color var(--ds-motion-route) var(--ds-ease-smooth),
+    box-shadow var(--ds-motion-control) var(--ds-ease-smooth);
+}
+
+.session-graph-node:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+}
+
+.session-graph-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.session-graph-node.root {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%), var(--panel);
+}
+
+.session-graph-node:disabled {
+  cursor: default;
+  opacity: .82;
+}
+
+.session-graph-node-head {
+  display: grid;
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.session-graph-node-title {
+  color: var(--text);
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-bold);
+  line-height: var(--ds-leading-xs);
+}
+
+.session-graph-node-role {
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-medium);
+  line-height: var(--ds-leading-2xs);
+}
+
+.session-graph-node-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+}
+
+.session-graph-node-status {
+  font-weight: var(--ds-weight-semibold);
+}
+
+.session-graph-node-time {
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.session-graph-node-meter {
+  gap: 0;
+}
+
+/* --- Node status: tone plus a badge, never color alone --- */
+
+.session-graph-node[data-graph-status="running"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+}
+
+/*
+ * Status text mixes its tone toward --text rather than using the raw token.
+ * The raw success and danger tokens are tuned to sit on the plain panel; on
+ * their own tinted node background they fall under 4.5:1 in the light theme,
+ * and this is body-size text, not a large-text exemption.
+ */
+.session-graph-node[data-graph-status="running"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--accent) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="input_needed"] {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--warning) 8%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="input_needed"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--warning) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="completed"] {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--border-subtle));
+  background: color-mix(in srgb, var(--success) 9%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="completed"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--success) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="failed"],
+.session-graph-node[data-graph-status="cancelled"] {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 9%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="failed"] .session-graph-node-status,
+.session-graph-node[data-graph-status="cancelled"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--danger) 62%, var(--text));
+}
+
+.session-graph-node[data-graph-status="queued"] {
+  border-style: dashed;
+}
+
+/* Only for work genuinely in flight. */
+.session-graph-node[data-graph-status="running"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: var(--ds-radius-card);
+  animation: sessionGraphPulse 1800ms var(--ds-ease-smooth) infinite;
+  pointer-events: none;
+}
+
+@keyframes sessionGraphPulse {
+  0%,
+  100% {
+    opacity: .15;
+  }
+
+  50% {
+    opacity: .75;
+  }
+}
+
+.session-graph-node-badge {
+  position: absolute;
+  right: calc(var(--ds-space-1) * -1);
+  bottom: calc(var(--ds-space-1) * -1);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--bg);
+  border-radius: var(--ds-radius-full);
+  color: var(--bg);
+}
+
+.session-graph-node-badge[data-graph-badge="success"] {
+  background: var(--success);
+}
+
+.session-graph-node-badge[data-graph-badge="failure"] {
+  background: var(--danger);
+}
+
+.session-graph-node-badge .icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* --- Tooltip body --- */
+
+.session-graph-tooltip {
+  display: grid;
+  gap: var(--ds-space-0);
+  max-width: 40ch;
+  text-align: left;
+}
+
+.session-graph-tooltip-title {
+  font-weight: var(--ds-weight-bold);
+}
+
+.session-graph-tooltip-detail,
+.session-graph-tooltip-hint {
+  opacity: .78;
+}
+
+/* --- Zoom bar --- */
+
+.session-graph-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--panel);
+}
+
+.session-graph-counts {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-graph-zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+}
+
+.session-graph-zoom-value {
+  min-width: 5ch;
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-graph-edge-path[data-graph-status="running"],
+  .session-graph-node[data-graph-status="running"]::after {
+    animation: none;
+  }
+}

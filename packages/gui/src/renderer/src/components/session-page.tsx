@@ -19,6 +19,7 @@ import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
 import { SessionSwarmTeam } from "./swarm-team-strip"
+import { SessionGraphSurface } from "./session-graph-surface"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
 import { SessionPageToolbar } from "./session-page-toolbar"
@@ -263,7 +264,8 @@ export function SessionPage(props: SessionPageProps) {
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
         <div class="session-workspace">
           <SessionSwarmTeam page={props} />
-          <Show when={!(props.team && props.teamMemberSessionID)}>
+          <SessionGraphSurface page={props} />
+          <Show when={!(props.team && props.teamMemberSessionID) && !props.graphNodeSessionID}>
           <TranscriptPanel
             sessionID={transcriptSessionID()}
             data={props.data}
@@ -355,6 +357,10 @@ export function SessionPage(props: SessionPageProps) {
                 gui={props.gui}
                 subscribeGlobalEvents={props.subscribeGlobalEvents}
                 directory={props.sidePanelDirectory ?? selected().directory}
+                graph={props.graph}
+                graphSelectedNodeID={props.graphNodeSessionID ? `session:${props.graphNodeSessionID}` : ""}
+                openGraphNode={props.openGraphNode}
+                openGraphNodeFullPage={props.openGraphNodeFullPage}
                 request={sidePanel.request()}
                 startResize={sidePanel.startResize}
                 toggleMaximized={sidePanel.toggleMaximized}

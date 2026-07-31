@@ -3,6 +3,7 @@ import { Button, SegmentedControl, ToastProvider } from "../ui"
 import { LabControls } from "./lab-controls"
 import { LabFeedback } from "./lab-feedback"
 import { LabFoundations } from "./lab-foundations"
+import { LabGraph } from "./lab-graph"
 import { LabNavigation } from "./lab-navigation"
 import { LabOverlays } from "./lab-overlays"
 import { LabSafety } from "./lab-safety"
@@ -85,6 +86,7 @@ export function LabApp() {
             <Match when={page() === "signature"}><LabSignature /></Match>
             <Match when={page() === "transcript"}><LabTranscript /></Match>
             <Match when={page() === "workspace"}><LabWorkspace /></Match>
+            <Match when={page() === "graph"}><LabGraph /></Match>
           </Switch>
           <Show when={page() === "foundations"}>
             <p class={styles.pageDetail}>

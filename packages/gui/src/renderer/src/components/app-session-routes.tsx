@@ -4,6 +4,7 @@ import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
 import { findFiles } from "../lib/session-api"
+import { openSessionWorkspace } from "../lib/session-workspace-bridge"
 import { ClaudeTerminalPage } from "./claude-terminal-surface"
 import { Button, ErrorState, LoadingState } from "./ui"
 
@@ -65,9 +66,32 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       swarms={model.authoritative.snapshot()?.swarms ?? []}
       team={model.swarmTeam.team()}
       teamMemberSessionID={model.swarmTeam.memberSessionID()}
-      selectTeamMember={model.swarmTeam.setMemberSessionID}
+      // The team pane and the graph pane both own the session's main area, so
+      // opening either one closes the other.
+      selectTeamMember={(sessionID) => {
+        model.sessionGraph.back()
+        model.swarmTeam.setMemberSessionID(sessionID)
+      }}
       teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}
       teamMemberLoading={model.authoritative.viewPaneState(model.swarmTeam.memberSessionID()).loading}
+      graph={model.sessionGraph.graph()}
+      graphPromptVisible={model.sessionGraph.promptVisible()}
+      dismissGraphPrompt={model.sessionGraph.dismissPrompt}
+      openGraphTab={() => {
+        const current = session()
+        if (current) openSessionWorkspace(current.id, { tab: "graph" })
+      }}
+      graphNodeSessionID={model.sessionGraph.nodeSessionID()}
+      graphNodeData={model.authoritative.viewSessionData()[model.sessionGraph.nodeSessionID()]}
+      graphNodeLoading={model.authoritative.viewPaneState(model.sessionGraph.nodeSessionID()).loading}
+      openGraphNode={(node) => {
+        model.swarmTeam.setMemberSessionID("")
+        model.sessionGraph.openNode(node)
+      }}
+      openGraphNodeFullPage={(node) => {
+        if (node.sessionID) model.sessionActions.open(node.sessionID)
+      }}
+      closeGraphNode={model.sessionGraph.back}
       connectProvider={(providerID) => void model.notices.run(() => model.capabilities.connectProvider(providerID))}
       mcp={model.authoritative.snapshot()?.mcp ?? {}}
       mcpResources={model.authoritative.snapshot()?.mcpResources ?? {}}

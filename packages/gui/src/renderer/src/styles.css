@@ -193,6 +193,8 @@
 @import "./styles/pages/sessions/session-side-panel.css" layer(features);
 @import "./styles/pages/sessions/provider-states.css" layer(features);
 @import "./styles/pages/sessions/swarm-team.css" layer(features);
+@import "./styles/pages/sessions/session-graph.css" layer(features);
+@import "./styles/pages/sessions/session-graph-embedded.css" layer(features);
 @import "./styles/pages/sessions/transcript-part.css" layer(features);
 @import "./styles/pages/sessions/transcript-thinking.css" layer(features);
 @import "./styles/pages/sessions/transcript-output.css" layer(features);

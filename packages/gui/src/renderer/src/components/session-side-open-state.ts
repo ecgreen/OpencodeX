@@ -47,6 +47,7 @@ export function openTabLabel(tab: OpenTab) {
   if (tab.kind === "file" && tab.path) return compactPath(tab.path)
   if (tab.kind === "files" || tab.kind === "picker") return "Files"
   if (tab.kind === "git") return "Git"
+  if (tab.kind === "graph") return "Graph"
   if (tab.kind === "terminal") return tab.title || "Terminal"
   if (tab.kind === "web") return tab.state?.title || tab.title || tab.url || "Web"
   return tab.title || "New tab"
@@ -56,6 +57,7 @@ export function openTabIcon(tab: OpenTab) {
   if (tab.kind === "context") return "context"
   if (tab.kind === "file" || tab.kind === "files" || tab.kind === "picker") return "file"
   if (tab.kind === "git") return "branch"
+  if (tab.kind === "graph") return "graph"
   if (tab.kind === "terminal") return "terminal"
   return "browser"
 }
@@ -182,7 +184,9 @@ function isStoredTab(value: unknown): value is OpenTab {
   if (!isRecord(value)) return false
   if (typeof value.id !== "string" || typeof value.input !== "string" || typeof value.title !== "string") return false
   if (typeof value.text !== "string" || typeof value.original !== "string") return false
-  return ["context", "file", "files", "git", "picker", "web"].includes(String(value.kind))
+  // Terminals are deliberately absent: a restored terminal tab would have no
+  // live PTY behind it. The graph rebuilds itself from state, so it restores.
+  return ["context", "file", "files", "git", "graph", "picker", "web"].includes(String(value.kind))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

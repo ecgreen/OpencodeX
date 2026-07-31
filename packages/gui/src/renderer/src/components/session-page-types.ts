@@ -4,6 +4,7 @@ import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/session-api"
 import type { GuiClient } from "../lib/client"
+import type { SessionGraph, SessionGraphNode } from "../lib/session-graph"
 import type { SwarmTeamView } from "../lib/swarm-team"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
@@ -26,6 +27,19 @@ export type SessionPageProps = {
   selectTeamMember?: (sessionID: string) => void
   teamMemberData?: SessionData
   teamMemberLoading?: boolean
+  /** The session's workflow graph, for the canvas and the opened-node header. */
+  graph?: SessionGraph
+  /** Whether to invite the reader into the graph tab from the session view. */
+  graphPromptVisible?: boolean
+  dismissGraphPrompt?: () => void
+  openGraphTab?: () => void
+  /** Child session opened from a graph node, "" for the top session. */
+  graphNodeSessionID?: string
+  graphNodeData?: SessionData
+  graphNodeLoading?: boolean
+  openGraphNode?: (node: SessionGraphNode) => void
+  openGraphNodeFullPage?: (node: SessionGraphNode) => void
+  closeGraphNode?: () => void
   /** Opens the credential flow, optionally pre-selecting a provider. */
   connectProvider?: (providerID?: string) => void
   mcp: Record<string, McpStatus>

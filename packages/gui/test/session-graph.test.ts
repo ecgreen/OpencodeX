@@ -1,0 +1,284 @@
+import { describe, expect, test } from "bun:test"
+import type { OpencodeXJob, OpencodeXSwarm, Session } from "@opencode-ai/sdk/v2/client"
+import { clientWorkItems } from "@opencode-ai/sdk/v2/work-item"
+import {
+  buildSessionGraph,
+  graphRootSessionID,
+  sessionGraphAvailable,
+  sessionGraphSummary,
+  type SessionGraphInput,
+} from "../src/renderer/src/lib/session-graph"
+
+describe("session graph model", () => {
+  test("builds the parent/child tree from session cards alone", () => {
+    const graph = buildSessionGraph(
+      input({
+        sessions: [root(), child("child-1", "Research the API"), child("child-2", "Write the migration")],
+      }),
+    )
+    expect(graph.rootSessionID).toBe("root")
+    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "session:child-1", "session:child-2"])
+    expect(graph.nodes.map((node) => node.depth)).toEqual([0, 1, 1])
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toEqual([
+      "session:root->session:child-1",
+      "session:root->session:child-2",
+    ])
+    expect(sessionGraphAvailable(graph)).toBe(true)
+  })
+
+  test("draws nested delegation at increasing depth", () => {
+    const grandchild = { ...child("child-2", "Sub-task"), parentID: "child-1" }
+    const graph = buildSessionGraph({
+      ...input({ sessions: [root(), child("child-1", "Research"), grandchild] }),
+    })
+    expect(graph.nodes.find((node) => node.id === "session:child-2")?.depth).toBe(2)
+  })
+
+  test("opens the same graph from a child as from the top session", () => {
+    const sessions = [root(), child("child-1", "Research")]
+    expect(graphRootSessionID(sessions, "child-1")).toBe("root")
+    const fromChild = buildSessionGraph(input({ sessionID: "child-1", sessions }))
+    const fromRoot = buildSessionGraph(input({ sessionID: "root", sessions }))
+    expect(fromChild.nodes.map((node) => node.id)).toEqual(fromRoot.nodes.map((node) => node.id))
+  })
+
+  test("survives a parent id that points at a session the client has not seen", () => {
+    const orphan = { ...child("child-1", "Research"), parentID: "missing" }
+    expect(graphRootSessionID([orphan], "child-1")).toBe("child-1")
+    expect(buildSessionGraph(input({ sessionID: "child-1", sessions: [orphan] })).nodes).toHaveLength(1)
+  })
+
+  test("reports no graph for a lone session", () => {
+    const graph = buildSessionGraph(input({ sessions: [root()] }))
+    expect(graph.nodes).toHaveLength(1)
+    expect(sessionGraphAvailable(graph)).toBe(false)
+  })
+
+  test("returns the empty graph when the session is not in the catalog yet", () => {
+    expect(buildSessionGraph(input({ sessionID: "pending:1", sessions: [] })).nodes).toEqual([])
+    expect(buildSessionGraph(input({ sessionID: "", sessions: [root()] })).nodes).toEqual([])
+  })
+})
+
+describe("session graph status", () => {
+  test("marks a finished delegation complete from its job, not its idle session", () => {
+    const sessions = [root(), child("child-1", "Research")]
+    const jobs = [job({ id: "job-1", sessionID: "child-1", status: "succeeded" })]
+    const graph = buildSessionGraph(input({ sessions, jobs }))
+    const node = graph.nodes.find((item) => item.id === "session:child-1")
+    expect(node?.status).toBe("completed")
+    expect(node?.badge).toBe("success")
+    expect(graph.counts.completed).toBe(1)
+  })
+
+  test("marks a failed delegation with the failure badge and message", () => {
+    const sessions = [root(), child("child-1", "Research")]
+    const jobs = [
+      job({ id: "job-1", sessionID: "child-1", status: "failed", failure: { message: "Tests did not pass" } }),
+    ]
+    const graph = buildSessionGraph(input({ sessions, jobs }))
+    const node = graph.nodes.find((item) => item.id === "session:child-1")
+    expect(node?.status).toBe("failed")
+    expect(node?.badge).toBe("failure")
+    expect(node?.detail).toBe("Tests did not pass")
+    expect(graph.edges.find((edge) => edge.to === "session:child-1")?.status).toBe("failed")
+  })
+
+  test("lets a live session outrank a recorded job outcome", () => {
+    const sessions = [root(), child("child-1", "Research")]
+    const jobs = [job({ id: "job-1", sessionID: "child-1", status: "succeeded" })]
+    const graph = buildSessionGraph({
+      ...input({ sessions, jobs }),
+      workItems: clientWorkItems({
+        sessions: entities(sessions),
+        sessionStatus: { "child-1": { type: "busy" } as never },
+        sessionUiState: {},
+        permissions: entities([]),
+        questions: entities([]),
+        jobs: entities(jobs),
+        swarms: entities([]),
+      }),
+    })
+    const node = graph.nodes.find((item) => item.id === "session:child-1")
+    expect(node?.status).toBe("running")
+    expect(node?.badge).toBeUndefined()
+  })
+
+  test("leaves an unfinished session with no badge", () => {
+    const graph = buildSessionGraph(input({ sessions: [root(), child("child-1", "Research")] }))
+    const node = graph.nodes.find((item) => item.id === "session:child-1")
+    expect(node?.status).toBe("idle")
+    expect(node?.badge).toBeUndefined()
+  })
+
+  test("summarizes the run for the canvas label", () => {
+    const sessions = [root(), child("child-1", "A"), child("child-2", "B")]
+    const jobs = [
+      job({ id: "job-1", sessionID: "child-1", status: "succeeded" }),
+      job({ id: "job-2", sessionID: "child-2", status: "failed" }),
+    ]
+    expect(sessionGraphSummary(buildSessionGraph(input({ sessions, jobs })))).toBe(
+      "Workflow graph: 3 steps, 1 complete, 1 failed",
+    )
+  })
+})
+
+describe("session graph jobs", () => {
+  test("gives a queued job with no session its own node under the swarm root", () => {
+    const sessions = [swarmRoot()]
+    const jobs = [job({ id: "job-1", status: "queued", swarmID: "swarm-1", title: "Review the diff" })]
+    const graph = buildSessionGraph(input({ sessions, jobs, swarms: [swarm()] }))
+    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "job:job-1"])
+    expect(graph.nodes[1]).toMatchObject({ kind: "job", depth: 1, status: "queued", title: "Review the diff" })
+  })
+
+  test("folds a claimed job into the child session it runs, with no duplicate node", () => {
+    const sessions = [swarmRoot(), child("child-1", "Review the diff")]
+    const jobs = [job({ id: "job-1", sessionID: "child-1", status: "running", swarmID: "swarm-1" })]
+    const graph = buildSessionGraph(input({ sessions, jobs, swarms: [swarm()] }))
+    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "session:child-1"])
+    expect(graph.nodes[1]?.status).toBe("running")
+  })
+
+  test("places a child job listed before its parent job", () => {
+    const sessions = [swarmRoot()]
+    const parent = job({ id: "job-1", status: "running", swarmID: "swarm-1" })
+    const nested = job({ id: "job-2", status: "queued", parentJobID: "job-1" })
+    const graph = buildSessionGraph(input({ sessions, jobs: [nested, parent], swarms: [swarm()] }))
+    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root", "job:job-1", "job:job-2"])
+    expect(graph.nodes.find((node) => node.id === "job:job-2")?.depth).toBe(2)
+  })
+
+  test("leaves out a job that belongs to another workflow", () => {
+    const graph = buildSessionGraph(
+      input({ sessions: [swarmRoot()], jobs: [job({ id: "job-1", swarmID: "other" })], swarms: [swarm()] }),
+    )
+    expect(graph.nodes.map((node) => node.id)).toEqual(["session:root"])
+  })
+})
+
+describe("session graph edge labels", () => {
+  test("prefers the swarm role and its instructions", () => {
+    const tagged: Session = {
+      ...child("child-1", "Research the API (swarm role)"),
+      metadata: { opencodex: { swarmID: "swarm-1", swarmRole: "Researcher" } },
+    }
+    const graph = buildSessionGraph(input({ sessions: [swarmRoot(), tagged], swarms: [swarm()] }))
+    const edge = graph.edges[0]
+    expect(edge?.label).toBe("Researcher")
+    expect(edge?.detail).toBe("Find the API contract and report back.")
+  })
+
+  test("falls back to the child title before the role metadata hydrates", () => {
+    const graph = buildSessionGraph(
+      input({ sessions: [swarmRoot(), child("child-1", "Research the API (swarm role)")], swarms: [swarm()] }),
+    )
+    expect(graph.edges[0]?.label).toBe("Research the API")
+    expect(graph.nodes[1]?.title).toBe("Research the API")
+    // The label already says it; a detail here would pad the tooltip with a
+    // duplicate, so the canvas is given nothing to render.
+    expect(graph.edges[0]?.detail).toBe("")
+  })
+
+  test("keeps the child title as detail when the role name differs from it", () => {
+    const tagged: Session = {
+      ...child("child-1", "Research the API"),
+      metadata: { opencodex: { swarmRole: "Scout" } },
+    }
+    const graph = buildSessionGraph(input({ sessions: [swarmRoot(), tagged] }))
+    expect(graph.edges[0]?.label).toBe("Scout")
+    expect(graph.edges[0]?.detail).toBe("Research the API")
+  })
+
+  test("describes a job edge by its source and attempt count", () => {
+    const jobs = [
+      job({ id: "job-1", status: "queued", swarmID: "swarm-1", title: "Review", attempt: 2, maxAttempts: 3 }),
+    ]
+    const graph = buildSessionGraph(input({ sessions: [swarmRoot()], jobs, swarms: [swarm()] }))
+    expect(graph.edges[0]?.detail).toBe("swarm job: Review (attempt 2 of 3)")
+  })
+})
+
+function input(overrides: Partial<SessionGraphInput> = {}): SessionGraphInput {
+  return {
+    sessionID: "root",
+    workItems: [],
+    sessions: [],
+    jobs: [],
+    swarms: [],
+    ...overrides,
+  }
+}
+
+function root(): Session {
+  return {
+    id: "root",
+    slug: "root",
+    projectID: "project-1",
+    directory: "C:/Work/OpencodeX",
+    title: "Ship the migration",
+    version: "test",
+    time: { created: 1, updated: 5 },
+  }
+}
+
+function swarmRoot(): Session {
+  return { ...root(), model: { providerID: "swarm", id: "swarm-1" } }
+}
+
+function child(id: string, title: string): Session {
+  return {
+    id,
+    slug: id,
+    projectID: "project-1",
+    parentID: "root",
+    directory: "C:/Work/OpencodeX",
+    title,
+    version: "test",
+    time: { created: id === "child-1" ? 2 : 3, updated: 4 },
+  }
+}
+
+function job(overrides: Partial<OpencodeXJob> & { id: string }): OpencodeXJob {
+  return {
+    kind: "swarm.role",
+    status: "queued",
+    source: "swarm",
+    attempt: 1,
+    maxAttempts: 1,
+    timeCreated: 1,
+    timeUpdated: 2,
+    ...overrides,
+  } as OpencodeXJob
+}
+
+function swarm(): OpencodeXSwarm {
+  return {
+    id: "swarm-1",
+    projectID: "project-1",
+    title: "Migration swarm",
+    prompt: "Ship the migration",
+    status: "running",
+    source: "swarm",
+    roles: [
+      {
+        id: "role-1",
+        swarmID: "swarm-1",
+        name: "Researcher",
+        status: "running",
+        instructions: "Find the API contract and report back.",
+        sortOrder: 0,
+        timeCreated: 1,
+        timeUpdated: 1,
+      },
+    ],
+    runs: [],
+    events: [],
+    timeCreated: 1,
+    timeUpdated: 1,
+  } as OpencodeXSwarm
+}
+
+function entities<T extends { id: string }>(items: readonly T[]) {
+  return { ids: items.map((item) => item.id), records: Object.fromEntries(items.map((item) => [item.id, item])) }
+}

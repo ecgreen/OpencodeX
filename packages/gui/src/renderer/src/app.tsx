@@ -21,6 +21,7 @@ import { createSessionSlashController } from "./controllers/session-slash-contro
 import { createSessionState } from "./controllers/session-state"
 import { createSessionSwitcherController } from "./controllers/session-switcher-controller"
 import { createSettingsController } from "./controllers/settings-controller"
+import { createSessionGraphController } from "./controllers/session-graph-controller"
 import { createSwarmTeamController } from "./controllers/swarm-team-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
 import { createUpdateNoticeController } from "./controllers/update-notice-controller"
@@ -76,6 +77,7 @@ export function App() {
   })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
   const swarmTeam = createSwarmTeamController({ authoritative, selection: sessionSelection })
+  const sessionGraph = createSessionGraphController({ authoritative, selection: sessionSelection })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
   const rail = createRailController({
     client: authoritative.client,
@@ -192,17 +194,22 @@ export function App() {
 
   createEffect(() => {
     const route = navigation.route()
-    // A swarm session's team view rides the view-session hydration: the
-    // selected member stays visible so its transcript loads and live-patches.
-    const member = route.name === "session" ? swarmTeam.memberSession() : undefined
+    // A swarm session's team view and the workflow graph both ride the
+    // view-session hydration: the child session they have opened stays visible
+    // so its transcript loads and live-patches. Only one can be open at a time,
+    // but both are collected here so neither depends on that staying true.
+    const embedded =
+      route.name === "session"
+        ? [swarmTeam.memberSession(), sessionGraph.nodeSession()].flatMap((session) => (session ? [session] : []))
+        : []
     authoritative.setVisibleSessionIDs(
       route.name === "views"
         ? view.sessions().map((session) => session.id)
         : sessionSelection.activeSessionID()
-          ? [sessionSelection.activeSessionID(), ...(member ? [member.id] : [])]
+          ? [sessionSelection.activeSessionID(), ...embedded.map((session) => session.id)]
           : [],
     )
-    if (member) void authoritative.syncViewSession(member)
+    for (const session of embedded) void authoritative.syncViewSession(session)
   })
 
   createEffect(
@@ -236,6 +243,7 @@ export function App() {
     sessionComposer,
     sessionSelection,
     sessionSlash,
+    sessionGraph,
     sessionState,
     sessionSwitcher,
     settings,

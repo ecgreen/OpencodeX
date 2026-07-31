@@ -1,6 +1,7 @@
 export type SessionWorkspaceTarget =
   | { tab: "context" }
   | { tab: "git"; value?: string }
+  | { tab: "graph" }
   | { tab: "open"; value?: string; title?: string }
 
 export type SessionWorkspaceRequest =

@@ -12,6 +12,7 @@ import { SidePanelGitCommitModal } from "./session-side-git-view"
 import { readSessionSideContextCollapseState, writeSessionSideContextCollapseState } from "./session-side-context-state"
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
 import { SessionSideOpenPanel } from "./session-side-open-panel"
+import type { SessionGraph, SessionGraphNode } from "../lib/session-graph"
 
 export type { SessionSidePanelContextOption, SessionSidePanelRequest, SessionSidePanelTab, SessionSidePanelTarget } from "./session-side-panel-types"
 
@@ -33,6 +34,10 @@ export function SessionSidePanel(props: {
   contextOptions?: SessionSidePanelContextOption[]
   selectedContextID?: string
   selectContext?: (id: string) => void
+  graph?: SessionGraph
+  graphSelectedNodeID?: string
+  openGraphNode?: (node: SessionGraphNode) => void
+  openGraphNodeFullPage?: (node: SessionGraphNode) => void
   startResize: (event: PointerEvent & { currentTarget: HTMLElement }) => void
   toggleMaximized?: () => void
   resizeByKeyboard?: (event: KeyboardEvent) => void
@@ -136,6 +141,10 @@ export function SessionSidePanel(props: {
           lspEnabled={props.config?.lsp === undefined ? undefined : props.config.lsp !== false}
           diffs={props.data?.diffs ?? []}
           git={git}
+          graph={props.graph}
+          graphSelectedNodeID={props.graphSelectedNodeID}
+          openGraphNode={props.openGraphNode}
+          openGraphNodeFullPage={props.openGraphNodeFullPage}
           openCommitModal={(path) => {
             setCommitPaths(path ? [path] : undefined)
             setCommitModalOpen(true)
