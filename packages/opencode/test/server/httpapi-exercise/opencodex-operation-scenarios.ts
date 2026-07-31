@@ -15,6 +15,8 @@ const swarmRoles = [
     name: "Engineer",
     skill: "engineer",
     instructions: "Implement the HTTP API exercise.",
+    // Roles carry the effort level their model runs at.
+    variant: "high",
   },
 ]
 
@@ -187,21 +189,28 @@ export const opencodexOperationScenarios: Scenario[] = [
   http.protected
     .post("/experimental/opencodex/swarm", "opencodex.swarm.create")
     .mutating()
-    .seeded((ctx) => seedOpencodeXProject(ctx, "swarm-create"))
     .at((ctx) => ({
       path: "/experimental/opencodex/swarm",
       headers: ctx.headers(),
+      // No projectID: a swarm is a model, usable from any session, so it must
+      // create without belonging to a project.
       body: {
-        projectID: ctx.state.id,
         title: "HTTP API created swarm",
         roles: swarmRoles,
       },
     }))
-    .json(200, (body, ctx) => {
+    .json(200, (body) => {
       object(body)
-      check(body.projectID === ctx.state.id, "created swarm should belong to the seeded project")
+      check(body.projectID === undefined, "a swarm created without a project should stay project-independent")
       check(body.title === "HTTP API created swarm", "created swarm should preserve its title")
       check(body.status === "planned", "created swarm should be planned")
+      const roles = body.roles
+      array(roles)
+      const engineer = roles.find((role) => isRecord(role) && role.name === "Engineer")
+      check(
+        isRecord(engineer) && engineer.variant === "high",
+        "a role's effort level should round-trip through create",
+      )
     }),
   http.protected
     .get("/experimental/opencodex/swarm/{swarmID}", "opencodex.swarm.get")

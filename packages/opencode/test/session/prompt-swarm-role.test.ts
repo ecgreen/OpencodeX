@@ -72,6 +72,7 @@ function role(input: { name: string; skill: string | null; instructions: string 
     instructions: input.instructions,
     provider_id: "anthropic",
     model_id: "claude-sonnet-5",
+    variant: null,
   }
 }
 

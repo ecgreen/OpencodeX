@@ -89,6 +89,7 @@ export const goalExecutionLayer = Layer.effect(
           instructions: OpencodeXSwarmRoleTable.instructions,
           provider_id: OpencodeXSwarmRoleTable.provider_id,
           model_id: OpencodeXSwarmRoleTable.model_id,
+          variant: OpencodeXSwarmRoleTable.variant,
         })
         .from(OpencodeXSwarmRoleTable)
         .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
@@ -198,6 +199,8 @@ export const goalExecutionLayer = Layer.effect(
                 modelID: ProviderV2.ModelID.make(executor.modelID!),
               },
               ...(executor.agent ? { agent: executor.agent } : {}),
+              // "default" is the sentinel for "no variant" in the prompt loop.
+              ...(executor.variant && executor.variant !== "default" ? { variant: executor.variant } : {}),
               // A check's verdict is machine-read, so it is a structured
               // output contract rather than prose the runtime has to guess at.
               ...(node.kind === "check" ? { format: { type: "json_schema" as const, schema: VERDICT_SCHEMA } } : {}),

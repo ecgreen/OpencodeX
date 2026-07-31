@@ -22,6 +22,8 @@ export type SwarmRoleRow = {
   instructions: string
   provider_id: string | null
   model_id: string | null
+  /** The model variant (effort level) the role runs at, when one is chosen. */
+  variant: string | null
 }
 
 export interface Deps {
@@ -100,6 +102,7 @@ export function make(deps: Deps) {
         instructions: OpencodeXSwarmRoleTable.instructions,
         provider_id: OpencodeXSwarmRoleTable.provider_id,
         model_id: OpencodeXSwarmRoleTable.model_id,
+        variant: OpencodeXSwarmRoleTable.variant,
       })
       .from(OpencodeXSwarmRoleTable)
       .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
@@ -162,6 +165,8 @@ export function make(deps: Deps) {
         modelID: ProviderV2.ModelID.make(role.model_id),
       },
       ...(role.agent ? { agent: role.agent } : {}),
+      // "default" is the sentinel for "no variant" everywhere in the loop.
+      ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
       parts: [{ type: "text", text }],
     }).pipe(Effect.catch(Effect.die))
     if (result.info.role === "assistant" && result.info.error) {

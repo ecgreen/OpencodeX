@@ -176,13 +176,12 @@ export function createManagementActionsController(input: {
   }
 
   async function createSwarmAction(projectID?: string) {
-    if ((input.snapshot()?.projects.length ?? 0) === 0)
-      return input.alert("Create or load a project before creating a swarm.")
+    // A swarm is a model, not a project resource - no project required.
     input.navigation.setRoute({ name: "swarm-create", projectID })
   }
 
   async function saveSwarm(value: {
-    projectID: string
+    projectID?: string
     title?: string
     roles: OpencodeXSwarmRoleInput[]
     swarmID?: string

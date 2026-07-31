@@ -20,6 +20,33 @@ describe("shared work item projection", () => {
     expect(attention[0]?.workItemID).toBe("session:session-1")
   })
 
+  test("drops goal node jobs left behind by a deleted goal", () => {
+    // Exactly the shape a failed node leaves: the goal is deleted, the node
+    // died before opening a session, so nothing remains to open or clear.
+    const stranded = goalNodeJob("job-stranded", "goal-gone")
+    const input = withJobs(stranded)
+
+    const items = clientWorkItems(input, 5_000)
+    expect(items.find((item) => item.id === "job:job-stranded")).toBeUndefined()
+    expect(clientAttentionItems(items).some((item) => item.workItemID === "job:job-stranded")).toBe(false)
+  })
+
+  test("keeps a goal node job that still has a session to open", () => {
+    const attached = { ...goalNodeJob("job-attached", "goal-gone"), sessionID: "session-1" }
+    const items = clientWorkItems(withJobs(attached), 5_000)
+
+    expect(items.find((item) => item.id === "job:job-attached")).toBeDefined()
+  })
+
+  test("keeps goal node jobs when the client has not synced goals", () => {
+    // An unsynced goal collection means "I cannot see it", not "it is gone" -
+    // filtering on that would blank the work list on every fresh connection.
+    const stranded = goalNodeJob("job-unsynced", "goal-gone")
+    const input = { ...withJobs(stranded), goals: undefined as unknown as WorkItemProjectionInput["goals"] }
+
+    expect(clientWorkItems(input, 5_000).find((item) => item.id === "job:job-unsynced")).toBeDefined()
+  })
+
   test("reports only newly appeared attention items", () => {
     const permission = attention("permission:session:session-1")
     const failure = attention("failure:job:job-1")
@@ -124,6 +151,32 @@ function goalEntities(): WorkItemProjectionInput["goals"] {
     },
   ]
   return { ids: goals.map((goal) => goal.id), records: Object.fromEntries(goals.map((goal) => [goal.id, goal])) }
+}
+
+function goalNodeJob(id: string, goalID: string) {
+  return {
+    id,
+    kind: "goal.node",
+    title: "Survey the schema",
+    status: "failed",
+    source: "manual",
+    projectID: "project-1",
+    statusReason: "InstanceRef not provided",
+    metadata: { goalID, nodeID: "survey", iteration: 0 },
+    attempt: 3,
+    maxAttempts: 3,
+    timeCreated: 1_000,
+    timeUpdated: 3_000,
+  } satisfies OpencodeXJob
+}
+
+/** The base state with `job` added, and no goals to anchor it to. */
+function withJobs(job: OpencodeXJob): WorkItemProjectionInput {
+  const base = state()
+  return {
+    ...base,
+    jobs: { ids: [...base.jobs.ids, job.id], records: { ...base.jobs.records, [job.id]: job } },
+  }
 }
 
 function state(): WorkItemProjectionInput {

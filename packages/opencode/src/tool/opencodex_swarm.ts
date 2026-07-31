@@ -68,27 +68,12 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
           const bySession = available.find((project) =>
             project.sessions.some((session) => session.id === ctx.sessionID),
           )
+          // A swarm is a model, not a project resource: a matching project just
+          // becomes its default workspace, and creating without one is fine.
           const project = byID ?? byName ?? bySession ?? (available.length === 1 ? available[0] : undefined)
 
-          if (!project) {
-            return {
-              title: "Project required",
-              output:
-                available.length === 0
-                  ? "No OpenCodeX projects exist yet. Create an OpenCodeX project before creating a swarm."
-                  : [
-                      "Choose an OpenCodeX project before creating a swarm.",
-                      "Available projects:",
-                      ...available.map(
-                        (item) => `- ${item.id}: ${item.name ?? item.project.name ?? item.project.worktree}`,
-                      ),
-                    ].join("\n"),
-              metadata: {},
-            }
-          }
-
           const created = yield* swarms.create({
-            projectID: project.id,
+            projectID: project?.id,
             title: params.title,
             prompt: params.prompt,
             source: "manual",
@@ -106,14 +91,14 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
             output: [
               `Created OpenCodeX swarm team "${created.title}".`,
               `Team ID: ${created.id}`,
-              `Project: ${project.name ?? project.project.name ?? project.project.worktree}`,
+              ...(project ? [`Project: ${project.name ?? project.project.name ?? project.project.worktree}`] : []),
               `Roles: ${created.roles.map((role) => role.name).join(", ")}`,
               "",
               "Pick this team in the model selector to run a session on it, or open the swarms page to edit its roles.",
             ].join("\n"),
             metadata: {
               swarmID: created.id,
-              projectID: project.id,
+              ...(project ? { projectID: project.id } : {}),
               roleCount: created.roles.length,
             },
           }

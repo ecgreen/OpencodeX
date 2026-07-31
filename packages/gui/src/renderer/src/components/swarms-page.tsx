@@ -78,7 +78,7 @@ function SwarmCard(props: {
           </Show>
         </div>
         <div class="swarm-card-meta">
-          <small>{projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID)}</small>
+          <small>{projectLabelByID(props.snapshot?.projects ?? [], props.swarm.projectID) ?? "Any project"}</small>
           <small>
             {orchestrator()?.modelID ? `Led by ${orchestrator()?.modelID}` : "Orchestrator needs a model"}
             {" · "}

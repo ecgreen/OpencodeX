@@ -1,39 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { runCreateProjectSessionAction, runCreateSwarmAction, runCreateViewAction } from "../src/renderer/src/lib/creation-actions"
+import { runCreateProjectSessionAction, runCreateViewAction } from "../src/renderer/src/lib/creation-actions"
 import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
 
 describe("GUI creation action workflows", () => {
-  test("creates swarms through project choice and opens the swarms route", async () => {
-    const calls: string[] = []
-
-    await runCreateSwarmAction({
-      projects: [project("project-1", "C:/Work/One")],
-      alert: (message) => calls.push(`alert:${message}`),
-      chooseProjectID: async () => "project-1",
-      createSwarm: async (projectID, title, prompt) => calls.push(`swarm:${projectID}:${title}:${prompt}`),
-      refresh: async () => calls.push("refresh"),
-      openSwarms: () => calls.push("route:swarms"),
-    })
-
-    expect(calls).toEqual(["swarm:project-1:New swarm:", "refresh", "route:swarms"])
-  })
-
-  test("stops swarm creation when no projects are available", async () => {
-    const calls: string[] = []
-
-    await runCreateSwarmAction({
-      projects: [],
-      alert: (message) => calls.push(message),
-      chooseProjectID: async () => "project-1",
-      createSwarm: async () => calls.push("create"),
-      refresh: async () => calls.push("refresh"),
-      openSwarms: () => calls.push("route"),
-    })
-
-    expect(calls).toEqual(["Create or load a project before creating a swarm."])
-  })
-
   test("creates views through session choice and opens the views route", async () => {
     const calls: string[] = []
 

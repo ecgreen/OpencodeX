@@ -72,6 +72,8 @@ export const Role = Schema.Struct({
   skill: Schema.optional(Schema.String),
   providerID: Schema.optional(ProviderV2.ID),
   modelID: Schema.optional(ProviderV2.ModelID),
+  /** The model variant (effort level) this role runs at, when one is chosen. */
+  variant: Schema.optional(Schema.String),
   modelProfile: Schema.optional(Schema.String),
   status: RoleStatus,
   instructions: Schema.String,
@@ -86,7 +88,8 @@ export type Role = Schema.Schema.Type<typeof Role>
 
 export const Info = Schema.Struct({
   id: Schema.String,
-  projectID: Schema.String,
+  /** Optional default workspace for the swarm's sessions. A swarm is a model. */
+  projectID: Schema.optional(Schema.String),
   title: Schema.String,
   prompt: Schema.String,
   status: Status,
@@ -109,6 +112,8 @@ export const RoleInput = Schema.Struct({
   skill: Schema.optional(Schema.String),
   providerID: Schema.optional(ProviderV2.ID),
   modelID: Schema.optional(ProviderV2.ModelID),
+  /** The model variant (effort level) to run this role at. */
+  variant: Schema.optional(Schema.String),
   modelProfile: Schema.optional(Schema.String),
   instructions: Schema.String,
   metadata: Schema.optional(Metadata),
@@ -116,7 +121,7 @@ export const RoleInput = Schema.Struct({
 export type RoleInput = Schema.Schema.Type<typeof RoleInput>
 
 export const CreateInput = Schema.Struct({
-  projectID: Schema.String,
+  projectID: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
   source: Schema.optional(OpencodeXJob.Source),
@@ -144,6 +149,7 @@ export const UpdateRoleInput = Schema.Struct({
   skill: Schema.optional(Schema.String),
   providerID: Schema.optional(Schema.String),
   modelID: Schema.optional(Schema.String),
+  variant: Schema.optional(Schema.String),
   modelProfile: Schema.optional(Schema.String),
   instructions: Schema.optional(Schema.String),
   metadata: Schema.optional(Metadata),

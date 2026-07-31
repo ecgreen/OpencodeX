@@ -89,6 +89,7 @@ export function hydrateRole(row: typeof OpencodeXSwarmRoleTable.$inferSelect): R
     skill: row.skill ?? undefined,
     providerID: row.provider_id ? ProviderV2.ID.make(row.provider_id) : undefined,
     modelID: row.model_id ? ProviderV2.ModelID.make(row.model_id) : undefined,
+    variant: row.variant ?? undefined,
     modelProfile: row.model_profile ?? undefined,
     status: Schema.decodeUnknownSync(RoleStatus)(row.status),
     instructions: row.instructions,
@@ -122,7 +123,7 @@ export function hydrate(input: {
 }): Info {
   return {
     id: input.swarm.id,
-    projectID: input.swarm.opencodex_project_id,
+    projectID: input.swarm.opencodex_project_id ?? undefined,
     title: input.swarm.title,
     prompt: input.swarm.prompt,
     status: Schema.decodeUnknownSync(Status)(input.swarm.status),

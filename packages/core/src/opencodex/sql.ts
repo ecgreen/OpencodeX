@@ -261,9 +261,10 @@ export const OpencodeXSwarmTable = sqliteTable(
   "opencodex_swarm",
   {
     id: text().primaryKey(),
-    opencodex_project_id: text()
-      .notNull()
-      .references(() => OpencodeXProjectTable.id, { onDelete: "cascade" }),
+    // A swarm is a model, not a project resource: the project is an optional
+    // default workspace for its sessions, and deleting the project must not
+    // take the team with it.
+    opencodex_project_id: text().references(() => OpencodeXProjectTable.id, { onDelete: "set null" }),
     title: text().notNull(),
     prompt: text().notNull(),
     status: text().notNull(),
@@ -296,6 +297,8 @@ export const OpencodeXSwarmRoleTable = sqliteTable(
     skill: text(),
     provider_id: text(),
     model_id: text(),
+    /** The model variant (effort level) this role runs at, when one is chosen. */
+    variant: text(),
     model_profile: text(),
     status: text().notNull(),
     instructions: text().notNull(),

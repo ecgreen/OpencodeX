@@ -16,12 +16,16 @@ export type SwarmRoleRow = {
   readonly instructions?: string | null
   readonly provider_id?: string | null
   readonly model_id?: string | null
+  /** The model variant (effort level) the role runs at, when one is chosen. */
+  readonly variant?: string | null
 }
 
 export type ResolvedExecutor = {
   readonly label: string
   readonly providerID?: string
   readonly modelID?: string
+  /** The model variant (effort level) the node runs at. */
+  readonly variant?: string
   readonly agent?: string
   /** Skill id whose body is prefixed to the prompt; resolved by the caller. */
   readonly skill?: string
@@ -58,6 +62,7 @@ export function resolveExecutor(input: ResolveInput): ResolveResult {
         roleName: role.name,
         providerID,
         modelID,
+        variant: role.variant ?? undefined,
         agent: role.agent ?? undefined,
         skill: role.skill ?? undefined,
         instructions: role.instructions?.trim() || undefined,

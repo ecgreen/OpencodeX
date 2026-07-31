@@ -127,7 +127,9 @@ export type WorkItemProjectionInput = Pick<
 export function clientWorkItems(input: WorkItemProjectionInput, now?: number): WorkItem[] {
   const permissions = groupBySession(input.permissions)
   const questions = groupBySession(input.questions)
-  const jobs = input.jobs.ids.flatMap((id) => (input.jobs.records[id] ? [input.jobs.records[id]] : []))
+  const jobs = input.jobs.ids
+    .flatMap((id) => (input.jobs.records[id] ? [input.jobs.records[id]] : []))
+    .filter((job) => !isStrandedGoalJob(job, input))
   const jobsBySession = groupJobsBySession(jobs)
   return [
     ...input.sessions.ids.flatMap((id) => {
@@ -368,6 +370,25 @@ function goalWorkItems(goal: OpencodeXGoal, now: number | undefined): WorkItem[]
       elapsedMs: elapsed(timeOrUndefined(goal.startedAt), timeOrUndefined(goal.completedAt), now),
     },
   ]
+}
+
+/**
+ * A goal node job outlives the goal that scheduled it, and one that never got
+ * as far as opening a session outlives it with nothing attached: no graph to
+ * open, no transcript to read, no session to retry from. Such a job can only
+ * ever render as a row that cannot be acted on or cleared, so it is debris
+ * rather than work, and the attention queue is the wrong place to keep it.
+ *
+ * Deliberately narrow. A job that still has a live session stays, because that
+ * session is a real destination even once the goal is gone, and a job whose
+ * goal is merely absent from a client that has not synced goals yet stays too -
+ * "I cannot see the goal" is not the same as "the goal is gone".
+ */
+function isStrandedGoalJob(job: OpencodeXJob, input: WorkItemProjectionInput) {
+  if (job.kind !== "goal.node") return false
+  const goalID = metadataString(job.metadata, "goalID")
+  if (!goalID || !input.goals || input.goals.records[goalID]) return false
+  return !job.sessionID || !input.sessions.records[job.sessionID]
 }
 
 function goalState(status: OpencodeXGoal["status"]): WorkItemState | undefined {

@@ -55,6 +55,8 @@ export type OpencodeXSwarmRole = {
   instructions: string
   providerID?: string
   modelID?: string
+  /** The model variant (effort level) this role runs at, when one is chosen. */
+  variant?: string
   modelProfile?: string
   sessionID?: string
   currentSessionID?: string
@@ -66,7 +68,8 @@ export type OpencodeXSwarmRole = {
 
 export type OpencodeXSwarm = {
   id: string
-  projectID: string
+  /** Optional default workspace for its sessions; a swarm is a model. */
+  projectID?: string
   title: string
   prompt: string
   status: string
@@ -109,6 +112,8 @@ export type SwarmRoleDraft = SwarmRolePreset & {
   customInstructions: string
   providerID?: string
   modelID?: string
+  /** The model variant (effort level) this role runs at, when one is chosen. */
+  variant?: string
   existing?: boolean
 }
 

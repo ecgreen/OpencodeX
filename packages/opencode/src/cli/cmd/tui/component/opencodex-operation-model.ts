@@ -181,3 +181,9 @@ export function modelDisplay(providers: ReturnType<typeof useSync>["data"]["prov
   const provider = providers.find((item) => item.id === model.providerID)
   return [provider?.name ?? model.providerID, provider?.models[model.modelID]?.name ?? model.modelID].join(" / ")
 }
+
+/** The effort levels (model variants) a chosen model offers; empty means no choice to make. */
+export function modelVariants(providers: ReturnType<typeof useSync>["data"]["provider"], model: { providerID?: string; modelID?: string }) {
+  if (!model.providerID || !model.modelID) return []
+  return Object.keys(providers.find((item) => item.id === model.providerID)?.models[model.modelID]?.variants ?? {})
+}

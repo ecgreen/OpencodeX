@@ -2440,6 +2440,7 @@ export type OpencodeXSwarmRole = {
   skill?: string
   providerID?: string
   modelID?: string
+  variant?: string
   modelProfile?: string
   status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
   instructions: string
@@ -2469,7 +2470,7 @@ export type OpencodeXSwarmEvent = {
 
 export type OpencodeXSwarm = {
   id: string
-  projectID: string
+  projectID?: string
   title: string
   prompt: string
   status:
@@ -2791,6 +2792,7 @@ export type OpencodeXSwarmRoleInput = {
   skill?: string
   providerID?: string
   modelID?: string
+  variant?: string
   modelProfile?: string
   instructions: string
   metadata?: {
@@ -2799,7 +2801,7 @@ export type OpencodeXSwarmRoleInput = {
 }
 
 export type OpencodeXSwarmCreateInput = {
-  projectID: string
+  projectID?: string
   title?: string
   prompt?: string
   source?: "manual" | "swarm" | "subagent" | "schedule" | "trigger" | "runbook" | "plugin"
@@ -2828,6 +2830,7 @@ export type OpencodeXSwarmUpdateRoleInput = {
   skill?: string
   providerID?: string
   modelID?: string
+  variant?: string
   modelProfile?: string
   instructions?: string
   metadata?: {

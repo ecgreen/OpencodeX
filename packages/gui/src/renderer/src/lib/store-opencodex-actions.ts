@@ -87,7 +87,7 @@ export async function getSwarm(gui: GuiClient, swarmID: string) {
   return gui.client.opencodex.swarm.get({ swarmID }, { headers: authHeaders(gui), throwOnError: true })
 }
 
-export async function createSwarm(gui: GuiClient, input: { projectID: string; title?: string; prompt?: string; roles?: OpencodeXSwarmRoleInput[] }) {
+export async function createSwarm(gui: GuiClient, input: { projectID?: string; title?: string; prompt?: string; roles?: OpencodeXSwarmRoleInput[] }) {
   return gui.client.opencodex.swarm.create({
     opencodeXSwarmCreateInput: {
       projectID: input.projectID,

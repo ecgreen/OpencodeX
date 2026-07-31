@@ -89,19 +89,28 @@ export function createOpencodeXSwarmsController() {
     const runPrompt = prompt.input.trim()
     if (!runPrompt) return false
     // A swarm task is an ordinary session on the swarm model: the orchestrator
-    // answers and delegates specialists inside that session.
-    const project = projects().find((item) => item.id === swarm.projectID)
+    // answers and delegates specialists inside that session. A project is only
+    // the session's default workspace - a swarm without one runs right here.
+    const project = swarm.projectID ? projects().find((item) => item.id === swarm.projectID) : undefined
     const directory = project?.folders?.[0]?.path ?? project?.project.worktree
     const model = { providerID: "swarm", modelID: swarm.id }
-    const session = await sdk.request<{ id: string }>("/experimental/opencodex/session", {
-      method: "POST",
-      body: JSON.stringify({
-        projectID: swarm.projectID,
-        directory,
-        agent: local.agent.current()?.name,
-        model: { providerID: model.providerID, id: model.modelID },
-      }),
-    }).catch((error: Error) => void DialogAlert.show(dialog, "Assign Task", error.message))
+    const session = project
+      ? await sdk.request<{ id: string }>("/experimental/opencodex/session", {
+          method: "POST",
+          body: JSON.stringify({
+            projectID: project.id,
+            directory,
+            agent: local.agent.current()?.name,
+            model: { providerID: model.providerID, id: model.modelID },
+          }),
+        }).catch((error: Error) => void DialogAlert.show(dialog, "Assign Task", error.message))
+      : await sdk.client.session
+          .create({ agent: local.agent.current()?.name, model: { providerID: model.providerID, id: model.modelID } })
+          .then((result) => {
+            if (result.data) return result.data
+            void DialogAlert.show(dialog, "Assign Task", "Creating a session failed.")
+            return undefined
+          })
     if (!session) return false
     // One-shot retainer: the session route or view pane picks the session up
     // inside the deferred-release grace period.
