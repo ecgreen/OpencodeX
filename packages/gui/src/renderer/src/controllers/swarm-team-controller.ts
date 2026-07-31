@@ -7,6 +7,8 @@ import {
   teamMemberForSession,
   type SwarmTeamView,
 } from "../lib/swarm-team"
+import type { OpencodeXGoal } from "@opencode-ai/sdk/v2/client"
+import { goalNodeForSession, sessionGoal } from "../lib/goal-graph-view"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
 
@@ -34,6 +36,16 @@ export function createSwarmTeamController(input: {
     })
   })
 
+  /**
+   * The goal this session owns. A goal supersedes the free-form team strip:
+   * its nodes are the delegations, and they carry their own child sessions.
+   */
+  const goal: Accessor<OpencodeXGoal | undefined> = createMemo(() => {
+    const snapshot = input.authoritative.snapshot()
+    if (!snapshot) return undefined
+    return sessionGoal(input.selection.selectedSession(), snapshot.goals)
+  })
+
   const memberSession: Accessor<Session | undefined> = createMemo(() => {
     const sessionID = memberSessionID()
     if (!sessionID) return undefined
@@ -46,11 +58,18 @@ export function createSwarmTeamController(input: {
     const current = memberSessionID()
     if (!current) return
     const view = team()
+    const owned = goal()
+    // The pane closes when its node or run disappears, or the reader leaves.
+    if (owned) {
+      if (!active || !goalNodeForSession(owned, current)) setMemberSessionID("")
+      return
+    }
     if (!active || !view || !teamMemberForSession(view, current)) setMemberSessionID("")
   })
 
   return {
     team,
+    goal,
     memberSessionID,
     setMemberSessionID,
     memberSession,

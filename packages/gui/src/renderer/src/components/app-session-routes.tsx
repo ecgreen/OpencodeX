@@ -64,6 +64,11 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       connectedProviderIDs={model.authoritative.snapshot()?.connectedProviderIDs ?? []}
       swarms={model.authoritative.snapshot()?.swarms ?? []}
       team={model.swarmTeam.team()}
+      goal={model.swarmTeam.goal()}
+      approveGoalNode={(goalID, nodeID, approved) =>
+        void model.notices.run(() => model.management.approveGoalNode(goalID, nodeID, approved))
+      }
+      cancelGoal={(goalID) => void model.notices.run(() => model.management.cancelGoal(goalID))}
       teamMemberSessionID={model.swarmTeam.memberSessionID()}
       selectTeamMember={model.swarmTeam.setMemberSessionID}
       teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}

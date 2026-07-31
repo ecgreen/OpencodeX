@@ -84,8 +84,8 @@ export type Executor = Schema.Schema.Type<typeof Executor>
 
 export const Loop = Schema.Struct({
   exitCheckNodeID: Schema.String,
-  maxIterations: Schema.Number,
-  iteration: Schema.Number,
+  maxIterations: Schema.Finite,
+  iteration: Schema.Finite,
   /** What the last exit check found, fed into the next iteration's prompts. */
   lastReport: Schema.optional(Schema.String),
   /** Derived from node parentage; present so clients can draw the cluster. */
@@ -111,8 +111,8 @@ export const Node = Schema.Struct({
   /** The loop this node is a body member of, when it sits inside one. */
   parentNodeID: Schema.optional(Schema.String),
   loop: Schema.optional(Loop),
-  sortOrder: Schema.Number,
-  iteration: Schema.Number,
+  sortOrder: Schema.Finite,
+  iteration: Schema.Finite,
   jobID: Schema.optional(Schema.String),
   sessionID: Schema.optional(Schema.String),
   /**
@@ -123,12 +123,12 @@ export const Node = Schema.Struct({
   result: Schema.optional(Schema.String),
   verdict: Schema.optional(Verdict),
   failureReason: Schema.optional(Schema.String),
-  attempt: Schema.Number,
-  startedAt: Schema.optional(Schema.Number),
-  completedAt: Schema.optional(Schema.Number),
+  attempt: Schema.Finite,
+  startedAt: Schema.optional(Schema.Finite),
+  completedAt: Schema.optional(Schema.Finite),
   metadata: Schema.optional(Metadata),
-  timeCreated: Schema.Number,
-  timeUpdated: Schema.Number,
+  timeCreated: Schema.Finite,
+  timeUpdated: Schema.Finite,
 }).annotate({ identifier: "OpencodeXGoalNode" })
 export type Node = Schema.Schema.Type<typeof Node>
 
@@ -141,23 +141,23 @@ export const Edge = Schema.Struct({
 export type Edge = Schema.Schema.Type<typeof Edge>
 
 export const Budget = Schema.Struct({
-  maxNodeRuns: Schema.optional(Schema.Number),
-  maxWallClockMs: Schema.optional(Schema.Number),
-  maxCostUsd: Schema.optional(Schema.Number),
+  maxNodeRuns: Schema.optional(Schema.Finite),
+  maxWallClockMs: Schema.optional(Schema.Finite),
+  maxCostUsd: Schema.optional(Schema.Finite),
 }).annotate({ identifier: "OpencodeXGoalBudget" })
 export type Budget = Schema.Schema.Type<typeof Budget>
 
 export const Spend = Schema.Struct({
-  nodeRuns: Schema.Number,
-  costUsd: Schema.Number,
+  nodeRuns: Schema.Finite,
+  costUsd: Schema.Finite,
 }).annotate({ identifier: "OpencodeXGoalSpend" })
 export type Spend = Schema.Schema.Type<typeof Spend>
 
 /** A recurring goal re-instantiates its graph on this cadence. */
 export const Schedule = Schema.Struct({
-  everyMs: Schema.Number,
-  nextRunAt: Schema.optional(Schema.Number),
-  lastRunAt: Schema.optional(Schema.Number),
+  everyMs: Schema.Finite,
+  nextRunAt: Schema.optional(Schema.Finite),
+  lastRunAt: Schema.optional(Schema.Finite),
   paused: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "OpencodeXGoalSchedule" })
 export type Schedule = Schema.Schema.Type<typeof Schedule>
@@ -181,11 +181,11 @@ export const Info = Schema.Struct({
   statusReason: Schema.optional(Schema.String),
   nodes: Schema.Array(Node),
   edges: Schema.Array(Edge),
-  startedAt: Schema.optional(Schema.Number),
-  completedAt: Schema.optional(Schema.Number),
+  startedAt: Schema.optional(Schema.Finite),
+  completedAt: Schema.optional(Schema.Finite),
   metadata: Schema.optional(Metadata),
-  timeCreated: Schema.Number,
-  timeUpdated: Schema.Number,
+  timeCreated: Schema.Finite,
+  timeUpdated: Schema.Finite,
 }).annotate({ identifier: "OpencodeXGoal" })
 export type Info = Schema.Schema.Type<typeof Info>
 
@@ -218,7 +218,7 @@ export const NodeInput = Schema.Struct({
   loop: Schema.optional(
     Schema.Struct({
       exitCheckNodeID: Schema.String,
-      maxIterations: Schema.optional(Schema.Number),
+      maxIterations: Schema.optional(Schema.Finite),
     }),
   ),
   metadata: Schema.optional(Metadata),

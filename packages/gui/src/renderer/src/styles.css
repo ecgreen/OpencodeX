@@ -185,6 +185,8 @@
 @import "./styles/pages/sessions/session-side-panel.css" layer(features);
 @import "./styles/pages/sessions/provider-states.css" layer(features);
 @import "./styles/pages/sessions/swarm-team.css" layer(features);
+@import "./styles/pages/sessions/goal-graph.css" layer(features);
+@import "./styles/pages/sessions/goal-graph-states.css" layer(states);
 @import "./styles/pages/sessions/transcript-part.css" layer(features);
 @import "./styles/pages/sessions/transcript-thinking.css" layer(features);
 @import "./styles/pages/sessions/transcript-output.css" layer(features);

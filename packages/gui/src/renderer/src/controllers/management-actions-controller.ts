@@ -23,6 +23,8 @@ import { activeSessionRouteKey } from "../lib/route-selection"
 import { runPermissionAction, sessionDirectoryForRequest } from "../lib/session-actions"
 import { createClaudeManagementActions } from "./management-claude-actions"
 import {
+  approveGoalNode,
+  cancelGoal,
   createProject,
   createSwarm,
   createView,
@@ -304,6 +306,18 @@ export function createManagementActionsController(input: {
     },
     createPinnedSession,
     createSwarm: createSwarmAction,
+    approveGoalNode: async (goalID: string, nodeID: string, approved: boolean) => {
+      const client = input.client()
+      if (!client) return
+      await approveGoalNode(client, goalID, nodeID, approved)
+      await input.refresh()
+    },
+    cancelGoal: async (goalID: string) => {
+      const client = input.client()
+      if (!client) return
+      await cancelGoal(client, goalID)
+      await input.refresh()
+    },
     launchClaudeSession: claude.launchClaudeSession,
     renameClaudeSession: claude.renameClaudeSession,
     moveClaudeSession: claude.moveClaudeSession,

@@ -103,6 +103,27 @@ import type {
   McpRemoteConfig,
   McpStatusErrors,
   McpStatusResponses,
+  OpencodexGoalCancelErrors,
+  OpencodexGoalCancelResponses,
+  OpencodexGoalCreateErrors,
+  OpencodeXGoalCreateInput,
+  OpencodexGoalCreateResponses,
+  OpencodexGoalDeleteErrors,
+  OpencodexGoalDeleteResponses,
+  OpencodexGoalGetErrors,
+  OpencodexGoalGetResponses,
+  OpencodexGoalListErrors,
+  OpencodexGoalListResponses,
+  OpencodexGoalNodeApproveErrors,
+  OpencodexGoalNodeApproveResponses,
+  OpencodexGoalPlanErrors,
+  OpencodeXGoalPlanInput,
+  OpencodexGoalPlanResponses,
+  OpencodexGoalPlanUpdateErrors,
+  OpencodexGoalPlanUpdateResponses,
+  OpencodexGoalStartErrors,
+  OpencodexGoalStartResponses,
+  OpencodeXGoalUpdatePlanInput,
   OpencodexJobCancelErrors,
   OpencodexJobCancelResponses,
   OpencodexJobClaimErrors,
@@ -4813,6 +4834,257 @@ export class Swarm extends HeyApiClient {
   }
 }
 
+export class Plan extends HeyApiClient {
+  /**
+   * Repair a running OpencodeX goal graph
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+      opencodeXGoalUpdatePlanInput?: OpencodeXGoalUpdatePlanInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "goalID" },
+            { key: "opencodeXGoalUpdatePlanInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      OpencodexGoalPlanUpdateResponses,
+      OpencodexGoalPlanUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/goal/{goalID}/plan",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Node extends HeyApiClient {
+  /**
+   * Approve or reject a goal gate
+   */
+  public approve<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+      nodeID: string
+      approved?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "goalID" },
+            { in: "path", key: "nodeID" },
+            { in: "body", key: "approved" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      OpencodexGoalNodeApproveResponses,
+      OpencodexGoalNodeApproveErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/goal/{goalID}/node/{nodeID}/approve",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Goal extends HeyApiClient {
+  /**
+   * List OpencodeX goals
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      projectID?: string
+      sessionID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "projectID" },
+            { in: "query", key: "sessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<OpencodexGoalListResponses, OpencodexGoalListErrors, ThrowOnError>({
+      url: "/experimental/opencodex/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create OpencodeX goal
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      opencodeXGoalCreateInput?: OpencodeXGoalCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "opencodeXGoalCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<OpencodexGoalCreateResponses, OpencodexGoalCreateErrors, ThrowOnError>(
+      {
+        url: "/experimental/opencodex/goal",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Delete an OpencodeX goal
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "goalID" }] }])
+    return (options?.client ?? this.client).delete<
+      OpencodexGoalDeleteResponses,
+      OpencodexGoalDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/opencodex/goal/{goalID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get OpencodeX goal
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "goalID" }] }])
+    return (options?.client ?? this.client).get<OpencodexGoalGetResponses, OpencodexGoalGetErrors, ThrowOnError>({
+      url: "/experimental/opencodex/goal/{goalID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Replace an OpencodeX goal's graph
+   */
+  public plan<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+      opencodeXGoalPlanInput?: OpencodeXGoalPlanInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "goalID" },
+            { key: "opencodeXGoalPlanInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<OpencodexGoalPlanResponses, OpencodexGoalPlanErrors, ThrowOnError>({
+      url: "/experimental/opencodex/goal/{goalID}/plan",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Start an OpencodeX goal
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "goalID" }] }])
+    return (options?.client ?? this.client).post<OpencodexGoalStartResponses, OpencodexGoalStartErrors, ThrowOnError>({
+      url: "/experimental/opencodex/goal/{goalID}/start",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel an OpencodeX goal
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      goalID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "goalID" }] }])
+    return (options?.client ?? this.client).post<OpencodexGoalCancelResponses, OpencodexGoalCancelErrors, ThrowOnError>(
+      {
+        url: "/experimental/opencodex/goal/{goalID}/cancel",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  private _plan?: Plan
+  get plan2(): Plan {
+    return (this._plan ??= new Plan({ client: this.client }))
+  }
+
+  private _node?: Node
+  get node(): Node {
+    return (this._node ??= new Node({ client: this.client }))
+  }
+}
+
 export class TerminalSession extends HeyApiClient {
   /**
    * List OpencodeX terminal sessions
@@ -5156,6 +5428,11 @@ export class Opencodex extends HeyApiClient {
   private _swarm?: Swarm
   get swarm(): Swarm {
     return (this._swarm ??= new Swarm({ client: this.client }))
+  }
+
+  private _goal?: Goal
+  get goal(): Goal {
+    return (this._goal ??= new Goal({ client: this.client }))
   }
 
   private _terminalSession?: TerminalSession
