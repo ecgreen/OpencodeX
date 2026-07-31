@@ -87,6 +87,11 @@ function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string
         showGenericToolOutput={props.page.showGenericToolOutput}
         concealCodeBlocks={props.page.concealCodeBlocks === true}
         running={node()?.status === "running"}
+        loadOlderMessages={
+          props.page.loadOlderEmbeddedMessages
+            ? (cursor) => props.page.loadOlderEmbeddedMessages!(props.sessionID, cursor)
+            : undefined
+        }
         emptyStateDismissed
       />
       <footer class="session-graph-embedded-note">

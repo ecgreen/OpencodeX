@@ -74,6 +74,9 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       }}
       teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}
       teamMemberLoading={model.authoritative.viewPaneState(model.swarmTeam.memberSessionID()).loading}
+      loadOlderEmbeddedMessages={(sessionID, cursor) =>
+        model.notices.run(() => model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
+      }
       graph={model.sessionGraph.graph()}
       openGraphTab={() => {
         const current = session()

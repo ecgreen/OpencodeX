@@ -218,8 +218,7 @@ export function createSessionHydrationController(input: {
         // design, so a session the workflow graph fetched itself counts too -
         // without that, an opened graph node loads its transcript and then
         // throws it away right here.
-        if (!input.snapshot()?.sessions.some((item) => item.id === session.id) && !isGraphVisibleSession(session.id))
-          return
+        if (!knownViewSession(session.id)) return
         input.setViewData((current) =>
           setRecordEntry(current, session.id, mergeLiveSessionData(current[session.id], data)),
         )
@@ -277,11 +276,16 @@ export function createSessionHydrationController(input: {
     input.setViewData((value) => setRecordEntry(value, sessionID, next))
   }
 
+  /** Same catalog caveat as `syncViewSession`: graph-fetched children count. */
+  const knownViewSession = (sessionID: string) =>
+    input.snapshot()?.sessions.some((session) => session.id === sessionID) === true ||
+    isGraphVisibleSession(sessionID)
+
   async function loadOlderViewSessionMessages(sessionID: string, before: string) {
-    if (!input.snapshot()?.sessions.some((session) => session.id === sessionID)) return
+    if (!knownViewSession(sessionID)) return
     const page = await fetchOlderPage(sessionID, before, VIEW_MESSAGE_PAGE_LIMIT, "view-older")
     if (!page || !input.presentation.visibleSessionIDs().includes(sessionID)) return
-    if (!input.snapshot()?.sessions.some((session) => session.id === sessionID)) return
+    if (!knownViewSession(sessionID)) return
     const current = input.viewData()[sessionID]
     if (!current) return
     batch(() => {

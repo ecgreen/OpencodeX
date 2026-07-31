@@ -60,6 +60,18 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   await expect(page.locator('.session-graph-node[data-graph-kind="join"]')).toHaveCount(1)
   expect(await page.locator(".session-graph-edge-marker").count()).toBeGreaterThan(0)
 
+  // An edge marker's tooltip needs a background of its own: the token behind it
+  // was misnamed upstream, which left every tooltip in the app transparent and
+  // unreadable over the canvas.
+  await page.locator(".session-graph-edge-marker").first().hover()
+  const tooltip = page.locator(".ui-tooltip").first()
+  await expect(tooltip).toBeVisible()
+  expect(await tooltip.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)")
+  // Move off the marker so the open tooltip is not floating over what the rest
+  // of this test needs to click.
+  await page.mouse.move(0, 0)
+  await expect(page.locator(".ui-tooltip")).toHaveCount(0)
+
   // Click a node at default zoom: the embedded transcript replaces the top
   // session's, and the way back works.
   await page.locator(".session-graph-node", { hasText: `Graph Child A ${suffix}` }).click()

@@ -20,3 +20,8 @@ export function setGraphVisibleSessions(ids: Iterable<string>) {
 export function isGraphVisibleSession(sessionID: string) {
   return graphSessionIDs.has(sessionID)
 }
+
+/** Every id the graph knows, for callers reconciling against the catalog. */
+export function graphVisibleSessionIDs(): ReadonlySet<string> {
+  return graphSessionIDs
+}

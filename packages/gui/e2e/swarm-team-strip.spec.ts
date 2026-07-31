@@ -107,11 +107,23 @@ test("switching between swarm specialists keeps the app responsive", async ({ pa
   await strip.getByRole("button", { name: /Designer/ }).click()
   await expect(page.locator(".swarm-member-pane")).toBeVisible()
   await expect(page.locator(".swarm-member-heading")).toContainText("Designer")
+  // A specialist's transcript has to actually arrive. Reconciling the catalog
+  // used to abort this load - swarm children are hidden from the catalog by
+  // design - and nothing retried, so the pane stayed blank for good.
+  await expect(page.locator(".swarm-member-pane .message").first()).toContainText(`Design pass ${suffix} step 1`)
 
   await strip.getByRole("button", { name: /Senior Engineer/ }).click()
   await expect(page.locator(".swarm-member-heading")).toContainText("Senior Engineer")
-  // Three runs, so the pane offers a run picker.
+  // Three runs, so the pane offers a run picker. It keeps clear of the way back
+  // even when the pane is narrow - a picker that cannot shrink ends up with the
+  // button sitting on top of it.
   await expect(page.locator(".swarm-member-run-select")).toBeVisible()
+  await expect(page.locator(".swarm-member-pane .message").first()).toContainText(`Module`)
+  for (const width of [1440, 900]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await memberHeaderGap(page), `run picker crowds the back button at ${width}px`).toBeGreaterThan(8)
+  }
+  await page.setViewportSize({ width: 1440, height: 960 })
 
   // Back and forth again - a switch must stay cheap however often it happens.
   await strip.getByRole("button", { name: /Designer/ }).click()
@@ -137,6 +149,15 @@ test("switching between swarm specialists keeps the app responsive", async ({ pa
   // actually about: a frozen window paints none, a healthy one paints dozens.
   expect(await paintedFrames(page, 1000)).toBeGreaterThan(20)
 })
+
+/** Pixels between the run picker's right edge and the "back" button. */
+async function memberHeaderGap(page: Page) {
+  return page.locator(".swarm-member-header").evaluate((header) => {
+    const select = header.querySelector(".swarm-member-run-select")?.getBoundingClientRect()
+    const button = [...header.querySelectorAll("button")].at(-1)?.getBoundingClientRect()
+    return select && button ? Math.round(button.left - select.right) : -1
+  })
+}
 
 /** How many frames the page manages to paint in `ms`. */
 async function paintedFrames(page: Page, ms: number) {

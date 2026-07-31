@@ -70,7 +70,7 @@ export function sessionGraphNode(input: {
   /** The session's live status event type ("busy" | "retry" | ...), if any. */
   busyType?: string
 }): SessionGraphNode {
-  const status = resolveStatus(input.item?.state, input.job, input.busyType)
+  const status = resolveStatus(input.item?.state, input.job, input.busyType, !input.root)
   return {
     id: `session:${input.session.id}`,
     kind: "session",
@@ -163,6 +163,7 @@ function resolveStatus(
   state: WorkItemState | undefined,
   job: OpencodeXJob | undefined,
   busyType?: string,
+  delegated = false,
 ): SessionGraphStatus {
   const live = state ? LIVE_STATUS[state] : undefined
   if (live) return live
@@ -173,7 +174,19 @@ function resolveStatus(
   if (terminal) return terminal
   // A finished delegation leaves its session `idle`; the job it ran under is
   // the only record that it succeeded, so it decides the badge.
-  return job ? JOB_STATUS[job.status] : "idle"
+  if (job) return JOB_STATUS[job.status]
+  // Swarm-delegated children have neither a work item nor a job - the catalog
+  // hides them, so nothing tracks them but their own session status, and that
+  // is cleared the moment they stop working. A delegated session only exists
+  // because a parent created *and* immediately prompted it, so "not running"
+  // means the delegation has returned. Reading that as `idle` was wrong twice
+  // over: the card claimed nothing had happened, and `idle` is not terminal, so
+  // the parent's merge node sat on "Waiting on branches" forever.
+  //
+  // The limitation is honest and worth stating: without a work item there is no
+  // record of *how* it ended, so a subagent that errored still reads completed.
+  // The transcript behind the node is where the failure is visible.
+  return delegated ? "completed" : "idle"
 }
 
 function roleByName(roles: SwarmRoleIndex, name: string | undefined) {

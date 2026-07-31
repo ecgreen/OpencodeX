@@ -13,7 +13,7 @@ import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
-import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { MAX_SWARM_DELEGATION_DEPTH, TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -62,10 +62,17 @@ function defer<T>() {
 
 const seed = Effect.fn("TaskToolTest.seed")(function* (
   title = "Pinned",
-  options?: { model?: { id: ProviderV2.ModelID; providerID: ProviderV2.ID } },
+  options?: {
+    model?: { id: ProviderV2.ModelID; providerID: ProviderV2.ID }
+    metadata?: Record<string, unknown>
+  },
 ) {
   const session = yield* Session.Service
-  const chat = yield* session.create({ title, ...(options?.model ? { model: options.model } : {}) })
+  const chat = yield* session.create({
+    title,
+    ...(options?.model ? { model: options.model } : {}),
+    ...(options?.metadata ? { metadata: options.metadata } : {}),
+  })
   const user = yield* session.updateMessage({
     id: MessageID.ascending(),
     role: "user",
@@ -499,7 +506,47 @@ describe("tool.task", () => {
 
       const child = yield* sessions.get(result.metadata.sessionId)
       expect(child.parentID).toBe(swarm.chat.id)
-      expect(child.metadata?.opencodex).toEqual({ swarmID: "swarm-1" })
+      // The depth rides along so membership survives past the first hop.
+      expect(child.metadata?.opencodex).toEqual({ swarmID: "swarm-1", swarmDepth: 1 })
+    }),
+  )
+
+  it.instance("carries the swarm down a multi-layer delegation, stopping at the cap", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const tools: Record<string, SessionPrompt.PromptInput["tools"]> = {}
+      // A specialist two layers down is still a member of its swarm, so it can
+      // hand work to the next layer: builder -> reviewer -> builder.
+      const middle = yield* seed("Specialist", { metadata: { opencodex: { swarmID: "swarm-1", swarmDepth: 2 } } })
+      const delegateFrom = (chat: typeof middle, key: string) =>
+        def.execute(
+          { description: "Reviewer: check the work", prompt: "hand off to the next layer", subagent_type: "general" },
+          {
+            sessionID: chat.chat.id,
+            messageID: chat.assistant.id,
+            directory: chat.chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (tools[key] = input.tools) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      const handoff = yield* delegateFrom(middle, "middle")
+      expect(tools.middle?.task).toBeUndefined()
+      const grandchild = yield* sessions.get(handoff.metadata.sessionId)
+      expect(grandchild.metadata?.opencodex).toEqual({ swarmID: "swarm-1", swarmDepth: 3 })
+
+      // At the cap the chain stops rather than recursing forever.
+      const deepest = yield* seed("Deep specialist", {
+        metadata: { opencodex: { swarmID: "swarm-1", swarmDepth: MAX_SWARM_DELEGATION_DEPTH - 1 } },
+      })
+      yield* delegateFrom(deepest, "deepest")
+      expect(tools.deepest?.task).toBe(false)
     }),
   )
 
@@ -566,7 +613,11 @@ describe("tool.task", () => {
 
       for (const result of [first, second, third]) {
         const child = yield* sessions.get(result.metadata.sessionId)
-        expect(child.metadata?.opencodex).toEqual({ swarmID: "swm_task_test", swarmRole: "Senior Engineer" })
+        expect(child.metadata?.opencodex).toEqual({
+          swarmID: "swm_task_test",
+          swarmDepth: 1,
+          swarmRole: "Senior Engineer",
+        })
       }
       expect(new Set([first, second, third].map((result) => result.metadata.sessionId)).size).toBe(3)
       // No explicit model was passed, so the role's configured model routes it.

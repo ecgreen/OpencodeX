@@ -102,11 +102,21 @@ describe("session graph status", () => {
     expect(node?.badge).toBeUndefined()
   })
 
-  test("leaves an unfinished session with no badge", () => {
+  test("the top session with nothing running is idle and unbadged", () => {
     const graph = buildSessionGraph(input({ sessions: [root(), child("child-1", "Research")] }))
-    const node = graph.nodes.find((item) => item.id === "session:child-1")
+    const node = graph.nodes.find((item) => item.id === "session:root")
     expect(node?.status).toBe("idle")
     expect(node?.badge).toBeUndefined()
+  })
+
+  test("a delegated child that is no longer working reads as returned", () => {
+    // Nothing tracks a swarm-delegated child but its own session status, which
+    // is cleared the moment it stops. It exists only because a parent created
+    // and prompted it, so "not running" means the delegation came back.
+    const graph = buildSessionGraph(input({ sessions: [root(), child("child-1", "Research")] }))
+    const node = graph.nodes.find((item) => item.id === "session:child-1")
+    expect(node?.status).toBe("completed")
+    expect(node?.badge).toBe("success")
   })
 
   test("summarizes the run for the canvas label", () => {
@@ -204,7 +214,8 @@ describe("session graph with a fetched swarm delegation tree", () => {
     })
     expect(graph.nodes.find((node) => node.id === "session:child-1")?.status).toBe("running")
     expect(graph.nodes.find((node) => node.id === "session:child-1a")?.status).toBe("running")
-    expect(graph.nodes.find((node) => node.id === "session:child-1b")?.status).toBe("idle")
+    // No live status of its own, so this branch has already reported back.
+    expect(graph.nodes.find((node) => node.id === "session:child-1b")?.status).toBe("completed")
     expect(graph.counts.running).toBe(2)
   })
 })
@@ -278,7 +289,27 @@ describe("session graph consolidation", () => {
   test("merge nodes never count as workflow steps", () => {
     const graph = buildSessionGraph(input({ sessions }))
     expect(graph.counts.total).toBe(3)
-    expect(sessionGraphSummary(graph)).toBe("Workflow graph: 3 steps")
+    expect(sessionGraphSummary(graph)).toBe("Workflow graph: 3 steps, 2 complete")
+  })
+
+  test("branches that have returned settle the merge node", () => {
+    // The whole point of the fan-in: once every branch is back, the merge reads
+    // "Merged" rather than sitting on "Waiting on branches" for the session's
+    // lifetime, which is what an `idle` child used to cause.
+    const graph = buildSessionGraph(input({ sessions }))
+    expect(graph.nodes.find((node) => node.id === "join:session:root")).toMatchObject({
+      status: "completed",
+      statusLabel: "Merged",
+      progress: { completed: 2, failed: 0, total: 2 },
+    })
+  })
+
+  test("a branch still working holds its merge node open", () => {
+    const graph = buildSessionGraph({ ...input({ sessions }), sessionStatus: { "child-2": { type: "busy" } } })
+    expect(graph.nodes.find((node) => node.id === "join:session:root")).toMatchObject({
+      status: "queued",
+      statusLabel: "Waiting on branches",
+    })
   })
 })
 

@@ -27,6 +27,9 @@ export type SessionPageProps = {
   selectTeamMember?: (sessionID: string) => void
   teamMemberData?: SessionData
   teamMemberLoading?: boolean
+  /** Pages an embedded pane back through its own history, so the delegation
+   * prompt at the top of a long specialist run stays reachable. */
+  loadOlderEmbeddedMessages?: (sessionID: string, cursor: string) => Promise<void>
   /** The session's workflow graph, for the canvas and the opened-node header. */
   graph?: SessionGraph
   /** Opens the workspace Graph tab; offered from the toolbar for any session. */

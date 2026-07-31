@@ -107,6 +107,36 @@ function errorText(error: unknown) {
   return String(error)
 }
 
+/**
+ * How many delegation hops a swarm may nest.
+ *
+ * Real graph engineering is layered: an orchestrator fans work out, a builder
+ * hands its output to a reviewer, the reviewer hands corrections back down. One
+ * hop would make every swarm a star with the orchestrator at the centre. The
+ * cap exists only so a role that delegates to itself cannot recurse forever -
+ * the orchestrator is depth 0, so this allows four layers of specialists below.
+ */
+export const MAX_SWARM_DELEGATION_DEPTH = 4
+
+/**
+ * The swarm a session belongs to, and how deep in the delegation chain it sits.
+ *
+ * The orchestrator is recognised by its model routing to the swarm facade;
+ * every session below it carries the swarm on its own metadata, which is what
+ * lets membership survive past the first hop.
+ */
+export function swarmContext(session: {
+  model?: { providerID: string; id: string } | null
+  metadata?: Record<string, unknown> | null
+}): { swarmID: string; depth: number } | undefined {
+  if (session.model?.providerID === "swarm" && session.model.id) return { swarmID: session.model.id, depth: 0 }
+  const opencodex = session.metadata?.opencodex
+  if (typeof opencodex !== "object" || opencodex === null) return undefined
+  const { swarmID, swarmDepth } = opencodex as { swarmID?: unknown; swarmDepth?: unknown }
+  if (typeof swarmID !== "string" || !swarmID) return undefined
+  return { swarmID, depth: typeof swarmDepth === "number" && swarmDepth > 0 ? swarmDepth : 1 }
+}
+
 /** A resolved swarm role's configured model, when it has a complete one. */
 function swarmRoleModel(role: { provider_id: string | null; model_id: string | null } | undefined) {
   if (!role?.provider_id || !role.model_id) return undefined
@@ -198,8 +228,12 @@ export const TaskTool = Tool.define(
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
       const parent = yield* sessions.get(ctx.sessionID)
-      const parentIsSwarm = parent.model?.providerID === "swarm"
-      const swarmRole = parentIsSwarm ? yield* resolveSwarmRole(parent.model!.id, params) : undefined
+      const swarm = swarmContext(parent)
+      // The child's own depth. Everything below keys off this rather than off
+      // "is my parent the orchestrator", so a specialist handing work to the
+      // next layer keeps its team, its roles, and its place in the graph.
+      const childDepth = swarm ? swarm.depth + 1 : 0
+      const swarmRole = swarm ? yield* resolveSwarmRole(swarm.swarmID, params) : undefined
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
@@ -211,12 +245,15 @@ export const TaskTool = Tool.define(
           // A swarm session's subtasks are its team at work; tagging them lets
           // the GUI group each child under the swarm's team view. The role is
           // resolved here rather than trusted from the model, so the same role
-          // delegated four times lands in the same bucket every time.
-          ...(parentIsSwarm
+          // delegated four times lands in the same bucket every time. The depth
+          // rides along so a hand-off two layers down is still recognisably
+          // part of this swarm.
+          ...(swarm
             ? {
                 metadata: {
                   opencodex: {
-                    swarmID: parent.model!.id,
+                    swarmID: swarm.swarmID,
+                    swarmDepth: childDepth,
                     ...(swarmRole ? { swarmRole: swarmRole.name } : {}),
                   },
                 },
@@ -278,11 +315,14 @@ export const TaskTool = Tool.define(
           agent: next.name,
           tools: {
             ...(next.permission.some((rule) => rule.permission === "todowrite") ? {} : { todowrite: false }),
-            // A swarm role must be able to fan its own work out, so a swarm
-            // session's specialists keep the task tool even when their agent
-            // does not grant it explicitly. Their own children do not inherit
-            // it, which keeps the fan-out one level deep by default.
-            ...(parentIsSwarm || next.permission.some((rule) => rule.permission === id) ? {} : { task: false }),
+            // A swarm role must be able to fan its own work out and to hand it
+            // to the next layer, so a swarm member keeps the task tool even
+            // when its agent does not grant it explicitly - up to the depth cap,
+            // past which delegation stops rather than recursing forever.
+            ...(( swarm && childDepth < MAX_SWARM_DELEGATION_DEPTH) ||
+            next.permission.some((rule) => rule.permission === id)
+              ? {}
+              : { task: false }),
             ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
           },
           parts,

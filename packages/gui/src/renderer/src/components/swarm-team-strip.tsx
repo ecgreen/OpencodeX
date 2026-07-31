@@ -38,6 +38,11 @@ export function SessionSwarmTeam(props: { page: SessionPageProps }) {
             showGenericToolOutput={props.page.showGenericToolOutput}
             concealCodeBlocks={props.page.concealCodeBlocks === true}
             select={(sessionID) => props.page.selectTeamMember?.(sessionID)}
+            loadOlderMessages={
+              props.page.loadOlderEmbeddedMessages
+                ? (cursor) => props.page.loadOlderEmbeddedMessages!(props.page.teamMemberSessionID!, cursor)
+                : undefined
+            }
           />
         )}
       </Show>
@@ -107,6 +112,7 @@ export function SwarmMemberPane(props: {
   showGenericToolOutput: boolean
   concealCodeBlocks: boolean
   select: (sessionID: string) => void
+  loadOlderMessages?: (cursor: string) => Promise<void>
 }) {
   const member = createMemo(() => props.team.members.find((item) => item.runs.some((run) => run.id === props.sessionID)))
   const run = createMemo(() => member()?.runs.find((item) => item.id === props.sessionID))
@@ -144,6 +150,7 @@ export function SwarmMemberPane(props: {
         showGenericToolOutput={props.showGenericToolOutput}
         concealCodeBlocks={props.concealCodeBlocks}
         running={run()?.busy === true}
+        loadOlderMessages={props.loadOlderMessages}
         emptyStateDismissed
       />
       <footer class="swarm-member-note">
