@@ -46,7 +46,7 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
         "The tool creates the reusable team and its roles; the swarm then appears in the model picker, and selecting it routes a session to the team.",
       ].join("\n"),
       parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           yield* ctx.ask({
             permission: "opencodex_swarm_create",
@@ -103,6 +103,6 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
             },
           }
         }),
-    } satisfies Tool.DefWithoutID<typeof Parameters, Metadata>
+    } satisfies Tool.DefWithoutID<typeof Parameters>
   }),
 )

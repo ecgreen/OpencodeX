@@ -16,7 +16,6 @@ import {
   writeSwarmRoleTemplates,
   type SwarmRoleTemplate,
 } from "../lib/swarm-role-templates"
-import type { GuiSnapshot } from "../lib/session-api"
 import { SwarmEditorTeam } from "./swarm-editor-team"
 import { SwarmPageHeader } from "./swarm-page-header"
 import { SwarmRoleModelPicker } from "./swarm-role-model-picker"
@@ -43,7 +42,7 @@ export function SwarmEditorPage(props: {
   startSession?: (swarm: OpencodeXSwarm) => void
 }) {
   const [swarmTitle, setSwarmTitle] = createSignal(props.swarm?.title ?? "")
-  const [roles, setRoles] = createSignal<OpencodeXSwarmRoleInput[]>(
+  const [roles, setRoles] = createSignal(
     props.swarm
       ? props.swarm.roles.map((role) => roleInput({
         name: role.name,

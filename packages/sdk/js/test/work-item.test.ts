@@ -42,6 +42,9 @@ describe("shared work item projection", () => {
     // An unsynced goal collection means "I cannot see it", not "it is gone" -
     // filtering on that would blank the work list on every fresh connection.
     const stranded = goalNodeJob("job-unsynced", "goal-gone")
+    // Deliberately absent, which is what an older client's state looks like -
+    // the guard under test exists precisely for that shape.
+    // oxlint-disable-next-line no-unsafe-type-assertion -- see above
     const input = { ...withJobs(stranded), goals: undefined as unknown as WorkItemProjectionInput["goals"] }
 
     expect(clientWorkItems(input, 5_000).find((item) => item.id === "job:job-unsynced")).toBeDefined()

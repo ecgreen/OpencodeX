@@ -452,11 +452,11 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(CrossSpawnSpawner.defaultLayer),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
-      // The bare goal layer, so the graph tools share this registry's database,
-      // project registry, and event bus instead of standing up their own. Its
-      // dependencies are provided after it, since a pipe applies outward.
+      // Bare layers, so the graph tools share this registry's database, project
+      // registry, and event bus instead of standing up their own. Their
+      // dependencies are provided after them, since a pipe applies outward.
       Layer.provide(OpencodeXGoal.layer),
-      Layer.provide(OpencodeXJob.defaultLayer),
+      Layer.provide(OpencodeXJob.layer),
       Layer.provide(OpencodeXProject.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
       Layer.provide(GuiBridge.defaultLayer),
