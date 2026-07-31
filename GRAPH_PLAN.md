@@ -199,7 +199,42 @@ Phases 1–2 are the same order of magnitude as the swarm-provider change was;
 phase 4 is the largest GUI piece since the views manager. Each phase ships
 alone and leaves today's behavior intact until phase 6.
 
-## 9. Risks and open questions
+## 9. What shipped, and where it departed from this plan
+
+All six phases are implemented on `task/swarm-graphs`. Five deviations are
+worth recording, because each one is a decision the plan got wrong:
+
+- **`swarm-plan-layer.ts` is not a fossil.** §2 listed it among the dead
+  legacy engine. It is live: it backs the `opencodex_swarm_create` tool. It
+  stays; the rest of the legacy engine goes.
+- **Goals ride the existing `operations` state domain**, alongside jobs and
+  swarms, rather than getting their own. A new domain would have meant a
+  thirteen-file change and five separate literal unions to keep in sync, for
+  no behavioural gain — goals *are* operations.
+- **The goal service is deliberately free of the prompt loop, and its layer
+  leaves dependencies to the caller.** The graph tools live in the tool
+  registry, which the prompt loop builds, so a service that depended on
+  prompting would be an import cycle. Node execution is registered
+  separately (`goal-runtime`). The second half matters as much: a
+  self-provided layer inside the registry stands up a *second* project
+  registry that resolves different config than the loop around it.
+- **`graph_plan` blocks by default and returns every node's report.** The
+  plan implied fire-and-forget. Blocking makes one tool call the whole
+  interaction: state the shape of the work, get all the results back. Pass
+  `wait: false` for standing goals. A `graph_status` tool was added; the
+  planner-facing `graph_report` was not — the dispatcher records results, and
+  annotation turned out to be a service concern, not a tool.
+- **A failed body node retries its loop iteration** rather than failing the
+  goal. The loop is already a bounded retry with feedback; making a body
+  failure spend an iteration reuses that instead of adding a second mechanism.
+
+Two rules are enforced rather than trusted, and both earned their tests: a
+loop never exits unverified (a check that errors, is skipped, or returns no
+verdict is a failure, not a pass), and a node's delivered prompt is persisted
+at dispatch, so auditing an output against its input never depends on
+reconstructing the prompt from a transcript.
+
+## 10. Risks and open questions
 
 - **Planner quality.** A bad graph executes badly, deterministically. Counter:
   plans are visible before dispatch (phase 1 ships inspection before
