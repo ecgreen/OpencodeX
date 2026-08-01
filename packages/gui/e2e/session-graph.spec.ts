@@ -24,13 +24,13 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
     data: { name: `Graph Project ${suffix}`, directory: fixtureDirectory, folders: [fixtureDirectory] },
   })
   expect(projectResponse.ok(), await projectResponse.text()).toBe(true)
-  const project = (await projectResponse.json()) as { id: string }
+  const project: { id: string } = await projectResponse.json()
   const sessionResponse = await request.post(`${backendURL}/experimental/opencodex/session`, {
     headers,
     data: { projectID: project.id, directory: fixtureDirectory, title: rootTitle },
   })
   expect(sessionResponse.ok(), await sessionResponse.text()).toBe(true)
-  const root = (await sessionResponse.json()) as { id: string }
+  const root: { id: string } = await sessionResponse.json()
 
   // A delegation tree: two ordinary children, and one child tagged the way
   // swarm delegations are - which the session catalog deliberately hides, so
@@ -46,7 +46,8 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
       data: { parentID: root.id, ...child },
     })
     expect(created.ok(), await created.text()).toBe(true)
-    const childID = ((await created.json()) as { id: string }).id
+    const createdChild: { id: string } = await created.json()
+    const childID = createdChild.id
     childIDs.push(childID)
     const posted = await request.post(`${backendURL}/session/${childID}/message`, {
       headers,

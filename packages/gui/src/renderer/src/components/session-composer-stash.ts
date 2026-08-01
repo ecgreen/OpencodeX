@@ -18,7 +18,7 @@ export function createComposerStashController(input: {
   flush: () => void
   resize: () => void
 }) {
-  const [stash, setStash] = createSignal<GuiPromptStashEntry[]>(readComposerStash())
+  const [stash, setStash] = createSignal(readComposerStash())
   onMount(() => onCleanup(subscribeComposerStash(setStash)))
 
   function commit(next: GuiPromptStashEntry[]) {

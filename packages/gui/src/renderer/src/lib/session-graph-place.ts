@@ -74,7 +74,7 @@ export function placeSessionTree(
     const final = index === stages.length - 1
     const reach = Math.max(...branches.map((branch) => context.depths.get(branch.via.id) ?? anchorDepth + 1))
     if (!stageMergeNeeded({ branches, final })) {
-      anchor = branches[0]!.via
+      anchor = branches[0].via
       anchorDepth = reach
       return
     }

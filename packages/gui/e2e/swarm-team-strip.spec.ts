@@ -40,7 +40,7 @@ test("switching between swarm specialists keeps the app responsive", async ({ pa
     data: { name: `Swarm Project ${suffix}`, directory: fixtureDirectory, folders: [fixtureDirectory] },
   })
   expect(projectResponse.ok(), await projectResponse.text()).toBe(true)
-  const project = (await projectResponse.json()) as { id: string }
+  const project: { id: string } = await projectResponse.json()
 
   const swarmResponse = await request.post(`${backendURL}/experimental/opencodex/swarm`, {
     headers,
@@ -55,14 +55,14 @@ test("switching between swarm specialists keeps the app responsive", async ({ pa
     },
   })
   expect(swarmResponse.ok(), await swarmResponse.text()).toBe(true)
-  const swarm = (await swarmResponse.json()) as { id: string }
+  const swarm: { id: string } = await swarmResponse.json()
 
   const sessionResponse = await request.post(`${backendURL}/experimental/opencodex/session`, {
     headers,
     data: { projectID: project.id, directory: fixtureDirectory, title: rootTitle },
   })
   expect(sessionResponse.ok(), await sessionResponse.text()).toBe(true)
-  const root = (await sessionResponse.json()) as { id: string }
+  const root: { id: string } = await sessionResponse.json()
 
   // Designer gets one run; Senior Engineer gets three, the "4x engineers" shape
   // that puts a run picker in the member pane.
@@ -81,7 +81,8 @@ test("switching between swarm specialists keeps the app responsive", async ({ pa
       },
     })
     expect(created.ok(), await created.text()).toBe(true)
-    await seedMessages(request, ((await created.json()) as { id: string }).id, child.title)
+    const createdChild: { id: string } = await created.json()
+    await seedMessages(request, createdChild.id, child.title)
   }
   await seedMessages(request, root.id, "Orchestrator")
 

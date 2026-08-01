@@ -481,9 +481,9 @@ describe("graph detail summaries", () => {
     const graph = buildSessionGraph(
       input({
         sessions: [swarmRoot(), { ...child("child-1", "Design pass"), metadata: { opencodex: { swarmID: "swarm-1", swarmRole: "Researcher" } } }],
-        swarms: [{ ...swarm(), roles: [{ ...swarm().roles[0]!, instructions }] }],
+        swarms: [{ ...swarm(), roles: [{ ...swarm().roles[0], instructions }] }],
       }),
     )
-    expect(graph.edges[0]!.detail).toBe("Own the visual language of the product.")
+    expect(graph.edges[0].detail).toBe("Own the visual language of the product.")
   })
 })
