@@ -11,13 +11,10 @@ import {
   projectTitle,
   statusColor,
   statusDot,
-  swarmDisplayPrompt,
-  swarmDisplayTimeUpdated,
-  swarmRunLabel,
   timeAgo,
   truncate,
 } from "./opencodex-operation-model"
-import { SwarmAgentCard, SwarmCard, SwarmEmptyState, SwarmNewTaskCard, SwarmTaskCard } from "./opencodex-swarm-cards"
+import { SwarmAgentCard, SwarmCard, SwarmEmptyState, SwarmNewTaskCard } from "./opencodex-swarm-cards"
 import { OpencodeXSwarmCreate } from "./opencodex-swarm-create"
 import { createOpencodeXSwarmsController } from "./opencodex-swarms-controller"
 
@@ -75,10 +72,10 @@ function OpencodeXSwarmsPage() {
                           <text fg={controller.theme.error} onMouseUp={() => void controller.removeSwarm(swarm())}>delete</text>
                         </box>
                       </box>
-                      <text fg={controller.theme.textMuted}>{projectTitle(controller.projects(), swarm().projectID)} - {swarmRunLabel(swarm())} - {timeAgo(swarmDisplayTimeUpdated(swarm()))}</text>
-                      <text fg={swarmDisplayPrompt(swarm()) ? controller.theme.text : controller.theme.textMuted}>{swarmDisplayPrompt(swarm()) ? truncate(swarmDisplayPrompt(swarm()), 48) : "No tasks yet."}</text>
+                      <text fg={controller.theme.textMuted}>{swarm().projectID ? projectTitle(controller.projects(), swarm().projectID) : "Any project"} - {timeAgo(swarm().timeUpdated)}</text>
+                      <text fg={swarm().prompt ? controller.theme.text : controller.theme.textMuted}>{swarm().prompt ? truncate(swarm().prompt, 48) : "No tasks yet."}</text>
                     </box>
-                    <SwarmNewTaskCard width={controller.cardWidth()} selected={controller.selectedRunID() === "new"} onSelect={() => controller.newTask(swarm())} />
+                    <SwarmNewTaskCard width={controller.cardWidth()} selected onSelect={() => controller.newTask(swarm())} />
                   </CardGrid>
                 )}
               </Show>
@@ -86,13 +83,6 @@ function OpencodeXSwarmsPage() {
             <Section title="Team" count={controller.current()?.roles.length} collapsible>
               <Show when={controller.current()} fallback={<EmptyRow text="Swarm not found." />}>
                 {(swarm) => <Show when={swarm().roles.length > 0} fallback={<EmptyRow text="No roles assigned to this swarm." />}><CardGrid><For each={swarm().roles}>{(role) => <SwarmAgentCard role={role} width={controller.cardWidth()} lead={isOrchestratorSwarmRole(role)} />}</For></CardGrid></Show>}
-              </Show>
-            </Section>
-            <Section title="Tasks" count={controller.currentRuns().length} collapsible action={{ label: "+ New Task", selected: controller.selectedRunID() === "new", onSelect: () => controller.newTask(controller.current()) }}>
-              <Show when={controller.current()} fallback={<EmptyRow text="Swarm not found." />}>
-                <Show when={controller.currentRuns().length > 0} fallback={<EmptyRow text="No tasks assigned yet." />}>
-                  <CardGrid><For each={controller.currentRuns()}>{(run) => <SwarmTaskCard run={run} status={controller.taskStatus(run)} width={controller.cardWidth()} selected={controller.selectedRunID() === run.id} onSelect={() => void controller.openTask(run)} />}</For></CardGrid>
-                </Show>
               </Show>
             </Section>
           </Show>

@@ -1,6 +1,7 @@
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import { projectSessions, type SessionOrderState } from "./app-session-lists"
-import { deriveSessionStatus, sessionStatusLabel } from "./session-status"
+import { deriveSessionStatus, sessionStatusLabel, type DerivedSessionStatus } from "./session-status"
+import { attentionGoals, goalHeadline } from "./goal-graph-view"
 import type { GuiSnapshot } from "./session-api"
 import { pendingViewSessions } from "./view-items"
 import { title } from "./format"
@@ -12,16 +13,107 @@ export type ProjectAttentionItem = {
   tone: "warning" | "danger" | "info"
 }
 
-export function projectSwarms(project: GuiSnapshot["projects"][number], snapshot?: GuiSnapshot) {
-  return (snapshot?.swarms ?? [])
-    .filter((swarm) => swarm.projectID === project.id)
-    .toSorted((a, b) => timeValue(b.timeUpdated) - timeValue(a.timeUpdated))
+/** Anything quieter than this reads as a project you are not working in today. */
+const QUIET_PROJECT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/** `all` is the resting state; the rest narrow the list to what a tile counts. */
+export type ProjectOverviewFilter = "all" | "attention" | "running" | "terminal"
+export type ProjectDirectorySort = "custom" | "activity" | "attention"
+
+export function projectLabel(project: GuiSnapshot["projects"][number]) {
+  return title(project.name ?? project.project.name)
+}
+
+export type ProjectSummaryGroup = "active" | "quiet"
+
+/**
+ * Everything the project rows and tiles display, derived once per project so
+ * filtering, sorting, and rendering all read the same numbers.
+ */
+export type ProjectSummary = {
+  project: GuiSnapshot["projects"][number]
+  status: DerivedSessionStatus
+  attention: ProjectAttentionItem[]
+  group: ProjectSummaryGroup
+  sessionCount: number
+  /** Sessions currently in progress, so "running" can be a count, not a flag. */
+  runningSessionCount: number
+  terminalSessionCount: number
+  viewCount: number
+  lastActivity: number
+}
+
+export function summarizeProjects(input: {
+  projects: GuiSnapshot["projects"]
+  snapshot?: GuiSnapshot
+  state?: SessionOrderState
+  now?: number
+}): ProjectSummary[] {
+  const now = input.now ?? Date.now()
+  return input.projects.map((project) => {
+    const lastActivity = projectLatestActivity(project, input.snapshot, input.state)
+    const attention = projectAttentionItems(project, input.snapshot, input.state)
+    const status = projectSessionStatus(project, input.snapshot, input.state)
+    const sessions = projectSessions(project, input.snapshot, input.state)
+    return {
+      project,
+      status,
+      attention,
+      group: attention.length > 0 || status !== "dormant" || now - lastActivity < QUIET_PROJECT_WINDOW_MS
+        ? "active"
+        : "quiet",
+      sessionCount: sessions.length,
+      runningSessionCount: sessions.filter((session) => deriveSessionStatus(input.snapshot, session) === "in_progress").length,
+      terminalSessionCount: (project.terminalSessions ?? []).length,
+      viewCount: projectViews(project, input.snapshot, input.state).length,
+      lastActivity,
+    }
+  })
+}
+
+/**
+ * Search reaches into session titles, not just the project's own name, because
+ * the thing a reader remembers is usually what they were working on.
+ */
+export function filterProjectSummaries(summaries: ProjectSummary[], query: string, filter: ProjectOverviewFilter) {
+  const text = query.trim().toLowerCase()
+  return summaries.filter((summary) => {
+    if (filter === "attention" && summary.attention.length === 0) return false
+    if (filter === "running" && summary.status !== "in_progress") return false
+    if (filter === "terminal" && summary.terminalSessionCount === 0) return false
+    if (!text) return true
+    return [
+      projectLabel(summary.project),
+      ...summary.project.folders.map((folder) => folder.path),
+      ...(summary.project.sessions ?? []).map((session) => session.title ?? ""),
+      ...(summary.project.terminalSessions ?? []).map((session) => session.title),
+    ].some((value) => value.toLowerCase().includes(text))
+  })
+}
+
+/** `custom` is the reader's own order, so it is returned untouched. */
+export function sortProjectSummaries(summaries: ProjectSummary[], sort: ProjectDirectorySort) {
+  if (sort === "activity") return summaries.toSorted((a, b) => b.lastActivity - a.lastActivity)
+  if (sort === "attention") {
+    return summaries.toSorted((a, b) =>
+      b.attention.length - a.attention.length
+      || attentionRank(b) - attentionRank(a)
+      || b.lastActivity - a.lastActivity)
+  }
+  return summaries
+}
+
+function attentionRank(summary: ProjectSummary) {
+  if (summary.attention.some((item) => item.tone === "danger")) return 3
+  if (summary.status === "input_needed") return 2
+  if (summary.status === "ready_for_review") return 1
+  return 0
 }
 
 export function projectViews(
   project: GuiSnapshot["projects"][number],
   snapshot?: GuiSnapshot,
-  state?: SessionOrderState,
+  _state?: SessionOrderState,
 ) {
   const sessionIDs = new Set(project.sessionIDs)
   const terminalSessionIDs = new Set((project.terminalSessions ?? []).map((session) => session.id))
@@ -74,6 +166,16 @@ export function projectAttentionItems(
       detail: request.questions[0]?.question ?? "Agent needs input",
       tone: "warning" as const,
     }))
+  // Gates, budget pauses, and failed goals - a standing goal has no session,
+  // so without this the project surface would never show it raising a hand.
+  const goals = attentionGoals(snapshot?.goals ?? [], project.id)
+    .filter((goal) => !(goal.ownerSessionID && attentionSessionIDs.has(goal.ownerSessionID)))
+    .map((goal) => ({
+      sessionID: goal.ownerSessionID ?? "",
+      title: title(goal.title),
+      detail: goalHeadline(goal),
+      tone: goal.status === "failed" ? ("danger" as const) : ("warning" as const),
+    }))
   const jobs = (snapshot?.jobs ?? []).flatMap((job) => {
     const sessionID = job.sessionID
     if (
@@ -92,7 +194,7 @@ export function projectAttentionItems(
       },
     ]
   })
-  return [...sessions, ...permissions, ...questions, ...jobs]
+  return [...sessions, ...permissions, ...questions, ...goals, ...jobs]
 }
 
 export function projectLatestActivity(
@@ -104,7 +206,6 @@ export function projectLatestActivity(
     0,
     ...projectSessions(project, snapshot, state).map((session) => timeValue(session.time.updated)),
     ...(project.terminalSessions ?? []).map((session) => timeValue(session.timeUpdated)),
-    ...projectSwarms(project, snapshot).map((swarm) => timeValue(swarm.timeUpdated)),
     ...projectViews(project, snapshot).map((view) => timeValue(view.timeUpdated)),
     timeValue(project.project.time?.updated),
   )

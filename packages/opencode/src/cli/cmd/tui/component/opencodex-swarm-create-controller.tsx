@@ -14,9 +14,9 @@ import { useTuiConfig } from "../context/tui-config"
 import { useBindings } from "../keymap"
 import { getScrollAcceleration } from "../util/scroll"
 import { useOxSidebar } from "./opencodex-sidebar"
-import { projectTitle, swarmLeadRole, swarmSpecialistRoles } from "./opencodex-operation-model"
+import { modelVariants, swarmLeadRole, swarmSpecialistRoles } from "./opencodex-operation-model"
 import { swarmRouteBindingCommands } from "./opencodex-operation-bindings"
-import type { ModelSelection, OpencodeXProject, OpencodeXSwarm, SwarmRoleDraft, SwarmRolePreset } from "./opencodex-operations-types"
+import type { ModelSelection, OpencodeXSwarm, SwarmRoleDraft, SwarmRolePreset } from "./opencodex-operations-types"
 import { createRoleDraft, ORCHESTRATOR_PRESET, roleDraftFromSwarmRole, roleInstructions, SWARM_ROLE_PRESETS } from "./opencodex-swarm-role-model"
 
 export function createOpencodeXSwarmCreateController() {
@@ -29,11 +29,9 @@ export function createOpencodeXSwarmCreateController() {
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
   const [, setOxSidebarOpen] = useOxSidebar()
-  const [projects] = createResource(() => sdk.request<OpencodeXProject[]>("/experimental/opencodex/project"))
   const editSwarmID = createMemo(() => route.data.type === "opencodex-swarm-create" ? route.data.swarmID : undefined)
   const [editSwarm] = createResource(editSwarmID, (swarmID) => swarmID ? sdk.request<OpencodeXSwarm>(`/experimental/opencodex/swarm/${swarmID}`) : undefined)
   const initialModel = local.model.current()
-  const [projectID, setProjectID] = createSignal<string>()
   const [title, setTitle] = createSignal("")
   const [orchestrator, setOrchestrator] = createSignal(createRoleDraft(ORCHESTRATOR_PRESET, initialModel))
   const [roles, setRoles] = createSignal<SwarmRoleDraft[]>([])
@@ -49,14 +47,19 @@ export function createOpencodeXSwarmCreateController() {
   const selectedRoles = createMemo(roles)
   const availableRoles = createMemo(() => SWARM_ROLE_PRESETS)
   const editorItems = createMemo(() => [
-    ...(!editing() ? [{ id: "project", action: selectProject }] : []),
     { id: "title", action: editTitle },
     { id: "orchestrator-name", action: editOrchestratorName },
     { id: "orchestrator-model", action: () => selectModel("orchestrator") },
+    ...(roleVariants(orchestrator()).length > 0
+      ? [{ id: "orchestrator-effort", action: () => selectEffort("orchestrator") }]
+      : []),
     { id: "orchestrator-instructions", action: () => editInstructions("orchestrator") },
     ...roles().flatMap((role) => [
       { id: `role:${role.draftID}`, action: () => editInstructions(role.draftID) },
       { id: `role-model:${role.draftID}`, action: () => selectModel(role.draftID) },
+      ...(roleVariants(role).length > 0
+        ? [{ id: `role-effort:${role.draftID}`, action: () => selectEffort(role.draftID) }]
+        : []),
       { id: `role-instructions:${role.draftID}`, action: () => editInstructions(role.draftID) },
       { id: `role-remove:${role.draftID}`, action: () => removeRole(role.draftID) },
     ]),
@@ -75,7 +78,6 @@ export function createOpencodeXSwarmCreateController() {
     const swarm = editSwarm()
     if (!swarm || initializedSwarmID() === swarm.id) return
     const lead = swarmLeadRole(swarm.roles)
-    setProjectID(swarm.projectID)
     setTitle(swarm.title)
     setOrchestrator(lead ? roleDraftFromSwarmRole(lead) : createRoleDraft(ORCHESTRATOR_PRESET, initialModel))
     setRoles(swarmSpecialistRoles(swarm.roles).map(roleDraftFromSwarmRole))
@@ -109,26 +111,6 @@ export function createOpencodeXSwarmCreateController() {
 
   function cancelCreate() {
     route.back(editSwarmID() ? { type: "opencodex-swarms", swarmID: editSwarmID() } : { type: "opencodex-dashboard" })
-  }
-
-  function selectProject() {
-    const list = projects() ?? []
-    if (list.length === 0) return
-    dialog.replace(() => (
-      <DialogSelect
-        title="Swarm project"
-        options={list.map((project) => ({
-          title: projectTitle(list, project.id),
-          value: project.id,
-          footer: project.project.worktree,
-          onSelect: () => {
-            setProjectID(project.id)
-            dialog.clear()
-          },
-        }))}
-        current={projectID()}
-      />
-    ))
   }
 
   function selectAgentRole() {
@@ -168,7 +150,8 @@ export function createOpencodeXSwarmCreateController() {
     if (instructions === null) return
     const nextRoles = [...roles(), { ...createRoleDraft(preset, model), customInstructions: instructions }]
     setRoles(nextRoles)
-    setSelected(5 + nextRoles.length * 4)
+    // Land on the add-agent card, wherever the fields above put it.
+    setSelected(Math.max(0, editorItems().findIndex((item) => item.id === "add-agent")))
   }
 
   async function editTitle() {
@@ -198,7 +181,34 @@ export function createOpencodeXSwarmCreateController() {
   function selectModel(roleID: string) {
     const role = roleID === "orchestrator" ? orchestrator() : roles().find((item) => item.draftID === roleID)
     if (!role) return
-    dialog.replace(() => <DialogModel current={role.providerID && role.modelID ? { providerID: role.providerID, modelID: role.modelID } : undefined} onSelect={(model) => updateRole(roleID, (item) => ({ ...item, providerID: model.providerID, modelID: model.modelID }))} />)
+    // A variant belongs to the model it was picked for, so changing the model
+    // resets the effort to that model's default.
+    dialog.replace(() => <DialogModel current={role.providerID && role.modelID ? { providerID: role.providerID, modelID: role.modelID } : undefined} onSelect={(model) => updateRole(roleID, (item) => ({ ...item, providerID: model.providerID, modelID: model.modelID, variant: undefined }))} />)
+  }
+
+  function roleVariants(role: SwarmRoleDraft) {
+    return modelVariants(sync.data.provider, role)
+  }
+
+  /** The effort level (model variant) this role runs at. */
+  function selectEffort(roleID: string) {
+    const role = roleID === "orchestrator" ? orchestrator() : roles().find((item) => item.draftID === roleID)
+    if (!role) return
+    const options = ["default", ...roleVariants(role)]
+    dialog.replace(() => (
+      <DialogSelect
+        title={`${role.name} effort`}
+        options={options.map((value) => ({
+          title: value === "default" ? "Default" : value,
+          value,
+          onSelect: () => {
+            updateRole(roleID, (item) => ({ ...item, variant: value === "default" ? undefined : value }))
+            dialog.clear()
+          },
+        }))}
+        current={role.variant ?? "default"}
+      />
+    ))
   }
 
   async function editInstructions(roleID: string) {
@@ -218,11 +228,6 @@ export function createOpencodeXSwarmCreateController() {
       await DialogAlert.show(dialog, "Edit Swarm", "Swarm config is still loading.")
       return
     }
-    const project = projectID()
-    if (!project && !editing()) {
-      await DialogAlert.show(dialog, "Create Swarm", "Select an OpencodeX project first.")
-      return
-    }
     const lead = orchestrator()
     if (!lead.providerID || !lead.modelID) {
       await DialogAlert.show(dialog, editing() ? "Edit Swarm" : "Create Swarm", "Select the orchestrator model first.")
@@ -239,11 +244,12 @@ export function createOpencodeXSwarmCreateController() {
     setCreating(true)
     const payload = {
       title: title().trim() || undefined,
-      roles: [lead, ...selectedRoles()].map((role) => ({ name: role.name, skill: role.skill, providerID: role.providerID, modelID: role.modelID, instructions: roleInstructions(role) })),
+      roles: [lead, ...selectedRoles()].map((role) => ({ name: role.name, skill: role.skill, providerID: role.providerID, modelID: role.modelID, variant: role.variant, instructions: roleInstructions(role) })),
     }
     const swarm = await (editing() && editSwarmID()
       ? sdk.request<OpencodeXSwarm>(`/experimental/opencodex/swarm/${editSwarmID()}`, { method: "PATCH", body: JSON.stringify(payload) })
-      : sdk.request<OpencodeXSwarm>("/experimental/opencodex/swarm", { method: "POST", body: JSON.stringify({ projectID: project, ...payload }) }))
+      // A swarm is a model, not a project resource - it needs no project.
+      : sdk.request<OpencodeXSwarm>("/experimental/opencodex/swarm", { method: "POST", body: JSON.stringify(payload) }))
       .catch((error: Error) => void DialogAlert.show(dialog, editing() ? "Edit Swarm" : "Create Swarm", error.message))
     setCreating(false)
     if (swarm) route.navigate({ type: "opencodex-swarms", swarmID: swarm.id })
@@ -270,8 +276,8 @@ export function createOpencodeXSwarmCreateController() {
   }))
 
   return {
-    sync, route, theme, projects, projectID, title, orchestrator, roles, selectedRoles, availableRoles, editing, creating,
-    promptMaxWidth, scrollAcceleration, isSelected, selectProject, editTitle, editOrchestratorName, selectModel,
+    sync, route, theme, title, orchestrator, roles, selectedRoles, availableRoles, editing, creating,
+    promptMaxWidth, scrollAcceleration, isSelected, editTitle, editOrchestratorName, selectModel, selectEffort,
     editInstructions, removeRole, addAgent, saveSwarm, cancelCreate,
   }
 }

@@ -74,9 +74,21 @@
   }
 }
 
+/*
+ * The row keeps its action column when it narrows; it is the meta that gives
+ * way, dropping under the name rather than squeezing it.
+ */
 @media (max-width:1180px) {
-  .project-directory-row {
-    grid-template-columns: 1fr;
+  .project-directory-open {
+    grid-template-columns: auto minmax(0,1fr);
+    row-gap: var(--ds-space-1);
+  }
+}
+
+@media (max-width:1180px) {
+  .project-directory-meta {
+    grid-column: 2;
+    justify-content: flex-start;
   }
 }
 
@@ -86,11 +98,6 @@
   }
 }
 
-@media (max-width:1180px) {
-  .project-directory-actions {
-    justify-content: flex-start;
-  }
-}
 
 @media (max-width:760px) {
   .project-directory-header {

@@ -70,6 +70,8 @@ export function applyClientStateSnapshot(
   const questions = reconcileEntities(previous.questions, catalog.questions, (item) => item.id)
   const jobs = reconcileEntities(previous.jobs, snapshot.payloads.operations.jobs, (item) => item.id)
   const swarms = reconcileEntities(previous.swarms, snapshot.payloads.operations.swarms, (item) => item.id)
+  // Tolerated as absent so a client can outrun a server that predates goals.
+  const goals = reconcileEntities(previous.goals, snapshot.payloads.operations.goals ?? [], (item) => item.id)
   const knownSessionIDs = collectKnownSessionIDs(paged.sessions, paged.projects, paged.views)
   return {
     ...paged,
@@ -85,6 +87,7 @@ export function applyClientStateSnapshot(
     questions,
     jobs,
     swarms,
+    goals,
     sessionStatus: reconcileRecord(previous.sessionStatus, catalog.sessionStatus),
     sessionUiState: mergeRecord(paged.sessionUiState, catalog.sessionUiState),
     dirtyCatalog: false,
@@ -108,11 +111,20 @@ export function applyClientOperationsSnapshot(
     return current
   const jobs = reconcileEntities(current.jobs, snapshot.payload.jobs, (item) => item.id)
   const swarms = reconcileEntities(current.swarms, snapshot.payload.swarms, (item) => item.id)
-  if (jobs === current.jobs && swarms === current.swarms && !current.dirtyOperations && !current.error) return current
+  const goals = reconcileEntities(current.goals, snapshot.payload.goals ?? [], (item) => item.id)
+  if (
+    jobs === current.jobs &&
+    swarms === current.swarms &&
+    goals === current.goals &&
+    !current.dirtyOperations &&
+    !current.error
+  )
+    return current
   return {
     ...current,
     jobs,
     swarms,
+    goals,
     dirtyOperations: false,
     error: undefined,
   }
@@ -438,6 +450,7 @@ export function selectClientOperationsSnapshot(state: ClientStateSyncState) {
   return {
     jobs: state.jobs.ids.flatMap((id) => state.jobs.records[id] ?? []),
     swarms: state.swarms.ids.flatMap((id) => state.swarms.records[id] ?? []),
+    goals: state.goals.ids.flatMap((id) => state.goals.records[id] ?? []),
   }
 }
 
@@ -458,6 +471,7 @@ export function emptyClientStateSyncState(): ClientStateSyncState {
     questions: emptyEntities(),
     jobs: emptyEntities(),
     swarms: emptyEntities(),
+    goals: emptyEntities(),
     sessionStatus: {},
     sessionUiState: {},
     sessionDetails: {},

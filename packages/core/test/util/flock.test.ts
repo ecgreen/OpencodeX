@@ -213,6 +213,74 @@ describe("util.flock", () => {
     expect(hit).toBe(true)
   }, 20_000)
 
+  test("reclaims a crashed owner before its heartbeat goes stale", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:dead-owner"
+    const ready = path.join(tmp.path, "ready")
+    const proc = spawnWorker({
+      key,
+      dir,
+      ready,
+      holdMs: 120_000,
+      staleMs: 60_000,
+      timeoutMs: 30_000,
+    })
+
+    await wait(ready, 5_000)
+    await stopWorker(proc)
+    await new Promise((resolve) => proc.on("close", resolve))
+
+    // The owner died a moment ago, so its heartbeat is still fresh: only the
+    // dead pid in meta.json can tell us the lock is free. A contender whose
+    // timeout is far shorter than staleMs must still get in.
+    let hit = false
+    await Flock.withLock(
+      key,
+      async () => {
+        hit = true
+      },
+      {
+        dir,
+        staleMs: 60_000,
+        timeoutMs: 3_000,
+      },
+    )
+
+    expect(hit).toBe(true)
+  }, 20_000)
+
+  test("leaves a live owner's lock alone when its pid is still running", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:live-owner"
+    const ready = path.join(tmp.path, "ready")
+    const proc = spawnWorker({
+      key,
+      dir,
+      ready,
+      holdMs: 20_000,
+      staleMs: 60_000,
+      timeoutMs: 30_000,
+    })
+
+    try {
+      await wait(ready, 5_000)
+      const err = await Flock.withLock(key, async () => {}, {
+        dir,
+        staleMs: 60_000,
+        timeoutMs: 1_000,
+      }).catch((err) => err)
+
+      expect(err).toBeInstanceOf(Error)
+      if (!(err instanceof Error)) throw err
+      expect(err.message).toContain("Timed out waiting for lock")
+    } finally {
+      await stopWorker(proc).catch(() => undefined)
+      await new Promise((resolve) => proc.on("close", resolve))
+    }
+  }, 15_000)
+
   test("breaks stale lock dirs when heartbeat is missing", async () => {
     await using tmp = await tmpdir()
     const dir = path.join(tmp.path, "locks")

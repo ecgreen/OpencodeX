@@ -43,10 +43,10 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
       description: [
         "Create an OpenCodeX swarm team for complex work that benefits from multiple specialist roles.",
         "Use this when the user asks to create, plan, delegate, or set up a reusable swarm/team.",
-        "The tool creates the reusable team and planned roles; the user can start one or more runs from the teams view.",
+        "The tool creates the reusable team and its roles; the swarm then appears in the model picker, and selecting it routes a session to the team.",
       ].join("\n"),
       parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           yield* ctx.ask({
             permission: "opencodex_swarm_create",
@@ -68,27 +68,12 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
           const bySession = available.find((project) =>
             project.sessions.some((session) => session.id === ctx.sessionID),
           )
+          // A swarm is a model, not a project resource: a matching project just
+          // becomes its default workspace, and creating without one is fine.
           const project = byID ?? byName ?? bySession ?? (available.length === 1 ? available[0] : undefined)
 
-          if (!project) {
-            return {
-              title: "Project required",
-              output:
-                available.length === 0
-                  ? "No OpenCodeX projects exist yet. Create an OpenCodeX project before creating a swarm."
-                  : [
-                      "Choose an OpenCodeX project before creating a swarm.",
-                      "Available projects:",
-                      ...available.map(
-                        (item) => `- ${item.id}: ${item.name ?? item.project.name ?? item.project.worktree}`,
-                      ),
-                    ].join("\n"),
-              metadata: {},
-            }
-          }
-
           const created = yield* swarms.create({
-            projectID: project.id,
+            projectID: project?.id,
             title: params.title,
             prompt: params.prompt,
             source: "manual",
@@ -106,18 +91,18 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
             output: [
               `Created OpenCodeX swarm team "${created.title}".`,
               `Team ID: ${created.id}`,
-              `Project: ${project.name ?? project.project.name ?? project.project.worktree}`,
+              ...(project ? [`Project: ${project.name ?? project.project.name ?? project.project.worktree}`] : []),
               `Roles: ${created.roles.map((role) => role.name).join(", ")}`,
               "",
-              "Open the teams dashboard to inspect it or start a run.",
+              "Pick this team in the model selector to run a session on it, or open the swarms page to edit its roles.",
             ].join("\n"),
             metadata: {
               swarmID: created.id,
-              projectID: project.id,
+              ...(project ? { projectID: project.id } : {}),
               roleCount: created.roles.length,
             },
           }
         }),
-    } satisfies Tool.DefWithoutID<typeof Parameters, Metadata>
+    } satisfies Tool.DefWithoutID<typeof Parameters>
   }),
 )

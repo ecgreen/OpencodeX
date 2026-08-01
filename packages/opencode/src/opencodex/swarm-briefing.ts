@@ -65,6 +65,11 @@ export function buildSwarmBriefing(input: BriefingInput): string | undefined {
     "- Run independent roles in parallel by making several calls in one turn; sequence only where outputs depend on each other.",
     "- When one role's work splits cleanly, delegate that role several times in parallel - each call runs a fresh copy of the role (for example, four engineers on four independent modules).",
     "- Design the workflow in layers, not a single fan-out: a specialist may delegate onward to the next role itself (a builder handing its output to a reviewer, a reviewer handing corrections back to a builder). Say so in the prompt when you want a role to hand off, and it will.",
+    // The three lines above describe shapes the orchestrator drives call by
+    // call, which is fine for small work. Past a few steps it should state the
+    // shape once and let the graph run it, which is also what makes the plan
+    // visible to the user rather than implied by the order calls happen to land.
+    "- For work with several parts, prefer the graph_plan tool: declare the whole task graph once and the team is delegated automatically, in parallel where the graph allows, with loops that repeat until their check passes.",
     "- Synthesize the team's results yourself: reconcile conflicts, state decisions, risks, and next actions in your final reply.",
     "- Skip delegation entirely when the request is trivial or conversational.",
     "</swarm-briefing>",

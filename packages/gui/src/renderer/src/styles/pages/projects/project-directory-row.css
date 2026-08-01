@@ -1,14 +1,36 @@
+/*
+ * The row is a status card: the whole open target is one button, the actions
+ * sit outside it, and the status class supplies the tint and the left edge.
+ */
 .project-directory-row {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(260px,1.45fr) minmax(220px,.9fr) auto;
+  grid-template-columns: minmax(0,1fr) auto;
   align-items: center;
-  gap: 14px;
+  gap: var(--ds-space-3);
   min-width: 0;
-  padding: 12px 14px;
+  padding: var(--ds-space-3) var(--ds-space-4);
   border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--card-accent,transparent);
+  border-radius: 0;
   background: transparent;
+  transition: opacity var(--ds-motion-hover) ease,background var(--ds-motion-control) ease,border-color var(--ds-motion-control) ease,box-shadow var(--ds-motion-control) var(--ds-ease-enter);
+}
+
+/* The row owns the corner markers now that it is not a dashboard card. */
+.project-directory-row .status-glyph {
+  right: var(--ds-space-3);
+  bottom: var(--ds-space-2);
+}
+
+.project-directory-row .mini-spinner {
+  position: absolute;
+  top: var(--ds-space-2);
+  right: var(--ds-space-3);
+}
+
+.project-directory-row.reorderable {
   cursor: grab;
-  transition: opacity .14s ease,transform .18s cubic-bezier(.16,1,.3,1),background .16s ease,box-shadow .18s cubic-bezier(.16,1,.3,1);
 }
 
 .project-directory-row.moving-up {
@@ -19,73 +41,11 @@
   animation: view-row-move-down .34s ease;
 }
 
-.project-directory-drop-placeholder {
-  display: grid;
-  min-height: 58px;
-  border: 1px solid color-mix(in srgb,var(--primary) 26%,var(--border-subtle));
-  border-left: 3px solid var(--primary);
-  background: linear-gradient(90deg,color-mix(in srgb,var(--primary) 9%,transparent),var(--theme-overlay-subtle));
-  box-shadow: inset 0 0 0 1px var(--theme-overlay-subtle),0 10px 26px var(--theme-shadow-soft);
-  transition: height .18s cubic-bezier(.16,1,.3,1),opacity .14s ease,transform .18s cubic-bezier(.16,1,.3,1);
-}
-
-.project-directory-drag-preview {
-  position: fixed;
-  z-index: 10000;
-  display: grid;
-  grid-template-columns: 30px minmax(0,1fr) auto;
-  align-items: center;
-  gap: 10px 14px;
-  max-width: calc(100vw - 24px);
-  padding: 12px 14px;
-  pointer-events: none;
-  -webkit-user-select: none;
-  user-select: none;
-  border: 1px solid color-mix(in srgb,var(--primary) 32%,var(--border));
-  border-left: 3px solid var(--primary);
-  color: var(--text);
-  background: color-mix(in srgb,var(--panel) 88%,var(--theme-canvas) 12%);
-  box-shadow: 0 18px 44px var(--theme-shadow-medium),0 0 0 1px var(--theme-overlay-subtle) inset;
-}
-
-.project-directory-drag-preview strong {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.project-directory-drag-preview small {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: color-mix(in srgb,var(--text) 70%,var(--muted));
-  font-size: 11px;
-}
-
-.project-directory-drag-preview .project-directory-meta span {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: color-mix(in srgb,var(--text) 70%,var(--muted));
-  font-size: 11px;
-}
-
-.project-directory-drag-preview .project-directory-meta {
-  justify-content: flex-end;
-}
-
 .project-directory-open {
   display: grid;
-  grid-template-columns: 30px minmax(0,1fr);
+  grid-template-columns: auto minmax(0,1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--ds-space-3);
   min-width: 0;
   padding: 0;
   border: 0;
@@ -94,13 +54,137 @@
   background: transparent;
 }
 
-.project-directory-icon {
+.project-directory-identity {
   display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  color: var(--primary);
-  background: var(--bg);
+  gap: var(--ds-space-0);
+  min-width: 0;
+}
+
+.project-directory-name {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.project-directory-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.project-directory-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
+  font-family: var(--ds-font-technical);
+}
+
+.project-directory-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ds-space-3);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.project-directory-meta-terminal {
+  color: var(--purple);
+}
+
+/* Quiet until the row is the one being looked at; see the states sheet. */
+.project-directory-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-0);
+  opacity: 0;
+  transition: opacity var(--ds-motion-hover) ease;
+}
+
+.project-directory-divider {
+  margin: 0;
+  padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-subtle);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase;
+}
+
+.project-directory-skeleton {
+  display: grid;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3) var(--ds-space-4);
+}
+
+.project-directory-skeleton .ui-skeleton {
+  height: var(--ds-space-9);
+}
+
+.project-directory-drop-placeholder {
+  display: grid;
+  min-height: var(--ds-space-9);
+  border: 1px solid color-mix(in srgb,var(--primary) 26%,var(--border-subtle));
+  border-left: 3px solid var(--primary);
+  background: linear-gradient(90deg,color-mix(in srgb,var(--primary) 9%,transparent),var(--theme-overlay-subtle));
+  box-shadow: inset 0 0 0 1px var(--theme-overlay-subtle);
+  transition: height var(--ds-motion-control) var(--ds-ease-enter),opacity var(--ds-motion-hover) ease;
+}
+
+.project-directory-drag-preview {
+  position: fixed;
+  z-index: 10000;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: var(--ds-space-3);
+  max-width: calc(100vw - var(--ds-space-6));
+  padding: var(--ds-space-3) var(--ds-space-4);
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  border: 1px solid color-mix(in srgb,var(--primary) 32%,var(--border));
+  border-left: 3px solid var(--primary);
+  border-radius: var(--ds-radius-card);
+  color: var(--text);
+  background: color-mix(in srgb,var(--panel) 88%,var(--theme-canvas) 12%);
+  box-shadow: var(--ds-elevation-modal);
+}
+
+.project-directory-drag-preview strong {
+  overflow: hidden;
+  display: block;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-base);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.project-directory-drag-preview small {
+  overflow: hidden;
+  display: block;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
+  font-family: var(--ds-font-technical);
 }

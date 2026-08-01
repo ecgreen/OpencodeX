@@ -1,22 +1,81 @@
 .project-directory-header p:not(.eyebrow) {
-  margin: 8px 0 0;
+  margin: var(--ds-space-2) 0 0;
   max-width: 68ch;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
 }
 
 .project-home-header p:not(.eyebrow) {
-  margin: 8px 0 0;
+  margin: var(--ds-space-2) 0 0;
   max-width: 68ch;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
 }
 
-.project-summary-item[data-tone=warning] {
-  border-color: color-mix(in srgb,var(--warning) 42%,var(--border));
-  background: color-mix(in srgb,var(--warning) 8%,var(--theme-surface));
+/*
+ * A tile is a filter, so it carries its tone only where the tone means
+ * something: the label, the value, and the edge it lights up when selected.
+ */
+.project-summary-item[data-metric=warning] .project-summary-label,
+.project-summary-item[data-metric=warning] strong {
+  color: var(--warning);
+}
+
+.project-summary-item[data-metric=danger] .project-summary-label,
+.project-summary-item[data-metric=danger] strong {
+  color: var(--danger);
+}
+
+.project-summary-item[data-metric=info] .project-summary-label,
+.project-summary-item[data-metric=info] strong {
+  color: var(--info);
+}
+
+.project-summary-item[data-metric=special] .project-summary-label,
+.project-summary-item[data-metric=special] strong {
+  color: var(--purple);
+}
+
+/* `:enabled` keeps the read-only div variant of the tile out of hover styling. */
+.project-summary-item:enabled:hover {
+  border-color: color-mix(in srgb,var(--border-active) 60%,transparent);
+  background: var(--surface-raised);
+}
+
+.project-summary-item:disabled {
+  opacity: .5;
+}
+
+.project-summary-item[aria-pressed=true] {
+  border-color: color-mix(in srgb,var(--primary) 46%,var(--border));
+  background: color-mix(in srgb,var(--primary) 9%,var(--theme-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--primary) 22%,transparent);
+}
+
+.project-summary-item[aria-pressed=true][data-metric=warning] {
+  border-color: color-mix(in srgb,var(--warning) 52%,var(--border));
+  background: color-mix(in srgb,var(--warning) 10%,var(--theme-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--warning) 24%,transparent);
+}
+
+.project-summary-item[aria-pressed=true][data-metric=danger] {
+  border-color: color-mix(in srgb,var(--danger) 52%,var(--border));
+  background: color-mix(in srgb,var(--danger) 10%,var(--theme-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--danger) 24%,transparent);
+}
+
+.project-summary-item[aria-pressed=true][data-metric=info] {
+  border-color: color-mix(in srgb,var(--info) 52%,var(--border));
+  background: color-mix(in srgb,var(--info) 10%,var(--theme-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--info) 24%,transparent);
+}
+
+.project-summary-item[aria-pressed=true][data-metric=special] {
+  border-color: color-mix(in srgb,var(--purple) 52%,var(--border));
+  background: color-mix(in srgb,var(--purple) 10%,var(--theme-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--purple) 24%,transparent);
 }
 
 .project-home-session-panel>header button:hover {

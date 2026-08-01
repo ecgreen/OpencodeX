@@ -29,7 +29,9 @@ export const planLayer = Layer.effect(
     const projects = yield* OpencodeXProject.Service
 
     const create = Effect.fn("OpencodeXSwarmPlan.create")(function* (input: CreateInput) {
-      yield* projects.get(input.projectID)
+      // A project is an optional default workspace, not a requirement - a
+      // swarm is a model, usable from any session's model picker.
+      if (input.projectID) yield* projects.get(input.projectID)
       const swarmID = `swm_${Identifier.ascending()}`
       const now = Date.now()
       const prompt = input.prompt?.trim() ?? ""
@@ -45,7 +47,7 @@ export const planLayer = Layer.effect(
                 .insert(OpencodeXSwarmTable)
                 .values({
                   id: swarmID,
-                  opencodex_project_id: input.projectID,
+                  opencodex_project_id: input.projectID ?? null,
                   title,
                   prompt,
                   status: "planned",
@@ -69,6 +71,7 @@ export const planLayer = Layer.effect(
                       skill: role.skill,
                       provider_id: role.providerID,
                       model_id: role.modelID,
+                      variant: role.variant,
                       model_profile: role.modelProfile,
                       status: "planned",
                       instructions: role.instructions,

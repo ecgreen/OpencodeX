@@ -38,6 +38,7 @@ export function roleDraftFromSwarmRole(role: OpencodeXSwarmRole): SwarmRoleDraft
   return {
     draftID: role.id,
     name: role.name,
+    variant: role.variant,
     skill: role.skill ?? role.agent ?? role.name.trim().toLowerCase().replace(/\s+/g, "-"),
     description: role.instructions,
     customInstructions: role.instructions,

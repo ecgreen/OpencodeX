@@ -19,6 +19,7 @@ import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
+import { SessionGoalGraph } from "./session-goal-graph"
 import { SessionSwarmTeam } from "./swarm-team-strip"
 import { SessionGraphSurface } from "./session-graph-surface"
 import { createSessionModelController } from "./session-model-controller"
@@ -265,9 +266,13 @@ export function SessionPage(props: SessionPageProps) {
       </Show>
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
         <div class="session-workspace">
-          <SessionSwarmTeam page={props} />
+          <Show when={props.goal} fallback={<SessionSwarmTeam page={props} />}>
+            <SessionGoalGraph page={props} />
+          </Show>
+          {/* Orthogonal to the strip above: this is the pane a graph node opens
+              into, and it renders nothing until one is selected. */}
           <SessionGraphSurface page={props} />
-          <Show when={!(props.team && props.teamMemberSessionID) && !props.graphNodeSessionID}>
+          <Show when={!((props.team || props.goal) && props.teamMemberSessionID) && !props.graphNodeSessionID}>
           <TranscriptPanel
             sessionID={transcriptSessionID()}
             data={props.data}

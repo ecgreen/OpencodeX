@@ -27,6 +27,12 @@ describe("swarm briefing", () => {
     expect(briefing).not.toContain('- Orchestrator;')
   })
 
+  test("teaches the orchestrator to plan a graph once work has several parts", () => {
+    const briefing = buildSwarmBriefing({ swarmID: "swm_1", title: "Feature Team", roles })!
+    expect(briefing).toContain("prefer the graph_plan tool")
+    expect(briefing).toContain("loops that repeat until their check passes")
+  })
+
   test("an orchestrator-only swarm is told to work alone", () => {
     const briefing = buildSwarmBriefing({ swarmID: "swm_1", title: "Solo", roles: roles.slice(0, 1) })!
     expect(briefing).toContain("no specialist roles configured")

@@ -3,13 +3,12 @@ import type { OpencodeXTerminalSession, Session } from "@opencode-ai/sdk/v2/clie
 import type { AttentionItem, WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { compactPath, title } from "../lib/format"
-import { projectSessions, type SessionOrderState } from "../lib/app-session-lists"
-import { projectSwarms, projectViews } from "../lib/project-summary"
+import { type SessionOrderState } from "../lib/app-session-lists"
 import { type GuiSnapshot } from "../lib/session-api"
 import { StatusPill } from "./status-pill"
 import { CardActionMenu } from "./card-action-menu"
 import { ProjectCommandCenter } from "./project-command-center"
-import { ProjectsOverview, projectLabel } from "./project-directory"
+import { ProjectsOverview } from "./project-directory"
 
 export function SessionCollectionPage(props: {
   sessions: Session[]
@@ -160,11 +159,15 @@ export function ProjectCollectionPage(props: {
   openView: (viewID: string) => void
   openSwarm: (swarmID: string) => void
   createSession: (projectID?: string, directory?: string) => void
-  createSwarm: (projectID: string) => void
+  launchClaudeSession: (projectID: string, directory: string) => void
   createProjectView: (projectID: string, sessionIDs: string[]) => void
   createProject: () => void
   editProject: (projectID: string, currentName: string, folders: string[]) => void
   deleteProject: (projectID: string, name: string) => void
+  renameSession: (session: Session) => void
+  deleteSession: (session: Session) => void
+  renameTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
+  removeTerminalSession: (terminalSession: OpencodeXTerminalSession) => void
   moveProject: (projectID: string, offset: number) => void
   reorderProject: (sourceID: string, targetID: string, placement: "before" | "after") => void
   sessionPinned: (sessionID: string) => boolean
@@ -174,32 +177,16 @@ export function ProjectCollectionPage(props: {
   const [query, setQuery] = createSignal("")
   const projects = createMemo(() => props.snapshot?.projects ?? [])
   const activeProject = createMemo(() => props.projectID ? projects().find((project) => project.id === props.projectID) : undefined)
-  const filteredProjects = createMemo(() => {
-    const text = query().trim().toLowerCase()
-    if (!text) return projects()
-    return projects().filter((project) =>
-      projectLabel(project).toLowerCase().includes(text)
-      || project.folders.some((folder) => folder.path.toLowerCase().includes(text)),
-    )
-  })
-  const overview = createMemo(() => {
-    const attention = props.attentionItems.filter((item) => item.projectID && projects().some((project) => project.id === item.projectID)).length
-    const sessions = projects().reduce((count, project) => count + projectSessions(project, props.snapshot, props.sessionOrderState).length + project.terminalSessions.length, 0)
-    const swarms = projects().reduce((count, project) => count + projectSwarms(project, props.snapshot).length, 0)
-    const views = projects().reduce((count, project) => count + projectViews(project, props.snapshot, props.sessionOrderState).length, 0)
-    return { attention, sessions, swarms, views }
-  })
 
   return (
     <Show when={activeProject()} fallback={(
       <ProjectsOverview
         projects={projects()}
-        filteredProjects={filteredProjects()}
         query={query()}
         setQuery={setQuery}
         snapshot={props.snapshot}
+        loading={props.snapshot === undefined}
         sessionOrderState={props.sessionOrderState}
-        overview={overview()}
         openProject={props.openProject}
         createProject={props.createProject}
         createSession={props.createSession}
@@ -222,9 +209,13 @@ export function ProjectCollectionPage(props: {
           openView={props.openView}
           openSwarm={props.openSwarm}
           createSession={props.createSession}
-          createSwarm={props.createSwarm}
+          launchClaudeSession={props.launchClaudeSession}
           editProject={props.editProject}
           deleteProject={props.deleteProject}
+          renameSession={props.renameSession}
+          deleteSession={props.deleteSession}
+          renameTerminalSession={props.renameTerminalSession}
+          removeTerminalSession={props.removeTerminalSession}
           sessionPinned={props.sessionPinned}
           toggleSessionPinned={props.toggleSessionPinned}
           terminalStatus={props.terminalStatus}
@@ -248,17 +239,6 @@ export function StatusPage(props: { snapshot?: GuiSnapshot }) {
         <Metric label="Active Sessions" value={Object.values(props.snapshot?.sessionStatus ?? {}).filter((status) => status.type !== "idle").length} />
         <Metric label="Input Needed" value={(props.snapshot?.permissions.length ?? 0) + (props.snapshot?.questions.length ?? 0)} />
       </section>
-    </div>
-  )
-}
-
-export function CollectionPage(props: { title: string; count: number; description: string }) {
-  return (
-    <div class="page placeholder-page">
-      <p class="eyebrow">Parity area</p>
-      <h1>{props.title}</h1>
-      <p>{props.description}</p>
-      <div class="metric-card large"><strong>{props.count}</strong><span>records available through existing backend APIs</span></div>
     </div>
   )
 }

@@ -104,6 +104,12 @@ export namespace Flock {
     return Math.max(0, ms + d)
   }
 
+  let hostname: string | undefined
+
+  function host() {
+    return (hostname ??= os.hostname())
+  }
+
   function mono() {
     return performance.now()
   }
@@ -122,8 +128,18 @@ export namespace Flock {
     }
   }
 
+  /** See `LockProtocol.ownerGone`: a dead local owner is abandoned right now. */
+  async function abandoned(metaPath: string) {
+    const raw = await readFile(metaPath, "utf8").catch(() => undefined)
+    if (raw === undefined) return false
+    const meta = LockProtocol.parseMeta(raw)
+    return meta !== undefined && LockProtocol.ownerGone(meta, host())
+  }
+
   async function stale(lockDir: string, heartbeatPath: string, metaPath: string, staleMs: number) {
     // Stale detection allows automatic recovery after crashed owners.
+    if (await abandoned(metaPath)) return true
+
     const now = wall()
     const heartbeat = await stats(heartbeatPath)
     if (heartbeat) {
@@ -201,7 +217,7 @@ export namespace Flock {
       }
     }
 
-    const meta = LockProtocol.meta({ token, hostname: os.hostname() })
+    const meta = LockProtocol.meta({ token, hostname: host() })
 
     await writeFile(heartbeatPath, "", { flag: "wx" }).catch(async () => {
       await rm(lockDir, { recursive: true, force: true })

@@ -1,8 +1,7 @@
 import type {
+  OpencodeXGoal,
   OpencodeXJob,
   OpencodeXSessionUiState,
-  OpencodeXSwarm,
-  OpencodeXSwarmRun,
   PermissionRequest,
   QuestionRequest,
   Session,
@@ -79,7 +78,7 @@ export type RunTimelineEvent = {
 
 export type WorkItem = {
   id: string
-  kind: "session" | "job" | "swarm_run"
+  kind: "session" | "job" | "goal"
   sourceID: string
   parentID?: string
   projectID?: string
@@ -122,13 +121,15 @@ export type AttentionItem = {
 
 export type WorkItemProjectionInput = Pick<
   ClientStateSyncState,
-  "sessions" | "sessionStatus" | "sessionUiState" | "permissions" | "questions" | "jobs" | "swarms"
+  "sessions" | "sessionStatus" | "sessionUiState" | "permissions" | "questions" | "jobs" | "goals"
 >
 
 export function clientWorkItems(input: WorkItemProjectionInput, now?: number): WorkItem[] {
   const permissions = groupBySession(input.permissions)
   const questions = groupBySession(input.questions)
-  const jobs = input.jobs.ids.flatMap((id) => (input.jobs.records[id] ? [input.jobs.records[id]] : []))
+  const jobs = input.jobs.ids
+    .flatMap((id) => (input.jobs.records[id] ? [input.jobs.records[id]] : []))
+    .filter((job) => !isStrandedGoalJob(job, input))
   const jobsBySession = groupJobsBySession(jobs)
   return [
     ...input.sessions.ids.flatMap((id) => {
@@ -148,9 +149,9 @@ export function clientWorkItems(input: WorkItemProjectionInput, now?: number): W
         : []
     }),
     ...jobs.map((job) => jobWorkItem(job, now)),
-    ...input.swarms.ids.flatMap((id) => {
-      const swarm = input.swarms.records[id]
-      return swarm ? swarm.runs.map((run) => swarmRunWorkItem(swarm, run, now)) : []
+    ...(input.goals?.ids ?? []).flatMap((id) => {
+      const goal = input.goals.records[id]
+      return goal ? goalWorkItems(goal, now) : []
     }),
   ].sort((left, right) => right.updatedAt - left.updatedAt || left.id.localeCompare(right.id))
 }
@@ -326,32 +327,74 @@ function jobWorkItem(job: OpencodeXJob, now: number | undefined): WorkItem {
   }
 }
 
-function swarmRunWorkItem(swarm: OpencodeXSwarm, run: OpencodeXSwarmRun, now: number | undefined): WorkItem {
-  const state = swarmState(run.status)
-  const completed = run.agents.filter((agent) => agent.status === "completed").length
-  const failed = run.agents.filter((agent) => agent.status === "failed" || agent.status === "cancelled").length
-  return {
-    id: `swarm_run:${run.id}`,
-    kind: "swarm_run",
-    sourceID: run.id,
-    swarmID: swarm.id,
-    projectID: run.projectID ?? swarm.projectID,
-    sessionID: run.resultSessionID ?? run.orchestratorSessionID,
-    title: run.title || swarm.title,
-    objective: run.prompt || swarm.prompt,
-    state,
-    statusLabel: workItemStatusLabel(state),
-    responsibleUser: swarm.createdBy ?? metadataString(run.metadata, "responsibleUser"),
-    executionTarget: target(run.metadata),
-    blocker: metadataString(run.metadata, "blocker"),
-    changedFiles: metadataStrings(run.metadata, "changedFiles"),
-    validation: validation(run.metadata),
-    progress: { completed, failed, total: run.agents.length },
-    startedAt: timeOrUndefined(run.startedAt),
-    completedAt: timeOrUndefined(run.completedAt),
-    updatedAt: time(run.timeUpdated),
-    elapsedMs: elapsed(timeOrUndefined(run.startedAt), timeOrUndefined(run.completedAt), now),
-  }
+/**
+ * A goal projects a work item only while it needs a human - a parked gate, a
+ * spent budget, or a failure. Running goals already show through their owner
+ * session and node jobs, and a finished goal nagging "review me" would drown
+ * the queue. This is what makes gates and budget pauses reach the attention
+ * surfaces (and notifications) instead of waiting silently for someone to
+ * happen to open the session page - a standing goal has no session at all.
+ */
+function goalWorkItems(goal: OpencodeXGoal, now: number | undefined): WorkItem[] {
+  const state = goalState(goal.status)
+  if (!state) return []
+  const gate = goal.nodes.find((node) => node.status === "awaiting_approval")
+  const failedNode = goal.nodes.find((node) => node.status === "failed")
+  const settled = goal.nodes.filter((node) => ["done", "skipped", "cancelled"].includes(node.status)).length
+  const failed = goal.nodes.filter((node) => node.status === "failed").length
+  return [
+    {
+      id: `goal:${goal.id}`,
+      kind: "goal",
+      sourceID: goal.id,
+      parentID: goal.ownerSessionID ? `session:${goal.ownerSessionID}` : undefined,
+      projectID: goal.projectID,
+      sessionID: goal.ownerSessionID,
+      swarmID: goal.swarmID,
+      title: goal.title,
+      objective: goal.statement,
+      state,
+      statusLabel: workItemStatusLabel(state),
+      executionTarget: { kind: "direct", directory: goal.directory },
+      blocker:
+        goal.statusReason ??
+        (gate ? `Waiting for approval: ${gate.title}` : undefined) ??
+        (failedNode ? `${failedNode.title} failed: ${failedNode.failureReason ?? "no reason recorded"}` : undefined),
+      changedFiles: [],
+      validation: { state: "unknown" },
+      progress: { completed: settled + failed, failed, total: goal.nodes.length },
+      resourceUse: { cost: goal.spend?.costUsd },
+      startedAt: timeOrUndefined(goal.startedAt),
+      completedAt: timeOrUndefined(goal.completedAt),
+      updatedAt: time(goal.timeUpdated),
+      elapsedMs: elapsed(timeOrUndefined(goal.startedAt), timeOrUndefined(goal.completedAt), now),
+    },
+  ]
+}
+
+/**
+ * A goal node job outlives the goal that scheduled it, and one that never got
+ * as far as opening a session outlives it with nothing attached: no graph to
+ * open, no transcript to read, no session to retry from. Such a job can only
+ * ever render as a row that cannot be acted on or cleared, so it is debris
+ * rather than work, and the attention queue is the wrong place to keep it.
+ *
+ * Deliberately narrow. A job that still has a live session stays, because that
+ * session is a real destination even once the goal is gone, and a job whose
+ * goal is merely absent from a client that has not synced goals yet stays too -
+ * "I cannot see the goal" is not the same as "the goal is gone".
+ */
+function isStrandedGoalJob(job: OpencodeXJob, input: WorkItemProjectionInput) {
+  if (job.kind !== "goal.node") return false
+  const goalID = metadataString(job.metadata, "goalID")
+  if (!goalID || !input.goals || input.goals.records[goalID]) return false
+  return !job.sessionID || !input.sessions.records[job.sessionID]
+}
+
+function goalState(status: OpencodeXGoal["status"]): WorkItemState | undefined {
+  if (status === "blocked" || status === "paused") return "waiting_input"
+  if (status === "failed") return "failed"
+  return undefined
 }
 
 function sessionState(
@@ -380,15 +423,6 @@ function jobState(job: OpencodeXJob): WorkItemState {
   return job.status
 }
 
-function swarmState(status: OpencodeXSwarmRun["status"]): WorkItemState {
-  if (status === "draft" || status === "planned") return "preparing"
-  if (status === "approval_needed") return "waiting_permission"
-  if (status === "blocked") return "waiting_input"
-  if (status === "partially_failed") return "partially_completed"
-  if (status === "cancelled") return "cancelled"
-  return status
-}
-
 function attentionForState(state: WorkItemState) {
   if (state === "waiting_permission") return { kind: "permission" as const, priority: 0 as const }
   if (state === "waiting_input") return { kind: "input" as const, priority: 0 as const }
@@ -415,7 +449,7 @@ function sameWorkItemSources(left: WorkItemProjectionInput, right: WorkItemProje
     left.permissions === right.permissions &&
     left.questions === right.questions &&
     left.jobs === right.jobs &&
-    left.swarms === right.swarms
+    left.goals === right.goals
   )
 }
 

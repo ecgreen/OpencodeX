@@ -1,8 +1,8 @@
+/* Full width with the same gutters as the projects pages. */
 .swarms-page {
   overflow: auto;
   width: 100%;
-  max-width: 1080px;
-  margin: 0 auto;
+  padding: var(--ds-space-2) var(--ds-space-6) var(--ds-space-4);
   background: var(--bg);
 }
 

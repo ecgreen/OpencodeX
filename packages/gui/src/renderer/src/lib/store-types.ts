@@ -7,6 +7,7 @@ import type {
   Message,
   OpencodeXJob,
   OpencodeXSessionUiState,
+  OpencodeXGoal,
   OpencodeXSwarm,
   OpencodeXTerminalSession,
   Part,
@@ -223,6 +224,7 @@ export type GuiSnapshot = {
   mcpResources?: Record<string, McpResource>
   plugins?: GuiPlugin[]
   swarms: OpencodeXSwarm[]
+  goals: OpencodeXGoal[]
   jobs: OpencodeXJob[]
   views: ClientCatalogView[]
 }

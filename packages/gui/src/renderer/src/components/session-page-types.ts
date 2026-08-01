@@ -1,4 +1,4 @@
-import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, OpencodeXSwarm, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, OpencodeXGoal, OpencodeXSwarm, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
@@ -22,6 +22,10 @@ export type SessionPageProps = {
   swarms?: OpencodeXSwarm[]
   /** Team view for sessions running on a swarm model. */
   team?: SwarmTeamView
+  /** The goal graph this session owns, when a planner authored one. */
+  goal?: OpencodeXGoal
+  approveGoalNode?: (goalID: string, nodeID: string, approved: boolean) => void
+  cancelGoal?: (goalID: string) => void
   /** Child session the reader has toggled into, "" for the orchestrator. */
   teamMemberSessionID?: string
   selectTeamMember?: (sessionID: string) => void

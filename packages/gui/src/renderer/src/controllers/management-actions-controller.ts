@@ -23,6 +23,8 @@ import { activeSessionRouteKey } from "../lib/route-selection"
 import { runPermissionAction, sessionDirectoryForRequest } from "../lib/session-actions"
 import { createClaudeManagementActions } from "./management-claude-actions"
 import {
+  approveGoalNode,
+  cancelGoal,
   createProject,
   createSwarm,
   createView,
@@ -50,6 +52,8 @@ export function createManagementActionsController(input: {
   refresh: () => Promise<void>
   refreshCapabilities: () => Promise<void>
   alert: (message: string) => void
+  /** Confirms work that already landed. Optional so tests can omit it. */
+  succeed?: (message: string) => void
   setPrompt: Setter<string>
   requestComposerFocus: () => void
   setPendingPinnedSessionRouteKey: Setter<string>
@@ -105,11 +109,13 @@ export function createManagementActionsController(input: {
     await runCreateProjectAction({
       fallbackDirectory: client.directory,
       chooseFolders,
+      askProject: input.dialogs.askProject,
       validateProjectFolders: (folders) => validateProjectFolders(client, { folders }),
       createProject: (name, directory, folders) =>
         createProject(client, { name, directory, folders }).then(() => undefined),
       refresh: input.refresh,
       alert: input.alert,
+      succeed: input.succeed,
     })
   }
 
@@ -126,18 +132,23 @@ export function createManagementActionsController(input: {
       updateProject: (targetProjectID, next) => updateProject(client, targetProjectID, next).then(() => undefined),
       refresh: input.refresh,
       alert: input.alert,
+      succeed: input.succeed,
     })
   }
 
   async function deleteProjectAction(projectID: string, name: string) {
     const client = input.client()
     if (!client) return
+    const project = input.snapshot()?.projects.find((item) => item.id === projectID)
     await runDeleteProjectAction({
       projectID,
       name,
+      sessionCount: project?.sessionIDs.length ?? 0,
+      terminalSessionCount: project?.terminalSessions.length ?? 0,
       confirm: input.dialogs.confirm,
       deleteProject: (targetProjectID) => deleteProject(client, targetProjectID).then(() => undefined),
       refresh: input.refresh,
+      succeed: input.succeed,
     })
   }
 
@@ -165,13 +176,12 @@ export function createManagementActionsController(input: {
   }
 
   async function createSwarmAction(projectID?: string) {
-    if ((input.snapshot()?.projects.length ?? 0) === 0)
-      return input.alert("Create or load a project before creating a swarm.")
+    // A swarm is a model, not a project resource - no project required.
     input.navigation.setRoute({ name: "swarm-create", projectID })
   }
 
   async function saveSwarm(value: {
-    projectID: string
+    projectID?: string
     title?: string
     roles: OpencodeXSwarmRoleInput[]
     swarmID?: string
@@ -295,6 +305,19 @@ export function createManagementActionsController(input: {
     },
     createPinnedSession,
     createSwarm: createSwarmAction,
+    approveGoalNode: async (goalID: string, nodeID: string, approved: boolean) => {
+      const client = input.client()
+      if (!client) return
+      await approveGoalNode(client, goalID, nodeID, approved)
+      await input.refresh()
+    },
+    cancelGoal: async (goalID: string) => {
+      const client = input.client()
+      if (!client) return
+      await cancelGoal(client, goalID)
+      await input.refresh()
+    },
+    launchClaudeSession: claude.launchClaudeSession,
     renameClaudeSession: claude.renameClaudeSession,
     moveClaudeSession: claude.moveClaudeSession,
     removeClaudeSession: claude.removeClaudeSession,

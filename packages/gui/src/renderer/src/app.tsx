@@ -103,6 +103,7 @@ export function App() {
     refresh: authoritative.refresh,
     refreshCapabilities: authoritative.refreshCapabilities,
     alert: notices.alert,
+    succeed: notices.succeed,
     setPrompt: sessionState.setPrompt,
     requestComposerFocus: sessionState.requestComposerFocus,
     setPendingPinnedSessionRouteKey: sessionState.setPendingPinnedRouteKey,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  deleteProjectMessage,
   newSessionDirectory,
   projectFolderValidationMessage,
   projectFoldersFromText,
@@ -35,7 +36,7 @@ describe("GUI project action decisions", () => {
     expect(newSessionDirectory({ projects: [], guiDirectory: "" })).toBeUndefined()
   })
 
-  test("creates projects through folder choice, validation, backend create, and refresh", async () => {
+  test("creates projects through folder choice, a name step, validation, create, and refresh", async () => {
     const calls: string[] = []
 
     await runCreateProjectAction({
@@ -44,6 +45,10 @@ describe("GUI project action decisions", () => {
         calls.push(`choose:${fallback}`)
         return ["C:/Work/OpencodeX", "C:/Work/Docs"]
       },
+      askProject: async (input) => {
+        calls.push(`ask:${input.title}:${input.name}:${input.folders.join("|")}`)
+        return { name: "Renamed", folders: input.folders }
+      },
       validateProjectFolders: async (folders) => {
         calls.push(`validate:${folders.join(",")}`)
         return { data: { valid: true, folders: [] } }
@@ -51,14 +56,33 @@ describe("GUI project action decisions", () => {
       createProject: async (name, directory, folders) => calls.push(`create:${name}:${directory}:${folders.join("|")}`),
       refresh: async () => calls.push("refresh"),
       alert: (message) => calls.push(`alert:${message}`),
+      succeed: (message) => calls.push(`succeed:${message}`),
     })
 
     expect(calls).toEqual([
       "choose:C:/Work",
+      "ask:Create project:OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
       "validate:C:/Work/OpencodeX,C:/Work/Docs",
-      "create:OpencodeX:C:/Work/OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
+      "create:Renamed:C:/Work/OpencodeX:C:/Work/OpencodeX|C:/Work/Docs",
       "refresh",
+      "succeed:Created Renamed.",
     ])
+  })
+
+  test("falls back to the folder name when the name step is left empty", async () => {
+    const calls: string[] = []
+
+    await runCreateProjectAction({
+      fallbackDirectory: "C:/Work",
+      chooseFolders: async () => ["C:/Work/OpencodeX"],
+      askProject: async (input) => ({ name: "   ", folders: input.folders }),
+      validateProjectFolders: async () => ({ data: { valid: true, folders: [] } }),
+      createProject: async (name) => calls.push(`create:${name}`),
+      refresh: async () => calls.push("refresh"),
+      alert: (message) => calls.push(`alert:${message}`),
+    })
+
+    expect(calls).toEqual(["create:OpencodeX", "refresh"])
   })
 
   test("stops project creation when validation fails", async () => {
@@ -70,6 +94,7 @@ describe("GUI project action decisions", () => {
         calls.push(`choose:${fallback}`)
         return ["C:/Missing"]
       },
+      askProject: async (input) => ({ name: input.name, folders: input.folders }),
       validateProjectFolders: async () => ({ data: { valid: false, folders: [{ input: "C:/Missing", message: "Folder is missing" }] } }),
       createProject: async () => calls.push("create"),
       refresh: async () => calls.push("refresh"),
@@ -88,6 +113,10 @@ describe("GUI project action decisions", () => {
         calls.push(`choose:${fallback}`)
         return undefined
       },
+      askProject: async () => {
+        calls.push("ask")
+        return undefined
+      },
       validateProjectFolders: async () => {
         calls.push("validate")
         return { data: { valid: true, folders: [] } }
@@ -98,6 +127,25 @@ describe("GUI project action decisions", () => {
     })
 
     expect(calls).toEqual(["choose:C:/Work"])
+  })
+
+  test("stops project creation when the name step is cancelled", async () => {
+    const calls: string[] = []
+
+    await runCreateProjectAction({
+      fallbackDirectory: "C:/Work",
+      chooseFolders: async () => ["C:/Work/OpencodeX"],
+      askProject: async () => undefined,
+      validateProjectFolders: async () => {
+        calls.push("validate")
+        return { data: { valid: true, folders: [] } }
+      },
+      createProject: async () => calls.push("create"),
+      refresh: async () => calls.push("refresh"),
+      alert: (message) => calls.push(`alert:${message}`),
+    })
+
+    expect(calls).toEqual([])
   })
 
   test("edits project name and folders together after validation", async () => {
@@ -161,9 +209,18 @@ describe("GUI project action decisions", () => {
       confirm: async () => true,
       deleteProject: async (projectID) => calls.push(`delete:${projectID}`),
       refresh: async () => calls.push("refresh"),
+      succeed: (message) => calls.push(`succeed:${message}`),
     })
 
-    expect(calls).toEqual(["delete:project-1", "refresh"])
+    expect(calls).toEqual(["delete:project-1", "refresh", "succeed:Deleted Project."])
+  })
+
+  test("tells the reader what the grouping holds before deleting it", () => {
+    expect(deleteProjectMessage("Project", 12, 3)).toContain("12 sessions and 3 Claude Code sessions leave this grouping")
+    expect(deleteProjectMessage("Project", 1, 0)).toContain("1 session leaves this grouping")
+    expect(deleteProjectMessage("Project", 0, 1)).toContain("1 Claude Code session leaves this grouping")
+    expect(deleteProjectMessage("Project", 1, 1)).toContain("1 session and 1 Claude Code session leave this grouping")
+    expect(deleteProjectMessage("Project", 0, 0)).toContain("This removes the GUI/TUI project grouping.")
   })
 
   test("routes new session creation and focuses the composer", () => {
