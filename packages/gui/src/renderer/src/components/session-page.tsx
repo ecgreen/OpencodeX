@@ -1,15 +1,8 @@
 import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import { nextPromptHistoryState, pushPromptStash, type GuiPromptStashEntry } from "../lib/prompt-state"
+import { nextPromptHistoryState } from "../lib/prompt-state"
 import { removeTrailingMentionQuery, type PromptMentionOption } from "../lib/prompt-autocomplete"
-import {
-  filePartFromFile,
-  filePartFromPath,
-  readComposerDraft,
-  readComposerStash,
-  subscribeComposerStash,
-  writeComposerStash,
-} from "../lib/session-composer-helpers"
+import { filePartFromFile, filePartFromPath, readComposerDraft } from "../lib/session-composer-helpers"
 import { readClaudeDriverMarker } from "../lib/claude-driver-marker"
 import { createStableEffect } from "../lib/stable-effect"
 import { Button, InlineNotice } from "./ui"
@@ -27,6 +20,7 @@ import type { SessionPageProps } from "./session-page-types"
 import { SessionPageToolbar } from "./session-page-toolbar"
 import { createSessionSidePanelController } from "./session-side-panel-controller"
 import { createSessionComposerDraftState } from "./session-composer-draft-state"
+import { createComposerStashController } from "./session-composer-stash"
 import { createSessionComposerPresentation } from "./session-composer-presentation"
 import { createSessionComposerInputController } from "./session-composer-input-controller"
 import { subscribeSessionBrowserCaptures } from "../lib/session-browser-capture"
@@ -39,11 +33,9 @@ export function SessionPage(props: SessionPageProps) {
   let transcriptExpandedSessionKey = ""
   const models = createSessionModelController(props)
   const sidePanel = createSessionSidePanelController(props)
-  const [stash, setStash] = createSignal<GuiPromptStashEntry[]>(readComposerStash())
   const [slashMenuOpen, setSlashMenuOpen] = createSignal(false)
   const [selectedSlashCommand, setSelectedSlashCommand] = createSignal(0)
   const [emptyStateDismissed, setEmptyStateDismissed] = createSignal(false)
-  onMount(() => onCleanup(subscribeComposerStash(setStash)))
   const composerState = createSessionComposerDraftState(props)
   const draftPrompt = composerState.draftPrompt
   const draftParts = composerState.draftParts
@@ -58,6 +50,14 @@ export function SessionPage(props: SessionPageProps) {
     sessionID: () => session()?.id,
     draft: () => ({ input: draftPrompt(), parts: draftParts() }),
     persistent: !props.composerState,
+  })
+  const composerStash = createComposerStashController({
+    draftPrompt,
+    draftParts,
+    setDraftPrompt,
+    setDraftParts,
+    flush: () => composerInput.flush(),
+    resize: () => composerInput.resize(),
   })
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
@@ -120,26 +120,6 @@ export function SessionPage(props: SessionPageProps) {
     const nextPrompt = removeTrailingMentionQuery(draftPrompt())
     setDraftPrompt(nextPrompt)
     setDraftParts((current) => [...current, option.part])
-    resizeComposer()
-  }
-  const stashPrompt = () => {
-    const prompt = { input: draftPrompt(), parts: draftParts() }
-    const next = pushPromptStash(readComposerStash(), prompt)
-    setStash(next)
-    writeComposerStash(next)
-    setDraftPrompt("")
-    setDraftParts([])
-    composerInput.flush()
-  }
-  const popStash = () => {
-    const entries = readComposerStash()
-    const entry = entries.at(-1)
-    if (!entry) return
-    const next = entries.slice(0, -1)
-    setStash(next)
-    writeComposerStash(next)
-    setDraftPrompt(entry.input)
-    setDraftParts(entry.parts)
     resizeComposer()
   }
   const loadHistory = (offset: number) => {
@@ -314,7 +294,7 @@ export function SessionPage(props: SessionPageProps) {
             mentionMenuVisible={mentionMenuVisible()}
             mentionOptions={mentionOptions()}
             abortConfirmArmed={props.abortConfirmArmed === true}
-            stashCount={stash().length}
+            stashCount={composerStash.count()}
             variants={models.variants()}
             variantPickerOpen={models.variantPickerOpen()}
             selectedVariant={props.selectedVariant}
@@ -335,8 +315,8 @@ export function SessionPage(props: SessionPageProps) {
             completeSlashCommand={completeSlashCommand}
             selectSlashCommand={selectSlashCommand}
             chooseMention={chooseMention}
-            stashPrompt={stashPrompt}
-            popStash={popStash}
+            stashPrompt={composerStash.push}
+            popStash={composerStash.pop}
             pasteFiles={(files) => void pasteFiles(files)}
             addPickedContext={() => void addPickedContext()}
             dropContext={(event) => void dropContext(event)}
