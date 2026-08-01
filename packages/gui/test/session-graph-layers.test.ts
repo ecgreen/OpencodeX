@@ -112,11 +112,91 @@ describe("layered swarm workflow", () => {
     // The designer hands to two engineers at once; both report to the designer.
     const wide = [
       ...chain,
-      session({ id: "build-2", title: "Build the header", parentID: "draft", role: "Senior Engineer", created: 5 }),
+      // Overlapping the first build: concurrent work, not a later stage.
+      { ...session({ id: "build-2", title: "Build the header", parentID: "draft", role: "Senior Engineer", created: 3 }), time: { created: 3, updated: 8 } },
     ]
     const graph = buildSessionGraph(input(wide))
     const merge = node(graph, "join:session:draft")
     expect(merge?.progress).toEqual({ completed: 2, failed: 0, total: 2 })
     expect(graph.edges.some((edge) => edge.from === "session:build-2" && edge.to === "join:session:draft")).toBe(true)
+  })
+})
+
+/**
+ * The shape a real relay produced. Every one of these was delegated by the
+ * orchestrator itself - `parentID` is the root for all of them - so parentage
+ * alone draws a star with nine spokes. The pipeline is in the timings: three
+ * designers overlapping, then a merge step after they stopped, then three
+ * engineers, then a merge step.
+ *
+ * Timings are the ones measured from the session this was built against.
+ */
+const relay = [
+  session({ id: "root", title: "Mock login page build relay workflow", created: 0 }),
+  ...[
+    { id: "d-solo", title: "Designer: Produce login page design", role: "Designer", created: 36_415, ran: 219_000 },
+    { id: "d-a", title: "Designer A: Layout & structure", role: "Designer", created: 744_807, ran: 45_000 },
+    { id: "d-b", title: "Designer B: Visual style", role: "Designer", created: 747_639, ran: 63_000 },
+    { id: "d-c", title: "Designer C: Behavior & states", role: "Designer", created: 750_929, ran: 48_000 },
+    { id: "d-merge", title: "Designer: Merge three design slices", role: "Designer", created: 840_575, ran: 113_000 },
+    { id: "e-a", title: "Senior Engineer A: Layout plan", role: "Senior Engineer", created: 968_665, ran: 64_000 },
+    { id: "e-b", title: "Senior Engineer B: Theme plan", role: "Senior Engineer", created: 977_820, ran: 85_000 },
+    { id: "e-c", title: "Senior Engineer C: Behavior plan", role: "Senior Engineer", created: 987_101, ran: 88_000 },
+    { id: "e-merge", title: "Senior Engineer: Merge three plans", role: "Senior Engineer", created: 1_091_205, ran: 82_000 },
+  ].map((step) => ({
+    ...session({ id: step.id, title: step.title, parentID: "root", role: step.role, created: step.created }),
+    time: { created: step.created, updated: step.created + step.ran },
+  })),
+]
+
+describe("a flat delegation tree with a pipeline inside it", () => {
+  const graph = buildSessionGraph(input(relay))
+  const columnOf = (id: string) => node(graph, `session:${id}`)?.depth
+
+  test("concurrent steps share a column and sequential ones do not", () => {
+    // The three designers were issued in one turn, so they overlap and stand
+    // side by side. Every other step waited on what came before it.
+    expect([columnOf("d-a"), columnOf("d-b"), columnOf("d-c")]).toEqual([
+      columnOf("d-a"),
+      columnOf("d-a"),
+      columnOf("d-a"),
+    ])
+    expect([columnOf("e-a"), columnOf("e-b"), columnOf("e-c")]).toEqual([
+      columnOf("e-a"),
+      columnOf("e-a"),
+      columnOf("e-a"),
+    ])
+    expect(columnOf("d-solo")!).toBeLessThan(columnOf("d-a")!)
+    expect(columnOf("d-a")!).toBeLessThan(columnOf("d-merge")!)
+    expect(columnOf("d-merge")!).toBeLessThan(columnOf("e-a")!)
+    expect(columnOf("e-a")!).toBeLessThan(columnOf("e-merge")!)
+  })
+
+  test("each fan-out closes with a merge the next stage flows out of", () => {
+    // Designers -> merge -> the step that consumed them.
+    const designers = graph.edges.filter((edge) => edge.to.startsWith("join:session:root:"))
+    expect(designers.map((edge) => edge.from).toSorted()).toContain("session:d-a")
+    const afterDesigners = graph.edges.find((edge) => edge.to === "session:d-merge")!
+    expect(afterDesigners.from.startsWith("join:")).toBe(true)
+    const afterEngineers = graph.edges.find((edge) => edge.to === "session:e-merge")!
+    expect(afterEngineers.from.startsWith("join:")).toBe(true)
+  })
+
+  test("a lone step flows straight on without a merge diamond of its own", () => {
+    // d-solo is a stage by itself; the next stage hangs off the step, not off a
+    // merge that would have exactly one branch.
+    expect(graph.edges.some((edge) => edge.from === "session:d-solo" && edge.to === "session:d-a")).toBe(true)
+    expect(node(graph, "join:session:root:0")).toBeUndefined()
+  })
+
+  test("the pipeline is deeper than the three columns parentage would give", () => {
+    // Nine steps all parented to the root; a spawn tree would put every one of
+    // them in column 1 and stop at column 2.
+    expect(Math.max(...graph.nodes.map((item) => item.depth))).toBeGreaterThan(6)
+    expect(graph.counts.total).toBe(10)
+  })
+
+  test("the work still consolidates once, into the session that ran it", () => {
+    expect(node(graph, "join:session:root")).toMatchObject({ status: "completed", statusLabel: "Merged" })
   })
 })

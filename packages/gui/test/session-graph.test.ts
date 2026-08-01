@@ -182,14 +182,17 @@ describe("session graph with a fetched swarm delegation tree", () => {
     metadata: { opencodex: { swarmID: "swarm-1" } },
   }
   const fanOut: Session[] = [
-    { ...child("child-1a", "Layout worker"), parentID: "child-1", time: { created: 5, updated: 6 } },
-    { ...child("child-1b", "Status worker"), parentID: "child-1", time: { created: 6, updated: 7 } },
+    { ...child("child-1a", "Layout worker"), parentID: "child-1", time: { created: 5, updated: 9 } },
+    { ...child("child-1b", "Status worker"), parentID: "child-1", time: { created: 6, updated: 9 } },
   ]
   const sessions = [swarmRoot(), engineer, designer, ...fanOut]
 
   test("draws the swarm children and the role's own subagents", () => {
     const graph = buildSessionGraph(input({ sessions }))
-    expect(steps(graph).map((node) => `${node.depth}:${node.id}`)).toEqual([
+    // Sorted: placement walks each branch to its end before starting the next,
+    // so emission order is depth-first. Only the column each step lands in is
+    // meaningful, and the layout reads that from `depth`.
+    expect(steps(graph).map((node) => `${node.depth}:${node.id}`).toSorted()).toEqual([
       "0:session:root",
       "1:session:child-1",
       "1:session:child-2",
@@ -272,8 +275,8 @@ describe("session graph consolidation", () => {
 
   test("nested delegation chains merge nodes: a branch's merge feeds its parent's", () => {
     const grandchildren = [
-      { ...child("child-1a", "Worker A"), parentID: "child-1", time: { created: 5, updated: 6 } },
-      { ...child("child-1b", "Worker B"), parentID: "child-1", time: { created: 6, updated: 7 } },
+      { ...child("child-1a", "Worker A"), parentID: "child-1", time: { created: 5, updated: 9 } },
+      { ...child("child-1b", "Worker B"), parentID: "child-1", time: { created: 6, updated: 9 } },
     ]
     const graph = buildSessionGraph(input({ sessions: [...sessions, ...grandchildren] }))
     const inner = graph.nodes.find((node) => node.id === "join:session:child-1")

@@ -88,7 +88,10 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   // An edge marker's tooltip needs a background of its own: the token behind it
   // was misnamed upstream, which left every tooltip in the app transparent and
   // unreadable over the canvas.
-  await page.locator(".session-graph-edge-marker").first().hover()
+  // Hovered on whichever card currently sits inside the canvas: a pipeline is
+  // wider than the side panel, so which steps are on screen depends on the fit,
+  // and an off-pane card cannot be scrolled to - the canvas pans by transform.
+  await hoverVisibleNode(page)
   const tooltip = page.locator(".ui-tooltip").first()
   await expect(tooltip).toBeVisible()
   expect(await tooltip.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)")
@@ -96,6 +99,7 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   // of this test needs to click.
   await page.mouse.move(0, 0)
   await expect(page.locator(".ui-tooltip")).toHaveCount(0)
+  await page.getByRole("button", { name: "Fit graph to view" }).click()
 
   // Click a node at default zoom: the embedded transcript replaces the top
   // session's, and the way back works.
@@ -161,4 +165,20 @@ async function openGraphTab(page: Page) {
   }
   await page.getByRole("button", { name: "New tab" }).click()
   await page.getByRole("button", { name: "Graph", exact: true }).click()
+}
+
+/** Hovers the first node card whose box lies inside the canvas viewport. */
+async function hoverVisibleNode(page: Page) {
+  const canvas = await page.locator(".session-graph-canvas").boundingBox()
+  if (!canvas) throw new Error("graph canvas has no box")
+  const cards = page.locator(SESSION_NODE)
+  for (let index = 0; index < (await cards.count()); index += 1) {
+    const box = await cards.nth(index).boundingBox()
+    if (!box) continue
+    if (box.x < canvas.x || box.y < canvas.y) continue
+    if (box.x + box.width > canvas.x + canvas.width || box.y + box.height > canvas.y + canvas.height) continue
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    return
+  }
+  throw new Error("no graph node is fully inside the canvas")
 }

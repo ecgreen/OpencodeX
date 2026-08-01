@@ -1,14 +1,12 @@
 import type { OpencodeXJob, OpencodeXSwarm, Session } from "@opencode-ai/sdk/v2/client"
 import type { WorkItem } from "@opencode-ai/sdk/v2/work-item"
-import { appendSessionGraphJoins } from "./session-graph-join"
 import {
   jobGraphEdge,
   jobGraphNode,
-  sessionGraphEdge,
-  sessionGraphNode,
   type SwarmRole,
   type SwarmRoleIndex,
 } from "./session-graph-nodes"
+import { placeSessionTree } from "./session-graph-place"
 
 /**
  * The agentic workflow a session is driving, as a graph.
@@ -127,35 +125,14 @@ export function buildSessionGraph(input: SessionGraphInput): SessionGraph {
   const edges: SessionGraphEdge[] = []
   const placed = new Set<string>()
   const depths = new Map<string, number>()
-  let frontier = [{ session: rootSession, depth: 0, parentID: "" }]
-  while (frontier.length > 0) {
-    const next: typeof frontier = []
-    for (const entry of frontier) {
-      const id = `session:${entry.session.id}`
-      if (placed.has(id)) continue
-      placed.add(id)
-      depths.set(id, entry.depth)
-      const job = latestJob(jobsBySession.get(entry.session.id))
-      const item = items.get(id)
-      const node = sessionGraphNode({
-        session: entry.session,
-        item,
-        job,
-        depth: entry.depth,
-        root: entry.depth === 0,
-        busyType: input.sessionStatus?.[entry.session.id]?.type,
-      })
-      nodes.push(node)
-      if (entry.parentID)
-        edges.push(sessionGraphEdge({ from: entry.parentID, node, session: entry.session, job, roles }))
-      for (const child of childSessions.get(entry.session.id) ?? [])
-        next.push({ session: child, depth: entry.depth + 1, parentID: id })
-    }
-    frontier = next
-  }
+  placeSessionTree(
+    { nodes, edges, placed, depths, childSessions, jobsBySession, items, roles, sessionStatus: input.sessionStatus, latestJob },
+    rootSession,
+    0,
+    "",
+  )
 
   placeJobs({ input, roles, items, placed, depths, nodes, edges, rootSessionID, sessionsByID })
-  appendSessionGraphJoins({ nodes, edges, sessionStatus: input.sessionStatus })
   return { rootID: `session:${rootSessionID}`, rootSessionID, nodes, edges, counts: countNodes(nodes) }
 }
 
