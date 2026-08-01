@@ -89,20 +89,28 @@ export function SessionRoute(props: { model: GuiAppModel }) {
         model.swarmTeam.setMemberSessionID("")
         model.sessionGraph.openNode(node)
       }}
+      // Swarm-delegated children are not in the catalog, so the full session
+      // route cannot resolve them - the embedded pane is the only place they can
+      // be read, and offering a button that silently does nothing is worse than
+      // not offering one.
+      graphNodeFullPageAvailable={(model.authoritative.snapshot()?.sessions ?? []).some(
+        (session) => session.id === model.sessionGraph.nodeSessionID(),
+      )}
       openGraphNodeFullPage={(node) => {
         if (!node.sessionID) return
-        // Swarm-delegated children are not in the catalog, so the full session
-        // route cannot resolve them; those stay in the embedded view.
-        const inCatalog = (model.authoritative.snapshot()?.sessions ?? []).some(
-          (session) => session.id === node.sessionID,
-        )
-        if (inCatalog) {
-          model.sessionActions.open(node.sessionID)
-          return
-        }
+        // Closing the embedded pane first is the whole job: the route changes
+        // underneath it, but an opened node survives the change (it is still in
+        // the new session's own graph), so the pane stays mounted over the page
+        // that was just navigated to and the button reads as doing nothing.
+        model.sessionGraph.back()
         model.swarmTeam.setMemberSessionID("")
-        model.sessionGraph.openNode(node)
+        model.sessionActions.open(node.sessionID)
       }}
+      retryEmbeddedSession={(sessionID) => {
+        const session = model.sessionGraph.mergedSessions().find((item) => item.id === sessionID)
+        if (session) void model.authoritative.syncViewSession(session, { force: true })
+      }}
+      embeddedSessionError={(sessionID) => model.authoritative.viewPaneState(sessionID).error}
       closeGraphNode={model.sessionGraph.back}
       connectProvider={(providerID) => void model.notices.run(() => model.capabilities.connectProvider(providerID))}
       mcp={model.authoritative.snapshot()?.mcp ?? {}}

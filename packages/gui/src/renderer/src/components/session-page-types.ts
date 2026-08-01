@@ -39,7 +39,12 @@ export type SessionPageProps = {
   graphNodeData?: SessionData
   graphNodeLoading?: boolean
   openGraphNode?: (node: SessionGraphNode) => void
+  /** False for steps the catalog does not carry, which have no full-page route. */
+  graphNodeFullPageAvailable?: boolean
   openGraphNodeFullPage?: (node: SessionGraphNode) => void
+  /** Why an embedded pane's transcript failed to load, if it did. */
+  embeddedSessionError?: (sessionID: string) => string | undefined
+  retryEmbeddedSession?: (sessionID: string) => void
   closeGraphNode?: () => void
   /** Opens the credential flow, optionally pre-selecting a provider. */
   connectProvider?: (providerID?: string) => void

@@ -155,6 +155,7 @@ export function createAuthoritativeStateController(input: {
     viewLoadedTime: (sessionID) => viewPaneState(sessionID).loadedTime,
     setViewLoadedTime: setViewPaneLoadedTime,
     setViewLoading: setViewPaneLoading,
+    setViewError: viewPanes.setError,
     rememberSelectedData: rememberSelectedSessionData,
     evictPresentation: evictSessionPresentation,
   })

@@ -107,6 +107,7 @@ export function createSessionHydrationController(input: {
   viewLoadedTime: (sessionID: string) => number | undefined
   setViewLoadedTime: (sessionID: string, loadedTime: number) => void
   setViewLoading: (sessionID: string, loading: boolean) => void
+  setViewError: (sessionID: string, error: string | undefined) => void
   rememberSelectedData: (sessionID: string, data: SessionData, loadedTime: number) => void
   evictPresentation: (sessionIDs: readonly string[]) => void
 }) {
@@ -231,6 +232,15 @@ export function createSessionHydrationController(input: {
           ),
         )
         input.evictPresentation(input.presentation.remember(session.id))
+        input.setViewError(session.id, undefined)
+      })
+      // A failed transcript load used to reject into the caller's `void`, which
+      // left the pane blank with nothing to explain it and nothing scheduled to
+      // try again. The pane can render this and offer a retry.
+      .catch((cause: unknown) => {
+        if (sessionLoadPromises.get(session.id)?.generation !== generation) return
+        console.error(`Failed to load session ${session.id}`, cause)
+        input.setViewError(session.id, cause instanceof Error ? cause.message : String(cause))
       })
       .finally(() => {
         if (sessionLoadPromises.get(session.id)?.generation !== generation) return

@@ -2,6 +2,7 @@ import { Show, createMemo, onCleanup, onMount } from "solid-js"
 import { formatRelative } from "../lib/format"
 import type { SessionData } from "../lib/session-api"
 import { sessionGraphNodeAt } from "../lib/session-graph"
+import { EmbeddedSessionStatus } from "./embedded-session-status"
 import type { SessionPageProps } from "./session-page-types"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { Button, IconButton } from "./ui"
@@ -67,14 +68,25 @@ function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string
             {node()?.updatedAt ? ` - updated ${formatRelative(node()!.updatedAt)}` : ""}
           </span>
         </div>
-        <IconButton
-          appearance="ghost"
-          size="compact"
-          icon="external"
-          label="Open this step as a full session"
-          onClick={() => node() && props.page.openGraphNodeFullPage?.(node()!)}
-        />
+        {/* Only for steps the catalog carries. A swarm-delegated child has no
+            full-page route, and a button that does nothing is worse than none. */}
+        <Show when={props.page.graphNodeFullPageAvailable}>
+          <IconButton
+            appearance="ghost"
+            size="compact"
+            icon="external"
+            label="Open this step as a full session"
+            onClick={() => node() && props.page.openGraphNodeFullPage?.(node()!)}
+          />
+        </Show>
       </header>
+      <EmbeddedSessionStatus
+        sessionID={props.sessionID}
+        data={props.page.graphNodeData}
+        loading={props.page.graphNodeLoading === true}
+        error={props.page.embeddedSessionError?.(props.sessionID)}
+        retry={props.page.retryEmbeddedSession}
+      />
       <TranscriptPanel
         sessionID={props.sessionID}
         data={props.page.graphNodeData ?? EMPTY_NODE_DATA}

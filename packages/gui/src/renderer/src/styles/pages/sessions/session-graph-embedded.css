@@ -64,3 +64,24 @@
   font-weight: var(--ds-weight-semibold);
   line-height: var(--ds-leading-2xs);
 }
+
+/* --- Why an embedded pane is empty --- */
+
+.embedded-session-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  margin: 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  color: var(--muted);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
+}
+
+.embedded-session-status.error {
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-subtle));
+  border-radius: var(--ds-radius-card);
+  color: color-mix(in srgb, var(--danger) 62%, var(--text));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}

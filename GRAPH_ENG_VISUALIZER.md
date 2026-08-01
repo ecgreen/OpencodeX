@@ -378,3 +378,11 @@ Scope note: specialists are not handed the full team roster, so a hand-off happe
 The companion rule: inside a swarm, a role spawning helpers of itself runs them on **its own** model rather than falling through to whatever its subagent agent configures. Role hand-offs still win over both - delegating to "Senior Engineer" uses that role's model, which is what makes a layered graph route correctly.
 
 **Layered graphs were verified, not assumed.** `test/session-graph-layers.test.ts` builds the shape by hand - orchestrator → Designer drafts → Senior Engineer builds → Designer validates - and asserts one column per layer, roles travelling with each hand-off, merges nesting inward (`join:build` → `join:draft` → `join:root`), an unfinished layer holding every merge above it open, and a fan-out inside a layer still fanning into that layer's merge. All seven passed on the first run: the graph model already handled arbitrary depth, and the only thing that had ever capped it was the backend's delegation rules.
+
+### Round 6: a pane that cannot explain itself
+
+"Open this step as a full session" appeared to do nothing. It was routing correctly - but the opened graph node survived the route change (the step is still a node in the *new* session's own graph), so the embedded pane stayed mounted over the page that had just been navigated to. `openGraphNodeFullPage` now closes the embedded pane before navigating.
+
+The blank pane got two things it was missing. `syncViewSession` rejected into the caller's `void` when a transcript load failed, so the pane sat empty with nothing to explain it and nothing scheduled to retry - indistinguishable from a step that genuinely had not said anything. View pane state now carries an `error`, and `EmbeddedSessionStatus` renders either "could not load this step" with a **Try again** (a forced re-sync, the only way back once a load has failed) or "nothing here yet - this step has not produced any messages". Both embedded panes use it.
+
+Worth recording for the next reader: `snapshot.sessions` and `selectClientKnownSessionIDs(state)` are *not* the same set. Swarm-delegated children appear in the first and not the second, which is why the round-4 presentation eviction bit while the full-page route resolved them fine. A check against the wrong one of those two is the shape of bug to look for here.

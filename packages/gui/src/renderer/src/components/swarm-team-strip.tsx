@@ -3,6 +3,7 @@ import { For, Show, createMemo } from "solid-js"
 import { formatRelative } from "../lib/format"
 import type { SessionData } from "../lib/session-api"
 import { defaultTeamRun, type SwarmTeamRun, type SwarmTeamView } from "../lib/swarm-team"
+import { EmbeddedSessionStatus } from "./embedded-session-status"
 import { Icon } from "./icon"
 import type { SessionPageProps } from "./session-page-types"
 import { TranscriptPanel } from "./session-transcript-panel"
@@ -38,6 +39,8 @@ export function SessionSwarmTeam(props: { page: SessionPageProps }) {
             showGenericToolOutput={props.page.showGenericToolOutput}
             concealCodeBlocks={props.page.concealCodeBlocks === true}
             select={(sessionID) => props.page.selectTeamMember?.(sessionID)}
+            error={props.page.embeddedSessionError?.(props.page.teamMemberSessionID!)}
+            retry={props.page.retryEmbeddedSession}
             loadOlderMessages={
               props.page.loadOlderEmbeddedMessages
                 ? (cursor) => props.page.loadOlderEmbeddedMessages!(props.page.teamMemberSessionID!, cursor)
@@ -112,6 +115,8 @@ export function SwarmMemberPane(props: {
   showGenericToolOutput: boolean
   concealCodeBlocks: boolean
   select: (sessionID: string) => void
+  error?: string
+  retry?: (sessionID: string) => void
   loadOlderMessages?: (cursor: string) => Promise<void>
 }) {
   const member = createMemo(() => props.team.members.find((item) => item.runs.some((run) => run.id === props.sessionID)))
@@ -138,6 +143,13 @@ export function SwarmMemberPane(props: {
           Back to orchestrator
         </Button>
       </header>
+      <EmbeddedSessionStatus
+        sessionID={props.sessionID}
+        data={props.data}
+        loading={props.loading}
+        error={props.error}
+        retry={props.retry}
+      />
       <TranscriptPanel
         sessionID={props.sessionID}
         data={props.data ?? EMPTY_MEMBER_DATA}

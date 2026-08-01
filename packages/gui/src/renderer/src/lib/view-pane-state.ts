@@ -10,6 +10,8 @@ export type ViewPaneRuntimeState = {
   selectedVariant?: string
   loading: boolean
   loadedTime?: number
+  /** Why the last transcript load failed, so a pane never just sits blank. */
+  error?: string
 }
 
 export const EMPTY_VIEW_PANE_RUNTIME_STATE: ViewPaneRuntimeState = {
@@ -55,6 +57,15 @@ export function createViewPaneStateStore() {
       update(paneID, (current) => (current.loading === loading ? current : { ...current, loading })),
     setLoadedTime: (paneID: string, loadedTime: number) =>
       update(paneID, (current) => (current.loadedTime === loadedTime ? current : { ...current, loadedTime })),
+    setError: (paneID: string, error: string | undefined) =>
+      update(paneID, (current) => {
+        if (current.error === error) return current
+        if (error === undefined) {
+          const { error: _dropped, ...rest } = current
+          return rest
+        }
+        return { ...current, error }
+      }),
   }
 }
 
