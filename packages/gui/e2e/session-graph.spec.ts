@@ -43,6 +43,19 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
       data: { parentID: root.id, ...child },
     })
     expect(created.ok(), await created.text()).toBe(true)
+    const posted = await request.post(
+      `${backendURL}/session/${((await created.json()) as { id: string }).id}/message`,
+      {
+        headers,
+        data: {
+          agent: "build",
+          model: { providerID: "test", modelID: "test-model" },
+          noReply: true,
+          parts: [{ type: "text", text: `Delegated work for ${child.title}.` }],
+        },
+      },
+    )
+    expect(posted.ok(), await posted.text()).toBe(true)
   }
 
   await page.goto("/")
@@ -96,6 +109,11 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   // the catalog does not carry it.
   await page.locator(".session-graph-node", { hasText: `Graph Hidden ${suffix}` }).dispatchEvent("click")
   await expect(page.locator(".session-graph-embedded-heading")).toContainText(`Graph Hidden ${suffix}`)
+  // Its transcript has to actually arrive, not just its header: a node that
+  // opens to an empty pane tells the reader nothing about what the step did.
+  await expect(page.locator(".session-graph-embedded .message").first()).toContainText(
+    `Delegated work for Graph Hidden ${suffix}`,
+  )
 
   // Escape returns to the top session; the graph canvas is still alive.
   await page.keyboard.press("Escape")

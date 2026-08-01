@@ -18,6 +18,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
 import { OpencodeXSwarmRoleTable } from "@opencode-ai/core/opencodex/sql"
 import { SwarmBriefing } from "@/opencodex/swarm-briefing"
+import { isSwarmProvider } from "@/provider/swarm-provider"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -176,11 +177,8 @@ export const TaskTool = Tool.define(
      * lead the description with the role name still match through the prefix.
      * No match is not an error - the child stays a plain swarm subtask.
      */
-    const resolveSwarmRole = Effect.fn("TaskTool.resolveSwarmRole")(function* (
-      swarmID: string,
-      params: Schema.Schema.Type<typeof Parameters>,
-    ) {
-      const roles = yield* database.db
+    const swarmRoleRows = Effect.fn("TaskTool.swarmRoleRows")(function* (swarmID: string) {
+      return yield* database.db
         .select({
           name: OpencodeXSwarmRoleTable.name,
           provider_id: OpencodeXSwarmRoleTable.provider_id,
@@ -191,8 +189,20 @@ export const TaskTool = Tool.define(
         .orderBy(asc(OpencodeXSwarmRoleTable.sort_order))
         .all()
         .pipe(Effect.orElseSucceed(() => []))
+    })
+
+    const resolveSwarmRole = Effect.fn("TaskTool.resolveSwarmRole")(function* (
+      swarmID: string,
+      params: Schema.Schema.Type<typeof Parameters>,
+    ) {
+      const roles = yield* swarmRoleRows(swarmID)
       const requested = params.swarm_role?.trim() || params.description.split(":")[0]
       return SwarmBriefing.matchSwarmRole(roles, requested ?? "")
+    })
+
+    /** The concrete model the swarm facade stands for: its orchestrator's. */
+    const orchestratorModel = Effect.fn("TaskTool.orchestratorModel")(function* (swarmID: string) {
+      return swarmRoleModel((yield* swarmRoleRows(swarmID))[0])
     })
 
     const run = Effect.fn("TaskTool.execute")(function* (
@@ -279,15 +289,34 @@ export const TaskTool = Tool.define(
       )
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 
-      // Explicit override first (a swarm briefing pins each role's model),
-      // then the resolved swarm role's own model, then the agent's configured
-      // model, then the caller's model.
-      const model = parseModelOverride(params.model) ??
+      const caller = { providerID: msg.info.providerID, modelID: msg.info.modelID }
+      // Explicit override first (a swarm briefing pins each role's model), then
+      // the resolved swarm role's own model. Inside a swarm the caller's own
+      // model comes next: a role spawning helpers of itself should run them on
+      // what it is running, not on whatever its agent happens to configure.
+      // Outside a swarm the agent's model keeps priority, as it always has.
+      const requested = parseModelOverride(params.model) ??
         swarmRoleModel(swarmRole) ??
-        next.model ?? {
-          modelID: msg.info.modelID,
-          providerID: msg.info.providerID,
-        }
+        (swarm && !isSwarmProvider(caller.providerID) ? caller : undefined) ??
+        next.model ??
+        caller
+      // A subagent never runs on the swarm facade. Routing it there would make
+      // the child a swarm session of its own - its first turn would be handed a
+      // briefing and a team, and it would start delegating instead of doing the
+      // work it was asked for, recursively. It reaches this point whenever the
+      // role could not be resolved and the caller's own model *is* the facade
+      // (the orchestrator delegating), so the fallback is the concrete model
+      // that facade stands for.
+      const model = isSwarmProvider(requested.providerID)
+        ? (yield* orchestratorModel(requested.modelID)) ?? next.model
+        : requested
+      if (!model || isSwarmProvider(model.providerID))
+        return yield* Effect.fail(
+          new Error(
+            `Cannot delegate: swarm ${requested.modelID} resolves to no concrete model. ` +
+              `Give its orchestrator role a model, or pass one on the task call.`,
+          ),
+        )
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,

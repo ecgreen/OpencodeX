@@ -64,6 +64,8 @@ const seed = Effect.fn("TaskToolTest.seed")(function* (
   title = "Pinned",
   options?: {
     model?: { id: ProviderV2.ModelID; providerID: ProviderV2.ID }
+    /** The model the seeded assistant turn ran on, when it matters. */
+    assistantModel?: { providerID: ProviderV2.ID; modelID: ProviderV2.ModelID }
     metadata?: Record<string, unknown>
   },
 ) {
@@ -91,8 +93,10 @@ const seed = Effect.fn("TaskToolTest.seed")(function* (
     cost: 0,
     path: { cwd: "/tmp", root: "/tmp" },
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    modelID: ref.modelID,
-    providerID: ref.providerID,
+    // Opt-in, because an orchestrator's turn records the swarm facade it was
+    // asked for - the value the delegation fallback would hand to its children.
+    modelID: options?.assistantModel?.modelID ?? ref.modelID,
+    providerID: options?.assistantModel?.providerID ?? ref.providerID,
     time: { created: Date.now() },
   }
   yield* session.updateMessage(assistant)
@@ -626,6 +630,100 @@ describe("tool.task", () => {
         "anthropic/claude-fable-5",
         "anthropic/claude-fable-5",
       ])
+    }),
+  )
+
+  it.instance("never routes a subagent to the swarm facade", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(ProjectTable)
+        .values({ id: ProjectV2.ID.make("prj_facade"), worktree: "/tmp", sandboxes: [] })
+      yield* database.db
+        .insert(OpencodeXProjectTable)
+        .values({ id: "opx_facade", project_id: ProjectV2.ID.make("prj_facade") })
+      yield* database.db.insert(OpencodeXSwarmTable).values({
+        id: "swm_facade",
+        opencodex_project_id: "opx_facade",
+        title: "Facade Team",
+        prompt: "Ship it",
+        status: "running",
+        source: "manual",
+      })
+      yield* database.db.insert(OpencodeXSwarmRoleTable).values([
+        {
+          id: "role_facade_orch",
+          swarm_id: "swm_facade",
+          name: "Orchestrator",
+          status: "running",
+          instructions: "",
+          sort_order: 0,
+          provider_id: "anthropic",
+          model_id: "claude-opus-5",
+        },
+      ])
+      const { chat, assistant } = yield* seed("Facade chat", {
+        model: { id: ProviderV2.ModelID.make("swm_facade"), providerID: ProviderV2.ID.make("swarm") },
+        assistantModel: {
+          providerID: ProviderV2.ID.make("swarm"),
+          modelID: ProviderV2.ModelID.make("swm_facade"),
+        },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+      // No role matches, so resolution falls all the way back to the caller's
+      // own model - which for an orchestrator is the swarm facade itself.
+      // Routing the child there would make it a swarm that delegates instead of
+      // working, recursively.
+      const result = yield* def.execute(
+        { description: "just do this", prompt: "do the work", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => prompts.push(input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(prompts[0]?.model).toMatchObject({ providerID: "anthropic", modelID: "claude-opus-5" })
+      const child = yield* sessions.get(result.metadata.sessionId)
+      expect(child.model?.providerID).not.toBe("swarm")
+    }),
+  )
+
+  it.instance("runs a role's own helpers on the model that role is running", () =>
+    Effect.gen(function* () {
+      // A specialist spawning subagents of itself has no role to resolve, so it
+      // must not fall through to the subagent agent's configured model - the
+      // helper runs on what its parent is running.
+      const specialist = yield* seed("Designer", {
+        metadata: { opencodex: { swarmID: "swm_helpers", swarmDepth: 1 } },
+        assistantModel: { providerID: ProviderV2.ID.make("openai"), modelID: ProviderV2.ModelID.make("gpt-5.2") },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+      yield* def.execute(
+        { description: "explore the icon set", prompt: "look around", subagent_type: "general" },
+        {
+          sessionID: specialist.chat.id,
+          messageID: specialist.assistant.id,
+          directory: specialist.chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => prompts.push(input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(prompts[0]?.model).toMatchObject({ providerID: "openai", modelID: "gpt-5.2" })
     }),
   )
 
