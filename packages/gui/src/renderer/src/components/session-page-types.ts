@@ -32,8 +32,6 @@ export type SessionPageProps = {
   loadOlderEmbeddedMessages?: (sessionID: string, cursor: string) => Promise<void>
   /** The session's workflow graph, for the canvas and the opened-node header. */
   graph?: SessionGraph
-  /** Opens the workspace Graph tab; offered from the toolbar for any session. */
-  openGraphTab?: () => void
   /** Child session opened from a graph node, "" for the top session. */
   graphNodeSessionID?: string
   graphNodeData?: SessionData

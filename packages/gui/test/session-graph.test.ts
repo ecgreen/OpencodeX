@@ -8,6 +8,7 @@ import {
   sessionGraphSummary,
   type SessionGraphInput,
 } from "../src/renderer/src/lib/session-graph"
+import { summarizeGraphDetail } from "../src/renderer/src/lib/session-graph-nodes"
 
 describe("session graph model", () => {
   test("builds the parent/child tree from session cards alone", () => {
@@ -443,3 +444,43 @@ function swarm(): OpencodeXSwarm {
 function entities<T extends { id: string }>(items: readonly T[]) {
   return { ids: items.map((item) => item.id), records: Object.fromEntries(items.map((item) => [item.id, item])) }
 }
+
+describe("graph detail summaries", () => {
+  test("keeps a short detail exactly as written", () => {
+    expect(summarizeGraphDetail("Find the API contract and report back.")).toBe(
+      "Find the API contract and report back.",
+    )
+  })
+
+  test("keeps the opening sentence of a long brief", () => {
+    const brief = `Review the flows end to end. ${"Then check every state, including the error ones. ".repeat(6)}`
+    expect(summarizeGraphDetail(brief)).toBe("Review the flows end to end.")
+  })
+
+  test("clips at a word boundary when there is no early sentence stop", () => {
+    const summary = summarizeGraphDetail("word ".repeat(80))!
+    expect(summary.length).toBeLessThanOrEqual(143)
+    expect(summary.endsWith("...")).toBe(true)
+    expect(summary).not.toContain("wor...")
+  })
+
+  test("collapses the whitespace a pasted brief carries", () => {
+    expect(summarizeGraphDetail("  Build   the\n\n  page  ")).toBe("Build the page")
+  })
+
+  test("nothing to say stays nothing", () => {
+    expect(summarizeGraphDetail("   ")).toBeUndefined()
+    expect(summarizeGraphDetail(undefined)).toBeUndefined()
+  })
+
+  test("a role's whole instruction sheet never reaches an edge tooltip", () => {
+    const instructions = `Own the visual language of the product. ${"Audit every screen for spacing, colour, and type. ".repeat(20)}`
+    const graph = buildSessionGraph(
+      input({
+        sessions: [swarmRoot(), { ...child("child-1", "Design pass"), metadata: { opencodex: { swarmID: "swarm-1", swarmRole: "Researcher" } } }],
+        swarms: [{ ...swarm(), roles: [{ ...swarm().roles[0]!, instructions }] }],
+      }),
+    )
+    expect(graph.edges[0]!.detail).toBe("Own the visual language of the product.")
+  })
+})

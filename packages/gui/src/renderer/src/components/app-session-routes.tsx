@@ -78,10 +78,6 @@ export function SessionRoute(props: { model: GuiAppModel }) {
         model.notices.run(() => model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
       }
       graph={model.sessionGraph.graph()}
-      openGraphTab={() => {
-        const current = session()
-        if (current) openSessionWorkspace(current.id, { tab: "graph" })
-      }}
       graphNodeSessionID={model.sessionGraph.nodeSessionID()}
       graphNodeData={model.authoritative.viewSessionData()[model.sessionGraph.nodeSessionID()]}
       graphNodeLoading={model.authoritative.viewPaneState(model.sessionGraph.nodeSessionID()).loading}

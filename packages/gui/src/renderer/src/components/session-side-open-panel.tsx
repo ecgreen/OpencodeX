@@ -366,7 +366,7 @@ export function SessionSideOpenPanel(props: {
           <SessionSideEmptyState
             directory={props.directory} diffs={props.diffs}
             openContext={addContextTab} showContext={!props.directoryOnly}
-            openGit={addGitTab} openFiles={files.openExplorer}
+            openGit={addGitTab} openGraph={addGraphTab} openFiles={files.openExplorer}
             openChangedFile={(path) => void openInputInNewTab(path)}
             openTerminal={terminals.create} addWebTab={addWebTab}
           />

@@ -25,7 +25,6 @@ export function SessionToolbar(props: {
   toggleGenericToolOutput: () => void
   sidePanelOpen?: boolean
   toggleSidePanel?: () => void
-  openGraph?: () => void
 }) {
   const [actionsOpen, setActionsOpen] = createSignal(false)
   let actionsMenu: HTMLDetailsElement | undefined
@@ -52,13 +51,6 @@ export function SessionToolbar(props: {
         </div>
       </div>
       <div class="session-actions compact">
-        {/* Always offered, whatever the workflow's shape: a session with no
-            delegations yet still opens a graph, which says so. */}
-        <Show when={props.openGraph}>
-          {(openGraph) => (
-            <IconButton icon="graph" label="View workflow graph" onClick={openGraph()} />
-          )}
-        </Show>
         <Show when={props.toggleSidePanel}>
           {(toggleSidePanel) => (
             <IconButton

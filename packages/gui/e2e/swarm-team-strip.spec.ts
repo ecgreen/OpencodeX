@@ -136,7 +136,7 @@ test("switching between swarm specialists keeps the app responsive", async ({ pa
 
   // With the graph canvas mounted alongside, switching specialists still has to
   // stay responsive: the canvas re-derives its layout from the same graph memo.
-  await page.getByRole("button", { name: "View workflow graph" }).click()
+  await openGraphTab(page)
   await expect(page.locator(".session-graph-canvas")).toBeVisible()
   await strip.getByRole("button", { name: /Designer/ }).click()
   await expect(page.locator(".swarm-member-heading")).toContainText("Designer")
@@ -175,4 +175,18 @@ async function paintedFrames(page: Page, ms: number) {
       }),
     ms,
   )
+}
+
+/** The graph is a launcher card in the workspace fly-out, beside Git. */
+async function openGraphTab(page: Page) {
+  const panel = page.locator(".session-side-panel.open")
+  if ((await panel.count()) === 0) await page.getByRole("button", { name: "Open side panel" }).click()
+  await expect(panel).toBeVisible()
+  const card = page.locator('.session-open-empty-actions button[data-empty-tone="graph"]')
+  if ((await card.count()) > 0) {
+    await card.click()
+    return
+  }
+  await page.getByRole("button", { name: "New tab" }).click()
+  await page.getByRole("button", { name: "Graph", exact: true }).click()
 }

@@ -245,6 +245,19 @@
   font-weight: var(--ds-weight-bold);
 }
 
+/* Belt and braces: the model already summarizes, but a title comes straight
+   from whatever the orchestrator named the step, and a hover card must stay a
+   glance whatever lands in it. */
+.session-graph-tooltip-title,
+.session-graph-tooltip-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.session-graph-tooltip-title { -webkit-line-clamp: 2; }
+.session-graph-tooltip-detail { -webkit-line-clamp: 3; }
+
 .session-graph-tooltip-detail,
 .session-graph-tooltip-hint {
   opacity: .78;

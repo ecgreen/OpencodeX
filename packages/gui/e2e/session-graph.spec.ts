@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import path from "node:path"
 import { fixtureDirectory } from "./fixture-directory"
 
@@ -75,7 +75,7 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   await expect(page.locator(".session-page")).toBeVisible()
 
   // The graph is always one toolbar click away, whatever shape the tree is in.
-  await page.getByRole("button", { name: "View workflow graph" }).click()
+  await openGraphTab(page)
   await expect(page.locator(".session-graph-canvas")).toBeVisible()
 
   // Every step renders - including the catalog-hidden swarm child and the
@@ -148,3 +148,17 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   await expect(page.locator(".session-graph-embedded")).toHaveCount(0)
   await expect(page.locator(".session-toolbar h1")).toContainText(`Graph Child A ${suffix}`)
 })
+
+/** The graph is a launcher card in the workspace fly-out, beside Git. */
+async function openGraphTab(page: Page) {
+  const panel = page.locator(".session-side-panel.open")
+  if ((await panel.count()) === 0) await page.getByRole("button", { name: "Open side panel" }).click()
+  await expect(panel).toBeVisible()
+  const card = page.locator('.session-open-empty-actions button[data-empty-tone="graph"]')
+  if ((await card.count()) > 0) {
+    await card.click()
+    return
+  }
+  await page.getByRole("button", { name: "New tab" }).click()
+  await page.getByRole("button", { name: "Graph", exact: true }).click()
+}

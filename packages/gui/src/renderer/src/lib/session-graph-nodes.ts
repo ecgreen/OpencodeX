@@ -81,7 +81,7 @@ export function sessionGraphNode(input: {
     status,
     statusLabel: STATUS_LABEL[status],
     badge: BADGE[status],
-    detail: input.item?.blocker ?? input.job?.failure?.message ?? input.job?.statusReason,
+    detail: summarizeGraphDetail(input.item?.blocker ?? input.job?.failure?.message ?? input.job?.statusReason),
     progress: input.item?.progress,
     startedAt: input.item?.startedAt ?? input.session.time.created,
     updatedAt: input.session.time.updated,
@@ -142,7 +142,7 @@ export function sessionGraphEdge(input: {
     from: input.from,
     to: input.node.id,
     label,
-    detail: role?.instructions?.trim() || (title === label ? "" : title),
+    detail: summarizeGraphDetail(role?.instructions || (title === label ? "" : title)) ?? "",
     status: input.node.status,
   }
 }
@@ -194,6 +194,30 @@ function roleByName(roles: SwarmRoleIndex, name: string | undefined) {
   const normalized = normalizeRole(name)
   for (const role of roles.values()) if (normalizeRole(role.name) === normalized) return role
   return undefined
+}
+
+/** Roughly one line of tooltip at the canvas's text size. */
+const SUMMARY_LIMIT = 140
+
+/**
+ * A hover card is a glance, not a document.
+ *
+ * Role instructions and delegation briefs run to paragraphs, and pasting one
+ * into a tooltip produced a wall of text over the canvas that was slower to read
+ * than opening the step. This keeps the opening sentence and stops there - the
+ * transcript behind the node is the place for the whole thing.
+ */
+export function summarizeGraphDetail(value: string | undefined, limit = SUMMARY_LIMIT) {
+  const text = value?.replace(/\s+/g, " ").trim()
+  if (!text) return undefined
+  // Prefer a natural stop, but only when one arrives early enough to be a
+  // summary rather than the whole text again.
+  const stop = text.search(/[.!?](\s|$)/)
+  const sentence = stop > 0 && stop + 1 <= limit ? text.slice(0, stop + 1) : text
+  if (sentence.length <= limit) return sentence
+  const clipped = sentence.slice(0, limit)
+  const boundary = clipped.lastIndexOf(" ")
+  return `${(boundary > limit / 2 ? clipped.slice(0, boundary) : clipped).trimEnd()}...`
 }
 
 /** Mirrors the server's lenient role matching (SwarmBriefing.matchSwarmRole). */
