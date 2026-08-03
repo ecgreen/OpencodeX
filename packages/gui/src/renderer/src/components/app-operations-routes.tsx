@@ -75,6 +75,7 @@ export function ViewsRoute(props: { model: GuiAppModel }) {
   const model = props.model
   return (
     <ViewsManagerPage
+      centerCollapsed={model.view.centerCollapsed()}
       view={model.view.activeView()}
       views={model.authoritative.snapshot()?.views ?? []}
       snapshot={model.authoritative.snapshot()}
@@ -126,6 +127,12 @@ function ViewWorkspacePanel(props: { model: GuiAppModel; item: ViewItem }) {
       selectContext={model.view.setSidePanelSessionID}
       startResize={model.view.startSidePanelResize}
       toggleMaximized={model.view.toggleSidePanelMaximized}
+      windowControls={{
+        centerCollapsed: model.view.centerCollapsed(),
+        collapsible: model.view.centerCollapsible(),
+        toggleCenter: model.view.toggleViewCenter,
+        closeWorkspace: () => model.view.setSidePanelOpen(false),
+      }}
       resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
     />
   )
@@ -143,6 +150,12 @@ function ViewWorkspacePanel(props: { model: GuiAppModel; item: ViewItem }) {
       request={model.view.sidePanelRequest()}
       startResize={model.view.startSidePanelResize}
       toggleMaximized={model.view.toggleSidePanelMaximized}
+      windowControls={{
+        centerCollapsed: model.view.centerCollapsed(),
+        collapsible: model.view.centerCollapsible(),
+        toggleCenter: model.view.toggleViewCenter,
+        closeWorkspace: () => model.view.setSidePanelOpen(false),
+      }}
       resizeByKeyboard={model.view.resizeSidePanelByKeyboard}
     />
   )

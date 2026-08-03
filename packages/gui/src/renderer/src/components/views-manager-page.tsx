@@ -30,10 +30,16 @@ export function ViewsManagerPage(props: {
   reorderViews: (viewIDs: string[]) => void | Promise<void>
   viewPinned: (viewID: string) => boolean
   toggleViewPinned: (viewID: string) => void
+  /** The view's panes put away so the workspace has the whole window. */
+  centerCollapsed?: boolean
 }) {
   const activeSummary = createMemo(() => props.view ? summarizeView({ view: props.view, snapshot: props.snapshot }) : undefined)
   return (
-    <div class="page views-manager-page" classList={{ "has-active-view": Boolean(props.view) }}>
+    <div
+      class="page views-manager-page"
+      classList={{ "has-active-view": Boolean(props.view) }}
+      data-center-collapsed={props.centerCollapsed ? "" : undefined}
+    >
       <Show
         when={props.view}
         fallback={

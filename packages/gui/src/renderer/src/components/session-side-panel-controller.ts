@@ -3,16 +3,14 @@ import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { SessionPageProps } from "./session-page-types"
 import type { SessionSidePanelRequest, SessionSidePanelTarget } from "./session-side-panel"
 import { registerSessionWorkspaceTargetHandler } from "../lib/session-workspace-bridge"
-import { createResizeSession } from "../lib/resize-session"
 import {
   canCollapseCenter,
   clampWorkspaceWidthRatio,
   EMPTY_WORKSPACE_LAYOUT,
   nextWorkspaceLayout,
-  WORKSPACE_WIDTH_MAX,
-  WORKSPACE_WIDTH_MIN,
   type WorkspaceLayoutChange,
 } from "../lib/workspace-layout"
+import { createWorkspaceWidth } from "../lib/workspace-width"
 
 const SIDE_PANEL_WIDTH_KEY = "opencodex.gui.sessionSidePanel.width"
 const sidePanelOpenBySessionID = new Map<string, boolean>()
@@ -34,13 +32,10 @@ export function createSessionSidePanelController(props: SessionPageProps) {
   const apply = (change: WorkspaceLayoutChange) => setLayout((current) => nextWorkspaceLayout(current, change))
   const setOpen = (value: boolean) => apply({ type: "workspace", open: value })
   const [mounted, setMounted] = createSignal(open())
-  const [widthRatio, setWidthRatio] = createSignal(readSidePanelWidthRatio())
+  const width = createWorkspaceWidth({ read: readSidePanelWidthRatio, write: writeSidePanelWidthRatio })
   const [request, setRequest] = createSignal<SessionSidePanelRequest>()
   const session = createMemo(() => enabled() ? props.session : undefined)
-  const resizeCleanups = new Set<() => void>()
   let loadedSessionID = props.session?.id ?? ""
-
-  onCleanup(() => resizeCleanups.forEach((cleanup) => cleanup()))
 
   const toggleFromCommand = () => {
     if (enabled()) toggle()
@@ -119,71 +114,6 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     pendingSidePanelOpenHandoff = { directory: props.session?.directory ?? "", expires: Date.now() + 30_000 }
   }
 
-  function startResize(event: PointerEvent & { currentTarget: HTMLElement }) {
-    event.preventDefault()
-    resizeCleanups.forEach((cleanup) => cleanup())
-    const handle = event.currentTarget
-    const pointerID = event.pointerId
-    handle.setPointerCapture?.(pointerID)
-    window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-start"))
-    const container = event.currentTarget.parentElement
-    container?.classList.add("resizing")
-    const containerWidth = container?.getBoundingClientRect().width ?? window.innerWidth
-    const startX = event.clientX
-    const startRatio = widthRatio()
-    const resize = createResizeSession(startRatio, {
-      preview: setWidthRatio,
-      persist: writeSidePanelWidthRatio,
-    })
-    const onMove = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerID) return
-      resize.update(clampWorkspaceWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
-    }
-    const cleanup = () => {
-      if (!resizeCleanups.delete(cleanup)) return
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", finish)
-      window.removeEventListener("pointercancel", finish)
-      if (handle.hasPointerCapture?.(pointerID)) handle.releasePointerCapture?.(pointerID)
-      container?.classList.remove("resizing")
-      resize.finish()
-      window.dispatchEvent(new CustomEvent("opencodex:session-side-panel-resize-end"))
-    }
-    const finish = (finishEvent: PointerEvent) => {
-      if (finishEvent.pointerId === pointerID) cleanup()
-    }
-    resizeCleanups.add(cleanup)
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", finish)
-    window.addEventListener("pointercancel", finish)
-  }
-
-  function toggleMaximized() {
-    setPersistedWidthRatio(widthRatio() >= WORKSPACE_WIDTH_MAX - 0.02 ? 0.4 : WORKSPACE_WIDTH_MAX)
-  }
-
-  function resizeByKeyboard(event: KeyboardEvent) {
-    const next = event.key === "ArrowLeft" ? widthRatio() + 0.04
-      : event.key === "ArrowRight" ? widthRatio() - 0.04
-        : event.key === "Home" ? WORKSPACE_WIDTH_MIN
-          : event.key === "End" ? WORKSPACE_WIDTH_MAX
-            : undefined
-    if (event.key === "Enter") {
-      event.preventDefault()
-      toggleMaximized()
-      return
-    }
-    if (next === undefined) return
-    event.preventDefault()
-    setPersistedWidthRatio(next)
-  }
-
-  function setPersistedWidthRatio(value: number) {
-    const next = clampWorkspaceWidthRatio(value)
-    setWidthRatio(next)
-    writeSidePanelWidthRatio(next)
-  }
-
   function openTranscriptTarget(event: MouseEvent) {
     const target = event.target
     if (!(target instanceof Element)) return
@@ -229,15 +159,15 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     collapsible,
     toggleCenter,
     mounted,
-    widthRatio,
+    widthRatio: width.widthRatio,
     request,
     session,
     openTarget,
     toggle,
     requestPendingOpenHandoff,
-    startResize,
-    toggleMaximized,
-    resizeByKeyboard,
+    startResize: width.startResize,
+    toggleMaximized: width.toggleMaximized,
+    resizeByKeyboard: width.resizeByKeyboard,
     openTranscriptTarget,
   }
 }

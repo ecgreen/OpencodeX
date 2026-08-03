@@ -39,3 +39,19 @@
 .session-page[data-center-collapsed] .session-side-panel-resize {
   display: none;
 }
+
+/* A view's panes put away for the same reason and by the same rules: its
+   workspace is the session panel, pointed at whichever session it prioritises. */
+.views-manager-page[data-center-collapsed] .views-manager-content {
+  display: none;
+}
+
+.views-manager-page[data-center-collapsed] .session-side-panel.open {
+  flex-basis: 100%;
+  width: 100%;
+  max-width: none;
+}
+
+.views-manager-page[data-center-collapsed] .session-side-panel-resize {
+  display: none;
+}
