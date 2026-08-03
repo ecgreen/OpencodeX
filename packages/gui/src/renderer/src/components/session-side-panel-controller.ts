@@ -4,6 +4,15 @@ import type { SessionPageProps } from "./session-page-types"
 import type { SessionSidePanelRequest, SessionSidePanelTarget } from "./session-side-panel"
 import { registerSessionWorkspaceTargetHandler } from "../lib/session-workspace-bridge"
 import { createResizeSession } from "../lib/resize-session"
+import {
+  canCollapseCenter,
+  clampWorkspaceWidthRatio,
+  EMPTY_WORKSPACE_LAYOUT,
+  nextWorkspaceLayout,
+  WORKSPACE_WIDTH_MAX,
+  WORKSPACE_WIDTH_MIN,
+  type WorkspaceLayoutChange,
+} from "../lib/workspace-layout"
 
 const SIDE_PANEL_WIDTH_KEY = "opencodex.gui.sessionSidePanel.width"
 const sidePanelOpenBySessionID = new Map<string, boolean>()
@@ -11,7 +20,19 @@ let pendingSidePanelOpenHandoff: { directory: string; expires: number } | undefi
 
 export function createSessionSidePanelController(props: SessionPageProps) {
   const enabled = () => props.sidePanelEnabled !== false
-  const [open, setOpen] = createSignal(enabled() ? initialSidePanelOpen(props.session) : false)
+  // The three columns move together, so they are one value rather than three
+  // signals that could disagree - see `workspace-layout` for the rules.
+  const [layout, setLayout] = createSignal(
+    nextWorkspaceLayout(
+      { ...EMPTY_WORKSPACE_LAYOUT, available: enabled() },
+      { type: "workspace", open: enabled() && initialSidePanelOpen(props.session) },
+    ),
+  )
+  const open = () => layout().workspaceOpen
+  const centerCollapsed = () => layout().centerCollapsed
+  const collapsible = () => canCollapseCenter(layout())
+  const apply = (change: WorkspaceLayoutChange) => setLayout((current) => nextWorkspaceLayout(current, change))
+  const setOpen = (value: boolean) => apply({ type: "workspace", open: value })
   const [mounted, setMounted] = createSignal(open())
   const [widthRatio, setWidthRatio] = createSignal(readSidePanelWidthRatio())
   const [request, setRequest] = createSignal<SessionSidePanelRequest>()
@@ -38,6 +59,10 @@ export function createSessionSidePanelController(props: SessionPageProps) {
   createEffect(() => {
     if (open()) setMounted(true)
   })
+
+  // A route that cannot host a workspace also cannot hide the session behind
+  // one, so availability is fed in rather than checked at each control.
+  createEffect(() => apply({ type: "available", available: enabled() }))
 
   createEffect(() => {
     if (!enabled()) return
@@ -78,10 +103,16 @@ export function createSessionSidePanelController(props: SessionPageProps) {
 
   function toggle() {
     if (open()) {
+      // Closing takes the session's column back out with it, which is the only
+      // reason a reader can never strand themselves in an empty window.
       setOpen(false)
       return
     }
     openPanel()
+  }
+
+  function toggleCenter() {
+    apply({ type: "toggleCenter" })
   }
 
   function requestPendingOpenHandoff() {
@@ -106,7 +137,7 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     })
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerID) return
-      resize.update(clampSidePanelWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
+      resize.update(clampWorkspaceWidthRatio(startRatio - ((moveEvent.clientX - startX) / containerWidth)))
     }
     const cleanup = () => {
       if (!resizeCleanups.delete(cleanup)) return
@@ -128,14 +159,14 @@ export function createSessionSidePanelController(props: SessionPageProps) {
   }
 
   function toggleMaximized() {
-    setPersistedWidthRatio(widthRatio() >= 0.68 ? 0.4 : 0.7)
+    setPersistedWidthRatio(widthRatio() >= WORKSPACE_WIDTH_MAX - 0.02 ? 0.4 : WORKSPACE_WIDTH_MAX)
   }
 
   function resizeByKeyboard(event: KeyboardEvent) {
     const next = event.key === "ArrowLeft" ? widthRatio() + 0.04
       : event.key === "ArrowRight" ? widthRatio() - 0.04
-        : event.key === "Home" ? 0.28
-          : event.key === "End" ? 0.7
+        : event.key === "Home" ? WORKSPACE_WIDTH_MIN
+          : event.key === "End" ? WORKSPACE_WIDTH_MAX
             : undefined
     if (event.key === "Enter") {
       event.preventDefault()
@@ -148,7 +179,7 @@ export function createSessionSidePanelController(props: SessionPageProps) {
   }
 
   function setPersistedWidthRatio(value: number) {
-    const next = clampSidePanelWidthRatio(value)
+    const next = clampWorkspaceWidthRatio(value)
     setWidthRatio(next)
     writeSidePanelWidthRatio(next)
   }
@@ -194,6 +225,9 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     enabled,
     open,
     setOpen,
+    centerCollapsed,
+    collapsible,
+    toggleCenter,
     mounted,
     widthRatio,
     request,
@@ -238,14 +272,10 @@ function takePendingSidePanelOpenHandoff(session: Session | undefined) {
 function readSidePanelWidthRatio() {
   if (typeof localStorage === "undefined") return 0.4
   const parsed = Number(localStorage.getItem(SIDE_PANEL_WIDTH_KEY))
-  return clampSidePanelWidthRatio(Number.isFinite(parsed) ? parsed : 0.4)
+  return clampWorkspaceWidthRatio(Number.isFinite(parsed) ? parsed : 0.4)
 }
 
 function writeSidePanelWidthRatio(value: number) {
   if (typeof localStorage === "undefined") return
-  localStorage.setItem(SIDE_PANEL_WIDTH_KEY, String(clampSidePanelWidthRatio(value)))
-}
-
-function clampSidePanelWidthRatio(value: number) {
-  return Math.max(0.28, Math.min(0.7, value))
+  localStorage.setItem(SIDE_PANEL_WIDTH_KEY, String(clampWorkspaceWidthRatio(value)))
 }

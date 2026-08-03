@@ -20,3 +20,22 @@
   min-height: 0;
   gap: 8px;
 }
+
+/* The session column put away so the workspace can have the whole window. It
+   stays mounted and keeps its scroll position; only its box is taken back. */
+.session-page[data-center-collapsed] .session-workspace,
+.session-page[data-center-collapsed] .session-page-top {
+  display: none;
+}
+
+.session-page[data-center-collapsed] .session-side-panel.open {
+  flex-basis: 100%;
+  width: 100%;
+  max-width: none;
+}
+
+/* Nothing to drag against once the session is away: the workspace is already
+   the full window, and the handle would only pull it back to a hidden edge. */
+.session-page[data-center-collapsed] .session-side-panel-resize {
+  display: none;
+}

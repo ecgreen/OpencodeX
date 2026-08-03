@@ -1,6 +1,7 @@
 import { Show } from "solid-js"
 import { formatRelative } from "../lib/format"
 import type { SessionGraphEdge, SessionGraphNode } from "../lib/session-graph"
+import type { SessionGraphGate } from "../lib/session-graph-goal"
 import type { SessionGraphLayoutNode } from "../lib/session-graph-layout"
 import { Icon } from "./icon"
 import { Button, ProgressMeter, Tooltip } from "./ui"
@@ -20,6 +21,8 @@ export function SessionGraphNodeCard(props: {
   open: (node: SessionGraphNode) => void
   openFullPage: (node: SessionGraphNode) => void
   hover: (id: string) => void
+  /** Answers a parked gate. The canvas is the only place a goal can be unblocked. */
+  approve?: (gate: SessionGraphGate, approved: boolean) => void
 }) {
   const node = () => props.placed.node
   const progress = () => node().progress
@@ -88,6 +91,20 @@ export function SessionGraphNodeCard(props: {
           </Show>
         </Button>
       </Tooltip>
+      {/* A sibling of the card, not a child: the card is itself a button, and
+          a button cannot contain the two this gate needs. */}
+      <Show when={props.approve && node().gate}>
+        {(gate) => (
+          <div class="session-graph-node-gate">
+            <Button appearance="outline" size="compact" icon="check" onClick={() => props.approve?.(gate(), true)}>
+              Approve
+            </Button>
+            <Button appearance="ghost" tone="danger" size="compact" icon="x" onClick={() => props.approve?.(gate(), false)}>
+              Skip
+            </Button>
+          </div>
+        )}
+      </Show>
     </div>
   )
 }

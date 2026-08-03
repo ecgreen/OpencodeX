@@ -7,6 +7,7 @@ import {
   type SessionGraph,
   type SessionGraphNode,
 } from "../lib/session-graph"
+import { sessionGoal } from "../lib/goal-graph-view"
 import {
   GRAPH_FETCH_DEBOUNCE_MS,
   GRAPH_FETCH_MAX_DEPTH,
@@ -114,6 +115,9 @@ export function createSessionGraphController(input: {
     const session = input.selection.selectedSession()
     const snapshot = input.authoritative.snapshot()
     if (!session || !snapshot) return EMPTY_SESSION_GRAPH
+    // The plan this session declared, when it declared one. The graph is the one
+    // surface for both, so a goal is drawn as the pipeline it became.
+    const goal = sessionGoal(session, snapshot.goals ?? [])
     return buildSessionGraph({
       sessionID: session.id,
       workItems: input.authoritative.workItems(),
@@ -121,6 +125,7 @@ export function createSessionGraphController(input: {
       jobs: snapshot.jobs,
       swarms: snapshot.swarms,
       sessionStatus: snapshot.sessionStatus,
+      ...(goal ? { goal } : {}),
     })
   })
 

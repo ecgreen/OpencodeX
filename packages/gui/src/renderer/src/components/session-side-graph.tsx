@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, on } from "solid-js"
 import { sessionGraphSummary, type SessionGraph, type SessionGraphNode } from "../lib/session-graph"
+import type { SessionGraphGate } from "../lib/session-graph-goal"
 import { paddedBounds } from "../lib/session-graph-layout"
 import { graphTransform } from "../lib/session-graph-viewport"
 import { createSessionGraphViewController } from "./session-side-graph-controller"
@@ -20,6 +21,7 @@ export function SessionSideGraph(props: {
   selectedNodeID: string
   open: (node: SessionGraphNode) => void
   openFullPage: (node: SessionGraphNode) => void
+  approve?: (gate: SessionGraphGate, approved: boolean) => void
 }) {
   const controller = createSessionGraphViewController({ graph: () => props.graph })
   const frame = createMemo(() => paddedBounds(controller.layout().bounds))
@@ -118,6 +120,7 @@ export function SessionSideGraph(props: {
                   open={props.open}
                   openFullPage={props.openFullPage}
                   hover={(id) => controller.setHoveredNodeID(id)}
+                  approve={props.approve}
                 />
               )}
             </For>

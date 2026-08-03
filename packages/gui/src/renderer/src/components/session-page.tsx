@@ -12,7 +12,6 @@ import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
-import { SessionGoalGraph } from "./session-goal-graph"
 import { SessionSwarmTeam } from "./swarm-team-strip"
 import { SessionGraphSurface } from "./session-graph-surface"
 import { createSessionModelController } from "./session-model-controller"
@@ -227,8 +226,11 @@ export function SessionPage(props: SessionPageProps) {
   // A mirrored Claude Code session cannot run headlessly until the CLI is
   // signed in; the raw terminal page is where that happens.
   const claudeDriver = createMemo(() => readClaudeDriverMarker(session()?.metadata))
+  // The session column is hidden rather than unmounted when it collapses: the
+  // transcript keeps its scroll position and its subscriptions, so restoring it
+  // is instant and does not re-fetch what the reader was already looking at.
   return (
-    <div class="page session-page" data-session-id={session()?.id}>
+    <div class="page session-page" data-session-id={session()?.id} data-center-collapsed={sidePanel.centerCollapsed() ? "" : undefined}>
       <SessionPageToolbar props={props} sidePanel={sidePanel} />
       <Show when={claudeDriver()?.authState === "needs-login" ? claudeDriver() : undefined}>
         {(marker) => (
@@ -245,10 +247,11 @@ export function SessionPage(props: SessionPageProps) {
         )}
       </Show>
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
-        <div class="session-workspace">
-          <Show when={props.goal} fallback={<SessionSwarmTeam page={props} />}>
-            <SessionGoalGraph page={props} />
-          </Show>
+        <div class="session-workspace" inert={sidePanel.centerCollapsed()}>
+          {/* One graph, drawn from what ran. A goal no longer gets a list of its
+              own here: its steps are sessions parented to this one, so the
+              pipeline already carries them, gates and all. */}
+          <SessionSwarmTeam page={props} />
           {/* Orthogonal to the strip above: this is the pane a graph node opens
               into, and it renders nothing until one is selected. */}
           <SessionGraphSurface page={props} />
@@ -348,9 +351,16 @@ export function SessionPage(props: SessionPageProps) {
                 graphSelectedNodeID={props.graphNodeSessionID ? `session:${props.graphNodeSessionID}` : ""}
                 openGraphNode={props.openGraphNode}
                 openGraphNodeFullPage={props.openGraphNodeFullPage}
+                approveGraphGate={(gate, approved) => props.approveGoalNode?.(gate.goalID, gate.nodeID, approved)}
                 request={sidePanel.request()}
                 startResize={sidePanel.startResize}
                 toggleMaximized={sidePanel.toggleMaximized}
+                windowControls={{
+                  centerCollapsed: sidePanel.centerCollapsed(),
+                  collapsible: sidePanel.collapsible(),
+                  toggleCenter: sidePanel.toggleCenter,
+                  closeWorkspace: () => sidePanel.setOpen(false),
+                }}
                 resizeByKeyboard={sidePanel.resizeByKeyboard}
               />
             </Suspense>

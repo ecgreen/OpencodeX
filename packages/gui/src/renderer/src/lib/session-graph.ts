@@ -1,5 +1,11 @@
-import type { OpencodeXJob, OpencodeXSwarm, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeXGoal, OpencodeXJob, OpencodeXSwarm, Session } from "@opencode-ai/sdk/v2/client"
 import type { WorkItem } from "@opencode-ai/sdk/v2/work-item"
+import {
+  enrichWithGoalNode,
+  goalNodesBySession,
+  plannedGoalNodes,
+  type SessionGraphGate,
+} from "./session-graph-goal"
 import {
   jobGraphEdge,
   jobGraphNode,
@@ -43,6 +49,8 @@ export type SessionGraphNode = {
   /** Failure message or blocker, shown on hover. */
   detail?: string
   progress?: { completed: number; failed: number; total: number }
+  /** Present only while a declared step is parked on a human's approval. */
+  gate?: SessionGraphGate
   startedAt?: number
   updatedAt: number
   root: boolean
@@ -80,6 +88,12 @@ export type SessionGraphInput = {
    * applied by id regardless, so this is how a fetched child reads as running.
    */
   sessionStatus?: Record<string, { type?: string } | undefined>
+  /**
+   * The plan this session declared, when it declared one. Execution still draws
+   * the shape; this only supplies what running cannot show - the steps that
+   * have not run, and the approval a gate is parked on.
+   */
+  goal?: OpencodeXGoal
 }
 
 export const EMPTY_SESSION_GRAPH: SessionGraph = {
@@ -133,7 +147,41 @@ export function buildSessionGraph(input: SessionGraphInput): SessionGraph {
   )
 
   placeJobs({ input, roles, items, placed, depths, nodes, edges, rootSessionID, sessionsByID })
+  applyGoal({ goal: input.goal, nodes, edges, depths })
   return { rootID: `session:${rootSessionID}`, rootSessionID, nodes, edges, counts: countNodes(nodes) }
+}
+
+/**
+ * Folds a declared plan into the drawn pipeline: labels the steps that ran from
+ * what the plan meant them to be, then adds the ones that have not run at all.
+ * The pipeline's own shape is never rewritten - execution stays the witness.
+ */
+function applyGoal(context: {
+  goal?: OpencodeXGoal
+  nodes: SessionGraphNode[]
+  edges: SessionGraphEdge[]
+  depths: ReadonlyMap<string, number>
+}) {
+  const goal = context.goal
+  if (!goal || goal.nodes.length === 0) return
+  const bySession = goalNodesBySession(goal)
+  const placed = new Map<string, { id: string; depth: number }>()
+  context.nodes.forEach((node, index) => {
+    const goalNode = node.sessionID ? bySession.get(node.sessionID) : undefined
+    if (!goalNode) return
+    context.nodes[index] = enrichWithGoalNode(node, goalNode, goal.id)
+    placed.set(goalNode.id, { id: node.id, depth: node.depth })
+  })
+  // Steps hang off wherever the drawn pipeline ends, which is its deepest node
+  // - the final merge when there is one, else the last step to have run.
+  const tail = context.nodes.reduce(
+    (deepest, node) => (node.depth > deepest.depth ? node : deepest),
+    context.nodes[0],
+  )
+  if (!tail) return
+  const planned = plannedGoalNodes({ goal, placed, tail, tailDepth: tail.depth })
+  context.nodes.push(...planned.nodes)
+  context.edges.push(...planned.edges)
 }
 
 /** Whether this session is driving a workflow worth drawing. */

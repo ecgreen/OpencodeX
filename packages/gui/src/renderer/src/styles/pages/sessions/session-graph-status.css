@@ -125,3 +125,15 @@
     animation: none;
   }
 }
+
+/* A parked gate answers itself on the canvas. It sits under the card rather
+   than inside it, because the card is a button and cannot contain these two. */
+.session-graph-node-gate {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  display: flex;
+  gap: var(--ds-space-1);
+  margin-top: var(--ds-space-1);
+  z-index: 2;
+}

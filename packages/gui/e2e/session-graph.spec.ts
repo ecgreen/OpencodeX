@@ -144,6 +144,32 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   await page.getByRole("button", { name: "Fit graph to view" }).click()
   await expect(page.locator(".session-graph-zoom-value")).not.toHaveText("250%")
 
+  // The session column can be put away so the workspace has the whole window,
+  // and closing the workspace has to bring it back - otherwise the reader is
+  // left looking at nothing, with no control on screen to fix it.
+  const workspace = page.locator(".session-side-panel.open")
+  const sessionColumn = page.locator(".session-workspace")
+  await expect(sessionColumn).toBeVisible()
+  const shared = (await workspace.boundingBox())!.width
+  await page.getByRole("button", { name: "Hide the session" }).click()
+  await expect(sessionColumn).toBeHidden()
+  // It took the room the session gave up, rather than merely hiding it. Polled
+  // because the width is a transition: sampled on the click it still reads as
+  // the old value, which passes or fails on timing rather than on behaviour.
+  await expect.poll(async () => (await workspace.boundingBox())?.width ?? 0).toBeGreaterThan(shared)
+  // The way back is on screen: the control lives in the workspace, not in the
+  // session toolbar that just went away with it.
+  await expect(page.getByRole("button", { name: "Show the session" })).toBeVisible()
+
+  // Closing the workspace from here restores the session instead of emptying
+  // the window - the invariant that makes "everything closed" unreachable.
+  await page.getByRole("button", { name: "Close the workspace" }).click()
+  await expect(sessionColumn).toBeVisible()
+  await expect(workspace).toHaveCount(0)
+
+  await openGraphTab(page)
+  await expect(page.locator(".session-graph-canvas")).toBeVisible()
+
   // Last, because it navigates away: "open as a full session" has to actually
   // leave the embedded pane behind. It used to route underneath a pane that
   // survived the change, so the button read as doing nothing at all.
