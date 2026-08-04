@@ -1,7 +1,12 @@
 import type { OpencodeXGoal, OpencodeXGoalNode } from "@opencode-ai/sdk/v2/client"
 import { executorLabel } from "./goal-graph-view"
-import type { SessionGraphEdge, SessionGraphNode, SessionGraphStatus } from "./session-graph"
-import { summarizeGraphDetail } from "./session-graph-nodes"
+import type {
+  SessionGraphEdge,
+  SessionGraphNode,
+  SessionGraphOutcome,
+  SessionGraphStatus,
+} from "./session-graph"
+import { OUTCOME_BADGE, summarizeGraphDetail } from "./session-graph-nodes"
 
 /**
  * A declared goal, folded into the pipeline the session actually ran.
@@ -33,13 +38,23 @@ const STATUS_LABEL: Record<SessionGraphStatus, string> = {
   queued: "Not started",
   running: "Running",
   input_needed: "Needs your approval",
+  needs_review: "Ready for review",
   completed: "Done",
+  returned: "Returned",
   failed: "Failed",
   cancelled: "Skipped",
 }
 
 export function goalNodeStatus(status: string): SessionGraphStatus {
   return STATUS[status] ?? "queued"
+}
+
+/** What a terminal plan step produced; running/waiting steps have no outcome. */
+const GOAL_OUTCOME: Record<string, SessionGraphOutcome> = {
+  done: "verified_success",
+  failed: "failed",
+  skipped: "cancelled",
+  cancelled: "cancelled",
 }
 
 /** The goal's steps, by the session each one ran in. */
@@ -115,6 +130,7 @@ export function plannedGoalNodes(input: {
   const edges: SessionGraphEdge[] = []
   for (const node of [...pending].toSorted((left, right) => left.sortOrder - right.sortOrder)) {
     const status = goalNodeStatus(node.status)
+    const outcome = GOAL_OUTCOME[node.status]
     const id = `goal:${node.id}`
     nodes.push({
       id,
@@ -125,6 +141,7 @@ export function plannedGoalNodes(input: {
       ...(executorLabel(node) ? { role: executorLabel(node) } : {}),
       status,
       statusLabel: STATUS_LABEL[status],
+      ...(outcome ? { outcome, badge: OUTCOME_BADGE[outcome] } : {}),
       ...(status === "input_needed" ? { gate: { goalID: input.goal.id, nodeID: node.id } } : {}),
       ...goalDetail(node),
       updatedAt: node.completedAt ?? 0,
@@ -140,6 +157,9 @@ export function plannedGoalNodes(input: {
         label: node.kind === "gate" ? "Awaiting approval" : "Planned",
         detail: node.brief || node.title,
         status,
+        // The one place declared edges are authoritative: steps that have not
+        // run. Once a step runs, execution draws its shape instead.
+        provenance: "planned",
       })
     }
   }

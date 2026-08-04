@@ -1,5 +1,5 @@
 import type { LspStatus } from "@opencode-ai/sdk/v2/client"
-import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
 import type { GuiClient } from "../lib/client"
 import type { DiffFile } from "../lib/session-api"
 import { isWorkbenchImageContent } from "../lib/workbench"
@@ -29,6 +29,7 @@ import { SessionSideOpenDirtyDialog } from "./session-side-open-dirty-dialog"
 import { SessionSideOpenExplorerPane } from "./session-side-open-explorer-pane"
 import { SessionSideGraph } from "./session-side-graph"
 import { EMPTY_SESSION_GRAPH, type SessionGraph, type SessionGraphNode } from "../lib/session-graph"
+import type { GraphTopologyState } from "../lib/session-graph-fetch"
 
 export function SessionSideOpenPanel(props: {
   sessionID: string; active: boolean
@@ -49,9 +50,14 @@ export function SessionSideOpenPanel(props: {
   /** The session's workflow graph, already derived from authoritative state. */
   graph?: SessionGraph
   graphSelectedNodeID?: string
+  graphTopology?: GraphTopologyState
+  retryGraphTopology?: () => void
   openGraphNode?: (node: SessionGraphNode) => void
   openGraphNodeFullPage?: (node: SessionGraphNode) => void
+  canOpenGraphNodeFullPage?: (sessionID: string) => boolean
   approveGraphGate?: (gate: SessionGraphGate, approved: boolean) => void
+  /** Fullscreen drill-down pane, measured into the graph tab's own layout. */
+  graphDrawer?: JSX.Element
 }) {
   const restoredState = restoreOpenPanelState(props.sessionID)
   const [tabs, setTabs] = createSignal<OpenTab[]>(restoredState.tabs)
@@ -354,13 +360,21 @@ export function SessionSideOpenPanel(props: {
           <SessionSideBrowserHost preview={browser.activePreview()} parked={browser.parkedID() === activeTab()?.id} available={Boolean(window.opencodex?.browser)} lifecycle={browser.lifecycle()} error={browser.error()} url={activeTab()?.url ?? ""} setHost={browser.setHost} />
         </Match>
         <Match when={activeTab()?.kind === "graph"}>
-          <SessionSideGraph
-            graph={props.graph ?? EMPTY_SESSION_GRAPH}
-            selectedNodeID={props.graphSelectedNodeID ?? ""}
-            open={(node) => props.openGraphNode?.(node)}
-            openFullPage={(node) => props.openGraphNodeFullPage?.(node)}
-            approve={props.approveGraphGate}
-          />
+          {/* The drawer is a measured sibling of the canvas, never an overlay;
+              switching tabs removes it with the tab it belongs to. */}
+          <div class="session-graph-stage">
+            <SessionSideGraph
+              graph={props.graph ?? EMPTY_SESSION_GRAPH}
+              selectedNodeID={props.graphSelectedNodeID ?? ""}
+              open={(node) => props.openGraphNode?.(node)}
+              openFullPage={(node) => props.openGraphNodeFullPage?.(node)}
+              canOpenFullPage={props.canOpenGraphNodeFullPage}
+              approve={props.approveGraphGate}
+              topology={props.graphTopology}
+              retryTopology={props.retryGraphTopology}
+            />
+            {props.graphDrawer}
+          </div>
         </Match>
         <Match when={activeTab()?.kind === "terminal"}>
           <SessionOpenTerminal tab={activeTab()!} write={terminals.write} rename={terminals.rename} />

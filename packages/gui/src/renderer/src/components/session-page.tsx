@@ -14,6 +14,7 @@ import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
 import { SessionSwarmTeam } from "./swarm-team-strip"
 import { SessionGraphSurface } from "./session-graph-surface"
+import { SessionGraphDrawer } from "./session-graph-drawer"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
 import { SessionPageToolbar } from "./session-page-toolbar"
@@ -252,9 +253,11 @@ export function SessionPage(props: SessionPageProps) {
               own here: its steps are sessions parented to this one, so the
               pipeline already carries them, gates and all. */}
           <SessionSwarmTeam page={props} />
-          {/* Orthogonal to the strip above: this is the pane a graph node opens
-              into, and it renders nothing until one is selected. */}
-          <SessionGraphSurface page={props} />
+          {/* The pane a graph node opens into; in fullscreen the same surface
+              rides the Graph tab's drawer instead - never both. */}
+          <Show when={!sidePanel.centerCollapsed()}>
+            <SessionGraphSurface page={props} />
+          </Show>
           <Show when={!((props.team || props.goal) && props.teamMemberSessionID) && !props.graphNodeSessionID}>
           <TranscriptPanel
             sessionID={transcriptSessionID()}
@@ -348,9 +351,19 @@ export function SessionPage(props: SessionPageProps) {
                 subscribeGlobalEvents={props.subscribeGlobalEvents}
                 directory={props.sidePanelDirectory ?? selected().directory}
                 graph={props.graph}
-                graphSelectedNodeID={props.graphNodeSessionID ? `session:${props.graphNodeSessionID}` : ""}
+                graphSelectedNodeID={props.graphSelectedNodeID ?? ""}
+                graphTopology={props.graphTopology}
+                retryGraphTopology={props.retryGraphTopology}
                 openGraphNode={props.openGraphNode}
                 openGraphNodeFullPage={props.openGraphNodeFullPage}
+                canOpenGraphNodeFullPage={props.canOpenGraphNodeFullPage}
+                // Fullscreen drill-down rides the Graph tab itself, measured
+                // into the tab's layout and removed with the tab on switch.
+                graphDrawer={
+                  sidePanel.centerCollapsed() && props.graphNodeSessionID ? (
+                    <SessionGraphDrawer page={props} />
+                  ) : undefined
+                }
                 approveGraphGate={(gate, approved) => props.approveGoalNode?.(gate.goalID, gate.nodeID, approved)}
                 request={sidePanel.request()}
                 startResize={sidePanel.startResize}

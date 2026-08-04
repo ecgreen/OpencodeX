@@ -1,10 +1,12 @@
-import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, OpencodeXGoal, OpencodeXSwarm, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, FileNode, GlobalEvent, LspStatus, McpResource, McpStatus, OpencodeXGoal, OpencodeXJob, OpencodeXSwarm, PermissionRequest, Provider, QuestionAnswer, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { SessionData } from "../lib/session-api"
 import type { GuiClient } from "../lib/client"
 import type { SessionGraph, SessionGraphNode } from "../lib/session-graph"
+import type { GraphTopologyState } from "../lib/session-graph-fetch"
+import type { WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import type { SwarmTeamView } from "../lib/swarm-team"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
@@ -36,14 +38,29 @@ export type SessionPageProps = {
   loadOlderEmbeddedMessages?: (sessionID: string, cursor: string) => Promise<void>
   /** The session's workflow graph, for the canvas and the opened-node header. */
   graph?: SessionGraph
+  /** Completeness of the graph's delegation tree: loading, stale, truncated. */
+  graphTopology?: GraphTopologyState
+  retryGraphTopology?: () => void
+  /** The activated graph node - selectable even without a transcript. */
+  graphSelectedNodeID?: string
   /** Child session opened from a graph node, "" for the top session. */
   graphNodeSessionID?: string
   graphNodeData?: SessionData
   graphNodeLoading?: boolean
+  /** The selected node's work item, for the supervision inspector. */
+  graphNodeWorkItem?: WorkItem
+  /** The opened node's session record - the fallback source for hidden children. */
+  graphNodeSession?: Session
+  /** The opened node's jobs, for attempt counts and failure history. */
+  graphNodeJobs?: readonly OpencodeXJob[]
   openGraphNode?: (node: SessionGraphNode) => void
-  /** False for steps the catalog does not carry, which have no full-page route. */
-  graphNodeFullPageAvailable?: boolean
   openGraphNodeFullPage?: (node: SessionGraphNode) => void
+  /**
+   * One capability check for every full-page entry point - the embedded
+   * header's button and the canvas's Ctrl/Cmd-click. False for steps the
+   * catalog does not carry, which have no full-page route.
+   */
+  canOpenGraphNodeFullPage?: (sessionID: string) => boolean
   /** Why an embedded pane's transcript failed to load, if it did. */
   embeddedSessionError?: (sessionID: string) => string | undefined
   retryEmbeddedSession?: (sessionID: string) => void

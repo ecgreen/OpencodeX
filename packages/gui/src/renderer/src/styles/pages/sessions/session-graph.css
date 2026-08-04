@@ -54,8 +54,8 @@
 
 .session-graph-edge-path {
   fill: none;
-  stroke: color-mix(in srgb, var(--border) 90%, transparent);
-  stroke-width: 1.5;
+  stroke: color-mix(in srgb, var(--text) 24%, transparent);
+  stroke-width: 2;
   stroke-linecap: round;
   transition: stroke var(--ds-motion-control) var(--ds-ease-smooth);
 }
@@ -74,14 +74,41 @@
   stroke: color-mix(in srgb, var(--success) 55%, transparent);
 }
 
-.session-graph-edge-path[data-graph-status="failed"],
-.session-graph-edge-path[data-graph-status="cancelled"] {
+.session-graph-edge-path[data-graph-status="failed"] {
   stroke: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+.session-graph-edge-path[data-graph-status="cancelled"] {
+  stroke: color-mix(in srgb, var(--text) 30%, transparent);
 }
 
 .session-graph-edge-path.hovered {
   stroke: var(--accent);
+  stroke-width: 3;
+}
+
+/* Hovering a node lights everything that feeds or leaves it, so flow can be
+   traced without following each curve by eye. */
+.session-graph-edge-path.connected {
+  stroke: color-mix(in srgb, var(--accent) 70%, var(--border));
   stroke-width: 2.5;
+}
+
+/*
+ * Provenance is drawn as line style *and* said in the edge tooltip, so the
+ * distinction survives a reader who cannot separate a dash from a dot.
+ * Observed and declared edges stay solid; an inferred sequence is a reading of
+ * timestamps and draws dashed; a planned step has not happened and draws
+ * dotted and lighter; a merge return is presentation and stays as it was.
+ * A running edge keeps its flow animation - activity outranks provenance.
+ */
+.session-graph-edge-path[data-graph-provenance="inferred_sequence"]:not([data-graph-status="running"]) {
+  stroke-dasharray: 6 5;
+}
+
+.session-graph-edge-path[data-graph-provenance="planned"]:not([data-graph-status="running"]) {
+  stroke-dasharray: 2 5;
+  opacity: .8;
 }
 
 @keyframes sessionGraphFlow {
@@ -102,21 +129,48 @@
   pointer-events: none;
 }
 
-.session-graph-edge-marker {
-  display: block;
-  width: 9px;
-  height: 9px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  /* A diamond, and a generous hit area around it: 9px alone is too small a
-     hover target, and targets must never shrink below usable. */
-  transform: rotate(45deg);
-  outline: var(--ds-space-2) solid transparent;
+/* The real pointer target: a transparent outline does not take part in hit
+   testing, so the diamond gets a 24px wrapper instead of pretending. The
+   inverse-scale transform holds that 24px on *screen* whatever the zoom -
+   without it the target shrinks with the scene, down to ~6px at minimum
+   zoom. The marker inside rides along, so it stays legible zoomed out too. */
+.session-graph-edge-hit {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  transform: scale(calc(1 / var(--graph-scale, 1)));
   pointer-events: auto;
   cursor: help;
-  transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease;
 }
 
+.session-graph-edge-marker {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid color-mix(in srgb, var(--text) 35%, var(--border));
+  background: var(--panel);
+  transform: rotate(45deg);
+  pointer-events: none;
+  transition:
+    border-color var(--ds-motion-hover) ease,
+    background var(--ds-motion-hover) ease,
+    transform var(--ds-motion-hover) ease;
+}
+
+/* The marker grows under the pointer: a 9px diamond confirms the hover state
+   too quietly on a busy canvas. */
+.session-graph-edge-hit:hover .session-graph-edge-marker {
+  transform: rotate(45deg) scale(1.35);
+}
+
+/* A planned edge's marker matches its line: not yet real. */
+.session-graph-edge-marker[data-graph-provenance="planned"] {
+  border-style: dashed;
+  opacity: .8;
+}
+
+.session-graph-edge-hit:hover .session-graph-edge-marker,
 .session-graph-edge-marker:hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 24%, var(--panel));
@@ -131,37 +185,52 @@
   background: color-mix(in srgb, var(--success) 16%, var(--panel));
 }
 
-.session-graph-edge-marker[data-graph-status="failed"],
-.session-graph-edge-marker[data-graph-status="cancelled"] {
+.session-graph-edge-marker[data-graph-status="failed"] {
   border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
   background: color-mix(in srgb, var(--danger) 16%, var(--panel));
 }
 
+.session-graph-edge-marker[data-graph-status="cancelled"] {
+  border-color: color-mix(in srgb, var(--text) 35%, var(--border));
+}
+
 /* --- Nodes --- */
 
+/* Card above, gate row below when present: layout reserved the row, so the
+   gate participates in the anchor's height instead of overhanging the next
+   node (see graphNodeHeight). */
 .session-graph-node-anchor {
   position: absolute;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--ds-space-1);
 }
 
 .session-graph-node-trigger {
   display: block;
   width: 100%;
   height: 100%;
+  min-height: 0;
 }
 
 .session-graph-node {
   position: relative;
   display: grid;
   align-content: start;
-  gap: var(--ds-space-1);
+  gap: var(--ds-space-2);
   width: 100%;
   height: 100%;
   /* The status badge deliberately overhangs the corner. */
   overflow: visible;
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border: 1px solid var(--border-subtle);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border: 1px solid var(--border);
   border-radius: var(--ds-radius-card);
-  background: var(--panel);
+  /* A quiet top-light lift over the panel: cards must stand off the dotted
+     canvas at a glance, in both themes, before any status tint arrives. */
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 3%, transparent), transparent 55%),
+    var(--panel);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 8%, transparent);
   text-align: left;
   transition:
     border-color var(--ds-motion-control) var(--ds-ease-smooth),
@@ -169,24 +238,43 @@
     box-shadow var(--ds-motion-control) var(--ds-ease-smooth);
 }
 
-.session-graph-node:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+/* Hover lifts the card decisively - a stronger border, a real shadow, and an
+   accent wash - through color and depth, never motion, so nothing shifts
+   under the pointer and reduced motion needs no exception. */
+.session-graph-node:hover {
+  z-index: 2;
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 65%),
+    var(--panel);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 8px 24px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* The far end of a hovered edge answers back, closing the visual circuit. */
+.session-graph-node.edge-endpoint {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent),
+    0 4px 14px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .session-graph-node.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 6px 20px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .session-graph-node.root {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%), var(--panel);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%), var(--panel);
 }
 
-.session-graph-node:disabled {
-  cursor: default;
-  opacity: .82;
-}
+/* Every card is activatable now (selection, if not a transcript); the
+   sentinel and planned steps read quieter through their own kind styling
+   rather than a disabled state. */
 
 .session-graph-node-head {
   display: grid;
@@ -196,16 +284,22 @@
 
 .session-graph-node-title {
   color: var(--text);
-  font-size: var(--ds-text-xs);
+  font-size: var(--ds-text-sm);
   font-weight: var(--ds-weight-bold);
-  line-height: var(--ds-leading-xs);
+  line-height: var(--ds-leading-sm);
 }
 
+/* The role reads as a kicker under the title: small caps-style tracking and
+   an accent-leaning tone, so "who is doing this" is scannable without
+   competing with "what they are doing". */
 .session-graph-node-role {
-  color: var(--muted);
+  margin-top: var(--ds-space-0);
+  color: color-mix(in srgb, var(--accent) 42%, var(--muted));
   font-size: var(--ds-text-2xs);
-  font-weight: var(--ds-weight-medium);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: .07em;
   line-height: var(--ds-leading-2xs);
+  text-transform: uppercase;
 }
 
 .session-graph-node-foot {
@@ -214,8 +308,8 @@
   gap: var(--ds-space-2);
   min-width: 0;
   color: var(--muted);
-  font-size: var(--ds-text-2xs);
-  line-height: var(--ds-leading-2xs);
+  font-size: var(--ds-text-xs);
+  line-height: var(--ds-leading-xs);
 }
 
 .session-graph-node-status {
@@ -232,40 +326,12 @@
   gap: 0;
 }
 
-/* --- Tooltip body --- */
-
-.session-graph-tooltip {
-  display: grid;
-  gap: var(--ds-space-0);
-  max-width: 40ch;
-  text-align: left;
-}
-
-.session-graph-tooltip-title {
-  font-weight: var(--ds-weight-bold);
-}
-
-/* Belt and braces: the model already summarizes, but a title comes straight
-   from whatever the orchestrator named the step, and a hover card must stay a
-   glance whatever lands in it. */
-.session-graph-tooltip-title,
-.session-graph-tooltip-detail {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-}
-
-.session-graph-tooltip-title { -webkit-line-clamp: 2; }
-.session-graph-tooltip-detail { -webkit-line-clamp: 3; }
-
-.session-graph-tooltip-detail,
-.session-graph-tooltip-hint {
-  opacity: .78;
-}
+/* Tooltip body styles live in session-graph-chrome.css. */
 
 /* --- Zoom bar --- */
 
 .session-graph-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--ds-space-2);
@@ -300,8 +366,19 @@
   text-align: center;
 }
 
+/* Topology notices and the legend popover live in session-graph-chrome.css. */
+
 @media (prefers-reduced-motion: reduce) {
   .session-graph-edge-path[data-graph-status="running"] {
     animation: none;
+  }
+
+  /* Status colour changes and hover flourishes are nonessential motion: the
+     label and badge carry the change; the colour may simply switch, and the
+     marker may simply be bigger. */
+  .session-graph-edge-path,
+  .session-graph-edge-marker,
+  .session-graph-node {
+    transition-duration: 1ms;
   }
 }

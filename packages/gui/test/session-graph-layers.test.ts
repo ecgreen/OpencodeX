@@ -94,9 +94,15 @@ describe("layered swarm workflow", () => {
 
   test("once the last layer reports, the whole chain consolidates", () => {
     const graph = buildSessionGraph(input(chain))
-    expect(node(graph, "join:session:root")).toMatchObject({ status: "completed", statusLabel: "Merged" })
+    // Returned branches settle the chain, but nothing verified their outcomes,
+    // so the consolidation says exactly that instead of claiming success.
+    expect(node(graph, "join:session:root")).toMatchObject({
+      status: "completed",
+      statusLabel: "Merged - outcomes unverified",
+    })
     expect(graph.counts.total).toBe(4)
-    expect(graph.counts.completed).toBe(3)
+    expect(graph.counts.returned).toBe(3)
+    expect(graph.counts.completed).toBe(0)
   })
 
   test("the canvas lays the chain out left to right, one column per layer", () => {
@@ -197,6 +203,24 @@ describe("a flat delegation tree with a pipeline inside it", () => {
   })
 
   test("the work still consolidates once, into the session that ran it", () => {
-    expect(node(graph, "join:session:root")).toMatchObject({ status: "completed", statusLabel: "Merged" })
+    expect(node(graph, "join:session:root")).toMatchObject({
+      status: "completed",
+      statusLabel: "Merged - outcomes unverified",
+    })
+  })
+
+  test("stage-derived edges admit to being inferred; real spawn edges do not", () => {
+    // d-a hangs off d-solo only because it started after d-solo stopped - a
+    // timestamp reading. The first stage hangs off the session that actually
+    // spawned it.
+    const inferred = graph.edges.find((edge) => edge.from === "session:d-solo" && edge.to === "session:d-a")
+    expect(inferred?.provenance).toBe("inferred_sequence")
+    expect(inferred?.detail).toContain("Inferred: started after the previous stage returned.")
+    const observed = graph.edges.find((edge) => edge.from === "session:root" && edge.to === "session:d-solo")
+    expect(observed?.provenance).toBe("observed_spawn")
+    // Merge fan-in is presentation, and every edge declares where it came from.
+    const back = graph.edges.find((edge) => edge.to === "join:session:root")
+    expect(back?.provenance).toBe("synthetic_return")
+    expect(graph.edges.every((edge) => edge.provenance)).toBe(true)
   })
 })

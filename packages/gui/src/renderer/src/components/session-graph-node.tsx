@@ -1,4 +1,4 @@
-import { Show } from "solid-js"
+import { For, Show, createSignal } from "solid-js"
 import { formatRelative } from "../lib/format"
 import type { SessionGraphEdge, SessionGraphNode } from "../lib/session-graph"
 import type { SessionGraphGate } from "../lib/session-graph-goal"
@@ -16,11 +16,17 @@ import { Button, ProgressMeter, Tooltip } from "./ui"
  */
 export function SessionGraphNodeCard(props: {
   placed: SessionGraphLayoutNode
-  edge?: SessionGraphEdge
+  edges: readonly SessionGraphEdge[]
   selected: boolean
+  /** True while a hovered edge starts or ends at this node. */
+  edgeEndpoint?: boolean
   open: (node: SessionGraphNode) => void
   openFullPage: (node: SessionGraphNode) => void
+  /** Whether the full-page route can resolve this node's session. */
+  canOpenFullPage?: (sessionID: string) => boolean
   hover: (id: string) => void
+  /** Roving focus: the node to move to for an arrow key, if any. */
+  neighbor?: (fromID: string, key: string) => string
   /** Answers a parked gate. The canvas is the only place a goal can be unblocked. */
   approve?: (gate: SessionGraphGate, approved: boolean) => void
 }) {
@@ -31,9 +37,35 @@ export function SessionGraphNodeCard(props: {
     if (!value || value.total <= 0) return undefined
     return (value.completed + value.failed) / value.total
   }
+  const activate = (event: MouseEvent) => {
+    if (!(event.metaKey || event.ctrlKey)) {
+      props.open(node())
+      return
+    }
+    // Ctrl/Cmd-click promises a full page; when the route cannot resolve this
+    // session (a catalog-hidden child), stay embedded instead of navigating to
+    // a page that would come up empty.
+    const sessionID = node().sessionID
+    if (sessionID && props.canOpenFullPage && !props.canOpenFullPage(sessionID)) {
+      props.open(node())
+      return
+    }
+    props.openFullPage(node())
+  }
+  const roam = (event: KeyboardEvent) => {
+    if (!props.neighbor) return
+    const targetID = props.neighbor(node().id, event.key)
+    if (!targetID) return
+    event.preventDefault()
+    // Stop the canvas from also panning on the same press.
+    event.stopPropagation()
+    const canvas = (event.currentTarget as HTMLElement).closest(".session-graph-canvas")
+    canvas?.querySelector<HTMLElement>(`[data-graph-node-id="${CSS.escape(targetID)}"]`)?.focus()
+  }
   return (
     <div
       class="session-graph-node-anchor"
+      classList={{ gated: Boolean(props.approve && node().gate) }}
       style={{
         left: `${props.placed.x}px`,
         top: `${props.placed.y}px`,
@@ -41,22 +73,24 @@ export function SessionGraphNodeCard(props: {
         height: `${props.placed.height}px`,
       }}
     >
-      <Tooltip class="session-graph-node-trigger" placement="top" label={<NodeTooltip node={node()} edge={props.edge} />}>
+      <Tooltip class="session-graph-node-trigger" placement="top" label={<NodeTooltip node={node()} edges={props.edges} />}>
         <Button
           appearance="ghost"
           class="session-graph-node"
-          classList={{ selected: props.selected, root: node().root }}
+          classList={{ selected: props.selected, root: node().root, "edge-endpoint": props.edgeEndpoint }}
           data-graph-status={node().status}
           data-graph-kind={node().kind}
+          data-graph-badge={node().badge}
+          data-graph-node-id={node().id}
           aria-label={`${node().title}. ${node().statusLabel}.${node().role ? ` ${node().role}.` : ""}`}
           aria-current={props.selected ? "true" : undefined}
-          disabled={!node().sessionID}
           onPointerDown={(event) => event.stopPropagation()}
           onPointerEnter={() => props.hover(node().id)}
           onPointerLeave={() => props.hover("")}
           onFocus={() => props.hover(node().id)}
           onBlur={() => props.hover("")}
-          onClick={(event) => (event.metaKey || event.ctrlKey ? props.openFullPage(node()) : props.open(node()))}
+          onKeyDown={roam}
+          onClick={activate}
         >
           <span class="session-graph-node-head">
             <span class="session-graph-node-title ds-truncate">
@@ -85,53 +119,137 @@ export function SessionGraphNodeCard(props: {
           <Show when={node().badge}>
             {(badge) => (
               <span class="session-graph-node-badge" data-graph-badge={badge()}>
-                <Icon name={badge() === "success" ? "check" : "x"} />
+                <Icon
+                  name={
+                    badge() === "success"
+                      ? "check"
+                      : badge() === "warning"
+                        ? "warning"
+                        : badge() === "cancelled"
+                          ? "stop"
+                          : "x"
+                  }
+                />
               </span>
             )}
           </Show>
         </Button>
       </Tooltip>
-      {/* A sibling of the card, not a child: the card is itself a button, and
-          a button cannot contain the two this gate needs. */}
+      {/* In flow below the card, not overhanging it: layout reserves this row
+          (see graphNodeHeight), so gates never overlap the next node or fall
+          outside fit-to-view. A sibling of the card, not a child - the card is
+          itself a button and cannot contain these two. */}
       <Show when={props.approve && node().gate}>
-        {(gate) => (
-          <div class="session-graph-node-gate">
-            <Button appearance="outline" size="compact" icon="check" onClick={() => props.approve?.(gate(), true)}>
-              Approve
-            </Button>
-            <Button appearance="ghost" tone="danger" size="compact" icon="x" onClick={() => props.approve?.(gate(), false)}>
-              Skip
-            </Button>
-          </div>
-        )}
+        {(gate) => <GateActions title={node().title} gate={gate()} approve={props.approve!} />}
       </Show>
     </div>
   )
 }
 
 /**
- * Hover and focus detail. The incoming edge is repeated here because edge
- * labels are pointer-only: this is how a keyboard reader learns what the step
- * was asked to resolve.
+ * A parked gate's two answers. Approving is a plain click; skipping bypasses
+ * declared work and arms first - the same press-again pattern the abort
+ * control uses - so a stray click cannot silently drop a step. Focus leaving
+ * the button disarms it.
  */
-function NodeTooltip(props: { node: SessionGraphNode; edge?: SessionGraphEdge }) {
+function GateActions(props: {
+  title: string
+  gate: SessionGraphGate
+  approve: (gate: SessionGraphGate, approved: boolean) => void
+}) {
+  const [skipArmed, setSkipArmed] = createSignal(false)
+  return (
+    <div class="session-graph-node-gate">
+      <Button appearance="outline" size="compact" icon="check" onClick={() => props.approve(props.gate, true)}>
+        Approve
+      </Button>
+      <Tooltip placement="bottom" label={<span class="session-graph-tooltip">This step will not run.</span>}>
+        <Button
+          appearance={skipArmed() ? "solid" : "ghost"}
+          tone="danger"
+          size="compact"
+          icon="x"
+          aria-label={
+            skipArmed()
+              ? `Confirm skipping ${props.title} - this step will not run`
+              : `Skip ${props.title} - this step will not run`
+          }
+          onBlur={() => setSkipArmed(false)}
+          onPointerLeave={() => setSkipArmed(false)}
+          onClick={() => {
+            if (!skipArmed()) {
+              setSkipArmed(true)
+              return
+            }
+            setSkipArmed(false)
+            props.approve(props.gate, false)
+          }}
+        >
+          {skipArmed() ? "Really skip?" : "Skip step"}
+        </Button>
+      </Tooltip>
+    </div>
+  )
+}
+
+/**
+ * Hover and focus detail. Incoming edges are repeated here because edge labels
+ * are pointer-only: this is how a keyboard reader learns what the step was
+ * asked to resolve, and - for a merge or a multi-input planned step - every
+ * dependency feeding it. Status carries its tone here too, so the card and
+ * its tooltip agree in color as well as words.
+ */
+function NodeTooltip(props: { node: SessionGraphNode; edges: readonly SessionGraphEdge[] }) {
+  const described = () => props.edges.filter((edge) => edge.detail)
   return (
     <span class="session-graph-tooltip">
+      <Show when={props.node.role}>
+        {(role) => <span class="session-graph-tooltip-role">{role()}</span>}
+      </Show>
       <span class="session-graph-tooltip-title">{props.node.title}</span>
-      <span class="session-graph-tooltip-status">
+      <span class="session-graph-tooltip-status" data-graph-status={props.node.status}>
+        <span class="session-graph-tooltip-status-dot" aria-hidden="true" />
         {props.node.statusLabel}
         <Show when={props.node.progress && props.node.progress.total > 0}>
           {` - ${props.node.progress!.completed} of ${props.node.progress!.total} done`}
         </Show>
         <Show when={(props.node.progress?.failed ?? 0) > 0}>{`, ${props.node.progress!.failed} failed`}</Show>
       </span>
-      <Show when={props.edge?.detail}>
-        {(detail) => <span class="session-graph-tooltip-detail">Resolving: {detail()}</span>}
+      <Show when={props.node.summary}>
+        {(summary) => (
+          <span class="session-graph-tooltip-section">
+            <span class="session-graph-tooltip-caption">Summary</span>
+            <span class="session-graph-tooltip-detail">{summary()}</span>
+          </span>
+        )}
       </Show>
       <Show when={props.node.detail}>
         {(detail) => <span class="session-graph-tooltip-detail">{detail()}</span>}
       </Show>
-      <Show when={props.node.sessionID} fallback={<span class="session-graph-tooltip-hint">Not started yet</span>}>
+      <Show when={described().length === 1}>
+        <span class="session-graph-tooltip-section">
+          <span class="session-graph-tooltip-caption">Resolving</span>
+          <span class="session-graph-tooltip-detail">{described()[0].detail}</span>
+        </span>
+      </Show>
+      <Show when={described().length > 1}>
+        <span class="session-graph-tooltip-section">
+          <span class="session-graph-tooltip-caption">Fed by {described().length} steps</span>
+          <For each={described()}>
+            {(edge) => <span class="session-graph-tooltip-detail session-graph-tooltip-item">{edge.detail}</span>}
+          </For>
+        </span>
+      </Show>
+      <Show
+        when={props.node.sessionID && props.node.kind !== "sentinel"}
+        fallback={
+          <span class="session-graph-tooltip-hint">
+            {props.node.kind === "sentinel"
+              ? "Discovery stopped here - retry loads more"
+              : "Not started yet - activating selects it"}
+          </span>
+        }
+      >
         <span class="session-graph-tooltip-hint">Click to read this session</span>
       </Show>
     </span>

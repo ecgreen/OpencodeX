@@ -19,8 +19,14 @@
   min-width: 400px;
   min-height: 0;
   gap: 8px;
-  /* Fullscreen workspace slides this column out; see the rules further down. */
-  transition: flex-grow .2s ease, flex-basis .2s ease, min-width .2s ease, opacity .16s ease, transform .2s ease;
+  /* Fullscreen workspace slides this column out; see the rules further down.
+     Tokenized motion, and collapsed under reduced motion at the end of file. */
+  transition:
+    flex-grow var(--ds-motion-route) var(--ds-ease-smooth),
+    flex-basis var(--ds-motion-route) var(--ds-ease-smooth),
+    min-width var(--ds-motion-route) var(--ds-ease-smooth),
+    opacity var(--ds-motion-control) var(--ds-ease-smooth),
+    transform var(--ds-motion-route) var(--ds-ease-smooth);
 }
 
 /* Fullscreen workspace: the session column gives its room to the panel and
@@ -72,4 +78,20 @@
 
 .views-manager-page[data-center-collapsed] .session-side-panel-resize {
   display: none;
+}
+
+/* The fullscreen graph drill-down drawer lives with the graph tab's own
+   styles - see session-graph-embedded.css (.session-graph-stage). */
+
+/* Reduced motion: the slide is nonessential; collapse it to a state change. */
+@media (prefers-reduced-motion: reduce) {
+  .session-workspace,
+  .views-manager-content {
+    transition-duration: 1ms;
+  }
+
+  .session-page[data-center-collapsed] .session-workspace,
+  .views-manager-page[data-center-collapsed] .views-manager-content {
+    transform: none;
+  }
 }

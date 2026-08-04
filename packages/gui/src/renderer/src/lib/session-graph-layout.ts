@@ -9,14 +9,30 @@ import type { SessionGraph, SessionGraphEdge, SessionGraphNode } from "./session
  * pass), which is enough to keep edges short without full crossing removal.
  */
 
-export const GRAPH_NODE_WIDTH = 212
-export const GRAPH_NODE_HEIGHT = 76
-export const GRAPH_COLUMN_GAP = 76
-export const GRAPH_ROW_GAP = 20
+/**
+ * Card geometry is sized for reading, not for fitting: the card carries a
+ * two-line title, a role, and a status line at full body sizes, so shrinking
+ * it only moves the squinting from the type scale to the zoom level.
+ */
+export const GRAPH_NODE_WIDTH = 264
+export const GRAPH_NODE_HEIGHT = 104
+/**
+ * The action row a parked approval gate adds below its card: a compact control
+ * plus its gap. Layout must know it, or two gated siblings overlap and a
+ * bottom-row gate clips outside fit-to-view.
+ */
+export const GRAPH_GATE_ROW_HEIGHT = 40
+export const GRAPH_COLUMN_GAP = 90
+export const GRAPH_ROW_GAP = 28
 export const GRAPH_PADDING = 40
 
 const ROW_PITCH = GRAPH_NODE_HEIGHT + GRAPH_ROW_GAP
 const COLUMN_PITCH = GRAPH_NODE_WIDTH + GRAPH_COLUMN_GAP
+
+/** A node's real drawn height: gated nodes reserve their action row. */
+export function graphNodeHeight(node: SessionGraphNode) {
+  return GRAPH_NODE_HEIGHT + (node.gate ? GRAPH_GATE_ROW_HEIGHT : 0)
+}
 
 export type SessionGraphLayoutNode = {
   node: SessionGraphNode
@@ -54,16 +70,30 @@ export function layoutSessionGraph(graph: SessionGraph): SessionGraphLayout {
   for (const depth of layerDepths(graph.nodes)) {
     const layer = graph.nodes.filter((node) => node.depth === depth)
     const ordered = orderLayer(layer, parents, centers)
-    const shift = layerShift(ordered, parents, centers)
-    ordered.forEach((node, slot) => centers.set(node.id, slot * ROW_PITCH + shift))
+    // Rows accumulate real heights rather than assuming one pitch, so a gated
+    // node's action row pushes the next row down instead of being overlapped.
+    const offsets: number[] = []
+    let stack = 0
+    for (const node of ordered) {
+      offsets.push(stack)
+      stack += graphNodeHeight(node) + GRAPH_ROW_GAP
+    }
+    const shift = layerShift(ordered, offsets, parents, centers)
+    ordered.forEach((node, slot) => centers.set(node.id, offsets[slot] + shift))
   }
-  const nodes = graph.nodes.map((node) => ({
-    node,
-    x: node.depth * COLUMN_PITCH,
-    y: Math.round(centers.get(node.id) ?? 0),
-    width: GRAPH_NODE_WIDTH,
-    height: GRAPH_NODE_HEIGHT,
-  }))
+  const nodes = graph.nodes
+    .map((node) => ({
+      node,
+      x: node.depth * COLUMN_PITCH,
+      y: Math.round(centers.get(node.id) ?? 0),
+      width: GRAPH_NODE_WIDTH,
+      height: graphNodeHeight(node),
+    }))
+    // Spatial reading order, so tab order walks columns left to right and each
+    // column top to bottom instead of following depth-first emission order.
+    .toSorted(
+      (left, right) => left.node.depth - right.node.depth || left.y - right.y || left.node.id.localeCompare(right.node.id),
+    )
   const byID = new Map(nodes.map((item) => [item.node.id, item]))
   const edges = graph.edges.flatMap((edge) => {
     const from = byID.get(edge.from)
@@ -75,6 +105,46 @@ export function layoutSessionGraph(graph: SessionGraph): SessionGraphLayout {
 
 export function sessionGraphLayoutNode(layout: SessionGraphLayout, id: string) {
   return layout.nodes.find((item) => item.node.id === id)
+}
+
+/**
+ * The nearest node in the pressed direction, for roving focus between cards.
+ * Distance is centre to centre with the off-axis component weighted, so
+ * "right" prefers the node actually to the right over a nearer diagonal.
+ * Every placed node is a candidate - planned steps, merges, and discovery
+ * markers are all selectable, so none of them may strand focus.
+ */
+export function spatialGraphNeighbor(
+  nodes: readonly SessionGraphLayoutNode[],
+  fromID: string,
+  key: string,
+): string {
+  const direction = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[key]
+  if (!direction) return ""
+  const from = nodes.find((item) => item.node.id === fromID)
+  if (!from) return ""
+  const center = (item: SessionGraphLayoutNode) => ({
+    x: item.x + item.width / 2,
+    y: item.y + item.height / 2,
+  })
+  const origin = center(from)
+  let best = ""
+  let bestScore = Number.POSITIVE_INFINITY
+  for (const item of nodes) {
+    if (item.node.id === fromID) continue
+    const target = center(item)
+    const dx = target.x - origin.x
+    const dy = target.y - origin.y
+    const along = dx * direction[0] + dy * direction[1]
+    if (along <= 0) continue
+    const across = Math.abs(dx * direction[1]) + Math.abs(dy * direction[0])
+    const score = along + across * 2
+    if (score < bestScore) {
+      bestScore = score
+      best = item.node.id
+    }
+  }
+  return best
 }
 
 /** The box a "fit to view" should frame, padded so nodes never touch the edge. */
@@ -113,12 +183,13 @@ function orderLayer(
  */
 function layerShift(
   ordered: readonly SessionGraphNode[],
+  offsets: readonly number[],
   parents: ReadonlyMap<string, string[]>,
   centers: ReadonlyMap<string, number>,
 ) {
   const anchored = ordered.flatMap((node, slot) => {
     const center = barycenter(node, parents, centers)
-    return center === undefined ? [] : [center - slot * ROW_PITCH]
+    return center === undefined ? [] : [center - offsets[slot]]
   })
   if (anchored.length === 0) return 0
   return anchored.reduce((total, value) => total + value, 0) / anchored.length

@@ -1,5 +1,5 @@
 import type { GlobalEvent, LspStatus, Provider, Session } from "@opencode-ai/sdk/v2/client"
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import type { GuiClient } from "../lib/client"
 import type { GuiSnapshot, SessionData } from "../lib/session-api"
 import { Icon } from "./icon"
@@ -13,6 +13,7 @@ import { readSessionSideContextCollapseState, writeSessionSideContextCollapseSta
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
 import { SessionSideOpenPanel } from "./session-side-open-panel"
 import type { SessionGraph, SessionGraphNode } from "../lib/session-graph"
+import type { GraphTopologyState } from "../lib/session-graph-fetch"
 import type { SessionGraphGate } from "../lib/session-graph-goal"
 
 export type { SessionSidePanelContextOption, SessionSidePanelRequest, SessionSidePanelTab, SessionSidePanelTarget } from "./session-side-panel-types"
@@ -37,9 +38,14 @@ export function SessionSidePanel(props: {
   selectContext?: (id: string) => void
   graph?: SessionGraph
   graphSelectedNodeID?: string
+  graphTopology?: GraphTopologyState
+  retryGraphTopology?: () => void
   openGraphNode?: (node: SessionGraphNode) => void
   openGraphNodeFullPage?: (node: SessionGraphNode) => void
+  canOpenGraphNodeFullPage?: (sessionID: string) => boolean
   approveGraphGate?: (gate: SessionGraphGate, approved: boolean) => void
+  /** Fullscreen drill-down pane, rendered beside the graph tab's canvas. */
+  graphDrawer?: JSX.Element
   startResize: (event: PointerEvent & { currentTarget: HTMLElement }) => void
   toggleMaximized?: () => void
   resizeByKeyboard?: (event: KeyboardEvent) => void
@@ -146,8 +152,12 @@ export function SessionSidePanel(props: {
           git={git}
           graph={props.graph}
           graphSelectedNodeID={props.graphSelectedNodeID}
+          graphTopology={props.graphTopology}
+          retryGraphTopology={props.retryGraphTopology}
           openGraphNode={props.openGraphNode}
           openGraphNodeFullPage={props.openGraphNodeFullPage}
+          canOpenGraphNodeFullPage={props.canOpenGraphNodeFullPage}
+          graphDrawer={props.graphDrawer}
           openCommitModal={(path) => {
             setCommitPaths(path ? [path] : undefined)
             setCommitModalOpen(true)

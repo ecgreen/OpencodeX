@@ -16,12 +16,165 @@
 
 /* --- Opened node --- */
 
+/* A column whose transcript takes whatever the optional rows (inspector,
+   status line) leave over - explicit rows would need every combination of
+   optional children spelled out. */
 .session-graph-embedded {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--ds-space-2);
   min-width: 0;
   min-height: 0;
+}
+
+.session-graph-embedded > * {
+  flex: 0 0 auto;
+}
+
+.session-graph-embedded > .transcript-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- The graph tab's stage: canvas plus the fullscreen drill-down drawer ---
+   The drawer is a measured flex sibling, never an overlay: opening it shrinks
+   the canvas (which re-reveals the selection) instead of covering it, and it
+   leaves with the Graph tab because it is rendered inside it. */
+
+.session-graph-stage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.session-graph-stage > .session-graph {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.session-graph-drawer {
+  display: flex;
+  flex: 0 0 var(--session-graph-drawer-width, 44%);
+  min-width: 320px;
+  max-width: 70%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* The splitter contract: a 24px hit area around a hairline rule. */
+.session-graph-drawer-handle {
+  position: relative;
+  flex: 0 0 24px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.session-graph-drawer-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+.session-graph-drawer-handle:hover::after,
+.session-graph-drawer-handle:focus-visible::after {
+  width: 3px;
+  margin-left: -1px;
+  background: var(--accent);
+}
+
+.session-graph-drawer-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.session-graph-drawer-body {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--ds-space-2);
+}
+
+/* The embedded surface fills the drawer the way it fills the workspace. */
+.session-graph-drawer-body .session-graph-embedded {
+  min-height: 0;
+}
+
+/* Narrow panes: a side-by-side split would crush both halves, so the stage
+   stacks and the drawer becomes a bottom sheet; the width drag is meaningless
+   there and is hidden. */
+@media (max-width: 980px) {
+  .session-graph-stage {
+    flex-direction: column;
+  }
+
+  .session-graph-drawer {
+    flex-basis: 45%;
+    min-width: 0;
+    max-width: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .session-graph-drawer-handle {
+    display: none;
+  }
+}
+
+/* --- The supervision inspector between card and transcript --- */
+
+.session-graph-inspector {
+  padding: var(--ds-space-1) var(--ds-space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ds-radius-card);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+}
+
+.session-graph-inspector summary {
+  cursor: pointer;
+  padding: var(--ds-space-1) 0;
+  color: var(--text);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.session-graph-inspector-objective {
+  margin: var(--ds-space-1) 0;
+}
+
+.session-graph-inspector-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--ds-space-0) var(--ds-space-3);
+  margin: var(--ds-space-1) 0;
+}
+
+.session-graph-inspector-rows dt {
+  color: var(--muted);
+}
+
+.session-graph-inspector-rows dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.session-graph-inspector-files ul {
+  margin: var(--ds-space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-graph-inspector-file {
+  max-width: 100%;
+  justify-content: flex-start;
 }
 
 .session-graph-embedded-header {

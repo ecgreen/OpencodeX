@@ -84,6 +84,13 @@ export function wheelZoomFactor(deltaY: number) {
 }
 
 /**
+ * Below this scale a card's text stops being readable, and the graph starts
+ * satisfying "show the topology" while failing "show what the model is
+ * doing". Automatic framing never goes under it; manual zoom still may.
+ */
+export const READABLE_GRAPH_SCALE = 0.65
+
+/**
  * Frames the graph in the viewport. Small graphs are never blown up past 1:1 -
  * a two-node workflow filling the pane looks broken rather than zoomed.
  */
@@ -96,6 +103,101 @@ export function fitGraphViewport(bounds: SessionGraphBounds, size: SessionGraphS
     y: (size.height - padded.height * scale) / 2 - padded.y * scale,
     scale,
   }
+}
+
+/**
+ * Automatic framing with a readability floor: fit the whole graph when that
+ * stays legible, otherwise hold the floor scale and centre the most relevant
+ * box (selected node, attention node, or the root) - panning reaches the
+ * rest, and the offscreen indicators say it exists.
+ */
+export function frameGraphViewport(
+  bounds: SessionGraphBounds,
+  size: SessionGraphSize,
+  focus?: SessionGraphBounds,
+): SessionGraphViewport {
+  const fitted = fitGraphViewport(bounds, size)
+  if (fitted.scale >= READABLE_GRAPH_SCALE) return fitted
+  const target = focus ?? bounds
+  return centerGraphViewport({ x: 0, y: 0, scale: READABLE_GRAPH_SCALE }, target, size)
+}
+
+/**
+ * What lies *entirely* outside the visible area, by canvas edge. A card that
+ * is even partially on screen is not "more work over there" - counting it
+ * made the numbers read wrong at every zoom where cards straddle the edges.
+ * Attention states are counted separately so the indicator can say
+ * "something needs you" rather than merely "more exists". A node beyond two
+ * edges at once counts toward the horizontal one - the graph reads left to
+ * right, so that is the direction a reader will pan first.
+ */
+export function offscreenGraphSummary(
+  nodes: readonly { box: SessionGraphBounds; attention: boolean }[],
+  viewport: SessionGraphViewport,
+  size: SessionGraphSize,
+): Record<"left" | "right" | "up" | "down", { count: number; attention: number }> {
+  const summary = {
+    left: { count: 0, attention: 0 },
+    right: { count: 0, attention: 0 },
+    up: { count: 0, attention: 0 },
+    down: { count: 0, attention: 0 },
+  }
+  for (const node of nodes) {
+    const topLeft = clientPointFromGraph(viewport, { x: node.box.x, y: node.box.y })
+    const bottomRight = clientPointFromGraph(viewport, {
+      x: node.box.x + node.box.width,
+      y: node.box.y + node.box.height,
+    })
+    const edge =
+      bottomRight.x < 0
+        ? "left"
+        : topLeft.x > size.width
+          ? "right"
+          : bottomRight.y < 0
+            ? "up"
+            : topLeft.y > size.height
+              ? "down"
+              : undefined
+    if (!edge) continue
+    summary[edge].count += 1
+    if (node.attention) summary[edge].attention += 1
+  }
+  return summary
+}
+
+/**
+ * Keeps panning inside a world twice the graph's size, centred on it: half a
+ * graph of margin on every side is room to breathe, while "drag the whole
+ * workflow into the void and stare at dots" stops being reachable. When the
+ * visible window outsizes that world on an axis, the graph centres on it
+ * instead - fully zoomed out there is nowhere sensible to pan anyway.
+ */
+export function clampGraphViewportPan(
+  viewport: SessionGraphViewport,
+  bounds: SessionGraphBounds,
+  size: SessionGraphSize,
+): SessionGraphViewport {
+  if (bounds.width <= 0 || bounds.height <= 0 || size.width <= 0 || size.height <= 0) return viewport
+  const world = {
+    x: bounds.x - bounds.width / 2,
+    y: bounds.y - bounds.height / 2,
+    width: bounds.width * 2,
+    height: bounds.height * 2,
+  }
+  const scale = viewport.scale
+  const windowWidth = size.width / scale
+  const windowHeight = size.height / scale
+  // The visible window in graph coordinates; clamping it clamps the pan.
+  const windowX = -viewport.x / scale
+  const windowY = -viewport.y / scale
+  const clampAxis = (position: number, windowSpan: number, worldStart: number, worldSpan: number) => {
+    if (windowSpan >= worldSpan) return worldStart + (worldSpan - windowSpan) / 2
+    return Math.min(Math.max(position, worldStart), worldStart + worldSpan - windowSpan)
+  }
+  const clampedX = clampAxis(windowX, windowWidth, world.x, world.width)
+  const clampedY = clampAxis(windowY, windowHeight, world.y, world.height)
+  if (clampedX === windowX && clampedY === windowY) return viewport
+  return { x: -clampedX * scale, y: -clampedY * scale, scale }
 }
 
 /** Centres one node without changing zoom, for "reveal the selected node". */

@@ -13,6 +13,15 @@ import {
   type SwarmRoleIndex,
 } from "./session-graph-nodes"
 import { placeSessionTree } from "./session-graph-place"
+import {
+  EMPTY_SESSION_GRAPH_COUNTS,
+  appendUnexpandedMarkers,
+  countGraphNodes,
+} from "./session-graph-report"
+
+// The reporting layer lives beside this module; re-exported so consumers keep
+// one import path for the graph model.
+export { sessionGraphSummary, sessionGraphStructure } from "./session-graph-report"
 
 /**
  * The agentic workflow a session is driving, as a graph.
@@ -28,13 +37,49 @@ export type SessionGraphStatus =
   | "queued"
   | "running"
   | "input_needed"
+  | "needs_review"
   | "completed"
+  /**
+   * Terminal, but with no recorded outcome: the delegation stopped working and
+   * nothing durable says how it ended. Deliberately not `completed` - a child
+   * that errored without a job record must never wear a success badge.
+   */
+  | "returned"
+  | "failed"
+  | "cancelled"
+
+/** How an edge is known: recorded fact, plan, inference, or presentation. */
+export type SessionGraphEdgeProvenance =
+  | "observed_spawn"
+  | "declared_dependency"
+  | "inferred_sequence"
+  | "synthetic_return"
+  | "planned"
+
+/**
+ * What a finished step produced, independent of whether it is still running
+ * (status) and of how the card is decorated (badge). Merges aggregate this
+ * dimension worst-first, which is what stops a review-required or partial
+ * branch being laundered into a green check at any nesting depth.
+ */
+export type SessionGraphOutcome =
+  | "verified_success"
+  /**
+   * The step returned cleanly and the harness durably recorded that - but
+   * nothing verified the work. Execution settlement, not judged success:
+   * deliberately distinct from `verified_success`, and never badged green.
+   */
+  | "completed_unverified"
+  | "partial"
+  | "review_required"
+  | "unknown"
   | "failed"
   | "cancelled"
 
 export type SessionGraphNode = {
   id: string
-  kind: "session" | "job" | "join"
+  /** `sentinel` marks where discovery stopped, not a step that exists. */
+  kind: "session" | "job" | "join" | "sentinel"
   sessionID?: string
   jobID?: string
   /** Layer index: how many spawn hops from the root. */
@@ -44,10 +89,22 @@ export type SessionGraphNode = {
   role?: string
   status: SessionGraphStatus
   statusLabel: string
-  /** Corner badge. Absent while the node has not reached a terminal state. */
-  badge?: "success" | "failure"
+  /** What the step produced, once terminal. Absent while it is still working. */
+  outcome?: SessionGraphOutcome
+  /**
+   * Corner badge - pure presentation, derived from `outcome`. Absent while the
+   * node has not reached a terminal state, and absent for a terminal state
+   * whose outcome is unverified or review-required; `warning` marks a
+   * qualified success, `cancelled` a deliberate stop that is not a failure.
+   */
+  badge?: "success" | "warning" | "failure" | "cancelled"
   /** Failure message or blocker, shown on hover. */
   detail?: string
+  /**
+   * What the step is about, in one breath: the recorded report opening for a
+   * finished delegation, or the objective it was spawned with while it runs.
+   */
+  summary?: string
   progress?: { completed: number; failed: number; total: number }
   /** Present only while a declared step is parked on a human's approval. */
   gate?: SessionGraphGate
@@ -66,6 +123,30 @@ export type SessionGraphEdge = {
   detail: string
   /** Mirrors the target node, so a failed branch reads as failed end to end. */
   status: SessionGraphStatus
+  /**
+   * Where this edge's claim comes from. Observed and declared edges draw solid;
+   * inferred sequencing draws dashed and says so, because "started after the
+   * previous stage returned" is a reading of timestamps, not a recorded fact.
+   */
+  provenance: SessionGraphEdgeProvenance
+}
+
+export type SessionGraphCounts = {
+  /** Workflow steps including the orchestrator; merge nodes never count. */
+  total: number
+  /** Steps excluding the orchestrator - the work this session farmed out. */
+  delegated: number
+  running: number
+  retrying: number
+  queued: number
+  /** Steps parked on a human: permissions, questions, approval gates. */
+  blocked: number
+  needsReview: number
+  completed: number
+  /** Terminal with no recorded outcome - see the `returned` status. */
+  returned: number
+  failed: number
+  cancelled: number
 }
 
 export type SessionGraph = {
@@ -73,7 +154,7 @@ export type SessionGraph = {
   rootSessionID: string
   nodes: SessionGraphNode[]
   edges: SessionGraphEdge[]
-  counts: { total: number; running: number; completed: number; failed: number; blocked: number }
+  counts: SessionGraphCounts
 }
 
 export type SessionGraphInput = {
@@ -94,6 +175,12 @@ export type SessionGraphInput = {
    * have not run, and the approval a gate is parked on.
    */
   goal?: OpencodeXGoal
+  /**
+   * Branches whose descendants discovery never checked - a depth or session
+   * bound, or a failed request. Each one gets an explicit marker on the
+   * branch it belongs to instead of the graph silently looking complete.
+   */
+  unexpanded?: readonly { sessionID: string; reason: "depth_limit" | "session_limit" | "load_error" }[]
 }
 
 export const EMPTY_SESSION_GRAPH: SessionGraph = {
@@ -101,7 +188,7 @@ export const EMPTY_SESSION_GRAPH: SessionGraph = {
   rootSessionID: "",
   nodes: [],
   edges: [],
-  counts: { total: 0, running: 0, completed: 0, failed: 0, blocked: 0 },
+  counts: EMPTY_SESSION_GRAPH_COUNTS,
 }
 
 /**
@@ -148,7 +235,8 @@ export function buildSessionGraph(input: SessionGraphInput): SessionGraph {
 
   placeJobs({ input, roles, items, placed, depths, nodes, edges, rootSessionID, sessionsByID })
   applyGoal({ goal: input.goal, nodes, edges, depths })
-  return { rootID: `session:${rootSessionID}`, rootSessionID, nodes, edges, counts: countNodes(nodes) }
+  if (input.unexpanded?.length) appendUnexpandedMarkers(nodes, edges, input.unexpanded)
+  return { rootID: `session:${rootSessionID}`, rootSessionID, nodes, edges, counts: countGraphNodes(nodes) }
 }
 
 /**
@@ -187,16 +275,6 @@ function applyGoal(context: {
 /** Whether this session is driving a workflow worth drawing. */
 export function sessionGraphAvailable(graph: SessionGraph) {
   return graph.counts.total > 1
-}
-
-export function sessionGraphSummary(graph: SessionGraph) {
-  if (graph.nodes.length === 0) return "Workflow graph: empty"
-  const parts = [`${graph.counts.total} ${graph.counts.total === 1 ? "step" : "steps"}`]
-  if (graph.counts.running > 0) parts.push(`${graph.counts.running} running`)
-  if (graph.counts.blocked > 0) parts.push(`${graph.counts.blocked} needing input`)
-  if (graph.counts.completed > 0) parts.push(`${graph.counts.completed} complete`)
-  if (graph.counts.failed > 0) parts.push(`${graph.counts.failed} failed`)
-  return `Workflow graph: ${parts.join(", ")}`
 }
 
 export function sessionGraphNodeAt(graph: SessionGraph, id: string) {
@@ -261,21 +339,6 @@ function jobParentID(
   const rootSwarmID = root?.model?.providerID === "swarm" ? root.model.id : undefined
   if (job.swarmID && job.swarmID === rootSwarmID) return `session:${rootSessionID}`
   return undefined
-}
-
-/** Merge nodes are presentation, not steps, so they stay out of the counts. */
-function countNodes(all: readonly SessionGraphNode[]) {
-  const nodes = all.filter((node) => node.kind !== "join")
-  return nodes.reduce(
-    (counts, node) => ({
-      total: counts.total + 1,
-      running: counts.running + (node.status === "running" ? 1 : 0),
-      completed: counts.completed + (node.status === "completed" ? 1 : 0),
-      failed: counts.failed + (node.status === "failed" || node.status === "cancelled" ? 1 : 0),
-      blocked: counts.blocked + (node.status === "input_needed" ? 1 : 0),
-    }),
-    { total: 0, running: 0, completed: 0, failed: 0, blocked: 0 },
-  )
 }
 
 /** Filtered before sorting: the catalog holds every session, few of them children. */

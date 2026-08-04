@@ -169,6 +169,43 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   // The toolbar is still there, offering the way back on the same button.
   await expectWithin(page.getByRole("button", { name: "Exit fullscreen workspace" }), page.locator(".session-toolbar"))
 
+  // Fullscreen drill-down: clicking a node must reveal its transcript *here*,
+  // beside the graph, not render it into the hidden session column. This was
+  // the central loop for large graphs, and it used to dead-end.
+  await page.locator(SESSION_NODE, { hasText: `Graph Child A ${suffix}` }).dispatchEvent("click")
+  await expect(page.locator(".session-graph-drawer")).toBeVisible()
+  await expect(page.locator(".session-graph-drawer .session-graph-embedded-heading")).toContainText(
+    `Graph Child A ${suffix}`,
+  )
+  // The graph did not go anywhere: both are on screen at once, and the drawer
+  // is measured *beside* the canvas, never over it - the two boxes must not
+  // intersect, and the selected card stays inside the visible canvas.
+  await expect(page.locator(".session-graph-canvas")).toBeVisible()
+  await expect(sessionColumn).toBeHidden()
+  {
+    const canvasBox = (await page.locator(".session-graph-canvas").boundingBox())!
+    const drawerBox = (await page.locator(".session-graph-drawer").boundingBox())!
+    expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(drawerBox.x + 1)
+    const selected = await page
+      .locator(SESSION_NODE, { hasText: `Graph Child A ${suffix}` })
+      .boundingBox()
+    expect(selected).not.toBeNull()
+    expect(selected!.x + selected!.width).toBeLessThanOrEqual(canvasBox.x + canvasBox.width + 1)
+  }
+  // Switching workspace tabs takes the drawer with the Graph tab instead of
+  // leaving it parked over the newcomer; coming back restores it.
+  await page.getByRole("button", { name: "New tab" }).click()
+  await page.getByRole("button", { name: "Git", exact: true }).click()
+  await expect(page.locator(".session-graph-drawer")).toHaveCount(0)
+  await page.getByRole("tab", { name: "Graph" }).click()
+  await expect(page.locator(".session-graph-drawer")).toBeVisible()
+  // Escape closes the drawer and hands focus back to the node that opened it.
+  await page.keyboard.press("Escape")
+  await expect(page.locator(".session-graph-drawer")).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-graph-node-id") ?? ""))
+    .toContain("session:")
+
   // Closing the workspace while fullscreen restores the session instead of
   // emptying the window - the invariant that makes "everything closed"
   // unreachable.

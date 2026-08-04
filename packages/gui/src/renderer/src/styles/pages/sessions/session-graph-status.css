@@ -3,7 +3,8 @@
 /* --- Node status: tone plus a badge, never color alone --- */
 
 .session-graph-node[data-graph-status="running"] {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
 }
 
 /*
@@ -17,8 +18,8 @@
 }
 
 .session-graph-node[data-graph-status="input_needed"] {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
-  background: color-mix(in srgb, var(--warning) 8%, var(--panel));
+  border-color: color-mix(in srgb, var(--warning) 65%, var(--border));
+  background: color-mix(in srgb, var(--warning) 14%, var(--panel));
 }
 
 .session-graph-node[data-graph-status="input_needed"] .session-graph-node-status {
@@ -26,27 +27,62 @@
 }
 
 .session-graph-node[data-graph-status="completed"] {
-  border-color: color-mix(in srgb, var(--success) 46%, var(--border-subtle));
-  background: color-mix(in srgb, var(--success) 9%, var(--panel));
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border));
+  background: color-mix(in srgb, var(--success) 14%, var(--panel));
 }
 
 .session-graph-node[data-graph-status="completed"] .session-graph-node-status {
   color: color-mix(in srgb, var(--success) 62%, var(--text));
 }
 
-.session-graph-node[data-graph-status="failed"],
-.session-graph-node[data-graph-status="cancelled"] {
-  border-color: color-mix(in srgb, var(--danger) 50%, var(--border-subtle));
-  background: color-mix(in srgb, var(--danger) 9%, var(--panel));
+.session-graph-node[data-graph-status="failed"] {
+  border-color: color-mix(in srgb, var(--danger) 62%, var(--border));
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel));
 }
 
-.session-graph-node[data-graph-status="failed"] .session-graph-node-status,
-.session-graph-node[data-graph-status="cancelled"] .session-graph-node-status {
+.session-graph-node[data-graph-status="failed"] .session-graph-node-status {
   color: color-mix(in srgb, var(--danger) 62%, var(--text));
+}
+
+/* A deliberate stop, not a failure: neutral, matching the shared status
+   contract. The stop badge and the label carry the distinction. */
+.session-graph-node[data-graph-status="cancelled"] {
+  border-color: color-mix(in srgb, var(--text) 24%, var(--border-subtle));
+  background: color-mix(in srgb, var(--text) 4%, var(--panel));
 }
 
 .session-graph-node[data-graph-status="queued"] {
   border-style: dashed;
+}
+
+/* Ready for a human's eyes: attention treatment, deliberately not the success
+   green - review is work the supervisor still owes, not an outcome. */
+.session-graph-node[data-graph-status="needs_review"] {
+  border-color: color-mix(in srgb, var(--warning) 58%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel));
+}
+
+.session-graph-node[data-graph-status="needs_review"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--warning) 62%, var(--text));
+}
+
+/* Returned with no recorded outcome: terminal but neutral - dotted rather than
+   the queued dash, and none of the success tinting. The status text and the
+   missing badge carry the same message for readers who cannot see the border. */
+.session-graph-node[data-graph-status="returned"] {
+  border-style: dotted;
+  border-color: color-mix(in srgb, var(--text) 22%, var(--border-subtle));
+}
+
+/* A qualified outcome (merged with failures, partially completed) must not
+   read as the unqualified green, whatever tone group the status sits in. */
+.session-graph-node[data-graph-badge="warning"] {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--warning) 8%, var(--panel));
+}
+
+.session-graph-node[data-graph-badge="warning"] .session-graph-node-status {
+  color: color-mix(in srgb, var(--warning) 62%, var(--text));
 }
 
 /* Merge nodes are presentation, not sessions: lighter, so the real steps lead. */
@@ -96,28 +132,37 @@
 
 .session-graph-node-badge {
   position: absolute;
-  right: calc(var(--ds-space-1) * -1);
-  bottom: calc(var(--ds-space-1) * -1);
+  right: calc(var(--ds-space-2) * -1);
+  bottom: calc(var(--ds-space-2) * -1);
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--bg);
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--bg);
   border-radius: var(--ds-radius-full);
   color: var(--bg);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--text) 18%, transparent);
 }
 
 .session-graph-node-badge[data-graph-badge="success"] {
   background: var(--success);
 }
 
+.session-graph-node-badge[data-graph-badge="warning"] {
+  background: var(--warning);
+}
+
 .session-graph-node-badge[data-graph-badge="failure"] {
   background: var(--danger);
 }
 
+.session-graph-node-badge[data-graph-badge="cancelled"] {
+  background: color-mix(in srgb, var(--text) 45%, var(--panel));
+}
+
 .session-graph-node-badge .icon {
-  width: 12px;
-  height: 12px;
+  width: 15px;
+  height: 15px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -127,13 +172,22 @@
 }
 
 /* A parked gate answers itself on the canvas. It sits under the card rather
-   than inside it, because the card is a button and cannot contain these two. */
+   than inside it, because the card is a button and cannot contain these two.
+   In flow, not absolutely placed: the anchor's grid row is reserved by layout
+   (graphNodeHeight), so the actions can never overlap the next node. */
 .session-graph-node-gate {
-  position: absolute;
-  top: 100%;
-  left: 0;
   display: flex;
   gap: var(--ds-space-1);
-  margin-top: var(--ds-space-1);
   z-index: 2;
+}
+
+/* Where discovery stopped: explicitly not a step, and visibly not one. */
+.session-graph-node[data-graph-kind="sentinel"] {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+}
+
+.session-graph-node[data-graph-kind="sentinel"] .session-graph-node-title,
+.session-graph-node[data-graph-kind="sentinel"] .session-graph-node-status {
+  color: var(--muted);
 }

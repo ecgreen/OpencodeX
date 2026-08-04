@@ -29,6 +29,16 @@ export function SessionToolbar(props: {
   centerCollapsible?: boolean
   centerCollapsed?: boolean
   hideCenter?: () => void
+  /** One line of workflow state, folded into the side panel toggle's label. */
+  workflowSummary?: string
+  /**
+   * Contextual entry point, shown only while the session is actually driving a
+   * workflow - it opens/focuses the singleton Graph tab. Deliberately not a
+   * permanent toolbar button. `ariaLabel` carries what the visible label
+   * cannot fit, such as the graph-may-be-incomplete caveat.
+   */
+  workflowChip?: { label: string; attention: boolean; ariaLabel?: string }
+  openWorkflow?: () => void
 }) {
   const [actionsOpen, setActionsOpen] = createSignal(false)
   let actionsMenu: HTMLDetailsElement | undefined
@@ -55,6 +65,21 @@ export function SessionToolbar(props: {
         </div>
       </div>
       <div class="session-actions compact">
+        <Show when={props.workflowChip && props.openWorkflow}>
+          {(openWorkflow) => (
+            <Button
+              appearance="outline"
+              size="compact"
+              class="session-workflow-chip"
+              classList={{ attention: props.workflowChip!.attention }}
+              icon="merge"
+              aria-label={props.workflowChip!.ariaLabel}
+              onClick={openWorkflow()}
+            >
+              {props.workflowChip!.label}
+            </Button>
+          )}
+        </Show>
         {/* The middle of the three window controls: give the workspace the
             whole window. This bar stays on screen in fullscreen - it is the
             way back - so the same button toggles both directions. */}
@@ -74,7 +99,7 @@ export function SessionToolbar(props: {
             <IconButton
               class="session-side-panel-toggle"
               icon="panel"
-              label={props.sidePanelOpen ? "Close side panel" : "Open side panel"}
+              label={`${props.sidePanelOpen ? "Close side panel" : "Open side panel"}${props.workflowSummary ? ` - ${props.workflowSummary}` : ""}`}
               pressed={props.sidePanelOpen}
               onClick={toggleSidePanel()}
             />

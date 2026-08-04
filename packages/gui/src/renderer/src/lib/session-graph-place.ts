@@ -1,6 +1,6 @@
 import type { OpencodeXJob, Session } from "@opencode-ai/sdk/v2/client"
 import type { WorkItem } from "@opencode-ai/sdk/v2/work-item"
-import type { SessionGraphEdge, SessionGraphNode } from "./session-graph"
+import type { SessionGraphEdge, SessionGraphEdgeProvenance, SessionGraphNode } from "./session-graph"
 import { buildStageMerge, stageMergeNeeded, type SessionGraphBranch } from "./session-graph-join"
 import { sessionGraphEdge, sessionGraphNode, type SwarmRoleIndex } from "./session-graph-nodes"
 import { groupSessionStages } from "./session-graph-stages"
@@ -37,6 +37,7 @@ export function placeSessionTree(
   session: Session,
   depth: number,
   from: string,
+  provenance: SessionGraphEdgeProvenance = "observed_spawn",
 ): Placement | undefined {
   const id = `session:${session.id}`
   // A parent that is its own ancestor would otherwise recurse forever; the
@@ -55,7 +56,7 @@ export function placeSessionTree(
     busyType: context.sessionStatus?.[session.id]?.type,
   })
   context.nodes.push(node)
-  if (from) context.edges.push(sessionGraphEdge({ from, node, session, job, roles: context.roles }))
+  if (from) context.edges.push(sessionGraphEdge({ from, node, session, job, roles: context.roles, provenance }))
 
   const children = context.childSessions.get(session.id) ?? []
   if (children.length === 0) return { terminal: node, depth }
@@ -65,7 +66,16 @@ export function placeSessionTree(
   let anchorDepth = depth
   stages.forEach((stage, index) => {
     const branches = stage.flatMap((child): SessionGraphBranch[] => {
-      const placement = placeSessionTree(context, child, anchorDepth + 1, anchor.id)
+      // The first stage hangs off the session that really spawned it; later
+      // stages hang off the previous stage's end, which only timestamps say
+      // they waited for - that edge must admit to being an inference.
+      const placement = placeSessionTree(
+        context,
+        child,
+        anchorDepth + 1,
+        anchor.id,
+        anchor.id === node.id ? "observed_spawn" : "inferred_sequence",
+      )
       if (!placement) return []
       const own = context.nodes.find((item) => item.id === `session:${child.id}`)
       return own ? [{ child: own, via: placement.terminal }] : []

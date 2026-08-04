@@ -1,8 +1,9 @@
-import { Show, createMemo, onCleanup, onMount } from "solid-js"
+import { Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { formatRelative } from "../lib/format"
 import type { SessionData } from "../lib/session-api"
 import { sessionGraphNodeAt } from "../lib/session-graph"
 import { EmbeddedSessionStatus } from "./embedded-session-status"
+import { SessionGraphInspector } from "./session-graph-inspector"
 import type { SessionPageProps } from "./session-page-types"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { Button, IconButton } from "./ui"
@@ -16,7 +17,8 @@ const EMPTY_NODE_DATA: SessionData = { messages: [], todos: [], diffs: [] }
  *
  * Mirrors `SessionSwarmTeam`, which does the same job for the swarm strip. The
  * two are mutually exclusive - the composition layer clears one when the other
- * is selected - so the session's main area only ever has one owner.
+ * is selected - so the session's main area only ever has one owner. In
+ * fullscreen the same surface renders inside the graph drawer instead.
  */
 export function SessionGraphSurface(props: { page: SessionPageProps }) {
   return (
@@ -36,6 +38,7 @@ function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string
     const graph = props.page.graph
     return (graph ? sessionGraphNodeAt(graph, graph.rootID)?.title : undefined) ?? "Top session"
   })
+  const fullPageAvailable = () => props.page.canOpenGraphNodeFullPage?.(props.sessionID) === true
 
   // Escape is the way out of any inline drill-down in this app. It is ignored
   // once something else has handled the key, so it does not fight a dialog.
@@ -47,6 +50,25 @@ function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string
     }
     document.addEventListener("keydown", onKeyDown)
     onCleanup(() => document.removeEventListener("keydown", onKeyDown))
+  })
+
+  // Closing the pane - Back, Escape, or the node leaving the graph - unmounts
+  // the focused control; hand focus back to the node that opened it so a
+  // keyboard reader lands where they left off. If the node is gone too (a
+  // route change), the selector matches nothing and focus is left alone.
+  // The id is captured while mounted: `props.sessionID` comes through a
+  // `<Show>` accessor, and reading it during cleanup - after the condition
+  // went false - throws the stale-accessor error and aborts the unmount.
+  let openedNodeID = ""
+  createEffect(() => {
+    openedNodeID = `session:${props.sessionID}`
+  })
+  onCleanup(() => {
+    const nodeID = openedNodeID
+    if (!nodeID) return
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-graph-node-id="${CSS.escape(nodeID)}"]`)?.focus()
+    })
   })
 
   return (
@@ -68,9 +90,10 @@ function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string
             {node()?.updatedAt ? ` - updated ${formatRelative(node()!.updatedAt)}` : ""}
           </span>
         </div>
-        {/* Only for steps the catalog carries. A swarm-delegated child has no
-            full-page route, and a button that does nothing is worse than none. */}
-        <Show when={props.page.graphNodeFullPageAvailable}>
+        {/* One capability check, shared with the canvas's Ctrl/Cmd-click: a
+            swarm-delegated child has no full-page route, and a button that
+            does nothing is worse than none. */}
+        <Show when={fullPageAvailable()}>
           <IconButton
             appearance="ghost"
             size="compact"
@@ -80,6 +103,12 @@ function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string
           />
         </Show>
       </header>
+      <SessionGraphInspector
+        node={node()}
+        item={props.page.graphNodeWorkItem}
+        session={props.page.graphNodeSession}
+        jobs={props.page.graphNodeJobs}
+      />
       <EmbeddedSessionStatus
         sessionID={props.sessionID}
         data={props.page.graphNodeData}

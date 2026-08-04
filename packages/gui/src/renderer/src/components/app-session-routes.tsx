@@ -83,22 +83,39 @@ export function SessionRoute(props: { model: GuiAppModel }) {
         model.notices.run(() => model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
       }
       graph={model.sessionGraph.graph()}
+      graphTopology={model.sessionGraph.topology()}
+      retryGraphTopology={model.sessionGraph.retryTopology}
+      graphSelectedNodeID={model.sessionGraph.selectedNodeID()}
       graphNodeSessionID={model.sessionGraph.nodeSessionID()}
       graphNodeData={model.authoritative.viewSessionData()[model.sessionGraph.nodeSessionID()]}
       graphNodeLoading={model.authoritative.viewPaneState(model.sessionGraph.nodeSessionID()).loading}
+      graphNodeWorkItem={model.authoritative
+        .workItems()
+        .find((item) => item.id === `session:${model.sessionGraph.nodeSessionID()}`)}
+      graphNodeSession={model.sessionGraph.nodeSession()}
+      graphNodeJobs={(model.authoritative.snapshot()?.jobs ?? []).filter(
+        (job) => job.sessionID === model.sessionGraph.nodeSessionID(),
+      )}
       openGraphNode={(node) => {
         model.swarmTeam.setMemberSessionID("")
         model.sessionGraph.openNode(node)
       }}
       // Swarm-delegated children are not in the catalog, so the full session
-      // route cannot resolve them - the embedded pane is the only place they can
-      // be read, and offering a button that silently does nothing is worse than
-      // not offering one.
-      graphNodeFullPageAvailable={(model.authoritative.snapshot()?.sessions ?? []).some(
-        (session) => session.id === model.sessionGraph.nodeSessionID(),
-      )}
+      // route cannot resolve them - the embedded pane is the only place they
+      // can be read. This one check guards every full-page entry point: the
+      // embedded header's button and the canvas's Ctrl/Cmd-click.
+      canOpenGraphNodeFullPage={(sessionID) =>
+        (model.authoritative.snapshot()?.sessions ?? []).some((session) => session.id === sessionID)
+      }
       openGraphNodeFullPage={(node) => {
         if (!node.sessionID) return
+        // The same capability check as the buttons that lead here: a route
+        // that cannot resolve must not be navigated to, whatever called this.
+        if (!(model.authoritative.snapshot()?.sessions ?? []).some((session) => session.id === node.sessionID)) {
+          model.swarmTeam.setMemberSessionID("")
+          model.sessionGraph.openNode(node)
+          return
+        }
         // Closing the embedded pane first is the whole job: the route changes
         // underneath it, but an opened node survives the change (it is still in
         // the new session's own graph), so the pane stays mounted over the page

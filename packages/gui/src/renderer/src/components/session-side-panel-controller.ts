@@ -73,6 +73,10 @@ export function createSessionSidePanelController(props: SessionPageProps) {
     if (id === loadedSessionID) return
     const keepPendingPanelOpen = loadedSessionID.startsWith("pending:") && open()
     loadedSessionID = id
+    // Fullscreen does not survive a route change: a session opened from a
+    // graph node must arrive visible, not parked behind a collapsed column
+    // whose workspace belongs to the previous session's graph.
+    apply({ type: "center", collapsed: false })
     setOpen(id ? keepPendingPanelOpen || initialSidePanelOpen(props.session) : false)
   })
 
