@@ -160,16 +160,20 @@
   background: var(--panel);
 }
 
+/* Cornered, not centred on the edge. A pipeline is one row of cards down the
+   middle of the canvas, so a chip at `top: 50%` sits exactly on top of the
+   outermost card and swallows the click meant for it - the card is visible and
+   stable, and the press still lands on the chip. The bottom corners are free:
+   the up/down chips own the horizontal centre, and the legend anchors to its
+   own toggle. */
 .session-graph-offscreen[data-edge="left"] {
-  top: 50%;
+  bottom: var(--ds-space-2);
   left: var(--ds-space-2);
-  transform: translateY(-50%);
 }
 
 .session-graph-offscreen[data-edge="right"] {
-  top: 50%;
   right: var(--ds-space-2);
-  transform: translateY(-50%);
+  bottom: var(--ds-space-2);
 }
 
 .session-graph-offscreen[data-edge="up"] {
