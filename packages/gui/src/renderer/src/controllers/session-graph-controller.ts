@@ -49,7 +49,7 @@ export function createSessionGraphController(input: {
    */
   const [selectedID, setSelectedID] = createSignal("")
   const [descendants, setDescendants] = createSignal<readonly Session[]>([])
-  const [topology, setTopology] = createSignal<GraphTopologyState>(IDLE_GRAPH_TOPOLOGY)
+  const [topology, setTopology] = createSignal(IDLE_GRAPH_TOPOLOGY)
 
   const mergedSessions = createMemo(() =>
     mergeSessionLists(input.authoritative.snapshot()?.sessions ?? [], descendants()),

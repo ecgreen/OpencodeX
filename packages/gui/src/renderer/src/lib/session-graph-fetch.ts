@@ -113,7 +113,11 @@ export async function collectSessionDescendants(input: {
     { sessionID: input.rootID, ...(input.rootDirectory ? { directory: input.rootDirectory } : {}), depth: 0 },
   ]
 
-  while (queue.length > 0 && !capped) {
+  // `capped` is checked at the top rather than in the condition: it is only
+  // ever set inside the in-flight batch below, which static analysis cannot
+  // see from the loop header.
+  while (queue.length > 0) {
+    if (capped) break
     if (input.cancelled?.()) return undefined
     const batch = queue.splice(0, concurrency)
     await Promise.all(

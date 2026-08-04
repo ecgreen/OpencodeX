@@ -89,7 +89,7 @@ describe("delegation record metadata", () => {
     expect(delegationSummary(long)!.endsWith("...")).toBe(true)
     // No summary is no key, not an empty string.
     expect(delegationSummary(stamp())).toBeUndefined()
-    expect("summary" in (stamp() as any).opencodex.delegation).toBe(false)
+    expect(JSON.stringify(stamp())).not.toContain(`"summary"`)
     expect(summarizeDelegationReport("   ")).toBeUndefined()
   })
 
@@ -98,9 +98,12 @@ describe("delegation record metadata", () => {
     expect(delegationRecord({})).toBeUndefined()
     expect(delegationRecord({ opencodex: "nope" })).toBeUndefined()
     // Unknown versions and enum values degrade to no record, never success.
-    expect(delegationRecord(withDelegationRecord(undefined, { ...running(), version: 3 as never }))).toBeUndefined()
+    // Written as the stored shape rather than through the writer: this is
+    // metadata that a future version - or a hand-edited session - can put on
+    // disk, which the writer's own types would never let us build.
+    expect(delegationRecord({ opencodex: { delegation: { ...running(), version: 3 } } })).toBeUndefined()
     expect(
-      delegationRecord(withDelegationRecord(undefined, running({ outcome: "maybe" as never }))),
+      delegationRecord({ opencodex: { delegation: { ...running(), phase: "settled", outcome: "maybe" } } }),
     ).toBeUndefined()
     // Malformed timestamps are rejected rather than tolerated.
     expect(

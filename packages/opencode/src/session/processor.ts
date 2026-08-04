@@ -12,7 +12,7 @@ import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
 import { isOverflow } from "./overflow"
 import { PartID } from "./schema"
-import type { SessionID } from "./schema"
+import { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
 import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
@@ -200,7 +200,7 @@ export const layer = Layer.effect(
         if (match.part.tool === "task" && typeof childSessionID === "string" && typeof delegationRunID === "string") {
           yield* session
             .stampDelegationDelivery({
-              sessionID: childSessionID as SessionID,
+              sessionID: SessionID.make(childSessionID),
               runID: delegationRunID,
               outcome: "delivered",
             })

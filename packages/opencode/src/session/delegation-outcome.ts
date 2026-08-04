@@ -82,14 +82,11 @@ export function withDelegationRecord(
   metadata: Record<string, unknown> | undefined | null,
   record: DelegationRecord,
 ): Record<string, unknown> {
-  const opencodex =
-    typeof metadata?.opencodex === "object" && metadata.opencodex !== null
-      ? (metadata.opencodex as Record<string, unknown>)
-      : {}
+  const opencodex = isRecord(metadata?.opencodex) ? metadata.opencodex : {}
   const trimmed = summarizeDelegationReport(record.summary)
   const { summary: _untrimmed, ...rest } = record
   return {
-    ...(metadata ?? {}),
+    ...metadata,
     opencodex: {
       ...opencodex,
       delegation: { ...rest, ...(trimmed ? { summary: trimmed } : {}) },
@@ -117,13 +114,19 @@ export function settleDelegation(
   }
 }
 
+/**
+ * Narrowing by predicate rather than assertion: metadata arrives as free-form
+ * JSON, and every reader here has to prove an object before indexing it.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 /** The delegation object as stored, without any validation. */
 function rawDelegation(metadata: Record<string, unknown> | undefined | null): Record<string, unknown> | undefined {
   const opencodex = metadata?.opencodex
-  if (typeof opencodex !== "object" || opencodex === null) return undefined
-  const delegation = (opencodex as { delegation?: unknown }).delegation
-  if (typeof delegation !== "object" || delegation === null) return undefined
-  return delegation as Record<string, unknown>
+  if (!isRecord(opencodex)) return undefined
+  return isRecord(opencodex.delegation) ? opencodex.delegation : undefined
 }
 
 function isOutcome(value: unknown): value is DelegationOutcome {
@@ -247,9 +250,6 @@ export function preserveDelegationRecord(
   const record = rawDelegation(stored)
   const cleaned = withoutDelegationRecord(incoming) ?? {}
   if (record === undefined) return cleaned
-  const opencodex =
-    typeof cleaned.opencodex === "object" && cleaned.opencodex !== null
-      ? (cleaned.opencodex as Record<string, unknown>)
-      : {}
+  const opencodex = isRecord(cleaned.opencodex) ? cleaned.opencodex : {}
   return { ...cleaned, opencodex: { ...opencodex, delegation: record } }
 }

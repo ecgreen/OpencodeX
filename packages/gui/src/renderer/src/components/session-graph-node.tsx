@@ -52,14 +52,14 @@ export function SessionGraphNodeCard(props: {
     }
     props.openFullPage(node())
   }
-  const roam = (event: KeyboardEvent) => {
+  const roam = (event: KeyboardEvent & { currentTarget: HTMLElement }) => {
     if (!props.neighbor) return
     const targetID = props.neighbor(node().id, event.key)
     if (!targetID) return
     event.preventDefault()
     // Stop the canvas from also panning on the same press.
     event.stopPropagation()
-    const canvas = (event.currentTarget as HTMLElement).closest(".session-graph-canvas")
+    const canvas = event.currentTarget.closest(".session-graph-canvas")
     canvas?.querySelector<HTMLElement>(`[data-graph-node-id="${CSS.escape(targetID)}"]`)?.focus()
   }
   return (

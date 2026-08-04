@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
 import * as PromptSwarm from "../../src/session/prompt-swarm"
 import type { DelegationRecord } from "../../src/session/delegation-outcome"
+import { SessionID } from "../../src/session/schema"
 
 /**
  * The delegated-specialist prompt is assembled from up to three layers:
@@ -17,7 +18,7 @@ describe("swarm role delegation prompt", () => {
 
     const report = await Effect.runPromise(
       runSwarmRole({
-        sessionID: "ses_parent" as never,
+        sessionID: SessionID.make("ses_parent"),
         swarmID: "swm_1",
         roles: [role({ name: "Designer", skill: "designer", instructions: "Prefer boring layouts." })],
         role: "Designer",
@@ -38,7 +39,7 @@ describe("swarm role delegation prompt", () => {
     })
     expect(stamps[1]).toMatchObject({
       record: { phase: "settled", outcome: "completed", summary: "done" },
-      expectRunID: stamps[0]!.record.runID,
+      expectRunID: stamps[0].record.runID,
     })
   })
 
@@ -47,7 +48,7 @@ describe("swarm role delegation prompt", () => {
 
     await Effect.runPromise(
       runSwarmRole({
-        sessionID: "ses_parent" as never,
+        sessionID: SessionID.make("ses_parent"),
         swarmID: "swm_1",
         roles: [role({ name: "Migrator", skill: null, instructions: "Always plan a rollback." })],
         role: "Migrator",
@@ -63,7 +64,7 @@ describe("swarm role delegation prompt", () => {
 
     await Effect.runPromise(
       runSwarmRole({
-        sessionID: "ses_parent" as never,
+        sessionID: SessionID.make("ses_parent"),
         swarmID: "swm_1",
         roles: [role({ name: "Specialist", skill: "no-such-skill", instructions: "" })],
         role: "Specialist",
@@ -149,7 +150,7 @@ function run(
   overrides: { roles?: PromptSwarm.SwarmRoleRow[] } = {},
 ) {
   return runSwarmRole({
-    sessionID: "ses_parent" as never,
+    sessionID: SessionID.make("ses_parent"),
     swarmID: "swm_1",
     roles: overrides.roles ?? [role({ name: "Specialist", skill: null, instructions: "" })],
     role: "Specialist",
@@ -178,7 +179,7 @@ function harness(input: {
   /** Overrides what the child prompt resolves to, for exit-shape tests. */
   promptResult?: Effect.Effect<unknown, unknown>
   /** Overrides the skill lookup, for pre-prompt failure tests. */
-  skillFailure?: Effect.Effect<never, never>
+  skillFailure?: Effect.Effect<never>
 }) {
   const prompts: string[] = []
   const stamps: Array<{ record: DelegationRecord; expectRunID?: string }> = []

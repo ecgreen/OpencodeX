@@ -7,6 +7,7 @@ import {
   sessionGraphAvailable,
   sessionGraphSummary,
   type SessionGraphInput,
+  type SessionGraphNode,
 } from "../src/renderer/src/lib/session-graph"
 import { summarizeGraphDetail } from "../src/renderer/src/lib/session-graph-nodes"
 
@@ -258,7 +259,7 @@ describe("session graph status", () => {
         {
           ...workItem("child-1", "running"),
           objective: "Map the current schema and flag breaking changes.",
-        } as never,
+        },
       ],
     })
     expect(graph.nodes.find((node) => node.id === "session:child-1")?.summary).toBe(
@@ -718,9 +719,9 @@ describe("session graph supervision states", () => {
   // merely running, needs-review is not completed, partial is not success.
   const cases: Array<{
     state: string
-    status: string
+    status: SessionGraphNode["status"]
     label: string
-    badge: string | undefined
+    badge: SessionGraphNode["badge"]
   }> = [
     { state: "retrying", status: "running", label: "Retrying", badge: undefined },
     { state: "needs_review", status: "needs_review", label: "Ready for review", badge: undefined },
@@ -733,7 +734,7 @@ describe("session graph supervision states", () => {
     { state: "queued", status: "queued", label: "Queued", badge: undefined },
   ]
 
-  const outcomes: Array<{ state: string; outcome: string | undefined }> = [
+  const outcomes: Array<{ state: string; outcome: SessionGraphNode["outcome"] }> = [
     { state: "completed", outcome: "verified_success" },
     { state: "needs_review", outcome: "review_required" },
     { state: "partially_completed", outcome: "partial" },
@@ -749,9 +750,7 @@ describe("session graph supervision states", () => {
         ...input({ sessions: [root(), child("child-1", "Research")] }),
         workItems: [workItem("child-1", expected.state)],
       })
-      expect(graph.nodes.find((item) => item.id === "session:child-1")?.outcome).toBe(
-        expected.outcome as never,
-      )
+      expect(graph.nodes.find((item) => item.id === "session:child-1")?.outcome).toBe(expected.outcome)
     })
   }
 
@@ -762,9 +761,9 @@ describe("session graph supervision states", () => {
         workItems: [workItem("child-1", expected.state)],
       })
       const node = graph.nodes.find((item) => item.id === "session:child-1")
-      expect(node?.status).toBe(expected.status as never)
+      expect(node?.status).toBe(expected.status)
       expect(node?.statusLabel).toBe(expected.label)
-      expect(node?.badge).toBe(expected.badge as never)
+      expect(node?.badge).toBe(expected.badge)
     })
   }
 

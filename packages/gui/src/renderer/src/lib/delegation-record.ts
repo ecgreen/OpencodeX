@@ -54,12 +54,18 @@ export function sessionDelegationSummary(session: Session): string | undefined {
   return sessionDelegationRecord(session)?.summary
 }
 
+/**
+ * Narrowing by predicate rather than assertion: session metadata is free-form
+ * JSON, and every reader here has to prove an object before indexing it.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 function rawDelegation(session: Session): Record<string, unknown> | undefined {
   const opencodex = session.metadata?.opencodex
-  if (typeof opencodex !== "object" || opencodex === null) return undefined
-  const delegation = (opencodex as { delegation?: unknown }).delegation
-  if (typeof delegation !== "object" || delegation === null) return undefined
-  return delegation as Record<string, unknown>
+  if (!isRecord(opencodex)) return undefined
+  return isRecord(opencodex.delegation) ? opencodex.delegation : undefined
 }
 
 function isOutcome(value: unknown): value is DelegationRecordOutcome {
