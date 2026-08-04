@@ -14,6 +14,7 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
 import { MAX_SWARM_DELEGATION_DEPTH, TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { delegationOutcome, delegationRecord } from "../../src/session/delegation-outcome"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -510,8 +511,10 @@ describe("tool.task", () => {
 
       const child = yield* sessions.get(result.metadata.sessionId)
       expect(child.parentID).toBe(swarm.chat.id)
-      // The depth rides along so membership survives past the first hop.
-      expect(child.metadata?.opencodex).toEqual({ swarmID: "swarm-1", swarmDepth: 1 })
+      // The depth rides along so membership survives past the first hop, and
+      // the finished run stamps its durable outcome beside it.
+      expect(child.metadata?.opencodex).toMatchObject({ swarmID: "swarm-1", swarmDepth: 1 })
+      expect(delegationOutcome(child.metadata)).toBe("completed")
     }),
   )
 
@@ -543,7 +546,8 @@ describe("tool.task", () => {
       const handoff = yield* delegateFrom(middle, "middle")
       expect(tools.middle?.task).toBeUndefined()
       const grandchild = yield* sessions.get(handoff.metadata.sessionId)
-      expect(grandchild.metadata?.opencodex).toEqual({ swarmID: "swarm-1", swarmDepth: 3 })
+      expect(grandchild.metadata?.opencodex).toMatchObject({ swarmID: "swarm-1", swarmDepth: 3 })
+      expect(delegationOutcome(grandchild.metadata)).toBe("completed")
 
       // At the cap the chain stops rather than recursing forever.
       const deepest = yield* seed("Deep specialist", {
@@ -617,11 +621,12 @@ describe("tool.task", () => {
 
       for (const result of [first, second, third]) {
         const child = yield* sessions.get(result.metadata.sessionId)
-        expect(child.metadata?.opencodex).toEqual({
+        expect(child.metadata?.opencodex).toMatchObject({
           swarmID: "swm_task_test",
           swarmDepth: 1,
           swarmRole: "Senior Engineer",
         })
+        expect(delegationOutcome(child.metadata)).toBe("completed")
       }
       expect(new Set([first, second, third].map((result) => result.metadata.sessionId)).size).toBe(3)
       // No explicit model was passed, so the role's configured model routes it.
@@ -1095,6 +1100,321 @@ describe("tool.task", () => {
 
       expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
       expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
+    }),
+  )
+
+  it.instance("execute stamps the child with a succeeded delegation outcome", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        { description: "do work", prompt: "do it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "done" }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const child = yield* sessions.get(SessionID.make(result.metadata.sessionId))
+      const record = delegationRecord(child.metadata)
+      expect(record).toMatchObject({
+        phase: "settled",
+        outcome: "completed",
+        attempt: 1,
+        parentSessionID: chat.id,
+        parentMessageID: assistant.id,
+        // Execution settled; the parent has not durably received the report
+        // yet - that mark belongs to the tool-part persistence, not the tool.
+        deliveryOutcome: "pending",
+      })
+      expect(result.metadata.runID).toBe(record!.runID)
+    }),
+  )
+
+  it.instance("execute stamps the child with a failed delegation outcome on subagent error", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      // The subagent's turn completes, but the assistant message carries an
+      // error - the "finished badly" shape a durable record must not miss.
+      const failingOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          Effect.sync(() => {
+            const message = reply(input, "partial output")
+            return {
+              ...message,
+              info: { ...message.info, error: { name: "UnknownError", data: { message: "boom" } } },
+            } as SessionLegacy.WithParts
+          }),
+      }
+
+      const result = yield* def.execute(
+        { description: "do work", prompt: "do it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: failingOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const child = yield* sessions.get(SessionID.make(result.metadata.sessionId))
+      expect(delegationOutcome(child.metadata)).toBe("errored")
+      // The stamp must ride alongside the swarm bookkeeping, never replace it.
+      expect(result.output).toContain("failed")
+    }),
+  )
+
+  it.instance("a reused task session renumbers the run and replaces the prior record", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const exec = (task_id?: string) =>
+        def.execute(
+          { description: "do work", prompt: "do it", subagent_type: "general", ...(task_id ? { task_id } : {}) },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ text: "done" }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      const first = yield* exec()
+      const firstRecord = delegationRecord(
+        (yield* sessions.get(SessionID.make(first.metadata.sessionId))).metadata,
+      )
+      const second = yield* exec(first.metadata.sessionId)
+      const secondRecord = delegationRecord(
+        (yield* sessions.get(SessionID.make(second.metadata.sessionId))).metadata,
+      )
+
+      expect(second.metadata.sessionId).toBe(first.metadata.sessionId)
+      expect(firstRecord).toMatchObject({ attempt: 1, phase: "settled", outcome: "completed" })
+      expect(secondRecord).toMatchObject({ attempt: 2, phase: "settled", outcome: "completed" })
+      expect(secondRecord!.runID).not.toBe(firstRecord!.runID)
+    }),
+  )
+
+  it.instance("a foreground abort stamps the child cancelled even when the prompt returns cleanly", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const ready = defer<SessionPrompt.PromptInput>()
+      const cancelled = defer<SessionID>()
+      const abort = new AbortController()
+      // The prompt resolves with a normal reply *after* cancellation was
+      // requested - the late clean return the cancellation contract covers.
+      const promptOps: TaskPromptOps = {
+        cancel: (sessionID) =>
+          Effect.sync(() => {
+            cancelled.resolve(sessionID)
+          }),
+        resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+        prompt: (input) =>
+          Effect.promise(() => {
+            ready.resolve(input)
+            return cancelled.promise
+          }).pipe(Effect.as(reply(input, "finished anyway"))),
+      }
+
+      const fiber = yield* def
+        .execute(
+          { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: abort.signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.forkChild)
+
+      const input = yield* Effect.promise(() => ready.promise)
+      abort.abort()
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+
+      // The observed cancellation request wins over the late clean return.
+      const child = yield* sessions.get(input.sessionID)
+      expect(delegationRecord(child.metadata)).toMatchObject({ phase: "settled", outcome: "cancelled" })
+    }),
+  )
+
+  it.instance("a defect during the child prompt still settles the record as errored", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let childID: SessionID | undefined
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) => {
+          childID = input.sessionID
+          return Effect.die(new Error("boom"))
+        },
+      }
+
+      const exit = yield* def
+        .execute(
+          { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isSuccess(exit)).toBe(false)
+      const child = yield* sessions.get(childID!)
+      expect(delegationRecord(child.metadata)).toMatchObject({ phase: "settled", outcome: "errored" })
+    }),
+  )
+
+  background.instance("a background subagent error fails the job and stamps the child errored", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const notifications: string[] = []
+      // The child's turn returns an assistant-level error; the parent's
+      // notification prompt succeeds so the wording can be observed.
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          Effect.sync(() => {
+            if (input.sessionID === chat.id) {
+              for (const part of input.parts) if (part.type === "text") notifications.push(part.text)
+              return reply(input, "noted")
+            }
+            const base = reply(input, "partial output")
+            return {
+              ...base,
+              info: { ...base.info, error: { name: "UnknownError", data: { message: "boom" } } },
+            } as SessionLegacy.WithParts
+          }),
+      }
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into it",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.timedOut).toBe(false)
+      // The job, the child's stamp, and the notification tell the same story.
+      expect(waited.info?.status).toBe("error")
+      const child = yield* sessions.get(SessionID.make(result.metadata.sessionId))
+      expect(delegationOutcome(child.metadata)).toBe("errored")
+      const settled = yield* Effect.promise(async () => {
+        for (let i = 0; i < 50 && notifications.length === 0; i++) await new Promise((r) => setTimeout(r, 20))
+        return notifications
+      })
+      expect(settled[0]).toContain('state="error"')
+      expect(settled[0]).toContain("Background task failed")
+    }),
+  )
+
+  background.instance("a delivered background notification marks the run delivered", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into it",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "background done" }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.info?.status).toBe("completed")
+      // The notification prompt is forked; poll briefly for its delivery mark.
+      const record = yield* Effect.promise(async () => {
+        for (let i = 0; i < 50; i++) {
+          const child = await Effect.runPromise(
+            sessions.get(SessionID.make(result.metadata.sessionId)).pipe(Effect.orDie),
+          )
+          const current = delegationRecord(child.metadata)
+          if (current?.deliveryOutcome === "delivered") return current
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        return undefined
+      })
+      expect(record).toMatchObject({ outcome: "completed", deliveryOutcome: "delivered" })
     }),
   )
 })

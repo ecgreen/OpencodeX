@@ -198,6 +198,20 @@ export function make(deps: Deps) {
           time: { ...part.state.time, end: Date.now() },
         },
       } satisfies SessionLegacy.ToolPart)
+      // The durable tool part above is the parent's copy of the child's
+      // report: for a delegation that is what "delivered" means, so the
+      // child's run record is marked only now, compare-and-set on its runID.
+      const childSessionID = result.metadata?.sessionId
+      const delegationRunID = result.metadata?.runID
+      if (typeof childSessionID === "string" && typeof delegationRunID === "string") {
+        yield* sessions
+          .stampDelegationDelivery({
+            sessionID: SessionID.make(childSessionID),
+            runID: delegationRunID,
+            outcome: "delivered",
+          })
+          .pipe(Effect.ignore)
+      }
     }
 
     if (!result) {

@@ -17,6 +17,12 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { EventTable } from "@opencode-ai/core/event/sql"
 import { eq } from "drizzle-orm"
+import {
+  DELEGATION_RECORD_VERSION,
+  delegationRecord,
+  settleDelegation,
+  type DelegationRecord,
+} from "../../src/session/delegation-outcome"
 
 void Log.init({ print: false })
 
@@ -347,6 +353,105 @@ describe("transient part updates", () => {
       // once the terminal write lands.
       const stored = yield* session.getPart({ sessionID: info.id, messageID, partID: part.id })
       expect(stored?.type === "text" ? stored.text : undefined).toBe("durable")
+    }),
+  )
+})
+
+describe("session delegation stamping", () => {
+  const record = (overrides: Partial<DelegationRecord> = {}): DelegationRecord => ({
+    version: DELEGATION_RECORD_VERSION,
+    runID: "run_a",
+    parentSessionID: "ses_parent",
+    attempt: 1,
+    phase: "running",
+    startedAt: 100,
+    ...overrides,
+  })
+
+  it.instance("compare-and-set rejects stale runs and double settles", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({ metadata: { note: "keep" } })
+
+      // Run A claims the session and settles once.
+      expect(yield* session.stampDelegation({ sessionID: info.id, record: record() })).toBe(true)
+      expect(
+        yield* session.stampDelegation({
+          sessionID: info.id,
+          record: settleDelegation(record(), { outcome: "completed", summary: "first" }),
+          expectRunID: "run_a",
+        }),
+      ).toBe(true)
+      // A second settle from the same run is declined: the first settle won.
+      expect(
+        yield* session.stampDelegation({
+          sessionID: info.id,
+          record: settleDelegation(record(), { outcome: "errored" }),
+          expectRunID: "run_a",
+        }),
+      ).toBe(false)
+      // Run B claims the session; a late write from run A is now stale.
+      expect(
+        yield* session.stampDelegation({ sessionID: info.id, record: record({ runID: "run_b", attempt: 2 }) }),
+      ).toBe(true)
+      expect(
+        yield* session.stampDelegation({
+          sessionID: info.id,
+          record: settleDelegation(record(), { outcome: "errored" }),
+          expectRunID: "run_a",
+        }),
+      ).toBe(false)
+
+      const current = yield* session.get(info.id)
+      expect(delegationRecord(current.metadata)).toMatchObject({ runID: "run_b", attempt: 2, phase: "running" })
+      // The merge preserved unrelated metadata across every write.
+      expect(current.metadata?.note).toBe("keep")
+
+      yield* session.remove(info.id)
+    }),
+  )
+
+  it.instance("delivery marks compare-and-set on the run identity", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({})
+      yield* session.stampDelegation({
+        sessionID: info.id,
+        record: settleDelegation(record(), { outcome: "completed", deliveryOutcome: "pending" }),
+      })
+
+      // A late mark from another run cannot touch this record.
+      expect(
+        yield* session.stampDelegationDelivery({ sessionID: info.id, runID: "run_zzz", outcome: "delivered" }),
+      ).toBe(false)
+      expect(
+        yield* session.stampDelegationDelivery({ sessionID: info.id, runID: "run_a", outcome: "delivered", at: 555 }),
+      ).toBe(true)
+
+      const current = delegationRecord((yield* session.get(info.id)).metadata)
+      expect(current).toMatchObject({ outcome: "completed", deliveryOutcome: "delivered", deliveredAt: 555 })
+
+      yield* session.remove(info.id)
+    }),
+  )
+
+  it.instance("a fork does not inherit the source's delegation record", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({ metadata: { opencodex: { swarmID: "swm_1", swarmRole: "Builder" } } })
+      yield* session.stampDelegation({
+        sessionID: info.id,
+        record: settleDelegation(record(), { outcome: "completed", summary: "the source's run" }),
+      })
+
+      const forked = yield* session.fork({ sessionID: info.id })
+      // The copied stamp described the source session's run under its own
+      // parent; the fork keeps the swarm bookkeeping but not the provenance.
+      expect(delegationRecord(forked.metadata)).toBeUndefined()
+      expect(forked.metadata?.opencodex).toMatchObject({ swarmID: "swm_1", swarmRole: "Builder" })
+
+      yield* session.remove(forked.id)
+      yield* session.remove(info.id)
     }),
   )
 })

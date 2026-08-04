@@ -4,6 +4,7 @@ import { Command } from "@/command"
 import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
 import { Session } from "@/session/session"
+import { preserveDelegationRecord } from "@/session/delegation-outcome"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
@@ -190,7 +191,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         yield* session.setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title })
       }
       if (ctx.payload.metadata !== undefined) {
-        yield* session.setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+        // The delegation record is server-owned runtime state: a generic
+        // metadata replacement can neither erase nor forge it, so the stored
+        // record rides over whatever the caller sent under that key.
+        yield* session.setMetadata({
+          sessionID: ctx.params.sessionID,
+          metadata: preserveDelegationRecord(current.metadata, ctx.payload.metadata),
+        })
       }
       if (ctx.payload.permission !== undefined) {
         yield* session.setPermission({
