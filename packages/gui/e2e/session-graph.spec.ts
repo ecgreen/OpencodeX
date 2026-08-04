@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import path from "node:path"
 import { fixtureDirectory } from "./fixture-directory"
 
@@ -144,26 +144,35 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   await page.getByRole("button", { name: "Fit graph to view" }).click()
   await expect(page.locator(".session-graph-zoom-value")).not.toHaveText("250%")
 
-  // The session column can be put away so the workspace has the whole window,
-  // and closing the workspace has to bring it back - otherwise the reader is
-  // left looking at nothing, with no control on screen to fix it.
+  // Fullscreen workspace: the session column slides away and the panel takes
+  // the whole window, under a toolbar that stays - it holds the way back.
   const workspace = page.locator(".session-side-panel.open")
   const sessionColumn = page.locator(".session-workspace")
   await expect(sessionColumn).toBeVisible()
   const shared = (await workspace.boundingBox())!.width
-  await page.getByRole("button", { name: "Hide the session" }).click()
+  // Genuinely on screen in the toolbar, not merely in the DOM: a clipped
+  // control still answers a click, because the click scrolls it into view
+  // first, so presence alone proves nothing.
+  await expectWithin(page.getByRole("button", { name: "Fullscreen workspace" }), page.locator(".session-toolbar"))
+  await page.getByRole("button", { name: "Fullscreen workspace" }).click()
   await expect(sessionColumn).toBeHidden()
   // It took the room the session gave up, rather than merely hiding it. Polled
   // because the width is a transition: sampled on the click it still reads as
   // the old value, which passes or fails on timing rather than on behaviour.
   await expect.poll(async () => (await workspace.boundingBox())?.width ?? 0).toBeGreaterThan(shared)
-  // The way back is on screen: the control lives in the workspace, not in the
-  // session toolbar that just went away with it.
-  await expect(page.getByRole("button", { name: "Show the session" })).toBeVisible()
+  // The content is genuinely full-height, not a strip: hiding the toolbar used
+  // to drop .session-main into the page grid's `auto` row, which crushed the
+  // fullscreen panel to ~100px with the canvas at zero.
+  expect((await workspace.boundingBox())!.height).toBeGreaterThan(400)
+  await expect(page.locator(".session-graph-canvas")).toBeVisible()
+  expect((await page.locator(".session-graph-canvas").boundingBox())!.height).toBeGreaterThan(300)
+  // The toolbar is still there, offering the way back on the same button.
+  await expectWithin(page.getByRole("button", { name: "Exit fullscreen workspace" }), page.locator(".session-toolbar"))
 
-  // Closing the workspace from here restores the session instead of emptying
-  // the window - the invariant that makes "everything closed" unreachable.
-  await page.getByRole("button", { name: "Close the workspace" }).click()
+  // Closing the workspace while fullscreen restores the session instead of
+  // emptying the window - the invariant that makes "everything closed"
+  // unreachable.
+  await page.getByRole("button", { name: "Close side panel" }).click()
   await expect(sessionColumn).toBeVisible()
   await expect(workspace).toHaveCount(0)
 
@@ -185,13 +194,32 @@ async function openGraphTab(page: Page) {
   const panel = page.locator(".session-side-panel.open")
   if ((await panel.count()) === 0) await page.getByRole("button", { name: "Open side panel" }).click()
   await expect(panel).toBeVisible()
+  // Which affordance appears depends on whether the panel restored any tabs,
+  // and neither is there the instant the panel is: wait for one of them before
+  // choosing, or the choice races the render and picks the absent branch.
   const card = page.locator('.session-open-empty-actions button[data-empty-tone="graph"]')
+  const newTab = page.getByRole("button", { name: "New tab" })
+  await expect(card.or(newTab).first()).toBeVisible()
   if ((await card.count()) > 0) {
     await card.click()
     return
   }
-  await page.getByRole("button", { name: "New tab" }).click()
+  await newTab.click()
   await page.getByRole("button", { name: "Graph", exact: true }).click()
+}
+
+/** Asserts a control is drawn inside its container, not clipped out of it. */
+async function expectWithin(target: Locator, container: Locator) {
+  await expect(target).toBeVisible()
+  const box = await target.boundingBox()
+  const bounds = await container.boundingBox()
+  if (!box || !bounds) throw new Error("control or container has no box")
+  expect({
+    left: box.x >= bounds.x - 1,
+    right: box.x + box.width <= bounds.x + bounds.width + 1,
+    top: box.y >= bounds.y - 1,
+    bottom: box.y + box.height <= bounds.y + bounds.height + 1,
+  }).toEqual({ left: true, right: true, top: true, bottom: true })
 }
 
 /** Hovers the first node card whose box lies inside the canvas viewport. */

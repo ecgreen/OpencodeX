@@ -32,6 +32,9 @@ export function SessionPageToolbar(input: {
             toggleGenericToolOutput={input.props.toggleGenericToolOutput}
             sidePanelOpen={input.sidePanel.enabled() ? input.sidePanel.open() : undefined}
             toggleSidePanel={input.sidePanel.enabled() ? input.sidePanel.toggle : undefined}
+            centerCollapsible={input.sidePanel.collapsible()}
+            centerCollapsed={input.sidePanel.centerCollapsed()}
+            hideCenter={input.sidePanel.toggleCenter}
           />
         )}
       </Show>

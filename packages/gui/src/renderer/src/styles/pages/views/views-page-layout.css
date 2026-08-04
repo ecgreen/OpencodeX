@@ -47,6 +47,17 @@
   position: relative;
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The columns: panes on the left, workspace on the right. The header sits
+   above this row so fullscreen can take the panes without taking it. */
+.views-manager-body {
+  display: flex;
+  flex: 1 1 auto;
   gap: 10px;
   min-width: 0;
   min-height: 0;
@@ -59,6 +70,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  transition: flex-grow .2s ease, flex-basis .2s ease, min-width .2s ease, opacity .16s ease, transform .2s ease;
 }
 
 .views-manager-content>.views-page {

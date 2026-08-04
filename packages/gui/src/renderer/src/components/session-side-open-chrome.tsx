@@ -3,7 +3,6 @@ import type { createSessionSideTabBarController } from "./session-side-tab-bar-c
 import { Icon } from "./icon"
 import { Button, IconButton, TextInput } from "./ui"
 import { SessionSideTabBar } from "./session-side-tab-bar"
-import { SessionWorkspaceControls, type SessionWorkspaceControls as WorkspaceControls } from "./session-workspace-controls"
 import { Show } from "solid-js"
 import { compactPath } from "../lib/format"
 
@@ -36,20 +35,12 @@ export function SessionSideOpenChrome(props: {
   agentBrowsing: boolean
   reloadExternal: () => void
   keepLocal: () => void
-  windowControls?: WorkspaceControls
 }) {
   const tab = () => props.activeTab
   return <>
-    {/* The chrome outlives the tabs: with the session put away this strip is the
-        only way back, so an empty workspace still has to carry its controls. */}
-    <Show when={props.tabs.length > 0 || props.windowControls}>
+    <Show when={props.tabs.length > 0}>
       <div class="session-open-chrome">
-        <Show
-          when={props.tabs.length > 0}
-          fallback={<div class="session-open-tabs session-open-tabs-empty"><SessionWorkspaceControls controls={props.windowControls} /></div>}
-        >
-          <SessionSideTabBar controller={props.controller} addGit={props.addGit} addFile={props.addFile} addTerminal={props.addTerminal} addContext={props.addContext} addGraph={props.addGraph} showContext={!props.directoryOnly} addWeb={props.addWeb} changedFiles={props.changedFiles} windowControls={props.windowControls} />
-        </Show>
+        <SessionSideTabBar controller={props.controller} addGit={props.addGit} addFile={props.addFile} addTerminal={props.addTerminal} addContext={props.addContext} addGraph={props.addGraph} showContext={!props.directoryOnly} addWeb={props.addWeb} changedFiles={props.changedFiles} />
         <Show when={tab()?.kind === "web"}><div class="session-open-bar">
           <IconButton icon="chevronLeft" label="Back" disabled={!tab()?.state?.canGoBack} onClick={() => props.browserAction("back")} />
           <IconButton icon="chevronRight" label="Forward" disabled={!tab()?.state?.canGoForward} onClick={() => props.browserAction("forward")} />

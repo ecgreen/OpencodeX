@@ -355,12 +355,6 @@ export function SessionPage(props: SessionPageProps) {
                 request={sidePanel.request()}
                 startResize={sidePanel.startResize}
                 toggleMaximized={sidePanel.toggleMaximized}
-                windowControls={{
-                  centerCollapsed: sidePanel.centerCollapsed(),
-                  collapsible: sidePanel.collapsible(),
-                  toggleCenter: sidePanel.toggleCenter,
-                  closeWorkspace: () => sidePanel.setOpen(false),
-                }}
                 resizeByKeyboard={sidePanel.resizeByKeyboard}
               />
             </Suspense>

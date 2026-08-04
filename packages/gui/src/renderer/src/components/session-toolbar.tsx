@@ -25,6 +25,10 @@ export function SessionToolbar(props: {
   toggleGenericToolOutput: () => void
   sidePanelOpen?: boolean
   toggleSidePanel?: () => void
+  /** Only once the workspace is up: with it down there is nothing to go fullscreen over. */
+  centerCollapsible?: boolean
+  centerCollapsed?: boolean
+  hideCenter?: () => void
 }) {
   const [actionsOpen, setActionsOpen] = createSignal(false)
   let actionsMenu: HTMLDetailsElement | undefined
@@ -51,6 +55,20 @@ export function SessionToolbar(props: {
         </div>
       </div>
       <div class="session-actions compact">
+        {/* The middle of the three window controls: give the workspace the
+            whole window. This bar stays on screen in fullscreen - it is the
+            way back - so the same button toggles both directions. */}
+        <Show when={props.centerCollapsible && props.hideCenter}>
+          {(hideCenter) => (
+            <IconButton
+              class="session-center-toggle"
+              icon="fit"
+              label={props.centerCollapsed ? "Exit fullscreen workspace" : "Fullscreen workspace"}
+              pressed={props.centerCollapsed}
+              onClick={hideCenter()}
+            />
+          )}
+        </Show>
         <Show when={props.toggleSidePanel}>
           {(toggleSidePanel) => (
             <IconButton

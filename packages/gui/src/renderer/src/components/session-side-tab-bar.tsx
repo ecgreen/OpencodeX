@@ -6,7 +6,6 @@ import { OPEN_PANEL_OVERFLOW_VISIBLE_ROWS, type OpenTab } from "./session-side-o
 import { openTabDirty, openTabIcon, openTabLabel } from "./session-side-open-state"
 import { sidePanelPathKey } from "./session-side-path"
 import { createSessionSideTabBarController } from "./session-side-tab-bar-controller"
-import { SessionWorkspaceControls, type SessionWorkspaceControls as WorkspaceControls } from "./session-workspace-controls"
 
 export function SessionSideTabBar(props: {
   controller: ReturnType<typeof createSessionSideTabBarController>
@@ -18,8 +17,6 @@ export function SessionSideTabBar(props: {
   showContext?: boolean
   addWeb: () => void
   changedFiles?: string[]
-  /** Window controls: this strip is the only chrome left once the session is away. */
-  windowControls?: WorkspaceControls
 }) {
   const controller = props.controller
   return (
@@ -133,7 +130,6 @@ export function SessionSideTabBar(props: {
           </div>
         </Portal>
       </Show>
-      <SessionWorkspaceControls controls={props.windowControls} />
       <OpenTabDragPreviewView preview={controller.dragPreview()} tab={controller.previewTab()} label={controller.previewLabel()} />
     </div>
   )

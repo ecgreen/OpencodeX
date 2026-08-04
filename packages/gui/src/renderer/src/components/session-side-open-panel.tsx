@@ -22,7 +22,6 @@ import { SessionOpenTerminal, createSessionSideTerminalController } from "./sess
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
 import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-controller"
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
-import type { SessionWorkspaceControls as WorkspaceControls } from "./session-workspace-controls"
 import type { SessionGraphGate } from "../lib/session-graph-goal"
 import { SessionSideFileEditor } from "./session-side-file-editor"
 import { SessionSideFileSkeleton } from "./session-side-file-skeleton"
@@ -53,7 +52,6 @@ export function SessionSideOpenPanel(props: {
   openGraphNode?: (node: SessionGraphNode) => void
   openGraphNodeFullPage?: (node: SessionGraphNode) => void
   approveGraphGate?: (gate: SessionGraphGate, approved: boolean) => void
-  windowControls?: WorkspaceControls
 }) {
   const restoredState = restoreOpenPanelState(props.sessionID)
   const [tabs, setTabs] = createSignal<OpenTab[]>(restoredState.tabs)
@@ -255,7 +253,7 @@ export function SessionSideOpenPanel(props: {
 
   return (
     <section class="session-side-open">
-      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} addGraph={addGraphTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={() => setExplorerOpen((open) => !open)} explorerOpen={explorerOpen()} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} windowControls={props.windowControls} />
+      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} addGraph={addGraphTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={() => setExplorerOpen((open) => !open)} explorerOpen={explorerOpen()} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
       <Switch>
         <Match when={!props.directoryOnly && activeTab()?.kind === "context" && props.contextModel}>
           <div class="session-side-context">

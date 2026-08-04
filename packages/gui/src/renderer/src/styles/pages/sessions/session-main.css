@@ -19,13 +19,24 @@
   min-width: 400px;
   min-height: 0;
   gap: 8px;
+  /* Fullscreen workspace slides this column out; see the rules further down. */
+  transition: flex-grow .2s ease, flex-basis .2s ease, min-width .2s ease, opacity .16s ease, transform .2s ease;
 }
 
-/* The session column put away so the workspace can have the whole window. It
-   stays mounted and keeps its scroll position; only its box is taken back. */
-.session-page[data-center-collapsed] .session-workspace,
-.session-page[data-center-collapsed] .session-page-top {
-  display: none;
+/* Fullscreen workspace: the session column gives its room to the panel and
+   slides out the way the panel itself slides in. It stays mounted - scroll
+   position, subscriptions - and it stays in the layout, because removing its
+   box would drop .session-main into the page grid's `auto` row and crush the
+   whole thing to content height. The header above both columns stays: it holds
+   the toggle, so it is the way back. */
+.session-page[data-center-collapsed] .session-workspace {
+  flex-grow: 0;
+  flex-basis: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translate(-14px);
+  pointer-events: none;
 }
 
 .session-page[data-center-collapsed] .session-side-panel.open {
@@ -40,10 +51,17 @@
   display: none;
 }
 
-/* A view's panes put away for the same reason and by the same rules: its
-   workspace is the session panel, pointed at whichever session it prioritises. */
+/* A view's panes slide away for the same reason and by the same motion: its
+   workspace is the session panel, pointed at whichever session it prioritises.
+   The view header stays above, holding the way back. */
 .views-manager-page[data-center-collapsed] .views-manager-content {
-  display: none;
+  flex-grow: 0;
+  flex-basis: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translate(-14px);
+  pointer-events: none;
 }
 
 .views-manager-page[data-center-collapsed] .session-side-panel.open {

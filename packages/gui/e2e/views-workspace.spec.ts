@@ -44,17 +44,21 @@ test("a view's workspace can take the window, and giving it back restores the pa
   const workspace = page.locator(".session-side-panel.open")
   await expect(workspace).toBeVisible()
 
-  // The same control the session page grew, because it is the same panel.
+  // The same control the session toolbar has, because it is the same panel.
   const shared = (await workspace.boundingBox())!.width
-  await page.getByRole("button", { name: "Hide the session" }).click()
+  await page.getByRole("button", { name: "Fullscreen workspace" }).click()
   await expect(panes).toBeHidden()
   // Polled: the width is a transition, so sampling on the click reads the old
   // value and the assertion would turn on timing rather than on behaviour.
   await expect.poll(async () => (await workspace.boundingBox())?.width ?? 0).toBeGreaterThan(shared)
+  // The header stays above the fullscreen workspace - it holds the way back -
+  // and the panel underneath it is genuinely full-height, not a strip.
+  await expect(page.locator(".active-view-header")).toBeVisible()
+  expect((await workspace.boundingBox())!.height).toBeGreaterThan(400)
 
   // Closing the workspace has to bring the panes back - a view with neither on
   // screen is the empty window the layout rules exist to prevent.
-  await page.getByRole("button", { name: "Close the workspace" }).click()
+  await page.getByRole("button", { name: "Close side panel" }).click()
   await expect(panes).toBeVisible()
   await expect(page.locator(".session-side-panel.open")).toHaveCount(0)
 })

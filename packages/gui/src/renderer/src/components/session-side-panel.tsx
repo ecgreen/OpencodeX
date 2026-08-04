@@ -12,7 +12,6 @@ import { SidePanelGitCommitModal } from "./session-side-git-view"
 import { readSessionSideContextCollapseState, writeSessionSideContextCollapseState } from "./session-side-context-state"
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
 import { SessionSideOpenPanel } from "./session-side-open-panel"
-import type { SessionWorkspaceControls as WorkspaceControls } from "./session-workspace-controls"
 import type { SessionGraph, SessionGraphNode } from "../lib/session-graph"
 import type { SessionGraphGate } from "../lib/session-graph-goal"
 
@@ -44,7 +43,6 @@ export function SessionSidePanel(props: {
   startResize: (event: PointerEvent & { currentTarget: HTMLElement }) => void
   toggleMaximized?: () => void
   resizeByKeyboard?: (event: KeyboardEvent) => void
-  windowControls?: WorkspaceControls
 }) {
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>(readSessionSideContextCollapseState())
   const [commitModalOpen, setCommitModalOpen] = createSignal(false)
@@ -131,7 +129,6 @@ export function SessionSidePanel(props: {
         <SessionSideOpenPanel
           sessionID={sessionID()}
           active={props.open}
-          windowControls={props.windowControls}
           approveGraphGate={props.approveGraphGate}
           gui={props.gui}
           directory={gitDirectory()}
