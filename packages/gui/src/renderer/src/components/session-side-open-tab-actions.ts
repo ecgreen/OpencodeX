@@ -62,7 +62,7 @@ export function createSessionSideOpenTabActions(input: {
     input.setActiveID(id)
     return id
   }
-  function selectSingletonTab(kind: "context" | "files" | "git", title: string) {
+  function selectSingletonTab(kind: "context" | "files" | "git" | "graph", title: string) {
     const existing = input.tabs().find((tab) => tab.kind === kind)
     if (existing) {
       if (input.activeTab()?.kind === "web" && existing.id !== input.activeID()) input.browser().hideAll()
@@ -81,6 +81,12 @@ export function createSessionSideOpenTabActions(input: {
   }
   function addGitTab() {
     selectSingletonTab("git", "Git")
+  }
+  // A singleton: one session has one workflow graph, so a second tab would
+  // only ever duplicate the first.
+  function addGraphTab() {
+    if (input.directoryOnly()) return
+    selectSingletonTab("graph", "Graph")
   }
   // Deliberately not a singleton: "+ Files" always opens a fresh explorer tab.
   function addFileTab() {
@@ -204,6 +210,7 @@ export function createSessionSideOpenTabActions(input: {
     addContextTab,
     addFileTab,
     addGitTab,
+    addGraphTab,
     addWebTab,
     closeTab,
     createTab,

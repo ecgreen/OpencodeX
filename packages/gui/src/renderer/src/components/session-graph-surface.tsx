@@ -1,0 +1,143 @@
+import { Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { formatRelative } from "../lib/format"
+import type { SessionData } from "../lib/session-api"
+import { sessionGraphNodeAt } from "../lib/session-graph"
+import { EmbeddedSessionStatus } from "./embedded-session-status"
+import { SessionGraphInspector } from "./session-graph-inspector"
+import type { SessionPageProps } from "./session-page-types"
+import { TranscriptPanel } from "./session-transcript-panel"
+import { Button, IconButton } from "./ui"
+
+const EMPTY_NODE_DATA: SessionData = { messages: [], todos: [], diffs: [] }
+
+/**
+ * The graph's presence inside the session view: the child session a graph node
+ * opens into. The way *into* the graph is a toolbar button, not a banner here -
+ * a standing invitation does not deserve a row of the transcript's height.
+ *
+ * Mirrors `SessionSwarmTeam`, which does the same job for the swarm strip. The
+ * two are mutually exclusive - the composition layer clears one when the other
+ * is selected - so the session's main area only ever has one owner. In
+ * fullscreen the same surface renders inside the graph drawer instead.
+ */
+export function SessionGraphSurface(props: { page: SessionPageProps }) {
+  return (
+    <Show when={props.page.graphNodeSessionID}>
+      {(sessionID) => <SessionGraphNodePane page={props.page} sessionID={sessionID()} />}
+    </Show>
+  )
+}
+
+/** A graph node's session, read-only, in place of the top session's transcript. */
+function SessionGraphNodePane(props: { page: SessionPageProps; sessionID: string }) {
+  const node = createMemo(() => {
+    const graph = props.page.graph
+    return graph ? sessionGraphNodeAt(graph, `session:${props.sessionID}`) : undefined
+  })
+  const rootTitle = createMemo(() => {
+    const graph = props.page.graph
+    return (graph ? sessionGraphNodeAt(graph, graph.rootID)?.title : undefined) ?? "Top session"
+  })
+  const fullPageAvailable = () => props.page.canOpenGraphNodeFullPage?.(props.sessionID) === true
+
+  // Escape is the way out of any inline drill-down in this app. It is ignored
+  // once something else has handled the key, so it does not fight a dialog.
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      event.preventDefault()
+      props.page.closeGraphNode?.()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    onCleanup(() => document.removeEventListener("keydown", onKeyDown))
+  })
+
+  // Closing the pane - Back, Escape, or the node leaving the graph - unmounts
+  // the focused control; hand focus back to the node that opened it so a
+  // keyboard reader lands where they left off. If the node is gone too (a
+  // route change), the selector matches nothing and focus is left alone.
+  // The id is captured while mounted: `props.sessionID` comes through a
+  // `<Show>` accessor, and reading it during cleanup - after the condition
+  // went false - throws the stale-accessor error and aborts the unmount.
+  let openedNodeID = ""
+  createEffect(() => {
+    openedNodeID = `session:${props.sessionID}`
+  })
+  onCleanup(() => {
+    const nodeID = openedNodeID
+    if (!nodeID) return
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-graph-node-id="${CSS.escape(nodeID)}"]`)?.focus()
+    })
+  })
+
+  return (
+    <section class="session-graph-embedded">
+      <header class="session-graph-embedded-header">
+        <Button
+          appearance="outline"
+          size="compact"
+          icon="chevronLeft"
+          onClick={() => props.page.closeGraphNode?.()}
+        >
+          Back to top session
+        </Button>
+        <div class="session-graph-embedded-heading">
+          <strong class="ds-truncate">{node()?.title ?? "Workflow step"}</strong>
+          <span class="ds-truncate">
+            {rootTitle()}
+            {node() ? ` / ${node()!.statusLabel}` : ""}
+            {node()?.updatedAt ? ` - updated ${formatRelative(node()!.updatedAt)}` : ""}
+          </span>
+        </div>
+        {/* One capability check, shared with the canvas's Ctrl/Cmd-click: a
+            swarm-delegated child has no full-page route, and a button that
+            does nothing is worse than none. */}
+        <Show when={fullPageAvailable()}>
+          <IconButton
+            appearance="ghost"
+            size="compact"
+            icon="external"
+            label="Open this step as a full session"
+            onClick={() => node() && props.page.openGraphNodeFullPage?.(node()!)}
+          />
+        </Show>
+      </header>
+      <SessionGraphInspector
+        node={node()}
+        item={props.page.graphNodeWorkItem}
+        session={props.page.graphNodeSession}
+        jobs={props.page.graphNodeJobs}
+      />
+      <EmbeddedSessionStatus
+        sessionID={props.sessionID}
+        data={props.page.graphNodeData}
+        loading={props.page.graphNodeLoading === true}
+        error={props.page.embeddedSessionError?.(props.sessionID)}
+        retry={props.page.retryEmbeddedSession}
+      />
+      <TranscriptPanel
+        sessionID={props.sessionID}
+        data={props.page.graphNodeData ?? EMPTY_NODE_DATA}
+        loading={props.page.graphNodeLoading === true}
+        providers={props.page.providers}
+        showTimestamps={props.page.showTimestamps}
+        showThinking={props.page.showThinking}
+        showToolDetails={props.page.showToolDetails}
+        showScrollbar={props.page.showScrollbar}
+        showGenericToolOutput={props.page.showGenericToolOutput}
+        concealCodeBlocks={props.page.concealCodeBlocks === true}
+        running={node()?.status === "running"}
+        loadOlderMessages={
+          props.page.loadOlderEmbeddedMessages
+            ? (cursor) => props.page.loadOlderEmbeddedMessages!(props.sessionID, cursor)
+            : undefined
+        }
+        emptyStateDismissed
+      />
+      <footer class="session-graph-embedded-note">
+        <span>Read-only view - steer this step from the top session.</span>
+      </footer>
+    </section>
+  )
+}

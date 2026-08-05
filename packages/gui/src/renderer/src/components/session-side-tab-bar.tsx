@@ -13,6 +13,7 @@ export function SessionSideTabBar(props: {
   addFile: () => void
   addTerminal: () => void
   addContext: () => void
+  addGraph: () => void
   showContext?: boolean
   addWeb: () => void
   changedFiles?: string[]
@@ -117,6 +118,9 @@ export function SessionSideTabBar(props: {
         <Portal>
           <div class="session-open-popup-menu session-open-new-tab-panel" ref={controller.setNewMenuPanel} style={controller.newMenuStyle()}>
             <Button appearance="ghost" type="button" onClick={props.addGit}><Icon name="branch" /><span>Git</span></Button>
+            {/* Beside Git, and never gated: every session has a workflow to
+                look at, even when that workflow is a single step. */}
+            <Button appearance="ghost" type="button" onClick={props.addGraph}><Icon name="graph" /><span>Graph</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addFile}><Icon name="file" /><span>Files</span></Button>
             <Button appearance="ghost" type="button" onClick={props.addTerminal}><Icon name="terminal" /><span>New Terminal</span></Button>
             <Show when={props.showContext !== false}>

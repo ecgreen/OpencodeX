@@ -75,6 +75,9 @@ export function ViewsRoute(props: { model: GuiAppModel }) {
   const model = props.model
   return (
     <ViewsManagerPage
+      centerCollapsed={model.view.centerCollapsed()}
+      centerCollapsible={model.view.centerCollapsible()}
+      hideCenter={model.view.toggleViewCenter}
       view={model.view.activeView()}
       views={model.authoritative.snapshot()?.views ?? []}
       snapshot={model.authoritative.snapshot()}

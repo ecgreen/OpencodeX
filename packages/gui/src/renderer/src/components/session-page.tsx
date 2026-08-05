@@ -1,16 +1,10 @@
 import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import { nextPromptHistoryState, pushPromptStash, type GuiPromptStashEntry } from "../lib/prompt-state"
+import { nextPromptHistoryState } from "../lib/prompt-state"
 import { removeTrailingMentionQuery, type PromptMentionOption } from "../lib/prompt-autocomplete"
-import {
-  filePartFromFile,
-  filePartFromPath,
-  readComposerDraft,
-  readComposerStash,
-  subscribeComposerStash,
-  writeComposerStash,
-} from "../lib/session-composer-helpers"
+import { filePartFromFile, filePartFromPath, readComposerDraft } from "../lib/session-composer-helpers"
 import { readClaudeDriverMarker } from "../lib/claude-driver-marker"
+import { createStableEffect } from "../lib/stable-effect"
 import { Button, InlineNotice } from "./ui"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
@@ -18,13 +12,15 @@ import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
 import { SessionModelPicker } from "./session-model-picker"
-import { SessionGoalGraph } from "./session-goal-graph"
 import { SessionSwarmTeam } from "./swarm-team-strip"
+import { SessionGraphSurface } from "./session-graph-surface"
+import { SessionGraphDrawer } from "./session-graph-drawer"
 import { createSessionModelController } from "./session-model-controller"
 import type { SessionPageProps } from "./session-page-types"
 import { SessionPageToolbar } from "./session-page-toolbar"
 import { createSessionSidePanelController } from "./session-side-panel-controller"
 import { createSessionComposerDraftState } from "./session-composer-draft-state"
+import { createComposerStashController } from "./session-composer-stash"
 import { createSessionComposerPresentation } from "./session-composer-presentation"
 import { createSessionComposerInputController } from "./session-composer-input-controller"
 import { subscribeSessionBrowserCaptures } from "../lib/session-browser-capture"
@@ -37,11 +33,9 @@ export function SessionPage(props: SessionPageProps) {
   let transcriptExpandedSessionKey = ""
   const models = createSessionModelController(props)
   const sidePanel = createSessionSidePanelController(props)
-  const [stash, setStash] = createSignal<GuiPromptStashEntry[]>(readComposerStash())
   const [slashMenuOpen, setSlashMenuOpen] = createSignal(false)
   const [selectedSlashCommand, setSelectedSlashCommand] = createSignal(0)
   const [emptyStateDismissed, setEmptyStateDismissed] = createSignal(false)
-  onMount(() => onCleanup(subscribeComposerStash(setStash)))
   const composerState = createSessionComposerDraftState(props)
   const draftPrompt = composerState.draftPrompt
   const draftParts = composerState.draftParts
@@ -56,6 +50,14 @@ export function SessionPage(props: SessionPageProps) {
     sessionID: () => session()?.id,
     draft: () => ({ input: draftPrompt(), parts: draftParts() }),
     persistent: !props.composerState,
+  })
+  const composerStash = createComposerStashController({
+    draftPrompt,
+    draftParts,
+    setDraftPrompt,
+    setDraftParts,
+    flush: () => composerInput.flush(),
+    resize: () => composerInput.resize(),
   })
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
@@ -118,26 +120,6 @@ export function SessionPage(props: SessionPageProps) {
     const nextPrompt = removeTrailingMentionQuery(draftPrompt())
     setDraftPrompt(nextPrompt)
     setDraftParts((current) => [...current, option.part])
-    resizeComposer()
-  }
-  const stashPrompt = () => {
-    const prompt = { input: draftPrompt(), parts: draftParts() }
-    const next = pushPromptStash(readComposerStash(), prompt)
-    setStash(next)
-    writeComposerStash(next)
-    setDraftPrompt("")
-    setDraftParts([])
-    composerInput.flush()
-  }
-  const popStash = () => {
-    const entries = readComposerStash()
-    const entry = entries.at(-1)
-    if (!entry) return
-    const next = entries.slice(0, -1)
-    setStash(next)
-    writeComposerStash(next)
-    setDraftPrompt(entry.input)
-    setDraftParts(entry.parts)
     resizeComposer()
   }
   const loadHistory = (offset: number) => {
@@ -212,7 +194,8 @@ export function SessionPage(props: SessionPageProps) {
   })
   // A permission or question needs an answer; snap back to the orchestrator
   // view so the safety dock is never hidden behind a team-member pane.
-  createEffect(() => {
+  // Guarded: it writes the member selection it reads.
+  createStableEffect("sessionPage.clearMemberWhenBlocked", () => {
     if (blocked() && props.teamMemberSessionID) props.selectTeamMember?.("")
   })
   createEffect(() => {
@@ -244,8 +227,11 @@ export function SessionPage(props: SessionPageProps) {
   // A mirrored Claude Code session cannot run headlessly until the CLI is
   // signed in; the raw terminal page is where that happens.
   const claudeDriver = createMemo(() => readClaudeDriverMarker(session()?.metadata))
+  // The session column is hidden rather than unmounted when it collapses: the
+  // transcript keeps its scroll position and its subscriptions, so restoring it
+  // is instant and does not re-fetch what the reader was already looking at.
   return (
-    <div class="page session-page" data-session-id={session()?.id}>
+    <div class="page session-page" data-session-id={session()?.id} data-center-collapsed={sidePanel.centerCollapsed() ? "" : undefined}>
       <SessionPageToolbar props={props} sidePanel={sidePanel} />
       <Show when={claudeDriver()?.authState === "needs-login" ? claudeDriver() : undefined}>
         {(marker) => (
@@ -262,11 +248,17 @@ export function SessionPage(props: SessionPageProps) {
         )}
       </Show>
       <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
-        <div class="session-workspace">
-          <Show when={props.goal} fallback={<SessionSwarmTeam page={props} />}>
-            <SessionGoalGraph page={props} />
+        <div class="session-workspace" inert={sidePanel.centerCollapsed()}>
+          {/* One graph, drawn from what ran. A goal no longer gets a list of its
+              own here: its steps are sessions parented to this one, so the
+              pipeline already carries them, gates and all. */}
+          <SessionSwarmTeam page={props} />
+          {/* The pane a graph node opens into; in fullscreen the same surface
+              rides the Graph tab's drawer instead - never both. */}
+          <Show when={!sidePanel.centerCollapsed()}>
+            <SessionGraphSurface page={props} />
           </Show>
-          <Show when={!((props.team || props.goal) && props.teamMemberSessionID)}>
+          <Show when={!((props.team || props.goal) && props.teamMemberSessionID) && !props.graphNodeSessionID}>
           <TranscriptPanel
             sessionID={transcriptSessionID()}
             data={props.data}
@@ -308,7 +300,7 @@ export function SessionPage(props: SessionPageProps) {
             mentionMenuVisible={mentionMenuVisible()}
             mentionOptions={mentionOptions()}
             abortConfirmArmed={props.abortConfirmArmed === true}
-            stashCount={stash().length}
+            stashCount={composerStash.count()}
             variants={models.variants()}
             variantPickerOpen={models.variantPickerOpen()}
             selectedVariant={props.selectedVariant}
@@ -329,8 +321,8 @@ export function SessionPage(props: SessionPageProps) {
             completeSlashCommand={completeSlashCommand}
             selectSlashCommand={selectSlashCommand}
             chooseMention={chooseMention}
-            stashPrompt={stashPrompt}
-            popStash={popStash}
+            stashPrompt={composerStash.push}
+            popStash={composerStash.pop}
             pasteFiles={(files) => void pasteFiles(files)}
             addPickedContext={() => void addPickedContext()}
             dropContext={(event) => void dropContext(event)}
@@ -358,6 +350,21 @@ export function SessionPage(props: SessionPageProps) {
                 gui={props.gui}
                 subscribeGlobalEvents={props.subscribeGlobalEvents}
                 directory={props.sidePanelDirectory ?? selected().directory}
+                graph={props.graph}
+                graphSelectedNodeID={props.graphSelectedNodeID ?? ""}
+                graphTopology={props.graphTopology}
+                retryGraphTopology={props.retryGraphTopology}
+                openGraphNode={props.openGraphNode}
+                openGraphNodeFullPage={props.openGraphNodeFullPage}
+                canOpenGraphNodeFullPage={props.canOpenGraphNodeFullPage}
+                // Fullscreen drill-down rides the Graph tab itself, measured
+                // into the tab's layout and removed with the tab on switch.
+                graphDrawer={
+                  sidePanel.centerCollapsed() && props.graphNodeSessionID ? (
+                    <SessionGraphDrawer page={props} />
+                  ) : undefined
+                }
+                approveGraphGate={(gate, approved) => props.approveGoalNode?.(gate.goalID, gate.nodeID, approved)}
                 request={sidePanel.request()}
                 startResize={sidePanel.startResize}
                 toggleMaximized={sidePanel.toggleMaximized}

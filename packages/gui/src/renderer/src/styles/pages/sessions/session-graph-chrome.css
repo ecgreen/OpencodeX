@@ -1,0 +1,223 @@
+/* --- Workflow graph chrome: tooltips, notices, indicators, and the legend --- */
+
+/* --- Tooltip body ---
+   A graph tooltip is a small dossier, not a phrase: the shared bubble is
+   sized for one-line hints, so the graph gives its own tooltips room and a
+   real type hierarchy - kicker, title, toned status, sectioned detail. */
+
+.ui-tooltip:has(.session-graph-tooltip) {
+  max-width: 440px;
+}
+
+/* Padding lives on the content, not the bubble: a more specific primitive
+   rule kept winning the bubble's padding, and the content is ours outright. */
+.session-graph-tooltip {
+  display: grid;
+  gap: var(--ds-space-2);
+  max-width: 52ch;
+  padding: var(--ds-space-2) var(--ds-space-2);
+  text-align: left;
+  font-size: var(--ds-text-sm);
+  line-height: var(--ds-leading-sm);
+}
+
+/* Kickers: the role above the title, and section captions below it. */
+.session-graph-tooltip-role,
+.session-graph-tooltip-caption {
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: .08em;
+  line-height: var(--ds-leading-2xs);
+  text-transform: uppercase;
+}
+
+/* Clamped as a belt and braces: the title comes straight from whatever the
+   orchestrator named the step, and a hover card must stay a glance. */
+.session-graph-tooltip-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-bold);
+  line-height: var(--ds-leading-md);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* The evidence caption: what kind of claim this edge is making. */
+.session-graph-tooltip-provenance {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* Status wears its tone here exactly as the card does - dot plus label, so
+   the color never carries the meaning alone. */
+.session-graph-tooltip-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.session-graph-tooltip-status-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--ds-radius-full);
+  background: currentColor;
+}
+
+.session-graph-tooltip-status[data-graph-status="running"] {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+}
+
+.session-graph-tooltip-status[data-graph-status="input_needed"],
+.session-graph-tooltip-status[data-graph-status="needs_review"] {
+  color: color-mix(in srgb, var(--warning) 70%, var(--text));
+}
+
+.session-graph-tooltip-status[data-graph-status="completed"] {
+  color: color-mix(in srgb, var(--success) 70%, var(--text));
+}
+
+.session-graph-tooltip-status[data-graph-status="failed"] {
+  color: color-mix(in srgb, var(--danger) 70%, var(--text));
+}
+
+.session-graph-tooltip-status[data-graph-status="cancelled"],
+.session-graph-tooltip-status[data-graph-status="returned"],
+.session-graph-tooltip-status[data-graph-status="queued"],
+.session-graph-tooltip-status[data-graph-status="idle"] {
+  color: var(--muted);
+}
+
+/* Sections separate what the step is from what feeds it. */
+.session-graph-tooltip-section {
+  display: grid;
+  gap: var(--ds-space-1);
+  padding-top: var(--ds-space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.session-graph-tooltip-item {
+  position: relative;
+  padding-left: var(--ds-space-3);
+}
+
+.session-graph-tooltip-item::before {
+  content: "–";
+  position: absolute;
+  left: 0;
+  color: var(--muted);
+}
+
+/* Clamped like the title: details are model prose and must stay a glance. */
+.session-graph-tooltip-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  opacity: .85;
+}
+
+.session-graph-tooltip-hint {
+  opacity: .7;
+  font-size: var(--ds-text-xs);
+  font-style: italic;
+}
+
+/* --- Topology notices: the graph admitting what it does not know --- */
+
+.session-graph-notice {
+  position: absolute;
+  top: var(--ds-space-2);
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  max-width: calc(100% - var(--ds-space-4) * 2);
+  padding: var(--ds-space-1) var(--ds-space-3);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--ds-radius-card);
+  background: color-mix(in srgb, var(--warning) 8%, var(--panel));
+  color: var(--text);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+  transform: translateX(-50%);
+}
+
+/* --- Offscreen-work indicators: hidden steps stay discoverable --- */
+
+.session-graph-offscreen {
+  position: absolute;
+  z-index: 3;
+  font-size: var(--ds-text-2xs);
+  font-variant-numeric: tabular-nums;
+  background: var(--panel);
+}
+
+/* Cornered, not centred on the edge. A pipeline is one row of cards down the
+   middle of the canvas, so a chip at `top: 50%` sits exactly on top of the
+   outermost card and swallows the click meant for it - the card is visible and
+   stable, and the press still lands on the chip. The bottom corners are free:
+   the up/down chips own the horizontal centre, and the legend anchors to its
+   own toggle. */
+.session-graph-offscreen[data-edge="left"] {
+  bottom: var(--ds-space-2);
+  left: var(--ds-space-2);
+}
+
+.session-graph-offscreen[data-edge="right"] {
+  right: var(--ds-space-2);
+  bottom: var(--ds-space-2);
+}
+
+.session-graph-offscreen[data-edge="up"] {
+  top: var(--ds-space-2);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.session-graph-offscreen[data-edge="down"] {
+  bottom: var(--ds-space-2);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Attention beyond the edge is said with a glyph in the label as well. */
+.session-graph-offscreen.attention {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  color: color-mix(in srgb, var(--warning) 62%, var(--text));
+}
+
+/* --- Legend popover: what the shapes and line styles claim --- */
+
+.session-graph-legend {
+  position: absolute;
+  right: var(--ds-space-3);
+  bottom: calc(100% + var(--ds-space-2));
+  z-index: 4;
+  display: grid;
+  gap: var(--ds-space-2);
+  width: min(46ch, 80vw);
+  padding: var(--ds-space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--ds-radius-card);
+  background: var(--panel);
+  box-shadow: var(--ds-shadow-overlay);
+  color: var(--muted);
+  font-size: var(--ds-text-2xs);
+  line-height: var(--ds-leading-2xs);
+}
+
+.session-graph-legend p {
+  margin: 0;
+}
+
+.session-graph-legend strong {
+  color: var(--text);
+}

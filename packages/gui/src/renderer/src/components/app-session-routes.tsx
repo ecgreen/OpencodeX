@@ -4,6 +4,7 @@ import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
 import { findFiles } from "../lib/session-api"
+import { openSessionWorkspace } from "../lib/session-workspace-bridge"
 import { ClaudeTerminalPage } from "./claude-terminal-surface"
 import { Button, ErrorState, LoadingState } from "./ui"
 
@@ -70,9 +71,65 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       }
       cancelGoal={(goalID) => void model.notices.run(() => model.management.cancelGoal(goalID))}
       teamMemberSessionID={model.swarmTeam.memberSessionID()}
-      selectTeamMember={model.swarmTeam.setMemberSessionID}
+      // The team pane and the graph pane both own the session's main area, so
+      // opening either one closes the other.
+      selectTeamMember={(sessionID) => {
+        model.sessionGraph.back()
+        model.swarmTeam.setMemberSessionID(sessionID)
+      }}
       teamMemberData={model.authoritative.viewSessionData()[model.swarmTeam.memberSessionID()]}
       teamMemberLoading={model.authoritative.viewPaneState(model.swarmTeam.memberSessionID()).loading}
+      loadOlderEmbeddedMessages={(sessionID, cursor) =>
+        model.notices.run(() => model.authoritative.loadOlderViewSessionMessages(sessionID, cursor))
+      }
+      graph={model.sessionGraph.graph()}
+      graphTopology={model.sessionGraph.topology()}
+      retryGraphTopology={model.sessionGraph.retryTopology}
+      graphSelectedNodeID={model.sessionGraph.selectedNodeID()}
+      graphNodeSessionID={model.sessionGraph.nodeSessionID()}
+      graphNodeData={model.authoritative.viewSessionData()[model.sessionGraph.nodeSessionID()]}
+      graphNodeLoading={model.authoritative.viewPaneState(model.sessionGraph.nodeSessionID()).loading}
+      graphNodeWorkItem={model.authoritative
+        .workItems()
+        .find((item) => item.id === `session:${model.sessionGraph.nodeSessionID()}`)}
+      graphNodeSession={model.sessionGraph.nodeSession()}
+      graphNodeJobs={(model.authoritative.snapshot()?.jobs ?? []).filter(
+        (job) => job.sessionID === model.sessionGraph.nodeSessionID(),
+      )}
+      openGraphNode={(node) => {
+        model.swarmTeam.setMemberSessionID("")
+        model.sessionGraph.openNode(node)
+      }}
+      // Swarm-delegated children are not in the catalog, so the full session
+      // route cannot resolve them - the embedded pane is the only place they
+      // can be read. This one check guards every full-page entry point: the
+      // embedded header's button and the canvas's Ctrl/Cmd-click.
+      canOpenGraphNodeFullPage={(sessionID) =>
+        (model.authoritative.snapshot()?.sessions ?? []).some((session) => session.id === sessionID)
+      }
+      openGraphNodeFullPage={(node) => {
+        if (!node.sessionID) return
+        // The same capability check as the buttons that lead here: a route
+        // that cannot resolve must not be navigated to, whatever called this.
+        if (!(model.authoritative.snapshot()?.sessions ?? []).some((session) => session.id === node.sessionID)) {
+          model.swarmTeam.setMemberSessionID("")
+          model.sessionGraph.openNode(node)
+          return
+        }
+        // Closing the embedded pane first is the whole job: the route changes
+        // underneath it, but an opened node survives the change (it is still in
+        // the new session's own graph), so the pane stays mounted over the page
+        // that was just navigated to and the button reads as doing nothing.
+        model.sessionGraph.back()
+        model.swarmTeam.setMemberSessionID("")
+        model.sessionActions.open(node.sessionID)
+      }}
+      retryEmbeddedSession={(sessionID) => {
+        const session = model.sessionGraph.mergedSessions().find((item) => item.id === sessionID)
+        if (session) void model.authoritative.syncViewSession(session, { force: true })
+      }}
+      embeddedSessionError={(sessionID) => model.authoritative.viewPaneState(sessionID).error}
+      closeGraphNode={model.sessionGraph.back}
       connectProvider={(providerID) => void model.notices.run(() => model.capabilities.connectProvider(providerID))}
       mcp={model.authoritative.snapshot()?.mcp ?? {}}
       mcpResources={model.authoritative.snapshot()?.mcpResources ?? {}}

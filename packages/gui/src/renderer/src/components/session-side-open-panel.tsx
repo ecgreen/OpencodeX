@@ -1,5 +1,5 @@
 import type { LspStatus } from "@opencode-ai/sdk/v2/client"
-import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
 import type { GuiClient } from "../lib/client"
 import type { DiffFile } from "../lib/session-api"
 import { isWorkbenchImageContent } from "../lib/workbench"
@@ -22,10 +22,14 @@ import { SessionOpenTerminal, createSessionSideTerminalController } from "./sess
 import type { SessionSidePanelContextOption, SessionSidePanelRequest } from "./session-side-panel-types"
 import { createWorkbenchDiagnosticsController } from "./workbench-diagnostics-controller"
 import { SessionSideOpenChrome } from "./session-side-open-chrome"
+import type { SessionGraphGate } from "../lib/session-graph-goal"
 import { SessionSideFileEditor } from "./session-side-file-editor"
 import { SessionSideFileSkeleton } from "./session-side-file-skeleton"
 import { SessionSideOpenDirtyDialog } from "./session-side-open-dirty-dialog"
 import { SessionSideOpenExplorerPane } from "./session-side-open-explorer-pane"
+import { SessionSideGraph } from "./session-side-graph"
+import { EMPTY_SESSION_GRAPH, type SessionGraph, type SessionGraphNode } from "../lib/session-graph"
+import type { GraphTopologyState } from "../lib/session-graph-fetch"
 
 export function SessionSideOpenPanel(props: {
   sessionID: string; active: boolean
@@ -43,6 +47,17 @@ export function SessionSideOpenPanel(props: {
   git: SessionSideGitController
   openCommitModal: (path?: string) => void
   gitActiveChange?: (state: { sessionID: string; active: boolean }) => void
+  /** The session's workflow graph, already derived from authoritative state. */
+  graph?: SessionGraph
+  graphSelectedNodeID?: string
+  graphTopology?: GraphTopologyState
+  retryGraphTopology?: () => void
+  openGraphNode?: (node: SessionGraphNode) => void
+  openGraphNodeFullPage?: (node: SessionGraphNode) => void
+  canOpenGraphNodeFullPage?: (sessionID: string) => boolean
+  approveGraphGate?: (gate: SessionGraphGate, approved: boolean) => void
+  /** Fullscreen drill-down pane, measured into the graph tab's own layout. */
+  graphDrawer?: JSX.Element
 }) {
   const restoredState = restoreOpenPanelState(props.sessionID)
   const [tabs, setTabs] = createSignal<OpenTab[]>(restoredState.tabs)
@@ -85,7 +100,7 @@ export function SessionSideOpenPanel(props: {
     terminals: () => terminals,
     files: () => files,
   })
-  const { activeDirectory, addContextTab, addFileTab, addGitTab, addWebTab, closeTab, createTab, dirtyClose, disposeTabs, openActiveInput, openFromExplorer, openInputInNewTab, resolveDirtyClose, setActiveInput, updateOpenTab } = actions
+  const { activeDirectory, addContextTab, addFileTab, addGitTab, addGraphTab, addWebTab, closeTab, createTab, dirtyClose, disposeTabs, openActiveInput, openFromExplorer, openInputInNewTab, resolveDirtyClose, setActiveInput, updateOpenTab } = actions
   browser = createSessionSideBrowserController({
     active: () => props.active,
     tabs,
@@ -217,6 +232,10 @@ export function SessionSideOpenPanel(props: {
         addGitTab()
         return
       }
+      if (request.tab === "graph") {
+        addGraphTab()
+        return
+      }
       if (request.value) void openInputInNewTab(request.value, request.title)
     })
   })
@@ -240,7 +259,7 @@ export function SessionSideOpenPanel(props: {
 
   return (
     <section class="session-side-open">
-      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={() => setExplorerOpen((open) => !open)} explorerOpen={explorerOpen()} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
+      <SessionSideOpenChrome sessionID={props.sessionID} tabs={tabs()} activeTab={activeTab()} controller={tabBar} changedFiles={props.diffs.flatMap((file) => file.file ? [file.file] : [])} addGit={addGitTab} addFile={addFileTab} addTerminal={terminals.create} addContext={addContextTab} addGraph={addGraphTab} directoryOnly={props.directoryOnly} addWeb={addWebTab} setWebInput={setActiveInput} openWebInput={() => void openActiveInput()} browserAction={(action) => void browser.action(action)} browserDevtools={() => void browser.devtools()} browserExternal={() => void browser.openExternal()} browserScreenshot={browser.screenshot} updateTab={updateOpenTab} openFiles={() => setExplorerOpen((open) => !open)} explorerOpen={explorerOpen()} discardFile={files.discardActiveChanges} saveFile={() => void files.saveActiveFile()} dirty={dirty()} readOnly={activeTab()?.readOnly === true} agentBrowsing={agent.active()} reloadExternal={files.reloadExternalFile} keepLocal={files.keepLocalChanges} />
       <Switch>
         <Match when={!props.directoryOnly && activeTab()?.kind === "context" && props.contextModel}>
           <div class="session-side-context">
@@ -340,6 +359,23 @@ export function SessionSideOpenPanel(props: {
         <Match when={activeTab()?.kind === "web"}>
           <SessionSideBrowserHost preview={browser.activePreview()} parked={browser.parkedID() === activeTab()?.id} available={Boolean(window.opencodex?.browser)} lifecycle={browser.lifecycle()} error={browser.error()} url={activeTab()?.url ?? ""} setHost={browser.setHost} />
         </Match>
+        <Match when={activeTab()?.kind === "graph"}>
+          {/* The drawer is a measured sibling of the canvas, never an overlay;
+              switching tabs removes it with the tab it belongs to. */}
+          <div class="session-graph-stage">
+            <SessionSideGraph
+              graph={props.graph ?? EMPTY_SESSION_GRAPH}
+              selectedNodeID={props.graphSelectedNodeID ?? ""}
+              open={(node) => props.openGraphNode?.(node)}
+              openFullPage={(node) => props.openGraphNodeFullPage?.(node)}
+              canOpenFullPage={props.canOpenGraphNodeFullPage}
+              approve={props.approveGraphGate}
+              topology={props.graphTopology}
+              retryTopology={props.retryGraphTopology}
+            />
+            {props.graphDrawer}
+          </div>
+        </Match>
         <Match when={activeTab()?.kind === "terminal"}>
           <SessionOpenTerminal tab={activeTab()!} write={terminals.write} rename={terminals.rename} />
         </Match>
@@ -347,7 +383,7 @@ export function SessionSideOpenPanel(props: {
           <SessionSideEmptyState
             directory={props.directory} diffs={props.diffs}
             openContext={addContextTab} showContext={!props.directoryOnly}
-            openGit={addGitTab} openFiles={files.openExplorer}
+            openGit={addGitTab} openGraph={addGraphTab} openFiles={files.openExplorer}
             openChangedFile={(path) => void openInputInNewTab(path)}
             openTerminal={terminals.create} addWebTab={addWebTab}
           />

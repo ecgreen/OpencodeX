@@ -7,6 +7,7 @@ import {
   refreshClientStateSessionTail,
 } from "./client-session-loader"
 import { mergeLiveSessionData } from "./live-session-patch"
+import { isGraphVisibleSession } from "./session-graph-visibility"
 import { collapseMessageWindow, prependOlderMessages, trimToLiveTail } from "./message-window"
 import type { Route } from "./routes"
 import {
@@ -106,6 +107,7 @@ export function createSessionHydrationController(input: {
   viewLoadedTime: (sessionID: string) => number | undefined
   setViewLoadedTime: (sessionID: string, loadedTime: number) => void
   setViewLoading: (sessionID: string, loading: boolean) => void
+  setViewError: (sessionID: string, error: string | undefined) => void
   rememberSelectedData: (sessionID: string, data: SessionData, loadedTime: number) => void
   evictPresentation: (sessionIDs: readonly string[]) => void
 }) {
@@ -213,7 +215,11 @@ export function createSessionHydrationController(input: {
       .then((data) => {
         if (!data || sessionLoadPromises.get(session.id)?.generation !== generation) return
         if (!input.presentation.visibleSessionIDs().includes(session.id)) return
-        if (!input.snapshot()?.sessions.some((item) => item.id === session.id)) return
+        // "Still exists" check. The catalog hides swarm-delegated children by
+        // design, so a session the workflow graph fetched itself counts too -
+        // without that, an opened graph node loads its transcript and then
+        // throws it away right here.
+        if (!knownViewSession(session.id)) return
         input.setViewData((current) =>
           setRecordEntry(current, session.id, mergeLiveSessionData(current[session.id], data)),
         )
@@ -226,6 +232,15 @@ export function createSessionHydrationController(input: {
           ),
         )
         input.evictPresentation(input.presentation.remember(session.id))
+        input.setViewError(session.id, undefined)
+      })
+      // A failed transcript load used to reject into the caller's `void`, which
+      // left the pane blank with nothing to explain it and nothing scheduled to
+      // try again. The pane can render this and offer a retry.
+      .catch((cause: unknown) => {
+        if (sessionLoadPromises.get(session.id)?.generation !== generation) return
+        console.error(`Failed to load session ${session.id}`, cause)
+        input.setViewError(session.id, cause instanceof Error ? cause.message : String(cause))
       })
       .finally(() => {
         if (sessionLoadPromises.get(session.id)?.generation !== generation) return
@@ -271,11 +286,16 @@ export function createSessionHydrationController(input: {
     input.setViewData((value) => setRecordEntry(value, sessionID, next))
   }
 
+  /** Same catalog caveat as `syncViewSession`: graph-fetched children count. */
+  const knownViewSession = (sessionID: string) =>
+    input.snapshot()?.sessions.some((session) => session.id === sessionID) === true ||
+    isGraphVisibleSession(sessionID)
+
   async function loadOlderViewSessionMessages(sessionID: string, before: string) {
-    if (!input.snapshot()?.sessions.some((session) => session.id === sessionID)) return
+    if (!knownViewSession(sessionID)) return
     const page = await fetchOlderPage(sessionID, before, VIEW_MESSAGE_PAGE_LIMIT, "view-older")
     if (!page || !input.presentation.visibleSessionIDs().includes(sessionID)) return
-    if (!input.snapshot()?.sessions.some((session) => session.id === sessionID)) return
+    if (!knownViewSession(sessionID)) return
     const current = input.viewData()[sessionID]
     if (!current) return
     batch(() => {

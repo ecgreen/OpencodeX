@@ -80,7 +80,10 @@
 .ui-button-spinner,
 .ui-field-spinner { width: var(--ds-space-3); height: var(--ds-space-3); border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--ds-radius-full); animation: ui-spin 700ms linear infinite; }
 
-[data-ui="field"] { display: grid; min-width: 0; gap: var(--ds-space-1); }
+/* `minmax(0, 1fr)`, not the implicit `auto`: an auto track sizes to its content,
+   so a field narrowed by its container still laid its control out at full
+   max-content width and let it overflow across whatever sat beside it. */
+[data-ui="field"] { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: var(--ds-space-1); }
 .ui-field-label { color: var(--ds-text); font-size: var(--ds-text-sm); line-height: var(--ds-leading-sm); font-weight: var(--ds-weight-semibold); }
 .ui-field-control { display: flex; min-width: 0; height: var(--ds-control-height-default); align-items: center; gap: var(--ds-space-2); padding: 0 var(--ds-space-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-control); background: var(--ds-surface-raised); transition: border-color var(--ds-motion-hover) ease, background var(--ds-motion-hover) ease, box-shadow var(--ds-motion-hover) ease; }
 .ui-field-control[data-size="compact"] { height: var(--ds-control-height-compact); }

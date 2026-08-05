@@ -58,14 +58,17 @@ export function buildSwarmBriefing(input: BriefingInput): string | undefined {
           "- Do not use the built-in Task tool; it is unavailable here and would bypass the team's model routing.",
         ]
       : [
-          `- Delegate with the task tool: subagent_type as listed, the role name in the description, and a prompt containing the role's instructions plus the exact scope, expected output, and whether files may be edited.`,
+          `- Delegate with the task tool: subagent_type and swarm_role exactly as listed, the role name leading the description, and a prompt containing the role's instructions plus the exact scope, expected output, and whether files may be edited.`,
           `- Pass the listed model value on each task call so every specialist runs on its configured model.`,
           "- Each specialist runs in its own subagent session that the user can open from the transcript; keep prompts self-contained.",
         ]),
     "- Run independent roles in parallel by making several calls in one turn; sequence only where outputs depend on each other.",
-    // Delegating one specialist at a time is fine for small work. Past a few
-    // steps the orchestrator should state the shape of the work once and let
-    // the graph run it, which is also what makes the plan visible to the user.
+    "- When one role's work splits cleanly, delegate that role several times in parallel - each call runs a fresh copy of the role (for example, four engineers on four independent modules).",
+    "- Design the workflow in layers, not a single fan-out: a specialist may delegate onward to the next role itself (a builder handing its output to a reviewer, a reviewer handing corrections back to a builder). Say so in the prompt when you want a role to hand off, and it will.",
+    // The three lines above describe shapes the orchestrator drives call by
+    // call, which is fine for small work. Past a few steps it should state the
+    // shape once and let the graph run it, which is also what makes the plan
+    // visible to the user rather than implied by the order calls happen to land.
     "- For work with several parts, prefer the graph_plan tool: declare the whole task graph once and the team is delegated automatically, in parallel where the graph allows, with loops that repeat until their check passes.",
     "- Synthesize the team's results yourself: reconcile conflicts, state decisions, risks, and next actions in your final reply.",
     "- Skip delegation entirely when the request is trivial or conversational.",
@@ -78,8 +81,9 @@ function specialistLine(role: BriefingRole, viaDelegateTool: boolean) {
   return [
     `- ${role.name}`,
     // The delegate tool resolves the agent and model from the role itself, so
-    // only the task tool needs them spelled out on every call.
-    ...(viaDelegateTool ? [] : [`subagent_type="${role.agent?.trim() || DEFAULT_SUBAGENT}"`]),
+    // only the task tool needs them spelled out on every call. swarm_role is
+    // what ties the child session back to this role in the team view.
+    ...(viaDelegateTool ? [] : [`swarm_role="${role.name}"`, `subagent_type="${role.agent?.trim() || DEFAULT_SUBAGENT}"`]),
     ...(model && !viaDelegateTool ? [`model="${model}"`] : []),
     ...(role.skill ? [`skill: ${role.skill}`] : []),
     ...(role.instructions?.trim() ? [`instructions: ${collapse(role.instructions)}`] : []),

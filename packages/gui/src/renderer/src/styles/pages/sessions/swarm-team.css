@@ -123,9 +123,22 @@
   font-size: 11px;
 }
 
+/*
+ * The run picker sits between the heading and "Back to orchestrator". It gives
+ * up width before the button does - a fixed-width picker in a narrow pane
+ * overflows its track and the button ends up sitting on top of it - and it
+ * carries its own margin so the two never read as one merged control.
+ */
 .swarm-member-run-select {
-  width: 240px;
+  flex: 0 1 240px;
+  min-width: 0;
   max-width: 40%;
+  margin-right: var(--ds-space-2);
+}
+
+/* The way back is never the control that shrinks. */
+.swarm-member-header > button {
+  flex: none;
 }
 
 .swarm-member-note {

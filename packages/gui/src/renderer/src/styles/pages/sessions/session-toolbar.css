@@ -43,3 +43,15 @@
   background: linear-gradient(180deg,color-mix(in srgb,var(--secondary) 18%,transparent),transparent),color-mix(in srgb,var(--surface-raised) 74%,var(--secondary) 18%);
   box-shadow: 0 0 0 1px color-mix(in srgb,var(--secondary) 24%,transparent),0 10px 24px color-mix(in srgb,var(--secondary) 14%,transparent);
 }
+
+/* Contextual workflow entry point: present only while the session is driving
+   a workflow. Attention is carried by the label text as well as the tint. */
+.session-toolbar .session-workflow-chip {
+  font-size: var(--ds-text-2xs);
+}
+
+.session-toolbar .session-workflow-chip.attention {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--line-strong));
+  color: color-mix(in srgb, var(--warning) 62%, var(--text));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--warning) 12%, transparent), transparent);
+}

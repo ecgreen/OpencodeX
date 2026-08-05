@@ -1,5 +1,5 @@
 import { asc, eq } from "drizzle-orm"
-import { Context, Effect, Option } from "effect"
+import { Cause, Context, Effect, Exit, Option } from "effect"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { Database } from "@opencode-ai/core/database/database"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -12,7 +12,17 @@ import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/c
 import { isSwarmProvider } from "@/provider/swarm-provider"
 import { PartID, SessionID } from "./schema"
 import type { PromptInput } from "./prompt-schema"
+import {
+  DELEGATION_RECORD_VERSION,
+  settleDelegation,
+  type DelegationOutcome,
+  type DelegationRecord,
+} from "./delegation-outcome"
+import { Identifier } from "@/id/id"
+import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
+
+const log = Log.create({ service: "session.prompt-swarm" })
 
 /** One swarm role as the loop reads it, ordered by `sort_order`. */
 export type SwarmRoleRow = {
@@ -154,28 +164,78 @@ export function make(deps: Deps) {
     // loading the skill itself, but a delegated specialist never sees the
     // skill tool's inventory - so the body is delivered here, ahead of the
     // per-role instructions and the task.
-    const roleSkill = role.skill ? yield* skills.get(role.skill) : undefined
-    const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
-      .filter(Boolean)
-      .join("\n\n")
-    const result = yield* prompt({
-      sessionID: child.id,
-      model: {
-        providerID: ProviderV2.ID.make(role.provider_id),
-        modelID: ProviderV2.ModelID.make(role.model_id),
-      },
-      ...(role.agent ? { agent: role.agent } : {}),
-      // "default" is the sentinel for "no variant" everywhere in the loop.
-      ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
-      parts: [{ type: "text", text }],
-    }).pipe(Effect.catch(Effect.die))
-    if (result.info.role === "assistant" && result.info.error) {
-      return `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}`
+    // The durable answer to "did this delegation work?" - and its opening
+    // line. Nothing else records either: a swarm child has no job row and its
+    // live status clears on return, so without this stamp the workflow graph
+    // can only say "returned" and show nothing of what came back. The record
+    // is run-scoped: `running` is written before the prompt starts and one
+    // all-exit boundary settles it, so a defect or interruption can no longer
+    // slip out without a terminal record.
+    const runID = Identifier.ascending("run")
+    const started: DelegationRecord = {
+      version: DELEGATION_RECORD_VERSION,
+      runID,
+      parentSessionID: input.sessionID,
+      attempt: 1,
+      phase: "running",
+      startedAt: Date.now(),
     }
-    const report = result.parts
-      .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
-      .join("\n")
-    return report || `Role "${role.name}" produced no output.`
+    const stamp = (record: DelegationRecord, expectRunID?: string) =>
+      sessions
+        .stampDelegation({ sessionID: child.id, record, ...(expectRunID ? { expectRunID } : {}) })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              log.error("swarm delegation stamp failed", { sessionID: child.id, runID, cause })
+              return false
+            }),
+          ),
+        )
+    const settle = (outcome: DelegationOutcome, summary?: string) =>
+      stamp(settleDelegation(started, { outcome, summary }), runID).pipe(Effect.asVoid)
+    yield* stamp(started)
+    const outcome: { state: "completed" | "error"; text: string } = yield* Effect.gen(function* () {
+      // The role's skill is its base definition; the built-in role skills carry
+      // the full role prompt. The task-tool path gets it through the specialist
+      // loading the skill itself, but a delegated specialist never sees the
+      // skill tool's inventory - so the body is delivered here, ahead of the
+      // per-role instructions and the task.
+      const roleSkill = role.skill ? yield* skills.get(role.skill) : undefined
+      const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
+        .filter(Boolean)
+        .join("\n\n")
+      const result = yield* prompt({
+        sessionID: child.id,
+        model: {
+          providerID: ProviderV2.ID.make(role.provider_id!),
+          modelID: ProviderV2.ModelID.make(role.model_id!),
+        },
+        ...(role.agent ? { agent: role.agent } : {}),
+        // "default" is the sentinel for "no variant" everywhere in the loop.
+        ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
+        parts: [{ type: "text", text }],
+      })
+      if (result.info.role === "assistant" && result.info.error) {
+        return { state: "error" as const, text: `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}` }
+      }
+      const report = result.parts
+        .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
+        .join("\n")
+      return { state: "completed" as const, text: report }
+    }).pipe(
+      // Every exit settles the record: clean return, subagent error, typed
+      // failure, defect, and interruption alike.
+      Effect.onExit((exit) =>
+        Exit.isSuccess(exit)
+          ? settle(exit.value.state === "error" ? "errored" : "completed", exit.value.text)
+          : Cause.hasInterruptsOnly(exit.cause)
+            ? settle("cancelled")
+            : settle("errored"),
+      ),
+      Effect.catch(Effect.die),
+    )
+    if (outcome.state === "error") return outcome.text
+    return outcome.text || `Role "${role.name}" produced no output.`
   })
 
   /**

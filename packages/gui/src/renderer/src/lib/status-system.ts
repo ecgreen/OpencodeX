@@ -40,6 +40,8 @@ const STATUS: Record<string, StatusPresentation> = {
   queued: { tone: "neutral", glyph: "circle", label: "Queued" },
   pending: { tone: "neutral", glyph: "circle", label: "Pending" },
   retry: { tone: "warning", glyph: "refresh", label: "Retrying", active: true },
+  retrying: { tone: "warning", glyph: "refresh", label: "Retrying", active: true },
+  cancelling: { tone: "neutral", glyph: "stop", label: "Cancelling", active: true },
 
   // Terminal outcomes.
   completed: { tone: "success", glyph: "check", label: "Completed" },
@@ -48,9 +50,17 @@ const STATUS: Record<string, StatusPresentation> = {
   installed: { tone: "success", glyph: "check", label: "Installed" },
   failed: { tone: "danger", glyph: "warning", label: "Failed" },
   error: { tone: "danger", glyph: "warning", label: "Error" },
+  // Note: the workflow graph deliberately groups `interrupted` with failure
+  // (an interrupted delegation did not deliver) while keeping this label; the
+  // divergence in tone there is a supervision decision, not an oversight.
   interrupted: { tone: "warning", glyph: "stop", label: "Interrupted" },
   stopped: { tone: "neutral", glyph: "stop", label: "Stopped" },
   cancelled: { tone: "neutral", glyph: "stop", label: "Cancelled" },
+  "partially-completed": { tone: "warning", glyph: "squareCheck", label: "Partially completed" },
+  recovered: { tone: "success", glyph: "check", label: "Recovered" },
+  // A delegation that stopped working without recording how it ended. Terminal,
+  // but deliberately not a success: the outcome is unverified.
+  returned: { tone: "neutral", glyph: "circle", label: "Returned" },
 
   // Connection and runtime.
   starting: { tone: "info", glyph: "activity", label: "Starting", active: true },
