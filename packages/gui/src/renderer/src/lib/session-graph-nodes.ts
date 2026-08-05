@@ -1,5 +1,6 @@
 import type { OpencodeXJob, OpencodeXSwarm, Session } from "@opencode-ai/sdk/v2/client"
 import type { WorkItem, WorkItemState } from "@opencode-ai/sdk/v2/work-item"
+import { GRAPH_SPAWN_GRACE_MS } from "./session-graph-core"
 import type {
   SessionGraphEdge,
   SessionGraphEdgeProvenance,
@@ -112,8 +113,11 @@ export const OUTCOME_BADGE: Partial<
  * reads as "returned". A child is created and prompted in the same beat, but
  * its first busy event rides the next push - without this grace the card
  * flashes a terminal state during that gap.
+ *
+ * Defined in session-graph-core so the eager controller can read it without
+ * pulling this module in; re-exported here, where callers expect it.
  */
-export const GRAPH_SPAWN_GRACE_MS = 3_000
+export { GRAPH_SPAWN_GRACE_MS }
 
 export const RETURNED_DETAIL = "Outcome not recorded - open the step to verify"
 

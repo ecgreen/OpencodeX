@@ -13,11 +13,13 @@ import {
   type SwarmRoleIndex,
 } from "./session-graph-nodes"
 import { placeSessionTree } from "./session-graph-place"
+import { appendUnexpandedMarkers, countGraphNodes } from "./session-graph-report"
 import {
+  EMPTY_SESSION_GRAPH,
   EMPTY_SESSION_GRAPH_COUNTS,
-  appendUnexpandedMarkers,
-  countGraphNodes,
-} from "./session-graph-report"
+  graphRootSessionID,
+  sessionGraphAvailable,
+} from "./session-graph-core"
 
 // The reporting layer lives beside this module; re-exported so consumers keep
 // one import path for the graph model.
@@ -183,13 +185,10 @@ export type SessionGraphInput = {
   unexpanded?: readonly { sessionID: string; reason: "depth_limit" | "session_limit" | "load_error" }[]
 }
 
-export const EMPTY_SESSION_GRAPH: SessionGraph = {
-  rootID: "",
-  rootSessionID: "",
-  nodes: [],
-  edges: [],
-  counts: EMPTY_SESSION_GRAPH_COUNTS,
-}
+// Re-exported so every existing caller keeps importing these from here; the
+// definitions moved to session-graph-core to keep them off the heavy path.
+// See session-graph-core.ts for why.
+export { EMPTY_SESSION_GRAPH, EMPTY_SESSION_GRAPH_COUNTS, graphRootSessionID, sessionGraphAvailable }
 
 /**
  * The topmost session of the workflow the given session belongs to.
@@ -197,19 +196,6 @@ export const EMPTY_SESSION_GRAPH: SessionGraph = {
  * Opening the graph from a child shows the same graph as opening it from the
  * orchestrator, which is what makes "back to the top session" mean one thing.
  */
-export function graphRootSessionID(sessions: readonly Session[], sessionID: string) {
-  const byID = new Map(sessions.map((session) => [session.id, session]))
-  const seen = new Set<string>()
-  let current = byID.get(sessionID)
-  if (!current) return sessionID
-  while (current.parentID && !seen.has(current.id)) {
-    seen.add(current.id)
-    const parent = byID.get(current.parentID)
-    if (!parent) break
-    current = parent
-  }
-  return current.id
-}
 
 export function buildSessionGraph(input: SessionGraphInput): SessionGraph {
   if (!input.sessionID) return EMPTY_SESSION_GRAPH
@@ -273,9 +259,6 @@ function applyGoal(context: {
 }
 
 /** Whether this session is driving a workflow worth drawing. */
-export function sessionGraphAvailable(graph: SessionGraph) {
-  return graph.counts.total > 1
-}
 
 export function sessionGraphNodeAt(graph: SessionGraph, id: string) {
   return graph.nodes.find((node) => node.id === id)

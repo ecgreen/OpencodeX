@@ -1,15 +1,12 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack, type Accessor } from "solid-js"
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { SessionGraph, SessionGraphNode } from "../lib/session-graph"
 import {
-  buildSessionGraph,
   graphRootSessionID,
   sessionGraphAvailable,
   EMPTY_SESSION_GRAPH,
-  type SessionGraph,
-  type SessionGraphNode,
-} from "../lib/session-graph"
-import { sessionGoal } from "../lib/goal-graph-view"
-import { GRAPH_SPAWN_GRACE_MS } from "../lib/session-graph-nodes"
+  GRAPH_SPAWN_GRACE_MS,
+} from "../lib/session-graph-core"
 import {
   GRAPH_FETCH_DEBOUNCE_MS,
   IDLE_GRAPH_TOPOLOGY,
@@ -24,6 +21,12 @@ import { setGraphVisibleSessions } from "../lib/session-graph-visibility"
 import { createStableEffect } from "../lib/stable-effect"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
+
+/** The two entry points the graph memo needs, loaded together. */
+type GraphBuilder = {
+  buildSessionGraph: typeof import("../lib/session-graph").buildSessionGraph
+  sessionGoal: typeof import("../lib/goal-graph-view").sessionGoal
+}
 
 /**
  * State for the workflow graph: the graph itself, the delegation tree behind
@@ -50,6 +53,26 @@ export function createSessionGraphController(input: {
   const [selectedID, setSelectedID] = createSignal("")
   const [descendants, setDescendants] = createSignal<readonly Session[]>([])
   const [topology, setTopology] = createSignal(IDLE_GRAPH_TOPOLOGY)
+
+  /**
+   * The graph builder arrives by dynamic import so it lands in the lazy
+   * session-page chunk rather than the renderer entry: this controller is
+   * constructed eagerly in `app.tsx`, and a static import would drag the whole
+   * projection/placement/reporting cluster into the startup bundle. See
+   * lib/session-graph-core.ts.
+   *
+   * Started immediately rather than on first open - the fetch is parallel to
+   * everything else this controller does at boot, so the module is in hand
+   * well before a reader can reach the graph, and no view has to wait.
+   */
+  const [builder, setBuilder] = createSignal<GraphBuilder>()
+  void Promise.all([import("../lib/session-graph"), import("../lib/goal-graph-view")]).then(
+    ([graphModule, goalModule]) =>
+      setBuilder({
+        buildSessionGraph: graphModule.buildSessionGraph,
+        sessionGoal: goalModule.sessionGoal,
+      }),
+  )
 
   const mergedSessions = createMemo(() =>
     mergeSessionLists(input.authoritative.snapshot()?.sessions ?? [], descendants()),
@@ -176,10 +199,15 @@ export function createSessionGraphController(input: {
     const session = input.selection.selectedSession()
     const snapshot = input.authoritative.snapshot()
     if (!session || !snapshot) return EMPTY_SESSION_GRAPH
+    const build = builder()
+    // The builder is fetched, not bundled here - see loadGraphBuilder. Until it
+    // lands there is no graph to draw, which reads as the empty state the
+    // panel already shows before a workflow exists.
+    if (!build) return EMPTY_SESSION_GRAPH
     // The plan this session declared, when it declared one. The graph is the one
     // surface for both, so a goal is drawn as the pipeline it became.
-    const goal = sessionGoal(session, snapshot.goals ?? [])
-    return buildSessionGraph({
+    const goal = build.sessionGoal(session, snapshot.goals ?? [])
+    return build.buildSessionGraph({
       sessionID: session.id,
       workItems: input.authoritative.workItems(),
       sessions: mergedSessions(),

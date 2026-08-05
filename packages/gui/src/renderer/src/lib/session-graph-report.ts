@@ -12,19 +12,9 @@ import type {
  * Runtime imports flow one way - this module only takes types from there.
  */
 
-export const EMPTY_SESSION_GRAPH_COUNTS: SessionGraphCounts = {
-  total: 0,
-  delegated: 0,
-  running: 0,
-  retrying: 0,
-  queued: 0,
-  blocked: 0,
-  needsReview: 0,
-  completed: 0,
-  returned: 0,
-  failed: 0,
-  cancelled: 0,
-}
+import { EMPTY_SESSION_GRAPH_COUNTS } from "./session-graph-core"
+
+export { EMPTY_SESSION_GRAPH_COUNTS }
 
 /** Merge and sentinel nodes are presentation, not steps: out of the counts. */
 export function countGraphNodes(all: readonly SessionGraphNode[]): SessionGraphCounts {
