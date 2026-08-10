@@ -38,6 +38,15 @@ const COMMON_TOOL_IDS = new Set([
   "browser_navigate",
   "browser_screenshot",
   "browser_snapshot",
+  "toolsearch",
+  "taskcreate",
+  "taskupdate",
+  "tasklist",
+  "taskget",
+  "agent",
+  "monitor",
+  "schedulewakeup",
+  "plan_exit",
 ])
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {

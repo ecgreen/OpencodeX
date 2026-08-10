@@ -32,6 +32,21 @@ describe("GUI tool display helpers", () => {
     expect(toolDisplayTitle("browser_snapshot", {}, { url: "https://example.com/" })).toBe("Snapshot browser https://example.com/")
   })
 
+  test("titles Claude-shaped file inputs and harness tools", () => {
+    expect(toolDisplayTitle("read", { file_path: "C:/repo/a.ts" }, {})).toBe("Read C:/repo/a.ts")
+    expect(toolDisplayTitle("toolsearch", { query: "select:TaskCreate" }, {})).toBe('Search tools "select:TaskCreate"')
+    expect(toolDisplayTitle("taskcreate", { subject: "Implement new feature" }, {})).toBe("Create task — Implement new feature")
+    expect(toolDisplayTitle("taskupdate", { taskId: "4", status: "completed" }, {})).toBe("Update task #4 — completed")
+    expect(toolDisplayTitle("taskupdate", { taskId: "4", subject: "Rename" }, {})).toBe("Update task #4")
+    expect(toolDisplayTitle("tasklist", {}, {})).toBe("List tasks")
+    expect(toolDisplayTitle("taskget", { taskId: "2" }, {})).toBe("Task #2")
+    expect(toolDisplayTitle("agent", { subagent_type: "Explore", description: "Find lab routes" }, {})).toBe("Agent Explore: Find lab routes")
+    expect(toolDisplayTitle("monitor", { action: "start" }, {})).toBe("Monitor start")
+    expect(toolDisplayTitle("schedulewakeup", { delaySeconds: 300 }, {})).toBe("Schedule wakeup in 300s")
+    expect(shouldShowRawToolData("taskcreate", { subject: "x" }, {})).toBe(false)
+    expect(shouldShowRawToolData("toolsearch", { query: "x" }, {})).toBe(false)
+  })
+
   test("uses verb-first titles and reports patched file counts", () => {
     expect(toolDisplayTitle("webfetch", { url: "https://example.com/" }, {})).toBe("Fetch https://example.com/")
     expect(toolDisplayTitle("websearch", { query: "solid signals" }, {})).toBe('Search "solid signals"')
