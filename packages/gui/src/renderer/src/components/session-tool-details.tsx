@@ -18,6 +18,9 @@ import { ToolDiffs } from "./session-tool-diff"
 import { ToolCodeBlock, ToolPreviewText } from "./session-tool-text"
 import { TodoList } from "./session-todo-list"
 
+/** Harness tools whose one-line output is the whole story - show it ungated. */
+const HARNESS_TASK_TOOLS = new Set(["toolsearch", "taskcreate", "taskupdate", "tasklist", "taskget", "monitor", "schedulewakeup"])
+
 export function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string; showGenericOutput: boolean; patchPending?: boolean }) {
   const diagnostics = createMemo(() => arrayValue(props.metadata.diagnostics))
   return (
@@ -56,6 +59,18 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
         <Match when={props.tool === "question"}>
           <ToolQuestions input={props.input} metadata={props.metadata} />
           <ToolOutput output={props.output} />
+        </Match>
+        <Match when={HARNESS_TASK_TOOLS.has(props.tool)}>
+          <ToolKeyValues
+            values={[
+              field("Query", stringValue(props.input.query)),
+              field("Subject", stringValue(props.input.subject)),
+              field("Description", stringValue(props.input.description)),
+              field("Status", stringValue(props.input.status)),
+              field("Task", stringValue(props.input.taskId)),
+            ]}
+          />
+          <ToolOutput output={props.output} maxLines={15} compact />
         </Match>
         <Match when={props.tool === "task"}>
           <ToolOutput output={props.output} />
