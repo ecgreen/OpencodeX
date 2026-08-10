@@ -342,6 +342,28 @@ describe("claude stream-json mapper", () => {
     const malformed = run([{ type: "assistant", message: { id: "m1", content: "plain string" } }])
     expect(parts(malformed.writes).map((part) => part.type)).toEqual(["step-start", "text"])
   })
+
+  test("regression: per-block no-index finals do not duplicate streamed parts", () => {
+    const events = [
+      { type: "stream_event", event: { type: "message_start", message: { id: "msg_real" } } },
+      { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "thinking" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Pondering deeply" } } },
+      // final thinking: stripped to empty, single block, no index field
+      { type: "assistant", message: { id: "msg_real", content: [{ type: "thinking", thinking: "" }] } },
+      { type: "stream_event", event: { type: "content_block_stop", index: 0 } },
+      { type: "stream_event", event: { type: "content_block_start", index: 1, content_block: { type: "text" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "alpha and " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "more prose" } } },
+      // final text: full content, single block, no index field (position 0 ≠ stream index 1)
+      { type: "assistant", message: { id: "msg_real", content: [{ type: "text", text: "alpha and more prose" }] } },
+    ] as ClaudeEvent[]
+    const { writes } = run(events)
+    const ids = new Map<string, string>()
+    for (const w of writes) {
+      if (w.kind === "part" && (w.part.type === "text" || w.part.type === "reasoning")) ids.set(w.part.id, w.part.type)
+    }
+    expect([...ids.values()].sort()).toEqual(["reasoning", "text"])
+  })
 })
 
 describe("task tools feed the todo system", () => {
