@@ -63,7 +63,10 @@
 
 .part-header {
   display: flex;
-  flex-wrap: wrap;
+  /* One line, always: a long command meta truncates with an ellipsis instead
+     of wrapping the row. The full invocation stays reachable via the meta's
+     native tooltip and the expanded details body. */
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--ds-space-2);
   min-height: 24px;
@@ -104,6 +107,7 @@
   height: 13px;
   color: var(--part-accent, var(--ds-text-muted));
   opacity: .85;
+  flex-shrink: 0;
 }
 
 /*
@@ -131,6 +135,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--ds-text-muted);
   font-size: 11px;
@@ -148,6 +153,7 @@
   align-items: center;
   gap: var(--ds-space-1);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .part-status-label {
