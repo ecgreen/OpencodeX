@@ -23,7 +23,9 @@
 }
 
 /* A one-line thought rendered as the row's content: sits by the title, wraps,
-   and never truncates - unlike .part-meta, which is a crushable preview. */
+   and never truncates - unlike .part-meta, which is a crushable preview. The
+   row keeps .part-header's align-items: center - baseline alignment misplaces
+   the SVG icon chip, whose flex baseline is its bottom edge. */
 .thinking-inline-text {
   flex: 1 1 auto;
   min-width: 0;
@@ -33,10 +35,6 @@
   line-height: 1.45;
   white-space: normal;
   overflow-wrap: anywhere;
-}
-
-.thinking-inline .part-header-static {
-  align-items: baseline;
 }
 
 .thinking-segments {
