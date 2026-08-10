@@ -22,6 +22,23 @@
   font-style: italic;
 }
 
+/* A one-line thought rendered as the row's content: sits by the title, wraps,
+   and never truncates - unlike .part-meta, which is a crushable preview. */
+.thinking-inline-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ds-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.thinking-inline .part-header-static {
+  align-items: baseline;
+}
+
 .thinking-segments {
   display: grid;
   gap: var(--ds-space-3);

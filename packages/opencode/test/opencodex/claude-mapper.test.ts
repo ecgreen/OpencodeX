@@ -175,6 +175,22 @@ describe("claude stream-json mapper", () => {
     expect(reasoning.at(-1)).toMatchObject({ text: "Real reasoning" })
   })
 
+  test("per-block final events reconcile with stream parts by content, not position", () => {
+    // The CLI emits one assistant event per content block, so a text block that
+    // streamed at index 1 (after a thinking block) arrives in a final event
+    // whose content array puts it at position 0. Without content reconciliation
+    // this produced duplicate text parts (observed live, 2026-08-09).
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Now the mapper side" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "thinking", thinking: "" }] } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "text", text: "Now the mapper side" }] } },
+    ])
+    const texts = parts(writes).filter((part) => part.type === "text")
+    expect(new Set(texts.map((part) => part.id)).size).toBe(1)
+    expect(texts.at(-1)).toMatchObject({ text: "Now the mapper side" })
+  })
+
   test("distinct api messages in one turn keep distinct text parts", () => {
     const { writes } = run([
       { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "First words" }] } },

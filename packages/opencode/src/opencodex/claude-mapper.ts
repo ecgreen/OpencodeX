@@ -283,10 +283,25 @@ function ensureMessage(writes: SessionWrite[], state: MapperState, context: Mapp
   })
 }
 
+/**
+ * The CLI emits one assistant event per content block, so a block's position in
+ * its event rarely matches its streamed index. When the block's full content
+ * equals what some stream key already accumulated for this API message, reuse
+ * that key - otherwise the final write would open a duplicate part.
+ */
+function reconciledKey(state: MapperState, prefix: string, content: string, fallback: string) {
+  const scope = `${prefix}:${state.apiMessageID ?? "m"}:`
+  if (state.textParts.has(fallback)) return fallback
+  for (const [key, text] of state.streamText) {
+    if (key.startsWith(scope) && text === content && state.textParts.has(key)) return key
+  }
+  return fallback
+}
+
 function mapAssistantBlock(block: ContentBlock, position: number, writes: SessionWrite[], state: MapperState, context: MapperContext) {
   const messageID = state.messageID!
   if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-    const key = `text:${blockKey(block, state, position)}`
+    const key = reconciledKey(state, "text", block.text, `text:${blockKey(block, state, position)}`)
     const partID = state.textParts.get(key) ?? context.nextPartID()
     state.textParts.set(key, partID)
     writes.push({
@@ -303,7 +318,7 @@ function mapAssistantBlock(block: ContentBlock, position: number, writes: Sessio
     return
   }
   if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
-    const key = `thinking:${blockKey(block, state, position)}`
+    const key = reconciledKey(state, "thinking", block.thinking, `thinking:${blockKey(block, state, position)}`)
     const partID = state.textParts.get(key) ?? context.nextPartID()
     state.textParts.set(key, partID)
     writes.push({

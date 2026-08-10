@@ -141,12 +141,14 @@ describe("GUI thinking preview", () => {
     expect(thinkingPreview("   \n\n  ", false)).toBe("")
   })
 
-  test("one short thought renders inline with no dropdown", () => {
-    // The preview already shows everything - a dropdown would open onto nothing new.
+  test("one-line thoughts render inline with no dropdown, regardless of length", () => {
+    // A dropdown hiding a single line opens onto nothing new - the line itself
+    // is the content, shown wrapping in the row.
     expect(thinkingFitsInline(["Handling workspace browser limitations"], false)).toBe(true)
+    expect(thinkingFitsInline(["**Planning simplified test with inline mock**"], false)).toBe(true)
+    expect(thinkingFitsInline(["x".repeat(200)], false)).toBe(true)
     expect(thinkingFitsInline(["First thought\nSecond thought"], false)).toBe(false)
     expect(thinkingFitsInline(["One", "Two"], false)).toBe(false)
-    expect(thinkingFitsInline(["x".repeat(200)], false)).toBe(false)
     // While streaming, keep the expandable ticker - more lines may arrive.
     expect(thinkingFitsInline(["Short"], true)).toBe(false)
     expect(thinkingFitsInline([], false)).toBe(false)

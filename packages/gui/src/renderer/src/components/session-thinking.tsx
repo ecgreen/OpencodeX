@@ -3,6 +3,7 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { createDisclosure, createMountedOnce } from "../lib/disclosure"
 import { collapseWhitespace, formatElapsed } from "../lib/tool-display"
 import type { DisplayPart, ReasoningPart } from "../lib/transcript-grouping"
+import { Icon } from "./icon"
 import { PartHeader, useTranscriptChrome } from "./session-part-chrome"
 
 const PREVIEW_LENGTH = 96
@@ -24,15 +25,20 @@ function stripMarkdownEmphasis(line: string) {
 }
 
 /**
- * Some providers ship only a one-line thinking summary. When the header
- * preview already shows the whole thought, an expander opens onto nothing new -
- * render inline instead. Streaming blocks stay expandable: more may arrive.
+ * Some providers ship only a one-line thinking summary. A dropdown hiding a
+ * single line opens onto nothing new - the line IS the content, so it renders
+ * inline in the row (wrapping, never truncated). Streaming blocks stay
+ * expandable: more may arrive.
  */
 export function thinkingFitsInline(texts: string[], streaming: boolean) {
   if (streaming || texts.length !== 1) return false
-  const lines = texts[0].split("\n").map((line) => line.trim()).filter(Boolean)
-  if (lines.length !== 1) return false
-  return stripMarkdownEmphasis(lines[0]).length <= PREVIEW_LENGTH
+  return texts[0].split("\n").map((line) => line.trim()).filter(Boolean).length === 1
+}
+
+/** The full single-line thought, decoration stripped, never truncated. */
+export function thinkingInlineText(text: string) {
+  const line = text.split("\n").map((item) => item.trim()).filter(Boolean)[0] ?? ""
+  return stripMarkdownEmphasis(line)
 }
 
 export function ThinkingGroupView(props: {
@@ -71,13 +77,17 @@ export function ThinkingGroupView(props: {
     <Show when={props.showThinking && visibleParts().length > 0}>
       <Show when={!inline()} fallback={
         <div class="part thinking-block thinking-inline" data-kind="thinking" data-status="completed">
-          <PartHeader
-            static
-            icon="brain"
-            title="Thinking"
-            meta={preview()}
-            status={duration() ? <span class="part-duration">{duration()}</span> : undefined}
-          />
+          {/* Not PartHeader: its meta slot is a crushable right-aligned preview,
+              and this line is the content - it sits by the title and wraps. */}
+          <div class="part-header part-header-static">
+            <span class="part-chevron-spacer" aria-hidden="true" />
+            <Icon name="brain" class="part-icon" />
+            <span class="part-title">Thinking</span>
+            <span class="thinking-inline-text">{thinkingInlineText(visibleParts()[0]?.text ?? "")}</span>
+            <Show when={duration()}>
+              <span class="part-status"><span class="part-duration">{duration()}</span></span>
+            </Show>
+          </div>
         </div>
       }>
       <details
