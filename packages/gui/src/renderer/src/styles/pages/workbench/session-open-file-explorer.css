@@ -147,7 +147,7 @@
   box-shadow: none;
 }
 
-.session-open-file-explorer .workbench-file-row {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row {
   position: relative;
   grid-template-columns: 18px 20px minmax(0,1fr) auto auto;
   gap: 7px;
@@ -161,23 +161,23 @@
   transition: background .14s ease,color .14s ease,box-shadow .14s ease;
 }
 
-.session-open-file-explorer .workbench-file-row.directory {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row.directory {
   color: color-mix(in srgb,var(--text) 86%,var(--secondary));
   font-weight: 740;
 }
 
-.session-open-file-explorer .workbench-file-row>.icon {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row>.icon {
   width: 17px;
   height: 17px;
   color: color-mix(in srgb,var(--secondary) 74%,var(--text));
 }
 
-.session-open-file-explorer .workbench-disclosure {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-disclosure {
   width: 18px;
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
 }
 
-.session-open-file-explorer .workbench-tree-spacer {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-tree-spacer {
   width: 18px;
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
 }
