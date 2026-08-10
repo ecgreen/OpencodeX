@@ -151,12 +151,14 @@
   position: relative;
   grid-template-columns: 18px 20px minmax(0,1fr) auto auto;
   gap: 7px;
-  width: calc(100% - 8px);
+  /* Indent lives in the margin, not the padding: the highlight's left edge
+     starts at the nesting level, sitting exactly on the ancestor guide line. */
+  width: calc(100% - 8px - (var(--depth) * 12px));
   min-height: 30px;
-  margin-inline: 4px;
+  margin-inline: calc(4px + (var(--depth) * 12px)) 4px;
   border-radius: 7px;
   color: color-mix(in srgb,var(--text) 92%,var(--muted));
-  padding: 4px 9px 4px calc(10px + (var(--depth) * 12px));
+  padding: 4px 9px 4px 3px;
   font-family: inherit;
   font-size: 13px;
   font-weight: 620;

@@ -8,15 +8,15 @@
   border-color: var(--border);
 }
 
-/* Ancestor guide lines, one per depth level. The 12px period matches the row
-   indent step, and the 19px offset centers each line under its ancestor's
-   disclosure chevron (10px row padding + half the 18px disclosure column). */
+/* Ancestor guide lines, one per depth level, drawn in the gutter left of the
+   indented row. The 12px period matches the indent step; the innermost line
+   lands on the row's left edge, under its parent's disclosure chevron. */
 :is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:before {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 19px;
+  left: calc(12px - (var(--depth) * 12px));
   width: calc(var(--depth) * 12px);
   opacity: var(--depth-lines, 0);
   pointer-events: none;
