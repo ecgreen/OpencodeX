@@ -101,6 +101,26 @@ describe("claude stream-json mapper", () => {
     })
   })
 
+  test("normalizes file tool inputs to native keys so transcript titles resolve", () => {
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [{ type: "tool_use", id: "call_1", name: "Read", input: { file_path: "C:/repo/a.ts", offset: 10 } }],
+        },
+      },
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "call_1", content: "1\tconst a = 1" }] },
+      },
+    ])
+    const tool = parts(writes).filter((part) => part.type === "tool").at(-1)
+    expect(tool).toMatchObject({
+      state: { input: { filePath: "C:/repo/a.ts", file_path: "C:/repo/a.ts", offset: 10 } },
+    })
+  })
+
   test("marks failed tool results as errors", () => {
     const { writes } = run([
       {

@@ -126,6 +126,21 @@ export function normalizeToolName(name: string) {
   return TOOL_NAMES[key] ?? name.toLowerCase()
 }
 
+/**
+ * Claude spells file params `file_path`/`notebook_path`; native tools and the
+ * GUI title/detail registries read `filePath`. Mirror of the permission-layer
+ * mapping in claude-permission.ts so transcript parts render like native ones.
+ * Original keys are kept so nothing reading the raw shape breaks.
+ */
+export function normalizeToolInput(tool: string, input: Record<string, unknown>): Record<string, unknown> {
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined)
+  if (tool === "read" || tool === "edit" || tool === "write") {
+    const file = text(input.filePath) ?? text(input.file_path) ?? text(input.notebook_path)
+    if (file) return { ...input, filePath: file }
+  }
+  return input
+}
+
 export function mapEvent(event: ClaudeEvent, state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
   const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
@@ -260,7 +275,7 @@ function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: M
   }
   if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
     const tool = normalizeToolName(block.name)
-    const input = isRecord(block.input) ? block.input : {}
+    const input = normalizeToolInput(tool, isRecord(block.input) ? block.input : {})
     const partID = state.toolParts.get(block.id)?.partID ?? context.nextPartID()
     const start = state.toolParts.get(block.id)?.start ?? context.now()
     state.toolParts.set(block.id, { partID, tool, input, start })
@@ -291,7 +306,7 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
   state.toolParts.delete(callID)
   const output = readResultText(block.content)
   const end = context.now()
-  const input = context.decidedInput?.(callID) ?? pending.input
+  const input = normalizeToolInput(pending.tool, context.decidedInput?.(callID) ?? pending.input)
   writes.push({
     kind: "part",
     part: {
