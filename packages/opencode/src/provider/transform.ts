@@ -591,6 +591,22 @@ function openaiReasoningEfforts(apiId: string, releaseDate: string) {
   return efforts
 }
 
+/**
+ * `auto` reasoning summaries return one-line headlines; `detailed` returns the
+ * multi-paragraph summaries Codex shows. Raw chain-of-thought is never exposed
+ * either way. Scoped to first-party OpenAI/Azure transports and the GPT-5
+ * family - proxied providers (Copilot) keep `auto` until verified.
+ */
+const DETAILED_SUMMARY_NPMS = new Set(["@ai-sdk/openai", "@ai-sdk/azure"])
+
+function openaiReasoningSummary(npm: string | undefined, apiId: string): "auto" | "detailed" {
+  const id = apiId.toLowerCase()
+  // Chat/search variants of the family reason lightly and are not part of the
+  // Codex-parity surface; keep them on `auto`.
+  if (id.includes("-chat") || id.includes("search")) return "auto"
+  return npm !== undefined && DETAILED_SUMMARY_NPMS.has(npm) && GPT5_FAMILY_RE.test(id) ? "detailed" : "auto"
+}
+
 function openaiCompatibleReasoningEfforts(id: string) {
   const apiId = id.toLowerCase()
   const chatEfforts = gpt5ChatReasoningEfforts(apiId)
@@ -816,7 +832,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           effort,
           {
             reasoningEffort: effort,
-            reasoningSummary: "auto",
+            reasoningSummary: openaiReasoningSummary("@ai-sdk/azure", model.api.id),
             include: INCLUDE_ENCRYPTED_REASONING,
           },
         ]),
@@ -829,7 +845,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           effort,
           {
             reasoningEffort: effort,
-            reasoningSummary: "auto",
+            reasoningSummary: openaiReasoningSummary("@ai-sdk/openai", model.api.id),
             include: INCLUDE_ENCRYPTED_REASONING,
           },
         ]),
@@ -1150,14 +1166,14 @@ export function options(input: {
   }
 
   if (input.model.api.npm === "@ai-sdk/azure" && input.model.api.id.includes("gpt-5.5")) {
-    result["reasoningSummary"] = "auto"
+    result["reasoningSummary"] = openaiReasoningSummary("@ai-sdk/azure", input.model.api.id)
     return result
   }
 
   if (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) {
     if (!input.model.api.id.includes("gpt-5-pro")) {
       result["reasoningEffort"] = "medium"
-      result["reasoningSummary"] = "auto"
+      result["reasoningSummary"] = openaiReasoningSummary(input.model.api.npm, input.model.api.id)
       if (input.model.api.npm === "@ai-sdk/openai") {
         result["include"] = INCLUDE_ENCRYPTED_REASONING
       }
@@ -1177,7 +1193,7 @@ export function options(input: {
     if (input.model.providerID.startsWith("opencode")) {
       result["promptCacheKey"] = input.sessionID
       result["include"] = INCLUDE_ENCRYPTED_REASONING
-      result["reasoningSummary"] = "auto"
+      result["reasoningSummary"] = openaiReasoningSummary(input.model.api.npm, input.model.api.id)
     }
   }
 

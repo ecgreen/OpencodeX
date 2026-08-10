@@ -660,7 +660,9 @@ function openaiModelVariants(model: {
     ...model.variants,
     xhigh: model.variants?.xhigh ?? {
       reasoningEffort: "xhigh",
-      reasoningSummary: "auto",
+      // The Codex backend is what Codex CLI talks to, and Codex requests
+      // detailed summaries - `auto` only returns one-line headlines.
+      reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     },
   }

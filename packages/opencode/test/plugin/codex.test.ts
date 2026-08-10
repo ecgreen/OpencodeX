@@ -172,7 +172,7 @@ describe("plugin.codex", () => {
 
     expect(models["gpt-5.5"]?.variants?.xhigh).toEqual({
       reasoningEffort: "xhigh",
-      reasoningSummary: "auto",
+      reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     })
   })
@@ -209,7 +209,7 @@ describe("plugin.codex", () => {
 
     expect(models["gpt-5-5"]?.variants?.xhigh).toEqual({
       reasoningEffort: "xhigh",
-      reasoningSummary: "auto",
+      reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     })
   })
