@@ -129,6 +129,7 @@
 .part-chevron-spacer {
   width: 13px;
   height: 13px;
+  flex-shrink: 0;
 }
 
 .part-meta {
@@ -243,10 +244,6 @@
   color: var(--ds-danger);
 }
 
-.tool-group-item .part-error-preview {
-  padding-left: 0;
-}
-
 /* A retry reads as a log line: the request recovered, nothing to act on. */
 .part.retry-notice {
   display: flex;
@@ -264,7 +261,10 @@
 }
 
 .part.retry-notice .part-error-preview {
-  padding-left: 21px;
+  /* The retry container wraps on its own (flex-wrap above); the old 21px
+     indent assumed an own-line layout under a chevron, which no longer
+     applies here. */
+  padding-left: 0;
   color: var(--ds-text-muted);
 }
 

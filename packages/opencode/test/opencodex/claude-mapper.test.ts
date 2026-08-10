@@ -379,7 +379,7 @@ describe("task tools feed the todo system", () => {
       ...toolTurn("TaskCreate", { subject: "Fix login", description: "d" }, "Task #1 created successfully: Fix login"),
     ])
     const todos = writes.filter((w) => w.kind === "todos").at(-1)
-    expect(todos).toMatchObject({ kind: "todos", todos: [{ content: "Fix login", status: "pending" }] })
+    expect(todos).toMatchObject({ kind: "todos", todos: [{ content: "Fix login", status: "pending", priority: "medium" }] })
   })
 
   test("taskupdate changes status; deleted removes; unknown id is ignored", () => {
@@ -390,8 +390,8 @@ describe("task tools feed the todo system", () => {
       ...toolTurn("TaskUpdate", { taskId: "1", status: "deleted" }, "deleted"),
     ])
     const lists = writes.filter((w) => w.kind === "todos").map((w) => w.todos)
-    expect(lists.at(0)).toEqual([{ content: "Fix login", status: "pending" }])
-    expect(lists.at(1)).toEqual([{ content: "Fix login", status: "in_progress" }])
+    expect(lists.at(0)).toEqual([{ content: "Fix login", status: "pending", priority: "medium" }])
+    expect(lists.at(1)).toEqual([{ content: "Fix login", status: "in_progress", priority: "medium" }])
     expect(lists.at(-1)).toEqual([])
     // the unknown-id update emitted no todos write
     expect(lists.length).toBe(3)
@@ -405,12 +405,27 @@ describe("task tools feed the todo system", () => {
     expect([...state.tasks.keys()]).toEqual(["local-1", "local-2"])
   })
 
+  test("taskcreate fallback ids stay monotonic across a deletion, so ids never collide", () => {
+    // Regression: the old fallback (`local-${state.tasks.size + 1}`) reused ids
+    // once the registry shrank - creating A, deleting it, then creating B would
+    // both land on "local-1".
+    const { state } = run([
+      ...toolTurn("TaskCreate", { subject: "A" }, "ok"),
+      ...toolTurn("TaskUpdate", { taskId: "local-1", status: "deleted" }, "deleted"),
+      ...toolTurn("TaskCreate", { subject: "B" }, "ok"),
+    ])
+    expect([...state.tasks.keys()]).toEqual(["local-2"])
+  })
+
   test("completed task-tool parts carry metadata.todos for the transcript widget", () => {
     const { writes } = run([
       ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
     ])
     const part = writes.filter((w) => w.kind === "part").map((w) => w.part).findLast((p) => p.type === "tool")
-    expect(part?.state).toMatchObject({ status: "completed", metadata: { todos: [{ content: "Fix login", status: "pending" }] } })
+    expect(part?.state).toMatchObject({
+      status: "completed",
+      metadata: { todos: [{ content: "Fix login", status: "pending", priority: "medium" }] },
+    })
   })
 
   test("tasks seed from a prior turn's registry", () => {
@@ -419,7 +434,39 @@ describe("task tools feed the todo system", () => {
       ...toolTurn("TaskUpdate", { taskId: "1", status: "completed" }, "Updated"),
     ], state)
     const todos = writes.filter((w) => w.kind === "todos").at(-1)
-    expect(todos?.todos).toEqual([{ content: "Fix login", status: "completed" }])
+    expect(todos?.todos).toEqual([{ content: "Fix login", status: "completed", priority: "medium" }])
+  })
+
+  test("regression: every todo emitted by taskcreate/taskupdate and by todowrite carries a priority string", () => {
+    // A DB column (`todo.priority`) is NOT NULL with no default - any todos
+    // write missing a priority defects Todo.update and, unrecovered, kills the
+    // whole turn on the first TaskCreate. Pin that every path always sets one.
+    const { writes: taskWrites } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "in_progress" }, "Updated task #1 status"),
+    ])
+    const { writes: todoWriteWrites } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            { type: "tool_use", id: "toolu_1", name: "TodoWrite", input: { todos: [{ content: "No priority given", status: "pending" }] } },
+          ],
+        },
+      },
+    ] as ClaudeEvent[])
+
+    for (const writes of [taskWrites, todoWriteWrites]) {
+      const todoLists = writes.filter((w) => w.kind === "todos").map((w) => w.todos)
+      expect(todoLists.length).toBeGreaterThan(0)
+      for (const todos of todoLists) {
+        for (const todo of todos) {
+          expect(typeof todo.priority).toBe("string")
+          expect(todo.priority).toBeTruthy()
+        }
+      }
+    }
   })
 })
 

@@ -73,8 +73,8 @@ export function make(deps: Deps) {
    * hidden part of the user message hands the orchestrator its team so it
    * delegates specialists as subagents inside the same session.
    */
-  const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID) {
-    const context = yield* swarmContext(sessionID)
+  const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
+    const context = yield* swarmContext(sessionID, messageID)
     if (!context) return
     const briefed = context.last.parts.some(
       (part) =>
@@ -318,10 +318,14 @@ export function make(deps: Deps) {
       sidechain: {
         spawn: (spawnInput: { title: string; prompt: string }) =>
           Effect.gen(function* () {
+            // Avoid doubling up when the subagent's own title already says
+            // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
+            // render as "code-reviewer subagent (@claude subagent)".
+            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,
-                title: `${spawnInput.title} (@claude subagent)`,
+                title,
                 ...(session.permission ? { permission: session.permission } : {}),
               })
               .pipe(Effect.orDie)

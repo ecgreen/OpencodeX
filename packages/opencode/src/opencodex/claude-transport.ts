@@ -144,6 +144,11 @@ export function createSdkTransport(): ClaudeTransport {
             // is the recovery path for prose the final assistant events lose
             // (2026-08-09 spec, Part B finding 3).
             includePartialMessages: true,
+            // Without this, a subagent's own prose (text/thinking) never reaches
+            // the stream at all - only its tool calls do. Forwarding tags that
+            // output with parent_tool_use_id so the sidechain router can project
+            // it into the child session's transcript instead of losing it.
+            forwardSubagentText: true,
             // OpencodeX is the sole permission gate: Claude defers every tool
             // decision to canUseTool, which bridges to OpencodeX permission cards.
             permissionMode: "default",

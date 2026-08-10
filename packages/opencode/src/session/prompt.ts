@@ -723,7 +723,7 @@ export const layer = Layer.effect(
       function* (input: LoopInput) {
         // Every prompt entry point funnels through here, so this is the one
         // place that has to know a turn may belong to an external driver.
-        yield* ensureSwarmBriefing(input.sessionID).pipe(Effect.ignore)
+        yield* ensureSwarmBriefing(input.sessionID, input.messageID).pipe(Effect.ignore)
         const work = (yield* claudeCodeTurn(input.sessionID, input.messageID)) ?? runLoop(input.sessionID)
         return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
       },

@@ -46,7 +46,7 @@ type ClaudeUsage = {
 export type SessionWrite =
   | { kind: "message"; message: SessionLegacy.Assistant }
   | { kind: "part"; part: SessionLegacy.Part }
-  | { kind: "todos"; todos: Array<{ content: string; status: string; priority?: string }> }
+  | { kind: "todos"; todos: Array<{ content: string; status: string; priority: string }> }
 
 export type MapperContext = {
   sessionID: SessionID
@@ -89,6 +89,8 @@ export type MapperState = {
   finished?: boolean
   /** Claude harness task tools (TaskCreate/TaskUpdate) projected as todos. */
   tasks: Map<string, { subject: string; status: string }>
+  /** Monotonic counter for synthesized task ids, so deletions can't cause reuse. */
+  taskSequence: number
 }
 
 export function initialState(input: { modelID?: string; billed?: MapperState["billed"]; tasks?: ConversationTask[] } = {}): MapperState {
@@ -99,6 +101,7 @@ export function initialState(input: { modelID?: string; billed?: MapperState["bi
     textParts: new Map(),
     streamText: new Map(),
     tasks: new Map((input.tasks ?? []).map((task) => [task.id, { subject: task.subject, status: task.status }])),
+    taskSequence: (input.tasks ?? []).length,
   }
 }
 
@@ -378,14 +381,14 @@ function completedMetadata(tool: string, output: string): Record<string, unknown
 }
 
 export function taskRegistryTodos(state: MapperState) {
-  return [...state.tasks.values()].map((task) => ({ content: task.subject, status: task.status }))
+  return [...state.tasks.values()].map((task) => ({ content: task.subject, status: task.status, priority: "medium" }))
 }
 
 /** Applies a completed task tool to the registry. Returns the projected todos when the registry changed. */
 function applyTaskTool(tool: string, input: Record<string, unknown>, output: string, state: MapperState) {
   if (tool === "taskcreate") {
     const parsed = /Task #(\w+) created/.exec(output)?.[1]
-    const id = parsed ?? `local-${state.tasks.size + 1}`
+    const id = parsed ?? `local-${++state.taskSequence}`
     const subject = typeof input.subject === "string" && input.subject ? input.subject : "Task"
     state.tasks.set(id, { subject, status: "pending" })
     return taskRegistryTodos(state)
@@ -611,7 +614,7 @@ function readTodos(input: Record<string, unknown>) {
   return todos.filter(isRecord).map((todo) => ({
     content: typeof todo.content === "string" ? todo.content : typeof todo.activeForm === "string" ? todo.activeForm : "Todo",
     status: typeof todo.status === "string" ? todo.status : "pending",
-    ...(typeof todo.priority === "string" ? { priority: todo.priority } : {}),
+    priority: typeof todo.priority === "string" ? todo.priority : "medium",
   }))
 }
 

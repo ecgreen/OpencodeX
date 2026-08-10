@@ -79,6 +79,37 @@ describe("sidechain router", () => {
     const actions = router.finalizeAll()
     expect(actions.every((a) => a.kind === "writes" && a.sessionID === "ses_child")).toBe(true)
   })
+
+  test("finalizeAll threads a custom reason into the closed turn's step-finish part", () => {
+    const router = createSidechainRouter({ makeContext })
+    router.route(sidechainAssistant as never, mainToolParts)
+    router.attachChild("task_1", "ses_child", "msg_user_child")
+    const actions = router.finalizeAll("The turn was interrupted before this subagent finished.")
+    const stepFinish = actions
+      .filter((a) => a.kind === "writes")
+      .flatMap((a) => (a.kind === "writes" ? a.writes : []))
+      .find((w) => w.kind === "part" && w.part.type === "step-finish")
+    expect(stepFinish).toMatchObject({
+      kind: "part",
+      part: { type: "step-finish", reason: "The turn was interrupted before this subagent finished." },
+    })
+  })
+
+  test("abandonChain marks a spawn-failed chain done so later events for it are dropped, not buffered", () => {
+    const router = createSidechainRouter({ makeContext })
+    // Spawn is requested but never attached (as happens when the controller's
+    // spawn recovery yields undefined).
+    router.route(sidechainAssistant as never, mainToolParts)
+    router.abandonChain("task_1")
+    // A later event for the same chain must not buffer into `pending` forever.
+    const result = router.route(
+      { type: "assistant", parent_tool_use_id: "task_1", message: { id: "m_side", content: [{ type: "text", text: "more" }] } } as never,
+      mainToolParts,
+    )
+    expect(result.actions).toEqual([])
+    // finalizeAll must not try to close an already-abandoned chain again.
+    expect(router.finalizeAll()).toEqual([])
+  })
 })
 
 // A spawn failure must not kill the main turn - it must be recovered into

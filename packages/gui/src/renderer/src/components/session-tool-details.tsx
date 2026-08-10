@@ -54,7 +54,12 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
           </Show>
           <ToolDiagnostics diagnostics={diagnostics()} />
         </Match>
-        <Match when={props.tool === "todowrite"}>
+        {/*
+          Hoisted above the HARNESS_TASK_TOOLS match below: taskcreate/taskupdate
+          are in that set, so without this they'd never reach a todos render even
+          though the mapper stamps their completed parts with metadata.todos.
+        */}
+        <Match when={props.tool === "todowrite" || arrayValue(props.metadata.todos).length > 0}>
           <ToolTodos input={props.input} metadata={props.metadata} />
         </Match>
         <Match when={props.tool === "question"}>

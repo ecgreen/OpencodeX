@@ -181,6 +181,12 @@ export const layer = Layer.effect(
             if (child) {
               const flushed = sidechain!.attachChild(action.chainID, child.sessionID, child.userMessageID)
               yield* interpretSidechainActions(flushed)
+            } else {
+              // The spawn was not recovered (the child session never came into
+              // being), so attachChild will never be called for this chain -
+              // without abandoning it, its later events would buffer
+              // unboundedly in `chain.pending` for the rest of the turn.
+              sidechain!.abandonChain(action.chainID)
             }
             continue
           }
@@ -303,7 +309,10 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             yield* Effect.promise(() => turn.interrupt().catch(() => undefined))
             yield* finalize("abort")
-            if (sidechain) yield* interpretSidechainActions(sidechain.finalizeAll())
+            if (sidechain)
+              yield* interpretSidechainActions(
+                sidechain.finalizeAll("The turn was interrupted before this subagent finished."),
+              )
             yield* saveConversation()
           }),
         ),
@@ -365,7 +374,14 @@ export const layer = Layer.effect(
       for (const write of writes) {
         if (write.kind === "message") yield* sessions.updateMessage(write.message)
         else if (write.kind === "part") yield* sessions.updatePart(write.part)
-        else yield* todos.update({ sessionID, todos: write.todos as never }).pipe(Effect.ignore)
+        else
+          // `Todo.update` can defect (e.g. a NOT NULL violation) rather than fail
+          // typed, and `Effect.ignore` does not catch defects - an uncaught one
+          // here would kill the whole turn over a todos projection. `catchCause`
+          // recovers from both typed failures and defects.
+          yield* todos
+            .update({ sessionID, todos: write.todos as never })
+            .pipe(Effect.catchCause((cause) => Effect.logWarning("todos update failed", { cause })))
       }
     })
 

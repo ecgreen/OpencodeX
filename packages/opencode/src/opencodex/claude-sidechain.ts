@@ -27,7 +27,6 @@ export type SidechainAction =
 type Chain = {
   state: MapperState
   context?: MapperContext
-  sessionID?: string
   /** Events seen before the child session exists; replayed on attachChild. */
   pending: ClaudeEvent[]
   done: boolean
@@ -74,13 +73,13 @@ export function createSidechainRouter(input: {
     return [{ kind: "writes", chainID, sessionID: chain.context.sessionID as string, writes: mapped.writes }]
   }
 
-  function finalize(chain: Chain, chainID: string): SidechainAction[] {
+  function finalize(chain: Chain, chainID: string, reason = "subagent completed"): SidechainAction[] {
     if (chain.done || !chain.context) {
       chain.done = true
       return []
     }
     chain.done = true
-    const finalized = finalizeAbandonedTurn(chain.state, chain.context, { reason: "subagent completed" })
+    const finalized = finalizeAbandonedTurn(chain.state, chain.context, { reason })
     chain.state = finalized.state
     if (finalized.writes.length === 0) return []
     return [{ kind: "writes", chainID, sessionID: chain.context.sessionID as string, writes: finalized.writes }]
@@ -125,14 +124,26 @@ export function createSidechainRouter(input: {
       const chain = chains.get(chainID)
       if (!chain || chain.context) return []
       chain.context = input.makeContext(sessionID, userMessageID)
-      chain.sessionID = sessionID
       const pending = chain.pending
       chain.pending = []
       return pending.flatMap((event) => mapThrough(chain, chainID, event))
     },
 
-    finalizeAll(): SidechainAction[] {
-      return [...chains.entries()].flatMap(([chainID, chain]) => finalize(chain, chainID))
+    /**
+     * A chain whose spawn was never recovered (attachChild is never going to be
+     * called - the controller-side spawn failed) has nowhere to send its
+     * pending events. Without this they would buffer unboundedly in
+     * `chain.pending` for the rest of the turn.
+     */
+    abandonChain(chainID: string): void {
+      const chain = chains.get(chainID)
+      if (!chain) return
+      chain.done = true
+      chain.pending = []
+    },
+
+    finalizeAll(reason?: string): SidechainAction[] {
+      return [...chains.entries()].flatMap(([chainID, chain]) => finalize(chain, chainID, reason))
     },
   }
 }
