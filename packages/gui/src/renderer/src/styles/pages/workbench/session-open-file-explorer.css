@@ -109,14 +109,15 @@
   background: color-mix(in srgb,var(--muted) 14%,transparent);
 }
 
+/* An inset field rather than a full-bleed separator band: it floats inside
+   the pane with the same rounding language as the tree rows below it. */
 .session-open-file-explorer .workbench-filter {
-  min-height: 36px;
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
+  min-height: 30px;
+  margin: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
   background: color-mix(in srgb,var(--bg) 72%,var(--panel));
-  padding: 5px 10px;
+  padding: 3px 12px;
   box-shadow: none;
 }
 
