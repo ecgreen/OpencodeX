@@ -136,6 +136,29 @@ describe("claude stream-json mapper", () => {
     expect(tool.state.metadata?.truncated).toBe(true)
   })
 
+  test("stream deltas build text parts that the final event reuses", () => {
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "world" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "text", text: "Hello world" }] } },
+    ])
+    const texts = parts(writes).filter((part) => part.type === "text")
+    expect(texts.length).toBeGreaterThan(1)
+    expect(texts.at(-1)).toMatchObject({ text: "Hello world" })
+    expect(new Set(texts.map((part) => part.id)).size).toBe(1)
+  })
+
+  test("distinct api messages in one turn keep distinct text parts", () => {
+    const { writes } = run([
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "First words" }] } },
+      { type: "assistant", message: { id: "m2", content: [{ type: "text", text: "Second words" }] } },
+    ])
+    const texts = parts(writes).filter((part) => part.type === "text")
+    expect(new Set(texts.map((part) => part.id)).size).toBe(2)
+  })
+
   test("marks failed tool results as errors", () => {
     const { writes } = run([
       {

@@ -77,6 +77,10 @@ export type MapperState = {
   billed: { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
   toolParts: Map<string, { partID: PartID; tool: string; input: Record<string, unknown>; start: number }>
   textParts: Map<string, PartID>
+  /** Accumulated text per streaming block, keyed like textParts. */
+  streamText: Map<string, string>
+  /** The API message currently streaming; scopes block indexes across events. */
+  apiMessageID?: string
   claudeSessionID?: string
   /** Set when a `--resume` was refused, so the stored id can be discarded. */
   resumeRejected?: boolean
@@ -90,6 +94,7 @@ export function initialState(input: { modelID?: string; billed?: MapperState["bi
     billed: input.billed ?? { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     toolParts: new Map(),
     textParts: new Map(),
+    streamText: new Map(),
   }
 }
 
@@ -143,7 +148,7 @@ export function normalizeToolInput(tool: string, input: Record<string, unknown>)
 
 export function mapEvent(event: ClaudeEvent, state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText) }
 
   if (event.type === "system" && event.subtype === "init") {
     if (typeof event.session_id === "string") next.claudeSessionID = event.session_id
@@ -151,12 +156,52 @@ export function mapEvent(event: ClaudeEvent, state: MapperState, context: Mapper
     return { writes, state: next }
   }
 
+  // Partial-message events stream text as it is generated. Without them a text
+  // block only lands when its whole API message completes - and mid-turn prose
+  // has been observed never landing at all (see the 2026-08-09 spec, Part B
+  // finding 3), so the deltas are also the recovery path.
+  if (event.type === "stream_event" && isRecord(event.event)) {
+    const stream = event.event
+    if (stream.type === "message_start" && isRecord(stream.message) && typeof stream.message.id === "string") {
+      next.apiMessageID = stream.message.id
+      return { writes, state: next }
+    }
+    if (
+      stream.type === "content_block_delta" &&
+      typeof stream.index === "number" &&
+      isRecord(stream.delta) &&
+      stream.delta.type === "text_delta" &&
+      typeof stream.delta.text === "string" &&
+      next.apiMessageID
+    ) {
+      ensureMessage(writes, next, context)
+      const key = `text:${next.apiMessageID}:${stream.index}`
+      const partID = next.textParts.get(key) ?? context.nextPartID()
+      next.textParts.set(key, partID)
+      const text = (next.streamText.get(key) ?? "") + stream.delta.text
+      next.streamText.set(key, text)
+      writes.push({
+        kind: "part",
+        part: {
+          id: partID,
+          sessionID: context.sessionID,
+          messageID: next.messageID!,
+          type: "text",
+          text,
+          time: { start: context.now() },
+        },
+      })
+    }
+    return { writes, state: next }
+  }
+
   if (event.type === "assistant" && event.message) {
     if (typeof event.message.model === "string") next.modelID = event.message.model
+    if (typeof event.message.id === "string") next.apiMessageID = event.message.id
     ensureMessage(writes, next, context)
-    for (const block of contentBlocks(event.message.content)) {
-      mapAssistantBlock(block, writes, next, context)
-    }
+    contentBlocks(event.message.content).forEach((block, position) => {
+      mapAssistantBlock(block, position, writes, next, context)
+    })
     return { writes, state: next }
   }
 
@@ -184,7 +229,7 @@ export function finalizeAbandonedTurn(
   input: { reason: string; error?: string },
 ): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText) }
   if (!next.messageID) return { writes, state: next }
   const now = context.now()
   for (const [callID, pending] of next.toolParts) {
@@ -217,7 +262,7 @@ export function finalizeAbandonedTurn(
 /** Opens an assistant message without any Claude event, for failure turns. */
 export function startTurn(state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText) }
   ensureMessage(writes, next, context)
   return { writes, state: next }
 }
@@ -237,10 +282,10 @@ function ensureMessage(writes: SessionWrite[], state: MapperState, context: Mapp
   })
 }
 
-function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
+function mapAssistantBlock(block: ContentBlock, position: number, writes: SessionWrite[], state: MapperState, context: MapperContext) {
   const messageID = state.messageID!
   if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-    const key = `text:${blockKey(block)}`
+    const key = `text:${blockKey(block, state, position)}`
     const partID = state.textParts.get(key) ?? context.nextPartID()
     state.textParts.set(key, partID)
     writes.push({
@@ -257,7 +302,7 @@ function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: M
     return
   }
   if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
-    const key = `thinking:${blockKey(block)}`
+    const key = `thinking:${blockKey(block, state, position)}`
     const partID = state.textParts.get(key) ?? context.nextPartID()
     state.textParts.set(key, partID)
     writes.push({
@@ -473,9 +518,14 @@ function contentBlocks(content: unknown): ContentBlock[] {
   return content.filter((block): block is ContentBlock => isRecord(block))
 }
 
-/** Blocks have no stable id, so position within the message identifies them. */
-function blockKey(block: ContentBlock) {
-  return typeof block.index === "number" ? String(block.index) : (block.text ?? block.thinking ?? "").length.toString()
+/**
+ * Blocks have no stable id, so the API message id plus the block's position
+ * within it identifies them - across re-emissions and across the stream-delta
+ * and final-event paths, which must land on the same part.
+ */
+function blockKey(block: ContentBlock, state: MapperState, position: number) {
+  const index = typeof block.index === "number" ? block.index : position
+  return `${state.apiMessageID ?? "m"}:${index}`
 }
 
 function readResultText(content: unknown): string {

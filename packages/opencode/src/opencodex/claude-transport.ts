@@ -140,6 +140,10 @@ export function createSdkTransport(): ClaudeTransport {
           options: {
             cwd: options.cwd,
             abortController: controller,
+            // Deltas stream text as it is generated. Beyond live streaming, this
+            // is the recovery path for prose the final assistant events lose
+            // (2026-08-09 spec, Part B finding 3).
+            includePartialMessages: true,
             // OpencodeX is the sole permission gate: Claude defers every tool
             // decision to canUseTool, which bridges to OpencodeX permission cards.
             permissionMode: "default",
