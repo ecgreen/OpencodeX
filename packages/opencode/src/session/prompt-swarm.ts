@@ -310,6 +310,29 @@ export function make(deps: Deps) {
             },
           }
         : {}),
+      // Claude's subagents (Task tool calls) run as sidechains of the same
+      // event stream, tagged with `parent_tool_use_id`. The driver's sidechain
+      // router hands each one back here to become a real child session, so it
+      // shows up in the session graph and transcript instead of leaking into
+      // the orchestrator's own turn.
+      sidechain: {
+        spawn: (spawnInput: { title: string; prompt: string }) =>
+          Effect.gen(function* () {
+            const child = yield* sessions
+              .create({
+                parentID: sessionID,
+                title: `${spawnInput.title} (@claude subagent)`,
+                ...(session.permission ? { permission: session.permission } : {}),
+              })
+              .pipe(Effect.orDie)
+            const message = yield* prompt({
+              sessionID: child.id,
+              noReply: true,
+              parts: [{ type: "text", text: spawnInput.prompt || spawnInput.title }],
+            }).pipe(Effect.orDie)
+            return { sessionID: child.id, userMessageID: message.info.id }
+          }),
+      },
     })
   })
 

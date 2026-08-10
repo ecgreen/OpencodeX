@@ -11,6 +11,7 @@ import { ClaudeDriverMetadata } from "./claude-driver-metadata"
 import { ClaudeHandoff } from "./claude-handoff"
 import { ClaudeMapper, type MapperContext } from "./claude-mapper"
 import { ClaudePermission } from "./claude-permission"
+import { ClaudeSidechain } from "./claude-sidechain"
 import {
   ClaudeTransport,
   createSdkTransport,
@@ -70,6 +71,14 @@ export interface Interface {
      * runs specialist roles back inside OpencodeX on their own models.
      */
     delegate?: SwarmDelegate
+    /**
+     * Present when the caller can turn a Claude subagent (sidechain) into a
+     * real child session. Without it, sidechain events fall through to the
+     * main mapper untouched (today's behavior).
+     */
+    sidechain?: {
+      spawn: (input: { title: string; prompt: string }) => Effect.Effect<{ sessionID: string; userMessageID: string }>
+    }
   }) => Effect.Effect<SessionLegacy.WithParts>
 }
 
@@ -96,6 +105,9 @@ export const layer = Layer.effect(
       claudeModelID?: string
       variant?: string
       delegate?: SwarmDelegate
+      sidechain?: {
+        spawn: (input: { title: string; prompt: string }) => Effect.Effect<{ sessionID: string; userMessageID: string }>
+      }
     }) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       // Resolved per turn rather than per layer: `Agent.defaultInfo` re-reads
@@ -139,6 +151,41 @@ export const layer = Layer.effect(
         modelID: conversation?.modelID,
         billed: conversation?.billed,
         tasks: conversation?.tasks,
+      })
+
+      // Present only when the caller (prompt-swarm) can turn a Claude subagent
+      // into a real child session. Sidechains are Claude's own event stream,
+      // tagged with `parent_tool_use_id` - see claude-sidechain.ts.
+      const sidechain = input.sidechain
+        ? ClaudeSidechain.createSidechainRouter({
+            makeContext: (sessionID, parentMessageID) => ({
+              ...context,
+              sessionID: sessionID as typeof context.sessionID,
+              parentMessageID: parentMessageID as typeof context.parentMessageID,
+            }),
+          })
+        : undefined
+
+      // Recursive because attaching a child can immediately flush buffered
+      // writes for it, which themselves need to be interpreted. Declared here
+      // (rather than alongside `applyWrites`) so it closes over `input` and
+      // `sidechain`.
+      const interpretSidechainActions: (actions: ClaudeSidechain.SidechainAction[]) => Effect.Effect<void> = Effect.fn(
+        "OpencodeXClaudeDriver.sidechain",
+      )(function* (actions) {
+        for (const action of actions) {
+          if (action.kind === "spawn") {
+            const child = yield* input
+              .sidechain!.spawn({ title: action.title, prompt: action.prompt })
+              .pipe(Effect.catch(() => Effect.succeed(undefined)))
+            if (child) {
+              const flushed = sidechain!.attachChild(action.chainID, child.sessionID, child.userMessageID)
+              yield* interpretSidechainActions(flushed)
+            }
+            continue
+          }
+          yield* applyWrites(action.writes, action.sessionID as SessionID)
+        }
       })
 
       const executable = yield* Effect.promise(() => ClaudeTransport.resolveClaudeExecutable())
@@ -235,6 +282,11 @@ export const layer = Layer.effect(
             break
           }
           if (next.done) break
+          if (sidechain) {
+            const routed = sidechain.route(next.value, live.toolParts)
+            yield* interpretSidechainActions(routed.actions)
+            if (routed.handled) continue
+          }
           const mapped = ClaudeMapper.mapEvent(next.value, live, context)
           live = mapped.state
           yield* applyWrites(mapped.writes, input.sessionID)
@@ -251,6 +303,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             yield* Effect.promise(() => turn.interrupt().catch(() => undefined))
             yield* finalize("abort")
+            if (sidechain) yield* interpretSidechainActions(sidechain.finalizeAll())
             yield* saveConversation()
           }),
         ),
@@ -265,6 +318,12 @@ export const layer = Layer.effect(
       } else if (!live.finished) {
         yield* finalize("stop")
       }
+
+      // Any sidechain still open when the turn ends (the main turn finished,
+      // errored, or hit its stop reason before the subagent's own tool_result
+      // arrived) is abandoned - close it the same way `finalize` closes the
+      // main turn, so its transcript never shows a part stuck "running".
+      if (sidechain) yield* interpretSidechainActions(sidechain.finalizeAll())
 
       yield* saveConversation()
 
