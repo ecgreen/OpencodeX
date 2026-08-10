@@ -200,3 +200,12 @@ const table = sqliteTable("session", {
 - Run relevant scoped typecheck, lint, test, or build commands when they are useful to validate changes.
 - Prefer package-level commands from the affected package directory over broad repo-wide commands unless the change requires full-repo validation.
 - If a command is expected to be long-running, destructive, or environment-specific, call it out first and ask which command the user wants run.
+
+## Questions Need Their Context Attached
+
+Assistant prose emitted mid-turn can be lost upstream of the GUI (see
+docs/superpowers/specs/2026-08-09-question-card-and-transcript-visibility-design.md,
+Part B finding 3). When asking the user to approve or choose anything, put the
+material they need INSIDE the question payload (the `question` field renders
+long text) or in a committed file the question references - never rely on
+turn-middle message text being visible.
