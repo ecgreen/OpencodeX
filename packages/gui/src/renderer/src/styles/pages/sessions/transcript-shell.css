@@ -31,7 +31,6 @@
 /* Inline code that names a real-looking file path opens in the workspace.
    Dotted underline at rest, accent on hover: clickable without shouting. */
 .transcript-shell .part.text code[data-side-panel-open-file] {
-  cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
   transition: color .14s ease;

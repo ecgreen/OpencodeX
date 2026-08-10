@@ -36,4 +36,10 @@ describe("transcript file path detection", () => {
     expect(transcriptFilePath("foo/bar/")).toBeUndefined() // directory
     expect(transcriptFilePath("")).toBeUndefined()
   })
+
+  test("rejects globs and version-ish strings", () => {
+    expect(transcriptFilePath("src/**/*.ts")).toBeUndefined() // glob
+    expect(transcriptFilePath("1/2.5")).toBeUndefined() // version-ish, extension starts with digit
+    expect(transcriptFilePath("localhost:3000/api/v2.0")).toBeUndefined() // version-ish, extension starts with digit
+  })
 })

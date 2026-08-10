@@ -2,7 +2,7 @@ import { workbenchPathKey } from "./workbench"
 
 const schemePattern = /^[a-z][a-z0-9+.-]*:\/\//i
 const lineSuffixPattern = /:\d+(?::\d+)?$/
-const extensionPattern = /\.[A-Za-z0-9]{1,8}$/
+const extensionPattern = /\.[A-Za-z][A-Za-z0-9]{0,7}$/
 
 /**
  * Decides whether inline-code text is file-path-shaped. Deliberately strict:
@@ -13,6 +13,7 @@ const extensionPattern = /\.[A-Za-z0-9]{1,8}$/
 export function transcriptFilePath(text: string): string | undefined {
   const raw = text.trim()
   if (!raw || /\s/.test(raw)) return undefined
+  if (raw.includes("*")) return undefined
   if (schemePattern.test(raw)) return undefined
   const normalized = workbenchPathKey(raw.replace(lineSuffixPattern, ""))
   if (!normalized.includes("/") || normalized.endsWith("/")) return undefined
@@ -31,7 +32,10 @@ export function decorateTranscriptFileLinks(root: ParentNode) {
     if (code.closest("a[href]")) continue
     const path = transcriptFilePath(code.textContent ?? "")
     if (path) {
-      code.dataset.sidePanelOpenFile = path
+      // Guard BEFORE writing: setting the attribute to the same value still
+      // fires the attribute MutationObserver below, so an unconditional
+      // write would create an observer/stamp feedback loop.
+      if (code.dataset.sidePanelOpenFile !== path) code.dataset.sidePanelOpenFile = path
       if (!code.title) code.title = "Open in workspace"
     } else if (code.dataset.sidePanelOpenFile) {
       delete code.dataset.sidePanelOpenFile
@@ -42,13 +46,20 @@ export function decorateTranscriptFileLinks(root: ParentNode) {
 
 /**
  * The Markdown component re-renders via morphdom while streaming, which can
- * replace decorated nodes, so decoration re-runs on subtree changes. The
- * observer ignores attribute mutations, so stamping data attributes cannot
- * re-trigger it.
+ * replace decorated nodes, so decoration re-runs on subtree changes. At
+ * end-of-stream morphdom also syncs attributes on an otherwise-identical
+ * node (stripping our stamp + title) without any childList/characterData
+ * mutation, so the observer must also watch attribute changes to heal that.
  */
 export function observeTranscriptFileLinks(root: HTMLElement) {
   const observer = new MutationObserver(() => decorateTranscriptFileLinks(root))
-  observer.observe(root, { childList: true, characterData: true, subtree: true })
+  observer.observe(root, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-side-panel-open-file"],
+  })
   decorateTranscriptFileLinks(root)
   return () => observer.disconnect()
 }

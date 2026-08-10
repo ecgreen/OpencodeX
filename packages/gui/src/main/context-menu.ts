@@ -1,8 +1,5 @@
 import { Menu, type WebContents } from "electron"
-import { editContextMenuTemplate, type EditContextMenuParams, type EditContextMenuItem } from "./context-menu-template.js"
-
-export type { EditContextMenuParams, EditContextMenuItem }
-export { editContextMenuTemplate }
+import { editContextMenuTemplate } from "./context-menu-template.js"
 
 export function attachEditContextMenu(contents: WebContents) {
   contents.on("context-menu", (_event, params) => {
