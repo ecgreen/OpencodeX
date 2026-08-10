@@ -158,9 +158,10 @@ export function SessionSideDiffPanel(props: {
                    <Button appearance="ghost"
                      type="button"
                      role="treeitem"
+                     class="workbench-file-row"
                      aria-expanded={row.type === "directory" ? !collapsedTree().has(row.path) : undefined}
                      classList={{ selected: row.path === selected()?.path, directory: row.type === "directory", expanded: row.type === "directory" && !collapsedTree().has(row.path), deleted: change()?.status === "deleted" }}
-                    style={{ "--indent": `${row.depth * 14}px` }}
+                    style={{ "--depth": String(row.depth), "--depth-lines": row.depth === 0 ? "0" : "1" }}
                     onClick={() => {
                       if (row.type === "directory") {
                         setCollapsedTree((current) => current.has(row.path)
@@ -171,17 +172,11 @@ export function SessionSideDiffPanel(props: {
                       selectFile(row.path)
                     }}
                   >
-                    <span class="session-side-tree-guides" aria-hidden="true">
-                      <For each={row.guides}>
-                        {(active, index) => <span classList={{ active }} style={{ "--guide-indent": `${index() * 14}px` }} />}
-                      </For>
-                    </span>
-                    <span class="session-side-file-name">
-                      <span class="session-side-disclosure" classList={{ placeholder: row.type !== "directory" }}>
-                        <Show when={row.type === "directory"}><Icon name={collapsedTree().has(row.path) ? "chevronRight" : "chevronDown"} /></Show>
-                      </span>
-                      <strong>{row.name}</strong>
-                    </span>
+                    <Show when={row.type === "directory"} fallback={<span class="workbench-tree-spacer" />}>
+                      <span class="workbench-disclosure"><Icon name={collapsedTree().has(row.path) ? "chevronRight" : "chevronDown"} /></span>
+                    </Show>
+                    <Icon name={row.type === "directory" ? collapsedTree().has(row.path) ? "folder" : "folder-open" : "file"} />
+                    <span>{row.name}</span>
                     <Show when={change()}>
                       {(file) => <small><Show when={!file().binary} fallback={<span>Binary</span>}><Show when={file().additions !== undefined && file().deletions !== undefined} fallback={<span>Measuring</span>}><b class="diff-additions">+{file().additions}</b><b class="diff-deletions">-{file().deletions}</b></Show></Show></small>}
                     </Show>
