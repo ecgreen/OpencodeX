@@ -111,7 +111,7 @@
 
 /* An inset field rather than a full-bleed separator band: it floats inside
    the pane with the same rounding language as the tree rows below it. */
-.session-open-file-explorer .workbench-filter {
+:is(.session-open-file-explorer, .session-side-file-pane) .workbench-filter {
   min-height: 30px;
   margin: 6px 8px;
   border: 1px solid var(--border-subtle);
@@ -121,7 +121,7 @@
   box-shadow: none;
 }
 
-.session-open-file-explorer .workbench-filter input {
+:is(.session-open-file-explorer, .session-side-file-pane) .workbench-filter input {
   border: 0;
   background: transparent;
   color: var(--text);

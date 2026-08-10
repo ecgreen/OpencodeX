@@ -29,6 +29,7 @@ export function SessionSideDiffPanel(props: {
 }) {
   const [selectedFile, setSelectedFile] = createSignal("")
   const [collapsedTree, setCollapsedTree] = createSignal<ReadonlySet<string>>(new Set())
+  const [treeFilter, setTreeFilter] = createSignal("")
   const [splitRatio, setSplitRatio] = createSignal(0.32)
   const [diffStyle, setDiffStyle] = createSignal<"unified" | "split">("unified")
   const [busyAction, setBusyAction] = createSignal("")
@@ -37,9 +38,16 @@ export function SessionSideDiffPanel(props: {
   let selectedIndex = 0
   let previousRows: readonly WorkbenchChangeTreeRow[] = []
   const rows = createMemo(() => {
-    previousRows = reconcileWorkbenchChangeRows(previousRows, flattenWorkbenchChangeTree(props.controller.files(), collapsedTree()))
+    previousRows = reconcileWorkbenchChangeRows(previousRows, flattenWorkbenchChangeTree(props.controller.files(), collapsedTree(), treeFilter()))
     return previousRows
   })
+
+  // Each new query re-reveals its matches fresh, so collapses made under the
+  // previous filter do not leak into the next one.
+  function updateTreeFilter(value: string) {
+    setCollapsedTree(new Set<string>())
+    setTreeFilter(value)
+  }
   const selected = createMemo(() => sidePanelChangeForPath(props.controller.files(), selectedFile()))
   const selectedPatch = createMemo(() => selectedFile() ? props.controller.patch(selectedFile()) : undefined)
 
@@ -87,6 +95,7 @@ export function SessionSideDiffPanel(props: {
     const request = props.request
     if (!request?.token || !request.value) return
     const path = request.value
+    setTreeFilter("")
     void props.controller.reveal(path).then((parents) => {
       setCollapsedTree((current) => new Set([...current].filter((item) => !parents.includes(item))))
       selectFile(path)
@@ -144,8 +153,17 @@ export function SessionSideDiffPanel(props: {
         <Show when={props.controller.refreshError()}>{(value) => <div class="session-side-git-notice"><span>{value()}</span><Button appearance="ghost" size="compact" onClick={() => void props.controller.refresh()}>Retry</Button></div>}</Show>
         <Show when={props.controller.metricsError()}>{(value) => <div class="session-side-git-notice">{value()} Existing files remain available.</div>}</Show>
         <Show when={props.controller.initializationError()}>{(value) => <div class="session-side-git-notice">{value()} Try initializing the repository again.</div>}</Show>
-        <Show when={rows().length > 0} fallback={<div class="session-side-empty">{props.controller.message() || "No project changes."}</div>}>
+        <Show when={props.controller.files().length > 0} fallback={<div class="session-side-empty">{props.controller.message() || "No project changes."}</div>}>
           <div class="session-side-diff-layout" style={{ "--session-side-file-list-width": `${Math.round(splitRatio() * 10000) / 100}%` }}>
+            <div class="session-side-file-pane">
+            <div class="workbench-filter">
+              <Icon name="search" />
+              <TextInput type="search" aria-label="Filter changes" value={treeFilter()} placeholder="Filter changes" onInput={(event) => updateTreeFilter(event.currentTarget.value)} />
+              <Show when={treeFilter()}>
+                <Button appearance="ghost" type="button" aria-label="Clear change filter" onClick={() => updateTreeFilter("")}><Icon name="x" /></Button>
+              </Show>
+            </div>
+            <Show when={rows().length > 0} fallback={<div class="session-side-empty">No matches.</div>}>
             <VirtualList
               items={rows()}
               rowHeight={30}
@@ -183,6 +201,8 @@ export function SessionSideDiffPanel(props: {
                   </Button>
                 )}}
             />
+            </Show>
+            </div>
             <div class="session-side-diff-splitter" role="separator" aria-orientation="vertical" aria-valuemin={Math.round(SPLIT_MIN * 100)} aria-valuemax={Math.round(SPLIT_MAX * 100)} aria-valuenow={Math.round(splitRatio() * 100)} tabIndex={0} onPointerDown={startSplitResize} onKeyDown={(event) => {
               const next = event.key === "ArrowLeft" ? splitRatio() - 0.03 : event.key === "ArrowRight" ? splitRatio() + 0.03 : event.key === "Home" ? SPLIT_MIN : event.key === "End" ? SPLIT_MAX : undefined
               if (next === undefined) return

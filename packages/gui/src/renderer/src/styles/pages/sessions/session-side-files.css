@@ -60,10 +60,22 @@
 /* The git tree shares the editor explorer's row system (see
    session-open-file-explorer.css). Only container concerns and git-specific
    row extras live here. */
+.session-side-file-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: radial-gradient(circle at 18% 0%,color-mix(in srgb,var(--secondary) 8%,transparent),transparent 32%),color-mix(in srgb,var(--panel) 78%,var(--bg));
+}
+
+.session-side-file-pane>.session-side-empty {
+  flex: 1;
+}
+
 .session-side-file-list {
+  flex: 1;
   min-height: 0;
   overflow: auto;
-  background: radial-gradient(circle at 18% 0%,color-mix(in srgb,var(--secondary) 8%,transparent),transparent 32%),color-mix(in srgb,var(--panel) 78%,var(--bg));
 }
 
 /* Virtualized rows are recycled while scrolling; the entrance animation from

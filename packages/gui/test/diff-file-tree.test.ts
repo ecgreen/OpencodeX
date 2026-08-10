@@ -47,6 +47,24 @@ describe("GUI diff file tree helpers", () => {
     const refreshed = reconcileWorkbenchChangeRows(rows, flattenWorkbenchChangeTree(rows.flatMap((row) => row.node ? [row.node] : []), new Set()))
     expect(refreshed.find((row) => row.path === "src/app.ts")).toBe(rows.find((row) => row.path === "src/app.ts"))
   })
+
+  test("filters the change tree to matching files and their folders", () => {
+    const files = [
+      { type: "file" as const, name: "app.ts", path: "src/app.ts", status: "added", staged: false, unstaged: false, untracked: true, openable: true },
+      { type: "file" as const, name: "store.ts", path: "src/lib/store.ts", status: "modified", staged: false, unstaged: true, untracked: false, openable: true },
+      { type: "file" as const, name: "README.md", path: "README.md", status: "modified", staged: false, unstaged: true, untracked: false, openable: true },
+    ]
+
+    expect(flattenWorkbenchChangeTree(files, new Set(), "store").map((row) => `${row.depth}:${row.type}:${row.path}`)).toEqual([
+      "0:directory:src",
+      "1:directory:src/lib",
+      "2:file:src/lib/store.ts",
+    ])
+    // A collapsed folder stays collapsed while a filter is active.
+    expect(flattenWorkbenchChangeTree(files, new Set(["src"]), "store").map((row) => row.path)).toEqual(["src"])
+    // Blank and whitespace-only filters leave the tree untouched.
+    expect(flattenWorkbenchChangeTree(files, new Set(), "  ").length).toBe(5)
+  })
 })
 
 function diff(file: string): DiffFile {
