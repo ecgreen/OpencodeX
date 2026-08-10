@@ -154,7 +154,7 @@
   min-height: 30px;
   border-radius: 7px;
   color: color-mix(in srgb,var(--text) 92%,var(--muted));
-  padding: 4px 9px 4px calc(10px + (var(--depth) * 16px));
+  padding: 4px 9px 4px calc(10px + (var(--depth) * 12px));
   font-family: inherit;
   font-size: 13px;
   font-weight: 620;
