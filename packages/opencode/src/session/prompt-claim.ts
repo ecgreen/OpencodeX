@@ -171,7 +171,7 @@ export function make(deps: Deps) {
         Effect.repeat(Schedule.forever),
         Effect.forkIn(scope),
       )
-      const exit = yield* loop({ sessionID: command.session_id }).pipe(
+      const exit = yield* loop({ sessionID: command.session_id, messageID: command.message_id }).pipe(
         Effect.exit,
         Effect.ensuring(Fiber.interrupt(heartbeat)),
       )

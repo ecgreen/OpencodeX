@@ -10,7 +10,7 @@ import { SwarmBriefing } from "@/opencodex/swarm-briefing"
 import { Skill } from "@/skill"
 import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
 import { isSwarmProvider } from "@/provider/swarm-provider"
-import { PartID, SessionID } from "./schema"
+import { MessageID, PartID, SessionID } from "./schema"
 import type { PromptInput } from "./prompt-schema"
 import {
   DELEGATION_RECORD_VERSION,
@@ -42,6 +42,20 @@ export interface Deps {
   readonly sessions: Context.Service.Shape<typeof Session.Service>
   readonly skills: Context.Service.Shape<typeof Skill.Service>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
+}
+
+/**
+ * The message a Claude turn should deliver. A queued command names its own
+ * message; delivering `lastUserMessage` instead sent the newest text N times
+ * and swallowed the earlier queued messages (2026-08-10 spec, problem 2b).
+ */
+export function claudeTurnMessage<T extends { info: { id: string; role: string } }>(
+  messages: readonly T[],
+  messageID: string | undefined,
+): T | undefined {
+  if (messageID === undefined) return messages.findLast((message) => message.info.role === "user")
+  const message = messages.find((message) => message.info.id === messageID)
+  return message?.info.role === "user" ? message : undefined
 }
 
 /**
@@ -92,8 +106,8 @@ export function make(deps: Deps) {
   })
 
   /** The swarm behind a session's model, or undefined for an ordinary route. */
-  const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID) {
-    const last = yield* lastUserMessage(sessionID)
+  const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
+    const last = messageID ? yield* userMessage(sessionID, messageID) : yield* lastUserMessage(sessionID)
     if (!last || last.info.role !== "user") return undefined
     if (!isSwarmProvider(last.info.model.providerID)) return undefined
     const swarmID = last.info.model.modelID
@@ -243,14 +257,14 @@ export function make(deps: Deps) {
    * Claude Code CLI instead of a provider API. Returns the work effect for
    * such a turn, or undefined for an ordinary session.
    */
-  const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID) {
+  const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
     const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
-    const last = yield* lastUserMessage(sessionID)
+    const last = messageID ? yield* userMessage(sessionID, messageID) : yield* lastUserMessage(sessionID)
     const selected = last?.info.role === "user" ? last.info.model : session.model
     // A swarm is a facade over its orchestrator, so a swarm whose
     // orchestrator is the Claude subscription takes the driver path too -
     // with a delegation tool that keeps specialists on their own models.
-    const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID) : undefined
+    const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID, messageID) : undefined
     const orchestrator = swarm?.orchestrator
     const model =
       swarm?.orchestratorIsClaudeCode && orchestrator?.provider_id && orchestrator.model_id
@@ -319,7 +333,15 @@ export function make(deps: Deps) {
 
   const lastUserMessage = Effect.fnUntraced(function* (sessionID: SessionID) {
     const match = yield* sessions.findMessage(sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
-    return Option.getOrUndefined(match)
+    const message = Option.getOrUndefined(match)
+    return message ? claudeTurnMessage([message], undefined) : undefined
+  })
+
+  /** The message a queued command named for its own turn, if it's still a user message. */
+  const userMessage = Effect.fnUntraced(function* (sessionID: SessionID, messageID: MessageID) {
+    const match = yield* sessions.findMessage(sessionID, (message) => message.info.id === messageID).pipe(Effect.orDie)
+    const message = Option.getOrUndefined(match)
+    return message ? claudeTurnMessage([message], messageID) : undefined
   })
 
   return {
@@ -330,5 +352,6 @@ export function make(deps: Deps) {
     ensureClaudeTitle,
     modelIdentifier,
     lastUserMessage,
+    userMessage,
   }
 }
