@@ -1,0 +1,76 @@
+# Selection Highlight & Native Context Menu — Design
+
+**Date:** 2026-08-10
+**Status:** Approved
+
+## Problem
+
+1. The GUI defines no `::selection` rule, so drag-selecting text in the session
+   workspace (and everywhere else) falls back to Chromium's default highlight —
+   a saturated bright blue that makes selected text unreadable in dark mode.
+   The workbench CodeMirror editor sets its own selection to solid
+   `--theme-info`, which is similarly bright and inconsistent.
+2. Right-clicking selected text or an editable field does nothing: Electron's
+   main process never handles the `context-menu` event, so there is no default
+   Cut/Copy/Paste anywhere in the app.
+
+## Scope
+
+`packages/gui` only. The shared `packages/ui` / pierre styles (used by the web
+UI) stay untouched. Embedded browser views (`browser-ipc.ts` WebContentsViews)
+are out of scope — main window only.
+
+## Design
+
+### 1. App-wide selection highlight (dark + light)
+
+- Add a text-selection token to both theme files
+  (`src/renderer/src/styles/themes/dark.css` and `light.css`):
+  - `--theme-selection-text`: the theme accent at ~30% alpha
+    (dark: `rgba(250, 178, 131, 0.3)`; light: the light theme's accent at a
+    comparable alpha, tuned so selected text stays readable).
+  - Exposed as `--ds-text-selection`. The existing `--ds-selection` token is
+    unchanged — it remains the menu/list item highlight.
+- One global rule in the GUI's global styles:
+
+  ```css
+  ::selection {
+    background-color: var(--ds-text-selection);
+  }
+  ```
+
+  No `color` override — the translucent background keeps the original text
+  color (including syntax highlighting and muted text) legible.
+- Align the workbench CodeMirror selection: replace the solid `--theme-info`
+  backgrounds in `styles/pages/workbench/workbench-codemirror-states.css` and
+  the inline selection theme in `components/code-editor.tsx` with
+  `var(--ds-text-selection)` so editor and prose selection match.
+
+### 2. Native right-click menu (Electron main process)
+
+- New module `src/main/context-menu.ts`, attached to the main window's
+  `webContents` when the window is created (from `src/main/index.ts`).
+- Listens for the `context-menu` event and pops a native `Menu` built from
+  `params.editFlags`:
+  - **Cut** — shown when `isEditable`, enabled when `editFlags.canCut`
+  - **Copy** — shown when there is a selection, enabled when `editFlags.canCopy`
+  - **Paste** — shown when `isEditable`, enabled when `editFlags.canPaste`
+  - separator
+  - **Select All** — enabled when `editFlags.canSelectAll`
+- Items use Electron menu roles (`cut`, `copy`, `paste`, `selectAll`) so
+  clipboard behavior is native and correct.
+- Guard: the menu only appears when `params.isEditable` or
+  `params.selectionText.trim()` is non-empty. Right-clicking blank space or a
+  graph card shows nothing new — the existing in-app `CardContextMenu`
+  (which calls `preventDefault`) keeps working untouched.
+
+## Testing
+
+Manual verification:
+
+- Launch the app in dark and light themes; select text in the workspace
+  transcript, the workbench editor, and a text input. The highlight must be
+  the accent tint and the text must remain readable.
+- Right-click: selected text (Copy works), an editable field (Cut/Copy/Paste
+  states correct, Paste inserts), blank space (no native menu), a graph card
+  (existing in-app menu unaffected).
