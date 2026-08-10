@@ -29,6 +29,7 @@
   --theme-accent: #fab283;
   --theme-accent-hover: #ffc49f;
   --theme-accent-soft: rgba(250, 178, 131, 0.14);
+  --theme-selection-text: rgba(250, 178, 131, 0.3);
   --theme-danger: #ff7d86;
   --theme-danger-soft: rgba(255, 125, 134, 0.14);
   --theme-warning: #e9b95f;
@@ -68,6 +69,7 @@
     --ds-border-strong: var(--theme-border-strong);
     --ds-focus: var(--theme-accent);
     --ds-selection: var(--theme-accent-soft);
+    --ds-text-selection: var(--theme-selection-text);
     --ds-control-accent: var(--theme-accent);
     --ds-control-accent-text: var(--theme-text-inverse);
     --ds-danger: var(--theme-danger);

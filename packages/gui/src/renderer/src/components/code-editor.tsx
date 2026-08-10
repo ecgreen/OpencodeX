@@ -154,7 +154,7 @@ export function CodeEditor(props: CodeEditorProps) {
               borderLeftColor: "#d4d4d4",
             },
             ".cm-selectionLayer .cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection, .cm-line::selection, .cm-line *::selection": {
-              backgroundColor: "#264f78",
+              backgroundColor: "var(--ds-text-selection)",
               color: "inherit",
             },
             ".cm-dropCursor": {

@@ -66,3 +66,11 @@ input {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Text selection: a translucent accent tint. No color override — the text
+   underneath keeps its own color (syntax highlighting, muted text) so a
+   selection never makes content unreadable. Chromium's default highlight
+   is unusably bright on the dark theme. */
+::selection {
+  background-color: var(--ds-text-selection);
+}
