@@ -175,9 +175,9 @@ export const layer = Layer.effect(
       )(function* (actions) {
         for (const action of actions) {
           if (action.kind === "spawn") {
-            const child = yield* input
-              .sidechain!.spawn({ title: action.title, prompt: action.prompt })
-              .pipe(Effect.catch(() => Effect.succeed(undefined)))
+            const child = yield* ClaudeSidechain.recoverSpawnFailure(
+              input.sidechain!.spawn({ title: action.title, prompt: action.prompt }),
+            )
             if (child) {
               const flushed = sidechain!.attachChild(action.chainID, child.sessionID, child.userMessageID)
               yield* interpretSidechainActions(flushed)

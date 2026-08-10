@@ -1,3 +1,4 @@
+import { Cause, Effect } from "effect"
 import {
   finalizeAbandonedTurn,
   initialState,
@@ -33,6 +34,29 @@ type Chain = {
 }
 
 export type SidechainRouter = ReturnType<typeof createSidechainRouter>
+
+/**
+ * A sidechain spawn failing must not kill the main turn - it should simply
+ * skip that one subagent. The spawn capability's declared error type is
+ * `never` (callers wrap their own errors in `Effect.orDie`, e.g.
+ * prompt-swarm.ts's `sessions.create`/`prompt` calls), so a real failure
+ * surfaces as a defect, not a typed error: a plain `Effect.catch`/
+ * `Effect.catchAll` handler - which only inspects the typed error channel -
+ * never runs, and the defect sails through, killing the whole turn before
+ * `finalize`/`saveConversation` get a chance to run.
+ *
+ * `Effect.catchCause` recovers from the entire `Cause` - typed failures and
+ * defects alike - which is what "catches both" requires. The one thing it
+ * must NOT recover from is genuine fiber interruption (the turn being
+ * aborted): swallowing that would stop the abort from actually propagating
+ * up through the driver's event loop, so an interrupted cause is re-raised
+ * via `Effect.failCause` instead of being turned into a value.
+ */
+export function recoverSpawnFailure<A, R>(effect: Effect.Effect<A, never, R>): Effect.Effect<A | undefined, never, R> {
+  return effect.pipe(
+    Effect.catchCause((cause) => (Cause.hasInterrupts(cause) ? Effect.failCause(cause) : Effect.succeed(undefined))),
+  )
+}
 
 export function createSidechainRouter(input: {
   makeContext: (sessionID: string, parentMessageID: string) => MapperContext

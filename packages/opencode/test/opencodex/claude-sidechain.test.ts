@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { createSidechainRouter } from "../../src/opencodex/claude-sidechain"
+import { Cause, Effect, Exit } from "effect"
+import { createSidechainRouter, recoverSpawnFailure } from "../../src/opencodex/claude-sidechain"
 import type { MapperContext, MapperState } from "../../src/opencodex/claude-mapper"
 
 let part = 0
@@ -77,5 +78,51 @@ describe("sidechain router", () => {
     router.attachChild("task_1", "ses_child", "msg_user_child")
     const actions = router.finalizeAll()
     expect(actions.every((a) => a.kind === "writes" && a.sessionID === "ses_child")).toBe(true)
+  })
+})
+
+// A spawn failure must not kill the main turn - it must be recovered into
+// `undefined` so the driver just skips that one sidechain. `spawn`'s declared
+// error channel is `never` (callers `Effect.orDie` their own errors, e.g.
+// prompt-swarm.ts's `sessions.create`/`prompt`), so a real failure surfaces
+// as a DEFECT, not a typed error. A handler that only inspects the typed
+// error channel (`Effect.catch`/`Effect.catchAll`) never runs for a defect,
+// so it is dead code here - the defect sails through unrecovered, killing
+// `interpretSidechainActions`, the driver's consume loop, and the whole turn
+// before `finalize`/`saveConversation` run. These tests pin the actual
+// recovery behavior `recoverSpawnFailure` must provide; the die/typed-error
+// cases below fail if `recoverSpawnFailure` is reimplemented as a plain
+// `Effect.catch` (a rejected promise instead of resolving to `undefined`).
+describe("recoverSpawnFailure", () => {
+  test("a spawn that dies (Effect.orDie's failure mode) recovers to undefined instead of propagating", async () => {
+    const dying = Effect.die(new Error("simulated spawn crash")) as Effect.Effect<
+      { sessionID: string; userMessageID: string },
+      never
+    >
+    const result = await Effect.runPromise(recoverSpawnFailure(dying))
+    expect(result).toBeUndefined()
+  })
+
+  test("a spawn that fails with a typed error also recovers instead of propagating", async () => {
+    // spawn's declared type says E = never, but a defensive recovery must
+    // not rely on that promise holding for every future caller.
+    const failing = Effect.fail("boom") as unknown as Effect.Effect<{ sessionID: string; userMessageID: string }, never>
+    const result = await Effect.runPromise(recoverSpawnFailure(failing))
+    expect(result).toBeUndefined()
+  })
+
+  test("a successful spawn passes through untouched", async () => {
+    const ok = Effect.succeed({ sessionID: "ses_1", userMessageID: "msg_1" })
+    const result = await Effect.runPromise(recoverSpawnFailure(ok))
+    expect(result).toEqual({ sessionID: "ses_1", userMessageID: "msg_1" })
+  })
+
+  test("does NOT swallow genuine fiber interruption - the turn must still be able to stop", async () => {
+    const interrupted = Effect.interrupt as unknown as Effect.Effect<
+      { sessionID: string; userMessageID: string },
+      never
+    >
+    const exit = await Effect.runPromiseExit(recoverSpawnFailure(interrupted))
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
   })
 })
