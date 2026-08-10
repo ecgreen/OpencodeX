@@ -1,7 +1,7 @@
 # Question/Permission Card Redesign + Transcript Visibility Fixes
 
 Date: 2026-08-09 (evening session)
-Status: Draft — awaiting user review
+Status: Implemented 2026-08-09 (see docs/superpowers/plans/2026-08-09-safety-dock-and-transcript-visibility.md; live verification of partial-message streaming pending a backend restart)
 Session: `ses_0166d4791ffeTkk8gn6DyUQXwz` ("OpencodeX question/response widget review")
 
 This spec has two halves:
