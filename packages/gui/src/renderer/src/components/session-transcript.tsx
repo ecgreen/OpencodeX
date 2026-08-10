@@ -33,7 +33,7 @@ export type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
 export { groupTranscriptParts } from "../lib/transcript-grouping"
 
 /** Tools whose completed output is the deliverable, not a step along the way. */
-const KEEP_OPEN_WHEN_COMPLETE = new Set(["todowrite", "apply_patch"])
+const KEEP_OPEN_WHEN_COMPLETE = new Set(["todowrite", "apply_patch", "plan_exit"])
 
 export function activeTranscriptStreamingPartID(messages: MessageBundle[], running: boolean) {
   if (!running) return

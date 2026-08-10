@@ -6,6 +6,21 @@
   min-width: 0;
 }
 
+/* An ExitPlanMode plan is a deliverable: readable width, scrolls past 420px. */
+.tool-plan {
+  display: grid;
+  gap: var(--ds-space-2);
+  justify-items: start;
+  max-height: 420px;
+  overflow: auto;
+  padding: var(--ds-space-3);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-canvas);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-border-strong) transparent;
+}
+
 .tool-output {
   display: grid;
   gap: 6px;

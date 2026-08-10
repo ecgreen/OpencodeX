@@ -129,6 +129,7 @@ function toolHasRichDetails(tool: string, metadata: Record<string, unknown>, inp
     arrayValue(metadata.todos).length ||
     arrayValue(input.todos).length ||
     arrayValue(input.questions).length ||
+    stringValue(input.plan) ||
     stringValue(input.content),
   )
 }

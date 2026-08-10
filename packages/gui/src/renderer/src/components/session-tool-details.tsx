@@ -1,4 +1,5 @@
 import { Button } from "./ui"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import {
@@ -58,6 +59,17 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
         </Match>
         <Match when={props.tool === "question"}>
           <ToolQuestions input={props.input} metadata={props.metadata} />
+          <ToolOutput output={props.output} />
+        </Match>
+        <Match when={props.tool === "plan_exit"}>
+          <Show when={stringValue(props.input.plan)}>
+            {(plan) => (
+              <div class="tool-plan">
+                <Markdown text={plan()} />
+                <Button appearance="ghost" type="button" onClick={() => void copyFullToolText(plan())}>Copy plan</Button>
+              </div>
+            )}
+          </Show>
           <ToolOutput output={props.output} />
         </Match>
         <Match when={HARNESS_TASK_TOOLS.has(props.tool)}>

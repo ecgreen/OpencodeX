@@ -47,6 +47,11 @@ describe("GUI tool display helpers", () => {
     expect(shouldShowRawToolData("toolsearch", { query: "x" }, {})).toBe(false)
   })
 
+  test("plan_exit renders as a plan deliverable", () => {
+    expect(toolDisplayTitle("plan_exit", { plan: "# Plan" }, {})).toBe("Proposed plan")
+    expect(toolHasVisibleDetails("plan_exit", { plan: "# Plan" }, {}, "")).toBe(true)
+  })
+
   test("uses verb-first titles and reports patched file counts", () => {
     expect(toolDisplayTitle("webfetch", { url: "https://example.com/" }, {})).toBe("Fetch https://example.com/")
     expect(toolDisplayTitle("websearch", { query: "solid signals" }, {})).toBe('Search "solid signals"')
@@ -60,7 +65,7 @@ describe("GUI tool display helpers", () => {
   test("falls back to the streamed title, then a humanized tool id", () => {
     expect(toolDisplayTitle("github_create_issue", {}, {}, "running", "Creating issue #42")).toBe("Creating issue #42")
     expect(toolDisplayTitle("github_create_issue", {}, {}, "completed")).toBe("Github · create issue")
-    expect(toolDisplayTitle("plan_exit", {}, {})).toBe("Exit plan mode")
+    expect(toolDisplayTitle("plan_exit", {}, {})).toBe("Proposed plan")
     expect(humanizeToolTitle("lint")).toBe("Lint")
     // A registry title always wins over a streamed one, so titles stay stable.
     expect(toolDisplayTitle("read", { filePath: "README.md" }, {}, "running", "Reading...")).toBe("Read README.md")
