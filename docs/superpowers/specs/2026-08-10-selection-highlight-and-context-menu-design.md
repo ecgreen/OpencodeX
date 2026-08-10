@@ -13,6 +13,10 @@
 2. Right-clicking selected text or an editable field does nothing: Electron's
    main process never handles the `context-menu` event, so there is no default
    Cut/Copy/Paste anywhere in the app.
+3. When the assistant mentions a file path in the session transcript (e.g.
+   `docs/superpowers/specs/2026-08-10-foo-design.md`), it renders as inert
+   inline code. The user has to manually navigate the file workspace to view
+   it, even though the workspace can already open arbitrary paths.
 
 ## Scope
 
@@ -64,6 +68,35 @@ are out of scope — main window only.
   graph card shows nothing new — the existing in-app `CardContextMenu`
   (which calls `preventDefault`) keeps working untouched.
 
+### 3. Clickable file paths in the session transcript
+
+- Scope: inline `code` spans (`:not(pre) > code`) inside the session
+  transcript's rendered markdown. Code blocks, other panels, and the web UI
+  are untouched. The shared `packages/ui` Markdown component is NOT modified —
+  this is a GUI-side enhancement layered on top of its output (mirroring how
+  the component itself decorates URL-shaped inline code into external links).
+- Detection: a pure helper in `packages/gui/src/renderer/src/lib` that decides
+  whether an inline-code text is file-path-shaped: contains `/` (or `\`), no
+  whitespace, ends in a filename with an extension, and is not a URL
+  (`scheme://` prefixes are excluded — those stay external links). An optional
+  trailing `:line` / `:line:col` suffix is accepted and stripped from the
+  opened path.
+- Decoration: the transcript's text part wrapper walks the rendered markdown
+  and adds `data-file-link="<normalized path>"` to matching spans. Because the
+  Markdown component re-renders via morphdom while streaming, decoration
+  re-runs on content changes (MutationObserver on the markdown container, or
+  re-run in the same effect that owns the container).
+- Interaction: a delegated `click` handler on the transcript (the component
+  already knows its `sessionID`) — clicking a `[data-file-link]` span calls
+  `openSessionWorkspace(sessionID, { tab: "open", value: path, title })`, the
+  same existing bridge target the command palette and file explorer use. No
+  new open mechanism. Nonexistent paths behave however the workspace "open"
+  tab already handles them.
+- Styling: `[data-file-link]` gets the transcript link treatment (see
+  `role-editor-states.css`, which already styles `.transcript-shell a[href]`):
+  pointer cursor, accent underline on hover — enough affordance to read as
+  clickable without shouting.
+
 ## Testing
 
 Manual verification:
@@ -74,3 +107,8 @@ Manual verification:
 - Right-click: selected text (Copy works), an editable field (Cut/Copy/Paste
   states correct, Paste inserts), blank space (no native menu), a graph card
   (existing in-app menu unaffected).
+- File paths: an assistant message containing an inline-code repo path shows
+  it link-styled; clicking opens that file in the workspace "open" tab. A URL
+  in inline code still opens externally; paths inside fenced code blocks stay
+  inert. Path detection gets unit tests (path shapes, URLs, `:line` suffixes,
+  backslash paths).
