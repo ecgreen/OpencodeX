@@ -179,15 +179,16 @@
   font-size: 10px;
 }
 
-/* Always drops to its own line under the title, never between header slots. */
+/* Inline on the single-line header, truncating with an ellipsis; the full
+   error is visible when the row is expanded. */
 .part-error-preview {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1 0 100%;
+  flex: 0 1 auto;
   min-width: 0;
   margin-left: 0;
-  padding-left: 21px;
+  padding-left: 0;
   color: var(--ds-danger);
   font-size: 11px;
 }
