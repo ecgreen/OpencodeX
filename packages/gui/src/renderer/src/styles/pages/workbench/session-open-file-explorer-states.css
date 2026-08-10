@@ -10,13 +10,13 @@
 
 /* Ancestor guide lines, one per depth level, drawn in the gutter left of the
    indented row. The 12px period matches the indent step; the innermost line
-   lands on the row's left edge, under its parent's disclosure chevron. */
+   sits 4px left of the row's edge so the highlight doesn't touch it. */
 :is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:before {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(12px - (var(--depth) * 12px));
+  left: calc(8px - (var(--depth) * 12px));
   width: calc(var(--depth) * 12px);
   opacity: var(--depth-lines, 0);
   pointer-events: none;
