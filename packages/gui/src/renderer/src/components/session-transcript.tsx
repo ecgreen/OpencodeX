@@ -1,8 +1,9 @@
 import type { Part } from "@opencode-ai/sdk/v2/client"
-import { For, Match, Show, Switch, createMemo } from "solid-js"
+import { For, Match, Show, Switch, createMemo, onCleanup } from "solid-js"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import type { MessageBundle } from "../lib/session-api"
 import { autoOpenForStatus, createDisclosure, createMountedOnce } from "../lib/disclosure"
+import { observeTranscriptFileLinks } from "../lib/transcript-file-links"
 import type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
 import { isStaleRunningTool, toolGroupStatus, toolGroupSummary, toolGroupTitle } from "../lib/transcript-grouping"
 import {
@@ -180,7 +181,7 @@ function TextPartView(props: { part: Extract<Part, { type: "text" }>; streaming:
   const text = createMemo(() => props.part.synthetic || props.part.ignored ? "" : props.part.text.trim())
   return (
     <Show when={text()}>
-      <div class="part text">
+      <div class="part text" ref={(element) => onCleanup(observeTranscriptFileLinks(element))}>
         <Markdown text={text()} cacheKey={props.part.id} streaming={props.streaming} />
       </div>
     </Show>
