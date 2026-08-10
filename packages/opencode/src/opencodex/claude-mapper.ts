@@ -166,31 +166,32 @@ export function mapEvent(event: ClaudeEvent, state: MapperState, context: Mapper
       next.apiMessageID = stream.message.id
       return { writes, state: next }
     }
-    if (
-      stream.type === "content_block_delta" &&
-      typeof stream.index === "number" &&
-      isRecord(stream.delta) &&
-      stream.delta.type === "text_delta" &&
-      typeof stream.delta.text === "string" &&
-      next.apiMessageID
-    ) {
-      ensureMessage(writes, next, context)
-      const key = `text:${next.apiMessageID}:${stream.index}`
-      const partID = next.textParts.get(key) ?? context.nextPartID()
-      next.textParts.set(key, partID)
-      const text = (next.streamText.get(key) ?? "") + stream.delta.text
-      next.streamText.set(key, text)
-      writes.push({
-        kind: "part",
-        part: {
-          id: partID,
-          sessionID: context.sessionID,
-          messageID: next.messageID!,
-          type: "text",
-          text,
-          time: { start: context.now() },
-        },
-      })
+    if (stream.type === "content_block_delta" && typeof stream.index === "number" && isRecord(stream.delta) && next.apiMessageID) {
+      const delta =
+        stream.delta.type === "text_delta" && typeof stream.delta.text === "string"
+          ? { kind: "text" as const, prefix: "text", text: stream.delta.text }
+          : stream.delta.type === "thinking_delta" && typeof stream.delta.thinking === "string"
+            ? { kind: "reasoning" as const, prefix: "thinking", text: stream.delta.thinking }
+            : undefined
+      if (delta && delta.text) {
+        ensureMessage(writes, next, context)
+        const key = `${delta.prefix}:${next.apiMessageID}:${stream.index}`
+        const partID = next.textParts.get(key) ?? context.nextPartID()
+        next.textParts.set(key, partID)
+        const text = (next.streamText.get(key) ?? "") + delta.text
+        next.streamText.set(key, text)
+        writes.push({
+          kind: "part",
+          part: {
+            id: partID,
+            sessionID: context.sessionID,
+            messageID: next.messageID!,
+            type: delta.kind,
+            text,
+            time: { start: context.now() },
+          },
+        })
+      }
     }
     return { writes, state: next }
   }

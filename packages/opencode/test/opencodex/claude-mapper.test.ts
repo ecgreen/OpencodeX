@@ -150,6 +150,31 @@ describe("claude stream-json mapper", () => {
     expect(new Set(texts.map((part) => part.id)).size).toBe(1)
   })
 
+  test("thinking deltas build reasoning parts the final event reuses", () => {
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Weighing " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "options" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "thinking", thinking: "Weighing options" }] } },
+    ])
+    const reasoning = parts(writes).filter((part) => part.type === "reasoning")
+    expect(reasoning.length).toBeGreaterThan(1)
+    expect(reasoning.at(-1)).toMatchObject({ text: "Weighing options" })
+    expect(new Set(reasoning.map((part) => part.id)).size).toBe(1)
+  })
+
+  test("stripped thinking deltas still leave streamed reasoning in place", () => {
+    // Fable-style turns strip thinking from the final event (empty text +
+    // signature). The streamed content must not be erased by that final write.
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Real reasoning" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "thinking", thinking: "", signature: "sig" }] } },
+    ])
+    const reasoning = parts(writes).filter((part) => part.type === "reasoning")
+    expect(reasoning.at(-1)).toMatchObject({ text: "Real reasoning" })
+  })
+
   test("distinct api messages in one turn keep distinct text parts", () => {
     const { writes } = run([
       { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "First words" }] } },

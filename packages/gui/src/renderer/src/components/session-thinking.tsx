@@ -23,6 +23,18 @@ function stripMarkdownEmphasis(line: string) {
   return line.replace(/^#{1,6}\s+/, "").replace(/[*_`]+/g, "")
 }
 
+/**
+ * Some providers ship only a one-line thinking summary. When the header
+ * preview already shows the whole thought, an expander opens onto nothing new -
+ * render inline instead. Streaming blocks stay expandable: more may arrive.
+ */
+export function thinkingFitsInline(texts: string[], streaming: boolean) {
+  if (streaming || texts.length !== 1) return false
+  const lines = texts[0].split("\n").map((line) => line.trim()).filter(Boolean)
+  if (lines.length !== 1) return false
+  return stripMarkdownEmphasis(lines[0]).length <= PREVIEW_LENGTH
+}
+
 export function ThinkingGroupView(props: {
   item: Extract<DisplayPart, { type: "reasoning-group" }>
   showThinking: boolean
@@ -53,9 +65,21 @@ export function ThinkingGroupView(props: {
     store: chrome.disclosure,
   })
   const bodyMounted = createMountedOnce(disclosure.open)
+  const inline = createMemo(() => thinkingFitsInline(visibleParts().map((part) => part.text), streaming()))
 
   return (
     <Show when={props.showThinking && visibleParts().length > 0}>
+      <Show when={!inline()} fallback={
+        <div class="part thinking-block thinking-inline" data-kind="thinking" data-status="completed">
+          <PartHeader
+            static
+            icon="brain"
+            title="Thinking"
+            meta={preview()}
+            status={duration() ? <span class="part-duration">{duration()}</span> : undefined}
+          />
+        </div>
+      }>
       <details
         class="part thinking-block"
         data-kind="thinking"
@@ -91,6 +115,7 @@ export function ThinkingGroupView(props: {
           </div>
         </Show>
       </details>
+      </Show>
     </Show>
   )
 }
