@@ -1,5 +1,6 @@
 import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { Show, createSignal } from "solid-js"
+import type { MessageBundle } from "../../lib/session-api"
 import { SessionSafetyDock } from "../session-safety-dock"
 import { Button, useToast } from "../ui"
 import { Section } from "./lab-shared"
@@ -98,6 +99,46 @@ function mockQuestions(): QuestionRequest[] {
   ] as unknown as QuestionRequest[]
 }
 
+/**
+ * The question card quotes the model's accompanying words and links its plan;
+ * this mock stands in for the live transcript so the lab exercises both.
+ */
+function mockMessages(): MessageBundle[] {
+  return [
+    {
+      info: { id: "msg_lab_assistant", role: "assistant", sessionID: "ses_lab", time: { created: 1 } },
+      parts: [
+        {
+          id: "prt_lab_plan",
+          sessionID: "ses_lab",
+          messageID: "msg_lab_assistant",
+          type: "tool",
+          callID: "call_lab_plan",
+          tool: "plan_exit",
+          state: {
+            status: "completed",
+            input: {
+              plan: "## Auth rollout plan\n\n1. Mint refresh tokens in `createSession`\n2. Audit the event\n3. Gate the rollout behind a flag",
+            },
+            output: "",
+            title: "Proposed plan",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+        },
+        {
+          id: "prt_lab_text",
+          sessionID: "ses_lab",
+          messageID: "msg_lab_assistant",
+          type: "text",
+          text: "I compared three approaches; **OAuth** keeps refresh handling server-side. The plan above covers the rollout - pick what fits.",
+          time: { start: 3, end: 4 },
+        },
+      ],
+    } as unknown as MessageBundle,
+  ]
+}
+
 function SafetyStage(props: { permissions: () => PermissionRequest[]; questions: () => QuestionRequest[] }) {
   const toast = useToast()
   const [permissions, setPermissions] = createSignal(props.permissions())
@@ -145,7 +186,7 @@ function SafetyStage(props: { permissions: () => PermissionRequest[]; questions:
           <SessionSafetyDock
             permissions={permissions()}
             questions={questions()}
-            messages={[]}
+            messages={mockMessages()}
             replyPermission={replyPermission}
             replyQuestion={replyQuestion}
             rejectQuestion={rejectQuestion}
@@ -164,14 +205,14 @@ export function LabSafety() {
     <>
       <Section
         title="Permissions only"
-        detail="Three queued approvals: a shell command, an edit with its diff (Expand opens the full review), and a web fetch with the URL in the body. The pill reads 1 of 3. Keyboard: 1 allow once, 2 always allow, 3 reject, F expand, arrows page."
+        detail="Three queued approvals with the slim one-line header. The title sits in the body; the X (or 3/Escape) opens a reject confirm. Keyboard: 1 allow once, 2 always allow, F expand, arrows page."
       >
         <SafetyStage permissions={mockPermissions} questions={() => []} />
       </Section>
 
       <Section
         title="Questions only"
-        detail="One request with two questions: a single-select (auto-advances on choice) and a multi-select. Each question is a pill step; selections persist while paging and Reply submits once everything is answered."
+        detail="One request with two questions and no footer: answers are tiles, a single-select choice pulses then advances, and the selection that completes the request auto-submits. Multi-select shows an inline Next / Send answers chip. The context block quotes the model's words and links its plan; the X (or Escape) opens a dismiss confirm."
       >
         <SafetyStage permissions={() => []} questions={mockQuestions} />
       </Section>
