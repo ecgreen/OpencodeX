@@ -1,5 +1,6 @@
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import type { SessionSchema } from "@opencode-ai/core/session/schema"
+import type { ConversationTask } from "./claude-driver-metadata"
 
 type SessionID = typeof SessionSchema.ID.Type
 type MessageID = typeof SessionLegacy.MessageID.Type
@@ -86,15 +87,18 @@ export type MapperState = {
   resumeRejected?: boolean
   authFailed?: boolean
   finished?: boolean
+  /** Claude harness task tools (TaskCreate/TaskUpdate) projected as todos. */
+  tasks: Map<string, { subject: string; status: string }>
 }
 
-export function initialState(input: { modelID?: string; billed?: MapperState["billed"] } = {}): MapperState {
+export function initialState(input: { modelID?: string; billed?: MapperState["billed"]; tasks?: ConversationTask[] } = {}): MapperState {
   return {
     modelID: input.modelID ?? "claude-code",
     billed: input.billed ?? { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     toolParts: new Map(),
     textParts: new Map(),
     streamText: new Map(),
+    tasks: new Map((input.tasks ?? []).map((task) => [task.id, { subject: task.subject, status: task.status }])),
   }
 }
 
@@ -148,7 +152,7 @@ export function normalizeToolInput(tool: string, input: Record<string, unknown>)
 
 export function mapEvent(event: ClaudeEvent, state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
 
   if (event.type === "system" && event.subtype === "init") {
     if (typeof event.session_id === "string") next.claudeSessionID = event.session_id
@@ -230,7 +234,7 @@ export function finalizeAbandonedTurn(
   input: { reason: string; error?: string },
 ): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
   if (!next.messageID) return { writes, state: next }
   const now = context.now()
   for (const [callID, pending] of next.toolParts) {
@@ -263,7 +267,7 @@ export function finalizeAbandonedTurn(
 /** Opens an assistant message without any Claude event, for failure turns. */
 export function startTurn(state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
   ensureMessage(writes, next, context)
   return { writes, state: next }
 }
@@ -373,6 +377,35 @@ function completedMetadata(tool: string, output: string): Record<string, unknown
   return { preview, ...(lines.length > READ_PREVIEW_LINES ? { truncated: true } : {}) }
 }
 
+export function taskRegistryTodos(state: MapperState) {
+  return [...state.tasks.values()].map((task) => ({ content: task.subject, status: task.status }))
+}
+
+/** Applies a completed task tool to the registry. Returns the projected todos when the registry changed. */
+function applyTaskTool(tool: string, input: Record<string, unknown>, output: string, state: MapperState) {
+  if (tool === "taskcreate") {
+    const parsed = /Task #(\w+) created/.exec(output)?.[1]
+    const id = parsed ?? `local-${state.tasks.size + 1}`
+    const subject = typeof input.subject === "string" && input.subject ? input.subject : "Task"
+    state.tasks.set(id, { subject, status: "pending" })
+    return taskRegistryTodos(state)
+  }
+  if (tool === "taskupdate") {
+    const id = typeof input.taskId === "string" ? input.taskId : typeof input.taskId === "number" ? String(input.taskId) : undefined
+    const current = id ? state.tasks.get(id) : undefined
+    if (!id || !current) return undefined
+    const status = typeof input.status === "string" && input.status ? input.status : current.status
+    if (status === "deleted") state.tasks.delete(id)
+    else
+      state.tasks.set(id, {
+        subject: typeof input.subject === "string" && input.subject ? input.subject : current.subject,
+        status,
+      })
+    return taskRegistryTodos(state)
+  }
+  return undefined
+}
+
 function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
   const callID = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined
   if (!callID) return
@@ -382,6 +415,7 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
   const output = readResultText(block.content)
   const end = context.now()
   const input = normalizeToolInput(pending.tool, context.decidedInput?.(callID) ?? pending.input)
+  const todos = block.is_error ? undefined : applyTaskTool(pending.tool, input, output, state)
   writes.push({
     kind: "part",
     part: {
@@ -398,11 +432,12 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
             input,
             output,
             title: pending.tool,
-            metadata: completedMetadata(pending.tool, output),
+            metadata: { ...completedMetadata(pending.tool, output), ...(todos ? { todos } : {}) },
             time: { start: pending.start, end },
           },
     },
   })
+  if (todos) writes.push({ kind: "todos", todos })
 }
 
 function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperState, context: MapperContext) {

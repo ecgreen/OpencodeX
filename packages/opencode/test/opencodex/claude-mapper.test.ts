@@ -27,8 +27,21 @@ function context(): MapperContext {
   }
 }
 
-function run(events: ClaudeEvent[], ctx = context()) {
-  let state = initialState()
+function run(events: ClaudeEvent[], initialStateOrCtx: MapperState | MapperContext | undefined = undefined) {
+  let state: MapperState
+  let ctx: MapperContext
+
+  // Determine if the second argument is a state or context
+  if (initialStateOrCtx && "toolParts" in initialStateOrCtx) {
+    // It's a state
+    state = initialStateOrCtx
+    ctx = context()
+  } else {
+    // It's a context or undefined
+    state = initialState()
+    ctx = (initialStateOrCtx as MapperContext) || context()
+  }
+
   const writes: SessionWrite[] = []
   for (const event of events) {
     const result = mapEvent(event, state, ctx)
@@ -328,6 +341,63 @@ describe("claude stream-json mapper", () => {
 
     const malformed = run([{ type: "assistant", message: { id: "m1", content: "plain string" } }])
     expect(parts(malformed.writes).map((part) => part.type)).toEqual(["step-start", "text"])
+  })
+})
+
+describe("task tools feed the todo system", () => {
+  function toolTurn(tool: string, input: Record<string, unknown>, resultText: string) {
+    return [
+      { type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: `call_${tool}`, name: tool, input }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: `call_${tool}`, content: [{ type: "text", text: resultText }] }] } },
+    ] as ClaudeEvent[]
+  }
+
+  test("taskcreate registers a pending todo and emits the todos write", () => {
+    const { writes } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login", description: "d" }, "Task #1 created successfully: Fix login"),
+    ])
+    const todos = writes.filter((w) => w.kind === "todos").at(-1)
+    expect(todos).toMatchObject({ kind: "todos", todos: [{ content: "Fix login", status: "pending" }] })
+  })
+
+  test("taskupdate changes status; deleted removes; unknown id is ignored", () => {
+    const { writes } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "in_progress" }, "Updated task #1 status"),
+      ...toolTurn("TaskUpdate", { taskId: "99", status: "completed" }, "no such task"),
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "deleted" }, "deleted"),
+    ])
+    const lists = writes.filter((w) => w.kind === "todos").map((w) => w.todos)
+    expect(lists.at(0)).toEqual([{ content: "Fix login", status: "pending" }])
+    expect(lists.at(1)).toEqual([{ content: "Fix login", status: "in_progress" }])
+    expect(lists.at(-1)).toEqual([])
+    // the unknown-id update emitted no todos write
+    expect(lists.length).toBe(3)
+  })
+
+  test("taskcreate result without a parseable id falls back to a local id", () => {
+    const { writes, state } = run([
+      ...toolTurn("TaskCreate", { subject: "A" }, "ok"),
+      ...toolTurn("TaskCreate", { subject: "B" }, "ok"),
+    ])
+    expect([...state.tasks.keys()]).toEqual(["local-1", "local-2"])
+  })
+
+  test("completed task-tool parts carry metadata.todos for the transcript widget", () => {
+    const { writes } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
+    ])
+    const part = writes.filter((w) => w.kind === "part").map((w) => w.part).findLast((p) => p.type === "tool")
+    expect(part?.state).toMatchObject({ status: "completed", metadata: { todos: [{ content: "Fix login", status: "pending" }] } })
+  })
+
+  test("tasks seed from a prior turn's registry", () => {
+    const state = initialState({ tasks: [{ id: "1", subject: "Fix login", status: "in_progress" }] })
+    const { writes } = run([
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "completed" }, "Updated"),
+    ], state)
+    const todos = writes.filter((w) => w.kind === "todos").at(-1)
+    expect(todos?.todos).toEqual([{ content: "Fix login", status: "completed" }])
   })
 })
 

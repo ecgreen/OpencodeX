@@ -8,6 +8,8 @@ export const METADATA_KEY = "claudeCode"
 
 export type AuthState = "ready" | "needs-login"
 
+export type ConversationTask = { id: string; subject: string; status: string }
+
 export type Conversation = {
   /**
    * The conversation id Claude issued, reused across turns to resume in place.
@@ -21,10 +23,15 @@ export type Conversation = {
   authState?: AuthState
   /** Cumulative spend Claude has reported, so per-turn cost is a delta. */
   billed?: { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
+  tasks?: ConversationTask[]
 }
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isTask(value: unknown): value is ConversationTask {
+  return record(value) && typeof value.id === "string" && typeof value.subject === "string" && typeof value.status === "string"
 }
 
 export function readConversation(metadata: Record<string, unknown> | undefined): Conversation | undefined {
@@ -37,6 +44,7 @@ export function readConversation(metadata: Record<string, unknown> | undefined):
     ...(typeof value.modelID === "string" ? { modelID: value.modelID } : {}),
     ...(value.authState === "ready" || value.authState === "needs-login" ? { authState: value.authState } : {}),
     ...(isBilled(value.billed) ? { billed: value.billed } : {}),
+    ...(Array.isArray(value.tasks) ? { tasks: value.tasks.filter(isTask) } : {}),
   }
 }
 

@@ -138,6 +138,7 @@ export const layer = Layer.effect(
       let live = ClaudeMapper.initialState({
         modelID: conversation?.modelID,
         billed: conversation?.billed,
+        tasks: conversation?.tasks,
       })
 
       const executable = yield* Effect.promise(() => ClaudeTransport.resolveClaudeExecutable())
@@ -215,6 +216,7 @@ export const layer = Layer.effect(
               modelID: live.modelID,
               billed: live.billed,
               ...(live.authFailed ? { authState: "needs-login" as const } : { authState: "ready" as const }),
+              ...(live.tasks.size > 0 ? { tasks: [...live.tasks].map(([id, task]) => ({ id, ...task })) } : {}),
             }),
           })
           .pipe(Effect.ignore)
