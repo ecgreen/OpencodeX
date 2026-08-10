@@ -8,6 +8,7 @@ import { EventTable } from "@opencode-ai/core/event/sql"
 import { asc } from "drizzle-orm"
 import { and } from "drizzle-orm"
 import { eq } from "drizzle-orm"
+import { inArray } from "drizzle-orm"
 import { lte } from "drizzle-orm"
 import { not } from "drizzle-orm"
 import { or } from "drizzle-orm"
@@ -15,6 +16,7 @@ import { Effect, Scope } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { HistoryPayload, ReplayPayload, SessionPayload } from "../groups/sync"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "server.sync" })
@@ -75,15 +77,31 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
     })
 
     const history = Effect.fn("SyncHttpApi.history")(function* (ctx: { payload: typeof HistoryPayload.Type }) {
-      const exclude = Object.entries(ctx.payload)
+      const exclude = Object.entries(ctx.payload.state)
+
+      // A hub can host many projects in one database. Scope the journal to
+      // sessions that belong to the requesting directory so unrelated projects
+      // sharing the same hub never cross-contaminate each other's mirrors.
+      const scoped = yield* db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(eq(SessionTable.directory, ctx.payload.directory))
+        .all()
+        .pipe(Effect.orDie)
+      const scopedIDs = scoped.map((row) => row.id)
+      if (scopedIDs.length === 0) return []
+
+      const conditions = [
+        exclude.length > 0
+          ? not(or(...exclude.map(([id, seq]) => and(eq(EventTable.aggregate_id, id), lte(EventTable.seq, seq))))!)
+          : undefined,
+        inArray(EventTable.aggregate_id, scopedIDs),
+      ].filter((cond): cond is NonNullable<typeof cond> => cond !== undefined)
+
       return yield* db
         .select()
         .from(EventTable)
-        .where(
-          exclude.length > 0
-            ? not(or(...exclude.map(([id, seq]) => and(eq(EventTable.aggregate_id, id), lte(EventTable.seq, seq))))!)
-            : undefined,
-        )
+        .where(and(...conditions))
         .orderBy(asc(EventTable.seq))
         .all()
         .pipe(Effect.orDie)

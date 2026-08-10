@@ -18,6 +18,9 @@ import { Effect, Option, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
+import { Workspace } from "@/control-plane/workspace"
+import * as InstanceState from "@/effect/instance-state"
+import * as Log from "@opencode-ai/core/util/log"
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
@@ -42,9 +45,12 @@ const tryParseJson = (text: string) =>
     catch: () => new HttpApiError.BadRequest({}),
   })
 
+const WARP_TIMEOUT = "5 seconds" as const
+
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
+    const workspace = yield* Workspace.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
     const compactSvc = yield* SessionCompaction.Service
@@ -54,6 +60,27 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const statusSvc = yield* SessionStatus.Service
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
+
+    const log = Log.create({ service: "server.session" })
+
+    // Best-effort mirror: when a hub workspace is configured for this project,
+    // warp newly created sessions up to it so they become the hub's single
+    // source of truth. Never block or fail session creation — a flaky hub
+    // should degrade to a normal local session.
+    const warpToHub = Effect.fn("SessionHttpApi.warpToHub")(function* (info: Session.Info) {
+      if (info.workspaceID) return
+      const instance = yield* InstanceState.context
+      yield* workspace
+        .warpToHub(instance.project, info.id)
+        .pipe(
+          Effect.timeout(WARP_TIMEOUT),
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              log.warn("auto warp to hub skipped", { sessionID: info.id, error: String(error) })
+            }),
+          ),
+        )
+    })
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       return yield* session.list({
@@ -155,7 +182,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
-      return yield* session.create(ctx.payload)
+      const created = yield* session.create(ctx.payload)
+      yield* warpToHub(created)
+      return created
     })
 
     const createRaw = Effect.fn("SessionHttpApi.createRaw")(function* (ctx: {

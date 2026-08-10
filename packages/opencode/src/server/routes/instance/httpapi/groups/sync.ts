@@ -25,7 +25,10 @@ export const ReplayResponse = Schema.Struct({
 export const SessionPayload = Schema.Struct({
   sessionID: SessionID,
 })
-export const HistoryPayload = Schema.Record(Schema.String, NonNegativeInt)
+export const HistoryPayload = Schema.Struct({
+  directory: Schema.String,
+  state: Schema.Record(Schema.String, NonNegativeInt),
+})
 export const HistoryEvent = Schema.Struct({
   id: Schema.String,
   aggregate_id: Schema.String,
@@ -89,7 +92,7 @@ export const SyncApi = HttpApi.make("sync")
             identifier: "sync.history.list",
             summary: "List sync events",
             description:
-              "List sync events for all aggregates. Keys are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history.",
+              "List sync events scoped to a directory. Keys in `state` are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history.",
           }),
         ),
       )

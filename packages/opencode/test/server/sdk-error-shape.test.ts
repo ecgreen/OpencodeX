@@ -63,7 +63,10 @@ describe("v2 SDK error shape", () => {
 
     let caught: unknown
     try {
-      await sdk.sync.history.list({ body: { aggregate: -1 } as any }, { throwOnError: true })
+      await sdk.sync.history.list(
+        { body_directory: tmp.path, state: { aggregate: -1 } as any },
+        { throwOnError: true },
+      )
     } catch (e) {
       caught = e
     }

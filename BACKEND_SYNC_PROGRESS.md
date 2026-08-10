@@ -1,6 +1,6 @@
 # Backend Synchronization Progress
 
-Last updated: 2026-07-29
+Last updated: 2026-08-10
 
 ## Goal
 
@@ -249,6 +249,29 @@ Relevant files:
 - GUI request recovery buffers SDK request bodies before changing coordinator origins. Chromium no longer receives a local HTTP/1 streaming upload with `duplex: half`, which previously rejected prompt POSTs as `Failed to fetch` before they reached the backend.
 - OpenAI no longer receives an implicit 10-second response-header timeout. Slow valid model starts were being aborted as `MessageAbortedError`, so both GUI and TUI displayed `interrupted`; response-header timeouts remain available as an explicit provider option.
 - Added regressions for TUI batch delivery, lease replacement scanning, GUI sidecar recovery, reconnect-warning gating, failed prompt admission, and POST body/auth preservation across sidecar recovery.
+
+### Hub workspace mirror and per-directory sync scoping
+
+- Added a `hub` section to `opencode.json` (`url`, optional `username`/`password`), with `OPENCODE_HUB_URL` / `OPENCODE_HUB_PASSWORD` env overrides; the username/password fall back to the server auth defaults. Schema annotations flow into the auto-generated config reference.
+- Added a builtin `hub` workspace adapter: a project configured with a hub URL lists its remote workspaces through the existing `syncList` discovery (zero extra bootstrap), stores the resolved target in the workspace's persisted `extra`, and resolves to a `{ type: "remote", url, headers }` target so existing workspace routing proxies sessions to the hub.
+- Scoped `/sync/history` to a directory. The request payload is now `{ directory, state }` (was `state` with directory as a query param); events are filtered to aggregates that belong to the requesting directory, and `[]` is returned when the directory has no sessions. This lets one hub host multiple projects without leaking session events across them.
+- Regenerated the JavaScript SDK (`sync.history.list` now carries `body_directory` + `state`), and updated the CLI SDK error-shape and HTTP sync tests to the new payload.
+- Added `Workspace.Service.warpToHub`: when a session is created over HTTP in a project that has a `hub` workspace, the session is warped into that workspace immediately (`copyChanges: false`, replay + steal), so GUI-created sessions auto-mirror to the hub. The warp is best-effort and bounded (5s timeout): a flaky hub degrades to a normal local session instead of failing session creation.
+- Added the `hub` adapter and `warpToHub` coverage in the control-plane adapter/workspace suites and the per-directory scoping regression in the HTTP sync suite.
+
+Relevant files:
+
+- `packages/opencode/src/config/hub.ts`
+- `packages/opencode/src/control-plane/adapters/hub.ts`
+- `packages/opencode/src/control-plane/adapters/index.ts`
+- `packages/opencode/src/control-plane/workspace.ts`
+- `packages/opencode/src/server/routes/instance/httpapi/groups/sync.ts`
+- `packages/opencode/src/server/routes/instance/httpapi/handlers/sync.ts`
+- `packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`
+- `packages/sdk/js/src/v2/gen/{sdk,types}.gen.ts`
+- `packages/opencode/test/control-plane/{adapters,workspace}.test.ts`
+- `packages/opencode/test/server/httpapi-sync.test.ts`
+- `packages/opencode/test/server/sdk-error-shape.test.ts`
 
 ## Verification Completed
 
