@@ -298,6 +298,20 @@ function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: M
   }
 }
 
+const READ_PREVIEW_LINES = 20
+
+/**
+ * Native reads ship a head-of-file preview in metadata, which is what makes the
+ * transcript row worth expanding. The Claude CLI sends none, so synthesize one
+ * from the tool output.
+ */
+function completedMetadata(tool: string, output: string): Record<string, unknown> {
+  if (tool !== "read" || !output.trim()) return {}
+  const lines = output.split("\n")
+  const preview = lines.slice(0, READ_PREVIEW_LINES).join("\n")
+  return { preview, ...(lines.length > READ_PREVIEW_LINES ? { truncated: true } : {}) }
+}
+
 function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
   const callID = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined
   if (!callID) return
@@ -323,7 +337,7 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
             input,
             output,
             title: pending.tool,
-            metadata: {},
+            metadata: completedMetadata(pending.tool, output),
             time: { start: pending.start, end },
           },
     },

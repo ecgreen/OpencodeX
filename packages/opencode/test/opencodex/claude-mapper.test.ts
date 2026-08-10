@@ -121,6 +121,21 @@ describe("claude stream-json mapper", () => {
     })
   })
 
+  test("read results carry a preview so the transcript expander has content", () => {
+    const output = Array.from({ length: 30 }, (_, i) => `${i + 1}\tline ${i + 1}`).join("\n")
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: { id: "m1", content: [{ type: "tool_use", id: "call_r", name: "Read", input: { file_path: "C:/repo/a.ts" } }] },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "call_r", content: output }] } },
+    ])
+    const tool = parts(writes).filter((part) => part.type === "tool").at(-1)
+    if (tool?.type !== "tool" || tool.state.status !== "completed") throw new Error("expected completed tool part")
+    expect(String(tool.state.metadata?.preview).split("\n")).toHaveLength(20)
+    expect(tool.state.metadata?.truncated).toBe(true)
+  })
+
   test("marks failed tool results as errors", () => {
     const { writes } = run([
       {
