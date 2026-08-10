@@ -32,36 +32,12 @@
   transform: translate(0);
 }
 
-.session-side-file-list button.selected {
-  background: var(--element);
-}
-
-.session-side-file-list button.deleted .session-side-file-name strong {
+/* Hover/selected/focus states come from the shared workbench-file-row rules
+   (session-open-file-explorer-states.css); only the git-specific deleted
+   treatment lives here. */
+.session-side-file-list .workbench-file-row.deleted > span:not(.workbench-tree-spacer) {
   color: var(--muted);
   text-decoration: line-through;
-}
-
-.session-side-file-list button:hover {
-  background: var(--element);
-}
-
-.session-side-file-list button:focus-visible {
-  background: var(--element);
-}
-
-.session-side-file-list button.directory.expanded .session-side-disclosure:after {
-  content: "";
-  position: absolute;
-  top: 13px;
-  bottom: -6px;
-  left: 50%;
-  width: 1px;
-  background: color-mix(in srgb,var(--border-subtle) 58%,transparent);
-  transform: translate(-.5px);
-}
-
-.session-side-tree-guides span.active {
-  display: block;
 }
 
 .session-side-patch header:hover {
