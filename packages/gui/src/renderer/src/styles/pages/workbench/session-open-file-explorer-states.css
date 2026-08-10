@@ -37,7 +37,6 @@
 
 :is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row.selected {
   background: linear-gradient(90deg,color-mix(in srgb,var(--secondary) 18%,transparent),transparent 70%),color-mix(in srgb,var(--element) 82%,var(--secondary) 10%);
-  box-shadow: inset 3px 0 color-mix(in srgb,var(--secondary) 78%,white 4%);
 }
 
 :is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:not(.directory)>.icon {
