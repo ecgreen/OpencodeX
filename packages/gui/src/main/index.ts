@@ -21,6 +21,7 @@ import { validString } from "./ipc-validation.js"
 import { MAIN_PERFORMANCE_MILESTONES, markMainPerformance } from "./performance.js"
 import { loopbackSidecarURL } from "./sidecar-connection.js"
 import { createSidecarLifecycle } from "./sidecar-lifecycle.js"
+import { attachEditContextMenu } from "./context-menu.js"
 
 markMainPerformance(MAIN_PERFORMANCE_MILESTONES.bootstrap)
 const isDev = !app.isPackaged
@@ -176,6 +177,7 @@ async function createWindow() {
     event.preventDefault()
     openExternalURL(url)
   })
+  attachEditContextMenu(window.webContents)
 
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.rendererLoadStarted)
   if (isDev) {
