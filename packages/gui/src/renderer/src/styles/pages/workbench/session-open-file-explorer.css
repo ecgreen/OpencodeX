@@ -129,15 +129,6 @@
   font-size: 13px;
 }
 
-.session-open-file-explorer .workbench-search-results {
-  max-height: 142px;
-  overflow: auto;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-  background: color-mix(in srgb,var(--bg) 72%,transparent);
-}
-
 .session-open-file-explorer .workbench-tree {
   min-height: 0;
   overflow: auto;
@@ -185,13 +176,6 @@
 :is(.session-open-file-explorer, .session-side-file-list) .workbench-tree-spacer {
   width: 18px;
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
-}
-
-.session-open-file-explorer .workbench-search-row {
-  min-height: 31px;
-  border-radius: 7px;
-  padding: 5px 8px;
-  font-size: 13px;
 }
 
 /* Loading placeholder for the file pane. Only this area swaps while a file is

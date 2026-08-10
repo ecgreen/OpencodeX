@@ -40,6 +40,9 @@ export function createSessionSideFileController(input: {
   const [busy, setBusy] = createSignal(false)
   const [filesByPath, setFilesByPath] = createSignal<Record<string, FileNode[]>>({})
   const [expandedFolders, setExpandedFolders] = createSignal<Set<string>>(new Set())
+  // Folders the user collapsed while a filter auto-expanded them. Cleared on
+  // every filter change so each new query re-reveals its matches fresh.
+  const [collapsedFolders, setCollapsedFolders] = createSignal<Set<string>>(new Set())
   const [filter, setFilter] = createSignal("")
   const [matches, setMatches] = createSignal<FileNode[]>([])
   const [searchState, setSearchState] = createSignal<"idle" | "loading" | "error">("idle")
@@ -79,7 +82,9 @@ export function createSessionSideFileController(input: {
     root: filesByPath()[""] ?? [],
     children: filesByPath(),
     expanded: expandedFolders(),
+    collapsed: collapsedFolders(),
     filter: filter(),
+    matches: matches(),
   }))
   const external = createSessionSideFileExternal({
     gui: input.gui,
@@ -104,6 +109,7 @@ export function createSessionSideFileController(input: {
     setFilesByPath({})
     setBusy(false)
     setExpandedFolders(new Set<string>())
+    setCollapsedFolders(new Set<string>())
     setFilter("")
     setMatches([])
     setSearchState(directory ? "idle" : "error")
@@ -223,11 +229,22 @@ export function createSessionSideFileController(input: {
     }
   }
 
-  async function toggleFolder(file: FileNode) {
-    if (expandedFolders().has(file.path)) {
+  function updateFilter(value: string) {
+    setCollapsedFolders(new Set<string>())
+    setFilter(value)
+  }
+
+  // `expandedNow` is the rendered state: while filtering, folders auto-expand
+  // without being in expandedFolders, so membership alone cannot tell whether
+  // this click should collapse or expand.
+  async function toggleFolder(file: FileNode, expandedNow?: boolean) {
+    const isExpanded = expandedNow ?? (expandedFolders().has(file.path) && !collapsedFolders().has(file.path))
+    if (isExpanded) {
       setExpandedFolders((current) => new Set([...current].filter((path) => path !== file.path)))
+      setCollapsedFolders((current) => new Set([...current, file.path]))
       return
     }
+    setCollapsedFolders((current) => new Set([...current].filter((path) => path !== file.path)))
     setExpandedFolders((current) => new Set([...current, file.path]))
     if (filesByPath()[file.path] === undefined) await refresh(file.path)
   }
@@ -235,7 +252,7 @@ export function createSessionSideFileController(input: {
   async function openExplorerFile(path: string) {
     const target = workbenchPathKey(path)
     if (!target) return
-    setFilter("")
+    updateFilter("")
     const identity = openTabFileIdentity({ path: target, directory: input.directory() })
     const existing = input.tabs().find((tab) => tab.kind === "file" && openTabFileIdentity(tab, input.directory()) === identity)
     if (existing) {
@@ -345,7 +362,7 @@ export function createSessionSideFileController(input: {
   }
 
   return {
-    busy, filter, setFilter, matches, searchState, rows, openExplorer, openInActiveTab, closeExplorer, toggleFolder,
+    busy, filter, setFilter: updateFilter, matches, searchState, rows, openExplorer, openInActiveTab, closeExplorer, toggleFolder,
     openExplorerFile, openFile, saveActiveFile, openDefinition: definition.open, loadHover: definition.hover, loadCompletion: definition.completion, navigation: definition.navigation,
     reloadExternalFile: external.reload, keepLocalChanges: external.keepLocal,
     discardActiveChanges, cancelTabs,

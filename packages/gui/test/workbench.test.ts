@@ -698,6 +698,46 @@ describe("Workbench helpers", () => {
     ])
   })
 
+  test("keeps a folder collapsed while filtering when the user collapsed it", () => {
+    const rows = flattenWorkbenchFileTree({
+      root: [
+        { name: "src", path: "src", absolute: "C:/repo/src", type: "directory", ignored: false },
+      ],
+      children: {
+        src: [
+          { name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false },
+        ],
+      },
+      expanded: new Set<string>(),
+      collapsed: new Set(["src"]),
+      filter: "app",
+    })
+
+    expect(rows.map((row) => [row.node.path, row.expanded])).toEqual([
+      ["src", false],
+    ])
+  })
+
+  test("reveals project search matches inside folders that were never loaded", () => {
+    const rows = flattenWorkbenchFileTree({
+      root: [
+        { name: "src", path: "src", absolute: "C:/repo/src", type: "directory", ignored: false },
+      ],
+      children: {},
+      expanded: new Set<string>(),
+      filter: "store",
+      matches: [
+        { name: "store.ts", path: "src/lib/store.ts", absolute: "C:/repo/src/lib/store.ts", type: "file", ignored: false },
+      ],
+    })
+
+    expect(rows.map((row) => [row.node.path, row.depth, row.expanded, row.loaded])).toEqual([
+      ["src", 0, true, true],
+      ["src/lib", 1, true, true],
+      ["src/lib/store.ts", 2, false, true],
+    ])
+  })
+
   test("ranks direct open-file options from loaded tree and search matches", () => {
     const options = workbenchOpenFileOptions({
       root: [

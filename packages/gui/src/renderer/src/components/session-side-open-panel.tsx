@@ -308,11 +308,10 @@ export function SessionSideOpenPanel(props: {
                 filter={files.filter()}
                 setFilter={files.setFilter}
                 searchState={files.searchState()}
-                matches={files.matches()}
                 rows={files.rows()}
                 loading={files.busy()}
                 openPath={activeTab()?.path ?? ""}
-                toggleFolder={(file) => void files.toggleFolder(file)}
+                toggleFolder={(file, expanded) => void files.toggleFolder(file, expanded)}
                 openFile={openFromExplorer}
                 fileStatus={fileStatus}
                 close={closeExplorerPane}

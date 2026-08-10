@@ -21,7 +21,7 @@ test("provides TSX hover and completion from a hoisted dependency", async ({ pag
   await page.getByRole("button", { name: "Open side panel" }).click()
   await page.getByRole("button", { name: "Open file" }).click()
   const search = page.getByRole("searchbox", { name: "Filter files" })
-  const result = page.locator(".workbench-search-row", { hasText: "app.tsx" })
+  const result = page.locator(".workbench-file-row", { hasText: "app.tsx" })
   await expect(async () => {
     await search.fill("app.tsx")
     await expect(result).toBeVisible({ timeout: 2_000 })
