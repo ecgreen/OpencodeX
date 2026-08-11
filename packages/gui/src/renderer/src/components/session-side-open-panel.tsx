@@ -343,10 +343,7 @@ export function SessionSideOpenPanel(props: {
                     tab={activeTab()}
                     diagnostics={diagnostics}
                     navigation={files.navigation()}
-                    change={(value) => {
-                      const tab = activeTab()
-                      if (tab && !tab.readOnly) updateOpenTab(tab.id, { text: value })
-                    }}
+                    change={(value) => activeTab() && !activeTab()?.readOnly && updateOpenTab(activeTab()?.id ?? "", { text: value })}
                     save={() => void files.saveActiveFile()}
                     definition={(position) => void files.openDefinition(position)}
                     hover={files.loadHover}

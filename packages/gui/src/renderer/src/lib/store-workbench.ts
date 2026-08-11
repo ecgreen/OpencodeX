@@ -343,11 +343,11 @@ export async function togglePlugin(gui: GuiClient, input: { id: string; enabled:
 async function pluginApi<T>(gui: GuiClient, pathname: string, init: RequestInit = {}, directory?: string): Promise<T> {
   const url = new URL(pathname, gui.url)
   if (directory || gui.directory) url.searchParams.set("directory", directory || gui.directory)
-  const headers = new Headers({
+  const headers = {
     ...(init.body === undefined ? {} : { "content-type": "application/json" }),
     ...authHeaders(gui),
-  })
-  new Headers(init.headers).forEach((value, key) => headers.set(key, value))
+    ...Object.fromEntries(new Headers(init.headers)),
+  }
   const response = await fetch(url, {
     ...init,
     headers,
