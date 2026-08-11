@@ -35,7 +35,7 @@ export function createSessionSideGitController(input: {
   subscribeGlobalEvents?: (listener: (event: GlobalEvent) => void | Promise<void>) => () => void
 }) {
   const [files, setFiles] = createSignal<readonly WorkbenchChangeFile[]>([])
-  const [summary, setSummary] = createSignal<WorkbenchChangeSummary>(emptyWorkbenchChangeSummary())
+  const [summary, setSummary] = createSignal(emptyWorkbenchChangeSummary())
   const [mode, setMode] = createSignal<"git" | "directory">("git")
   const [revision, setRevision] = createSignal("")
   const [message, setMessage] = createSignal("")
@@ -142,6 +142,9 @@ export function createSessionSideGitController(input: {
     do {
       refreshQueued = false
       await runRefresh()
+      // oxlint-disable-next-line no-unmodified-loop-condition -- `generation` is bumped by
+      // resetWorkspace() during the `await runRefresh()` above; the rule can't see that
+      // cross-closure mutation, so this is a false positive.
     } while (refreshQueued && currentGeneration === generation && input.active())
   }
 

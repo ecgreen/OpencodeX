@@ -60,7 +60,7 @@ export function SessionSideOpenPanel(props: {
   graphDrawer?: JSX.Element
 }) {
   const restoredState = restoreOpenPanelState(props.sessionID)
-  const [tabs, setTabs] = createSignal<OpenTab[]>(restoredState.tabs)
+  const [tabs, setTabs] = createSignal(restoredState.tabs)
   const [activeID, setActiveID] = createSignal(restoredState.activeID)
   const activeTab = createMemo(() => tabs().find((item) => item.id === activeID()) ?? tabs()[0])
   const [menuOpen, setMenuOpen] = createSignal(false)
@@ -176,7 +176,7 @@ export function SessionSideOpenPanel(props: {
     const previousActiveID = untrack(activeID)
     saveOpenPanelState(loadedSessionID, previousTabs, previousActiveID)
     const transfer = loadedSessionID.startsWith("pending:")
-    if (transfer) browser.hideAll()
+    if (transfer) void browser.hideAll()
     disposeTabs(sessionReplacementCleanupTabs(previousTabs, transfer))
     const next = transfer
       ? { tabs: previousTabs, activeID: previousActiveID }
@@ -243,7 +243,7 @@ export function SessionSideOpenPanel(props: {
     saveOpenPanelState(loadedSessionID, tabs(), activeID())
     disposeTabs(tabs())
   })
-  const dirty = createMemo(() => activeTab() ? openTabDirty(activeTab()!) : false)
+  const dirty = createMemo(() => activeTab() ? openTabDirty(activeTab()) : false)
   const changedPathKeys = createMemo(
     () => new Set(props.diffs.flatMap((file) => (file.file ? [sidePanelPathKey(file.file)] : []))),
   )
@@ -376,7 +376,7 @@ export function SessionSideOpenPanel(props: {
           </div>
         </Match>
         <Match when={activeTab()?.kind === "terminal"}>
-          <SessionOpenTerminal tab={activeTab()!} write={terminals.write} rename={terminals.rename} />
+          <SessionOpenTerminal tab={activeTab()} write={terminals.write} rename={terminals.rename} />
         </Match>
         <Match when={true}>
           <SessionSideEmptyState

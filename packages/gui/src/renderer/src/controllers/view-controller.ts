@@ -58,7 +58,7 @@ export function createViewController(input: {
   )
   const editingView = createMemo(() => {
     const route = input.navigation.route()
-    if (route.name !== "view-edit" || !route.viewID) return
+    if (route.name !== "view-edit" || !route.viewID) return undefined
     return input.authoritative.snapshot()?.views.find((view) => view.id === route.viewID)
   })
   const sessions = createMemo(() => viewSessionsInOrder(activeView()).slice(0, 8))
@@ -90,7 +90,7 @@ export function createViewController(input: {
   )
   const sidePanelItem = createMemo(() => {
     const available = items()
-    if (available.length === 0) return
+    if (available.length === 0) return undefined
     return (
       available.find((item) => viewItemID(item) === sidePanelSessionID()) ??
       available.find((item) => viewItemID(item) === focusedSession()) ??

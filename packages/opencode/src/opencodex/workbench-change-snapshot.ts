@@ -118,18 +118,18 @@ export function encodeWorkbenchCursor(value: { revision: string; path?: string; 
 }
 
 export function decodeWorkbenchCursor(value: string | undefined) {
-  if (!value) return
+  if (!value) return undefined
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
       revision?: unknown
       path?: unknown
       index?: unknown
     }
-    if (typeof parsed.revision !== "string" || typeof parsed.index !== "number") return
-    if (parsed.path !== undefined && typeof parsed.path !== "string") return
+    if (typeof parsed.revision !== "string" || typeof parsed.index !== "number") return undefined
+    if (parsed.path !== undefined && typeof parsed.path !== "string") return undefined
     return { revision: parsed.revision, path: parsed.path, index: parsed.index }
   } catch {
-    return
+    return undefined
   }
 }
 

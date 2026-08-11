@@ -180,7 +180,7 @@ async function readActiveManifest(key: string) {
   } catch (error) {
     if (isMissingCoordinatorFile(error)) return undefined
     const token = await readCoordinatorManifestToken(file)
-    if (!token) throw new Error("Invalid TUI coordinator manifest cannot be removed safely")
+    if (!token) throw new Error("Invalid TUI coordinator manifest cannot be removed safely", { cause: error })
     await removeCoordinatorManifest(key, token)
     return undefined
   }

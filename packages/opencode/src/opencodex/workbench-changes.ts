@@ -285,9 +285,9 @@ const validateOpenableFiles = Effect.fn("WorkbenchChanges.validate")(function* (
   return (yield* Effect.all(files.map((file) => Effect.gen(function* () {
     if (file.status === "deleted") return { ...file, openable: false }
     const target = path.resolve(directory, file.path)
-    if (!AppFileSystem.contains(directory, target) || !(yield* fs.isFile(target))) return
+    if (!AppFileSystem.contains(directory, target) || !(yield* fs.isFile(target))) return undefined
     const real = yield* fs.realPath(target).pipe(Effect.catch(() => Effect.succeed("")))
-    if (!real || !AppFileSystem.contains(directory, real)) return
+    if (!real || !AppFileSystem.contains(directory, real)) return undefined
     return { ...file, openable: true }
   })), { concurrency: 16 })).filter((file): file is WorkbenchChangeFile => file !== undefined)
 })
@@ -322,7 +322,7 @@ const measureTextFiles = Effect.fnUntraced(function* (snapshot: WorkbenchChangeS
   const fs = yield* AppFileSystem.Service
   const measured = yield* Effect.all(files.map((file) => Effect.gen(function* () {
     const target = path.resolve(snapshot.directory, file.path)
-    if (!file.openable || !(yield* fs.isFile(target))) return
+    if (!file.openable || !(yield* fs.isFile(target))) return undefined
     const value = yield* fs.stream(target, { chunkSize: 64 * 1024 }).pipe(
       Stream.runFold(() => ({ lines: 0, bytes: 0, last: -1, binary: false }), (state, chunk) => ({
         lines: state.lines + chunk.reduce((count, byte) => count + Number(byte === 10), 0),
@@ -332,7 +332,7 @@ const measureTextFiles = Effect.fnUntraced(function* (snapshot: WorkbenchChangeS
       })),
       Effect.catch(() => Effect.succeed(undefined)),
     )
-    if (!value) return
+    if (!value) return undefined
     return {
       path: file.path,
       additions: value.binary ? 0 : value.lines + Number(value.bytes > 0 && value.last !== 10),
@@ -409,7 +409,7 @@ function changeStatus(code: string): WorkbenchChangeFile["status"] {
 }
 
 function gitOutput(result: { exitCode: number; stdout: Buffer; stdoutTruncated: boolean }) {
-  if (result.exitCode !== 0 || result.stdoutTruncated) return
+  if (result.exitCode !== 0 || result.stdoutTruncated) return undefined
   return result.stdout.toString("utf8").trim() || undefined
 }
 

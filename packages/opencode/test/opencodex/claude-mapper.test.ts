@@ -27,7 +27,7 @@ function context(): MapperContext {
   }
 }
 
-function run(events: ClaudeEvent[], initialStateOrCtx: MapperState | MapperContext | undefined = undefined) {
+function run(events: ClaudeEvent[], initialStateOrCtx?: MapperState | MapperContext) {
   let state: MapperState
   let ctx: MapperContext
 
@@ -398,7 +398,7 @@ describe("task tools feed the todo system", () => {
   })
 
   test("taskcreate result without a parseable id falls back to a local id", () => {
-    const { writes, state } = run([
+    const { state } = run([
       ...toolTurn("TaskCreate", { subject: "A" }, "ok"),
       ...toolTurn("TaskCreate", { subject: "B" }, "ok"),
     ])

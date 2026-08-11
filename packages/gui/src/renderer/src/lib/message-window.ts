@@ -106,7 +106,7 @@ function valueWeight(value: unknown, cap: number): number {
   if (typeof value === "string") return textWeight(value, cap)
   if (typeof value === "number" || typeof value === "boolean") return 24
   if (Array.isArray(value)) {
-    return Math.min(cap, value.reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
+    return Math.min(cap, value.reduce((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
   }
   if (typeof value === "object" && value !== null) {
     return Math.min(cap, Object.values(value as Record<string, unknown>).reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))

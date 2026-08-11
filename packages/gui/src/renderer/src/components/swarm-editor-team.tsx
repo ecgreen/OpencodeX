@@ -41,7 +41,7 @@ export function SwarmEditorTeam(props: {
   )
   const selectedModel = createMemo(() => {
     const role = selected()
-    if (!role?.providerID || !role.modelID) return
+    if (!role?.providerID || !role.modelID) return undefined
     return props.providers.find((item) => item.id === role.providerID)?.models[role.modelID]
   })
   // Keep the option collection stable when only the selected effort changes.

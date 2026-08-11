@@ -129,7 +129,7 @@ export function Icon(props: { name: string; class?: string }) {
 
   createEffect(() => {
     if (typeof document === "undefined") return
-    loadIcon(props.name).then((icon) => setGraphic(() => icon))
+    void loadIcon(props.name).then((icon) => setGraphic(() => icon))
   })
 
   return (

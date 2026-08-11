@@ -37,13 +37,13 @@ export { groupTranscriptParts } from "../lib/transcript-grouping"
 const KEEP_OPEN_WHEN_COMPLETE = new Set(["todowrite", "apply_patch", "plan_exit"])
 
 export function activeTranscriptStreamingPartID(messages: MessageBundle[], running: boolean) {
-  if (!running) return
+  if (!running) return undefined
   const message = messages.at(-1)
-  if (!message || message.info.role !== "assistant" || typeof message.info.time.completed === "number") return
+  if (!message || message.info.role !== "assistant" || typeof message.info.time.completed === "number") return undefined
   const part = message.parts.at(-1)
-  if (!part || (part.type !== "text" && part.type !== "reasoning")) return
-  if (!part.text.trim() || part.time === undefined || part.time.end !== undefined) return
-  if (part.type === "text" && (part.synthetic || part.ignored)) return
+  if (!part || (part.type !== "text" && part.type !== "reasoning")) return undefined
+  if (!part.text.trim() || part.time === undefined || part.time.end !== undefined) return undefined
+  if (part.type === "text" && (part.synthetic || part.ignored)) return undefined
   return part.id
 }
 
