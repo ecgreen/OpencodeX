@@ -1,4 +1,5 @@
 import { Button } from "./ui"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { TOOL_OUTPUT_PREVIEW_LIMITS, previewToolOutput } from "@opencode-ai/ui/tool-output-preview"
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import {
@@ -17,6 +18,9 @@ import {
 import { ToolDiffs } from "./session-tool-diff"
 import { ToolCodeBlock, ToolPreviewText } from "./session-tool-text"
 import { TodoList } from "./session-todo-list"
+
+/** Harness tools whose one-line output is the whole story - show it ungated. */
+const HARNESS_TASK_TOOLS = new Set(["toolsearch", "taskcreate", "taskupdate", "tasklist", "taskget", "monitor", "schedulewakeup"])
 
 export function ToolDetails(props: { tool: string; input: Record<string, unknown>; metadata: Record<string, unknown>; output: string; error?: string; showGenericOutput: boolean; patchPending?: boolean }) {
   const diagnostics = createMemo(() => arrayValue(props.metadata.diagnostics))
@@ -50,12 +54,40 @@ export function ToolDetails(props: { tool: string; input: Record<string, unknown
           </Show>
           <ToolDiagnostics diagnostics={diagnostics()} />
         </Match>
-        <Match when={props.tool === "todowrite"}>
+        {/*
+          Hoisted above the HARNESS_TASK_TOOLS match below: taskcreate/taskupdate
+          are in that set, so without this they'd never reach a todos render even
+          though the mapper stamps their completed parts with metadata.todos.
+        */}
+        <Match when={props.tool === "todowrite" || arrayValue(props.metadata.todos).length > 0}>
           <ToolTodos input={props.input} metadata={props.metadata} />
         </Match>
         <Match when={props.tool === "question"}>
           <ToolQuestions input={props.input} metadata={props.metadata} />
           <ToolOutput output={props.output} />
+        </Match>
+        <Match when={props.tool === "plan_exit"}>
+          <Show when={stringValue(props.input.plan)}>
+            {(plan) => (
+              <div class="tool-plan">
+                <Markdown text={plan()} />
+                <Button appearance="ghost" type="button" onClick={() => void copyFullToolText(plan())}>Copy plan</Button>
+              </div>
+            )}
+          </Show>
+          <ToolOutput output={props.output} />
+        </Match>
+        <Match when={HARNESS_TASK_TOOLS.has(props.tool)}>
+          <ToolKeyValues
+            values={[
+              field("Query", stringValue(props.input.query)),
+              field("Subject", stringValue(props.input.subject)),
+              field("Description", stringValue(props.input.description)),
+              field("Status", stringValue(props.input.status)),
+              field("Task", stringValue(props.input.taskId)),
+            ]}
+          />
+          <ToolOutput output={props.output} maxLines={15} compact />
         </Match>
         <Match when={props.tool === "task"}>
           <ToolOutput output={props.output} />

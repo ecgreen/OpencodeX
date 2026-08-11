@@ -88,8 +88,11 @@ export function expandedDirectories(nodes: DiffTreeNode[]) {
 export function flattenWorkbenchChangeTree(
   files: readonly WorkbenchChangeFile[],
   collapsed: ReadonlySet<string>,
+  filter?: string,
 ): WorkbenchChangeTreeRow[] {
-  return flattenWorkbenchNodes(buildWorkbenchChangeTree(files), collapsed)
+  const query = filter?.trim().toLowerCase() ?? ""
+  const matching = query ? files.filter((file) => file.path.toLowerCase().includes(query)) : files
+  return flattenWorkbenchNodes(buildWorkbenchChangeTree(matching), collapsed)
 }
 
 export function reconcileWorkbenchChangeRows(

@@ -24,11 +24,27 @@ const TOOL_TITLE_BY_ID: Record<string, ToolTitleBuilder | undefined> = {
   websearch: (input) => `Search ${quoteValue(input.query)}`.trim(),
   skill: (input) => stringFieldTitle("Load skill", input.name) ?? "Load skill",
   lsp: (input) => stringFieldTitle("LSP", input.action ?? input.command) ?? "LSP request",
-  plan_exit: () => "Exit plan mode",
+  plan_exit: () => "Proposed plan",
   repo_clone: (input) => stringFieldTitle("Clone", input.url ?? input.repo) ?? "Clone repository",
   repo_overview: () => "Repo overview",
   opencodex_swarm_create: () => "Create swarm",
   invalid: () => "Invalid tool call",
+  toolsearch: (input) => `Search tools ${quoteValue(input.query)}`.trim(),
+  taskcreate: (input) => stringFieldTitle("Create task —", input.subject) ?? "Create task",
+  taskupdate: (input) => {
+    const id = stringValue(input.taskId)
+    const status = stringValue(input.status)
+    if (!id) return "Update task"
+    return status ? `Update task #${id} — ${status}` : `Update task #${id}`
+  },
+  tasklist: () => "List tasks",
+  taskget: (input) => (stringValue(input.taskId) ? `Task #${stringValue(input.taskId)}` : "Get task"),
+  agent: (input) => `Agent ${stringValue(input.subagent_type) ?? "general"}: ${stringValue(input.description) ?? "subagent"}`,
+  monitor: (input) => stringFieldTitle("Monitor", input.action) ?? "Monitor",
+  schedulewakeup: (input) => {
+    const seconds = numberValue(input.delaySeconds)
+    return seconds === undefined ? "Schedule wakeup" : `Schedule wakeup in ${seconds}s`
+  },
   workspace_open: (input) => stringFieldTitle("Open workspace", input.path) ?? "Open workspace",
   browser_navigate: (input) => stringFieldTitle("Navigate browser", input.url) ?? "Navigate browser",
   browser_screenshot: (_input, metadata) => stringFieldTitle("Capture browser", metadata.url) ?? "Capture browser",
@@ -118,7 +134,10 @@ function shellTitle(input: Record<string, unknown>) {
 }
 
 function fileToolTitle(action: string, input: Record<string, unknown>) {
-  return `${action} ${stringValue(input.filePath) ?? "file"}`
+  // Native tools spell it `filePath`; the Claude bridge may pass through
+  // `file_path`/`notebook_path` for parts recorded before input normalization.
+  const file = stringValue(input.filePath) ?? stringValue(input.file_path) ?? stringValue(input.notebook_path)
+  return `${action} ${file ?? "file"}`
 }
 
 function stringFieldTitle(label: string, value: unknown) {

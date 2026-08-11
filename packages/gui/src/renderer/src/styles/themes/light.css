@@ -44,6 +44,7 @@
   --theme-accent: #9c4418;
   --theme-accent-hover: #83380f;
   --theme-accent-soft: rgba(156, 68, 24, 0.13);
+  --theme-selection-text: rgba(156, 68, 24, 0.28);
   --theme-danger: #a81f18;
   --theme-danger-soft: rgba(168, 31, 24, 0.13);
   --theme-warning: #7d5300;

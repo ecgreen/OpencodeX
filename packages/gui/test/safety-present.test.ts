@@ -4,13 +4,45 @@ import {
   buildSafetyQueue,
   describePermission,
   finalQuestionAnswers,
+  latestAssistantContext,
   moveSafetyQueueIndex,
+  nextUnansweredStep,
   questionAnswersComplete,
   safetyQueueGroup,
   toggleQuestionAnswer,
 } from "../src/renderer/src/lib/safety-present"
 
 describe("GUI safety presentation helpers", () => {
+  test("nextUnansweredStep wraps and skips answered steps", () => {
+    expect(nextUnansweredStep([[], ["A"], []], ["", "", ""], 0)).toBe(2)
+    expect(nextUnansweredStep([["A"], [], []], ["", "", ""], 2)).toBe(1)
+    expect(nextUnansweredStep([["A"], ["B"]], ["", ""], 0)).toBeUndefined()
+    // Custom text counts as answering its step.
+    expect(nextUnansweredStep([[], []], ["typed", ""], 0)).toBe(1)
+  })
+
+  test("latestAssistantContext surfaces last visible text and plan", () => {
+    const messages = [
+      { info: { role: "user" }, parts: [] },
+      {
+        info: { role: "assistant" },
+        parts: [
+          { id: "p1", type: "text", text: "First" },
+          {
+            id: "p2",
+            type: "tool",
+            tool: "plan_exit",
+            state: { status: "completed", input: { plan: "# The plan" }, output: "", title: "", metadata: {}, time: { start: 1, end: 2 } },
+          },
+          { id: "p3", type: "text", text: "  Review the plan below.  " },
+          { id: "p4", type: "text", text: "ignored", synthetic: true },
+        ],
+      },
+    ] as never
+    expect(latestAssistantContext(messages)).toEqual({ text: "Review the plan below.", plan: "# The plan" })
+    expect(latestAssistantContext([] as never)).toEqual({})
+  })
+
   test("builds a permission-first queue with one entry per question step", () => {
     const queue = buildSafetyQueue(
       [permission({ id: "permission-1" })],

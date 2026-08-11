@@ -8,19 +8,22 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Session } from "@/session/session"
-import { MessageV2 } from "../../src/session/message-v2"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
-import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { MAX_SWARM_DELEGATION_DEPTH, TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { delegationOutcome, delegationRecord } from "../../src/session/delegation-outcome"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ProjectV2 } from "@opencode-ai/core/project"
+import { ProjectTable } from "@opencode-ai/core/project/sql"
+import { OpencodeXProjectTable, OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -58,9 +61,21 @@ function defer<T>() {
   return { promise, resolve }
 }
 
-const seed = Effect.fn("TaskToolTest.seed")(function* (title = "Pinned") {
+const seed = Effect.fn("TaskToolTest.seed")(function* (
+  title = "Pinned",
+  options?: {
+    model?: { id: ProviderV2.ModelID; providerID: ProviderV2.ID }
+    /** The model the seeded assistant turn ran on, when it matters. */
+    assistantModel?: { providerID: ProviderV2.ID; modelID: ProviderV2.ModelID }
+    metadata?: Record<string, unknown>
+  },
+) {
   const session = yield* Session.Service
-  const chat = yield* session.create({ title })
+  const chat = yield* session.create({
+    title,
+    ...(options?.model ? { model: options.model } : {}),
+    ...(options?.metadata ? { metadata: options.metadata } : {}),
+  })
   const user = yield* session.updateMessage({
     id: MessageID.ascending(),
     role: "user",
@@ -79,8 +94,10 @@ const seed = Effect.fn("TaskToolTest.seed")(function* (title = "Pinned") {
     cost: 0,
     path: { cwd: "/tmp", root: "/tmp" },
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    modelID: ref.modelID,
-    providerID: ref.providerID,
+    // Opt-in, because an orchestrator's turn records the swarm facade it was
+    // asked for - the value the delegation fallback would hand to its children.
+    modelID: options?.assistantModel?.modelID ?? ref.modelID,
+    providerID: options?.assistantModel?.providerID ?? ref.providerID,
     time: { created: Date.now() },
   }
   yield* session.updateMessage(assistant)
@@ -454,6 +471,345 @@ describe("tool.task", () => {
     },
   )
 
+  it.instance("keeps the task tool for a swarm session's specialists and tags them", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const swarm = yield* seed("Swarm chat", {
+        model: { id: ProviderV2.ModelID.make("swarm-1"), providerID: ProviderV2.ID.make("swarm") },
+      })
+      const plain = yield* seed("Plain chat")
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const tools: Record<string, SessionPrompt.PromptInput["tools"]> = {}
+      const exec = (chat: typeof swarm, key: string) =>
+        def.execute(
+          {
+            description: "Senior Engineer: build the graph",
+            prompt: "fan the work out as needed",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.chat.id,
+            messageID: chat.assistant.id,
+            directory: chat.chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (tools[key] = input.tools) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      const result = yield* exec(swarm, "swarm")
+      yield* exec(plain, "plain")
+
+      // A specialist keeps its own task tool so a role can spawn subagents of
+      // itself; an ordinary subagent still loses it unless its agent grants it.
+      expect(tools.swarm?.task).toBeUndefined()
+      expect(tools.plain?.task).toBe(false)
+
+      const child = yield* sessions.get(result.metadata.sessionId)
+      expect(child.parentID).toBe(swarm.chat.id)
+      // The depth rides along so membership survives past the first hop, and
+      // the finished run stamps its durable outcome beside it.
+      expect(child.metadata?.opencodex).toMatchObject({ swarmID: "swarm-1", swarmDepth: 1 })
+      expect(delegationOutcome(child.metadata)).toBe("completed")
+    }),
+  )
+
+  it.instance("carries the swarm down a multi-layer delegation, stopping at the cap", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const tools: Record<string, SessionPrompt.PromptInput["tools"]> = {}
+      // A specialist two layers down is still a member of its swarm, so it can
+      // hand work to the next layer: builder -> reviewer -> builder.
+      const middle = yield* seed("Specialist", { metadata: { opencodex: { swarmID: "swarm-1", swarmDepth: 2 } } })
+      const delegateFrom = (chat: typeof middle, key: string) =>
+        def.execute(
+          { description: "Reviewer: check the work", prompt: "hand off to the next layer", subagent_type: "general" },
+          {
+            sessionID: chat.chat.id,
+            messageID: chat.assistant.id,
+            directory: chat.chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (tools[key] = input.tools) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      const handoff = yield* delegateFrom(middle, "middle")
+      expect(tools.middle?.task).toBeUndefined()
+      const grandchild = yield* sessions.get(handoff.metadata.sessionId)
+      expect(grandchild.metadata?.opencodex).toMatchObject({ swarmID: "swarm-1", swarmDepth: 3 })
+      expect(delegationOutcome(grandchild.metadata)).toBe("completed")
+
+      // At the cap the chain stops rather than recursing forever.
+      const deepest = yield* seed("Deep specialist", {
+        metadata: { opencodex: { swarmID: "swarm-1", swarmDepth: MAX_SWARM_DELEGATION_DEPTH - 1 } },
+      })
+      yield* delegateFrom(deepest, "deepest")
+      expect(tools.deepest?.task).toBe(false)
+    }),
+  )
+
+  it.instance("resolves the swarm role, tags the child with it, and uses the role's model", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const database = yield* Database.Service
+      // The role lookup joins through real rows: project -> swarm -> roles.
+      yield* database.db
+        .insert(ProjectTable)
+        .values({ id: ProjectV2.ID.make("prj_task_test"), worktree: "/tmp", sandboxes: [] })
+      yield* database.db.insert(OpencodeXProjectTable).values({ id: "opx_task_test", project_id: ProjectV2.ID.make("prj_task_test") })
+      yield* database.db.insert(OpencodeXSwarmTable).values({
+        id: "swm_task_test",
+        opencodex_project_id: "opx_task_test",
+        title: "Feature Team",
+        prompt: "Ship it",
+        status: "running",
+        source: "manual",
+      })
+      yield* database.db.insert(OpencodeXSwarmRoleTable).values([
+        { id: "role_orch", swarm_id: "swm_task_test", name: "Orchestrator", status: "running", instructions: "", sort_order: 0 },
+        {
+          id: "role_eng",
+          swarm_id: "swm_task_test",
+          name: "Senior Engineer",
+          status: "running",
+          instructions: "",
+          sort_order: 1,
+          provider_id: "anthropic",
+          model_id: "claude-fable-5",
+        },
+      ])
+      const { chat, assistant } = yield* seed("Swarm chat", {
+        model: { id: ProviderV2.ModelID.make("swm_task_test"), providerID: ProviderV2.ID.make("swarm") },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+      const promptOps = stubOps({ onPrompt: (input) => prompts.push(input) })
+      const exec = (input: { description: string; swarm_role?: string }) =>
+        def.execute(
+          { ...input, prompt: "do the work", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      // The explicit parameter wins even when the description says nothing
+      // useful, and running the same role twice makes a second tagged copy.
+      const first = yield* exec({ description: "build module A", swarm_role: "senior engineer" })
+      const second = yield* exec({ description: "build module B", swarm_role: "Senior Engineer" })
+      // Older orchestrators that only lead the description with the role name
+      // still resolve through the prefix fallback.
+      const third = yield* exec({ description: "Senior Engineer: build module C" })
+
+      for (const result of [first, second, third]) {
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.metadata?.opencodex).toMatchObject({
+          swarmID: "swm_task_test",
+          swarmDepth: 1,
+          swarmRole: "Senior Engineer",
+        })
+        expect(delegationOutcome(child.metadata)).toBe("completed")
+      }
+      expect(new Set([first, second, third].map((result) => result.metadata.sessionId)).size).toBe(3)
+      // No explicit model was passed, so the role's configured model routes it.
+      expect(prompts.map((input) => `${input.model?.providerID}/${input.model?.modelID}`)).toEqual([
+        "anthropic/claude-fable-5",
+        "anthropic/claude-fable-5",
+        "anthropic/claude-fable-5",
+      ])
+    }),
+  )
+
+  it.instance("never routes a subagent to the swarm facade", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const database = yield* Database.Service
+      yield* database.db
+        .insert(ProjectTable)
+        .values({ id: ProjectV2.ID.make("prj_facade"), worktree: "/tmp", sandboxes: [] })
+      yield* database.db
+        .insert(OpencodeXProjectTable)
+        .values({ id: "opx_facade", project_id: ProjectV2.ID.make("prj_facade") })
+      yield* database.db.insert(OpencodeXSwarmTable).values({
+        id: "swm_facade",
+        opencodex_project_id: "opx_facade",
+        title: "Facade Team",
+        prompt: "Ship it",
+        status: "running",
+        source: "manual",
+      })
+      yield* database.db.insert(OpencodeXSwarmRoleTable).values([
+        {
+          id: "role_facade_orch",
+          swarm_id: "swm_facade",
+          name: "Orchestrator",
+          status: "running",
+          instructions: "",
+          sort_order: 0,
+          provider_id: "anthropic",
+          model_id: "claude-opus-5",
+        },
+      ])
+      const { chat, assistant } = yield* seed("Facade chat", {
+        model: { id: ProviderV2.ModelID.make("swm_facade"), providerID: ProviderV2.ID.make("swarm") },
+        assistantModel: {
+          providerID: ProviderV2.ID.make("swarm"),
+          modelID: ProviderV2.ModelID.make("swm_facade"),
+        },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+      // No role matches, so resolution falls all the way back to the caller's
+      // own model - which for an orchestrator is the swarm facade itself.
+      // Routing the child there would make it a swarm that delegates instead of
+      // working, recursively.
+      const result = yield* def.execute(
+        { description: "just do this", prompt: "do the work", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => prompts.push(input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(prompts[0]?.model).toMatchObject({ providerID: "anthropic", modelID: "claude-opus-5" })
+      const child = yield* sessions.get(result.metadata.sessionId)
+      expect(child.model?.providerID).not.toBe("swarm")
+    }),
+  )
+
+  it.instance("runs a role's own helpers on the model that role is running", () =>
+    Effect.gen(function* () {
+      // A specialist spawning subagents of itself has no role to resolve, so it
+      // must not fall through to the subagent agent's configured model - the
+      // helper runs on what its parent is running.
+      const specialist = yield* seed("Designer", {
+        metadata: { opencodex: { swarmID: "swm_helpers", swarmDepth: 1 } },
+        assistantModel: { providerID: ProviderV2.ID.make("openai"), modelID: ProviderV2.ModelID.make("gpt-5.2") },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+      yield* def.execute(
+        { description: "explore the icon set", prompt: "look around", subagent_type: "general" },
+        {
+          sessionID: specialist.chat.id,
+          messageID: specialist.assistant.id,
+          directory: specialist.chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => prompts.push(input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(prompts[0]?.model).toMatchObject({ providerID: "openai", modelID: "gpt-5.2" })
+    }),
+  )
+
+  it.instance("surfaces a subagent failure instead of returning silence", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          Effect.sync(() => {
+            const base = reply(input, "")
+            return {
+              info: {
+                ...base.info,
+                error: {
+                  name: "ProviderAuthError",
+                  data: { providerID: "test", message: "credentials expired" },
+                } as SessionLegacy.Assistant["error"],
+              },
+              parts: [],
+            }
+          }),
+      }
+
+      const result = yield* def.execute(
+        { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("The subagent failed:")
+      expect(result.output).toContain("credentials expired")
+    }),
+  )
+
+  it.instance("labels an empty report instead of returning an empty string", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        // Only a synthetic part: an injected briefing, not a report.
+        prompt: (input) =>
+          Effect.sync(() => {
+            const base = reply(input, "internal briefing")
+            return { info: base.info, parts: [{ ...base.parts[0], synthetic: true }] }
+          }),
+      }
+
+      const result = yield* def.execute(
+        { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("The subagent completed without producing a text report.")
+      expect(result.output).not.toContain("internal briefing")
+    }),
+  )
+
   it.instance("rejects background execution when the experiment is disabled", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
@@ -744,6 +1100,321 @@ describe("tool.task", () => {
 
       expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
       expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
+    }),
+  )
+
+  it.instance("execute stamps the child with a succeeded delegation outcome", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        { description: "do work", prompt: "do it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "done" }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const child = yield* sessions.get(SessionID.make(result.metadata.sessionId))
+      const record = delegationRecord(child.metadata)
+      expect(record).toMatchObject({
+        phase: "settled",
+        outcome: "completed",
+        attempt: 1,
+        parentSessionID: chat.id,
+        parentMessageID: assistant.id,
+        // Execution settled; the parent has not durably received the report
+        // yet - that mark belongs to the tool-part persistence, not the tool.
+        deliveryOutcome: "pending",
+      })
+      expect(result.metadata.runID).toBe(record!.runID)
+    }),
+  )
+
+  it.instance("execute stamps the child with a failed delegation outcome on subagent error", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      // The subagent's turn completes, but the assistant message carries an
+      // error - the "finished badly" shape a durable record must not miss.
+      const failingOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          Effect.sync(() => {
+            const message = reply(input, "partial output")
+            return {
+              ...message,
+              info: { ...message.info, error: { name: "UnknownError", data: { message: "boom" } } },
+            } as SessionLegacy.WithParts
+          }),
+      }
+
+      const result = yield* def.execute(
+        { description: "do work", prompt: "do it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: failingOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const child = yield* sessions.get(SessionID.make(result.metadata.sessionId))
+      expect(delegationOutcome(child.metadata)).toBe("errored")
+      // The stamp must ride alongside the swarm bookkeeping, never replace it.
+      expect(result.output).toContain("failed")
+    }),
+  )
+
+  it.instance("a reused task session renumbers the run and replaces the prior record", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const exec = (task_id?: string) =>
+        def.execute(
+          { description: "do work", prompt: "do it", subagent_type: "general", ...(task_id ? { task_id } : {}) },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ text: "done" }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+      const first = yield* exec()
+      const firstRecord = delegationRecord(
+        (yield* sessions.get(SessionID.make(first.metadata.sessionId))).metadata,
+      )
+      const second = yield* exec(first.metadata.sessionId)
+      const secondRecord = delegationRecord(
+        (yield* sessions.get(SessionID.make(second.metadata.sessionId))).metadata,
+      )
+
+      expect(second.metadata.sessionId).toBe(first.metadata.sessionId)
+      expect(firstRecord).toMatchObject({ attempt: 1, phase: "settled", outcome: "completed" })
+      expect(secondRecord).toMatchObject({ attempt: 2, phase: "settled", outcome: "completed" })
+      expect(secondRecord!.runID).not.toBe(firstRecord!.runID)
+    }),
+  )
+
+  it.instance("a foreground abort stamps the child cancelled even when the prompt returns cleanly", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const ready = defer<SessionPrompt.PromptInput>()
+      const cancelled = defer<SessionID>()
+      const abort = new AbortController()
+      // The prompt resolves with a normal reply *after* cancellation was
+      // requested - the late clean return the cancellation contract covers.
+      const promptOps: TaskPromptOps = {
+        cancel: (sessionID) =>
+          Effect.sync(() => {
+            cancelled.resolve(sessionID)
+          }),
+        resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+        prompt: (input) =>
+          Effect.promise(() => {
+            ready.resolve(input)
+            return cancelled.promise
+          }).pipe(Effect.as(reply(input, "finished anyway"))),
+      }
+
+      const fiber = yield* def
+        .execute(
+          { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: abort.signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.forkChild)
+
+      const input = yield* Effect.promise(() => ready.promise)
+      abort.abort()
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+
+      // The observed cancellation request wins over the late clean return.
+      const child = yield* sessions.get(input.sessionID)
+      expect(delegationRecord(child.metadata)).toMatchObject({ phase: "settled", outcome: "cancelled" })
+    }),
+  )
+
+  it.instance("a defect during the child prompt still settles the record as errored", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let childID: SessionID | undefined
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) => {
+          childID = input.sessionID
+          return Effect.die(new Error("boom"))
+        },
+      }
+
+      const exit = yield* def
+        .execute(
+          { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isSuccess(exit)).toBe(false)
+      const child = yield* sessions.get(childID!)
+      expect(delegationRecord(child.metadata)).toMatchObject({ phase: "settled", outcome: "errored" })
+    }),
+  )
+
+  background.instance("a background subagent error fails the job and stamps the child errored", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const notifications: string[] = []
+      // The child's turn returns an assistant-level error; the parent's
+      // notification prompt succeeds so the wording can be observed.
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          Effect.sync(() => {
+            if (input.sessionID === chat.id) {
+              for (const part of input.parts) if (part.type === "text") notifications.push(part.text)
+              return reply(input, "noted")
+            }
+            const base = reply(input, "partial output")
+            return {
+              ...base,
+              info: { ...base.info, error: { name: "UnknownError", data: { message: "boom" } } },
+            } as SessionLegacy.WithParts
+          }),
+      }
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into it",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.timedOut).toBe(false)
+      // The job, the child's stamp, and the notification tell the same story.
+      expect(waited.info?.status).toBe("error")
+      const child = yield* sessions.get(SessionID.make(result.metadata.sessionId))
+      expect(delegationOutcome(child.metadata)).toBe("errored")
+      const settled = yield* Effect.promise(async () => {
+        for (let i = 0; i < 50 && notifications.length === 0; i++) await new Promise((r) => setTimeout(r, 20))
+        return notifications
+      })
+      expect(settled[0]).toContain('state="error"')
+      expect(settled[0]).toContain("Background task failed")
+    }),
+  )
+
+  background.instance("a delivered background notification marks the run delivered", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into it",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "background done" }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.info?.status).toBe("completed")
+      // The notification prompt is forked; poll briefly for its delivery mark.
+      const record = yield* Effect.promise(async () => {
+        for (let i = 0; i < 50; i++) {
+          const child = await Effect.runPromise(
+            sessions.get(SessionID.make(result.metadata.sessionId)).pipe(Effect.orDie),
+          )
+          const current = delegationRecord(child.metadata)
+          if (current?.deliveryOutcome === "delivered") return current
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        return undefined
+      })
+      expect(record).toMatchObject({ outcome: "completed", deliveryOutcome: "delivered" })
     }),
   )
 })

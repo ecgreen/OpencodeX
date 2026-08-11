@@ -9,6 +9,7 @@ export function SessionSideEmptyState(props: {
   openContext: () => void
   showContext?: boolean
   openGit: () => void
+  openGraph: () => void
   openFiles: () => void
   openChangedFile: (path: string) => void
   openTerminal: () => void
@@ -32,6 +33,11 @@ export function SessionSideEmptyState(props: {
           <Icon name="branch" />
           <strong>Git</strong>
           <span>Review working tree changes and prepare a commit.</span>
+        </Button>
+        <Button appearance="ghost" type="button" data-empty-tone="graph" onClick={props.openGraph}>
+          <Icon name="graph" />
+          <strong>Graph</strong>
+          <span>See how this session's work fans out across agents, and where it stands.</span>
         </Button>
         <Button appearance="ghost" type="button" data-empty-tone="file" onClick={props.openFiles}>
           <Icon name="folder-open" />

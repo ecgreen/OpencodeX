@@ -1,7 +1,7 @@
 import { InstanceState } from "@/effect/instance-state"
 import { workbenchDiagnostics } from "@/opencodex/workbench-diagnostics"
 import { loadWorkbenchChangePatch, loadWorkbenchChangePatchPage } from "@/opencodex/workbench-change-patch"
-import { listWorkbenchChanges, loadWorkbenchChangeMetrics } from "@/opencodex/workbench-changes"
+import { listWorkbenchChanges, loadWorkbenchChangeMetrics, loadWorkbenchRepositoryMetadata, runWorkbenchGit } from "@/opencodex/workbench-changes"
 import { workbenchGitHistory } from "@/opencodex/workbench-git"
 import { Effect } from "effect"
 import {
@@ -35,7 +35,7 @@ export function makeOpencodeXWorkbenchGitHandlers() {
   const workbenchChanges = Effect.fn("OpencodeXHttpApi.workbenchChanges")(function* (ctx: {
     query: typeof WorkbenchChangesQuery.Type
   }) {
-    return yield* listWorkbenchChanges(ctx.query)
+    return yield* listWorkbenchChanges({ ...ctx.query, metadata: ctx.query.metadata !== "false" })
   })
 
   const workbenchChangePatch = Effect.fn("OpencodeXHttpApi.workbenchChangePatch")(function* (ctx: {
@@ -58,12 +58,21 @@ export function makeOpencodeXWorkbenchGitHandlers() {
 
   const workbenchGitBranches = Effect.fn("OpencodeXHttpApi.workbenchGitBranches")(function* () {
     const cwd = workbenchCwd(yield* InstanceState.context)
-    const list = gitResult(yield* Effect.promise(() => gitRun(["branch", "--format=%(refname:short)"], cwd)))
-    if (list.exitCode !== 0) return { ok: false, message: gitMessage(list) || "Could not list branches.", branches: [] }
+    const [list, repository] = yield* Effect.all([
+      runWorkbenchGit(cwd, ["branch", "--format=%(refname:short)"], 64 * 1024, "3 seconds"),
+      loadWorkbenchRepositoryMetadata(cwd),
+    ], { concurrency: 2 })
+    if (list.exitCode !== 0) return { ok: false, message: list.stderr.toString("utf8").trim() || "Could not list branches.", branches: [] }
     return {
       ok: true,
-      current: yield* Effect.promise(() => gitBranch(cwd)),
-      branches: list.text().split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+      current: repository.branch,
+      branches: list.stdout.toString("utf8").split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+      defaultBranch: repository.defaultBranch,
+      upstream: repository.upstream,
+      ahead: repository.ahead,
+      behind: repository.behind,
+      remoteUrl: repository.remoteUrl,
+      githubUrl: repository.githubUrl,
     }
   })
 

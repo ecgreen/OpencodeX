@@ -43,5 +43,13 @@
     // Warn when spreading non-plain objects (Headers, class instances, etc.)
     "typescript/no-misused-spread": "warn"
   },
-  "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/.sst", "**/*.d.ts", "**/*.gen.ts"]
+  "ignorePatterns": [
+    "**/node_modules",
+    "**/dist",
+    "**/.build",
+    "**/.sst",
+    "**/*.d.ts",
+    "**/*.gen.ts",
+    ".claude/worktrees"
+  ]
 }

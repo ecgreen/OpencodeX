@@ -1,5 +1,5 @@
 import { asc, eq } from "drizzle-orm"
-import { Context, Effect, Option } from "effect"
+import { Cause, Context, Effect, Exit, Option } from "effect"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { Database } from "@opencode-ai/core/database/database"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -10,9 +10,19 @@ import { SwarmBriefing } from "@/opencodex/swarm-briefing"
 import { Skill } from "@/skill"
 import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
 import { isSwarmProvider } from "@/provider/swarm-provider"
-import { PartID, SessionID } from "./schema"
+import { MessageID, PartID, SessionID } from "./schema"
 import type { PromptInput } from "./prompt-schema"
+import {
+  DELEGATION_RECORD_VERSION,
+  settleDelegation,
+  type DelegationOutcome,
+  type DelegationRecord,
+} from "./delegation-outcome"
+import { Identifier } from "@/id/id"
+import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
+
+const log = Log.create({ service: "session.prompt-swarm" })
 
 /** One swarm role as the loop reads it, ordered by `sort_order`. */
 export type SwarmRoleRow = {
@@ -35,6 +45,20 @@ export interface Deps {
 }
 
 /**
+ * The message a Claude turn should deliver. A queued command names its own
+ * message; delivering `lastUserMessage` instead sent the newest text N times
+ * and swallowed the earlier queued messages (2026-08-10 spec, problem 2b).
+ */
+export function claudeTurnMessage<T extends { info: { id: string; role: string } }>(
+  messages: readonly T[],
+  messageID: string | undefined,
+): T | undefined {
+  if (messageID === undefined) return messages.findLast((message) => message.info.role === "user")
+  const message = messages.find((message) => message.info.id === messageID)
+  return message?.info.role === "user" ? message : undefined
+}
+
+/**
  * The two non-ordinary routes a turn can take: a swarm (a team of roles behind
  * one model id) and the local Claude Code CLI driver. Both are decided from the
  * last user message, which is why they sit together.
@@ -49,8 +73,8 @@ export function make(deps: Deps) {
    * hidden part of the user message hands the orchestrator its team so it
    * delegates specialists as subagents inside the same session.
    */
-  const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID) {
-    const context = yield* swarmContext(sessionID)
+  const ensureSwarmBriefing = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
+    const context = yield* swarmContext(sessionID, messageID)
     if (!context) return
     const briefed = context.last.parts.some(
       (part) =>
@@ -82,8 +106,8 @@ export function make(deps: Deps) {
   })
 
   /** The swarm behind a session's model, or undefined for an ordinary route. */
-  const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID) {
-    const last = yield* lastUserMessage(sessionID)
+  const swarmContext = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
+    const last = messageID ? yield* userMessage(sessionID, messageID) : yield* lastUserMessage(sessionID)
     if (!last || last.info.role !== "user") return undefined
     if (!isSwarmProvider(last.info.model.providerID)) return undefined
     const swarmID = last.info.model.modelID
@@ -154,28 +178,78 @@ export function make(deps: Deps) {
     // loading the skill itself, but a delegated specialist never sees the
     // skill tool's inventory - so the body is delivered here, ahead of the
     // per-role instructions and the task.
-    const roleSkill = role.skill ? yield* skills.get(role.skill) : undefined
-    const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
-      .filter(Boolean)
-      .join("\n\n")
-    const result = yield* prompt({
-      sessionID: child.id,
-      model: {
-        providerID: ProviderV2.ID.make(role.provider_id),
-        modelID: ProviderV2.ModelID.make(role.model_id),
-      },
-      ...(role.agent ? { agent: role.agent } : {}),
-      // "default" is the sentinel for "no variant" everywhere in the loop.
-      ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
-      parts: [{ type: "text", text }],
-    }).pipe(Effect.catch(Effect.die))
-    if (result.info.role === "assistant" && result.info.error) {
-      return `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}`
+    // The durable answer to "did this delegation work?" - and its opening
+    // line. Nothing else records either: a swarm child has no job row and its
+    // live status clears on return, so without this stamp the workflow graph
+    // can only say "returned" and show nothing of what came back. The record
+    // is run-scoped: `running` is written before the prompt starts and one
+    // all-exit boundary settles it, so a defect or interruption can no longer
+    // slip out without a terminal record.
+    const runID = Identifier.ascending("run")
+    const started: DelegationRecord = {
+      version: DELEGATION_RECORD_VERSION,
+      runID,
+      parentSessionID: input.sessionID,
+      attempt: 1,
+      phase: "running",
+      startedAt: Date.now(),
     }
-    const report = result.parts
-      .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
-      .join("\n")
-    return report || `Role "${role.name}" produced no output.`
+    const stamp = (record: DelegationRecord, expectRunID?: string) =>
+      sessions
+        .stampDelegation({ sessionID: child.id, record, ...(expectRunID ? { expectRunID } : {}) })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              log.error("swarm delegation stamp failed", { sessionID: child.id, runID, cause })
+              return false
+            }),
+          ),
+        )
+    const settle = (outcome: DelegationOutcome, summary?: string) =>
+      stamp(settleDelegation(started, { outcome, summary }), runID).pipe(Effect.asVoid)
+    yield* stamp(started)
+    const outcome: { state: "completed" | "error"; text: string } = yield* Effect.gen(function* () {
+      // The role's skill is its base definition; the built-in role skills carry
+      // the full role prompt. The task-tool path gets it through the specialist
+      // loading the skill itself, but a delegated specialist never sees the
+      // skill tool's inventory - so the body is delivered here, ahead of the
+      // per-role instructions and the task.
+      const roleSkill = role.skill ? yield* skills.get(role.skill) : undefined
+      const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
+        .filter(Boolean)
+        .join("\n\n")
+      const result = yield* prompt({
+        sessionID: child.id,
+        model: {
+          providerID: ProviderV2.ID.make(role.provider_id!),
+          modelID: ProviderV2.ModelID.make(role.model_id!),
+        },
+        ...(role.agent ? { agent: role.agent } : {}),
+        // "default" is the sentinel for "no variant" everywhere in the loop.
+        ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
+        parts: [{ type: "text", text }],
+      })
+      if (result.info.role === "assistant" && result.info.error) {
+        return { state: "error" as const, text: `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}` }
+      }
+      const report = result.parts
+        .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
+        .join("\n")
+      return { state: "completed" as const, text: report }
+    }).pipe(
+      // Every exit settles the record: clean return, subagent error, typed
+      // failure, defect, and interruption alike.
+      Effect.onExit((exit) =>
+        Exit.isSuccess(exit)
+          ? settle(exit.value.state === "error" ? "errored" : "completed", exit.value.text)
+          : Cause.hasInterruptsOnly(exit.cause)
+            ? settle("cancelled")
+            : settle("errored"),
+      ),
+      Effect.catch(Effect.die),
+    )
+    if (outcome.state === "error") return outcome.text
+    return outcome.text || `Role "${role.name}" produced no output.`
   })
 
   /**
@@ -183,14 +257,14 @@ export function make(deps: Deps) {
    * Claude Code CLI instead of a provider API. Returns the work effect for
    * such a turn, or undefined for an ordinary session.
    */
-  const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID) {
+  const claudeCodeTurn = Effect.fnUntraced(function* (sessionID: SessionID, messageID?: MessageID) {
     const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
-    const last = yield* lastUserMessage(sessionID)
+    const last = messageID ? yield* userMessage(sessionID, messageID) : yield* lastUserMessage(sessionID)
     const selected = last?.info.role === "user" ? last.info.model : session.model
     // A swarm is a facade over its orchestrator, so a swarm whose
     // orchestrator is the Claude subscription takes the driver path too -
     // with a delegation tool that keeps specialists on their own models.
-    const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID) : undefined
+    const swarm = isSwarmProvider(selected?.providerID ?? "") ? yield* swarmContext(sessionID, messageID) : undefined
     const orchestrator = swarm?.orchestrator
     const model =
       swarm?.orchestratorIsClaudeCode && orchestrator?.provider_id && orchestrator.model_id
@@ -236,6 +310,33 @@ export function make(deps: Deps) {
             },
           }
         : {}),
+      // Claude's subagents (Task tool calls) run as sidechains of the same
+      // event stream, tagged with `parent_tool_use_id`. The driver's sidechain
+      // router hands each one back here to become a real child session, so it
+      // shows up in the session graph and transcript instead of leaking into
+      // the orchestrator's own turn.
+      sidechain: {
+        spawn: (spawnInput: { title: string; prompt: string }) =>
+          Effect.gen(function* () {
+            // Avoid doubling up when the subagent's own title already says
+            // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
+            // render as "code-reviewer subagent (@claude subagent)".
+            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
+            const child = yield* sessions
+              .create({
+                parentID: sessionID,
+                title,
+                ...(session.permission ? { permission: session.permission } : {}),
+              })
+              .pipe(Effect.orDie)
+            const message = yield* prompt({
+              sessionID: child.id,
+              noReply: true,
+              parts: [{ type: "text", text: spawnInput.prompt || spawnInput.title }],
+            }).pipe(Effect.orDie)
+            return { sessionID: child.id, userMessageID: message.info.id }
+          }),
+      },
     })
   })
 
@@ -259,7 +360,15 @@ export function make(deps: Deps) {
 
   const lastUserMessage = Effect.fnUntraced(function* (sessionID: SessionID) {
     const match = yield* sessions.findMessage(sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
-    return Option.getOrUndefined(match)
+    const message = Option.getOrUndefined(match)
+    return message ? claudeTurnMessage([message], undefined) : undefined
+  })
+
+  /** The message a queued command named for its own turn, if it's still a user message. */
+  const userMessage = Effect.fnUntraced(function* (sessionID: SessionID, messageID: MessageID) {
+    const match = yield* sessions.findMessage(sessionID, (message) => message.info.id === messageID).pipe(Effect.orDie)
+    const message = Option.getOrUndefined(match)
+    return message ? claudeTurnMessage([message], messageID) : undefined
   })
 
   return {
@@ -270,5 +379,6 @@ export function make(deps: Deps) {
     ensureClaudeTitle,
     modelIdentifier,
     lastUserMessage,
+    userMessage,
   }
 }

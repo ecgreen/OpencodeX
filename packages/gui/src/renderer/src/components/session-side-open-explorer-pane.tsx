@@ -33,11 +33,10 @@ export function SessionSideOpenExplorerPane(props: {
   filter: string
   setFilter: (value: string) => void
   searchState: "idle" | "loading" | "error"
-  matches: FileNode[]
   rows: WorkbenchTreeRow[]
   loading: boolean
   openPath: string
-  toggleFolder: (node: FileNode) => void
+  toggleFolder: (node: FileNode, expanded: boolean) => void
   openFile: (path: string) => void
   fileStatus?: (path: string) => "dirty" | "session" | undefined
   close: () => void
@@ -77,7 +76,6 @@ export function SessionSideOpenExplorerPane(props: {
         filter={props.filter}
         setFilter={props.setFilter}
         searchState={props.searchState}
-        matches={props.matches}
         rows={props.rows}
         loading={props.loading}
         openPath={props.openPath}

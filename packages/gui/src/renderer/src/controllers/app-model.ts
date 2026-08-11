@@ -12,6 +12,7 @@ import type { createPluginController } from "./plugin-controller"
 import type { createRailController } from "./rail-controller"
 import type { createSessionActionsController } from "./session-actions-controller"
 import type { createSessionComposerController } from "./session-composer-controller"
+import type { createSessionGraphController } from "./session-graph-controller"
 import type { createSessionSelectionController } from "./session-selection-controller"
 import type { createSessionSlashController } from "./session-slash-controller"
 import type { createSessionState } from "./session-state"
@@ -37,6 +38,7 @@ export type GuiAppModel = {
   rail: ReturnType<typeof createRailController>
   sessionActions: ReturnType<typeof createSessionActionsController>
   sessionComposer: ReturnType<typeof createSessionComposerController>
+  sessionGraph: ReturnType<typeof createSessionGraphController>
   sessionSelection: ReturnType<typeof createSessionSelectionController>
   sessionSlash: ReturnType<typeof createSessionSlashController>
   sessionState: ReturnType<typeof createSessionState>

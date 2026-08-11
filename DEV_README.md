@@ -538,3 +538,11 @@ Expected. The repo lints against a recorded baseline: `bun run lint:ci` (`script
 
 **`bun run surface:audit` fails after I moved or deleted a package.**
 `upstream/policy.json` is the source of truth for which workspaces exist and which upstream paths are permanently pruned. Update it in the same change that moves the files.
+
+## Claude bridge changes require a coordinator restart
+
+The GUI reuses an already-running coordinator (`gui-coordinator.ts`) across app
+restarts. Changes to `packages/opencode` (mapper, driver, session loop) only
+take effect when that process restarts — quitting the GUI is not enough. Kill
+the `bun run … gui-coordinator.ts` process (or run the packaged updater); the
+next GUI connection respawns it from current source.

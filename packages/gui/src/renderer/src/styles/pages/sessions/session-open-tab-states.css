@@ -107,6 +107,10 @@
   --empty-action-tone: var(--primary) ;
 }
 
+.session-open-empty-actions button[data-empty-tone=graph] {
+  --empty-action-tone: var(--accent);
+}
+
 .session-open-empty-actions button[data-empty-tone=file] {
   --empty-action-tone: var(--secondary) ;
 }

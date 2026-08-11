@@ -8,48 +8,38 @@
   border-color: var(--border);
 }
 
-.session-open-file-explorer .workbench-file-row:before {
+/* Ancestor guide lines, one per depth level, drawn in the gutter left of the
+   indented row. The 12px period matches the indent step; the innermost line
+   sits 4px left of the row's edge so the highlight doesn't touch it. */
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:before {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 18px;
-  width: calc(var(--depth) * 16px);
+  left: calc(8px - (var(--depth) * 12px));
+  width: calc(var(--depth) * 12px);
   opacity: var(--depth-lines, 0);
   pointer-events: none;
-  background: repeating-linear-gradient(to right,transparent 0 15px,color-mix(in srgb,var(--border-subtle) 62%,transparent) 15px 16px);
+  background: repeating-linear-gradient(to right,color-mix(in srgb,var(--border-subtle) 62%,transparent) 0 1px,transparent 1px 12px);
 }
 
-.session-open-file-explorer .workbench-file-row:after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: calc(18px + ((var(--depth) - 1) * 16px));
-  width: 11px;
-  height: 1px;
-  opacity: var(--depth-lines, 0);
-  pointer-events: none;
-  background: color-mix(in srgb,var(--border-subtle) 62%,transparent);
-}
-
-.session-open-file-explorer .workbench-file-row:hover {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:hover {
   background: color-mix(in srgb,var(--secondary) 9%,var(--element));
   color: var(--text);
   outline: none;
 }
 
-.session-open-file-explorer .workbench-file-row:focus-visible {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:focus-visible {
   background: color-mix(in srgb,var(--secondary) 9%,var(--element));
   color: var(--text);
   outline: none;
 }
 
-.session-open-file-explorer .workbench-file-row.selected {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row.selected {
   background: linear-gradient(90deg,color-mix(in srgb,var(--secondary) 18%,transparent),transparent 70%),color-mix(in srgb,var(--element) 82%,var(--secondary) 10%);
-  box-shadow: inset 3px 0 color-mix(in srgb,var(--secondary) 78%,white 4%);
 }
 
-.session-open-file-explorer .workbench-file-row:not(.directory)>.icon {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row:not(.directory)>.icon {
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
 }
 

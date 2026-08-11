@@ -6,7 +6,7 @@ export type OpenTab = {
   id: string
   input: string
   title: string
-  kind: "context" | "file" | "files" | "git" | "picker" | "terminal" | "web"
+  kind: "context" | "file" | "files" | "git" | "graph" | "picker" | "terminal" | "web"
   path?: string
   directory?: string
   root?: string

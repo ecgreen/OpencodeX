@@ -29,13 +29,9 @@ export {
   VIEW_MESSAGE_PAGE_LIMIT,
 } from "../lib/session-hydration"
 import { createDeferredSessionRelease, createSessionPresentationController } from "../lib/session-presentation"
+import { graphVisibleSessionIDs } from "../lib/session-graph-visibility"
 import { subscribeEvents, type GuiSnapshot, type SessionData } from "../lib/session-api"
-import {
-  EMPTY_VIEW_PANE_RUNTIME_STATE,
-  setRecordEntry,
-  updateViewPaneRuntimeState,
-  type ViewPaneRuntimeState,
-} from "../lib/view-pane-state"
+import { createViewPaneStateStore, setRecordEntry } from "../lib/view-pane-state"
 import { createAuthoritativeStateApplicator } from "./authoritative-state-applicator"
 
 export const EMPTY_SESSION_DATA: SessionData = { messages: [], todos: [], diffs: [] }
@@ -62,7 +58,15 @@ export function createAuthoritativeStateController(input: {
     Record<string, { data: SessionData; loadedTime: number }>
   >({})
   const [viewSessionData, setViewSessionData] = createSignal<Record<string, SessionData>>({})
-  const [viewPaneStates, setViewPaneStates] = createSignal<Record<string, ViewPaneRuntimeState>>({})
+  const viewPanes = createViewPaneStateStore()
+  const {
+    states: viewPaneStates,
+    setStates: setViewPaneStates,
+    state: viewPaneState,
+    update: updateViewPaneState,
+    setLoading: setViewPaneLoading,
+    setLoadedTime: setViewPaneLoadedTime,
+  } = viewPanes
   const [sessionDataSessionID, setSessionDataSessionID] = createSignal("")
   const [loading, setLoading] = createSignal("Starting sidecar")
   const [error, setError] = createSignal<string>()
@@ -151,6 +155,7 @@ export function createAuthoritativeStateController(input: {
     viewLoadedTime: (sessionID) => viewPaneState(sessionID).loadedTime,
     setViewLoadedTime: setViewPaneLoadedTime,
     setViewLoading: setViewPaneLoading,
+    setViewError: viewPanes.setError,
     rememberSelectedData: rememberSelectedSessionData,
     evictPresentation: evictSessionPresentation,
   })
@@ -202,10 +207,17 @@ export function createAuthoritativeStateController(input: {
 
   function reconcilePresentation(next: ClientStateSyncState) {
     if (!next.epoch || !next.scope) return
+    // "Known" means the client catalog plus the delegation tree the graph
+    // fetched itself. Swarm-delegated children are hidden from the catalog by
+    // design, so reconciling against the catalog alone reads them as deleted -
+    // which aborts the transcript load of the pane the reader is looking at and
+    // leaves it blank, with nothing scheduled to try again.
+    const known = new Set(selectClientKnownSessionIDs(next))
+    for (const sessionID of graphVisibleSessionIDs()) known.add(sessionID)
     evictSessionPresentation(
       sessionPresentation.reconcile(
         `${next.epoch}\n${next.scope.projectID}\n${next.scope.workspaceID ?? ""}\n${next.scope.directory}`,
-        selectClientKnownSessionIDs(next),
+        known,
       ),
     )
   }
@@ -238,22 +250,6 @@ export function createAuthoritativeStateController(input: {
     if (!stateSync) throw new Error("GUI authoritative state sync is not connected")
     await stateSync.retry()
     await stateSync.refreshCapabilities()
-  }
-
-  function viewPaneState(paneID: string) {
-    return viewPaneStates()[paneID] ?? EMPTY_VIEW_PANE_RUNTIME_STATE
-  }
-
-  function updateViewPaneState(paneID: string, update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) {
-    setViewPaneStates((current) => updateViewPaneRuntimeState(current, paneID, update))
-  }
-
-  function setViewPaneLoading(paneID: string, loading: boolean) {
-    updateViewPaneState(paneID, (state) => (state.loading === loading ? state : { ...state, loading }))
-  }
-
-  function setViewPaneLoadedTime(paneID: string, loadedTime: number) {
-    updateViewPaneState(paneID, (state) => (state.loadedTime === loadedTime ? state : { ...state, loadedTime }))
   }
 
   function rememberSelectedSessionData(sessionID: string, data: SessionData, loadedTime: number) {

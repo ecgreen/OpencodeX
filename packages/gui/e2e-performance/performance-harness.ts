@@ -161,31 +161,47 @@ export function percentile(values: readonly number[], value: number) {
 
 export async function measureAuthoritativeClick(page: Page, title: string, click: () => Promise<void>) {
   await page.evaluate((expectedTitle) => {
-    const button = [...document.querySelectorAll<HTMLButtonElement>("button.session-link")]
-      .find((element) => element.textContent?.includes(expectedTitle))
-    if (!button) throw new Error(`Session button not found: ${expectedTitle}`)
+    if (![...document.querySelectorAll<HTMLButtonElement>("button.session-link")]
+      .some((element) => element.textContent?.includes(expectedTitle))) {
+      throw new Error(`Session button not found: ${expectedTitle}`)
+    }
     let started: number | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     let observer: MutationObserver | undefined
     const promise = new Promise<number>((resolve, reject) => {
+      const stop = () => {
+        document.removeEventListener("click", start, true)
+        observer?.disconnect()
+        if (timer !== undefined) clearTimeout(timer)
+      }
       const finish = () => {
         if (started === undefined) return
         if (document.querySelector(".session-titleline h1")?.textContent?.trim() !== expectedTitle) return
         if (document.querySelector(".session-loading-skeleton.visible")) return
-        observer?.disconnect()
-        if (timer !== undefined) clearTimeout(timer)
+        stop()
         requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now() - started!)))
       }
-      button.addEventListener("click", () => {
+      const start = (event: MouseEvent) => {
+        const target = event.target
+        if (!(target instanceof Element)) return
+        const button = target.closest<HTMLButtonElement>("button.session-link")
+        if (!button?.textContent?.includes(expectedTitle)) return
+        document.removeEventListener("click", start, true)
         started = performance.now()
         observer = new MutationObserver(finish)
         observer.observe(document.body, { childList: true, subtree: true, attributes: true })
+        if (timer !== undefined) clearTimeout(timer)
         timer = setTimeout(() => {
-          observer?.disconnect()
+          stop()
           reject(new Error(`Authoritative session paint timed out: ${expectedTitle}`))
         }, 15_000)
         finish()
-      }, { capture: true, once: true })
+      }
+      document.addEventListener("click", start, true)
+      timer = setTimeout(() => {
+        stop()
+        reject(new Error(`Authoritative session click was not observed: ${expectedTitle}`))
+      }, 15_000)
     })
     Reflect.set(window, "__opencodexAuthoritativeClick", promise)
   }, title)

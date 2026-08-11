@@ -40,6 +40,7 @@ export type PromptInput = Schema.Schema.Type<typeof PromptInput>
 
 export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
   sessionID: SessionID,
+  messageID: Schema.optional(MessageID),
 }) {}
 
 export const ShellInput = Schema.Struct({

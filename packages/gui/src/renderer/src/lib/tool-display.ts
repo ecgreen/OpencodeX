@@ -38,6 +38,15 @@ const COMMON_TOOL_IDS = new Set([
   "browser_navigate",
   "browser_screenshot",
   "browser_snapshot",
+  "toolsearch",
+  "taskcreate",
+  "taskupdate",
+  "tasklist",
+  "taskget",
+  "agent",
+  "monitor",
+  "schedulewakeup",
+  "plan_exit",
 ])
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
@@ -120,6 +129,7 @@ function toolHasRichDetails(tool: string, metadata: Record<string, unknown>, inp
     arrayValue(metadata.todos).length ||
     arrayValue(input.todos).length ||
     arrayValue(input.questions).length ||
+    stringValue(input.plan) ||
     stringValue(input.content),
   )
 }
@@ -204,7 +214,7 @@ export function patchContents(patch: string, filePath: string) {
     after.push(text)
   }
 
-  if (!inHunk) return
+  if (!inHunk) return undefined
   return {
     before: { name: filePath, contents: before.join("\n") },
     after: { name: filePath, contents: after.join("\n") },
@@ -213,18 +223,21 @@ export function patchContents(patch: string, filePath: string) {
 
 export function toolOutput(state: Extract<Part, { type: "tool" }>["state"]) {
   if (state.status === "completed") return state.output
+  return undefined
 }
 
 export function toolError(state: Extract<Part, { type: "tool" }>["state"]) {
   if (state.status === "error") return state.error
+  return undefined
 }
 
 export function toolMetadata(state: Extract<Part, { type: "tool" }>["state"]) {
   if ("metadata" in state && isRecordValue(state.metadata)) return state.metadata
+  return undefined
 }
 
 export function permissionToolPart(request: PermissionRequest, messages: MessageBundle[]) {
-  if (!request.tool) return
+  if (!request.tool) return undefined
   return messages
     .flatMap((message) => message.parts)
     .find((part): part is Extract<Part, { type: "tool" }> => part.type === "tool" && part.callID === request.tool?.callID && part.messageID === request.tool.messageID)
@@ -237,6 +250,7 @@ export function toolInput(request: PermissionRequest, part?: Extract<Part, { typ
 
 export function permissionDiff(request: PermissionRequest) {
   if (typeof request.metadata.diff === "string") return request.metadata.diff
+  return undefined
 }
 
 export function collapseOutput(output: string, maxLines = 120, maxChars = 12_000) {

@@ -16,6 +16,44 @@ const title = `Git Workspace ${path.basename(directory)}`
 const run = promisify(execFile)
 let ready = false
 
+test("shows the first manifest page while later pages load", async ({ page, request }) => {
+  await ensureFixture(request)
+  await configure(page, { width: 1440, height: 960 }, "dark", "no-preference")
+  const continuation = deferred()
+  await page.route("**/experimental/opencodex/workbench/changes/page**", async (route) => {
+    const start = new URL(route.request().url()).searchParams.get("cursor") ? 200 : 0
+    if (start > 0) await continuation.promise
+    await route.fulfill({ json: {
+      ok: true,
+      mode: "git",
+      revision: "progressive-manifest",
+      path: "",
+      items: Array.from({ length: start > 0 ? 201 : 200 }, (_, index) => ({
+        type: "file", name: `file-${start + index}.ts`, path: `generated/file-${start + index}.ts`, status: "modified",
+        staged: false, unstaged: true, untracked: false, openable: true,
+      })),
+      summary: { fileCount: 401, additions: 0, deletions: 0, metricsResolved: 0, metricsTotal: 401, metricsComplete: false },
+      ...(start === 0 ? { next: "continuation" } : {}),
+    } })
+  })
+  await page.route("**/experimental/opencodex/workbench/changes/metrics/page**", (route) => route.fulfill({ json: {
+    ok: true, stale: false, revision: "progressive-manifest", items: [],
+    summary: { fileCount: 401, additions: 0, deletions: 0, metricsResolved: 401, metricsTotal: 401, metricsComplete: true },
+  } }))
+  await page.route("**/experimental/opencodex/workbench/changes/patch/page**", (route) => route.fulfill({ json: {
+    ok: true, stale: false, revision: "progressive-manifest", path: "generated/file-0.ts", status: "modified",
+    additions: 0, deletions: 0, binary: false, complete: true,
+  } }))
+
+  await openGitWorkspace(page)
+  const header = page.locator(".session-side-diff > header")
+  await expect(header).toContainText("Loading 200/401 changes")
+  await expect(page.getByRole("treeitem", { name: /file-0\.ts/ })).toBeVisible()
+  continuation.resolve()
+  await expect(header).not.toContainText("Loading")
+  await expect(header).toContainText("401 files")
+})
+
 test("streams metrics, renders deletion patches, and refreshes without remounting", async ({
   page,
   request,

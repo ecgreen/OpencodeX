@@ -10,11 +10,10 @@ export function SessionSideFileExplorer(props: {
   filter: string
   setFilter: (value: string) => void
   searchState: "idle" | "loading" | "error"
-  matches: FileNode[]
   rows: WorkbenchTreeRow[]
   loading: boolean
   openPath: string
-  toggleFolder: (node: FileNode) => void
+  toggleFolder: (node: FileNode, expanded: boolean) => void
   openFile: (path: string) => void
   /** Marks files the session changed, or that have edits open and unsaved. */
   fileStatus?: (path: string) => "dirty" | "session" | undefined
@@ -36,39 +35,14 @@ export function SessionSideFileExplorer(props: {
           <Button appearance="ghost" type="button" aria-label="Clear file filter" onClick={() => props.setFilter("")}><Icon name="x" /></Button>
         </Show>
       </div>
-      <Show when={props.filter.trim().length >= 2}>
-        <div class="workbench-search-results">
-          <header>
-            <span>Project matches</span>
-            <small>{props.searchState === "loading" ? "Searching..." : props.searchState === "error" ? "Search failed" : `${props.matches.length} found`}</small>
-          </header>
-          <For each={props.matches} fallback={<div class="empty">{props.searchState === "loading" ? "Searching project..." : "No project matches."}</div>}>
-            {(match) => (
-              <Button appearance="ghost"
-                type="button"
-                class="workbench-search-row"
-                classList={{ selected: props.openPath === match.path, directory: match.type === "directory" }}
-                onClick={() => match.type === "directory" ? props.toggleFolder(match) : props.openFile(match.path)}
-              >
-                <Icon name={match.type === "directory" ? "folder" : "file"} />
-                <span>{match.path}</span>
-                <Show when={match.type !== "directory" && props.fileStatus?.(match.path)}>
-                  {(status) => (
-                    <span
-                      class="workbench-file-marker"
-                      data-kind={status()}
-                      title={status() === "dirty" ? "Unsaved changes" : "Changed in this session"}
-                      aria-label={status() === "dirty" ? "Unsaved changes" : "Changed in this session"}
-                    />
-                  )}
-                </Show>
-              </Button>
-            )}
-          </For>
-        </div>
-      </Show>
       <div class="workbench-tree" role="tree">
-        <For each={props.rows} fallback={<div class="empty">{props.loading ? "Loading files..." : "No files found."}</div>}>
+        <For each={props.rows} fallback={
+          <div class="empty">
+            {props.loading ? "Loading files..."
+              : props.filter.trim().length >= 2 ? (props.searchState === "loading" ? "Searching project..." : "No matches.")
+              : "No files found."}
+          </div>
+        }>
           {(row) => (
             <Button appearance="ghost"
               type="button"
@@ -77,7 +51,7 @@ export function SessionSideFileExplorer(props: {
               style={{ "--depth": String(row.depth), "--depth-lines": row.depth === 0 ? "0" : "1" }}
               role="treeitem"
               aria-expanded={row.node.type === "directory" ? row.expanded : undefined}
-              onClick={() => row.node.type === "directory" ? props.toggleFolder(row.node) : props.openFile(row.node.path)}
+              onClick={() => row.node.type === "directory" ? props.toggleFolder(row.node, row.expanded) : props.openFile(row.node.path)}
             >
               <Show when={row.node.type === "directory"} fallback={<span class="workbench-tree-spacer" />}>
                 <span class="workbench-disclosure"><Icon name={row.expanded ? "chevronDown" : "chevronRight"} /></span>

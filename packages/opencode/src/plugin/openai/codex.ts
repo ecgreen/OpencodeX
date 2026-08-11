@@ -481,11 +481,11 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 init.headers.forEach((value, key) => headers.set(key, value))
               } else if (Array.isArray(init.headers)) {
                 for (const [key, value] of init.headers) {
-                  if (value !== undefined) headers.set(key, String(value))
+                  if (value !== undefined) headers.set(key, value)
                 }
               } else {
                 for (const [key, value] of Object.entries(init.headers)) {
-                  if (value !== undefined) headers.set(key, String(value))
+                  if (value !== undefined) headers.set(key, value)
                 }
               }
             }
@@ -660,7 +660,9 @@ function openaiModelVariants(model: {
     ...model.variants,
     xhigh: model.variants?.xhigh ?? {
       reasoningEffort: "xhigh",
-      reasoningSummary: "auto",
+      // The Codex backend is what Codex CLI talks to, and Codex requests
+      // detailed summaries - `auto` only returns one-line headlines.
+      reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     },
   }

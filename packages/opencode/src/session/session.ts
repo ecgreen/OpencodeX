@@ -33,6 +33,12 @@ import { Snapshot } from "@/snapshot"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { SessionID, MessageID, PartID } from "./schema"
+import {
+  delegationRecord,
+  withDelegationRecord,
+  withoutDelegationRecord,
+  type DelegationRecord,
+} from "./delegation-outcome"
 
 import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
@@ -477,6 +483,31 @@ export interface Interface {
   readonly setAgent: (input: { sessionID: SessionID; agent: Info["agent"] }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
+  /**
+   * Writes a delegation run record under `metadata.opencodex.delegation`,
+   * merging inside one transaction so it can never clobber a concurrent
+   * metadata update. With `expectRunID` set the write is compare-and-set: it
+   * is declined - returning false - when another run's record owns the
+   * session, or when this run already settled (the first settle wins). A
+   * write without `expectRunID` claims the session for a new run
+   * unconditionally.
+   */
+  readonly stampDelegation: (input: {
+    sessionID: SessionID
+    record: DelegationRecord
+    expectRunID?: string
+  }) => Effect.Effect<boolean>
+  /**
+   * Marks whether the run's report durably reached the parent - the fact the
+   * execution stamp deliberately does not claim. Compare-and-set on `runID`;
+   * returns false when the record has moved on to another run.
+   */
+  readonly stampDelegationDelivery: (input: {
+    sessionID: SessionID
+    runID: string
+    outcome: "delivered" | "failed"
+    at?: number
+  }) => Effect.Effect<boolean>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
   readonly setRevert: (input: {
     sessionID: SessionID
@@ -872,7 +903,9 @@ export const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
         title,
-        metadata: structuredClone(original.metadata),
+        // The delegation record stays behind: it describes the source
+        // session's run under its own parent, and a fork is a fresh root.
+        metadata: withoutDelegationRecord(structuredClone(original.metadata)),
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()
@@ -933,6 +966,34 @@ export const layer: Layer.Layer<
         }),
       )
 
+    /**
+     * Read-modify-write inside one immediate transaction, for fields whose
+     * next value depends on the current one. `compute` returning undefined
+     * declines the write; the return value says whether a revision committed.
+     */
+    const mutate = (sessionID: SessionID, compute: (current: Info) => Info | undefined) =>
+      events.barrier(
+        Effect.gen(function* () {
+          const event = yield* db.transaction(
+            () =>
+              Effect.gen(function* () {
+                const current = yield* get(sessionID)
+                const next = compute(current)
+                if (!next) return undefined
+                return yield* events.commit(
+                  SessionLegacy.Event.Updated,
+                  { sessionID, info: next },
+                  { location: eventLocation(next) },
+                )
+              }),
+            { behavior: "immediate" },
+          )
+          if (!event) return false
+          yield* events.broadcast(event)
+          return true
+        }),
+      )
+
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
@@ -955,6 +1016,48 @@ export const layer: Layer.Layer<
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
       yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
+    })
+
+    const stampDelegation = Effect.fn("Session.stampDelegation")(function* (input: {
+      sessionID: SessionID
+      record: DelegationRecord
+      expectRunID?: string
+    }) {
+      return yield* mutate(input.sessionID, (current) => {
+        if (input.expectRunID) {
+          const stored = delegationRecord(current.metadata)
+          // Another run has claimed the session since; this writer is stale.
+          if (stored && stored.runID !== input.expectRunID) return undefined
+          // Same run, already settled: the first settle boundary won.
+          if (stored && stored.runID === input.expectRunID && stored.phase === "settled") return undefined
+        }
+        return {
+          ...current,
+          metadata: withDelegationRecord(current.metadata, input.record),
+          time: { ...current.time, updated: Date.now() },
+        }
+      }).pipe(Effect.orDie)
+    })
+
+    const stampDelegationDelivery = Effect.fn("Session.stampDelegationDelivery")(function* (input: {
+      sessionID: SessionID
+      runID: string
+      outcome: "delivered" | "failed"
+      at?: number
+    }) {
+      return yield* mutate(input.sessionID, (current) => {
+        const stored = delegationRecord(current.metadata)
+        if (!stored || stored.runID !== input.runID) return undefined
+        return {
+          ...current,
+          metadata: withDelegationRecord(current.metadata, {
+            ...stored,
+            deliveryOutcome: input.outcome,
+            ...(input.outcome === "delivered" ? { deliveredAt: input.at ?? Date.now() } : {}),
+          }),
+          time: { ...current.time, updated: Date.now() },
+        }
+      }).pipe(Effect.orDie)
     })
 
     const setPermission = Effect.fn("Session.setPermission")(function* (input: {
@@ -1110,6 +1213,8 @@ export const layer: Layer.Layer<
       setAgent,
       setArchived,
       setMetadata,
+      stampDelegation,
+      stampDelegationDelivery,
       setPermission,
       setRevert,
       clearRevert,

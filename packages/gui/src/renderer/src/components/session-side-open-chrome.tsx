@@ -16,6 +16,7 @@ export function SessionSideOpenChrome(props: {
   addFile: () => void
   addTerminal: () => void
   addContext: () => void
+  addGraph: () => void
   directoryOnly?: boolean
   addWeb: () => void
   setWebInput: (value: string) => void
@@ -39,7 +40,7 @@ export function SessionSideOpenChrome(props: {
   return <>
     <Show when={props.tabs.length > 0}>
       <div class="session-open-chrome">
-        <SessionSideTabBar controller={props.controller} addGit={props.addGit} addFile={props.addFile} addTerminal={props.addTerminal} addContext={props.addContext} showContext={!props.directoryOnly} addWeb={props.addWeb} changedFiles={props.changedFiles} />
+        <SessionSideTabBar controller={props.controller} addGit={props.addGit} addFile={props.addFile} addTerminal={props.addTerminal} addContext={props.addContext} addGraph={props.addGraph} showContext={!props.directoryOnly} addWeb={props.addWeb} changedFiles={props.changedFiles} />
         <Show when={tab()?.kind === "web"}><div class="session-open-bar">
           <IconButton icon="chevronLeft" label="Back" disabled={!tab()?.state?.canGoBack} onClick={() => props.browserAction("back")} />
           <IconButton icon="chevronRight" label="Forward" disabled={!tab()?.state?.canGoForward} onClick={() => props.browserAction("forward")} />

@@ -63,7 +63,10 @@
 
 .part-header {
   display: flex;
-  flex-wrap: wrap;
+  /* One line, always: a long command meta truncates with an ellipsis instead
+     of wrapping the row. The full invocation stays reachable via the meta's
+     native tooltip and the expanded details body. */
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--ds-space-2);
   min-height: 24px;
@@ -104,6 +107,7 @@
   height: 13px;
   color: var(--part-accent, var(--ds-text-muted));
   opacity: .85;
+  flex-shrink: 0;
 }
 
 /*
@@ -125,12 +129,14 @@
 .part-chevron-spacer {
   width: 13px;
   height: 13px;
+  flex-shrink: 0;
 }
 
 .part-meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--ds-text-muted);
   font-size: 11px;
@@ -148,6 +154,7 @@
   align-items: center;
   gap: var(--ds-space-1);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .part-status-label {
@@ -173,15 +180,16 @@
   font-size: 10px;
 }
 
-/* Always drops to its own line under the title, never between header slots. */
+/* Inline on the single-line header, truncating with an ellipsis; the full
+   error is visible when the row is expanded. */
 .part-error-preview {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1 0 100%;
+  flex: 0 1 auto;
   min-width: 0;
   margin-left: 0;
-  padding-left: 21px;
+  padding-left: 0;
   color: var(--ds-danger);
   font-size: 11px;
 }
@@ -236,10 +244,6 @@
   color: var(--ds-danger);
 }
 
-.tool-group-item .part-error-preview {
-  padding-left: 0;
-}
-
 /* A retry reads as a log line: the request recovered, nothing to act on. */
 .part.retry-notice {
   display: flex;
@@ -257,7 +261,10 @@
 }
 
 .part.retry-notice .part-error-preview {
-  padding-left: 21px;
+  /* The retry container wraps on its own (flex-wrap above); the old 21px
+     indent assumed an own-line layout under a chevron, which no longer
+     applies here. */
+  padding-left: 0;
   color: var(--ds-text-muted);
 }
 

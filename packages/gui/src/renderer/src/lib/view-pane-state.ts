@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import { emptyPrompt, type GuiPromptInfo } from "./prompt-state"
 
 export type ViewPaneRuntimeState = {
@@ -9,6 +10,8 @@ export type ViewPaneRuntimeState = {
   selectedVariant?: string
   loading: boolean
   loadedTime?: number
+  /** Why the last transcript load failed, so a pane never just sits blank. */
+  error?: string
 }
 
 export const EMPTY_VIEW_PANE_RUNTIME_STATE: ViewPaneRuntimeState = {
@@ -33,6 +36,37 @@ export function updateViewPaneRuntimeState(
   update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState,
 ) {
   return setRecordEntry(current, key, update(current[key] ?? EMPTY_VIEW_PANE_RUNTIME_STATE))
+}
+
+/**
+ * The per-pane runtime store and the writes that guard their own identity: a
+ * same-valued write must not notify, or an effect that reads a pane's loading
+ * flag and then sets it would re-run on its own write.
+ */
+export function createViewPaneStateStore() {
+  const [states, setStates] = createSignal<Record<string, ViewPaneRuntimeState>>({})
+  const state = (paneID: string) => states()[paneID] ?? EMPTY_VIEW_PANE_RUNTIME_STATE
+  const update = (paneID: string, next: (current: ViewPaneRuntimeState) => ViewPaneRuntimeState) =>
+    setStates((current) => updateViewPaneRuntimeState(current, paneID, next))
+  return {
+    states,
+    setStates,
+    state,
+    update,
+    setLoading: (paneID: string, loading: boolean) =>
+      update(paneID, (current) => (current.loading === loading ? current : { ...current, loading })),
+    setLoadedTime: (paneID: string, loadedTime: number) =>
+      update(paneID, (current) => (current.loadedTime === loadedTime ? current : { ...current, loadedTime })),
+    setError: (paneID: string, error: string | undefined) =>
+      update(paneID, (current) => {
+        if (current.error === error) return current
+        if (error === undefined) {
+          const { error: _dropped, ...rest } = current
+          return rest
+        }
+        return { ...current, error }
+      }),
+  }
 }
 
 export function pruneRecordKeys<T>(current: Record<string, T>, keep: ReadonlySet<string>) {

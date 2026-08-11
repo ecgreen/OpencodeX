@@ -6,7 +6,7 @@ void mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
 
 const { autoOpenForStatus, createDisclosure, createDisclosureStore, createMountedOnce, sessionDisclosureStore, clearSessionDisclosureStore } =
   await import("../src/renderer/src/lib/disclosure")
-const { thinkingPreview } = await import("../src/renderer/src/components/session-thinking")
+const { thinkingFitsInline, thinkingPreview } = await import("../src/renderer/src/components/session-thinking")
 
 function toggleEvent(open: boolean) {
   return { currentTarget: { open } }
@@ -139,5 +139,18 @@ describe("GUI thinking preview", () => {
     expect(thinkingPreview("## **Heading** with `code`", false)).toBe("Heading with code")
     expect(thinkingPreview("x".repeat(200), false)).toBe(`${"x".repeat(96)}…`)
     expect(thinkingPreview("   \n\n  ", false)).toBe("")
+  })
+
+  test("one-line thoughts render inline with no dropdown, regardless of length", () => {
+    // A dropdown hiding a single line opens onto nothing new - the line itself
+    // is the content, shown wrapping in the row.
+    expect(thinkingFitsInline(["Handling workspace browser limitations"], false)).toBe(true)
+    expect(thinkingFitsInline(["**Planning simplified test with inline mock**"], false)).toBe(true)
+    expect(thinkingFitsInline(["x".repeat(200)], false)).toBe(true)
+    expect(thinkingFitsInline(["First thought\nSecond thought"], false)).toBe(false)
+    expect(thinkingFitsInline(["One", "Two"], false)).toBe(false)
+    // While streaming, keep the expandable ticker - more lines may arrive.
+    expect(thinkingFitsInline(["Short"], true)).toBe(false)
+    expect(thinkingFitsInline([], false)).toBe(false)
   })
 })

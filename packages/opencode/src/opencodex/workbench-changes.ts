@@ -2,13 +2,15 @@ import { InstanceState } from "@/effect/instance-state"
 import { File } from "@/file"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { AppProcess } from "@opencode-ai/core/process"
-import { Effect, Stream } from "effect"
+import { Duration, Effect, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import path from "path"
 import {
   decodeWorkbenchCursor,
   encodeWorkbenchCursor,
   findWorkbenchSnapshot,
+  acquireWorkbenchSnapshotLock,
+  latestWorkbenchSnapshot,
   rememberWorkbenchSnapshot,
   workbenchChangeSummary,
   type WorkbenchChangeFile,
@@ -20,6 +22,8 @@ const DEFAULT_PAGE_SIZE = 100
 const METRIC_PAGE_SIZE = 32
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 const MAX_ERROR_BYTES = 64 * 1024
+const SNAPSHOT_TIMEOUT = "30 seconds"
+const METADATA_TIMEOUT = "3 seconds"
 export const WORKBENCH_PATCH_PAGE_BYTES = 256 * 1024
 export const gitBaseArgs = [
   "--no-optional-locks",
@@ -40,25 +44,35 @@ export const listWorkbenchChanges = Effect.fn("WorkbenchChanges.list")(function*
   cursor?: string
   revision?: string
   limit?: number
+  metadata?: boolean
 }) {
   const instance = yield* InstanceState.context
   const prefix = normalizeRelative(input.path ?? "")
   const cursor = decodeWorkbenchCursor(input.cursor)
   const requestedRevision = input.revision ?? cursor?.revision
   const cached = requestedRevision ? findWorkbenchSnapshot(instance.directory, requestedRevision) : undefined
-  const snapshot = cached ?? (requestedRevision
-    ? undefined
-    : yield* createWorkbenchSnapshot().pipe(Effect.catch(() => Effect.succeed(undefined))))
+  const created = cached || requestedRevision ? undefined : yield* createSharedWorkbenchSnapshot(instance.directory).pipe(
+    Effect.map((snapshot) => ({ ok: true as const, snapshot })),
+    Effect.timeoutOrElse({
+      duration: SNAPSHOT_TIMEOUT,
+      orElse: () => Effect.succeed({ ok: false as const, message: "Reading project changes timed out. Retry when the workspace is less busy." }),
+    }),
+    Effect.catch((cause) => Effect.succeed({
+      ok: false as const,
+      message: cause instanceof Error ? cause.message : "Unable to read project changes.",
+    })),
+  )
+  const snapshot = cached ?? (created?.ok ? created.snapshot : undefined)
   if (!snapshot || cursor && cursor.revision !== snapshot.revision) {
     return {
       ok: false,
-      stale: true,
+      stale: Boolean(requestedRevision),
       mode: "git" as const,
       revision: requestedRevision ?? "",
       path: prefix,
       items: [],
       summary: emptySummary(),
-      message: "The change snapshot is stale. Refresh to continue.",
+      message: created && !created.ok ? created.message : "The change snapshot is stale. Refresh to continue.",
     }
   }
   if (cursor?.path !== undefined && cursor.path !== prefix) {
@@ -73,6 +87,10 @@ export const listWorkbenchChanges = Effect.fn("WorkbenchChanges.list")(function*
       message: "The change page cursor does not match this path.",
     }
   }
+  const repository = input.metadata && !requestedRevision && snapshot.mode === "git"
+    ? yield* loadWorkbenchRepositoryMetadata(snapshot.directory)
+    : snapshot.repository
+  if (input.metadata) Object.assign(snapshot.repository, repository)
 
   const filtered = prefix
     ? snapshot.files.filter((file) => file.path === prefix || file.path.startsWith(`${prefix}/`))
@@ -91,7 +109,7 @@ export const listWorkbenchChanges = Effect.fn("WorkbenchChanges.list")(function*
     ...(index + items.length < filtered.length
       ? { next: encodeWorkbenchCursor({ revision: snapshot.revision, path: prefix, index: index + items.length }) }
       : {}),
-    ...snapshot.repository,
+    ...repository,
     ...(snapshot.message ? { message: snapshot.message } : {}),
   }
 })
@@ -147,17 +165,20 @@ export const loadWorkbenchChangeMetrics = Effect.fn("WorkbenchChanges.metrics")(
   }
 })
 
-export const workbenchMode = Effect.fnUntraced(function* (cwd: string) {
+export const workbenchMode = Effect.fn("WorkbenchChanges.mode")(function* (cwd: string) {
   const result = yield* runWorkbenchGit(cwd, ["rev-parse", "--is-inside-work-tree"], 4096)
-  return result.exitCode === 0 && result.stdout.toString("utf8").trim() === "true"
-    ? "git" as const
-    : "directory" as const
+  if (result.exitCode === 0) return result.stdout.toString("utf8").trim() === "true"
+    ? { mode: "git" as const }
+    : { mode: "directory" as const }
+  if (result.exitCode === 128 || result.exitCode === -1) return { mode: "directory" as const }
+  return { mode: "error" as const, message: result.stderr.toString("utf8").trim() || "Unable to determine repository state." }
 })
 
-export const runWorkbenchGit = Effect.fnUntraced(function* (
+export const runWorkbenchGit = Effect.fn("WorkbenchChanges.git")(function* (
   cwd: string,
   args: string[],
   maxOutputBytes?: number,
+  timeout: Duration.Input = "30 seconds",
 ) {
   const appProcess = yield* AppProcess.Service
   return yield* appProcess.run(
@@ -171,7 +192,7 @@ export const runWorkbenchGit = Effect.fnUntraced(function* (
     {
       ...(maxOutputBytes === undefined ? {} : { maxOutputBytes }),
       maxErrorBytes: MAX_ERROR_BYTES,
-      timeout: "30 seconds",
+      timeout,
     },
   ).pipe(Effect.catch((cause) => Effect.succeed({
     command: "git",
@@ -185,28 +206,41 @@ export const runWorkbenchGit = Effect.fnUntraced(function* (
 
 export const createWorkbenchSnapshot = Effect.fnUntraced(function* () {
   const instance = yield* InstanceState.context
-  const mode = yield* workbenchMode(instance.directory)
-  const snapshot = mode === "git"
+  const result = yield* workbenchMode(instance.directory)
+  if (result.mode === "error") return yield* Effect.fail(new Error(result.message))
+  const snapshot = result.mode === "git"
     ? yield* createGitSnapshot(instance.directory)
     : yield* createDirectorySnapshot(instance.directory)
   return rememberWorkbenchSnapshot(snapshot)
 })
 
-const createGitSnapshot = Effect.fnUntraced(function* (directory: string) {
-  const status = yield* runWorkbenchGit(directory, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--no-renames",
-    "--",
-    ".",
-  ])
+const createSharedWorkbenchSnapshot = Effect.fnUntraced(function* (directory: string) {
+  const previousRevision = latestWorkbenchSnapshot(directory)?.revision
+  const lock = acquireWorkbenchSnapshotLock(directory)
+  return yield* lock.semaphore.withPermits(1)(Effect.gen(function* () {
+    const concurrent = latestWorkbenchSnapshot(directory)
+    if (concurrent && concurrent.revision !== previousRevision) return concurrent
+    return yield* createWorkbenchSnapshot()
+  })).pipe(Effect.ensuring(Effect.sync(lock.release)))
+})
+
+const createGitSnapshot = Effect.fn("WorkbenchChanges.gitSnapshot")(function* (directory: string) {
+  const [status, baselineResult] = yield* Effect.all([
+    runWorkbenchGit(directory, [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--no-renames",
+      "--",
+      ".",
+    ]),
+    runWorkbenchGit(directory, ["rev-parse", "--verify", "HEAD^{tree}"], 4096),
+  ], { concurrency: 2 })
   if (status.exitCode !== 0 || status.stdoutTruncated) {
     return yield* Effect.fail(new Error(status.stderr.toString("utf8").trim() || "Unable to read Git changes."))
   }
   const files = yield* validateOpenableFiles(directory, status.stdout.toString("utf8").split("\0").flatMap(changeFromStatus))
-  const baselineResult = yield* runWorkbenchGit(directory, ["rev-parse", "--verify", "HEAD^{tree}"], 4096)
   return {
     directory,
     revision: crypto.randomUUID(),
@@ -214,7 +248,7 @@ const createGitSnapshot = Effect.fnUntraced(function* (directory: string) {
     mode: "git",
     baseline: gitOutput(baselineResult) ?? EMPTY_TREE,
     files: files.toSorted((left, right) => left.path.localeCompare(right.path)),
-    repository: yield* repositoryMetadata(directory),
+    repository: {},
     patches: new Map(),
   } satisfies WorkbenchChangeSnapshot
 })
@@ -246,14 +280,14 @@ const createDirectorySnapshot = Effect.fnUntraced(function* (directory: string) 
   } satisfies WorkbenchChangeSnapshot
 })
 
-const validateOpenableFiles = Effect.fnUntraced(function* (directory: string, files: WorkbenchChangeFile[]) {
+const validateOpenableFiles = Effect.fn("WorkbenchChanges.validate")(function* (directory: string, files: WorkbenchChangeFile[]) {
   const fs = yield* AppFileSystem.Service
   return (yield* Effect.all(files.map((file) => Effect.gen(function* () {
     if (file.status === "deleted") return { ...file, openable: false }
     const target = path.resolve(directory, file.path)
-    if (!AppFileSystem.contains(directory, target) || !(yield* fs.isFile(target))) return
+    if (!AppFileSystem.contains(directory, target) || !(yield* fs.isFile(target))) return undefined
     const real = yield* fs.realPath(target).pipe(Effect.catch(() => Effect.succeed("")))
-    if (!real || !AppFileSystem.contains(directory, real)) return
+    if (!real || !AppFileSystem.contains(directory, real)) return undefined
     return { ...file, openable: true }
   })), { concurrency: 16 })).filter((file): file is WorkbenchChangeFile => file !== undefined)
 })
@@ -288,7 +322,7 @@ const measureTextFiles = Effect.fnUntraced(function* (snapshot: WorkbenchChangeS
   const fs = yield* AppFileSystem.Service
   const measured = yield* Effect.all(files.map((file) => Effect.gen(function* () {
     const target = path.resolve(snapshot.directory, file.path)
-    if (!file.openable || !(yield* fs.isFile(target))) return
+    if (!file.openable || !(yield* fs.isFile(target))) return undefined
     const value = yield* fs.stream(target, { chunkSize: 64 * 1024 }).pipe(
       Stream.runFold(() => ({ lines: 0, bytes: 0, last: -1, binary: false }), (state, chunk) => ({
         lines: state.lines + chunk.reduce((count, byte) => count + Number(byte === 10), 0),
@@ -298,7 +332,7 @@ const measureTextFiles = Effect.fnUntraced(function* (snapshot: WorkbenchChangeS
       })),
       Effect.catch(() => Effect.succeed(undefined)),
     )
-    if (!value) return
+    if (!value) return undefined
     return {
       path: file.path,
       additions: value.binary ? 0 : value.lines + Number(value.bytes > 0 && value.last !== 10),
@@ -312,17 +346,17 @@ const measureTextFiles = Effect.fnUntraced(function* (snapshot: WorkbenchChangeS
   return { ok: true as const, items: measured.filter((item): item is NonNullable<typeof item> => item !== undefined) }
 })
 
-const repositoryMetadata = Effect.fnUntraced(function* (cwd: string) {
+export const loadWorkbenchRepositoryMetadata = Effect.fn("WorkbenchChanges.metadata")(function* (cwd: string) {
   const [branchResult, defaultResult, remoteResult, upstreamResult] = yield* Effect.all([
-    runWorkbenchGit(cwd, ["branch", "--show-current"], 4096),
-    runWorkbenchGit(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], 4096),
-    runWorkbenchGit(cwd, ["remote", "get-url", "origin"], 16 * 1024),
-    runWorkbenchGit(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], 4096),
+    runWorkbenchGit(cwd, ["branch", "--show-current"], 4096, METADATA_TIMEOUT),
+    runWorkbenchGit(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], 4096, METADATA_TIMEOUT),
+    runWorkbenchGit(cwd, ["remote", "get-url", "origin"], 16 * 1024, METADATA_TIMEOUT),
+    runWorkbenchGit(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], 4096, METADATA_TIMEOUT),
   ], { concurrency: 4 })
   const branch = gitOutput(branchResult)
   const remoteUrl = gitOutput(remoteResult)
   const upstream = gitOutput(upstreamResult)
-  const counts = upstream ? yield* runWorkbenchGit(cwd, ["rev-list", "--left-right", "--count", "HEAD...@{u}"], 4096) : undefined
+  const counts = upstream ? yield* runWorkbenchGit(cwd, ["rev-list", "--left-right", "--count", "HEAD...@{u}"], 4096, METADATA_TIMEOUT) : undefined
   const values = counts ? gitOutput(counts)?.split(/\s+/) : undefined
   const defaultBranch = gitOutput(defaultResult)?.replace(/^origin\//, "")
   return {
@@ -375,7 +409,7 @@ function changeStatus(code: string): WorkbenchChangeFile["status"] {
 }
 
 function gitOutput(result: { exitCode: number; stdout: Buffer; stdoutTruncated: boolean }) {
-  if (result.exitCode !== 0 || result.stdoutTruncated) return
+  if (result.exitCode !== 0 || result.stdoutTruncated) return undefined
   return result.stdout.toString("utf8").trim() || undefined
 }
 

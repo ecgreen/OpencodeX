@@ -1,6 +1,6 @@
 import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
-import { buildSafetyQueue, moveSafetyQueueIndex, safetyQueueGroup } from "../lib/safety-present"
+import { buildSafetyQueue, latestAssistantContext, moveSafetyQueueIndex, safetyQueueGroup } from "../lib/safety-present"
 import { permissionToolPart } from "../lib/tool-display"
 import type { MessageBundle } from "../lib/session-api"
 import { SessionPermissionCard } from "./session-permission-card"
@@ -17,6 +17,7 @@ export function SessionSafetyDock(props: {
   rejectQuestion: (request: QuestionRequest) => void
 }) {
   const queue = createMemo(() => buildSafetyQueue(props.permissions, props.questions))
+  const context = createMemo(() => latestAssistantContext(props.messages))
   const [activeID, setActiveID] = createSignal<string>()
   // Selections survive paging between question steps: the draft lives here,
   // keyed by request, not inside the per-step card.
@@ -102,6 +103,7 @@ export function SessionSafetyDock(props: {
               setCard={(element) => { card = element }}
               reply={props.replyQuestion}
               reject={props.rejectQuestion}
+              context={context()}
             />
           )
         }}

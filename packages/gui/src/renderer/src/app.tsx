@@ -1,4 +1,4 @@
-import { createEffect, on, onCleanup } from "solid-js"
+import { createEffect, on, onCleanup, untrack } from "solid-js"
 import type { GuiAppModel } from "./controllers/app-model"
 import { sessionErrorNotice } from "./lib/message-error"
 import { createAppearanceController } from "./controllers/appearance-controller"
@@ -21,6 +21,7 @@ import { createSessionSlashController } from "./controllers/session-slash-contro
 import { createSessionState } from "./controllers/session-state"
 import { createSessionSwitcherController } from "./controllers/session-switcher-controller"
 import { createSettingsController } from "./controllers/settings-controller"
+import { createSessionGraphController } from "./controllers/session-graph-controller"
 import { createSwarmTeamController } from "./controllers/swarm-team-controller"
 import { createTranscriptPreferences } from "./controllers/transcript-preferences"
 import { createUpdateNoticeController } from "./controllers/update-notice-controller"
@@ -75,7 +76,14 @@ export function App() {
     refresh: authoritative.refresh,
   })
   const sessionSelection = createSessionSelectionController({ authoritative, navigation, state: sessionState })
-  const swarmTeam = createSwarmTeamController({ authoritative, selection: sessionSelection })
+  const sessionGraph = createSessionGraphController({ authoritative, selection: sessionSelection })
+  // The graph's fetched delegation tree also feeds the team strip: the catalog
+  // hides swarm-delegated children, so the strip cannot see them on its own.
+  const swarmTeam = createSwarmTeamController({
+    authoritative,
+    selection: sessionSelection,
+    extraChildren: sessionGraph.descendants,
+  })
   const plugins = createPluginController({ client: authoritative.client, setSnapshot: authoritative.setSnapshot })
   const rail = createRailController({
     client: authoritative.client,
@@ -193,17 +201,29 @@ export function App() {
 
   createEffect(() => {
     const route = navigation.route()
-    // A swarm session's team view rides the view-session hydration: the
-    // selected member stays visible so its transcript loads and live-patches.
-    const member = route.name === "session" ? swarmTeam.memberSession() : undefined
+    // A swarm session's team view and the workflow graph both ride the
+    // view-session hydration: the child session they have opened stays visible
+    // so its transcript loads and live-patches. Only one can be open at a time,
+    // but both are collected here so neither depends on that staying true.
+    const embedded =
+      route.name === "session"
+        ? [swarmTeam.memberSession(), sessionGraph.nodeSession()].flatMap((session) => (session ? [session] : []))
+        : []
     authoritative.setVisibleSessionIDs(
       route.name === "views"
         ? view.sessions().map((session) => session.id)
         : sessionSelection.activeSessionID()
-          ? [sessionSelection.activeSessionID(), ...(member ? [member.id] : [])]
+          ? [sessionSelection.activeSessionID(), ...embedded.map((session) => session.id)]
           : [],
     )
-    if (member) void authoritative.syncViewSession(member)
+    // Untracked: hydration reads the very pane state it then writes (loading
+    // flags, loaded timestamps, cached transcripts). Tracking those reads here
+    // would subscribe this effect to its own writes, which is how a pane swap
+    // turns into a synchronous re-run loop. What this effect must react to is
+    // *which* sessions are embedded, and that is read above.
+    untrack(() => {
+      for (const session of embedded) void authoritative.syncViewSession(session)
+    })
   })
 
   createEffect(
@@ -237,6 +257,7 @@ export function App() {
     sessionComposer,
     sessionSelection,
     sessionSlash,
+    sessionGraph,
     sessionState,
     sessionSwitcher,
     settings,

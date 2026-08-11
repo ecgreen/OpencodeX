@@ -9,6 +9,7 @@ import { isKeyboardEditingTarget } from "../lib/keyboard-shortcuts"
 import type { ToolPart } from "./session-transcript"
 import { ModalFrame } from "./modal-frame"
 import { SafetyCardHeader, type SafetyQueuePosition } from "./session-safety-card"
+import { SafetyDismissConfirm } from "./session-safety-confirm"
 import { ToolPreviewText } from "./session-tool-text"
 import { Button, SurfaceCard } from "./ui"
 
@@ -25,6 +26,7 @@ export function SessionPermissionCard(props: {
   const input = createMemo(() => toolInput(props.request, props.tool))
   const presentation = createMemo(() => describePermission(props.request, input()))
   const [diffOpen, setDiffOpen] = createSignal(false)
+  const [confirmOpen, setConfirmOpen] = createSignal(false)
   const choose = (reply: PermissionReply) => props.reply(props.request, reply)
   let card: HTMLElement | undefined
   const closeDiff = () => {
@@ -44,7 +46,8 @@ export function SessionPermissionCard(props: {
         if (isKeyboardEditingTarget(event.target)) return
         if (event.key === "1") choose("once")
         if (event.key === "2") choose("always")
-        if (event.key === "3" || event.key === "Escape") choose("reject")
+        // Rejection always confirms first - same gesture as the header X.
+        if (event.key === "3" || event.key === "Escape") setConfirmOpen(true)
         if (event.key.toLowerCase() === "f" && presentation().diff) setDiffOpen(true)
         if (event.key === "ArrowLeft" && props.position.total > 1) props.position.previous()
         if (event.key === "ArrowRight" && props.position.total > 1) props.position.next()
@@ -52,13 +55,15 @@ export function SessionPermissionCard(props: {
     >
       <SafetyCardHeader
         icon={presentation().icon}
-        label={`Permission - ${presentation().kind}`}
-        title={presentation().title}
+        label="Permission Request"
         titleID={titleID}
         position={props.position}
+        dismissLabel="Reject request"
+        onDismiss={() => setConfirmOpen(true)}
       />
 
       <div class="safety-card-body">
+        <h2 class="safety-card-title">{presentation().title}</h2>
         <Show when={presentation().command}>
           {(command) => <pre class="permission-command"><span aria-hidden="true">$</span><code>{command()}</code></pre>}
         </Show>
@@ -85,11 +90,19 @@ export function SessionPermissionCard(props: {
       </div>
 
       <footer class="safety-card-actions">
-        <Button appearance="ghost" tone="danger" onClick={() => choose("reject")} leadingIcon="x">Reject <kbd>3</kbd></Button>
         <span class="safety-action-spacer" />
         <Button appearance="soft" tone="success" onClick={() => choose("always")}>Always allow <kbd>2</kbd></Button>
         <Button appearance="solid" tone="success" onClick={() => choose("once")} leadingIcon="check">Allow once <kbd>1</kbd></Button>
       </footer>
+
+      <SafetyDismissConfirm
+        open={confirmOpen()}
+        title="Reject this request?"
+        body="Claude is waiting on this approval. Rejecting tells Claude it may not run the tool, and it will continue without it."
+        confirmLabel="Reject"
+        onConfirm={() => { setConfirmOpen(false); choose("reject") }}
+        onCancel={() => { setConfirmOpen(false); requestAnimationFrame(() => card?.focus({ preventScroll: true })) }}
+      />
 
       <Show when={diffOpen() && presentation().diff}>
         <Portal>

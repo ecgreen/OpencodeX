@@ -1,3 +1,5 @@
+import { Semaphore } from "effect"
+
 export type WorkbenchChangeMode = "git" | "directory"
 
 export type WorkbenchChangeFile = {
@@ -57,6 +59,7 @@ export type WorkbenchChangeSnapshot = {
 
 const SNAPSHOT_TTL_MS = 2 * 60_000
 const snapshots = new Map<string, WorkbenchChangeSnapshot[]>()
+const snapshotLocks = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
 
 export function rememberWorkbenchSnapshot(snapshot: WorkbenchChangeSnapshot) {
   pruneWorkbenchSnapshots()
@@ -70,6 +73,24 @@ export function rememberWorkbenchSnapshot(snapshot: WorkbenchChangeSnapshot) {
 export function findWorkbenchSnapshot(directory: string, revision: string) {
   pruneWorkbenchSnapshots()
   return snapshots.get(directory)?.find((snapshot) => snapshot.revision === revision)
+}
+
+export function latestWorkbenchSnapshot(directory: string) {
+  pruneWorkbenchSnapshots()
+  return snapshots.get(directory)?.[0]
+}
+
+export function acquireWorkbenchSnapshotLock(directory: string) {
+  const lock = snapshotLocks.get(directory) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+  lock.users++
+  snapshotLocks.set(directory, lock)
+  return {
+    semaphore: lock.semaphore,
+    release: () => {
+      lock.users--
+      if (lock.users === 0 && !snapshots.has(directory) && snapshotLocks.get(directory) === lock) snapshotLocks.delete(directory)
+    },
+  }
 }
 
 export function workbenchChangeSummary(snapshot: WorkbenchChangeSnapshot): WorkbenchChangeSummary {
@@ -97,18 +118,18 @@ export function encodeWorkbenchCursor(value: { revision: string; path?: string; 
 }
 
 export function decodeWorkbenchCursor(value: string | undefined) {
-  if (!value) return
+  if (!value) return undefined
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
       revision?: unknown
       path?: unknown
       index?: unknown
     }
-    if (typeof parsed.revision !== "string" || typeof parsed.index !== "number") return
-    if (parsed.path !== undefined && typeof parsed.path !== "string") return
+    if (typeof parsed.revision !== "string" || typeof parsed.index !== "number") return undefined
+    if (parsed.path !== undefined && typeof parsed.path !== "string") return undefined
     return { revision: parsed.revision, path: parsed.path, index: parsed.index }
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -117,6 +138,9 @@ function pruneWorkbenchSnapshots() {
   snapshots.forEach((items, directory) => {
     const current = items.filter((snapshot) => snapshot.createdAt >= cutoff).slice(0, 2)
     if (current.length > 0) snapshots.set(directory, current)
-    else snapshots.delete(directory)
+    else {
+      snapshots.delete(directory)
+      if (snapshotLocks.get(directory)?.users === 0) snapshotLocks.delete(directory)
+    }
   })
 }

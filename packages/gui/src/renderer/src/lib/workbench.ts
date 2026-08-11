@@ -27,13 +27,7 @@ export {
 export { workbenchGithubLinks, workbenchGithubPullLink, workbenchPullNumber } from "./workbench-github"
 export { workbenchDiffPrompt, workbenchPromptTarget } from "./workbench-prompts"
 export { parseWorkbenchState, readWorkbenchState, writeWorkbenchState, workbenchClampPaneWidth, WORKBENCH_ASSISTANT_WIDTH, WORKBENCH_EXPLORER_WIDTH, WORKBENCH_STATE_STORAGE_KEY } from "./workbench-state"
-
-export type WorkbenchTreeRow = {
-  node: FileNode
-  depth: number
-  expanded: boolean
-  loaded: boolean
-}
+export { flattenWorkbenchFileTree, type WorkbenchTreeRow } from "./workbench-file-tree"
 
 export type WorkbenchFileBuffer<TContent = unknown> = {
   path: string
@@ -258,7 +252,7 @@ export function workbenchDiffCopyText(diff: WorkbenchDiffFile | undefined) {
 }
 
 export function workbenchUnsavedBufferDiff(buffer: Pick<WorkbenchFileBuffer, "path" | "content" | "original"> | undefined) {
-  if (!buffer || !workbenchBufferDirty(buffer)) return
+  if (!buffer || !workbenchBufferDirty(buffer)) return undefined
   const rows = workbenchLineDiffRows(buffer.original, buffer.content)
   return {
     file: workbenchPathKey(buffer.path),
@@ -335,36 +329,4 @@ export function workbenchFileAssistantPrompt(input: {
   ].join("\n")
 }
 
-export function flattenWorkbenchFileTree(input: {
-  root: FileNode[]
-  children: Record<string, FileNode[]>
-  expanded: ReadonlySet<string>
-  filter?: string
-}) {
-  const query = input.filter?.trim().toLowerCase() ?? ""
-  const visit = (items: FileNode[], depth: number): WorkbenchTreeRow[] =>
-    sortWorkbenchFiles(items).flatMap((node) => {
-      const childRows = node.type === "directory" ? visit(input.children[node.path] ?? [], depth + 1) : []
-      const matches = !query || node.name.toLowerCase().includes(query) || node.path.toLowerCase().includes(query)
-      if (query && !matches && childRows.length === 0) return []
-      const expanded = node.type === "directory" && (input.expanded.has(node.path) || (!!query && childRows.length > 0))
-      const row = {
-        node,
-        depth,
-        expanded,
-        loaded: node.type !== "directory" || input.children[node.path] !== undefined,
-      }
-      if (!expanded) return [row]
-      return [row, ...childRows]
-    })
-  return visit(input.root, 0)
-}
-
 export { highlightWorkbenchCode, workbenchChangedLineNumbers, workbenchLineStates } from "./workbench-lines"
-
-function sortWorkbenchFiles(items: FileNode[]) {
-  return [...items].sort((left, right) => {
-    if (left.type !== right.type) return left.type === "directory" ? -1 : 1
-    return left.name.localeCompare(right.name)
-  })
-}

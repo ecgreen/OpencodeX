@@ -23,7 +23,9 @@ const iconNames = {
   dashboard: "LayoutDashboard",
   rows: "Rows2",
   file: "File",
+  fit: "Maximize",
   folder: "Folder",
+  graph: "Workflow",
   "folder-open": "FolderOpen",
   github: "GitFork",
   globe: "Globe",
@@ -34,6 +36,7 @@ const iconNames = {
   listTodo: "ListTodo",
   fileDiff: "FileDiff",
   lock: "LockKeyhole",
+  merge: "GitMerge",
   minus: "Minus",
   more: "MoreHorizontal",
   panel: "PanelLeft",
@@ -85,12 +88,15 @@ const iconLoaders: Record<string, () => Promise<{ default: LucideIcon }>> = {
   FolderOpen: () => import("lucide-solid/icons/folder-open"),
   GitBranch: () => import("lucide-solid/icons/git-branch"),
   GitFork: () => import("lucide-solid/icons/git-fork"),
+  GitMerge: () => import("lucide-solid/icons/git-merge"),
   ExternalLink: () => import("lucide-solid/icons/external-link"),
   Grip: () => import("lucide-solid/icons/grip"),
   LayoutDashboard: () => import("lucide-solid/icons/layout-dashboard"),
   LayoutGrid: () => import("lucide-solid/icons/layout-grid"),
   ListTree: () => import("lucide-solid/icons/list-tree"),
   LockKeyhole: () => import("lucide-solid/icons/lock-keyhole"),
+  Maximize: () => import("lucide-solid/icons/maximize"),
+  Workflow: () => import("lucide-solid/icons/workflow"),
   MessageSquare: () => import("lucide-solid/icons/message-square"),
   Minus: () => import("lucide-solid/icons/minus"),
   MoreHorizontal: () => import("lucide-solid/icons/more-horizontal"),
@@ -123,7 +129,7 @@ export function Icon(props: { name: string; class?: string }) {
 
   createEffect(() => {
     if (typeof document === "undefined") return
-    loadIcon(props.name).then((icon) => setGraphic(() => icon))
+    void loadIcon(props.name).then((icon) => setGraphic(() => icon))
   })
 
   return (

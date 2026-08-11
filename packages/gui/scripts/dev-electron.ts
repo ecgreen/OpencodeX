@@ -113,11 +113,15 @@ async function pipe(
 }
 
 function electronBinary() {
-  const name = process.platform === "win32" ? "electron.exe" : "electron"
   return (
-    [path.join(gui, "node_modules", ".bin", name), path.join(root, "node_modules", ".bin", name), "electron"].find(
-      (candidate) => candidate === "electron" || fs.existsSync(candidate),
-    ) ?? "electron"
+    [path.join(gui, "node_modules", "electron"), path.join(root, "node_modules", "electron")]
+      .flatMap((directory) => {
+        const manifest = path.join(directory, "path.txt")
+        if (!fs.existsSync(manifest)) return []
+        const executable = path.join(directory, "dist", fs.readFileSync(manifest, "utf8").trim())
+        return fs.existsSync(executable) ? [executable] : []
+      })
+      .at(0) ?? "electron"
   )
 }
 

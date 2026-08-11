@@ -1,5 +1,6 @@
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import type { SessionSchema } from "@opencode-ai/core/session/schema"
+import type { ConversationTask } from "./claude-driver-metadata"
 
 type SessionID = typeof SessionSchema.ID.Type
 type MessageID = typeof SessionLegacy.MessageID.Type
@@ -45,7 +46,7 @@ type ClaudeUsage = {
 export type SessionWrite =
   | { kind: "message"; message: SessionLegacy.Assistant }
   | { kind: "part"; part: SessionLegacy.Part }
-  | { kind: "todos"; todos: Array<{ content: string; status: string; priority?: string }> }
+  | { kind: "todos"; todos: Array<{ content: string; status: string; priority: string }> }
 
 export type MapperContext = {
   sessionID: SessionID
@@ -77,19 +78,30 @@ export type MapperState = {
   billed: { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
   toolParts: Map<string, { partID: PartID; tool: string; input: Record<string, unknown>; start: number }>
   textParts: Map<string, PartID>
+  /** Accumulated text per streaming block, keyed like textParts. */
+  streamText: Map<string, string>
+  /** The API message currently streaming; scopes block indexes across events. */
+  apiMessageID?: string
   claudeSessionID?: string
   /** Set when a `--resume` was refused, so the stored id can be discarded. */
   resumeRejected?: boolean
   authFailed?: boolean
   finished?: boolean
+  /** Claude harness task tools (TaskCreate/TaskUpdate) projected as todos. */
+  tasks: Map<string, { subject: string; status: string }>
+  /** Monotonic counter for synthesized task ids, so deletions can't cause reuse. */
+  taskSequence: number
 }
 
-export function initialState(input: { modelID?: string; billed?: MapperState["billed"] } = {}): MapperState {
+export function initialState(input: { modelID?: string; billed?: MapperState["billed"]; tasks?: ConversationTask[] } = {}): MapperState {
   return {
     modelID: input.modelID ?? "claude-code",
     billed: input.billed ?? { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     toolParts: new Map(),
     textParts: new Map(),
+    streamText: new Map(),
+    tasks: new Map((input.tasks ?? []).map((task) => [task.id, { subject: task.subject, status: task.status }])),
+    taskSequence: (input.tasks ?? []).length,
   }
 }
 
@@ -126,9 +138,24 @@ export function normalizeToolName(name: string) {
   return TOOL_NAMES[key] ?? name.toLowerCase()
 }
 
+/**
+ * Claude spells file params `file_path`/`notebook_path`; native tools and the
+ * GUI title/detail registries read `filePath`. Mirror of the permission-layer
+ * mapping in claude-permission.ts so transcript parts render like native ones.
+ * Original keys are kept so nothing reading the raw shape breaks.
+ */
+export function normalizeToolInput(tool: string, input: Record<string, unknown>): Record<string, unknown> {
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined)
+  if (tool === "read" || tool === "edit" || tool === "write") {
+    const file = text(input.filePath) ?? text(input.file_path) ?? text(input.notebook_path)
+    if (file) return { ...input, filePath: file }
+  }
+  return input
+}
+
 export function mapEvent(event: ClaudeEvent, state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
 
   if (event.type === "system" && event.subtype === "init") {
     if (typeof event.session_id === "string") next.claudeSessionID = event.session_id
@@ -136,12 +163,53 @@ export function mapEvent(event: ClaudeEvent, state: MapperState, context: Mapper
     return { writes, state: next }
   }
 
+  // Partial-message events stream text as it is generated. Without them a text
+  // block only lands when its whole API message completes - and mid-turn prose
+  // has been observed never landing at all (see the 2026-08-09 spec, Part B
+  // finding 3), so the deltas are also the recovery path.
+  if (event.type === "stream_event" && isRecord(event.event)) {
+    const stream = event.event
+    if (stream.type === "message_start" && isRecord(stream.message) && typeof stream.message.id === "string") {
+      next.apiMessageID = stream.message.id
+      return { writes, state: next }
+    }
+    if (stream.type === "content_block_delta" && typeof stream.index === "number" && isRecord(stream.delta) && next.apiMessageID) {
+      const delta =
+        stream.delta.type === "text_delta" && typeof stream.delta.text === "string"
+          ? { kind: "text" as const, prefix: "text", text: stream.delta.text }
+          : stream.delta.type === "thinking_delta" && typeof stream.delta.thinking === "string"
+            ? { kind: "reasoning" as const, prefix: "thinking", text: stream.delta.thinking }
+            : undefined
+      if (delta && delta.text) {
+        ensureMessage(writes, next, context)
+        const key = `${delta.prefix}:${next.apiMessageID}:${stream.index}`
+        const partID = next.textParts.get(key) ?? context.nextPartID()
+        next.textParts.set(key, partID)
+        const text = (next.streamText.get(key) ?? "") + delta.text
+        next.streamText.set(key, text)
+        writes.push({
+          kind: "part",
+          part: {
+            id: partID,
+            sessionID: context.sessionID,
+            messageID: next.messageID!,
+            type: delta.kind,
+            text,
+            time: { start: context.now() },
+          },
+        })
+      }
+    }
+    return { writes, state: next }
+  }
+
   if (event.type === "assistant" && event.message) {
     if (typeof event.message.model === "string") next.modelID = event.message.model
+    if (typeof event.message.id === "string") next.apiMessageID = event.message.id
     ensureMessage(writes, next, context)
-    for (const block of contentBlocks(event.message.content)) {
-      mapAssistantBlock(block, writes, next, context)
-    }
+    contentBlocks(event.message.content).forEach((block, position) => {
+      mapAssistantBlock(block, position, writes, next, context)
+    })
     return { writes, state: next }
   }
 
@@ -169,7 +237,7 @@ export function finalizeAbandonedTurn(
   input: { reason: string; error?: string },
 ): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
   if (!next.messageID) return { writes, state: next }
   const now = context.now()
   for (const [callID, pending] of next.toolParts) {
@@ -202,7 +270,7 @@ export function finalizeAbandonedTurn(
 /** Opens an assistant message without any Claude event, for failure turns. */
 export function startTurn(state: MapperState, context: MapperContext): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
-  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts) }
+  const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
   ensureMessage(writes, next, context)
   return { writes, state: next }
 }
@@ -222,10 +290,25 @@ function ensureMessage(writes: SessionWrite[], state: MapperState, context: Mapp
   })
 }
 
-function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
+/**
+ * The CLI emits one assistant event per content block, so a block's position in
+ * its event rarely matches its streamed index. When the block's full content
+ * equals what some stream key already accumulated for this API message, reuse
+ * that key - otherwise the final write would open a duplicate part.
+ */
+function reconciledKey(state: MapperState, prefix: string, content: string, fallback: string) {
+  const scope = `${prefix}:${state.apiMessageID ?? "m"}:`
+  if (state.textParts.has(fallback)) return fallback
+  for (const [key, text] of state.streamText) {
+    if (key.startsWith(scope) && text === content && state.textParts.has(key)) return key
+  }
+  return fallback
+}
+
+function mapAssistantBlock(block: ContentBlock, position: number, writes: SessionWrite[], state: MapperState, context: MapperContext) {
   const messageID = state.messageID!
   if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-    const key = `text:${blockKey(block)}`
+    const key = reconciledKey(state, "text", block.text, `text:${blockKey(block, state, position)}`)
     const partID = state.textParts.get(key) ?? context.nextPartID()
     state.textParts.set(key, partID)
     writes.push({
@@ -242,7 +325,7 @@ function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: M
     return
   }
   if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
-    const key = `thinking:${blockKey(block)}`
+    const key = reconciledKey(state, "thinking", block.thinking, `thinking:${blockKey(block, state, position)}`)
     const partID = state.textParts.get(key) ?? context.nextPartID()
     state.textParts.set(key, partID)
     writes.push({
@@ -260,7 +343,7 @@ function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: M
   }
   if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
     const tool = normalizeToolName(block.name)
-    const input = isRecord(block.input) ? block.input : {}
+    const input = normalizeToolInput(tool, isRecord(block.input) ? block.input : {})
     const partID = state.toolParts.get(block.id)?.partID ?? context.nextPartID()
     const start = state.toolParts.get(block.id)?.start ?? context.now()
     state.toolParts.set(block.id, { partID, tool, input, start })
@@ -283,6 +366,49 @@ function mapAssistantBlock(block: ContentBlock, writes: SessionWrite[], state: M
   }
 }
 
+const READ_PREVIEW_LINES = 20
+
+/**
+ * Native reads ship a head-of-file preview in metadata, which is what makes the
+ * transcript row worth expanding. The Claude CLI sends none, so synthesize one
+ * from the tool output.
+ */
+function completedMetadata(tool: string, output: string): Record<string, unknown> {
+  if (tool !== "read" || !output.trim()) return {}
+  const lines = output.split("\n")
+  const preview = lines.slice(0, READ_PREVIEW_LINES).join("\n")
+  return { preview, ...(lines.length > READ_PREVIEW_LINES ? { truncated: true } : {}) }
+}
+
+export function taskRegistryTodos(state: MapperState) {
+  return [...state.tasks.values()].map((task) => ({ content: task.subject, status: task.status, priority: "medium" }))
+}
+
+/** Applies a completed task tool to the registry. Returns the projected todos when the registry changed. */
+function applyTaskTool(tool: string, input: Record<string, unknown>, output: string, state: MapperState) {
+  if (tool === "taskcreate") {
+    const parsed = /Task #(\w+) created/.exec(output)?.[1]
+    const id = parsed ?? `local-${++state.taskSequence}`
+    const subject = typeof input.subject === "string" && input.subject ? input.subject : "Task"
+    state.tasks.set(id, { subject, status: "pending" })
+    return taskRegistryTodos(state)
+  }
+  if (tool === "taskupdate") {
+    const id = typeof input.taskId === "string" ? input.taskId : typeof input.taskId === "number" ? String(input.taskId) : undefined
+    const current = id ? state.tasks.get(id) : undefined
+    if (!id || !current) return undefined
+    const status = typeof input.status === "string" && input.status ? input.status : current.status
+    if (status === "deleted") state.tasks.delete(id)
+    else
+      state.tasks.set(id, {
+        subject: typeof input.subject === "string" && input.subject ? input.subject : current.subject,
+        status,
+      })
+    return taskRegistryTodos(state)
+  }
+  return undefined
+}
+
 function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: MapperState, context: MapperContext) {
   const callID = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined
   if (!callID) return
@@ -291,7 +417,8 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
   state.toolParts.delete(callID)
   const output = readResultText(block.content)
   const end = context.now()
-  const input = context.decidedInput?.(callID) ?? pending.input
+  const input = normalizeToolInput(pending.tool, context.decidedInput?.(callID) ?? pending.input)
+  const todos = block.is_error ? undefined : applyTaskTool(pending.tool, input, output, state)
   writes.push({
     kind: "part",
     part: {
@@ -308,11 +435,12 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
             input,
             output,
             title: pending.tool,
-            metadata: {},
+            metadata: { ...completedMetadata(pending.tool, output), ...(todos ? { todos } : {}) },
             time: { start: pending.start, end },
           },
     },
   })
+  if (todos) writes.push({ kind: "todos", todos })
 }
 
 function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperState, context: MapperContext) {
@@ -444,9 +572,14 @@ function contentBlocks(content: unknown): ContentBlock[] {
   return content.filter((block): block is ContentBlock => isRecord(block))
 }
 
-/** Blocks have no stable id, so position within the message identifies them. */
-function blockKey(block: ContentBlock) {
-  return typeof block.index === "number" ? String(block.index) : (block.text ?? block.thinking ?? "").length.toString()
+/**
+ * Blocks have no stable id, so the API message id plus the block's position
+ * within it identifies them - across re-emissions and across the stream-delta
+ * and final-event paths, which must land on the same part.
+ */
+function blockKey(block: ContentBlock, state: MapperState, position: number) {
+  const index = typeof block.index === "number" ? block.index : position
+  return `${state.apiMessageID ?? "m"}:${index}`
 }
 
 function readResultText(content: unknown): string {
@@ -481,7 +614,7 @@ function readTodos(input: Record<string, unknown>) {
   return todos.filter(isRecord).map((todo) => ({
     content: typeof todo.content === "string" ? todo.content : typeof todo.activeForm === "string" ? todo.activeForm : "Todo",
     status: typeof todo.status === "string" ? todo.status : "pending",
-    ...(typeof todo.priority === "string" ? { priority: todo.priority } : {}),
+    priority: typeof todo.priority === "string" ? todo.priority : "medium",
   }))
 }
 

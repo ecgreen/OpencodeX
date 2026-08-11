@@ -87,6 +87,12 @@ export type WorkbenchGitBranches = {
   message?: string
   current?: string
   branches: string[]
+  defaultBranch?: string
+  upstream?: string
+  ahead?: number
+  behind?: number
+  remoteUrl?: string
+  githubUrl?: string
 }
 
 export type WorkbenchChangesPage = OpencodexWorkbenchChangesPageResponse

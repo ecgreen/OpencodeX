@@ -109,32 +109,24 @@
   background: color-mix(in srgb,var(--muted) 14%,transparent);
 }
 
-.session-open-file-explorer .workbench-filter {
-  min-height: 36px;
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
+/* An inset field rather than a full-bleed separator band: it floats inside
+   the pane with the same rounding language as the tree rows below it. */
+:is(.session-open-file-explorer, .session-side-file-pane) .workbench-filter {
+  min-height: 30px;
+  margin: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 15px;
   background: color-mix(in srgb,var(--bg) 72%,var(--panel));
-  padding: 5px 10px;
+  padding: 3px 12px;
   box-shadow: none;
 }
 
-.session-open-file-explorer .workbench-filter input {
+:is(.session-open-file-explorer, .session-side-file-pane) .workbench-filter input {
   border: 0;
   background: transparent;
   color: var(--text);
   padding: 4px 2px;
   font-size: 13px;
-}
-
-.session-open-file-explorer .workbench-search-results {
-  max-height: 142px;
-  overflow: auto;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-  background: color-mix(in srgb,var(--bg) 72%,transparent);
 }
 
 .session-open-file-explorer .workbench-tree {
@@ -147,46 +139,43 @@
   box-shadow: none;
 }
 
-.session-open-file-explorer .workbench-file-row {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row {
   position: relative;
   grid-template-columns: 18px 20px minmax(0,1fr) auto auto;
   gap: 7px;
+  /* Indent lives in the margin, not the padding: the highlight's left edge
+     starts at the nesting level, sitting exactly on the ancestor guide line. */
+  width: calc(100% - 8px - (var(--depth) * 12px));
   min-height: 30px;
+  margin-inline: calc(4px + (var(--depth) * 12px)) 4px;
   border-radius: 7px;
   color: color-mix(in srgb,var(--text) 92%,var(--muted));
-  padding: 4px 9px 4px calc(10px + (var(--depth) * 16px));
+  padding: 4px 9px 4px 3px;
   font-family: inherit;
   font-size: 13px;
   font-weight: 620;
   transition: background .14s ease,color .14s ease,box-shadow .14s ease;
 }
 
-.session-open-file-explorer .workbench-file-row.directory {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row.directory {
   color: color-mix(in srgb,var(--text) 86%,var(--secondary));
   font-weight: 740;
 }
 
-.session-open-file-explorer .workbench-file-row>.icon {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-file-row>.icon {
   width: 17px;
   height: 17px;
   color: color-mix(in srgb,var(--secondary) 74%,var(--text));
 }
 
-.session-open-file-explorer .workbench-disclosure {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-disclosure {
   width: 18px;
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
 }
 
-.session-open-file-explorer .workbench-tree-spacer {
+:is(.session-open-file-explorer, .session-side-file-list) .workbench-tree-spacer {
   width: 18px;
   color: color-mix(in srgb,var(--muted) 80%,var(--text));
-}
-
-.session-open-file-explorer .workbench-search-row {
-  min-height: 31px;
-  border-radius: 7px;
-  padding: 5px 8px;
-  font-size: 13px;
 }
 
 /* Loading placeholder for the file pane. Only this area swaps while a file is

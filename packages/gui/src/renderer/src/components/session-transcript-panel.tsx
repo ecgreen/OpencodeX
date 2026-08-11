@@ -7,6 +7,7 @@ import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/t
 import { Icon } from "./icon"
 import { MessageActions } from "./message-actions"
 import { sessionDisclosureStore } from "../lib/disclosure"
+import { createStableEffect } from "../lib/stable-effect"
 import { TranscriptChromeProvider } from "./session-part-chrome"
 import { DisplayPartView, activeTranscriptStreamingPartID, groupTranscriptParts } from "./session-transcript"
 import { createTranscriptScrollController } from "./session-transcript-scroll-controller"
@@ -52,7 +53,8 @@ export function TranscriptPanel(props: {
   const [warmSessionID, setWarmSessionID] = createSignal("")
   let warmFrame: number | undefined
   const warming = createMemo(() => warmSessionID() !== props.sessionID)
-  createEffect(() => {
+  // Guarded: writes the warm marker it reads, on every session swap.
+  createStableEffect("transcript.warmSession", () => {
     const id = props.sessionID
     if (warmSessionID() === id) return
     if (warmFrame !== undefined) cancelAnimationFrame(warmFrame)
@@ -130,7 +132,9 @@ export function TranscriptPanel(props: {
   // they expanded for are off screen and only cost memory and layout, so the
   // window collapses back to the tail budget - "Load more" reopens it.
   let tailAnchor = { sessionID: "", messageID: "" }
-  createEffect(() => {
+  // Guarded: collapsing rewrites the message list this effect reads, and the
+  // comparison it converges on lives in plain mutable state.
+  createStableEffect("transcript.collapseWindow", () => {
     const sessionID = props.sessionID
     const messageID = visibleMessageIDs().at(-1) ?? ""
     const previous = tailAnchor

@@ -47,7 +47,7 @@ function TabBarStage(props: { width?: number }) {
       style={props.width ? { width: `${props.width}px` } : { resize: "horizontal", overflow: "hidden", "min-width": "320px" }}
     >
       <code class={styles.specimenLabel}>{props.width ? `${props.width}px` : "drag the corner to resize"}</code>
-      <SessionSideTabBar controller={controller} addGit={noop} addFile={noop} addTerminal={noop} addContext={noop} addWeb={noop} changedFiles={[]} />
+      <SessionSideTabBar controller={controller} addGit={noop} addFile={noop} addTerminal={noop} addContext={noop} addGraph={noop} addWeb={noop} changedFiles={[]} />
     </div>
   )
 }

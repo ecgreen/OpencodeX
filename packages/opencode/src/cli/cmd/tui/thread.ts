@@ -20,6 +20,7 @@ import {
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
 import { coordinatorHeaders, resolveLocalCoordinator, startCoordinatorClientLease } from "./coordinator-registry"
+import { createCoordinatorTransport } from "./coordinator-transport"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -189,19 +190,39 @@ export const TuiThreadCommand = cmd({
           })()
         : await (async () => {
             const coordinator = await resolveLocalCoordinator(cwd)
-            const lease = startCoordinatorClientLease(coordinator.key)
+            let lease = startCoordinatorClientLease(coordinator.key)
             try {
               await lease.ready
             } catch (error) {
               lease.dispose()
               throw error
             }
+            // The coordinator can die mid-session (a GUI dev restart used to be
+            // enough). This transport re-resolves the manifest on connection
+            // loss and follows it to the replacement's url and credentials, so
+            // the TUI heals instead of hammering a dead port forever.
+            let leaseKey = coordinator.key
+            const reattaching = createCoordinatorTransport({
+              manifest: coordinator,
+              resolve: () => resolveLocalCoordinator(cwd),
+              onManifest: (manifest) => {
+                Log.Default.info("tui coordinator reattached", { url: manifest.url, pid: manifest.pid })
+                if (manifest.key === leaseKey) return
+                lease.dispose()
+                leaseKey = manifest.key
+                lease = startCoordinatorClientLease(manifest.key)
+                lease.ready.catch((error) => {
+                  Log.Default.warn("tui coordinator lease failed after reattach", { error: errorMessage(error) })
+                })
+              },
+            })
             stop = async () => {
               lease.dispose()
             }
             return {
               url: coordinator.url,
               headers: coordinatorHeaders(coordinator),
+              fetch: reattaching.fetch,
             }
           })()
 
@@ -250,4 +271,3 @@ export const TuiThreadCommand = cmd({
     process.exit(0)
   },
 })
-// scratch

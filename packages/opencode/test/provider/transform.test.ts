@@ -83,6 +83,36 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBe(sessionID)
   })
 
+  test("gpt-5 family requests detailed reasoning summaries, matching Codex", () => {
+    const gpt5Model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { id: "gpt-5.6-sol", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const result = ProviderTransform.options({ model: gpt5Model, sessionID, providerOptions: {} })
+    // `auto` yields one-line headlines; `detailed` returns the multi-paragraph
+    // summaries Codex shows. Raw chain-of-thought is never exposed either way.
+    expect(result.reasoningSummary).toBe("detailed")
+
+    const variants = ProviderTransform.variants(gpt5Model)
+    for (const [effort, options] of Object.entries(variants)) {
+      expect({ effort, summary: options.reasoningSummary }).toEqual({ effort, summary: "detailed" })
+    }
+  })
+
+  test("non-gpt-5 openai reasoning models keep auto summaries", () => {
+    const o4Model = {
+      ...mockModel,
+      providerID: "openai",
+      capabilities: { ...mockModel.capabilities, reasoning: true },
+      api: { id: "o4-mini", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const variants = ProviderTransform.variants(o4Model)
+    for (const options of Object.values(variants)) {
+      expect(options.reasoningSummary).toBe("auto")
+    }
+  })
+
   test("should set store=false for openai provider", () => {
     const openaiModel = {
       ...mockModel,
@@ -3145,7 +3175,8 @@ describe("ProviderTransform.variants", () => {
       expect(Object.keys(result)).toEqual(["minimal", "low", "medium", "high"])
       expect(result.low).toEqual({
         reasoningEffort: "low",
-        reasoningSummary: "auto",
+        // gpt-5 family requests detailed summaries (Codex parity).
+        reasoningSummary: "detailed",
         include: ["reasoning.encrypted_content"],
       })
     })
@@ -3248,7 +3279,8 @@ describe("ProviderTransform.variants", () => {
         expect(Object.keys(result)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
         expect(result.max).toEqual({
           reasoningEffort: "max",
-          reasoningSummary: "auto",
+          // gpt-5 family requests detailed summaries (Codex parity).
+          reasoningSummary: "detailed",
           include: ["reasoning.encrypted_content"],
         })
       })

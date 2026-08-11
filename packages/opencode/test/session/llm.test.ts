@@ -1076,7 +1076,7 @@ describe("session.llm.stream", () => {
 
         expect(resolved.variants?.max).toEqual({
           reasoningEffort: "max",
-          reasoningSummary: "auto",
+          reasoningSummary: "detailed",
           include: ["reasoning.encrypted_content"],
         })
         expect(resolved.variants?.ultra).toBeUndefined()

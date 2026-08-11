@@ -57,81 +57,31 @@
   padding: 10px;
 }
 
+/* The git tree shares the editor explorer's row system (see
+   session-open-file-explorer.css). Only container concerns and git-specific
+   row extras live here. */
+.session-side-file-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: radial-gradient(circle at 18% 0%,color-mix(in srgb,var(--secondary) 8%,transparent),transparent 32%),color-mix(in srgb,var(--panel) 78%,var(--bg));
+}
+
+.session-side-file-pane>.session-side-empty {
+  flex: 1;
+}
+
 .session-side-file-list {
+  flex: 1;
   min-height: 0;
   overflow: auto;
-  background: var(--bg);
 }
 
-.session-side-file-list button {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0,1fr) auto;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 24px;
-  border: 0;
-  border-radius: 0;
-  color: var(--text);
-  background: transparent;
-  padding: 2px 8px;
-  text-align: left;
-}
-
-.session-side-file-list button.directory {
-  color: color-mix(in srgb,var(--text) 88%,var(--muted));
-}
-
-.session-side-file-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  margin-left: var(--indent, 0px);
-}
-
-.session-side-file-name strong {
-  overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-side-disclosure {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 14px;
-  min-width: 14px;
-  height: 17px;
-  color: color-mix(in srgb,var(--muted) 86%,var(--text));
-}
-
-.session-side-disclosure.placeholder {
-  color: transparent;
-}
-
-.session-side-disclosure svg {
-  width: 13px;
-  height: 13px;
-  stroke-width: 2;
-}
-
-.session-side-tree-guides {
-  position: absolute;
-  inset: 0 auto 0 0;
-  pointer-events: none;
-}
-
-.session-side-tree-guides span {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(15px + var(--guide-indent, 0px));
-  display: none;
-  width: 1px;
-  background: color-mix(in srgb,var(--border-subtle) 58%,transparent);
+/* Virtualized rows are recycled while scrolling; the entrance animation from
+   the base row class would replay on every recycle, so it is disabled here. */
+.session-side-file-list .workbench-file-row {
+  animation: none;
 }
 
 .session-side-file-list small {

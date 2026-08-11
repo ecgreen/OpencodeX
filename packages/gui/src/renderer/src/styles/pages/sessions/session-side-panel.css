@@ -4,7 +4,7 @@
   grid-template-rows: minmax(0,1fr);
   width: 0;
   min-width: 0;
-  max-width: 70%;
+  max-width: 85%;
   min-height: 0;
   overflow: hidden;
   border: 0 solid var(--border-subtle);

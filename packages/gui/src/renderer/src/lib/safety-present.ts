@@ -1,4 +1,5 @@
 import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { MessageBundle } from "./session-api"
 import { permissionDiff, permissionTitle, stringValue } from "./tool-display"
 
 export type SafetyQueueItem =
@@ -136,6 +137,42 @@ export function finalQuestionAnswers(answers: QuestionAnswer[], custom: string[]
 
 export function questionAnswersComplete(answers: QuestionAnswer[], custom: string[]) {
   return finalQuestionAnswers(answers, custom).every((answer) => answer.length > 0)
+}
+
+/**
+ * The step the flow should move to after answering: the next question (after
+ * `fromStep`, wrapping) whose final answer - selection or typed text - is still
+ * empty. `undefined` means the request is complete and should submit instead.
+ */
+export function nextUnansweredStep(answers: QuestionAnswer[], custom: string[], fromStep: number): number | undefined {
+  const final = finalQuestionAnswers(answers, custom)
+  for (let offset = 1; offset <= final.length; offset++) {
+    const step = (fromStep + offset) % final.length
+    if (step === fromStep) continue
+    if ((final[step] ?? []).length === 0) return step
+  }
+  return undefined
+}
+
+/**
+ * The question card shows the model's accompanying words when they exist. The
+ * accompanying prose can be lost upstream (see the 2026-08-09 spec, Part B
+ * finding 3), so both fields are best-effort.
+ */
+export function latestAssistantContext(messages: MessageBundle[]): { text?: string; plan?: string } {
+  const message = [...messages].reverse().find((bundle) => bundle.info.role === "assistant")
+  if (!message) return {}
+  let text: string | undefined
+  let plan: string | undefined
+  for (const part of message.parts) {
+    if (part.type === "text" && !part.synthetic && !part.ignored && part.text.trim()) text = part.text.trim()
+    if (part.type === "tool" && part.tool === "plan_exit" && "input" in part.state) {
+      const input = part.state.input
+      const value = typeof input === "object" && input !== null ? stringValue((input as Record<string, unknown>).plan) : undefined
+      if (value?.trim()) plan = value
+    }
+  }
+  return { ...(text ? { text } : {}), ...(plan ? { plan } : {}) }
 }
 
 function permissionSummary(request: PermissionRequest, input: Record<string, unknown>): PermissionSummaryRow[] {

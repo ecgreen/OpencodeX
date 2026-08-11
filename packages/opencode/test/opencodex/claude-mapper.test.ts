@@ -27,8 +27,21 @@ function context(): MapperContext {
   }
 }
 
-function run(events: ClaudeEvent[], ctx = context()) {
-  let state = initialState()
+function run(events: ClaudeEvent[], initialStateOrCtx?: MapperState | MapperContext) {
+  let state: MapperState
+  let ctx: MapperContext
+
+  // Determine if the second argument is a state or context
+  if (initialStateOrCtx && "toolParts" in initialStateOrCtx) {
+    // It's a state
+    state = initialStateOrCtx
+    ctx = context()
+  } else {
+    // It's a context or undefined
+    state = initialState()
+    ctx = (initialStateOrCtx as MapperContext) || context()
+  }
+
   const writes: SessionWrite[] = []
   for (const event of events) {
     const result = mapEvent(event, state, ctx)
@@ -99,6 +112,105 @@ describe("claude stream-json mapper", () => {
       tool: "read",
       state: { status: "completed", output: "line one", input: { file_path: "a.ts" } },
     })
+  })
+
+  test("normalizes file tool inputs to native keys so transcript titles resolve", () => {
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [{ type: "tool_use", id: "call_1", name: "Read", input: { file_path: "C:/repo/a.ts", offset: 10 } }],
+        },
+      },
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "call_1", content: "1\tconst a = 1" }] },
+      },
+    ])
+    const tool = parts(writes).filter((part) => part.type === "tool").at(-1)
+    expect(tool).toMatchObject({
+      state: { input: { filePath: "C:/repo/a.ts", file_path: "C:/repo/a.ts", offset: 10 } },
+    })
+  })
+
+  test("read results carry a preview so the transcript expander has content", () => {
+    const output = Array.from({ length: 30 }, (_, i) => `${i + 1}\tline ${i + 1}`).join("\n")
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: { id: "m1", content: [{ type: "tool_use", id: "call_r", name: "Read", input: { file_path: "C:/repo/a.ts" } }] },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "call_r", content: output }] } },
+    ])
+    const tool = parts(writes).filter((part) => part.type === "tool").at(-1)
+    if (tool?.type !== "tool" || tool.state.status !== "completed") throw new Error("expected completed tool part")
+    expect(String(tool.state.metadata?.preview).split("\n")).toHaveLength(20)
+    expect(tool.state.metadata?.truncated).toBe(true)
+  })
+
+  test("stream deltas build text parts that the final event reuses", () => {
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "world" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "text", text: "Hello world" }] } },
+    ])
+    const texts = parts(writes).filter((part) => part.type === "text")
+    expect(texts.length).toBeGreaterThan(1)
+    expect(texts.at(-1)).toMatchObject({ text: "Hello world" })
+    expect(new Set(texts.map((part) => part.id)).size).toBe(1)
+  })
+
+  test("thinking deltas build reasoning parts the final event reuses", () => {
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Weighing " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "options" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "thinking", thinking: "Weighing options" }] } },
+    ])
+    const reasoning = parts(writes).filter((part) => part.type === "reasoning")
+    expect(reasoning.length).toBeGreaterThan(1)
+    expect(reasoning.at(-1)).toMatchObject({ text: "Weighing options" })
+    expect(new Set(reasoning.map((part) => part.id)).size).toBe(1)
+  })
+
+  test("stripped thinking deltas still leave streamed reasoning in place", () => {
+    // Fable-style turns strip thinking from the final event (empty text +
+    // signature). The streamed content must not be erased by that final write.
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Real reasoning" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "thinking", thinking: "", signature: "sig" }] } },
+    ])
+    const reasoning = parts(writes).filter((part) => part.type === "reasoning")
+    expect(reasoning.at(-1)).toMatchObject({ text: "Real reasoning" })
+  })
+
+  test("per-block final events reconcile with stream parts by content, not position", () => {
+    // The CLI emits one assistant event per content block, so a text block that
+    // streamed at index 1 (after a thinking block) arrives in a final event
+    // whose content array puts it at position 0. Without content reconciliation
+    // this produced duplicate text parts (observed live, 2026-08-09).
+    const { writes } = run([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m9" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Now the mapper side" } } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "thinking", thinking: "" }] } },
+      { type: "assistant", message: { id: "m9", content: [{ type: "text", text: "Now the mapper side" }] } },
+    ])
+    const texts = parts(writes).filter((part) => part.type === "text")
+    expect(new Set(texts.map((part) => part.id)).size).toBe(1)
+    expect(texts.at(-1)).toMatchObject({ text: "Now the mapper side" })
+  })
+
+  test("distinct api messages in one turn keep distinct text parts", () => {
+    const { writes } = run([
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "First words" }] } },
+      { type: "assistant", message: { id: "m2", content: [{ type: "text", text: "Second words" }] } },
+    ])
+    const texts = parts(writes).filter((part) => part.type === "text")
+    expect(new Set(texts.map((part) => part.id)).size).toBe(2)
   })
 
   test("marks failed tool results as errors", () => {
@@ -229,6 +341,132 @@ describe("claude stream-json mapper", () => {
 
     const malformed = run([{ type: "assistant", message: { id: "m1", content: "plain string" } }])
     expect(parts(malformed.writes).map((part) => part.type)).toEqual(["step-start", "text"])
+  })
+
+  test("regression: per-block no-index finals do not duplicate streamed parts", () => {
+    const events = [
+      { type: "stream_event", event: { type: "message_start", message: { id: "msg_real" } } },
+      { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "thinking" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Pondering deeply" } } },
+      // final thinking: stripped to empty, single block, no index field
+      { type: "assistant", message: { id: "msg_real", content: [{ type: "thinking", thinking: "" }] } },
+      { type: "stream_event", event: { type: "content_block_stop", index: 0 } },
+      { type: "stream_event", event: { type: "content_block_start", index: 1, content_block: { type: "text" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "alpha and " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "more prose" } } },
+      // final text: full content, single block, no index field (position 0 ≠ stream index 1)
+      { type: "assistant", message: { id: "msg_real", content: [{ type: "text", text: "alpha and more prose" }] } },
+    ] as ClaudeEvent[]
+    const { writes } = run(events)
+    const ids = new Map<string, string>()
+    for (const w of writes) {
+      if (w.kind === "part" && (w.part.type === "text" || w.part.type === "reasoning")) ids.set(w.part.id, w.part.type)
+    }
+    expect([...ids.values()].sort()).toEqual(["reasoning", "text"])
+  })
+})
+
+describe("task tools feed the todo system", () => {
+  function toolTurn(tool: string, input: Record<string, unknown>, resultText: string) {
+    return [
+      { type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: `call_${tool}`, name: tool, input }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: `call_${tool}`, content: [{ type: "text", text: resultText }] }] } },
+    ] as ClaudeEvent[]
+  }
+
+  test("taskcreate registers a pending todo and emits the todos write", () => {
+    const { writes } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login", description: "d" }, "Task #1 created successfully: Fix login"),
+    ])
+    const todos = writes.filter((w) => w.kind === "todos").at(-1)
+    expect(todos).toMatchObject({ kind: "todos", todos: [{ content: "Fix login", status: "pending", priority: "medium" }] })
+  })
+
+  test("taskupdate changes status; deleted removes; unknown id is ignored", () => {
+    const { writes } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "in_progress" }, "Updated task #1 status"),
+      ...toolTurn("TaskUpdate", { taskId: "99", status: "completed" }, "no such task"),
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "deleted" }, "deleted"),
+    ])
+    const lists = writes.filter((w) => w.kind === "todos").map((w) => w.todos)
+    expect(lists.at(0)).toEqual([{ content: "Fix login", status: "pending", priority: "medium" }])
+    expect(lists.at(1)).toEqual([{ content: "Fix login", status: "in_progress", priority: "medium" }])
+    expect(lists.at(-1)).toEqual([])
+    // the unknown-id update emitted no todos write
+    expect(lists.length).toBe(3)
+  })
+
+  test("taskcreate result without a parseable id falls back to a local id", () => {
+    const { state } = run([
+      ...toolTurn("TaskCreate", { subject: "A" }, "ok"),
+      ...toolTurn("TaskCreate", { subject: "B" }, "ok"),
+    ])
+    expect([...state.tasks.keys()]).toEqual(["local-1", "local-2"])
+  })
+
+  test("taskcreate fallback ids stay monotonic across a deletion, so ids never collide", () => {
+    // Regression: the old fallback (`local-${state.tasks.size + 1}`) reused ids
+    // once the registry shrank - creating A, deleting it, then creating B would
+    // both land on "local-1".
+    const { state } = run([
+      ...toolTurn("TaskCreate", { subject: "A" }, "ok"),
+      ...toolTurn("TaskUpdate", { taskId: "local-1", status: "deleted" }, "deleted"),
+      ...toolTurn("TaskCreate", { subject: "B" }, "ok"),
+    ])
+    expect([...state.tasks.keys()]).toEqual(["local-2"])
+  })
+
+  test("completed task-tool parts carry metadata.todos for the transcript widget", () => {
+    const { writes } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
+    ])
+    const part = writes.filter((w) => w.kind === "part").map((w) => w.part).findLast((p) => p.type === "tool")
+    expect(part?.state).toMatchObject({
+      status: "completed",
+      metadata: { todos: [{ content: "Fix login", status: "pending", priority: "medium" }] },
+    })
+  })
+
+  test("tasks seed from a prior turn's registry", () => {
+    const state = initialState({ tasks: [{ id: "1", subject: "Fix login", status: "in_progress" }] })
+    const { writes } = run([
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "completed" }, "Updated"),
+    ], state)
+    const todos = writes.filter((w) => w.kind === "todos").at(-1)
+    expect(todos?.todos).toEqual([{ content: "Fix login", status: "completed", priority: "medium" }])
+  })
+
+  test("regression: every todo emitted by taskcreate/taskupdate and by todowrite carries a priority string", () => {
+    // A DB column (`todo.priority`) is NOT NULL with no default - any todos
+    // write missing a priority defects Todo.update and, unrecovered, kills the
+    // whole turn on the first TaskCreate. Pin that every path always sets one.
+    const { writes: taskWrites } = run([
+      ...toolTurn("TaskCreate", { subject: "Fix login" }, "Task #1 created successfully: Fix login"),
+      ...toolTurn("TaskUpdate", { taskId: "1", status: "in_progress" }, "Updated task #1 status"),
+    ])
+    const { writes: todoWriteWrites } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            { type: "tool_use", id: "toolu_1", name: "TodoWrite", input: { todos: [{ content: "No priority given", status: "pending" }] } },
+          ],
+        },
+      },
+    ] as ClaudeEvent[])
+
+    for (const writes of [taskWrites, todoWriteWrites]) {
+      const todoLists = writes.filter((w) => w.kind === "todos").map((w) => w.todos)
+      expect(todoLists.length).toBeGreaterThan(0)
+      for (const todos of todoLists) {
+        for (const todo of todos) {
+          expect(typeof todo.priority).toBe("string")
+          expect(todo.priority).toBeTruthy()
+        }
+      }
+    }
   })
 })
 

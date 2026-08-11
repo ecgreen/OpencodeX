@@ -111,15 +111,18 @@ export function SwarmEditorPage(props: {
       return
     }
     setSaving(true)
-    await props.save({
-      // A swarm is a model and needs no project; one launched from a project
-      // page keeps that project as its default workspace.
-      projectID: props.swarm?.projectID ?? props.initialProjectID,
-      title: swarmTitle().trim() || undefined,
-      roles: normalizedRoles,
-      swarmID: props.swarm?.id,
-    })
-    setSaving(false)
+    try {
+      await props.save({
+        // A swarm is a model and needs no project; one launched from a project
+        // page keeps that project as its default workspace.
+        projectID: props.swarm?.projectID ?? props.initialProjectID,
+        title: swarmTitle().trim() || undefined,
+        roles: normalizedRoles,
+        swarmID: props.swarm?.id,
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
   function updateRole(index: number, update: (role: OpencodeXSwarmRoleInput) => OpencodeXSwarmRoleInput) {

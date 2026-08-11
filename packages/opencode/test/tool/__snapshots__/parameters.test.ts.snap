@@ -343,6 +343,10 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "description": "The type of specialized agent to use for this task",
       "type": "string",
     },
+    "swarm_role": {
+      "description": "For swarm sessions only: the swarm role this delegation runs as, exactly as listed in the briefing. Repeat the same role across parallel calls to run several copies of it.",
+      "type": "string",
+    },
     "task_id": {
       "description": "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
       "type": "string",

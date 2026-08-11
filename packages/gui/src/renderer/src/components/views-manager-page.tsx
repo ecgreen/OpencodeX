@@ -30,10 +30,18 @@ export function ViewsManagerPage(props: {
   reorderViews: (viewIDs: string[]) => void | Promise<void>
   viewPinned: (viewID: string) => boolean
   toggleViewPinned: (viewID: string) => void
+  /** The view's panes put away so the workspace has the whole window. */
+  centerCollapsed?: boolean
+  centerCollapsible?: boolean
+  hideCenter?: () => void
 }) {
   const activeSummary = createMemo(() => props.view ? summarizeView({ view: props.view, snapshot: props.snapshot }) : undefined)
   return (
-    <div class="page views-manager-page" classList={{ "has-active-view": Boolean(props.view) }}>
+    <div
+      class="page views-manager-page"
+      classList={{ "has-active-view": Boolean(props.view) }}
+      data-center-collapsed={props.centerCollapsed ? "" : undefined}
+    >
       <Show
         when={props.view}
         fallback={
@@ -53,18 +61,26 @@ export function ViewsManagerPage(props: {
       >
         {(view) => (
           <div class="views-manager-main">
-            <div class="views-manager-content">
-              <ActiveViewHeader
-                title={view().title}
-                summary={activeSummary()}
-                sidePanelOpen={props.sidePanelOpen}
-                toggleSidePanel={props.toggleSidePanel}
-                edit={() => props.editView(view().id)}
-                delete={() => props.deleteView(view().id, view().title)}
-              />
-              <ViewsPage view={view()} items={props.items} renderItem={props.renderItem} />
+            {/* Above the columns rather than inside the left one: in fullscreen
+                the panes go away, and the header - holding the way back - must
+                not go with them. Mirrors the session page's toolbar. */}
+            <ActiveViewHeader
+              title={view().title}
+              summary={activeSummary()}
+              sidePanelOpen={props.sidePanelOpen}
+              toggleSidePanel={props.toggleSidePanel}
+              centerCollapsible={props.centerCollapsible}
+              centerCollapsed={props.centerCollapsed}
+              hideCenter={props.hideCenter}
+              edit={() => props.editView(view().id)}
+              delete={() => props.deleteView(view().id, view().title)}
+            />
+            <div class="views-manager-body">
+              <div class="views-manager-content">
+                <ViewsPage view={view()} items={props.items} renderItem={props.renderItem} />
+              </div>
+              {props.sidePanel}
             </div>
-            {props.sidePanel}
           </div>
         )}
       </Show>
@@ -77,6 +93,9 @@ function ActiveViewHeader(props: {
   summary?: ViewSummary
   sidePanelOpen?: boolean
   toggleSidePanel?: () => void
+  centerCollapsible?: boolean
+  centerCollapsed?: boolean
+  hideCenter?: () => void
   edit: () => void | Promise<void>
   delete: () => void | Promise<void>
 }) {
@@ -89,6 +108,20 @@ function ActiveViewHeader(props: {
         </Show>
       </div>
       <div class="active-view-actions">
+        {/* Same middle control as a session's toolbar: give the workspace the
+            whole window. This header stays on screen in fullscreen, so the same
+            button is the way back. */}
+        <Show when={props.centerCollapsible && props.hideCenter}>
+          {(hideCenter) => (
+            <IconButton
+              class="session-center-toggle"
+              icon="fit"
+              label={props.centerCollapsed ? "Exit fullscreen workspace" : "Fullscreen workspace"}
+              pressed={props.centerCollapsed}
+              onClick={hideCenter()}
+            />
+          )}
+        </Show>
         <Show when={props.toggleSidePanel}>
           {(toggleSidePanel) => (
             <IconButton

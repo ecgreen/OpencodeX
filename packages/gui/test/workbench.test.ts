@@ -698,6 +698,46 @@ describe("Workbench helpers", () => {
     ])
   })
 
+  test("keeps a folder collapsed while filtering when the user collapsed it", () => {
+    const rows = flattenWorkbenchFileTree({
+      root: [
+        { name: "src", path: "src", absolute: "C:/repo/src", type: "directory", ignored: false },
+      ],
+      children: {
+        src: [
+          { name: "app.tsx", path: "src/app.tsx", absolute: "C:/repo/src/app.tsx", type: "file", ignored: false },
+        ],
+      },
+      expanded: new Set<string>(),
+      collapsed: new Set(["src"]),
+      filter: "app",
+    })
+
+    expect(rows.map((row) => [row.node.path, row.expanded])).toEqual([
+      ["src", false],
+    ])
+  })
+
+  test("reveals project search matches inside folders that were never loaded", () => {
+    const rows = flattenWorkbenchFileTree({
+      root: [
+        { name: "src", path: "src", absolute: "C:/repo/src", type: "directory", ignored: false },
+      ],
+      children: {},
+      expanded: new Set<string>(),
+      filter: "store",
+      matches: [
+        { name: "store.ts", path: "src/lib/store.ts", absolute: "C:/repo/src/lib/store.ts", type: "file", ignored: false },
+      ],
+    })
+
+    expect(rows.map((row) => [row.node.path, row.depth, row.expanded, row.loaded])).toEqual([
+      ["src", 0, true, true],
+      ["src/lib", 1, true, true],
+      ["src/lib/store.ts", 2, false, true],
+    ])
+  })
+
   test("ranks direct open-file options from loaded tree and search matches", () => {
     const options = workbenchOpenFileOptions({
       root: [
@@ -881,10 +921,11 @@ describe("Workbench store wrappers", () => {
       },
     } as unknown as GuiClient
 
-    expect(await workbenchChanges(gui, { path: "", limit: 100, signal: controller.signal })).toMatchObject({ mode: "directory", next: "next" })
+    expect(await workbenchChanges(gui, { path: "", limit: 100, metadata: false, signal: controller.signal })).toMatchObject({ mode: "directory", next: "next" })
     expect(await workbenchChangeMetricsPage(gui, { revision: "rev-1", limit: 32, signal: controller.signal })).toMatchObject({ summary: { additions: 1 } })
     expect(await workbenchChangePatchPage(gui, { path: "src/app.ts", revision: "rev-1", context: 8, signal: controller.signal })).toMatchObject({ path: "src/app.ts", patch: "@@" })
     expect(calls.map((call) => call.kind)).toEqual(["page", "metrics", "patch-page"])
+    expect(calls[0]?.input).toMatchObject({ metadata: "false" })
     expect(calls.every((call) => call.signal === controller.signal)).toBe(true)
   })
 

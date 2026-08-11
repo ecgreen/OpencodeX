@@ -12,7 +12,7 @@ import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
 import { isOverflow } from "./overflow"
 import { PartID } from "./schema"
-import type { SessionID } from "./schema"
+import { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
 import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
@@ -190,6 +190,22 @@ export const layer = Layer.effect(
             attachments: output.attachments,
           },
         })
+        // The durable tool part above is the parent's copy of a delegated
+        // child's report - for the task tool, its persistence is what
+        // "delivered" means. The literal tool id avoids importing TaskTool
+        // into the generic processor; compare-and-set on the runID keeps a
+        // late write from touching a newer run's record.
+        const childSessionID = output.metadata?.sessionId
+        const delegationRunID = output.metadata?.runID
+        if (match.part.tool === "task" && typeof childSessionID === "string" && typeof delegationRunID === "string") {
+          yield* session
+            .stampDelegationDelivery({
+              sessionID: SessionID.make(childSessionID),
+              runID: delegationRunID,
+              outcome: "delivered",
+            })
+            .pipe(Effect.ignore)
+        }
         yield* settleToolCall(toolCallID)
       })
 

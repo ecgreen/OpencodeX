@@ -51,7 +51,7 @@ export async function listWorkbenchFiles(gui: GuiClient, path: string, directory
 export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string, signal?: AbortSignal, root?: string): Promise<WorkbenchFileRead | undefined> {
   if (root) {
     const exact = await exactWorkbenchFileRead(gui, path, directory, signal, root)
-    if (!exact.ok) return
+    if (!exact.ok) return undefined
     return boundedWorkbenchFile({
       type: "text",
       content: exact.content ?? "",
@@ -64,7 +64,7 @@ export async function readWorkbenchFile(gui: GuiClient, path: string, directory?
     path,
     maxBytes: String(WORKBENCH_PREVIEW_FILE_BYTES),
   }, { headers: authHeaders(gui), throwOnError: true, signal }).then((x) => x.data)
-  if (!received) return
+  if (!received) return undefined
   const file: FileContent = received.encoding === "base64" ? { ...received, type: "binary" } : received
   const initial = boundedWorkbenchFile(file)
   if (file.type !== "text" || initial.mode === "metadata") return initial
@@ -132,8 +132,8 @@ export async function deleteWorkbenchFile(gui: GuiClient, path: string, director
   }, directory)
 }
 
-export async function workbenchGitBranches(gui: GuiClient, directory?: string): Promise<WorkbenchGitBranches> {
-  return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", {}, directory)
+export async function workbenchGitBranches(gui: GuiClient, directory?: string, signal?: AbortSignal): Promise<WorkbenchGitBranches> {
+  return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", { signal }, directory)
 }
 
 export function initializeWorkbenchGit(gui: GuiClient, directory?: string, signal?: AbortSignal) {
@@ -144,13 +144,14 @@ export function initializeWorkbenchGit(gui: GuiClient, directory?: string, signa
 
 export function workbenchChanges(
   gui: GuiClient,
-  input: { directory?: string; path?: string; cursor?: string; revision?: string; limit?: number; signal?: AbortSignal } = {},
+  input: { directory?: string; path?: string; cursor?: string; revision?: string; limit?: number; metadata?: boolean; signal?: AbortSignal } = {},
 ): Promise<WorkbenchChangesPage> {
   return gui.client.opencodex.workbench.changes.page({
     directory: input.directory || gui.directory || undefined,
     path: input.path,
     cursor: input.cursor,
     revision: input.revision,
+    metadata: input.metadata === undefined ? undefined : input.metadata ? "true" : "false",
     limit: input.limit === undefined ? undefined : String(input.limit),
   }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((result) => result.data)
 }
@@ -344,8 +345,8 @@ async function pluginApi<T>(gui: GuiClient, pathname: string, init: RequestInit 
   if (directory || gui.directory) url.searchParams.set("directory", directory || gui.directory)
   const headers = {
     ...(init.body === undefined ? {} : { "content-type": "application/json" }),
-    ...(authHeaders(gui) ?? {}),
-    ...(init.headers ?? {}),
+    ...authHeaders(gui),
+    ...Object.fromEntries(new Headers(init.headers)),
   }
   const response = await fetch(url, {
     ...init,

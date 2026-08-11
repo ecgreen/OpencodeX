@@ -6,6 +6,7 @@ import {
   prependOlderMessages,
   trimToLiveTail,
 } from "../src/renderer/src/lib/message-window"
+import { SESSION_MESSAGE_WINDOW, VIEW_MESSAGE_WINDOW } from "../src/renderer/src/lib/session-hydration"
 
 describe("message window helpers", () => {
   test("prepends older pages without reordering messages", () => {
@@ -85,12 +86,13 @@ describe("message window helpers", () => {
   })
 
   test("trims expanded windows at the expanded content budget", () => {
-    // Each message weighs 600 plus its text, so 9_600 apiece: the 300_000 byte
-    // expanded budget stops after 31 of them.
-    const messages = Array.from({ length: 60 }, (_, index) => bundle(`m${index}`, index + 1, "x".repeat(9_000)))
+    // Each message weighs 600 plus its text, so 8_000 apiece: the 300_000 byte
+    // expanded budget stops after 37 of them - above the minimum window floor,
+    // so this exercises the budget cut alone.
+    const messages = Array.from({ length: 60 }, (_, index) => bundle(`m${index}`, index + 1, "x".repeat(7_400)))
     const result = trimToLiveTail(sessionData(messages, { messageWindowExpanded: true }), 2)
 
-    expect(result.messages.length).toBe(31)
+    expect(result.messages.length).toBe(37)
     expect(result.messages.at(-1)?.info.id).toBe("m59")
   })
 
@@ -118,11 +120,49 @@ describe("message window helpers", () => {
   test("keeps the newest heavy message when following the live content budget", () => {
     const result = trimToLiveTail(
       sessionData([bundle("m1", 1), bundle("m2", 2), bundle("m3", 3), bundle("m4", 4, "x".repeat(1_800))]),
-      { count: 10, budget: 1_400 },
+      { count: 10, budget: 1_400, minCount: 1 },
     )
 
     expect(messageIDs(result)).toEqual(["m4"])
     expect(result.messageCursor).toBeTruthy()
+  })
+
+  test("keeps the minimum window when heavy messages exceed the budget", () => {
+    // Every message is over the whole budget by itself. Without a floor the
+    // window collapses to the single newest message and the transcript renders
+    // one message plus "Load more" - the reader must always keep scroll context.
+    const messages = Array.from({ length: 8 }, (_, index) => bundle(`m${index + 1}`, index + 1, "x".repeat(1_800)))
+    const result = trimToLiveTail(sessionData(messages), { count: 10, budget: 1_400, minCount: 4 })
+
+    expect(messageIDs(result)).toEqual(["m5", "m6", "m7", "m8"])
+    expect(result.messageCursor).toBeTruthy()
+  })
+
+  test("collapsing an expanded window never trims below the minimum count", () => {
+    const messages = Array.from({ length: 8 }, (_, index) => bundle(`m${index + 1}`, index + 1, "x".repeat(1_800)))
+    const result = collapseMessageWindow(
+      sessionData(messages, { messageCursor: "older", messageWindowExpanded: true }),
+      { count: 10, budget: 1_400, minCount: 4 },
+    )
+
+    expect(messageIDs(result)).toEqual(["m5", "m6", "m7", "m8"])
+    expect(result.messageWindowExpanded).toBeUndefined()
+  })
+
+  test("live tail windows guarantee multiple messages even when every message is heavy", () => {
+    // Regression: a logger-style session where each assistant turn alone
+    // outweighs the byte budget must never trim to a single message.
+    const messages = Array.from({ length: 64 }, (_, index) => bundle(`m${index + 1}`, index + 1, "x".repeat(20_000)))
+    const session = trimToLiveTail(sessionData(messages), SESSION_MESSAGE_WINDOW)
+    const view = trimToLiveTail(sessionData(messages), VIEW_MESSAGE_WINDOW)
+    const expanded = trimToLiveTail(sessionData(messages, { messageWindowExpanded: true }), SESSION_MESSAGE_WINDOW)
+
+    expect(session.messages.length).toBeGreaterThanOrEqual(SESSION_MESSAGE_WINDOW.minCount)
+    expect(SESSION_MESSAGE_WINDOW.minCount).toBeGreaterThanOrEqual(8)
+    expect(view.messages.length).toBeGreaterThanOrEqual(VIEW_MESSAGE_WINDOW.minCount)
+    expect(VIEW_MESSAGE_WINDOW.minCount).toBeGreaterThanOrEqual(8)
+    expect(expanded.messages.length).toBeGreaterThanOrEqual(EXPANDED_MESSAGE_WINDOW.minCount)
+    expect(EXPANDED_MESSAGE_WINDOW.minCount).toBeGreaterThanOrEqual(8)
   })
 })
 

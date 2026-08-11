@@ -19,4 +19,79 @@
   min-width: 400px;
   min-height: 0;
   gap: 8px;
+  /* Fullscreen workspace slides this column out; see the rules further down.
+     Tokenized motion, and collapsed under reduced motion at the end of file. */
+  transition:
+    flex-grow var(--ds-motion-route) var(--ds-ease-smooth),
+    flex-basis var(--ds-motion-route) var(--ds-ease-smooth),
+    min-width var(--ds-motion-route) var(--ds-ease-smooth),
+    opacity var(--ds-motion-control) var(--ds-ease-smooth),
+    transform var(--ds-motion-route) var(--ds-ease-smooth);
+}
+
+/* Fullscreen workspace: the session column gives its room to the panel and
+   slides out the way the panel itself slides in. It stays mounted - scroll
+   position, subscriptions - and it stays in the layout, because removing its
+   box would drop .session-main into the page grid's `auto` row and crush the
+   whole thing to content height. The header above both columns stays: it holds
+   the toggle, so it is the way back. */
+.session-page[data-center-collapsed] .session-workspace {
+  flex-grow: 0;
+  flex-basis: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translate(-14px);
+  pointer-events: none;
+}
+
+.session-page[data-center-collapsed] .session-side-panel.open {
+  flex-basis: 100%;
+  width: 100%;
+  max-width: none;
+}
+
+/* Nothing to drag against once the session is away: the workspace is already
+   the full window, and the handle would only pull it back to a hidden edge. */
+.session-page[data-center-collapsed] .session-side-panel-resize {
+  display: none;
+}
+
+/* A view's panes slide away for the same reason and by the same motion: its
+   workspace is the session panel, pointed at whichever session it prioritises.
+   The view header stays above, holding the way back. */
+.views-manager-page[data-center-collapsed] .views-manager-content {
+  flex-grow: 0;
+  flex-basis: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translate(-14px);
+  pointer-events: none;
+}
+
+.views-manager-page[data-center-collapsed] .session-side-panel.open {
+  flex-basis: 100%;
+  width: 100%;
+  max-width: none;
+}
+
+.views-manager-page[data-center-collapsed] .session-side-panel-resize {
+  display: none;
+}
+
+/* The fullscreen graph drill-down drawer lives with the graph tab's own
+   styles - see session-graph-embedded.css (.session-graph-stage). */
+
+/* Reduced motion: the slide is nonessential; collapse it to a state change. */
+@media (prefers-reduced-motion: reduce) {
+  .session-workspace,
+  .views-manager-content {
+    transition-duration: 1ms;
+  }
+
+  .session-page[data-center-collapsed] .session-workspace,
+  .views-manager-page[data-center-collapsed] .views-manager-content {
+    transform: none;
+  }
 }
