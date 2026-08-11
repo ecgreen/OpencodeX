@@ -24,6 +24,9 @@ import { createComposerStashController } from "./session-composer-stash"
 import { createSessionComposerPresentation } from "./session-composer-presentation"
 import { createSessionComposerInputController } from "./session-composer-input-controller"
 import { subscribeSessionBrowserCaptures } from "../lib/session-browser-capture"
+import { transcriptSubagentClick } from "../lib/transcript-subagent-link"
+import { createSessionFollowupController } from "./session-followup-controller"
+import { createSessionComposerSubmit } from "./session-composer-submit"
 const SessionSidePanel = lazy(() => import("./session-side-panel").then((module) => ({ default: module.SessionSidePanel })))
 export function SessionPage(props: SessionPageProps) {
   const session = () => props.session
@@ -45,7 +48,11 @@ export function SessionPage(props: SessionPageProps) {
   const setDraftParts = composerState.setDraftParts
   const setHistoryIndex = composerState.setHistoryIndex
   const setHistoryDraft = composerState.setHistoryDraft
-  const running = createMemo(() => props.status === "busy" || props.status === "retry")
+  // Mirrors the canonical isClientSessionWorking: a pending prompt counts as
+  // running. Without it, the lag between sending a prompt and the backend
+  // reporting busy reads as "run finished" - the queue would drain into the
+  // starting run and the delivery buttons would flicker back to plain send.
+  const running = createMemo(() => props.status === "busy" || props.status === "retry" || props.promptPending === true)
   const composerInput = createSessionComposerInputController({
     sessionID: () => session()?.id,
     draft: () => ({ input: draftPrompt(), parts: draftParts() }),
@@ -61,52 +68,27 @@ export function SessionPage(props: SessionPageProps) {
   })
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
+  const followup = createSessionFollowupController({ session, running, blocked, prompts: () => props.queuedPrompts ?? [], queue: props.queuePrompt, update: props.updateQueuedPrompt, remove: props.removeQueuedPrompt, onDelivered: props.queuedPromptDelivered, submit: props.submit })
   const { slashQuery, visibleSlashCommands, slashMenuVisible, mentionQuery, mentionOptions, mentionMenuVisible, userHistory, usageLabel } = createSessionComposerPresentation({ props, draftPrompt, slashMenuOpen, blocked })
-  const resizeComposer = composerInput.resize
-  const submitComposer = async (event: SubmitEvent) => {
-    event.preventDefault()
-    const draft = draftPrompt()
-    const text = draftText()
-    const parts = [...draftParts()]
-    if (blocked() || (!text && parts.length === 0)) return
-    // Sending here fails server-side with no assistant message to hang the error
-    // on, so the draft is kept and the composer banner explains the fix.
-    if (models.disconnectedProvider()) return
-    if (props.pending && sidePanel.open()) sidePanel.requestPendingOpenHandoff()
-    const shellText = text.startsWith("!") ? text.slice(1).trimStart() : undefined
-    const promptText = shellText ?? text
-    setDraftPrompt("")
-    setDraftParts([])
-    resizeComposer()
-    composerInput.flush()
-    const accepted = await props.submit(event, {
-      input: promptText,
-      parts:
-        shellText !== undefined
-          ? []
-          : parts.length
-            ? [...(text ? [{ type: "text" as const, text }] : []), ...parts]
-            : [{ type: "text", text }],
-      ...(shellText !== undefined ? { mode: "shell" } : {}),
-    })
-    if (!accepted) {
-      setDraftPrompt((current) => (!draft ? current : current ? `${draft}\n${current}` : draft))
-      setDraftParts((current) => [...parts, ...current])
-      resizeComposer()
-      composerInput.flush()
-      return
-    }
-    setEmptyStateDismissed(true)
-    setHistoryIndex(-1)
-    setHistoryDraft("")
-  }
+  const submitComposer = createSessionComposerSubmit({
+    blocked,
+    disconnected: () => Boolean(models.disconnectedProvider()),
+    draftPrompt, draftText, draftParts, setDraftPrompt, setDraftParts,
+    resize: composerInput.resize, flush: composerInput.flush,
+    prepare: () => { if (props.pending && sidePanel.open()) sidePanel.requestPendingOpenHandoff() },
+    selection: () => ({ agent: props.selectedAgent, model: props.selectedModel, variant: props.selectedVariant }),
+    followup, submit: props.submit,
+    accepted: () => {
+      setEmptyStateDismissed(true); setHistoryIndex(-1); setHistoryDraft("")
+    },
+  })
   const runSlashCommand = (command: SessionSlashCommand | undefined) => {
     if (!command || command.disabled) return
     const currentDraft = draftPrompt()
     const currentParts = draftParts()
     setDraftPrompt("")
     setSlashMenuOpen(false)
-    resizeComposer()
+    composerInput.resize()
     composerInput.flush()
     void command.run({ draftPrompt: currentDraft, draftParts: currentParts, setDraftPrompt, setDraftParts, openModelPicker: () => models.setPickerOpen(true) })
   }
@@ -114,13 +96,13 @@ export function SessionPage(props: SessionPageProps) {
     if (!command) return
     setDraftPrompt(`/${command.name}`)
     setSlashMenuOpen(true)
-    resizeComposer()
+    composerInput.resize()
   }
   const chooseMention = (option: PromptMentionOption) => {
     const nextPrompt = removeTrailingMentionQuery(draftPrompt())
     setDraftPrompt(nextPrompt)
     setDraftParts((current) => [...current, option.part])
-    resizeComposer()
+    composerInput.resize()
   }
   const loadHistory = (offset: number) => {
     const next = nextPromptHistoryState({
@@ -135,7 +117,7 @@ export function SessionPage(props: SessionPageProps) {
     setHistoryDraft(next.historyDraft)
     setDraftPrompt(next.draftPrompt)
     setDraftParts([])
-    resizeComposer()
+    composerInput.resize()
     return true
   }
   const pasteFiles = async (files: File[]) => {
@@ -147,14 +129,14 @@ export function SessionPage(props: SessionPageProps) {
     const context = items.map((item) => ({ ...item, path: item.path.trim() })).filter((item) => item.path)
     if (context.length === 0) return
     setDraftParts((current) => [...current, ...context.map((item) => filePartFromPath(item))])
-    resizeComposer()
+    composerInput.resize()
   }
   const addPickedContext = async () => {
     const items = await window.opencodex?.contextPaths?.(session()?.directory)
     if (!items?.length) return
     addContextPaths(items)
   }
-  const restoreComposerPrompt = createComposerPromptRestore({ setDraftPrompt, setDraftParts, resizeComposer, focus: () => composerInput.textarea()?.focus({ preventScroll: true }) })
+  const restoreComposerPrompt = createComposerPromptRestore({ setDraftPrompt, setDraftParts, resizeComposer: composerInput.resize, focus: () => composerInput.textarea()?.focus({ preventScroll: true }) })
   const handleMessageAction = createSessionMessageActionHandler({ session, data: () => props.data, onMessageAction: props.onMessageAction, restorePrompt: restoreComposerPrompt })
   const dropContext = async (event: DragEvent) => {
     const files = Array.from(event.dataTransfer?.files ?? [])
@@ -172,7 +154,7 @@ export function SessionPage(props: SessionPageProps) {
   }
   createEffect(() => {
     draftPrompt()
-    resizeComposer()
+    composerInput.resize()
   })
   createEffect(() => {
     const count = visibleSlashCommands().length
@@ -247,7 +229,15 @@ export function SessionPage(props: SessionPageProps) {
           </InlineNotice>
         )}
       </Show>
-      <div class="session-main" onClick={sidePanel.openTranscriptTarget}>
+      {/* Transcript agent rows stamp `data-subagent-session`; a click on one
+          opens the same embedded view a graph node opens into. Everything else
+          falls through to the side panel's file and link targets. */}
+      <div
+        class="session-main"
+        onClick={(event) => {
+          if (!transcriptSubagentClick(event, props.graph, props.openGraphNode)) sidePanel.openTranscriptTarget(event)
+        }}
+      >
         <div class="session-workspace" inert={sidePanel.centerCollapsed()}>
           {/* One graph, drawn from what ran. A goal no longer gets a list of its
               own here: its steps are sessions parented to this one, so the
@@ -290,6 +280,10 @@ export function SessionPage(props: SessionPageProps) {
             disconnectedProviderName={models.disconnectedProvider()?.name}
             connectProvider={props.connectProvider ? () => props.connectProvider?.(models.disconnectedProvider()?.id) : undefined}
             running={running()}
+            queuedPrompts={followup.prompts()}
+            updateQueuedPrompt={followup.update}
+            removeQueuedPrompt={followup.remove}
+            holdQueuedPrompts={followup.hold}
             mode={models.mode()}
             draftPrompt={draftPrompt()}
             draftParts={draftParts()}

@@ -2,7 +2,7 @@ import { For, Show, createMemo } from "solid-js"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { createDisclosure, createMountedOnce } from "../lib/disclosure"
 import { collapseWhitespace, formatElapsed } from "../lib/tool-display"
-import type { DisplayPart, ReasoningPart } from "../lib/transcript-grouping"
+import type { DisplayPart, ThinkingPart } from "../lib/transcript-grouping"
 import { Icon } from "./icon"
 import { PartHeader, useTranscriptChrome } from "./session-part-chrome"
 
@@ -130,7 +130,7 @@ export function ThinkingGroupView(props: {
   )
 }
 
-function ThinkingSegment(props: { part: ReasoningPart; index: number; total: number; streaming: boolean }) {
+function ThinkingSegment(props: { part: ThinkingPart; index: number; total: number; streaming: boolean }) {
   return (
     <section class="thinking-segment">
       <Show when={props.total > 1}>

@@ -1,6 +1,7 @@
 import { For, Match, Show, Switch, createEffect, createSignal } from "solid-js"
 import { Button, SegmentedControl, ToastProvider } from "../ui"
 import { LabControls } from "./lab-controls"
+import { LabComposer } from "./lab-composer"
 import { LabFeedback } from "./lab-feedback"
 import { LabFoundations } from "./lab-foundations"
 import { LabGraph } from "./lab-graph"
@@ -82,6 +83,7 @@ export function LabApp() {
             <Match when={page() === "feedback"}><LabFeedback /></Match>
             <Match when={page() === "navigation"}><LabNavigation /></Match>
             <Match when={page() === "overlays"}><LabOverlays /></Match>
+            <Match when={page() === "composer"}><LabComposer /></Match>
             <Match when={page() === "safety"}><LabSafety /></Match>
             <Match when={page() === "signature"}><LabSignature /></Match>
             <Match when={page() === "transcript"}><LabTranscript /></Match>

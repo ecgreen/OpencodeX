@@ -280,15 +280,25 @@ export function make(deps: Deps) {
     if (!text) return undefined
     yield* ensureClaudeTitle(session, text)
     const specialists = swarm?.roles.slice(1) ?? []
+    // Attribute the turn to the route the reader picked, so a swarm session
+    // stays labelled with the team rather than the orchestrator's model. The
+    // same attribution goes onto spawned sidechain children below: a child
+    // mirrors a Claude subagent and never runs a model of its own, so letting
+    // its user message fall through to default model resolution would label it
+    // with whatever provider the reader last used elsewhere.
+    const turnProviderID = selected?.providerID ?? providerID
+    const turnModelID = (swarm ? swarm.swarmID : modelIdentifier(model)) ?? CLAUDE_CODE_DEFAULT_MODEL_ID
+    const turnModel = {
+      providerID: ProviderV2.ID.make(String(turnProviderID)),
+      modelID: ProviderV2.ModelID.make(String(turnModelID)),
+    }
     return claudeDriver.runTurn({
       sessionID,
       parentMessageID: last.info.id,
       text,
       directory: session.directory,
-      // Attribute the turn to the route the reader picked, so a swarm session
-      // stays labelled with the team rather than the orchestrator's model.
-      providerID: selected?.providerID ?? providerID,
-      modelID: (swarm ? swarm.swarmID : modelIdentifier(model)) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+      providerID: turnProviderID,
+      modelID: turnModelID,
       claudeModelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
       // "default" is the sentinel for "no variant" everywhere else in the loop.
       ...(selected?.variant && selected.variant !== "default" ? { variant: selected.variant } : {}),
@@ -332,6 +342,7 @@ export function make(deps: Deps) {
             const message = yield* prompt({
               sessionID: child.id,
               noReply: true,
+              model: turnModel,
               parts: [{ type: "text", text: spawnInput.prompt || spawnInput.title }],
             }).pipe(Effect.orDie)
             return { sessionID: child.id, userMessageID: message.info.id }

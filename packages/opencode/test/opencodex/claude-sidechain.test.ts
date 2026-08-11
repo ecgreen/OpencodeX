@@ -53,6 +53,57 @@ describe("sidechain router", () => {
     expect(result.actions[0]).toMatchObject({ kind: "spawn", title: "Claude subagent" })
   })
 
+  test("a tool_progress heartbeat for a long-running main tool call does not spawn a phantom subagent", () => {
+    // The CLI emits `tool_progress` heartbeat frames for any tool call running
+    // longer than ~30s (e.g. the swarm delegate MCP tool), tagged with
+    // parent_tool_use_id = the running call's OWN id. That is progress
+    // telemetry, not a subagent conversation - spawning a chain for it
+    // manufactures an empty "Claude subagent" child session.
+    const router = createSidechainRouter({ makeContext })
+    const result = router.route(
+      {
+        type: "tool_progress",
+        tool_use_id: "task_1-heartbeat-0",
+        tool_name: "mcp__opencodex_swarm__delegate",
+        parent_tool_use_id: "task_1",
+        elapsed_time_seconds: 30,
+        heartbeat: true,
+      } as never,
+      mainToolParts,
+    )
+    expect(result.handled).toBe(true)
+    expect(result.actions).toEqual([])
+    // No chain was created: a later real sidechain event for the same call
+    // must still spawn normally.
+    const real = router.route(sidechainAssistant as never, mainToolParts)
+    expect(real.actions[0]).toMatchObject({ kind: "spawn", chainID: "task_1" })
+  })
+
+  test("a tool_progress frame inside an existing chain is swallowed without buffering", () => {
+    const router = createSidechainRouter({ makeContext })
+    router.route(sidechainAssistant as never, mainToolParts)
+    const progress = router.route(
+      {
+        type: "tool_progress",
+        tool_use_id: "inner_1",
+        tool_name: "Read",
+        parent_tool_use_id: "task_1",
+        elapsed_time_seconds: 30,
+        heartbeat: true,
+      } as never,
+      mainToolParts,
+    )
+    expect(progress.handled).toBe(true)
+    expect(progress.actions).toEqual([])
+    // Attaching still flushes only the buffered conversation event.
+    const flushed = router.attachChild("task_1", "ses_child", "msg_user_child")
+    const texts = flushed
+      .flatMap((a) => (a.kind === "writes" ? a.writes : []))
+      .filter((w) => w.kind === "part")
+      .map((w) => (w as { part: { text?: string } }).part.text)
+    expect(texts).toContain("child says hi")
+  })
+
   test("the spawning call's tool_result finalizes the chain (event still reaches the main mapper)", () => {
     const router = createSidechainRouter({ makeContext })
     router.route(sidechainAssistant as never, mainToolParts)
@@ -70,6 +121,68 @@ describe("sidechain router", () => {
     expect(settle.handled).toBe(false) // main mapper still records the Task tool result
     const writes = settle.actions.filter((a) => a.kind === "writes").flatMap((a) => (a.kind === "writes" ? a.writes : []))
     expect(writes.length).toBeGreaterThan(0) // the interrupted inner tool was closed
+  })
+
+  test("a background agent's launch ack does not finalize the chain; the completion notification does", () => {
+    // Background subagents (the SDK default) return their Task tool_result
+    // immediately - "Async agent launched successfully" - while the agent
+    // keeps streaming sidechain events. Settling the chain on that ack froze
+    // the child transcript at birth and dropped everything the agent did.
+    const router = createSidechainRouter({ makeContext })
+    // The CLI announces the background launch before the ack tool_result.
+    const started = router.route(
+      { type: "system", subtype: "task_started", task_id: "bg1", tool_use_id: "task_1" } as never,
+      mainToolParts,
+    )
+    expect(started.handled).toBe(false) // main mapper still sees system events
+    router.route(sidechainAssistant as never, mainToolParts)
+    router.attachChild("task_1", "ses_child", "msg_user_child")
+    // The launch ack must NOT settle the chain.
+    const ack = router.route(
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "task_1", content: [{ type: "text", text: "Async agent launched successfully." }] }] },
+      } as never,
+      mainToolParts,
+    )
+    expect(ack.handled).toBe(false)
+    expect(ack.actions).toEqual([])
+    // The agent's later output still lands in the child session.
+    const late = router.route(
+      { type: "assistant", parent_tool_use_id: "task_1", message: { id: "m_side2", content: [{ type: "text", text: "late output" }] } } as never,
+      mainToolParts,
+    )
+    const lateTexts = late.actions
+      .flatMap((a) => (a.kind === "writes" ? a.writes : []))
+      .flatMap((w) => (w.kind === "part" && w.part.type === "text" ? [w.part.text] : []))
+    expect(lateTexts).toContain("late output")
+    // The completion notification settles the chain.
+    const settle = router.route(
+      { type: "system", subtype: "task_notification", task_id: "bg1", tool_use_id: "task_1", status: "completed" } as never,
+      mainToolParts,
+    )
+    expect(settle.handled).toBe(false)
+    const stepFinish = settle.actions
+      .flatMap((a) => (a.kind === "writes" ? a.writes : []))
+      .find((w) => w.kind === "part" && w.part.type === "step-finish")
+    expect(stepFinish).toMatchObject({ part: { reason: "subagent completed" } })
+    // Nothing left for the end-of-turn sweep to close.
+    expect(router.finalizeAll()).toEqual([])
+  })
+
+  test("a failed background agent settles its chain with a failure reason", () => {
+    const router = createSidechainRouter({ makeContext })
+    router.route({ type: "system", subtype: "task_started", task_id: "bg1", tool_use_id: "task_1" } as never, mainToolParts)
+    router.route(sidechainAssistant as never, mainToolParts)
+    router.attachChild("task_1", "ses_child", "msg_user_child")
+    const settle = router.route(
+      { type: "system", subtype: "task_notification", task_id: "bg1", tool_use_id: "task_1", status: "failed" } as never,
+      mainToolParts,
+    )
+    const stepFinish = settle.actions
+      .flatMap((a) => (a.kind === "writes" ? a.writes : []))
+      .find((w) => w.kind === "part" && w.part.type === "step-finish")
+    expect(stepFinish).toMatchObject({ part: { reason: "subagent failed" } })
   })
 
   test("finalizeAll closes chains the turn abandoned", () => {

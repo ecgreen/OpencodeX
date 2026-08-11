@@ -387,6 +387,7 @@ export const layer = Layer.effect(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
       const message = yield* acceptPrompt(input)
+      if (input.delivery === "immediate") yield* state.interrupt(input.sessionID)
       if (input.noReply === true) return message
       return yield* loop({ sessionID: input.sessionID })
     })
@@ -837,6 +838,7 @@ export const layer = Layer.effect(
           { behavior: "immediate" },
         )
         .pipe(Effect.orDie)
+      if (input.delivery === "immediate") yield* state.interrupt(input.sessionID)
       if (input.noReply !== true) yield* launchCommand(acceptedCommandID)
     })
 
@@ -943,6 +945,7 @@ export const layer = Layer.effect(
       const result = yield* prompt({
         sessionID: input.sessionID,
         messageID: input.messageID,
+        delivery: input.delivery,
         model: userModel,
         agent: userAgent,
         parts,

@@ -150,7 +150,12 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       }}
       selectedVariant={model.sessionState.selectedVariant()}
       setSelectedVariant={model.sessionState.setSelectedVariant}
-      submit={(event, prompt) => model.notices.attempt(() => model.sessionComposer.submit(event, prompt))}
+      submit={(prompt, options) => model.notices.attempt(() => model.sessionComposer.submit(prompt, options))}
+      queuedPrompts={session() ? model.sessionState.queuedPrompts(session()!.id) : []}
+      queuePrompt={model.sessionState.queuePrompt}
+      updateQueuedPrompt={model.sessionState.updateQueuedPrompt}
+      removeQueuedPrompt={model.sessionState.removeQueuedPrompt}
+      queuedPromptDelivered={(text) => model.notices.succeed(`Sent queued message: ${text}`)}
       permissions={model.sessionSelection.selectedPermissions()}
       questions={model.sessionSelection.selectedQuestions()}
       replyPermission={(request, reply) => void model.notices.run(() => model.management.permission(request, reply))}
@@ -179,6 +184,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       toggleScrollbar={model.transcriptPreferences.handleToggleScrollbarSlash}
       toggleGenericToolOutput={model.transcriptPreferences.handleToggleGenericToolOutputSlash}
       status={session() ? model.authoritative.snapshot()?.sessionStatus[session()!.id]?.type : undefined}
+      promptPending={session() ? model.authoritative.snapshot()?.sessionPendingPrompt?.[session()!.id] === true : false}
       abortConfirmArmed={model.commands.abortConfirmSessionID() === session()?.id}
       readyForReview={
         session() ? model.authoritative.snapshot()?.sessionUiState[session()!.id]?.displayStatus === "needs_review" : false

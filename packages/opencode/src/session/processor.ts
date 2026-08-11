@@ -629,7 +629,6 @@ export const layer = Layer.effect(
         const error = parse(e)
         if (SessionLegacy.ContextOverflowError.isInstance(error)) {
           ctx.needsCompaction = true
-          yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
           return
         }
         ctx.assistantMessage.error = error

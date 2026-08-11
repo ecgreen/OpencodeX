@@ -203,7 +203,11 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking" }) {
+function makePrompt(input?: {
+  processor?: "blocking"
+  /** Replaces the Claude driver, so a test can script `runTurn` (e.g. to exercise the sidechain spawn). */
+  claudeDriver?: Layer.Layer<OpencodeXClaudeDriver.Service>
+}) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -261,7 +265,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(deps),
   )
   return SessionPrompt.layer.pipe(
-    Layer.provide(OpencodeXClaudeDriver.defaultLayer),
+    Layer.provide(input?.claudeDriver ?? OpencodeXClaudeDriver.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(Image.defaultLayer),
@@ -557,6 +561,63 @@ it.instance("promptAsync persists its message and execution intent before return
   }),
 )
 
+it.instance(
+  "promptAsync direct interrupts the active turn and starts the directing message",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const { db } = yield* Database.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.hang
+      yield* llm.text("redirected")
+
+      yield* prompt.promptAsync({
+        sessionID: chat.id,
+        messageID: MessageID.ascending(),
+        model: ref,
+        parts: [{ type: "text", text: "long task" }],
+      })
+      yield* llm.wait(1)
+
+      const directingID = MessageID.ascending()
+      yield* prompt.promptAsync({
+        sessionID: chat.id,
+        messageID: directingID,
+        delivery: "immediate",
+        model: ref,
+        parts: [{ type: "text", text: "focus on the regression test instead" }],
+      })
+
+      yield* llm.wait(2)
+      yield* pollWithTimeout(
+        db
+          .select({ status: SessionCommandTable.status })
+          .from(SessionCommandTable)
+          .where(eq(SessionCommandTable.session_id, chat.id))
+          .all()
+          .pipe(
+            Effect.orDie,
+            Effect.map((commands) =>
+              commands.length === 2 && commands.every((command) => command.status === "succeeded")
+                ? true
+                : undefined,
+            ),
+          ),
+        "directing prompt did not settle",
+      )
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const directed = messages.find(
+        (message) => message.info.role === "assistant" && message.info.parentID === directingID,
+      )
+      expect(directed?.parts.some((part) => part.type === "text" && part.text === "redirected")).toBe(true)
+      expect(JSON.stringify((yield* llm.inputs).at(-1)?.messages)).toContain("focus on the regression test instead")
+    }),
+  5_000,
+)
+
 it.instance("cancel marks both active and queued prompt intents terminal", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
@@ -711,6 +772,45 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
+it.instance("loop compacts and resumes after provider context overflow", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const events = yield* EventV2Bridge.Service
+    const chat = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const errors: string[] = []
+    const off = yield* events.listen((event) => {
+      if (event.type !== Session.Event.Error.type) return Effect.void
+      const data = event.data as typeof Session.Event.Error.data.Type
+      if (data.sessionID === chat.id && data.error) errors.push(data.error.name)
+      return Effect.void
+    })
+    yield* Effect.addFinalizer(() => off)
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "continue after compaction" }],
+    })
+    yield* llm.error(400, { type: "error", error: { code: "context_length_exceeded" } })
+    yield* llm.text("summary")
+    yield* llm.text("resumed")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+
+    expect(result.info.role).toBe("assistant")
+    expect(result.parts.some((part) => part.type === "text" && part.text === "resumed")).toBe(true)
+    expect(messages.some((message) => message.info.role === "assistant" && message.info.summary)).toBe(true)
+    expect(yield* llm.hits).toHaveLength(3)
+    expect(errors).toEqual([])
+  }),
+)
 
 it.instance("static loop returns assistant text through local provider", () =>
   Effect.gen(function* () {
@@ -2866,5 +2966,54 @@ it.instance("a swarm with a Claude Code orchestrator routes to the CLI driver, n
     expect(briefingText).toContain("mcp__opencodex_swarm__delegate")
     expect(briefingText).toContain("Do not use the built-in Task tool")
     expect(briefingText).toContain("Designer")
+  }),
+)
+
+// A driver stub that immediately spawns one sidechain child, so the test can
+// observe what prompt-swarm's spawn capability actually writes into the child
+// session without a live CLI.
+const sidechainSpawns: Array<{ sessionID: string; userMessageID: string }> = []
+const spawningDriver = Layer.succeed(
+  OpencodeXClaudeDriver.Service,
+  OpencodeXClaudeDriver.Service.of({
+    runTurn: (input) =>
+      Effect.gen(function* () {
+        const child = yield* input.sidechain!.spawn({ title: "probe subagent", prompt: "child work" })
+        sidechainSpawns.push(child)
+        return { info: { id: input.parentMessageID, sessionID: input.sessionID }, parts: [] } as never
+      }),
+  }),
+)
+const spawnDriverIt = testEffect(Layer.mergeAll(TestLLMServer.layer, makePrompt({ claudeDriver: spawningDriver })))
+
+spawnDriverIt.instance("a spawned subagent child is attributed to the parent's model, not the global default", () =>
+  Effect.gen(function* () {
+    // A sidechain child never runs a model of its own - it mirrors a Claude
+    // subagent - so its user message must carry the parent's route. Falling
+    // through to default model resolution labelled children with whatever
+    // provider the reader last used elsewhere (e.g. a local lmstudio model).
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: { providerID: ProviderV2.ID.make("claude-code"), modelID: ProviderV2.ModelID.make("sonnet") },
+      noReply: true,
+      parts: [{ type: "text", text: "delegate something" }],
+    })
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const spawned = sidechainSpawns.at(-1)
+    if (!spawned) return yield* Effect.die(new Error("the driver stub never spawned a sidechain child"))
+    const child = yield* sessions.get(spawned.sessionID as typeof chat.id).pipe(Effect.orDie)
+    expect(child.parentID).toBe(chat.id)
+    const messages = yield* sessions.messages({ sessionID: spawned.sessionID as typeof chat.id })
+    const user = messages.find((message) => message.info.role === "user")
+    expect(user?.info.role === "user" ? user.info.model : undefined).toMatchObject({
+      providerID: "claude-code",
+      modelID: "sonnet",
+    })
   }),
 )

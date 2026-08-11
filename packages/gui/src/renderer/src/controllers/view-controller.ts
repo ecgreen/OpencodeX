@@ -13,7 +13,7 @@ import { modelValue } from "../lib/model-selection"
 import { projectNameForID, projectNameForSession } from "../lib/project-name"
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import { activeViewForRoute, focusedViewItemID } from "../lib/route-selection"
-import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus } from "../lib/session-api"
+import { runShellCommand, runSessionCommand, sendPrompt, updateViewFocus, type PromptDelivery } from "../lib/session-api"
 import {
   orderedViewItems,
   viewItemID,
@@ -197,8 +197,11 @@ export function createViewController(input: {
     ),
   )
 
-  async function submitPrompt(event: SubmitEvent, item: ViewItem, value: GuiPromptInfo) {
-    event.preventDefault()
+  async function submitPrompt(
+    item: ViewItem,
+    value: GuiPromptInfo,
+    options: { delivery?: PromptDelivery; agent?: string; model?: string; variant?: string } = {},
+  ) {
     const client = input.authoritative.client()
     const paneID = viewItemID(item)
     return runViewPromptAction({
@@ -206,9 +209,10 @@ export function createViewController(input: {
       item,
       view: activeView(),
       text: value,
-      agentForSession: (session) => agentValue(paneID, session),
-      modelForSession: (session) => modelValueForPane(paneID, session),
-      variantForSession: (session) => variantValue(paneID, session),
+      agentForSession: (session) => options.agent ?? agentValue(paneID, session),
+      modelForSession: (session) => options.model ?? modelValueForPane(paneID, session),
+      variantForSession: (session) => options.variant ?? variantValue(paneID, session),
+      delivery: options.delivery,
       setDraftLoading: input.authoritative.setViewPaneLoading,
       markPendingPrompt: input.authoritative.markSessionPromptPending,
       releasePendingPrompt: input.authoritative.releaseSessionPromptPending,
@@ -227,6 +231,7 @@ export function createViewController(input: {
               directory: options.directory,
               agent: options.agent,
               model: options.model,
+              delivery: options.delivery,
             }).then(() => undefined)
           : Promise.resolve(),
       serverCommands: input.authoritative.snapshot()?.commands ?? [],

@@ -6,7 +6,7 @@ import type { createSessionState } from "./session-state"
 import { createPlanModeFollow } from "../lib/plan-mode-follow"
 import { activeSessionRouteKey } from "../lib/route-selection"
 import { runSessionPromptAction } from "../lib/session-prompt"
-import { runShellCommand, runSessionCommand, sendPrompt } from "../lib/session-api"
+import { runShellCommand, runSessionCommand, sendPrompt, type PromptDelivery } from "../lib/session-api"
 import { workbenchPromptTarget } from "../lib/workbench"
 
 export function createSessionComposerController(input: {
@@ -22,8 +22,10 @@ export function createSessionComposerController(input: {
     activeSessionID: input.selection.activeSessionID,
     setAgent: input.state.setSelectedAgent,
   })
-  async function submit(event: SubmitEvent, value?: string | GuiPromptInfo) {
-    event.preventDefault()
+  async function submit(
+    value?: string | GuiPromptInfo,
+    options: { delivery?: PromptDelivery; agent?: string; model?: string; variant?: string } = {},
+  ) {
     const client = input.authoritative.client()
     const route = input.navigation.route()
     if (!input.selection.selectedSession() && route.name === "session") {
@@ -38,9 +40,10 @@ export function createSessionComposerController(input: {
       text: value ?? input.state.prompt(),
       permissionCount: input.selection.selectedPermissions().length,
       questionCount: input.selection.selectedQuestions().length,
-      agent: input.state.selectedAgent(),
-      model: input.state.selectedModel(),
-      variant: input.state.selectedVariant(),
+      agent: options.agent ?? input.state.selectedAgent(),
+      model: options.model ?? input.state.selectedModel(),
+      variant: options.variant ?? input.state.selectedVariant(),
+      delivery: options.delivery,
       setPrompt: input.state.setPrompt,
       setLoadingSessionID: input.authoritative.setLoadingSessionID,
       sendPrompt: (sessionID, text, options) =>
@@ -56,6 +59,7 @@ export function createSessionComposerController(input: {
               directory: options.directory,
               agent: options.agent,
               model: options.model,
+              delivery: options.delivery,
             }).then(() => undefined)
           : Promise.resolve(),
       serverCommands: input.authoritative.snapshot()?.commands ?? [],

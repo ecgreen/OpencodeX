@@ -1,3 +1,4 @@
+import { createTwoFilesPatch } from "diff"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import type { SessionSchema } from "@opencode-ai/core/session/schema"
 import type { ConversationTask } from "./claude-driver-metadata"
@@ -76,6 +77,12 @@ export type MapperState = {
   modelID: string
   /** Claude reports cost/tokens cumulatively per conversation, not per turn. */
   billed: { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
+  /**
+   * Usage of the most recent API request, from assistant events. The result
+   * event's usage sums every request in the turn, so it cannot describe the
+   * conversation's current context - this can.
+   */
+  lastUsage?: SessionLegacy.StepFinishPart["tokens"]
   toolParts: Map<string, { partID: PartID; tool: string; input: Record<string, unknown>; start: number }>
   textParts: Map<string, PartID>
   /** Accumulated text per streaming block, keyed like textParts. */
@@ -87,6 +94,16 @@ export type MapperState = {
   resumeRejected?: boolean
   authFailed?: boolean
   finished?: boolean
+  /**
+   * Live background tasks (backgrounded subagents, background shells) as
+   * reported by `background_tasks_changed` - a level signal with replace
+   * semantics. While any are live, a `result` event is a pause (the CLI
+   * re-wakes the model on this same stream when they report back), not the
+   * end of the turn.
+   */
+  liveBackgroundTasks: number
+  /** Cost accumulated across this turn's steps, for the completed message. */
+  turnCost: number
   /** Claude harness task tools (TaskCreate/TaskUpdate) projected as todos. */
   tasks: Map<string, { subject: string; status: string }>
   /** Monotonic counter for synthesized task ids, so deletions can't cause reuse. */
@@ -100,6 +117,8 @@ export function initialState(input: { modelID?: string; billed?: MapperState["bi
     toolParts: new Map(),
     textParts: new Map(),
     streamText: new Map(),
+    liveBackgroundTasks: 0,
+    turnCost: 0,
     tasks: new Map((input.tasks ?? []).map((task) => [task.id, { subject: task.subject, status: task.status }])),
     taskSequence: (input.tasks ?? []).length,
   }
@@ -163,6 +182,14 @@ export function mapEvent(event: ClaudeEvent, state: MapperState, context: Mapper
     return { writes, state: next }
   }
 
+  if (event.type === "system" && event.subtype === "background_tasks_changed") {
+    // Replace semantics per the SDK contract: the payload is every live
+    // background task after the change, so a missed edge cannot wedge a
+    // stale count.
+    next.liveBackgroundTasks = Array.isArray(event.tasks) ? event.tasks.length : 0
+    return { writes, state: next }
+  }
+
   // Partial-message events stream text as it is generated. Without them a text
   // block only lands when its whole API message completes - and mid-turn prose
   // has been observed never landing at all (see the 2026-08-09 spec, Part B
@@ -206,6 +233,7 @@ export function mapEvent(event: ClaudeEvent, state: MapperState, context: Mapper
   if (event.type === "assistant" && event.message) {
     if (typeof event.message.model === "string") next.modelID = event.message.model
     if (typeof event.message.id === "string") next.apiMessageID = event.message.id
+    if (isRecord(event.message.usage)) next.lastUsage = readUsage(event.message.usage)
     ensureMessage(writes, next, context)
     contentBlocks(event.message.content).forEach((block, position) => {
       mapAssistantBlock(block, position, writes, next, context)
@@ -369,15 +397,40 @@ function mapAssistantBlock(block: ContentBlock, position: number, writes: Sessio
 const READ_PREVIEW_LINES = 20
 
 /**
- * Native reads ship a head-of-file preview in metadata, which is what makes the
- * transcript row worth expanding. The Claude CLI sends none, so synthesize one
- * from the tool output.
+ * Native tools stamp completed parts with the metadata the transcript renders:
+ * reads carry a head-of-file preview, edits carry `metadata.diff` (the ONLY
+ * thing the edit card shows). The Claude CLI sends neither, so synthesize both
+ * - otherwise an edit expander opens onto nothing but "The file has been
+ * updated successfully".
  */
-function completedMetadata(tool: string, output: string): Record<string, unknown> {
+function completedMetadata(tool: string, input: Record<string, unknown>, output: string): Record<string, unknown> {
+  if (tool === "edit") return editMetadata(input)
   if (tool !== "read" || !output.trim()) return {}
   const lines = output.split("\n")
   const preview = lines.slice(0, READ_PREVIEW_LINES).join("\n")
   return { preview, ...(lines.length > READ_PREVIEW_LINES ? { truncated: true } : {}) }
+}
+
+/**
+ * The changed snippet only, mirroring the permission card's diff synthesis in
+ * claude-permission.ts - the driver has no business reading the file just to
+ * widen the context, and the row links the full path anyway. MultiEdit maps
+ * onto `metadata.files` so each edit renders as its own patch block.
+ */
+function editMetadata(input: Record<string, unknown>): Record<string, unknown> {
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined)
+  const file = text(input.filePath) ?? text(input.file_path) ?? text(input.notebook_path) ?? "file"
+  const before = text(input.old_string) ?? text(input.oldString)
+  const after = text(input.new_string) ?? text(input.newString)
+  if (before !== undefined && after !== undefined) return { diff: createTwoFilesPatch(file, file, before, after) }
+  const edits = Array.isArray(input.edits) ? input.edits.filter(isRecord) : []
+  const files = edits.flatMap((edit) => {
+    const editBefore = text(edit.old_string) ?? text(edit.oldString)
+    const editAfter = text(edit.new_string) ?? text(edit.newString)
+    if (editBefore === undefined || editAfter === undefined) return []
+    return [{ filePath: file, relativePath: file, patch: createTwoFilesPatch(file, file, editBefore, editAfter) }]
+  })
+  return files.length > 0 ? { files } : {}
 }
 
 export function taskRegistryTodos(state: MapperState) {
@@ -435,7 +488,7 @@ function mapToolResult(block: ContentBlock, writes: SessionWrite[], state: Mappe
             input,
             output,
             title: pending.tool,
-            metadata: { ...completedMetadata(pending.tool, output), ...(todos ? { todos } : {}) },
+            metadata: { ...completedMetadata(pending.tool, input, output), ...(todos ? { todos } : {}) },
             time: { start: pending.start, end },
           },
     },
@@ -472,26 +525,24 @@ function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperSta
   const usage = event.usage ?? event.message?.usage ?? {}
   // `total_cost_usd` accumulates over the whole Claude conversation while the
   // projector adds every step-finish into the session total, so only the delta
-  // since the previous turn belongs to this one. Token counts in `usage` are
-  // already per-request and are used as reported.
+  // since the previous turn belongs to this one.
   const totalCost = numberOr(event.total_cost_usd, state.billed.cost)
   const cost = Math.max(0, totalCost - state.billed.cost)
-  const tokens = {
-    input: Math.max(0, numberOr(usage.input_tokens, 0)),
-    output: Math.max(0, numberOr(usage.output_tokens, 0)),
-    reasoning: 0,
-    cache: {
-      read: Math.max(0, numberOr(usage.cache_read_input_tokens, 0)),
-      write: Math.max(0, numberOr(usage.cache_creation_input_tokens, 0)),
-    },
-  }
+  // The result usage sums every API request in the turn - a long tool-using
+  // turn re-reads its cached context each step, so summed cache reads run into
+  // the millions and read as an impossible context size (the "8.1m (808%)"
+  // bug). Message tokens mean "the conversation's current context" everywhere
+  // else, which is the LAST request's usage from the assistant events.
+  const billed = readUsage(usage)
+  const tokens = state.lastUsage ?? billed
   state.billed = {
     cost: totalCost,
-    input: tokens.input,
-    output: tokens.output,
-    cacheRead: tokens.cache.read,
-    cacheWrite: tokens.cache.write,
+    input: billed.input,
+    output: billed.output,
+    cacheRead: billed.cache.read,
+    cacheWrite: billed.cache.write,
   }
+  state.turnCost += cost
   const failed = event.is_error === true || (event.subtype !== undefined && event.subtype !== "success")
   const error = failed ? readResultError(event) : undefined
   if (error && /not logged in|unauthorized|authentication|please run .*login/i.test(error)) state.authFailed = true
@@ -499,9 +550,14 @@ function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperSta
   // naming a conversation. That is the signal to stop reusing the stored id.
   if (failed && !state.claudeSessionID) state.resumeRejected = true
   writes.push(stepFinish(state, context, { reason: event.subtype ?? "stop", cost, tokens }))
+  // A successful result with backgrounded subagents still running is a pause,
+  // not the end of the turn: the CLI holds the stream open and re-wakes the
+  // model when they report back. Bill the step but keep the message - and the
+  // session - open, so delegation reads as in-progress instead of idle.
+  if (!failed && state.liveBackgroundTasks > 0) return
   writes.push({
     kind: "message",
-    message: assistantMessage(state, context, { completed: context.now(), cost, tokens, error }),
+    message: assistantMessage(state, context, { completed: context.now(), cost: state.turnCost, tokens, error }),
   })
   state.finished = true
 }
@@ -551,6 +607,18 @@ function assistantMessage(
 
 function emptyTokens() {
   return { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+}
+
+function readUsage(usage: ClaudeUsage) {
+  return {
+    input: Math.max(0, numberOr(usage.input_tokens, 0)),
+    output: Math.max(0, numberOr(usage.output_tokens, 0)),
+    reasoning: 0,
+    cache: {
+      read: Math.max(0, numberOr(usage.cache_read_input_tokens, 0)),
+      write: Math.max(0, numberOr(usage.cache_creation_input_tokens, 0)),
+    },
+  }
 }
 
 type ContentBlock = {

@@ -521,6 +521,7 @@ function reconcileClientSessionUiState(current: ClientStateSyncState, sessionID:
       hasPendingInteraction: needsInput,
       updatedAt: session.time.updated,
       reviewedAt: previous?.reviewedAt,
+      parentID: session.parentID,
     }),
     updated: session.time.updated > (previous?.seenAt ?? 0),
   }

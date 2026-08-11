@@ -6,6 +6,7 @@ import type { GuiSnapshot } from "../lib/session-api"
 import { projectNameForSession } from "../lib/project-name"
 import { deriveSessionStatus, sessionStatusLabel, sessionStatusTone } from "../lib/session-status"
 import { dialogFocusableElements, restoreDialogFocus, trappedDialogTabTarget } from "../lib/dialog-focus"
+import { trackOverlay } from "../lib/overlay-registry"
 
 export function SessionSwitcherOverlay(props: {
   open: boolean
@@ -25,6 +26,8 @@ export function SessionSwitcherOverlay(props: {
   let input: HTMLInputElement | undefined
   let dialog: HTMLElement | undefined
   let previousFocus: HTMLElement | undefined
+  // Parks the native browser view, which would otherwise paint over the overlay.
+  trackOverlay(() => props.open)
 
   createEffect(() => {
     if (!props.open) {

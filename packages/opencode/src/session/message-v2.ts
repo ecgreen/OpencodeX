@@ -747,6 +747,28 @@ export function latest(msgs: WithParts[]) {
   return { user, assistant, finished, tasks }
 }
 
+function fromStreamError(e: unknown) {
+  const parsed = ProviderError.parseStreamError(e instanceof Error ? e.message : e)
+  if (!parsed) return
+  if (parsed.type === "context_overflow") {
+    return new ContextOverflowError(
+      {
+        message: parsed.message,
+        responseBody: parsed.responseBody,
+      },
+      { cause: e },
+    ).toObject()
+  }
+  return new APIError(
+    {
+      message: parsed.message,
+      isRetryable: parsed.isRetryable,
+      responseBody: parsed.responseBody,
+    },
+    { cause: e },
+  ).toObject()
+}
+
 export function fromError(
   e: unknown,
   ctx: { providerID: ProviderV2.ID; aborted?: boolean },
@@ -810,6 +832,8 @@ export function fromError(
         { cause: e },
       ).toObject()
     case e instanceof ProviderError.ResponseStreamError:
+      const streamError = fromStreamError(e)
+      if (streamError) return streamError
       return new APIError(
         {
           message: e.message,
@@ -846,33 +870,12 @@ export function fromError(
         },
         { cause: e },
       ).toObject()
-    case e instanceof Error:
-      return new NamedError.Unknown({ message: errorMessage(e) }, { cause: e }).toObject()
     default:
       try {
-        const parsed = ProviderError.parseStreamError(e)
-        if (parsed) {
-          if (parsed.type === "context_overflow") {
-            return new ContextOverflowError(
-              {
-                message: parsed.message,
-                responseBody: parsed.responseBody,
-              },
-              { cause: e },
-            ).toObject()
-          }
-          return new APIError(
-            {
-              message: parsed.message,
-              isRetryable: parsed.isRetryable,
-              responseBody: parsed.responseBody,
-            },
-            {
-              cause: e,
-            },
-          ).toObject()
-        }
+        const streamError = fromStreamError(e)
+        if (streamError) return streamError
       } catch {}
+      if (e instanceof Error) return new NamedError.Unknown({ message: errorMessage(e) }, { cause: e }).toObject()
       return new NamedError.Unknown({ message: JSON.stringify(e) }, { cause: e }).toObject()
   }
 }

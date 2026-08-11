@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type Accessor } from "solid-js"
+import { overlayOpen } from "../lib/overlay-registry"
 import { workbenchNormalizeBrowserURL } from "../lib/workbench"
 import { createNativeBrowserController } from "./native-browser-controller"
 import type { OpenTab } from "./session-side-open-types"
@@ -17,7 +18,9 @@ export function createSessionSideBrowserController(input: {
   const previewTokens = new Map<string, number>()
   const previewTimers = new Map<string, number>()
   const native = createNativeBrowserController({
-    active: () => input.active() && !untrack(parkedID),
+    // overlayOpen guards imperative showActive paths (focus, resize restore)
+    // that could otherwise re-surface the native view under an open modal.
+    active: () => input.active() && !untrack(parkedID) && !overlayOpen(),
     activeID: input.activeID,
     ids: () => input.tabs().filter((tab) => tab.kind === "web").map((tab) => tab.id),
     url: (id) => input.tabs().find((tab) => tab.id === id && tab.kind === "web")?.url,
@@ -44,13 +47,17 @@ export function createSessionSideBrowserController(input: {
 
   createEffect(() => {
     const tab = input.activeTab()
-    const signature = `${input.active() ? "1" : "0"}:${tab?.id ?? ""}:${tab?.kind ?? ""}:${tab?.kind === "web" ? tab.url ?? "" : ""}:${input.menuOpen() ? "menu" : "ready"}`
+    // Modals cannot cover the native browser view (it composites above the
+    // DOM), so an open overlay parks the browser behind its last preview
+    // screenshot until the overlay closes.
+    const obscured = input.menuOpen() || overlayOpen()
+    const signature = `${input.active() ? "1" : "0"}:${tab?.id ?? ""}:${tab?.kind ?? ""}:${tab?.kind === "web" ? tab.url ?? "" : ""}:${obscured ? "parked" : "ready"}`
     void signature
     if (!input.active() || !tab || tab.kind !== "web") {
       native.hideAll()
       return
     }
-    if (input.menuOpen()) {
+    if (obscured) {
       park(tab.id)
       return
     }

@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { TextInput, Button, IconButton } from "./ui"
 import { formatRelative, title } from "../lib/format"
+import { trackOverlay } from "../lib/overlay-registry"
 import { rankByScore } from "../lib/palette-search"
 
 export type PaletteCommand = {
@@ -47,6 +48,8 @@ export function CommandPaletteModal(props: {
   const [selected, setSelected] = createSignal(0)
   const [notice, setNotice] = createSignal("")
   let input: HTMLInputElement | undefined
+  // Parks the native browser view, which would otherwise paint over the palette.
+  trackOverlay(() => props.open)
 
   const groups = createMemo(() => {
     const needle = query().trim()

@@ -4,11 +4,14 @@ import { toolMetadata, toolStateInput } from "./tool-display"
 
 export type ToolPart = Extract<Part, { type: "tool" }>
 export type ReasoningPart = Extract<Part, { type: "reasoning" }>
+export type TextPart = Extract<Part, { type: "text" }>
+export type CommentaryPart = TextPart & { metadata: { openai: { phase: "commentary" } } }
+export type ThinkingPart = ReasoningPart | CommentaryPart
 
 export type DisplayPart =
   | { key: string; type: "part"; part: Part }
   | { key: string; type: "tool-group"; tool: string; parts: ToolPart[] }
-  | { key: string; type: "reasoning-group"; parts: ReasoningPart[] }
+  | { key: string; type: "reasoning-group"; parts: ThinkingPart[] }
 
 const GROUP_VERB_BY_TOOL: Record<string, { verb: string; noun: string }> = {
   read: { verb: "Read", noun: "file" },
@@ -23,15 +26,23 @@ export function isGroupableTool(tool: string) {
   return tool in GROUP_VERB_BY_TOOL
 }
 
+/** OpenAI's Codex-style progress updates are assistant text, not reasoning-summary events. */
+export function isThinkingPart(part: Part): part is ThinkingPart {
+  if (part.type === "reasoning") return true
+  if (part.type !== "text") return false
+  const openai = part.metadata?.openai
+  return typeof openai === "object" && openai !== null && "phase" in openai && openai.phase === "commentary"
+}
+
 /**
- * Collapses runs of the same lightweight tool, and every run of reasoning, into
- * a single display item. Reasoning always groups - even a run of one - so the
- * transcript has exactly one thinking renderer to style and test.
+ * Collapses runs of the same lightweight tool, and every run of thinking, into
+ * a single display item. Thinking includes reasoning summaries and OpenAI
+ * commentary progress, and always groups so one renderer owns its presentation.
  */
 export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
   const result: DisplayPart[] = []
   let pendingTools: ToolPart[] = []
-  let pendingReasoning: ReasoningPart[] = []
+  let pendingThinking: ThinkingPart[] = []
 
   function flushTools() {
     if (pendingTools.length === 0) return
@@ -40,31 +51,31 @@ export function groupTranscriptParts(parts: Part[]): DisplayPart[] {
     pendingTools = []
   }
 
-  function flushReasoning() {
-    if (pendingReasoning.length === 0) return
-    result.push({ key: `reasoning-group:${pendingReasoning[0].id}`, type: "reasoning-group", parts: pendingReasoning })
-    pendingReasoning = []
+  function flushThinking() {
+    if (pendingThinking.length === 0) return
+    result.push({ key: `reasoning-group:${pendingThinking[0].id}`, type: "reasoning-group", parts: pendingThinking })
+    pendingThinking = []
   }
 
   for (const part of parts) {
     if (part.type === "tool" && isGroupableTool(part.tool)) {
-      flushReasoning()
+      flushThinking()
       if (pendingTools.length === 0 || pendingTools[0].tool === part.tool) {
         pendingTools.push(part)
         continue
       }
     }
-    if (part.type === "reasoning") {
+    if (isThinkingPart(part)) {
       flushTools()
-      pendingReasoning.push(part)
+      pendingThinking.push(part)
       continue
     }
     flushTools()
-    flushReasoning()
+    flushThinking()
     result.push({ key: `part:${part.id}`, type: "part", part })
   }
   flushTools()
-  flushReasoning()
+  flushThinking()
   return result
 }
 

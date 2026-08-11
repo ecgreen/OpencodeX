@@ -2,7 +2,7 @@ import type { Command, Session } from "@opencode-ai/sdk/v2/client"
 import type { ClientCatalogView } from "@opencode-ai/sdk/v2/client-sync"
 import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
-import { createSession, deleteSession, updateView, type PromptPart } from "./session-api"
+import { createSession, deleteSession, updateView, type PromptDelivery, type PromptPart } from "./session-api"
 import { promptPartsForSubmit, serverCommandMatch, textPrompt, type GuiPromptInfo } from "./prompt-state"
 import { pendingViewSessions, replacePendingViewPane, viewItemID, viewItemSession, type ViewItem } from "./view-items"
 
@@ -20,7 +20,7 @@ export type ViewPromptSubmission = {
 
 export type ViewPromptSendTarget = {
   sessionID: string
-  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: PromptPart[] }
+  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: PromptPart[]; delivery?: PromptDelivery }
   modelToRemember?: string
 }
 
@@ -32,6 +32,7 @@ export async function runViewPromptAction(input: {
   agentForSession: (session: Session) => string
   modelForSession: (session: Session) => string
   variantForSession: (session: Session) => string
+  delivery?: PromptDelivery
   setDraftLoading: (draftID: string, loading: boolean) => void
   setFocusedSessionID: (sessionID: string) => void
   alert: (message: string) => void
@@ -65,6 +66,7 @@ export async function runViewPromptAction(input: {
       agent: input.agentForSession(prepared.draftSession),
       model: input.modelForSession(prepared.draftSession),
       variant: input.variantForSession(prepared.draftSession),
+      delivery: input.delivery,
       prompt: submission.prompt,
     })
     const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
@@ -136,6 +138,7 @@ export function prepareViewPromptSendTarget(input: {
   agent: string
   model: string
   variant: string
+  delivery?: PromptDelivery
   prompt?: GuiPromptInfo
 }): ViewPromptSendTarget {
   return {
@@ -145,6 +148,7 @@ export function prepareViewPromptSendTarget(input: {
       agent: input.agent || undefined,
       model: parseModelValue(input.model),
       variant: input.variant || undefined,
+      delivery: input.delivery,
       parts: input.prompt ? promptPartsForSubmit(input.prompt) : undefined,
     },
     modelToRemember: input.model || undefined,

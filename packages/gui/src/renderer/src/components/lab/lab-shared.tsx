@@ -2,7 +2,7 @@ import type { JSX } from "solid-js"
 import { For } from "solid-js"
 import styles from "./lab.module.css"
 
-export type LabPageId = "foundations" | "controls" | "feedback" | "navigation" | "overlays" | "safety" | "signature" | "transcript" | "workspace" | "graph"
+export type LabPageId = "foundations" | "controls" | "feedback" | "navigation" | "overlays" | "composer" | "safety" | "signature" | "transcript" | "workspace" | "graph"
 
 export const LAB_PAGES: { id: LabPageId; label: string; detail: string }[] = [
   { id: "foundations", label: "Foundations", detail: "Type ramp, spacing, color, elevation, motion." },
@@ -10,6 +10,7 @@ export const LAB_PAGES: { id: LabPageId; label: string; detail: string }[] = [
   { id: "feedback", label: "Feedback", detail: "Badges, notices, states, skeletons, meters, toasts." },
   { id: "navigation", label: "Navigation", detail: "Tabs, shortcuts, command rows, breadcrumbs." },
   { id: "overlays", label: "Overlays", detail: "Tooltips, dialogs, popovers, menus." },
+  { id: "composer", label: "Composer", detail: "Idle, running, queued, and direct-message delivery states." },
   { id: "safety", label: "Safety", detail: "Permission and question cards, the composer dock queue." },
   { id: "signature", label: "Signature", detail: "Session cards, identity, the status system." },
   { id: "transcript", label: "Transcript", detail: "Message parts at minimum width - no horizontal scroll allowed." },

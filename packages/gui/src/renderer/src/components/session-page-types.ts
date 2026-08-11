@@ -10,6 +10,8 @@ import type { WorkItem } from "@opencode-ai/sdk/v2/work-item"
 import type { SwarmTeamView } from "../lib/swarm-team"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
+import type { QueuedSessionPrompt } from "../controllers/session-state"
+import type { PromptDelivery } from "../lib/session-api"
 
 export type SessionPageProps = {
   session?: Session
@@ -80,7 +82,16 @@ export type SessionPageProps = {
   setSelectedModel: (value: string) => void
   selectedVariant: string
   setSelectedVariant: (value: string) => void
-  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => Promise<boolean>
+  submit: (
+    prompt: GuiPromptInfo,
+    options?: { delivery?: PromptDelivery; agent?: string; model?: string; variant?: string },
+  ) => Promise<boolean>
+  queuedPrompts?: QueuedSessionPrompt[]
+  queuePrompt?: (prompt: Omit<QueuedSessionPrompt, "id">) => void
+  updateQueuedPrompt?: (sessionID: string, id: string, value: string) => void
+  removeQueuedPrompt?: (sessionID: string, id: string) => void
+  /** Confirmation surface for queue drains, so a delivered message never vanishes silently. */
+  queuedPromptDelivered?: (text: string) => void
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
@@ -105,6 +116,13 @@ export type SessionPageProps = {
   toggleScrollbar: () => void
   toggleGenericToolOutput: () => void
   status?: string
+  /**
+   * The optimistic `sessionPendingPrompt` marker: a prompt left this client but
+   * the backend has not reported `busy` yet. Running-state consumers (queue
+   * drain, delivery buttons) must treat it as running, mirroring the canonical
+   * `isClientSessionWorking`, or the queue drains into a starting run.
+   */
+  promptPending?: boolean
   abortConfirmArmed?: boolean
   readyForReview?: boolean
   markSessionReviewed?: (session: Session) => void

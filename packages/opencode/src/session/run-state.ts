@@ -29,6 +29,7 @@ interface ActiveRunner {
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly interrupt: (sessionID: SessionID) => Effect.Effect<void>
   readonly ensureRunning: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<SessionLegacy.WithParts>,
@@ -380,6 +381,75 @@ export const layer = Layer.effect(
       if (!target.active) yield* status.setForGeneration(sessionID, target.generation, { type: "idle" })
     })
 
+    /**
+     * Stops the current turn so a direct ("immediate") prompt can pivot the
+     * session. Unlike `cancel`, queued commands stay queued - the interrupting
+     * prompt is already one of them and must launch next. The cancel request
+     * is written durably so the owner's supervise monitor stops the run even
+     * when another process holds the lease; the in-memory runner alone only
+     * covers runs this instance started.
+     */
+    const interrupt = Effect.fn("SessionRunState.interrupt")(function* (sessionID: SessionID) {
+      const now = Date.now()
+      const target = yield* db
+        .transaction(
+          (transaction) =>
+            Effect.gen(function* () {
+              const current = yield* transaction
+                .select()
+                .from(SessionExecutionTable)
+                .where(eq(SessionExecutionTable.session_id, sessionID))
+                .get()
+              if (
+                !current ||
+                current.state !== "running" ||
+                !current.owner_id ||
+                !current.lease_expires_at ||
+                current.lease_expires_at <= now
+              )
+                return undefined
+              const alive = SessionExecutionOwner.alive(current.owner_id, processRunID)
+              yield* transaction
+                .update(SessionExecutionTable)
+                .set(
+                  alive
+                    ? { cancel_requested_at: now, time_updated: now }
+                    : {
+                        // A dead owner's stale lease would stall the pivot
+                        // until it expired; settle it like `cancel` does.
+                        state: "interrupted",
+                        owner_id: null,
+                        lease_expires_at: null,
+                        cancel_requested_at: now,
+                        completed_at: now,
+                        time_updated: now,
+                      },
+                )
+                .where(
+                  and(
+                    eq(SessionExecutionTable.session_id, sessionID),
+                    eq(SessionExecutionTable.owner_id, current.owner_id),
+                    eq(SessionExecutionTable.generation, current.generation),
+                  ),
+                )
+                .run()
+              return { owner: current.owner_id, generation: current.generation }
+            }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.orDie)
+      if (!target) return
+      const existing = (yield* InstanceState.get(state)).runners.get(sessionID)
+      if (
+        existing?.runner.busy &&
+        existing.lease.owner === target.owner &&
+        existing.lease.generation === target.generation
+      ) {
+        existing.interrupted = true
+        yield* existing.runner.cancel
+      }
+    })
+
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (
       sessionID: SessionID,
       onInterrupt: Effect.Effect<SessionLegacy.WithParts>,
@@ -414,7 +484,7 @@ export const layer = Layer.effect(
         )
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ assertNotBusy, cancel, interrupt, ensureRunning, startShell })
   }),
 )
 

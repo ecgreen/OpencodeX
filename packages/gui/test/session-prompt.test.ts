@@ -37,6 +37,7 @@ describe("GUI session prompt decisions", () => {
       agent: "build",
       model: "anthropic/claude-sonnet",
       variant: "fast",
+      delivery: "direct",
       prompt: textPrompt("hello"),
     })).toEqual({
       sessionID: "session-1",
@@ -45,6 +46,7 @@ describe("GUI session prompt decisions", () => {
         agent: "build",
         model: { providerID: "anthropic", modelID: "claude-sonnet" },
         variant: "fast",
+        delivery: "direct",
         parts: [{ type: "text", text: "hello" }],
       },
       modelToRemember: "anthropic/claude-sonnet",

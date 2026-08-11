@@ -30,6 +30,18 @@ describe("GUI session transcript parts", () => {
     expect(items[0]?.key).toBe(groupTranscriptParts([reasoningPart("reasoning-1", "first"), reasoningPart("reasoning-2", "second")])[0]?.key)
   })
 
+  test("renders OpenAI commentary as thinking without consuming final answer text", () => {
+    const commentary = textPart("commentary", "Checking the provider stream", undefined, "commentary")
+    const answer = textPart("answer", "The stream is fixed.", 2, "final_answer")
+
+    expect(groupTranscriptParts([commentary, reasoningPart("reasoning", "Compared events"), answer])).toMatchObject([
+      { key: "reasoning-group:commentary", type: "reasoning-group", parts: [commentary, { id: "reasoning" }] },
+      { key: "part:answer", type: "part", part: answer },
+    ])
+    expect(groupTranscriptParts([textPart("commentary", "Still checking", undefined, "commentary")])[0]?.key).toBe("reasoning-group:commentary")
+    expect(activeTranscriptStreamingPartID([assistantMessage([commentary])], true)).toBe("commentary")
+  })
+
   test("summarizes grouped tools by what they touched", () => {
     expect(toolGroupTitle("read", [readPart("a", "src/app.ts"), readPart("b", "src/store.ts")])).toBe("Read 2 files")
     expect(toolGroupTitle("skill", [readPart("a", "x")])).toBe("Load 1 skill")
@@ -54,7 +66,7 @@ describe("GUI session transcript parts", () => {
   })
 })
 
-function textPart(id: string, text: string, end?: number): Part {
+function textPart(id: string, text: string, end?: number, phase?: "commentary" | "final_answer"): Part {
   return {
     id,
     sessionID: "session",
@@ -62,6 +74,7 @@ function textPart(id: string, text: string, end?: number): Part {
     type: "text",
     text,
     time: { start: 1, ...(end === undefined ? {} : { end }) },
+    ...(phase ? { metadata: { openai: { phase } } } : {}),
   }
 }
 

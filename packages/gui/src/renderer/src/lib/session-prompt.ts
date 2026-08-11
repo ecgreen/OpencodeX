@@ -1,7 +1,7 @@
 import type { Command, Session } from "@opencode-ai/sdk/v2/client"
 import type { GuiClient } from "./client"
 import { parseModelValue } from "./model-selection"
-import { createSession, type PromptPart } from "./session-api"
+import { createSession, type PromptDelivery, type PromptPart } from "./session-api"
 import { promptPartsForSubmit, serverCommandMatch, textPrompt, type GuiPromptInfo } from "./prompt-state"
 
 export type PreparedSessionPromptTarget = {
@@ -20,7 +20,7 @@ export type SessionPromptSubmission = {
 
 export type SessionPromptSendTarget = {
   sessionID: string
-  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: PromptPart[] }
+  options: { directory?: string; agent?: string; model?: { providerID: string; modelID: string }; variant?: string; parts?: PromptPart[]; delivery?: PromptDelivery }
   modelToRemember?: string
 }
 
@@ -34,6 +34,7 @@ export async function runSessionPromptAction(input: {
   agent: string
   model: string
   variant: string
+  delivery?: PromptDelivery
   setPrompt: (value: string) => void
   setLoadingSessionID: (sessionID: string) => void
   sendPrompt: (sessionID: string, text: string, options: SessionPromptSendTarget["options"]) => Promise<void>
@@ -72,6 +73,7 @@ export async function runSessionPromptAction(input: {
       agent: input.agent,
       model: input.model,
       variant: input.variant,
+      delivery: input.delivery,
       prompt: submission.prompt,
     })
     const command = serverCommandMatch(submission.prompt.input, input.serverCommands ?? [])
@@ -122,6 +124,7 @@ export function prepareSessionPromptSendTarget(input: {
   agent: string
   model: string
   variant: string
+  delivery?: PromptDelivery
   prompt: GuiPromptInfo
 }): SessionPromptSendTarget {
   return {
@@ -131,6 +134,7 @@ export function prepareSessionPromptSendTarget(input: {
       agent: input.agent || undefined,
       model: parseModelValue(input.model),
       variant: input.variant || undefined,
+      delivery: input.delivery,
       parts: promptPartsForSubmit(input.prompt),
     },
     modelToRemember: input.model || undefined,

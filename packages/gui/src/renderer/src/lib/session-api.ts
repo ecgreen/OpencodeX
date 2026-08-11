@@ -73,6 +73,8 @@ export type {
   WorkbenchGitStash,
   WorkbenchOperationResult,
 } from "./store-types"
+
+export type PromptDelivery = "queue" | "direct"
 export {
   createWorkbenchFile,
   deleteWorkbenchFile,
@@ -189,6 +191,7 @@ export async function sendPrompt(
     model?: { providerID: string; modelID: string }
     variant?: string
     parts?: PromptPart[]
+    delivery?: PromptDelivery
   } = {},
 ) {
   return gui.client.session.promptAsync(
@@ -196,6 +199,7 @@ export async function sendPrompt(
       sessionID,
       directory: options.directory || gui.directory || undefined,
       messageID: createClientMessageID(),
+      delivery: options.delivery === "direct" ? "immediate" : options.delivery === "queue" ? "deferred" : undefined,
       agent: options.agent,
       model: options.model,
       variant: options.variant,
@@ -216,6 +220,7 @@ export async function runSessionCommand(
     model?: { providerID: string; modelID: string }
     variant?: string
     parts?: PromptPart[]
+    delivery?: PromptDelivery
   },
 ) {
   return gui.client.session.command(
@@ -225,6 +230,7 @@ export async function runSessionCommand(
       arguments: input.arguments,
       directory: input.directory || gui.directory || undefined,
       messageID: createClientMessageID(),
+      delivery: input.delivery === "direct" ? "immediate" : input.delivery === "queue" ? "deferred" : undefined,
       agent: input.agent,
       model: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
       variant: input.variant,
@@ -242,6 +248,7 @@ export async function runShellCommand(
     directory?: string
     agent?: string
     model?: { providerID: string; modelID: string }
+    delivery?: PromptDelivery
   },
 ) {
   return gui.client.session.shell(
@@ -250,6 +257,7 @@ export async function runShellCommand(
       command: input.command,
       directory: input.directory || gui.directory || undefined,
       messageID: createClientMessageID(),
+      delivery: input.delivery === "direct" ? "immediate" : input.delivery === "queue" ? "deferred" : undefined,
       agent: input.agent,
       model: input.model,
     },

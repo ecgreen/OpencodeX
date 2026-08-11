@@ -80,6 +80,31 @@ describe("GUI session status parity", () => {
     expect(deriveSessionStatus(next, next.sessions[0])).toBe("ready_for_review")
   })
 
+  test("a delegated child reconciles to idle, never ready for review", () => {
+    // Sub-agents are consumed by their parent, not reviewed by the reader;
+    // without the parentID guard every finished delegation sat in "Ready for
+    // review" forever because nothing ever marks a child reviewed.
+    const childID = "ses_child"
+    const current = snapshot({
+      sessions: [{ ...session(childID, 200), parentID: "ses_parent" }],
+      sessionUiState: {
+        [childID]: {
+          sessionID: childID,
+          seenAt: 50,
+          reviewedAt: 50,
+          reviewedFiles: [],
+          displayStatus: "idle",
+          updated: false,
+        },
+      },
+    })
+
+    const next = reconcileSessionUiState(current, childID)
+
+    expect(next.sessionUiState[childID]?.displayStatus).toBe("idle")
+    expect(deriveSessionStatus(next, next.sessions[0])).toBe("dormant")
+  })
+
   test("clears stale local in-progress state when viewed after backend work is idle", () => {
     const current = snapshot({
       sessions: [session(sessionID, 100)],

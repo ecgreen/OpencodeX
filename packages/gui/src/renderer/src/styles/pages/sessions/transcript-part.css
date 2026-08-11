@@ -132,6 +132,20 @@
   flex-shrink: 0;
 }
 
+/*
+ * Agent rows link to the sub-agent session they delegate to. A running row is
+ * clickable as a whole (it has no disclosure to fight); an expandable row
+ * keeps its summary toggle and carries the link on the trailing affordance.
+ */
+.part.tool[data-subagent-session] > .part-header-static {
+  cursor: pointer;
+}
+
+.part.tool[data-subagent-session]:hover .part-title {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .part-meta {
   overflow: hidden;
   text-overflow: ellipsis;

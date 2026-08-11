@@ -23,12 +23,13 @@ import {
   toolVisibleOutput,
 } from "../lib/tool-display"
 import { isStructuralPart } from "../lib/transcript-visibility"
+import { taskSubagentSessionID } from "../lib/transcript-subagent-link"
 import { Icon } from "./icon"
 import { PartErrorPreview, PartHeader, ToolStatusIndicator, partIconName, useTranscriptChrome } from "./session-part-chrome"
 import { ThinkingGroupView } from "./session-thinking"
 import { ToolDetails } from "./session-tool-details"
 import { ToolCodeBlock, ToolPreviewText } from "./session-tool-text"
-import { Button } from "./ui"
+import { Button, IconButton } from "./ui"
 
 export type { DisplayPart, ToolPart } from "../lib/transcript-grouping"
 export { groupTranscriptParts } from "../lib/transcript-grouping"
@@ -255,6 +256,11 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
   })
   const bodyMounted = createMountedOnce(disclosure.open)
   const rawMounted = createMountedOnce(raw.open)
+  // The child session an agent part delegates to, stamped by the task tool
+  // before the sub-agent starts - so the row links while it is still running.
+  // The session page's delegated click handler opens it in the same embedded
+  // view a graph node opens into.
+  const subagentSessionID = createMemo(() => taskSubagentSessionID(props.part.tool, metadata()))
   const header = (isStatic: boolean) => (
     <PartHeader
       static={isStatic}
@@ -262,7 +268,24 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
       title={title()}
       meta={patchSummary() || (shellCommand() ? <code class="part-meta-command" title={shellCommand()}>{shellCommand()}</code> : "")}
       status={<ToolStatusIndicator state={state()} stale={stale()} />}
-      trailing={<PartErrorPreview state={state()} when={!disclosure.open()} />}
+      trailing={
+        <>
+          <PartErrorPreview state={state()} when={!disclosure.open()} />
+          <Show when={subagentSessionID()}>
+            {(sessionID) => (
+              <IconButton
+                appearance="ghost"
+                size="compact"
+                class="part-open-subagent"
+                data-subagent-session={sessionID()}
+                icon="chevronRight"
+                label="Open sub-agent session"
+                tooltip="Open sub-agent session"
+              />
+            )}
+          </Show>
+        </>
+      }
     />
   )
   return (
@@ -272,6 +295,7 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
         data-kind={toolCategory(props.part.tool)}
         data-status={state().status}
         data-tier={toolTier(props.part.tool, state().status)}
+        data-subagent-session={subagentSessionID()}
       >
         {header(true)}
       </div>

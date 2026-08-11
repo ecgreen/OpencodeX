@@ -150,12 +150,12 @@ export function createNativeBrowserController(input: {
     if (rect.width < 1 || rect.height < 1) return scheduleBounds()
     const bounds = {
       id,
-      x: Math.max(0, Math.round(rect.x)),
-      y: Math.max(0, Math.round(rect.y)),
-      width: Math.max(1, Math.round(rect.width)),
-      height: Math.max(1, Math.round(rect.height)),
+      x: Math.max(0, rect.x),
+      y: Math.max(0, rect.y),
+      width: Math.max(1, rect.width),
+      height: Math.max(1, rect.height),
     }
-    const key = `${id}:${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`
+    const key = `${id}:${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}:${window.devicePixelRatio}`
     if (visibleID === id && lastBoundsKey === key) return
     const token = ++boundsToken
     const next = await browser.bounds(bounds).catch((cause) => fail(id, cause))

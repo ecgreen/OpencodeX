@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { SessionSchema } from "@opencode-ai/core/session/schema"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionID, MessageID, PartID } from "./schema"
 
@@ -17,6 +18,7 @@ export const ModelRef = Schema.Struct({
 export const PromptInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
+  delivery: Schema.optional(SessionSchema.Delivery),
   model: Schema.optional(ModelRef),
   agent: Schema.optional(Schema.String),
   noReply: Schema.optional(Schema.Boolean),
@@ -46,6 +48,7 @@ export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput"
 export const ShellInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
+  delivery: Schema.optional(SessionSchema.Delivery),
   agent: Schema.String,
   model: Schema.optional(ModelRef),
   command: Schema.String,
@@ -55,6 +58,7 @@ export type ShellInput = Schema.Schema.Type<typeof ShellInput>
 export const CommandInput = Schema.Struct({
   messageID: Schema.optional(MessageID),
   sessionID: SessionID,
+  delivery: Schema.optional(SessionSchema.Delivery),
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   arguments: Schema.String,
