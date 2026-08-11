@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "bun run script/opencodex-dev.ts",
     "dev:tui": "bun run script/opencodex-dev.ts",
-    "dev:electron": "bun --cwd packages/gui run dev:electron",
+    "dev:electron": "bun run --cwd packages/gui dev:electron",
     "opencodex": "bun run script/opencodex-dev.ts",
     "lint": "oxlint",
     "lint:ci": "bun run script/check-lint-baseline.ts",
