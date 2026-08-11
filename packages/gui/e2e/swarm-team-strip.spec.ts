@@ -183,11 +183,16 @@ async function openGraphTab(page: Page) {
   const panel = page.locator(".session-side-panel.open")
   if ((await panel.count()) === 0) await page.getByRole("button", { name: "Open side panel" }).click()
   await expect(panel).toBeVisible()
+  // Which affordance appears depends on whether the panel restored any tabs,
+  // and neither is there the instant the panel is: wait for one of them before
+  // choosing, or the choice races the render and picks the absent branch.
   const card = page.locator('.session-open-empty-actions button[data-empty-tone="graph"]')
+  const newTab = page.getByRole("button", { name: "New tab" })
+  await expect(card.or(newTab).first()).toBeVisible()
   if ((await card.count()) > 0) {
     await card.click()
     return
   }
-  await page.getByRole("button", { name: "New tab" }).click()
+  await newTab.click()
   await page.getByRole("button", { name: "Graph", exact: true }).click()
 }
