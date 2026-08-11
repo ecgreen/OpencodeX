@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn } from "bun:test"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import path from "node:path"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { SyncPaths } from "../../src/server/routes/instance/httpapi/groups/sync"
+import { HistoryEvent, SyncPaths } from "../../src/server/routes/instance/httpapi/groups/sync"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { Session } from "@/session/session"
 import * as Log from "@opencode-ai/core/util/log"
@@ -45,7 +46,7 @@ describe("sync HttpApi", () => {
         const history = yield* requestInDirectory(SyncPaths.history, tmp.directory, {
           method: "POST",
           headers,
-          body: JSON.stringify({ directory: tmp.directory, state: {} }),
+          body: JSON.stringify({}),
         })
         expect(history.status).toBe(200)
         const rows = (yield* history.json) as Array<{
@@ -92,7 +93,9 @@ describe("sync HttpApi", () => {
         const sessionB = yield* Session.use.create({ title: "beta" })
 
         // The hub DB is shared across projects; give sessionB a different
-        // directory so we can prove history stays scoped per project.
+        // directory so we can prove history stays scoped per project. The
+        // directory travels as an optional query parameter so clients that
+        // omit it keep the upstream full-journal contract.
         const { db } = yield* Database.Service
         const other = path.join(tmp.directory, "other-project")
         yield* db
@@ -102,23 +105,35 @@ describe("sync HttpApi", () => {
           .run()
           .pipe(Effect.orDie)
 
-        const historyA = yield* requestInDirectory(SyncPaths.history, tmp.directory, {
+        const unscoped = yield* requestInDirectory(SyncPaths.history, tmp.directory, {
           method: "POST",
           headers,
-          body: JSON.stringify({ directory: tmp.directory, state: {} }),
+          body: JSON.stringify({}),
         })
+        expect(unscoped.status).toBe(200)
+        const unscopedRows = Schema.decodeUnknownSync(Schema.Array(HistoryEvent))(yield* unscoped.json)
+        expect(unscopedRows.map((row) => row.aggregate_id)).toContain(sessionA.id)
+        expect(unscopedRows.map((row) => row.aggregate_id)).toContain(sessionB.id)
+
+        const historyA = yield* HttpClientRequest.post(
+          `${SyncPaths.history}?directory=${encodeURIComponent(tmp.directory)}`,
+        ).pipe(
+          HttpClientRequest.bodyJson({}),
+          Effect.flatMap(HttpClient.execute),
+        )
         expect(historyA.status).toBe(200)
-        const rowsA = (yield* historyA.json) as Array<{ aggregate_id: string }>
+        const rowsA = Schema.decodeUnknownSync(Schema.Array(HistoryEvent))(yield* historyA.json)
         expect(rowsA.map((row) => row.aggregate_id)).toContain(sessionA.id)
         expect(rowsA.map((row) => row.aggregate_id)).not.toContain(sessionB.id)
 
-        const historyB = yield* requestInDirectory(SyncPaths.history, other, {
-          method: "POST",
-          headers: { "x-opencode-directory": other, "content-type": "application/json" },
-          body: JSON.stringify({ directory: other, state: {} }),
-        })
+        const historyB = yield* HttpClientRequest.post(
+          `${SyncPaths.history}?directory=${encodeURIComponent(other)}`,
+        ).pipe(
+          HttpClientRequest.bodyJson({}),
+          Effect.flatMap(HttpClient.execute),
+        )
         expect(historyB.status).toBe(200)
-        const rowsB = (yield* historyB.json) as Array<{ aggregate_id: string }>
+        const rowsB = Schema.decodeUnknownSync(Schema.Array(HistoryEvent))(yield* historyB.json)
         expect(rowsB.map((row) => row.aggregate_id)).toContain(sessionB.id)
         expect(rowsB.map((row) => row.aggregate_id)).not.toContain(sessionA.id)
       }),
@@ -134,11 +149,11 @@ describe("sync HttpApi", () => {
         const cases = [
           {
             path: SyncPaths.history,
-            body: { directory: tmp.directory, state: { "ses_1": -1 } },
+            body: { "ses_1": -1 },
           },
           {
             path: SyncPaths.history,
-            body: { directory: tmp.directory, state: { "ses_1": 1.5 } },
+            body: { "ses_1": 1.5 },
           },
           {
             path: SyncPaths.replay,

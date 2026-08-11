@@ -361,13 +361,13 @@ export const layer = Layer.effect(
         known: Object.keys(state).length,
       })
 
+      const historyURL = route(url, "/sync/history")
+      if (space.directory) historyURL.searchParams.set("directory", space.directory)
+
       const response = yield* http.execute(
-        HttpClientRequest.post(route(url, "/sync/history"), {
+        HttpClientRequest.post(historyURL, {
           headers: new Headers(headers),
-          body: HttpBody.jsonUnsafe({
-            directory: space.directory ?? "",
-            state,
-          }),
+          body: HttpBody.jsonUnsafe(state),
         }),
       )
 

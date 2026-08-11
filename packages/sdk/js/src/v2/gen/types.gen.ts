@@ -10824,10 +10824,7 @@ export type SyncStealResponse = SyncStealResponses[keyof SyncStealResponses]
 
 export type SyncHistoryListData = {
   body?: {
-    directory: string
-    state: {
-      [key: string]: number
-    }
+    [key: string]: number
   }
   path?: never
   query?: {

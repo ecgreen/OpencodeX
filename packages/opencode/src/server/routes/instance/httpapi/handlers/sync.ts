@@ -76,32 +76,38 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
       return { sessionID: ctx.payload.sessionID }
     })
 
-    const history = Effect.fn("SyncHttpApi.history")(function* (ctx: { payload: typeof HistoryPayload.Type }) {
-      const exclude = Object.entries(ctx.payload.state)
+    const history = Effect.fn("SyncHttpApi.history")(function* (ctx: {
+      payload: typeof HistoryPayload.Type
+      query: { directory?: string }
+    }) {
+      const exclude = Object.entries(ctx.payload)
 
-      // A hub can host many projects in one database. Scope the journal to
-      // sessions that belong to the requesting directory so unrelated projects
-      // sharing the same hub never cross-contaminate each other's mirrors.
-      const scoped = yield* db
-        .select({ id: SessionTable.id })
-        .from(SessionTable)
-        .where(eq(SessionTable.directory, ctx.payload.directory))
-        .all()
-        .pipe(Effect.orDie)
-      const scopedIDs = scoped.map((row) => row.id)
-      if (scopedIDs.length === 0) return []
-
+      // A hub can host many projects in one database. When the caller sends
+      // the optional `directory` query parameter, scope the journal to
+      // sessions that belong to that directory so unrelated projects sharing
+      // the same hub never cross-contaminate each other's mirrors. Without
+      // it, the full journal is returned, keeping the upstream contract.
       const conditions = [
         exclude.length > 0
           ? not(or(...exclude.map(([id, seq]) => and(eq(EventTable.aggregate_id, id), lte(EventTable.seq, seq))))!)
           : undefined,
-        inArray(EventTable.aggregate_id, scopedIDs),
-      ].filter((cond): cond is NonNullable<typeof cond> => cond !== undefined)
+      ]
+      if (ctx.query.directory !== undefined) {
+        const scoped = yield* db
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(eq(SessionTable.directory, ctx.query.directory))
+          .all()
+          .pipe(Effect.orDie)
+        const scopedIDs = scoped.map((row) => row.id)
+        if (scopedIDs.length === 0) return []
+        conditions.push(inArray(EventTable.aggregate_id, scopedIDs))
+      }
 
       return yield* db
         .select()
         .from(EventTable)
-        .where(and(...conditions))
+        .where(and(...conditions.filter((cond): cond is NonNullable<typeof cond> => cond !== undefined)))
         .orderBy(asc(EventTable.seq))
         .all()
         .pipe(Effect.orDie)

@@ -741,8 +741,8 @@ describe("workspace CRUD", () => {
 
             expect(
               calls.map((call) => `${call.method} ${call.url.pathname}${call.url.search}${call.url.hash}`),
-            ).toEqual(["GET /base/global/event", "POST /base/sync/history"])
-            expect(calls[1].json).toEqual({ directory: dir, state: {} })
+            ).toEqual(["GET /base/global/event", `POST /base/sync/history?directory=${encodeURIComponent(dir)}`])
+            expect(calls[1].json).toEqual({})
             expect((yield* workspace.status()).find((item) => item.workspaceID === info.id)?.status).toBe("connected")
             expect(yield* workspace.isSyncing(info.id)).toBe(true)
 
@@ -1064,7 +1064,7 @@ describe("workspace CRUD", () => {
               "POST /warp-target/sync/replay",
               "POST /warp-target/sync/steal",
             ])
-            expect(calls[0].json).toEqual({ directory: "", state: { [session.id]: historyNextSeq - 1 } })
+            expect(calls[0].json).toEqual({ [session.id]: historyNextSeq - 1 })
             expect(calls[2].json).toEqual({ patch: "remote patch" })
             expect(calls[3].json).toMatchObject({
               directory: "remote-target-dir",
@@ -1419,7 +1419,7 @@ describe("workspace sync state", () => {
                   expect((yield* sessionSvc.get(session.id).pipe(Effect.orDie)).title).toBe("from history")
                 }),
               )
-              expect(historyBodies).toEqual([{ directory: "", state: { [session.id]: historyNextSeq - 1 } }])
+              expect(historyBodies).toEqual([{ [session.id]: historyNextSeq - 1 }])
               expect(
                 captured.events.some(
                   (event) =>

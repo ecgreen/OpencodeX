@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { ServerAuth } from "@/server/auth"
-import { type WorkspaceAdapter, type WorkspaceAdapterContext, type WorkspaceInfo, WorkspaceListedInfo } from "../types"
+import { type WorkspaceAdapter, type WorkspaceAdapterContext, WorkspaceListedInfo } from "../types"
 
 // Serialized shape persisted on the workspace row. `username`/`password` mirror
 // the config module so `ServerAuth.headers` falls back to the shared env vars

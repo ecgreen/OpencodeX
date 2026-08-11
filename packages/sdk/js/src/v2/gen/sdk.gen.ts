@@ -6899,14 +6899,13 @@ export class History extends HeyApiClient {
   /**
    * List sync events
    *
-   * List sync events scoped to a directory. Keys in `state` are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history.
+   * List sync events. Keys in `state` are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history. When the optional `directory` query parameter is set, the journal is scoped to sessions that belong to that directory; otherwise the full journal is returned.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
-      query_directory?: string
+      directory?: string
       workspace?: string
-      body_directory?: string
-      state?: {
+      body?: {
         [key: string]: number
       }
     },
@@ -6917,18 +6916,9 @@ export class History extends HeyApiClient {
       [
         {
           args: [
-            {
-              in: "query",
-              key: "query_directory",
-              map: "directory",
-            },
+            { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
-            {
-              in: "body",
-              key: "body_directory",
-              map: "directory",
-            },
-            { in: "body", key: "state" },
+            { key: "body", map: "body" },
           ],
         },
       ],
