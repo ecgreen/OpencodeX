@@ -1,5 +1,5 @@
 import type { GlobalEvent, OpencodeXTerminalSession } from "@opencode-ai/sdk/v2/client"
-import { Match, Show, Switch, createEffect, createSignal, on, onCleanup, onMount } from "solid-js"
+import { Match, Show, Suspense, Switch, createEffect, createSignal, lazy, on, onCleanup, onMount } from "solid-js"
 import type { createClaudeTerminalController } from "../controllers/claude-terminal-controller"
 import type { GuiClient } from "../lib/client"
 import { compactPath } from "../lib/format"
@@ -7,8 +7,11 @@ import type { GuiSnapshot } from "../lib/session-api"
 import { claudeCanStart, claudeStartLabel, claudeStatusLabel } from "../lib/terminal-presentation"
 import { Button, ErrorState, LoadingState, EmptyState, StatusBadge } from "./ui"
 import { CardActionMenu } from "./card-action-menu"
-import { SessionSidePanel, type SessionSidePanelRequest, type SessionSidePanelTarget } from "./session-side-panel"
+import type { SessionSidePanelRequest, SessionSidePanelTarget } from "./session-side-panel"
+import { SessionSidePanelLoading } from "./panel-loading-state"
 import styles from "./claude-terminal-surface.module.css"
+
+const SessionSidePanel = lazy(() => import("./session-side-panel").then((module) => ({ default: module.SessionSidePanel })))
 
 type Controller = ReturnType<typeof createClaudeTerminalController>
 
@@ -173,26 +176,28 @@ export function ClaudeTerminalPage(props: {
           autoStart
           focused
         />
-        <SessionSidePanel
-          open={sidePanelOpen()}
-          widthRatio={sidePanelWidth()}
-          sessionID={props.terminalSession.id}
-          directory={props.terminalSession.directory}
-          directoryOnly
-          gui={props.gui}
-          subscribeGlobalEvents={props.subscribeGlobalEvents}
-          lsp={props.snapshot?.lsp ?? []}
-          config={props.snapshot?.config}
-          request={sidePanelRequest()}
-          startResize={startResize}
-          toggleMaximized={() => setSidePanelWidth((width) => width >= 0.68 ? 0.4 : 0.7)}
-          resizeByKeyboard={(event) => {
-            const next = event.key === "ArrowLeft" ? sidePanelWidth() + 0.04 : event.key === "ArrowRight" ? sidePanelWidth() - 0.04 : undefined
-            if (next === undefined) return
-            event.preventDefault()
-            setSidePanelWidth(clampSidePanelWidth(next))
-          }}
-        />
+        <Suspense fallback={<SessionSidePanelLoading open={sidePanelOpen()} widthRatio={sidePanelWidth()} />}>
+          <SessionSidePanel
+            open={sidePanelOpen()}
+            widthRatio={sidePanelWidth()}
+            sessionID={props.terminalSession.id}
+            directory={props.terminalSession.directory}
+            directoryOnly
+            gui={props.gui}
+            subscribeGlobalEvents={props.subscribeGlobalEvents}
+            lsp={props.snapshot?.lsp ?? []}
+            config={props.snapshot?.config}
+            request={sidePanelRequest()}
+            startResize={startResize}
+            toggleMaximized={() => setSidePanelWidth((width) => width >= 0.68 ? 0.4 : 0.7)}
+            resizeByKeyboard={(event) => {
+              const next = event.key === "ArrowLeft" ? sidePanelWidth() + 0.04 : event.key === "ArrowRight" ? sidePanelWidth() - 0.04 : undefined
+              if (next === undefined) return
+              event.preventDefault()
+              setSidePanelWidth(clampSidePanelWidth(next))
+            }}
+          />
+        </Suspense>
       </div>
     </main>
   )
