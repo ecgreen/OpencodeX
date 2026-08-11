@@ -94,8 +94,9 @@ export function SessionComposer(props: {
           </div>
         )}
       </Show>
-      <div class={`composer-input ${props.mode}`}>
-        <ComposerQueuedPrompts prompts={props.queuedPrompts} update={props.updateQueuedPrompt} remove={props.removeQueuedPrompt} hold={props.holdQueuedPrompts} />
+      <div class="composer-card">
+      <ComposerQueuedPrompts prompts={props.queuedPrompts} update={props.updateQueuedPrompt} remove={props.removeQueuedPrompt} hold={props.holdQueuedPrompts} />
+      <div class={`composer-input ${props.mode}`} classList={{ "has-queued": props.queuedPrompts.length > 0 }}>
         <Show when={props.slashMenuVisible}>
           <div id={`${menuID}-slash`} class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
             <For each={props.visibleSlashCommands} fallback={<p>No matching commands.</p>}>
@@ -249,6 +250,7 @@ export function SessionComposer(props: {
             disabled={props.blocked || Boolean(props.disconnectedProviderName) || (props.draftText.length === 0 && props.draftParts.length === 0)}
           />
         </div>
+      </div>
       </div>
       <div class="composer-running" aria-live="polite">
         <span class="composer-running-left">

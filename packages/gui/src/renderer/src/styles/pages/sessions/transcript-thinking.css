@@ -42,7 +42,7 @@
   gap: var(--ds-space-3);
 }
 
-.thinking-segment header {
+.thinking-segment-title {
   margin-bottom: var(--ds-space-1);
   color: var(--ds-text-muted);
   font-size: 10px;

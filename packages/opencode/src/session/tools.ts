@@ -13,7 +13,6 @@ import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
 import { Duration, Effect, Schedule, Semaphore } from "effect"
-import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
 import { SessionProcessor } from "./processor"
 import { PartID } from "./schema"
@@ -44,20 +43,22 @@ type MetadataInput = Parameters<Tool.Context["metadata"]>[0]
  * guard an immediate write could slip in between and be overwritten by the
  * older captured frame.
  */
-const coalesceMetadata = Effect.fnUntraced(function* (write: (value: MetadataInput) => Effect.Effect<unknown>) {
+const coalesceMetadata = Effect.fnUntraced(function* (
+  write: (value: MetadataInput, transient: boolean) => Effect.Effect<unknown>,
+) {
   const lock = Semaphore.makeUnsafe(1)
   let pending: { value: MetadataInput; seq: number } | undefined
   let last = 0
   let sequence = 0
   let written = 0
 
-  const flush = (value: MetadataInput, seq: number) =>
+  const flush = (value: MetadataInput, seq: number, transient: boolean) =>
     lock.withPermit(
       Effect.suspend(() => {
         if (seq <= written) return Effect.void
         written = seq
         last = Date.now()
-        return write(value)
+        return write(value, transient)
       }),
     )
 
@@ -66,19 +67,23 @@ const coalesceMetadata = Effect.fnUntraced(function* (write: (value: MetadataInp
       Effect.suspend(() => {
         const item = pending
         pending = undefined
-        return item === undefined ? Effect.void : flush(item.value, item.seq)
+        return item === undefined ? Effect.void : flush(item.value, item.seq, true)
       }),
     ),
     Effect.repeat(Schedule.forever),
     Effect.forkScoped,
   )
 
-  return (value: MetadataInput) =>
+  return (value: MetadataInput, options?: { durable?: boolean }) =>
     Effect.suspend(() => {
       const seq = ++sequence
+      if (options?.durable) {
+        pending = undefined
+        return flush(value, seq, false)
+      }
       if (Date.now() - last >= METADATA_INTERVAL_MS) {
         pending = undefined
-        return flush(value, seq)
+        return flush(value, seq, true)
       }
       pending = { value, seq }
       return Effect.void
@@ -105,10 +110,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions) =>
     Effect.gen(function* () {
-      // In-flight progress only, so it is published transiently: the durable
-      // completion (or failure) revision that follows is what has to survive a
-      // crash.
-      const metadata = yield* coalesceMetadata((val) =>
+      // In-flight progress is transient by default. Stable tool state can opt
+      // into a durable revision when it must survive a snapshot refresh before
+      // completion, such as a task's child-session link.
+      const updateMetadata = (val: MetadataInput, transient: boolean) =>
         input.processor.updateToolCall(
           options.toolCallId,
           (match) => {
@@ -124,9 +129,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               },
             }
           },
-          { transient: true },
-        ),
-      )
+          { transient },
+        )
+      const metadata = yield* coalesceMetadata(updateMetadata)
       return {
         sessionID: input.session.id,
         directory: input.session.directory,
@@ -137,7 +142,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
         agent: input.agent.name,
         messages: input.messages,
-        metadata,
+        metadata: (value, metadataOptions) => metadata(value, metadataOptions).pipe(Effect.asVoid),
         ask: (req) =>
           permission
             .ask({

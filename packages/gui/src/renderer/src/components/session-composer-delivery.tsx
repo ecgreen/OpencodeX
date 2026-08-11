@@ -71,10 +71,9 @@ export function ComposerQueuedPrompts(props: {
     <>
       <Show when={props.prompts.length > 0}>
         <section class="composer-queued-prompts" aria-label={`${props.prompts.length} queued message${props.prompts.length === 1 ? "" : "s"}`}>
-          <div class="composer-queued-heading" aria-live="polite">
-            <span>Up next</span>
-            <span class="composer-queued-count">{props.prompts.length}</span>
-          </div>
+          {/* The visible tray is deliberately quiet - no heading, no count pill -
+              so the count lives in a hidden live region for screen readers. */}
+          <span class="ds-visually-hidden" aria-live="polite">{props.prompts.length} queued message{props.prompts.length === 1 ? "" : "s"}</span>
           <div class="composer-queued-list">
             <For each={props.prompts}>
               {(item, index) => (

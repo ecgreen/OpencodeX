@@ -268,21 +268,19 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
       title={title()}
       meta={patchSummary() || (shellCommand() ? <code class="part-meta-command" title={shellCommand()}>{shellCommand()}</code> : "")}
       status={<ToolStatusIndicator state={state()} stale={stale()} />}
+      subagentSessionID={subagentSessionID()}
       trailing={
         <>
           <PartErrorPreview state={state()} when={!disclosure.open()} />
           <Show when={subagentSessionID()}>
-            {(sessionID) => (
-              <IconButton
-                appearance="ghost"
-                size="compact"
-                class="part-open-subagent"
-                data-subagent-session={sessionID()}
-                icon="chevronRight"
-                label="Open sub-agent session"
-                tooltip="Open sub-agent session"
-              />
-            )}
+            <IconButton
+              appearance="ghost"
+              size="compact"
+              class="part-open-subagent"
+              icon="chevronRight"
+              label="Open sub-agent session"
+              tooltip="Open sub-agent session"
+            />
           </Show>
         </>
       }
@@ -295,7 +293,6 @@ function ToolPartView(props: { part: ToolPart; showDetails: boolean; showGeneric
         data-kind={toolCategory(props.part.tool)}
         data-status={state().status}
         data-tier={toolTier(props.part.tool, state().status)}
-        data-subagent-session={subagentSessionID()}
       >
         {header(true)}
       </div>

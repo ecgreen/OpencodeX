@@ -1,7 +1,6 @@
 import { Effect, Schema } from "effect"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import type { JSONSchema7 } from "@ai-sdk/provider"
-import type { MessageV2 } from "../session/message-v2"
 import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
@@ -43,7 +42,8 @@ export type Context<M extends Metadata = Metadata> = {
   callID?: string
   extra?: { [key: string]: unknown }
   messages: SessionLegacy.WithParts[]
-  metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
+  /** Progress is transient by default; durable metadata survives session refreshes. */
+  metadata(input: { title?: string; metadata?: M }, options?: { durable?: boolean }): Effect.Effect<void>
   ask(input: Omit<Permission.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
 }
 

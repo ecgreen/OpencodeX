@@ -57,12 +57,14 @@ export function PartHeader(props: {
   meta?: JSX.Element
   status?: JSX.Element
   trailing?: JSX.Element
+  subagentSessionID?: string
 }) {
   return (
     <Dynamic
       component={props.static ? "div" : "summary"}
       class="part-header"
       classList={{ "part-header-static": props.static === true }}
+      data-subagent-session={props.subagentSessionID}
     >
       <Show when={!props.static} fallback={<span class="part-chevron-spacer" aria-hidden="true" />}>
         <DisclosureChevron />

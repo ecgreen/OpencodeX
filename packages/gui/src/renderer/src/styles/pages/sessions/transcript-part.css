@@ -133,15 +133,15 @@
 }
 
 /*
- * Agent rows link to the sub-agent session they delegate to. A running row is
- * clickable as a whole (it has no disclosure to fight); an expandable row
- * keeps its summary toggle and carries the link on the trailing affordance.
+ * Agent headers link to the sub-agent session they delegate to. The target is
+ * the complete header for both static and expandable rows; opening the child
+ * takes precedence over toggling task output details.
  */
-.part.tool[data-subagent-session] > .part-header-static {
+.part-header[data-subagent-session] {
   cursor: pointer;
 }
 
-.part.tool[data-subagent-session]:hover .part-title {
+.part-header[data-subagent-session]:hover .part-title {
   text-decoration: underline;
   text-underline-offset: 2px;
 }

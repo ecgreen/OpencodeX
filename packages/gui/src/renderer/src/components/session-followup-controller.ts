@@ -23,8 +23,6 @@ export function createSessionFollowupController(input: {
   queue?: (prompt: Omit<QueuedSessionPrompt, "id">) => void
   update?: (sessionID: string, id: string, value: string) => void
   remove?: (sessionID: string, id: string) => void
-  /** Called after a queued message is delivered, so the drain is never silent. */
-  onDelivered?: (text: string) => void
   /** Test override for the drain delay. */
   drainDelayMs?: number
   submit: (
@@ -62,8 +60,6 @@ export function createSessionFollowupController(input: {
         .then((accepted) => {
           if (!accepted) return
           input.remove?.(session.id, item.id)
-          const text = promptText(item.prompt)
-          input.onDelivered?.(text.length > 60 ? `${text.slice(0, 60)}…` : text)
         })
         .finally(() => {
           sendingID = ""
@@ -87,8 +83,9 @@ export function createSessionFollowupController(input: {
       if (!input.running()) return "queue"
       // Queue is the default: plain Enter mid-run must never interrupt the
       // running response. Direct requires its explicit submitter.
-      const submitter = event.submitter as { value?: string } | null
-      return submitter?.value === "direct" ? "direct" : "queue"
+      return event.submitter !== null && "value" in event.submitter && event.submitter.value === "direct"
+        ? "direct"
+        : "queue"
     },
     hold: setHeld,
     queue,

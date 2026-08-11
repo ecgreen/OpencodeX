@@ -57,6 +57,28 @@ export function transcriptViewportShiftScrollTop(metrics: TranscriptViewportShif
   return Math.max(0, Math.min(shifted, Math.max(0, metrics.scrollHeight - metrics.clientHeight)))
 }
 
+/** Breathing room above a jumped-to message so it reads as "brought into
+ * view", not clipped against the viewport edge. */
+export const TRANSCRIPT_JUMP_TOP_OFFSET = 12
+
+export type TranscriptMessageJumpMetrics = TranscriptScrollMetrics & {
+  /** Message top relative to the viewport top (bounding-rect difference). */
+  messageTop: number
+}
+
+/**
+ * Where the viewport should land to put a message near its top. Clamped: the
+ * first message cannot scroll above zero and the last cannot overshoot past
+ * the bottom, so a jump never reveals blank space.
+ */
+export function transcriptMessageJumpScrollTop(
+  metrics: TranscriptMessageJumpMetrics,
+  offset = TRANSCRIPT_JUMP_TOP_OFFSET,
+) {
+  const target = metrics.scrollTop + metrics.messageTop - offset
+  return Math.max(0, Math.min(target, Math.max(0, metrics.scrollHeight - metrics.clientHeight)))
+}
+
 export function transcriptFollowStateAfterUserInput(now = Date.now()): TranscriptFollowState {
   return { followBottom: false, releasedUntil: now + TRANSCRIPT_USER_SCROLL_RELEASE_MS }
 }

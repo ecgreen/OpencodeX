@@ -9,6 +9,7 @@ import {
   shouldSpendTranscriptOpenBottomScroll,
   transcriptLoadingSkeletonDecision,
   transcriptBottomDistance,
+  transcriptMessageJumpScrollTop,
   TRANSCRIPT_BOTTOM_FOLLOW_THRESHOLD,
   type TranscriptFollowState,
 } from "../lib/transcript-scroll"
@@ -115,6 +116,26 @@ export function createTranscriptScrollController(input: {
     followState = { followBottom: true, releasedUntil: 0 }
     transcript.scrollTop = transcriptBottomScrollTop(transcript)
     setScrolledAway(false)
+  }
+  /**
+   * Explicit navigation to a message (prompt-history rail). Scoped to this
+   * transcript element so nested transcripts never steal the jump. Releases
+   * bottom-follow first - the reader asked to look at history, so the tail
+   * must not yank the viewport back while content streams in.
+   */
+  const jumpToMessage = (messageID: string) => {
+    if (!transcript) return
+    const target = transcript.querySelector(`[data-message-id="${CSS.escape(messageID)}"]`)
+    if (!(target instanceof HTMLElement)) return
+    releaseTranscriptScroll()
+    const top = transcriptMessageJumpScrollTop({
+      messageTop: target.getBoundingClientRect().top - transcript.getBoundingClientRect().top,
+      scrollTop: transcript.scrollTop,
+      scrollHeight: transcript.scrollHeight,
+      clientHeight: transcript.clientHeight,
+    })
+    const reduceMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    transcript.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" })
   }
   const applyScrollUpdate = () => {
     if (!transcript) return
@@ -279,6 +300,7 @@ export function createTranscriptScrollController(input: {
     handleContentKeyDown,
     loadOlder,
     jumpToLatest,
+    jumpToMessage,
     olderMessagesLoading,
     scrolledAway,
     loadingSkeletonVisible,

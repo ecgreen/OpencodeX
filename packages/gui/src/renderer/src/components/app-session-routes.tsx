@@ -4,7 +4,6 @@ import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
 import { findFiles } from "../lib/session-api"
-import { openSessionWorkspace } from "../lib/session-workspace-bridge"
 import { ClaudeTerminalPage } from "./claude-terminal-surface"
 import { Button, ErrorState, LoadingState } from "./ui"
 
@@ -155,7 +154,6 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       queuePrompt={model.sessionState.queuePrompt}
       updateQueuedPrompt={model.sessionState.updateQueuedPrompt}
       removeQueuedPrompt={model.sessionState.removeQueuedPrompt}
-      queuedPromptDelivered={(text) => model.notices.succeed(`Sent queued message: ${text}`)}
       permissions={model.sessionSelection.selectedPermissions()}
       questions={model.sessionSelection.selectedQuestions()}
       replyPermission={(request, reply) => void model.notices.run(() => model.management.permission(request, reply))}

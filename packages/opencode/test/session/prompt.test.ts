@@ -28,11 +28,7 @@ import { Image } from "../../src/image/image"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import {
-  SessionCommandTable,
-  SessionExecutionTable,
-  SessionTable,
-} from "@opencode-ai/core/session/sql"
+import { SessionCommandTable, SessionExecutionTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -105,10 +101,9 @@ function toolPart(parts: SessionLegacy.Part[]) {
 }
 
 /**
- * In-flight tool revisions are broadcast rather than journaled, so the durable
- * projection only ever shows terminal state. Real clients read progress off the
- * event stream; these tests do the same. Keyed by part id so the map always
- * holds the newest revision of each part.
+ * In-flight tool progress is normally broadcast rather than journaled. Real
+ * clients read that progress off the event stream; these tests do the same.
+ * Keyed by part id so the map always holds the newest revision of each part.
  */
 const liveToolParts = Effect.fnUntraced(function* () {
   const events = yield* EventV2Bridge.Service
@@ -125,7 +120,9 @@ const liveToolParts = Effect.fnUntraced(function* () {
     running: (messageID: MessageID) =>
       [...live.values()].find(
         (part) =>
-          part.messageID === messageID && part.state.status === "running" && part.state.metadata?.sessionId !== undefined,
+          part.messageID === messageID &&
+          part.state.status === "running" &&
+          part.state.metadata?.sessionId !== undefined,
       ),
   }
 })
@@ -552,12 +549,44 @@ it.instance("promptAsync persists its message and execution intent before return
       .get()
       .pipe(Effect.orDie)
     expect(command?.status).toMatch(/queued|running/)
-    expect((yield* sessions.messages({ sessionID: chat.id })).some((message) => message.info.id === command?.message_id)).toBe(
-      true,
-    )
+    expect(
+      (yield* sessions.messages({ sessionID: chat.id })).some((message) => message.info.id === command?.message_id),
+    ).toBe(true)
 
     yield* llm.wait(1)
     yield* prompt.cancel(chat.id)
+  }),
+)
+
+it.instance("retries title generation from the first prompt after more prompts arrive", () =>
+  Effect.gen(function* () {
+    yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({})
+    expect(Session.isDefaultTitle(chat.title)).toBe(true)
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Investigate why session titles sometimes remain placeholders" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "Continue with the retry path" }],
+    })
+
+    yield* prompt.loop({ sessionID: chat.id })
+    yield* pollWithTimeout(
+      sessions.get(chat.id).pipe(
+        Effect.orDie,
+        Effect.map((session) => (session.title === "E2E Title" ? session : undefined)),
+      ),
+      "title generation did not retry from the first prompt",
+    )
   }),
 )
 
@@ -573,9 +602,10 @@ it.instance(
       yield* llm.hang
       yield* llm.text("redirected")
 
+      const originalID = MessageID.ascending()
       yield* prompt.promptAsync({
         sessionID: chat.id,
-        messageID: MessageID.ascending(),
+        messageID: originalID,
         model: ref,
         parts: [{ type: "text", text: "long task" }],
       })
@@ -600,9 +630,7 @@ it.instance(
           .pipe(
             Effect.orDie,
             Effect.map((commands) =>
-              commands.length === 2 && commands.every((command) => command.status === "succeeded")
-                ? true
-                : undefined,
+              commands.length === 2 && commands.every((command) => command.status === "succeeded") ? true : undefined,
             ),
           ),
         "directing prompt did not settle",
@@ -612,8 +640,22 @@ it.instance(
       const directed = messages.find(
         (message) => message.info.role === "assistant" && message.info.parentID === directingID,
       )
+      const interrupted = messages.find(
+        (message) => message.info.role === "assistant" && message.info.parentID === originalID,
+      )
+      const steering = messages.find((message) => message.info.id === directingID)
       expect(directed?.parts.some((part) => part.type === "text" && part.text === "redirected")).toBe(true)
-      expect(JSON.stringify((yield* llm.inputs).at(-1)?.messages)).toContain("focus on the regression test instead")
+      expect(interrupted?.info.role === "assistant" ? interrupted.info.error?.name : undefined).toBe(
+        "MessageAbortedError",
+      )
+      expect(
+        steering?.parts.some(
+          (part) => part.type === "text" && part.synthetic === true && part.metadata?.steering === true,
+        ),
+      ).toBe(true)
+      const modelMessages = JSON.stringify((yield* llm.inputs).at(-1)?.messages)
+      expect(modelMessages).toContain("focus on the regression test instead")
+      expect(modelMessages).toContain("Continue the existing task, incorporating the new information")
     }),
   5_000,
 )
@@ -1145,7 +1187,7 @@ it.instance(
 )
 
 it.instance(
-  "running task tool preserves metadata after tool-call transition",
+  "persists running task metadata before completion",
   () =>
     Effect.gen(function* () {
       const { llm } = yield* useServerConfig(providerCfg)
@@ -1155,7 +1197,6 @@ it.instance(
         title: "Pinned",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
-      const live = yield* liveToolParts()
       yield* llm.tool("task", {
         description: "inspect bug",
         prompt: "look into the cache key path",
@@ -1170,10 +1211,11 @@ it.instance(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
-          const running = assistant && live.running(assistant.info.id)
-          return running?.tool === "task" ? running : undefined
+          const running = assistant ? toolPart(assistant.parts) : undefined
+          if (running?.tool !== "task" || running.state.status !== "running") return undefined
+          return running.state.metadata?.sessionId ? running : undefined
         }),
-        "timed out waiting for running task metadata",
+        "timed out waiting for durable running task metadata",
       )
 
       if (tool.state.status !== "running") return
@@ -2134,9 +2176,7 @@ unixNoLLMServer(
          * still covers the assertions, and bounds the damage when one does not
          * settle: every wait below names itself instead.
          */
-        const a = yield* prompt
-          .shell({ sessionID: chat.id, agent: "build", command: "sleep 5" })
-          .pipe(Effect.forkChild)
+        const a = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "sleep 5" }).pipe(Effect.forkChild)
         yield* waitForBusy(chat.id)
 
         const exit = yield* awaitWithTimeout(

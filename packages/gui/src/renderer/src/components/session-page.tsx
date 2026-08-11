@@ -68,8 +68,8 @@ export function SessionPage(props: SessionPageProps) {
   })
   const transcriptSessionID = createMemo(() => session()?.id ?? "empty-session")
   const draftText = createMemo(() => draftPrompt().trim())
-  const followup = createSessionFollowupController({ session, running, blocked, prompts: () => props.queuedPrompts ?? [], queue: props.queuePrompt, update: props.updateQueuedPrompt, remove: props.removeQueuedPrompt, onDelivered: props.queuedPromptDelivered, submit: props.submit })
-  const { slashQuery, visibleSlashCommands, slashMenuVisible, mentionQuery, mentionOptions, mentionMenuVisible, userHistory, usageLabel } = createSessionComposerPresentation({ props, draftPrompt, slashMenuOpen, blocked })
+  const followup = createSessionFollowupController({ session, running, blocked, prompts: () => props.queuedPrompts ?? [], queue: props.queuePrompt, update: props.updateQueuedPrompt, remove: props.removeQueuedPrompt, submit: props.submit })
+  const { visibleSlashCommands, slashMenuVisible, mentionOptions, mentionMenuVisible, userHistory, usageLabel } = createSessionComposerPresentation({ props, draftPrompt, slashMenuOpen, blocked })
   const submitComposer = createSessionComposerSubmit({
     blocked,
     disconnected: () => Boolean(models.disconnectedProvider()),
@@ -260,6 +260,7 @@ export function SessionPage(props: SessionPageProps) {
             showScrollbar={props.showScrollbar}
             showGenericToolOutput={props.showGenericToolOutput}
             concealCodeBlocks={props.concealCodeBlocks === true}
+            showPromptHistory
             running={running()}
             emptyStateDismissed={emptyStateDismissed()}
             emptyStateHandoff={props.pending === true && emptyStateDismissed()}
@@ -281,8 +282,8 @@ export function SessionPage(props: SessionPageProps) {
             connectProvider={props.connectProvider ? () => props.connectProvider?.(models.disconnectedProvider()?.id) : undefined}
             running={running()}
             queuedPrompts={followup.prompts()}
-            updateQueuedPrompt={followup.update}
-            removeQueuedPrompt={followup.remove}
+            updateQueuedPrompt={(id, value) => followup.update(id, value)}
+            removeQueuedPrompt={(id) => followup.remove(id)}
             holdQueuedPrompts={followup.hold}
             mode={models.mode()}
             draftPrompt={draftPrompt()}

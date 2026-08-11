@@ -2,7 +2,13 @@ import type { Part, Provider, Session } from "@opencode-ai/sdk/v2/client"
 import { describe, expect, test } from "bun:test"
 import type { MessageBundle } from "../src/renderer/src/lib/session-api"
 import { formatSessionTranscript } from "../src/renderer/src/lib/transcript"
-import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../src/renderer/src/lib/transcript-visibility"
+import {
+  TRANSCRIPT_PROMPT_HISTORY_LIMIT,
+  TRANSCRIPT_PROMPT_PREVIEW_LENGTH,
+  transcriptPromptHistory,
+  visibleTranscriptMessageIDs,
+  visibleTranscriptMessages,
+} from "../src/renderer/src/lib/transcript-visibility"
 
 describe("GUI session transcript formatting", () => {
   test("includes thinking and tool details by default", () => {
@@ -61,6 +67,96 @@ describe("GUI session transcript formatting", () => {
 
     expect(result[0]).toBe(first)
     expect(result[1]).toBe(second)
+  })
+
+  test("keeps interrupted work without showing an error when the next message steers it", () => {
+    const interrupted = assistantMessage()
+    if (interrupted.info.role === "assistant") {
+      interrupted.info.error = { name: "MessageAbortedError", data: { message: "Aborted" } }
+    }
+    const direction = userMessage("msg_direction", [
+      textPart("focus on the regression test"),
+      {
+        ...textPart("continue the task"),
+        id: "prt_steering",
+        messageID: "msg_direction",
+        synthetic: true,
+        metadata: { steering: true },
+      } as Part,
+    ])
+
+    const result = visibleTranscriptMessages([interrupted, direction])
+
+    expect(result.map((message) => message.info.id)).toEqual(["msg_assistant", "msg_direction"])
+    expect(result[0].info.role === "assistant" ? result[0].info.error : undefined).toBeUndefined()
+    expect(interrupted.info.role === "assistant" ? interrupted.info.error?.name : undefined).toBe("MessageAbortedError")
+    expect(result[1].parts).toHaveLength(1)
+  })
+
+  test("keeps an interruption error when the next message is not steering", () => {
+    const interrupted = assistantMessage()
+    if (interrupted.info.role === "assistant") {
+      interrupted.info.error = { name: "MessageAbortedError", data: { message: "Aborted" } }
+    }
+
+    const result = visibleTranscriptMessages([interrupted, userMessage("msg_next", [textPart("new task")])])
+
+    expect(result[0].info.role === "assistant" ? result[0].info.error?.name : undefined).toBe("MessageAbortedError")
+  })
+})
+
+describe("GUI transcript prompt history", () => {
+  test("keeps only the newest eight prompts in chronological order", () => {
+    const messages = Array.from({ length: 10 }, (_, index) =>
+      userMessage(`msg_${index}`, [textPart(`prompt ${index}`)]),
+    )
+
+    const entries = transcriptPromptHistory(messages)
+
+    expect(TRANSCRIPT_PROMPT_HISTORY_LIMIT).toBe(8)
+    expect(entries).toHaveLength(8)
+    expect(entries[0]).toEqual({ messageID: "msg_2", text: "prompt 2" })
+    expect(entries.at(-1)).toEqual({ messageID: "msg_9", text: "prompt 9" })
+  })
+
+  test("excludes assistant turns and non-prompt user messages", () => {
+    const messages = [
+      assistantMessage(),
+      userMessage("msg_compaction", [compactionPart()]),
+      userMessage("msg_blank", [textPart("   ")]),
+      userMessage("msg_synthetic", [{ ...textPart("steering"), synthetic: true } as Part]),
+      userMessage("msg_ignored", [{ ...textPart("hidden"), ignored: true } as Part]),
+      userMessage("msg_real", [textPart("actual input")]),
+    ]
+
+    expect(transcriptPromptHistory(messages)).toEqual([{ messageID: "msg_real", text: "actual input" }])
+  })
+
+  test("joins visible text parts and collapses whitespace", () => {
+    const messages = [
+      userMessage("msg_multi", [textPart("first  line\n\nsecond line"), compactionPart(), textPart("third part")]),
+    ]
+
+    expect(transcriptPromptHistory(messages)).toEqual([
+      { messageID: "msg_multi", text: "first line second line third part" },
+    ])
+  })
+
+  test("truncates long prompts with an ellipsis", () => {
+    const long = "word ".repeat(200).trim()
+    const [entry] = transcriptPromptHistory([userMessage("msg_long", [textPart(long)])])
+
+    expect(entry.text.length).toBeLessThanOrEqual(TRANSCRIPT_PROMPT_PREVIEW_LENGTH)
+    expect(entry.text.endsWith("…")).toBe(true)
+  })
+
+  test("keeps duplicate prompt texts as distinct entries", () => {
+    const messages = [
+      userMessage("msg_a", [textPart("run the tests")]),
+      userMessage("msg_b", [textPart("run the tests")]),
+    ]
+
+    expect(transcriptPromptHistory(messages).map((entry) => entry.messageID)).toEqual(["msg_a", "msg_b"])
   })
 })
 

@@ -6,7 +6,7 @@ void mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
 
 const { autoOpenForStatus, createDisclosure, createDisclosureStore, createMountedOnce, sessionDisclosureStore, clearSessionDisclosureStore } =
   await import("../src/renderer/src/lib/disclosure")
-const { thinkingFitsInline, thinkingPreview } = await import("../src/renderer/src/components/session-thinking")
+const { thinkingFitsInline, thinkingPreview, thinkingSegmentContent } = await import("../src/renderer/src/components/session-thinking")
 
 function toggleEvent(open: boolean) {
   return { currentTarget: { open } }
@@ -152,5 +152,31 @@ describe("GUI thinking preview", () => {
     // While streaming, keep the expandable ticker - more lines may arrive.
     expect(thinkingFitsInline(["Short"], true)).toBe(false)
     expect(thinkingFitsInline([], false)).toBe(false)
+  })
+
+  test("separates a reasoning summary title from its markdown body", () => {
+    expect(thinkingSegmentContent({ type: "reasoning", text: "**Checking session history**\n\nThe stored parts retain their provider metadata." }, 0, 2)).toEqual({
+      title: "Checking session history",
+      body: "The stored parts retain their provider metadata.",
+    })
+    expect(thinkingSegmentContent({ type: "reasoning", text: "**Checking session history**" }, 0, 2)).toEqual({
+      title: "Checking session history",
+      body: "",
+    })
+  })
+
+  test("keeps unstructured reasoning in the body", () => {
+    expect(thinkingSegmentContent({ type: "reasoning", text: "**Important:** keep this in the body." }, 1, 2)).toEqual({
+      title: "Thinking 2",
+      body: "**Important:** keep this in the body.",
+    })
+  })
+
+  test("derives a short commentary title without consuming its body", () => {
+    const text = "The working tree contains a coordinated feature set across the GUI, runtime, transport, and generated SDK types."
+    expect(thinkingSegmentContent({ type: "text", text }, 3, 4)).toEqual({
+      title: "The working tree contains a coordinated feature set across the G…",
+      body: text,
+    })
   })
 })

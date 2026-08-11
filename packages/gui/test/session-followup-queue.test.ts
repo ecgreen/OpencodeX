@@ -62,7 +62,7 @@ describe("GUI session follow-up queue", () => {
   })
 })
 
-function followupHarness(input?: { queued?: QueuedSessionPrompt[]; onDelivered?: (text: string) => void }) {
+function followupHarness(input?: { queued?: QueuedSessionPrompt[] }) {
   const session = { id: "session-1" } as Session
   const [running, setRunning] = createSignal(true)
   const [prompts, setPrompts] = createSignal<QueuedSessionPrompt[]>(input?.queued ?? [])
@@ -76,7 +76,6 @@ function followupHarness(input?: { queued?: QueuedSessionPrompt[]; onDelivered?:
       blocked: () => false,
       prompts,
       drainDelayMs: 60,
-      onDelivered: input?.onDelivered,
       remove: (_sessionID, id) => setPrompts((current) => current.filter((item) => item.id !== id)),
       submit: async (prompt) => {
         sent.push(prompt)
@@ -148,22 +147,6 @@ describe("GUI session follow-up delivery", () => {
       await settle()
       expect(sent).toHaveLength(1)
       expect(prompts()).toHaveLength(0)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("reports delivery so a drained message never vanishes silently", async () => {
-    const delivered: string[] = []
-    const { dispose, setRunning, sent } = followupHarness({
-      queued: [queuedItem("queued feedback")],
-      onDelivered: (text) => delivered.push(text),
-    })
-    try {
-      setRunning(false)
-      await settle()
-      expect(sent).toHaveLength(1)
-      expect(delivered).toEqual(["queued feedback"])
     } finally {
       dispose()
     }

@@ -7,6 +7,7 @@ import { Icon } from "./icon"
 import { PartHeader, useTranscriptChrome } from "./session-part-chrome"
 
 const PREVIEW_LENGTH = 96
+const SEGMENT_TITLE_LENGTH = 64
 
 /**
  * Pulls the line worth showing on a collapsed block. While the model is still
@@ -39,6 +40,25 @@ export function thinkingFitsInline(texts: string[], streaming: boolean) {
 export function thinkingInlineText(text: string) {
   const line = text.split("\n").map((item) => item.trim()).filter(Boolean)[0] ?? ""
   return stripMarkdownEmphasis(line)
+}
+
+/**
+ * OpenAI reasoning summaries commonly begin with a standalone bold title.
+ * Commentary has no separate title field, so use a bounded excerpt while
+ * retaining its complete text as the body.
+ */
+export function thinkingSegmentContent(part: Pick<ThinkingPart, "type" | "text">, index: number, total: number) {
+  const content = part.text.trim()
+  const fallback = total > 1 ? `Thinking ${index + 1}` : "Thinking"
+  if (part.type === "reasoning") {
+    const match = content.match(/^\*\*([^*\n]+)\*\*(?:\r?\n\r?\n|$)/)
+    if (match) return { title: match[1].trim(), body: content.slice(match[0].length).trimEnd() }
+    return { title: fallback, body: content }
+  }
+  return {
+    title: collapseWhitespace(thinkingPreview(content, false), SEGMENT_TITLE_LENGTH) || fallback,
+    body: content,
+  }
 }
 
 export function ThinkingGroupView(props: {
@@ -131,12 +151,15 @@ export function ThinkingGroupView(props: {
 }
 
 function ThinkingSegment(props: { part: ThinkingPart; index: number; total: number; streaming: boolean }) {
+  const content = createMemo(() => thinkingSegmentContent(props.part, props.index, props.total))
   return (
     <section class="thinking-segment">
-      <Show when={props.total > 1}>
-        <header>Thinking {props.index + 1}</header>
+      <Show when={props.total > 1 || content().title !== "Thinking"}>
+        <div class="thinking-segment-title">{content().title}</div>
       </Show>
-      <Markdown text={props.part.text.trim()} cacheKey={props.part.id} streaming={props.streaming} />
+      <Show when={content().body}>
+        {(body) => <Markdown text={body()} cacheKey={props.part.id} streaming={props.streaming} />}
+      </Show>
     </section>
   )
 }

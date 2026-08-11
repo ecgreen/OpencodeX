@@ -16,83 +16,110 @@
   flex-shrink: 0;
 }
 
+/* One step below the compact control size: the delivery pair sits in the
+   composer footer next to 11px meta text, and full compact buttons overweigh
+   that line. */
+.composer-delivery-actions .ui-button {
+  min-height: var(--ds-space-6);
+  padding-inline: var(--ds-space-2);
+  font-size: var(--ds-text-2xs);
+}
+
+.composer-delivery-actions .ui-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The queue is a tray fused to the top of the composer card: same outer
+   border, shared silhouette, one step darker so it reads as "waiting behind
+   the input" rather than a second panel. */
 .composer-queued-prompts {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: var(--ds-space-1);
-  max-height: 104px;
   min-height: 0;
-  padding: var(--ds-space-2);
-  border: 1px solid var(--theme-border-subtle);
-  border-radius: var(--ds-radius-control);
+  padding: var(--ds-space-0) var(--ds-space-2);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   background: var(--theme-surface);
   color: var(--muted);
-  font-size: var(--ds-text-xs);
+  font-size: var(--ds-text-2xs);
 }
 
-.composer-queued-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-1);
-  color: var(--theme-text);
-  font-weight: var(--ds-weight-semibold);
-}
-
-.composer-queued-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding-inline: var(--ds-space-1);
-  border-radius: var(--ds-radius-full);
-  background: var(--theme-accent-soft);
-  color: var(--theme-accent);
-  font-variant-numeric: tabular-nums;
+:root[data-theme="light"] .composer-queued-prompts {
+  background: var(--theme-surface-queue);
+  border-color: var(--theme-border-composer);
 }
 
 .composer-queued-list {
-  display: grid;
-  gap: var(--ds-space-0);
   min-height: 0;
+  max-height: 96px;
   overflow-y: auto;
 }
 
 .composer-queued-prompt {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--ds-space-1);
-  min-height: 28px;
-  padding-left: var(--ds-space-1);
+  gap: var(--ds-space-2);
+  min-height: 24px;
+  padding-inline: var(--ds-space-1);
   border-radius: var(--ds-radius-control);
+}
+
+.composer-queued-prompt + .composer-queued-prompt {
+  border-top: 1px solid var(--theme-overlay-soft);
 }
 
 .composer-queued-prompt:hover,
 .composer-queued-prompt:focus-within {
-  background: var(--theme-surface-hover);
+  background: var(--theme-overlay-subtle);
 }
 
 .composer-queued-index {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--theme-border-subtle);
-  border-radius: var(--ds-radius-full);
-  color: var(--theme-text-muted);
+  min-width: var(--ds-space-3);
+  color: var(--theme-text-subtle);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .composer-queued-text {
   overflow: hidden;
+  color: var(--theme-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.composer-queued-prompt:hover .composer-queued-text,
+.composer-queued-prompt:focus-within .composer-queued-text {
+  color: var(--theme-text);
+}
+
+/* Row actions stay silent until the row is hovered or holds focus, so a full
+   queue reads as text, not a wall of buttons. Focus reveals them for keyboard
+   users via :focus-within. */
 .composer-queued-actions {
   display: flex;
   align-items: center;
   gap: var(--ds-space-0);
+  opacity: 0;
+  transition: opacity var(--ds-motion-hover) ease;
+}
+
+.composer-queued-prompt:hover .composer-queued-actions,
+.composer-queued-prompt:focus-within .composer-queued-actions {
+  opacity: 1;
+}
+
+.composer-queued-actions .ui-icon-button {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+}
+
+.composer-queued-actions .ui-icon-button svg {
+  width: 13px;
+  height: 13px;
 }
 
 .composer-queued-remove-preview {

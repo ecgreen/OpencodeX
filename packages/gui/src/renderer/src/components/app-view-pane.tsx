@@ -57,7 +57,7 @@ function OpenCodeViewPane(props: {
       : EMPTY_SESSION_DATA,
   )
   const updatePane = props.model.authoritative.updateViewPaneState
-  const run = props.model.notices.run
+  const run = (action: () => Promise<void>) => props.model.notices.run(action)
 
   return (
     <ViewPaneHost
@@ -132,7 +132,6 @@ function OpenCodeViewPane(props: {
       queuePrompt={props.model.sessionState.queuePrompt}
       updateQueuedPrompt={props.model.sessionState.updateQueuedPrompt}
       removeQueuedPrompt={props.model.sessionState.removeQueuedPrompt}
-      queuedPromptDelivered={(text) => props.model.notices.succeed(`Sent queued message: ${text}`)}
       replyPermission={(request, reply) => void run(() => props.model.management.permission(request, reply))}
       replyQuestion={(request, answers) => void run(() => props.model.management.replyToQuestion(request, answers))}
       rejectQuestion={(request) => void run(() => props.model.management.rejectQuestionRequest(request))}

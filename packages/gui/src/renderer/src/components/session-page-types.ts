@@ -90,8 +90,6 @@ export type SessionPageProps = {
   queuePrompt?: (prompt: Omit<QueuedSessionPrompt, "id">) => void
   updateQueuedPrompt?: (sessionID: string, id: string, value: string) => void
   removeQueuedPrompt?: (sessionID: string, id: string) => void
-  /** Confirmation surface for queue drains, so a delivered message never vanishes silently. */
-  queuedPromptDelivered?: (text: string) => void
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void

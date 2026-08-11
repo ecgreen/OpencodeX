@@ -8,6 +8,22 @@
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
+/* When the queue tray is fused on top, the focus ring must wrap the whole
+   card - a ring on the input alone would cut across the seam. The ring moves
+   to the wrapper and the tray border joins the focus color. */
+.composer .composer-input.has-queued:focus-within {
+  box-shadow: none;
+}
+
+.composer-card:has(> .composer-input.has-queued:focus-within) {
+  border-radius: var(--radius-card);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.composer-card:has(> .composer-input.has-queued:focus-within) .composer-queued-prompts {
+  border-color: var(--brand);
+}
+
 :root[data-theme=light] .session-page .opencodex-logo {
   opacity: 1;
   filter: brightness(.3) saturate(1.4) contrast(1.3);

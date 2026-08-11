@@ -181,6 +181,7 @@
 @import "./styles/pages/sessions/session-titleline.css" layer(features);
 @import "./styles/pages/sessions/session-main.css" layer(features);
 @import "./styles/pages/sessions/transcript-shell.css" layer(features);
+@import "./styles/pages/sessions/transcript-prompt-history.css" layer(features);
 @import "./styles/pages/sessions/composer-input.css" layer(features);
 @import "./styles/pages/sessions/session-side-panel.css" layer(features);
 @import "./styles/pages/sessions/provider-states.css" layer(features);

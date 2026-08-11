@@ -47,7 +47,6 @@ export function ViewPaneHost(props: {
   queuePrompt?: (prompt: Omit<QueuedSessionPrompt, "id">) => void
   updateQueuedPrompt?: (sessionID: string, id: string, value: string) => void
   removeQueuedPrompt?: (sessionID: string, id: string) => void
-  queuedPromptDelivered?: (text: string) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
@@ -113,7 +112,6 @@ export function ViewPaneHost(props: {
       queuePrompt={props.queuePrompt}
       updateQueuedPrompt={props.updateQueuedPrompt}
       removeQueuedPrompt={props.removeQueuedPrompt}
-      queuedPromptDelivered={props.queuedPromptDelivered}
       replyPermission={props.replyPermission}
       replyQuestion={props.replyQuestion}
       rejectQuestion={props.rejectQuestion}

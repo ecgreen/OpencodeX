@@ -29,7 +29,7 @@ interface ActiveRunner {
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
-  readonly interrupt: (sessionID: SessionID) => Effect.Effect<void>
+  readonly interrupt: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly ensureRunning: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<SessionLegacy.WithParts>,
@@ -292,6 +292,7 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie)
       if (current?.state === "running" && current.leaseExpiresAt && current.leaseExpiresAt > Date.now())
         return yield* busyError(sessionID)
+      return undefined
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
@@ -438,7 +439,7 @@ export const layer = Layer.effect(
           { behavior: "immediate" },
         )
         .pipe(Effect.orDie)
-      if (!target) return
+      if (!target) return false
       const existing = (yield* InstanceState.get(state)).runners.get(sessionID)
       if (
         existing?.runner.busy &&
@@ -448,6 +449,7 @@ export const layer = Layer.effect(
         existing.interrupted = true
         yield* existing.runner.cancel
       }
+      return true
     })
 
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (
@@ -476,12 +478,10 @@ export const layer = Layer.effect(
       const lease = yield* claim(sessionID)
       if (!lease) return yield* busyError(sessionID)
       const active = yield* ownedRunner(sessionID, lease, onInterrupt)
-      return yield* active.runner
-        .startShell(supervise(sessionID, lease, onInterrupt, work), ready)
-        .pipe(
-          Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))),
-          Effect.onError(() => release(sessionID, lease, true)),
-        )
+      return yield* active.runner.startShell(supervise(sessionID, lease, onInterrupt, work), ready).pipe(
+        Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))),
+        Effect.onError(() => release(sessionID, lease, true)),
+      )
     })
 
     return Service.of({ assertNotBusy, cancel, interrupt, ensureRunning, startShell })

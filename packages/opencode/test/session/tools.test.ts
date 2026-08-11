@@ -18,7 +18,7 @@ import { testEffect } from "../lib/effect"
 
 const INTERVAL_MS = 100
 
-const writes: { title?: string }[] = []
+const writes: { title?: string; transient?: boolean }[] = []
 
 const probe = (run: (ctx: Tool.Context) => Effect.Effect<void>): Tool.Def => ({
   id: "probe",
@@ -63,10 +63,13 @@ const run = (tool: Tool.Def) =>
       session: { id: "ses_probe", directory: "/tmp", permission: [] } as any,
       processor: {
         message: { id: "msg_probe" } as any,
-        updateToolCall: (_callID, update) =>
+        updateToolCall: (_callID, update, options) =>
           Effect.sync(() => {
             const next = update({ state: { status: "running" } } as any)
-            writes.push({ title: next.state.status === "running" ? next.state.title : undefined })
+            writes.push({
+              title: next.state.status === "running" ? next.state.title : undefined,
+              transient: options?.transient,
+            })
             return next
           }),
         completeToolCall: () => Effect.void,
@@ -126,5 +129,35 @@ it.live("drains the newest pending value once per interval", () =>
     expect(writes[0]?.title).toBe("chunk 0")
     // The trailing drain always carries the newest value, never a stale one.
     expect(writes.at(-1)?.title).toBe("chunk 49")
+  }),
+)
+
+it.live("persists metadata that must survive a session refresh", () =>
+  Effect.gen(function* () {
+    yield* run(
+      probe((ctx) => ctx.metadata({ title: "linked", metadata: { sessionId: "ses_child" } }, { durable: true })),
+    )
+
+    expect(writes).toEqual([{ title: "linked", transient: false }])
+  }),
+)
+
+it.live("drops pending transient metadata after a durable write", () =>
+  Effect.gen(function* () {
+    yield* run(
+      probe((ctx) =>
+        Effect.gen(function* () {
+          yield* ctx.metadata({ title: "leading", metadata: {} })
+          yield* ctx.metadata({ title: "stale pending", metadata: {} })
+          yield* ctx.metadata({ title: "linked", metadata: { sessionId: "ses_child" } }, { durable: true })
+          yield* Effect.sleep(INTERVAL_MS * 2)
+        }),
+      ),
+    )
+
+    expect(writes).toEqual([
+      { title: "leading", transient: true },
+      { title: "linked", transient: false },
+    ])
   }),
 )
