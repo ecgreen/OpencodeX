@@ -407,6 +407,45 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
+  it.effect("passes through a detailed reasoning summary", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).model("gpt-5.2"),
+          prompt: "think",
+          providerOptions: {
+            openai: {
+              reasoningEffort: "high",
+              reasoningSummary: "detailed",
+            },
+          },
+        }),
+      )
+
+      expect(prepared.body.reasoning).toEqual({ effort: "high", summary: "detailed" })
+    }),
+  )
+
+  it.effect("drops an unrecognized reasoning summary value", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).model("gpt-5.2"),
+          prompt: "think",
+          providerOptions: {
+            openai: {
+              reasoningEffort: "high",
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              reasoningSummary: "bogus" as any,
+            },
+          },
+        }),
+      )
+
+      expect(prepared.body.reasoning).toEqual({ effort: "high", summary: undefined })
+    }),
+  )
+
   it.effect("accepts max reasoning effort", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
