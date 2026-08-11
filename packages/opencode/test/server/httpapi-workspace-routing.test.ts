@@ -350,6 +350,7 @@ describe("HttpApi workspace routing middleware", () => {
       const workspace = Workspace.Service.of({
         create: () => Effect.die("unused"),
         sessionWarp: () => Effect.die("unused"),
+        warpToHub: () => Effect.die("unused"),
         list: () => Effect.die("unused"),
         syncList: () => Effect.die("unused"),
         get: (id) =>

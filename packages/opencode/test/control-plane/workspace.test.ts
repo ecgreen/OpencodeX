@@ -741,7 +741,7 @@ describe("workspace CRUD", () => {
 
             expect(
               calls.map((call) => `${call.method} ${call.url.pathname}${call.url.search}${call.url.hash}`),
-            ).toEqual(["GET /base/global/event", "POST /base/sync/history"])
+            ).toEqual(["GET /base/global/event", `POST /base/sync/history?directory=${encodeURIComponent(dir)}`])
             expect(calls[1].json).toEqual({})
             expect((yield* workspace.status()).find((item) => item.workspaceID === info.id)?.status).toBe("connected")
             expect(yield* workspace.isSyncing(info.id)).toBe(true)
@@ -1723,5 +1723,59 @@ describe("workspace waitForSync", () => {
     // a 7000ms budget did not cover on the Windows runner, failing at 7270ms.
     // The sibling abort case takes 10.4s there on the suite default and is fine.
     { git: true },
+  )
+})
+
+describe("workspace warpToHub", () => {
+  it.live(
+    "warps a fresh session into the hub workspace and leaves other workspaces untouched",
+    () => {
+      const calls: Array<{ method: string; url: URL; json: unknown }> = []
+      return Effect.gen(function* () {
+        yield* HttpServer.serveEffect()(
+          Effect.gen(function* () {
+            const req = yield* HttpServerRequest.HttpServerRequest
+            const bodyText = yield* req.text
+            const url = new URL(req.url, "http://localhost")
+            calls.push({ method: req.method, url, json: bodyText ? JSON.parse(bodyText) : undefined })
+            if (url.pathname === "/warp-hub/sync/replay") return yield* HttpServerResponse.json({ sessionID: "ok" })
+            if (url.pathname === "/warp-hub/sync/steal") return yield* HttpServerResponse.json({ sessionID: "ok" })
+            return HttpServerResponse.text("unexpected", { status: 500 })
+          }),
+        )
+        const url = yield* serverUrl()
+        yield* provideTmpdirInstance(
+          () =>
+            Effect.gen(function* () {
+              const workspace = yield* Workspace.Service
+              const sessionSvc = yield* SessionNs.Service
+              const instance = yield* requireInstance
+              const { db } = yield* Database.Service
+              const hubWorkspace = workspaceInfo(instance.project.id, "hub", {
+                name: unique("hub"),
+                extra: { url: `${url}/warp-hub` },
+              })
+              yield* insertWorkspace(hubWorkspace)
+              const session = yield* sessionSvc.create({ title: "to warp" })
+
+              yield* workspace.warpToHub(instance.project, session.id)
+
+              const replay = calls.filter((call) => call.url.pathname === "/warp-hub/sync/replay")
+              const steal = calls.filter((call) => call.url.pathname === "/warp-hub/sync/steal")
+              expect(replay.length).toBeGreaterThan(0)
+              expect(steal.length).toBe(1)
+              expect(calls.map((call) => call.method)).not.toContain("GET")
+              const stored = yield* db
+                .select({ workspaceID: SessionTable.workspace_id })
+                .from(SessionTable)
+                .where(eq(SessionTable.id, session.id))
+                .get()
+                .pipe(Effect.orDie)
+              expect(stored).toEqual({ workspaceID: hubWorkspace.id })
+            }),
+          { git: true },
+        )
+      })
+    },
   )
 })

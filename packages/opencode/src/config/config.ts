@@ -25,6 +25,7 @@ import { ConfigAgent } from "./agent"
 import { ConfigAttachment } from "./attachment"
 import { ConfigCommand } from "./command"
 import { ConfigFormatter } from "./formatter"
+import { ConfigHub } from "./hub"
 import { ConfigLayout } from "./layout"
 import { ConfigLSP } from "./lsp"
 import { ConfigManaged } from "./managed"
@@ -225,6 +226,9 @@ export const Info = Schema.Struct({
   formatter: Schema.optional(ConfigFormatter.Info).annotate({
     description:
       "Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
+  }),
+  hub: Schema.optional(ConfigHub.Hub).annotate({
+    description: "Mirror an always-on opencode hub server into this project",
   }),
   lsp: Schema.optional(ConfigLSP.Info).annotate({
     description:

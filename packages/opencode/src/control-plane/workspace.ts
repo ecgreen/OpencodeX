@@ -154,6 +154,7 @@ type SyncLoopError = SyncHttpError | HttpClientError.HttpClientError
 export interface Interface {
   readonly create: (input: CreateInput) => Effect.Effect<Info, CreateError>
   readonly sessionWarp: (input: SessionWarpInput) => Effect.Effect<void, SessionWarpError>
+  readonly warpToHub: (project: Project.Info, sessionID: SessionID) => Effect.Effect<void>
   readonly list: (project: Project.Info) => Effect.Effect<Info[]>
   readonly syncList: (project: Project.Info) => Effect.Effect<void>
   readonly get: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
@@ -360,8 +361,11 @@ export const layer = Layer.effect(
         known: Object.keys(state).length,
       })
 
+      const historyURL = route(url, "/sync/history")
+      if (space.directory) historyURL.searchParams.set("directory", space.directory)
+
       const response = yield* http.execute(
-        HttpClientRequest.post(route(url, "/sync/history"), {
+        HttpClientRequest.post(historyURL, {
           headers: new Headers(headers),
           body: HttpBody.jsonUnsafe(state),
         }),
@@ -832,6 +836,27 @@ export const layer = Layer.effect(
       )
     })
 
+    const warpToHub = Effect.fn("Workspace.warpToHub")(function* (project: Project.Info, sessionID: SessionID) {
+      const hub = (yield* list(project)).find((workspace) => workspace.type === "hub")
+      if (!hub) return
+      yield* sessionWarp({
+        workspaceID: hub.id,
+        sessionID,
+        copyChanges: false,
+        projectID: project.id,
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            log.warn("warp to hub skipped", {
+              workspaceID: hub.id,
+              sessionID,
+              error: errorData(error),
+            })
+          }),
+        ),
+      )
+    })
+
     const list = Effect.fn("Workspace.list")(function* (project: Project.Info) {
       return (yield* db
         .select()
@@ -1006,6 +1031,7 @@ export const layer = Layer.effect(
     return Service.of({
       create,
       sessionWarp,
+      warpToHub,
       list,
       syncList,
       get,

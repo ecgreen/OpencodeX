@@ -89,7 +89,7 @@ export const SyncApi = HttpApi.make("sync")
             identifier: "sync.history.list",
             summary: "List sync events",
             description:
-              "List sync events for all aggregates. Keys are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history.",
+              "List sync events. Keys in `state` are aggregate IDs the client already knows about, values are the last known sequence ID. Events with seq > value are returned for those aggregates. Aggregates not listed in the input get their full history. When the optional `directory` query parameter is set, the journal is scoped to sessions that belong to that directory; otherwise the full journal is returned.",
           }),
         ),
       )

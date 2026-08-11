@@ -1575,6 +1575,15 @@ export type McpRemoteConfig = {
   timeout?: number
 }
 
+export type HubConfig = {
+  /**
+   * Base URL of the always-on opencode hub to mirror
+   */
+  url: string
+  username?: string
+  password?: string
+}
+
 /**
  * @deprecated Always uses stretch layout.
  */
@@ -1675,6 +1684,7 @@ export type Config = {
           extensions?: Array<string>
         }
       }
+  hub?: HubConfig
   /**
    * Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
    */
