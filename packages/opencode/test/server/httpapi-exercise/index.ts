@@ -460,7 +460,7 @@ const scenarios: Scenario[] = [
   http.protected.get("/experimental/resource", "experimental.resource.list").json(),
   http.protected
     .post("/sync/history", "sync.history.list")
-    .at((ctx) => ({ path: "/sync/history", headers: ctx.headers(), body: {} }))
+    .at((ctx) => ({ path: "/sync/history", headers: ctx.headers(), body: { directory: ctx.directory, state: {} } }))
     .json(200, array),
   http.protected
     .post("/sync/replay", "sync.replay")
