@@ -223,7 +223,12 @@ function spawnCoordinator(directory: string, key: string, database: string) {
   const command = cliCommand()
   const child = spawn(command[0], [...command.slice(1), "internal-tui-coordinator", directory, "--key", key], {
     cwd: directory,
-    detached: process.platform !== "win32",
+    /* Detached everywhere, including Windows: a non-detached child shares the
+       spawning terminal's console process group, so a Ctrl-C meant for the TUI
+       or GUI dev process also signals the coordinator - which then shuts down
+       gracefully even while other clients still hold leases. `windowsHide`
+       keeps the detached child from opening a console window. */
+    detached: true,
     stdio: "ignore",
     windowsHide: true,
     env: {
