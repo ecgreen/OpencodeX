@@ -46,3 +46,7 @@ tsconfig.tsbuildinfo
 
 # Playwright run output
 test-results/
+
+# Claude Code registered worktrees (do not delete/modify the worktrees themselves)
+.claude/worktrees/
+.superpowers/
