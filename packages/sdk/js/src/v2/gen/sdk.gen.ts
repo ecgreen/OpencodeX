@@ -4200,6 +4200,7 @@ export class Changes extends HeyApiClient {
       path?: string
       cursor?: string
       revision?: string
+      metadata?: "true" | "false"
       limit?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -4214,6 +4215,7 @@ export class Changes extends HeyApiClient {
             { in: "query", key: "path" },
             { in: "query", key: "cursor" },
             { in: "query", key: "revision" },
+            { in: "query", key: "metadata" },
             { in: "query", key: "limit" },
           ],
         },

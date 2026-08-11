@@ -2,9 +2,20 @@ import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createSessionSideGitController, reconcileWorkbenchFiles, sidePanelChangeForPath } from "../src/renderer/src/components/session-side-git-controller"
 import { mergeWorkbenchFileMetrics, workbenchPatchForPath, type WorkbenchPatchModel } from "../src/renderer/src/components/session-side-git-model"
+import { shouldLoadRepository } from "../src/renderer/src/components/session-side-git-repository"
 import type { GuiClient } from "../src/renderer/src/lib/client"
 
 describe("session side Git results", () => {
+  test("gates repository metadata reloads on revision change, not every poll", () => {
+    // First load always fetches (no prior revision recorded).
+    expect(shouldLoadRepository(undefined, "rev-1")).toBe(true)
+    // Same revision as last successful load: skip (this is the 30s-poll /
+    // file-watcher-tick case where nothing actually changed).
+    expect(shouldLoadRepository("rev-1", "rev-1")).toBe(false)
+    // Revision changed since the last successful load: fetch again.
+    expect(shouldLoadRepository("rev-1", "rev-2")).toBe(true)
+  })
+
   test("matches a selected change across absolute and relative paths", () => {
     const files = [{ type: "file" as const, name: "app.ts", path: "src/app.ts", status: "modified" as const, staged: false, unstaged: true, untracked: false, openable: true }]
     expect(sidePanelChangeForPath(files, "C:/repo/src/app.ts")?.path).toBe("src/app.ts")
@@ -208,6 +219,74 @@ describe("session side Git results", () => {
     }
   })
 
+  test("publishes the first manifest page and coalesces watcher refreshes", async () => {
+    const continuation = deferred<void>()
+    const refreshGate = deferred<void>()
+    const requests: Array<{ revision?: string; cursor?: string; signal?: AbortSignal }> = []
+    const [active, setActive] = createSignal(true)
+    let scans = 0
+    let globalListener: ((event: { directory: string; payload: { type: string } }) => void) | undefined
+    const gui = {
+      url: "http://127.0.0.1:4096",
+      directory: "C:/repo",
+      authHeader: "",
+      client: { opencodex: { workbench: { changes: {
+        page: async (input: { revision?: string; cursor?: string }, options: { signal?: AbortSignal }) => {
+          requests.push({ ...input, signal: options.signal })
+          if (input.cursor) {
+            await continuation.promise
+            return { data: manifest("rev-1", [file("second.ts")]) }
+          }
+          scans++
+          if (scans > 1) await refreshGate.promise
+          return { data: manifest(`rev-${scans}`, [file(scans === 1 ? "first.ts" : "refreshed.ts")], scans === 1 ? "page-2" : undefined) }
+        },
+        metricsPage: async (input: { revision: string }) => ({ data: {
+          ok: true, stale: false, revision: input.revision, items: [],
+          summary: { fileCount: scans === 1 ? 2 : 1, additions: 0, deletions: 0, metricsResolved: 0, metricsTotal: scans === 1 ? 2 : 1, metricsComplete: false },
+        } }),
+      } } } },
+    } as unknown as GuiClient
+    let dispose = () => undefined
+    const controller = createRoot((cleanup) => {
+      dispose = cleanup
+      return createSessionSideGitController({
+        active,
+        gui: () => gui,
+        directory: () => gui.directory,
+        subscribeGlobalEvents: (listener) => {
+          globalListener = listener as typeof globalListener
+          return () => { globalListener = undefined }
+        },
+      })
+    })
+
+    try {
+      await waitFor(() => controller.ready() && controller.manifestLoaded() === 1)
+      expect(controller.files().map((item) => item.path)).toEqual(["first.ts"])
+      expect(controller.manifestComplete()).toBe(false)
+      globalListener?.({ directory: gui.directory, payload: { type: "file.watcher.updated" } })
+      await Bun.sleep(300)
+      expect(scans).toBe(1)
+      expect(requests.at(-1)?.signal?.aborted).toBe(false)
+      let queuedSettled = false
+      const queued = controller.refresh().then(() => { queuedSettled = true })
+
+      continuation.resolve()
+      await waitFor(() => scans === 2)
+      expect(queuedSettled).toBe(false)
+      refreshGate.resolve()
+      await queued
+      expect(controller.revision()).toBe("rev-2")
+      expect(controller.manifestComplete()).toBe(true)
+      expect(controller.files().map((item) => item.path)).toEqual(["refreshed.ts"])
+      expect(requests.filter((request) => !request.revision)).toHaveLength(2)
+    } finally {
+      setActive(false)
+      dispose()
+    }
+  })
+
   test("initializes a non-Git workspace through the project API", async () => {
     const calls: Array<{ directory?: string; signal?: AbortSignal }> = []
     const gui = {
@@ -254,4 +333,18 @@ function patch(path: string, revision: string): WorkbenchPatchModel {
 
 function abortable(signal?: AbortSignal): Promise<never> {
   return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }))
+}
+
+function manifest(revision: string, items: ReturnType<typeof file>[], next?: string) {
+  return {
+    ok: true, mode: "git" as const, revision, path: "", items,
+    summary: { fileCount: next ? 2 : items.length, additions: 0, deletions: 0, metricsResolved: 0, metricsTotal: next ? 2 : items.length, metricsComplete: false },
+    ...(next ? { next } : {}),
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
 }

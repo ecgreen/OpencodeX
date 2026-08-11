@@ -104,12 +104,19 @@ export const WorkbenchGitBranches = Schema.Struct({
   message: Schema.optional(Schema.String),
   current: Schema.optional(Schema.String),
   branches: Schema.Array(Schema.String),
+  defaultBranch: Schema.optional(Schema.String),
+  upstream: Schema.optional(Schema.String),
+  ahead: Schema.optional(NonNegativeInt),
+  behind: Schema.optional(NonNegativeInt),
+  remoteUrl: Schema.optional(Schema.String),
+  githubUrl: Schema.optional(Schema.String),
 })
 export const WorkbenchChangesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   path: Schema.optional(Schema.String),
   cursor: Schema.optional(Schema.String),
   revision: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Literals(["true", "false"])),
   limit: Schema.optional(
     Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(200)),
   ),

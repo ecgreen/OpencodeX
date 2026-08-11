@@ -1,3 +1,5 @@
+import { Semaphore } from "effect"
+
 export type WorkbenchChangeMode = "git" | "directory"
 
 export type WorkbenchChangeFile = {
@@ -57,6 +59,7 @@ export type WorkbenchChangeSnapshot = {
 
 const SNAPSHOT_TTL_MS = 2 * 60_000
 const snapshots = new Map<string, WorkbenchChangeSnapshot[]>()
+const snapshotLocks = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
 
 export function rememberWorkbenchSnapshot(snapshot: WorkbenchChangeSnapshot) {
   pruneWorkbenchSnapshots()
@@ -70,6 +73,24 @@ export function rememberWorkbenchSnapshot(snapshot: WorkbenchChangeSnapshot) {
 export function findWorkbenchSnapshot(directory: string, revision: string) {
   pruneWorkbenchSnapshots()
   return snapshots.get(directory)?.find((snapshot) => snapshot.revision === revision)
+}
+
+export function latestWorkbenchSnapshot(directory: string) {
+  pruneWorkbenchSnapshots()
+  return snapshots.get(directory)?.[0]
+}
+
+export function acquireWorkbenchSnapshotLock(directory: string) {
+  const lock = snapshotLocks.get(directory) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+  lock.users++
+  snapshotLocks.set(directory, lock)
+  return {
+    semaphore: lock.semaphore,
+    release: () => {
+      lock.users--
+      if (lock.users === 0 && !snapshots.has(directory) && snapshotLocks.get(directory) === lock) snapshotLocks.delete(directory)
+    },
+  }
 }
 
 export function workbenchChangeSummary(snapshot: WorkbenchChangeSnapshot): WorkbenchChangeSummary {
@@ -117,6 +138,9 @@ function pruneWorkbenchSnapshots() {
   snapshots.forEach((items, directory) => {
     const current = items.filter((snapshot) => snapshot.createdAt >= cutoff).slice(0, 2)
     if (current.length > 0) snapshots.set(directory, current)
-    else snapshots.delete(directory)
+    else {
+      snapshots.delete(directory)
+      if (snapshotLocks.get(directory)?.users === 0) snapshotLocks.delete(directory)
+    }
   })
 }

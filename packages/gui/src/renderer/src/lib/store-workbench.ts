@@ -132,8 +132,8 @@ export async function deleteWorkbenchFile(gui: GuiClient, path: string, director
   }, directory)
 }
 
-export async function workbenchGitBranches(gui: GuiClient, directory?: string): Promise<WorkbenchGitBranches> {
-  return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", {}, directory)
+export async function workbenchGitBranches(gui: GuiClient, directory?: string, signal?: AbortSignal): Promise<WorkbenchGitBranches> {
+  return pluginApi<WorkbenchGitBranches>(gui, "/experimental/opencodex/workbench/git/branches", { signal }, directory)
 }
 
 export function initializeWorkbenchGit(gui: GuiClient, directory?: string, signal?: AbortSignal) {
@@ -144,13 +144,14 @@ export function initializeWorkbenchGit(gui: GuiClient, directory?: string, signa
 
 export function workbenchChanges(
   gui: GuiClient,
-  input: { directory?: string; path?: string; cursor?: string; revision?: string; limit?: number; signal?: AbortSignal } = {},
+  input: { directory?: string; path?: string; cursor?: string; revision?: string; limit?: number; metadata?: boolean; signal?: AbortSignal } = {},
 ): Promise<WorkbenchChangesPage> {
   return gui.client.opencodex.workbench.changes.page({
     directory: input.directory || gui.directory || undefined,
     path: input.path,
     cursor: input.cursor,
     revision: input.revision,
+    metadata: input.metadata === undefined ? undefined : input.metadata ? "true" : "false",
     limit: input.limit === undefined ? undefined : String(input.limit),
   }, { headers: authHeaders(gui), throwOnError: true, signal: input.signal }).then((result) => result.data)
 }

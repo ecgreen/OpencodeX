@@ -8,7 +8,7 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { File } from "../../src/file"
 import { loadWorkbenchChangePatch, loadWorkbenchChangePatchPage } from "../../src/opencodex/workbench-change-patch"
 import { workbenchChangeSummary } from "../../src/opencodex/workbench-change-snapshot"
-import { listWorkbenchChanges, loadWorkbenchChangeMetrics } from "../../src/opencodex/workbench-changes"
+import { listWorkbenchChanges, loadWorkbenchChangeMetrics, workbenchMode } from "../../src/opencodex/workbench-changes"
 import { workbenchDiagnostics } from "../../src/opencodex/workbench-diagnostics"
 import { workbenchGitHistory } from "../../src/opencodex/workbench-git"
 import { makeOpencodeXWorkbenchGitHandlers } from "../../src/server/routes/instance/httpapi/handlers/opencodex-workbench-git-handlers"
@@ -36,6 +36,29 @@ describe("OpencodeX Workbench Git", () => {
       repository: {},
       patches: new Map(),
     })).toMatchObject({ fileCount: 2, additions: 2, deletions: 1, metricsResolved: 2, metricsComplete: true })
+  })
+
+  test("falls back to directory mode when the git spawn itself fails", async () => {
+    // runWorkbenchGit reports exitCode -1 when the process never spawns at all
+    // (e.g. git missing from PATH, transient spawn errors) instead of running
+    // and exiting. That must degrade to "directory" mode like a missing repo
+    // (exit 128) rather than surfacing as an "error" mode.
+    const failingProcess = {
+      run: () =>
+        Effect.succeed({
+          command: "git",
+          exitCode: -1,
+          stdout: Buffer.alloc(0),
+          stderr: Buffer.from("spawn git ENOENT"),
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+    } as unknown as AppProcess.Interface
+    const layer = Layer.succeed(AppProcess.Service, failingProcess)
+
+    const result = await Effect.runPromise(workbenchMode("C:/does-not-matter").pipe(Effect.provide(layer)))
+
+    expect(result).toEqual({ mode: "directory" })
   })
 
   changesIt.instance(
@@ -148,6 +171,41 @@ describe("OpencodeX Workbench Git", () => {
         await mustGit(directory, ["commit", "--no-gpg-sign", "-m", "add tracked"])
       }),
     },
+  )
+
+  changesIt.instance(
+    "shares a snapshot between concurrent initial manifest requests",
+    () => Effect.gen(function* () {
+      const [first, second] = yield* Effect.all([
+        listWorkbenchChanges({ limit: 1 }),
+        listWorkbenchChanges({ limit: 1 }),
+      ], { concurrency: 2 })
+      expect(first.ok).toBe(true)
+      expect(second.ok).toBe(true)
+      expect(second.revision).toBe(first.revision)
+
+      const refreshed = yield* listWorkbenchChanges({ limit: 1 })
+      expect(refreshed.revision).not.toBe(first.revision)
+    }),
+    { git: true },
+  )
+
+  changesIt.instance(
+    "loads repository metadata outside the change snapshot",
+    () => Effect.gen(function* () {
+      const page = yield* listWorkbenchChanges({ limit: 1 })
+      expect(page.branch).toBeUndefined()
+
+      const handlers = makeOpencodeXWorkbenchGitHandlers()
+      const compatible = yield* handlers.workbenchChanges({ query: {} })
+      expect(compatible.branch).toBeString()
+
+      const branches = yield* handlers.workbenchGitBranches()
+      expect(branches.ok).toBe(true)
+      if (!branches.current) throw new Error("Expected a current branch")
+      expect(branches.branches).toContain(branches.current)
+    }),
+    { git: true },
   )
 
   changesIt.instance(

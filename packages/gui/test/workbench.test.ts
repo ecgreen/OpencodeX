@@ -921,10 +921,11 @@ describe("Workbench store wrappers", () => {
       },
     } as unknown as GuiClient
 
-    expect(await workbenchChanges(gui, { path: "", limit: 100, signal: controller.signal })).toMatchObject({ mode: "directory", next: "next" })
+    expect(await workbenchChanges(gui, { path: "", limit: 100, metadata: false, signal: controller.signal })).toMatchObject({ mode: "directory", next: "next" })
     expect(await workbenchChangeMetricsPage(gui, { revision: "rev-1", limit: 32, signal: controller.signal })).toMatchObject({ summary: { additions: 1 } })
     expect(await workbenchChangePatchPage(gui, { path: "src/app.ts", revision: "rev-1", context: 8, signal: controller.signal })).toMatchObject({ path: "src/app.ts", patch: "@@" })
     expect(calls.map((call) => call.kind)).toEqual(["page", "metrics", "patch-page"])
+    expect(calls[0]?.input).toMatchObject({ metadata: "false" })
     expect(calls.every((call) => call.signal === controller.signal)).toBe(true)
   })
 

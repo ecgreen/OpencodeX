@@ -7049,6 +7049,12 @@ export type OpencodexWorkbenchGitBranchesResponses = {
     message?: string
     current?: string
     branches: Array<string>
+    defaultBranch?: string
+    upstream?: string
+    ahead?: number
+    behind?: number
+    remoteUrl?: string
+    githubUrl?: string
   }
 }
 
@@ -7064,6 +7070,7 @@ export type OpencodexWorkbenchChangesPageData = {
     path?: string
     cursor?: string
     revision?: string
+    metadata?: "true" | "false"
     limit?: string
   }
   url: "/experimental/opencodex/workbench/changes/page"

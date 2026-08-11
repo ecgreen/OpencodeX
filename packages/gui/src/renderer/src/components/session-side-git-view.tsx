@@ -132,7 +132,8 @@ export function SessionSideDiffPanel(props: {
             {` · ${props.controller.summary().fileCount} file${props.controller.summary().fileCount === 1 ? "" : "s"} `}
             <b class="diff-additions">+{props.controller.summary().additions}</b>
             {" "}<b class="diff-deletions">-{props.controller.summary().deletions}</b>
-            <Show when={!props.controller.summary().metricsComplete}>{` · Measuring ${props.controller.summary().metricsResolved}/${props.controller.summary().metricsTotal}`}</Show>
+            <Show when={!props.controller.manifestComplete()}>{` · ${props.controller.loading() ? "Loading" : "Loaded"} ${props.controller.manifestLoaded()}/${props.controller.manifestTotal()} changes`}</Show>
+            <Show when={props.controller.manifestComplete() && !props.controller.summary().metricsComplete}>{` · Measuring ${props.controller.summary().metricsResolved}/${props.controller.summary().metricsTotal}`}</Show>
             <Show when={props.controller.refreshing()}> · Refreshing</Show>
             <Show when={props.controller.repository().ahead}>{` · ${props.controller.repository().ahead} ahead`}</Show>
             <Show when={props.controller.repository().behind}>{` · ${props.controller.repository().behind} behind`}</Show>
@@ -146,7 +147,9 @@ export function SessionSideDiffPanel(props: {
       </header>
       <Show when={props.controller.ready()} fallback={
         <Show when={!props.controller.error()} fallback={<div class="session-side-empty"><span>{props.controller.error()}</span><Button appearance="ghost" size="compact" onClick={() => void props.controller.refresh()}>Retry</Button></div>}>
-          <LoadingState class="session-side-diff-loading" title="Loading changes" description="Reading change paths without file contents." />
+          <Show when={props.controller.loading()} fallback={<div class="session-side-empty"><span>{props.controller.available() ? "Git changes are not loaded." : "Waiting for a workspace connection."}</span><Show when={props.controller.available()}><Button appearance="ghost" size="compact" onClick={() => void props.controller.refresh()}>Retry</Button></Show></div>}>
+            <LoadingState class="session-side-diff-loading" title={props.controller.slowLoading() ? "Still reading changes" : "Loading changes"} description={props.controller.slowLoading() ? "This workspace is taking longer than usual. Git is still scanning changed paths." : "Reading change paths without file contents."} />
+          </Show>
         </Show>
       }>
         <div class="session-side-diff-body">
