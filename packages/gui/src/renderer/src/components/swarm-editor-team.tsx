@@ -39,6 +39,17 @@ export function SwarmEditorTeam(props: {
   const selectedSkillChoice = createMemo(() =>
     selectedSkillChoices().find((choice) => choice.id === selected()?.skill),
   )
+  const selectedModel = createMemo(() => {
+    const role = selected()
+    if (!role?.providerID || !role.modelID) return
+    return props.providers.find((item) => item.id === role.providerID)?.models[role.modelID]
+  })
+  // Keep the option collection stable when only the selected effort changes.
+  const selectedEffortChoices = createMemo(() => ["default", ...Object.keys(selectedModel()?.variants ?? {})])
+  const selectedEffort = createMemo(() => {
+    const variant = selected()?.variant
+    return variant && selectedEffortChoices().includes(variant) ? variant : "default"
+  })
   const modelSummary = (role: OpencodeXSwarmRoleInput) => {
     if (!role.providerID || !role.modelID) return undefined
     const provider = props.providers.find((item) => item.id === role.providerID)
@@ -47,15 +58,6 @@ export function SwarmEditorTeam(props: {
   }
   const providerDisconnected = (role: OpencodeXSwarmRoleInput) =>
     Boolean(role.providerID) && !props.connectedProviderIDs.includes(role.providerID!)
-  /** The effort levels the chosen model offers; empty means no choice to make. */
-  const modelVariants = (role: OpencodeXSwarmRoleInput) => {
-    if (!role.providerID || !role.modelID) return []
-    const model = props.providers.find((item) => item.id === role.providerID)?.models[role.modelID]
-    return Object.keys(model?.variants ?? {})
-  }
-  const effortChoices = (role: OpencodeXSwarmRoleInput) => ["default", ...modelVariants(role)]
-  const selectedEffort = (role: OpencodeXSwarmRoleInput) =>
-    role.variant && modelVariants(role).includes(role.variant) ? role.variant : "default"
   const effortLabel = (value: string) => (value === "default" ? "Default" : value.charAt(0).toUpperCase() + value.slice(1))
 
   function updateSkill(index: number, skill: string) {
@@ -216,19 +218,21 @@ export function SwarmEditorTeam(props: {
                   </Show>
                   <Icon name="chevronRight" />
                 </Button>
-                <Show when={modelVariants(role()).length > 0}>
+                <Show when={selectedEffortChoices().length > 1}>
                   <Select<string>
                     label="Effort"
-                    options={effortChoices(role())}
-                    current={selectedEffort(role())}
+                    options={selectedEffortChoices()}
+                    current={selectedEffort()}
                     optionValue={(value) => value}
                     optionLabel={effortLabel}
-                    onSelect={(value) =>
+                    onSelect={(value) => {
+                      const variant = value && value !== "default" ? value : undefined
+                      if (variant === role().variant) return
                       props.update(props.selectedIndex, (current) => ({
                         ...current,
-                        variant: value && value !== "default" ? value : undefined,
+                        variant,
                       }))
-                    }
+                    }}
                   />
                 </Show>
                 <Show when={providerDisconnected(role())}>

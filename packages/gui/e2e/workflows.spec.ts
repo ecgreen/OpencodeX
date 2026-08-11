@@ -65,22 +65,47 @@ test("completes project, session, swarm, view, menu, and keyboard workflows", as
     await page.locator(".swarm-roster-row").nth(roleIndex).click()
     await page.locator(".swarm-model-button").click()
     await expect(page.locator(".model-picker-modal")).toBeVisible()
-    await page.locator(".model-picker-section-toggle").first().click()
-    await page.locator(".model-option-select").first().click()
+    await page.getByPlaceholder("Search models, providers, or swarms").fill("Test Model")
+    await page.locator(".model-option-select", { hasText: "Test Model" }).click()
     await expect(page.locator(".model-picker-modal")).toHaveCount(0)
   }
+  const effort = page.locator('.swarm-role-model [data-ui="field"]', { hasText: "Effort" })
+  await effort.getByRole("button").click()
+  await page.getByRole("option", { name: "Fast", exact: true }).click()
+  await expect(effort.getByRole("button")).toContainText("Fast")
+  await expect(page.locator(".swarm-roster-row").nth(1)).toContainText("fast")
   await expect(page.locator(".swarm-editor-status")).toHaveCount(0)
   await page.getByRole("textbox", { name: "Name", exact: true }).first().fill("GUI Acceptance Swarm")
-  await page.getByRole("button", { name: "Create swarm", exact: true }).click()
+  const createStarted = Promise.withResolvers<void>()
+  const releaseCreate = Promise.withResolvers<void>()
+  let createRequests = 0
+  await page.route("**/experimental/opencodex/swarm*", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue()
+      return
+    }
+    createRequests++
+    createStarted.resolve()
+    await releaseCreate.promise
+    await route.continue()
+  })
+  const createSwarmButton = page.getByRole("button", { name: "Create swarm", exact: true })
+  await createSwarmButton.click()
+  await createStarted.promise
+  await expect(page.getByRole("button", { name: "Saving...", exact: true })).toBeDisabled()
+  releaseCreate.resolve()
   // Creating lands back on the catalog; the new team is a card that opens the
   // editor (viewing and editing are the same page).
   const swarmCard = page.locator(".swarm-card", { hasText: "GUI Acceptance Swarm" })
   await expect(swarmCard).toBeVisible()
+  expect(createRequests).toBe(1)
+  await page.unroute("**/experimental/opencodex/swarm*")
   await swarmCard.locator(".swarm-card-open").click()
   await expect(page.getByRole("heading", { name: "Edit Swarm" })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Name", exact: true }).first()).toHaveValue("GUI Acceptance Swarm")
   await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible()
   await expect(page.locator(".swarm-roster-row")).toHaveCount(2)
+  await expect(page.locator(".swarm-roster-row").nth(1)).toContainText("fast")
   await page.locator(".swarm-editor-actions").getByRole("button", { name: "Close", exact: true }).click()
   // Swarms are models now: the picker's Swarms section lists the new team.
   await page.getByRole("button", { name: /GUI Acceptance Session/ }).first().click()

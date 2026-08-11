@@ -61,7 +61,7 @@ export function SwarmEditorRoute(props: { model: GuiAppModel }) {
       swarm={swarm()}
       initialProjectID={route()?.projectID}
       recentModels={props.model.sessionState.recentModels()}
-      save={(input) => void props.model.notices.run(() => props.model.management.saveSwarm(input))}
+      save={(input) => props.model.notices.run(() => props.model.management.saveSwarm(input))}
       cancel={() => props.model.navigation.setRoute({ name: "swarms" })}
       deleteSwarm={(swarmID, name) =>
         void props.model.notices.run(() => props.model.management.deleteSwarm(swarmID, name))

@@ -117,6 +117,7 @@ const backend = spawn(
                     limit: { context: 100_000, output: 10_000 },
                     cost: { input: 0, output: 0 },
                     options: {},
+                    variants: { fast: {}, slow: {} },
                   },
                 },
                 options: { apiKey: "test-key", baseURL: new URL("/v1", llm.url).href },
