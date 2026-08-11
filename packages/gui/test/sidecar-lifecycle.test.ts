@@ -158,7 +158,9 @@ describe("sidecar lifecycle", () => {
 
   test("awaits startup cancellation and captured child cleanup on quit", async () => {
     const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-      detached: process.platform !== "win32",
+      // Mirrors the production spawn: detached on every platform so a console
+      // signal aimed at the spawner cannot take the coordinator down with it.
+      detached: true,
       stdio: "ignore",
       windowsHide: true,
     })

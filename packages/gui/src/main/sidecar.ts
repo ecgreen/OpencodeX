@@ -227,7 +227,13 @@ async function spawnCoordinator(directory: string, key: string, database: string
     try {
       const spawned = spawn(started.command, started.args, {
         cwd: started.cwd,
-        detached: process.platform !== "win32",
+        /* Detached everywhere, including Windows: a non-detached child shares
+           the dev terminal's console process group, so a Ctrl-C aimed at the
+           GUI dev process also signals the coordinator - which then shuts down
+           gracefully even while an attached TUI still holds a client lease.
+           `windowsHide` keeps the detached child from opening a console
+           window. */
+        detached: true,
         stdio: ["ignore", startupLog, startupLog],
         env: {
           ...process.env,

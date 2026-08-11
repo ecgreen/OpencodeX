@@ -22,6 +22,7 @@ import { MAIN_PERFORMANCE_MILESTONES, markMainPerformance } from "./performance.
 import { loopbackSidecarURL } from "./sidecar-connection.js"
 import { createSidecarLifecycle } from "./sidecar-lifecycle.js"
 import { attachEditContextMenu } from "./context-menu.js"
+import { nextZoomLevel, zoomShortcutAction } from "./zoom-shortcuts.js"
 
 markMainPerformance(MAIN_PERFORMANCE_MILESTONES.bootstrap)
 const isDev = !app.isPackaged
@@ -178,6 +179,13 @@ async function createWindow() {
     openExternalURL(url)
   })
   attachEditContextMenu(window.webContents)
+  window.webContents.on("before-input-event", (event, input) => {
+    const action = zoomShortcutAction(input, process.platform)
+    if (!action) return
+    // Also stops the default menu's zoomOut accelerator from double-firing.
+    event.preventDefault()
+    window.webContents.zoomLevel = nextZoomLevel(window.webContents.zoomLevel, action)
+  })
 
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.rendererLoadStarted)
   if (isDev) {
