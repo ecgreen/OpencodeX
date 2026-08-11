@@ -51,7 +51,7 @@ export async function listWorkbenchFiles(gui: GuiClient, path: string, directory
 export async function readWorkbenchFile(gui: GuiClient, path: string, directory?: string, signal?: AbortSignal, root?: string): Promise<WorkbenchFileRead | undefined> {
   if (root) {
     const exact = await exactWorkbenchFileRead(gui, path, directory, signal, root)
-    if (!exact.ok) return
+    if (!exact.ok) return undefined
     return boundedWorkbenchFile({
       type: "text",
       content: exact.content ?? "",
@@ -64,7 +64,7 @@ export async function readWorkbenchFile(gui: GuiClient, path: string, directory?
     path,
     maxBytes: String(WORKBENCH_PREVIEW_FILE_BYTES),
   }, { headers: authHeaders(gui), throwOnError: true, signal }).then((x) => x.data)
-  if (!received) return
+  if (!received) return undefined
   const file: FileContent = received.encoding === "base64" ? { ...received, type: "binary" } : received
   const initial = boundedWorkbenchFile(file)
   if (file.type !== "text" || initial.mode === "metadata") return initial
@@ -343,11 +343,11 @@ export async function togglePlugin(gui: GuiClient, input: { id: string; enabled:
 async function pluginApi<T>(gui: GuiClient, pathname: string, init: RequestInit = {}, directory?: string): Promise<T> {
   const url = new URL(pathname, gui.url)
   if (directory || gui.directory) url.searchParams.set("directory", directory || gui.directory)
-  const headers = {
+  const headers = new Headers({
     ...(init.body === undefined ? {} : { "content-type": "application/json" }),
-    ...(authHeaders(gui) ?? {}),
-    ...(init.headers ?? {}),
-  }
+    ...authHeaders(gui),
+  })
+  new Headers(init.headers).forEach((value, key) => headers.set(key, value))
   const response = await fetch(url, {
     ...init,
     headers,

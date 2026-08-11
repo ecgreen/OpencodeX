@@ -109,7 +109,7 @@ function valueWeight(value: unknown, cap: number): number {
     return Math.min(cap, value.reduce((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
   }
   if (typeof value === "object" && value !== null) {
-    return Math.min(cap, Object.values(value as Record<string, unknown>).reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
+    return Math.min(cap, Object.values(value as Record<string, unknown>).reduce((total: number, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
   }
   return 8
 }

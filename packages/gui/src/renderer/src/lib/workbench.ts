@@ -252,7 +252,7 @@ export function workbenchDiffCopyText(diff: WorkbenchDiffFile | undefined) {
 }
 
 export function workbenchUnsavedBufferDiff(buffer: Pick<WorkbenchFileBuffer, "path" | "content" | "original"> | undefined) {
-  if (!buffer || !workbenchBufferDirty(buffer)) return
+  if (!buffer || !workbenchBufferDirty(buffer)) return undefined
   const rows = workbenchLineDiffRows(buffer.original, buffer.content)
   return {
     file: workbenchPathKey(buffer.path),

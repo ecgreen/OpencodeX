@@ -39,10 +39,10 @@ export function createSessionSideFileController(input: {
   const MAX_EXPLORER_NODES = 2_000
   const [busy, setBusy] = createSignal(false)
   const [filesByPath, setFilesByPath] = createSignal<Record<string, FileNode[]>>({})
-  const [expandedFolders, setExpandedFolders] = createSignal<Set<string>>(new Set())
+  const [expandedFolders, setExpandedFolders] = createSignal(new Set<string>())
   // Folders the user collapsed while a filter auto-expanded them. Cleared on
   // every filter change so each new query re-reveals its matches fresh.
-  const [collapsedFolders, setCollapsedFolders] = createSignal<Set<string>>(new Set())
+  const [collapsedFolders, setCollapsedFolders] = createSignal(new Set<string>())
   const [filter, setFilter] = createSignal("")
   const [matches, setMatches] = createSignal<FileNode[]>([])
   const [searchState, setSearchState] = createSignal<"idle" | "loading" | "error">("idle")
