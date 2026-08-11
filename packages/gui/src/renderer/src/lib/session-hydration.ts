@@ -32,8 +32,8 @@ type CachedSessionData = Record<string, { data: SessionData; loadedTime: number 
 export const SESSION_MESSAGE_PAGE_LIMIT = 128
 export const VIEW_MESSAGE_PAGE_LIMIT = 48
 export const LOAD_MORE_MESSAGE_MULTIPLIER = 3
-export const SESSION_MESSAGE_WINDOW = { count: 128, budget: 100_000 }
-export const VIEW_MESSAGE_WINDOW = { count: 48, budget: 28_000 }
+export const SESSION_MESSAGE_WINDOW = { count: 128, budget: 100_000, minCount: 16 }
+export const VIEW_MESSAGE_WINDOW = { count: 48, budget: 28_000, minCount: 8 }
 
 export async function runSelectedSessionSync(input: {
   force?: boolean

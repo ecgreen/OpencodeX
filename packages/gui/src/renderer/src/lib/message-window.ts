@@ -3,6 +3,13 @@ import type { MessageBundle, SessionData } from "./session-api"
 export type MessageWindow = {
   count: number
   budget: number
+  /**
+   * The budget never trims below this many messages. Without a floor, one
+   * heavy message (a logger-style turn with dozens of tool outputs) outweighs
+   * the whole budget by itself and the transcript collapses to a single
+   * message plus "Load more" - the reader must always keep scroll context.
+   */
+  minCount: number
 }
 
 export type MessagePage = {
@@ -24,7 +31,7 @@ export function prependOlderMessages(data: SessionData, page: MessagePage): Sess
  * but not an unbounded one: without a ceiling an expanded transcript keeps every
  * message the session ever streams and the renderer degrades with it.
  */
-export const EXPANDED_MESSAGE_WINDOW: MessageWindow = { count: 384, budget: 300_000 }
+export const EXPANDED_MESSAGE_WINDOW: MessageWindow = { count: 384, budget: 300_000, minCount: 32 }
 
 export function trimToLiveTail(data: SessionData, limit: number | MessageWindow): SessionData {
   const window = messagesFromEnd(data.messages, data.messageWindowExpanded ? EXPANDED_MESSAGE_WINDOW : limit)
@@ -68,7 +75,7 @@ function messagesFromEnd(messages: MessageBundle[], input: number | MessageWindo
   for (const message of messages.toReversed()) {
     if (selected.length >= limit.count) break
     const weight = messageWeight(message)
-    if (selected.length > 0 && budget + weight > limit.budget) break
+    if (selected.length >= Math.max(1, limit.minCount) && budget + weight > limit.budget) break
     selected.unshift(message)
     budget += weight
   }
@@ -76,7 +83,7 @@ function messagesFromEnd(messages: MessageBundle[], input: number | MessageWindo
 }
 
 function messageWindow(input: number | MessageWindow): MessageWindow {
-  if (typeof input === "number") return { count: input, budget: Number.POSITIVE_INFINITY }
+  if (typeof input === "number") return { count: input, budget: Number.POSITIVE_INFINITY, minCount: 1 }
   return input
 }
 
