@@ -54,3 +54,33 @@ OpencodeX has a documented upstream policy in `docs/UPSTREAM.md`, `upstream/lock
 - The upstream lock advances only after migration, SDK, package, CLI, GUI, and surface-policy gates pass and the sync PR merges.
 
 The policy also states that the first formal upstream sync has not run yet. Mobile integrations should therefore prefer upstream SDK/contracts, negotiate OpencodeX-specific capabilities explicitly, and pin tested OpencodeX compatibility until that process has demonstrated its cadence in practice.
+
+## 2026-08-12 Streaming Incident
+
+The reported duplicate prompts, dropped output, and permission-stream aborts exposed two independent failure domains on the development machine.
+
+### Split Live Event Buses
+
+Two OpencodeX servers were listening on port 4096 at the same time:
+
+- The TUI coordinator listened on `127.0.0.1:4096`.
+- The launchd hub listened on `0.0.0.0:4096` for LAN and Tailscale clients.
+
+Both processes opened the same SQLite database, but `/global/event` fanout is process-local. Loopback clients therefore received coordinator events while mobile clients received hub events. Persisted messages became visible to either process on transcript refetch, which explains why session re-entry could reveal messages that never arrived live.
+
+No `workspace` rows existed, and the affected session had no `workspace_id`, so the hub adapter was not bridging these process-local buses. The installed servers emitted 10-second heartbeats; no server-side SSE idle timeout was found.
+
+Operational remediation must make one process authoritative or explicitly configure and attach the hub workspace. Do not point a local hub adapter at `127.0.0.1:4096` while the coordinator owns that address; use the LAN or Tailscale address so it reaches the launchd hub.
+
+### Durable Command Replay
+
+The affected Claude session contained one persisted user row for each reported prompt, not three. The "design doc" command had `claim_generation = 3`, showing that the same durable command was reclaimed multiple times rather than submitted as three separate messages.
+
+The command recovery loop previously waited behind a valid foreign command lease. If that owner's heartbeat later lapsed, the waiting recovery fiber reclaimed and resent the command to the external Claude driver. The fix on this branch:
+
+- treats an actively foreign-owned command as occupied and exits that recovery attempt;
+- starts the command heartbeat immediately after claim, including while waiting for the session execution turn;
+- wakes queued and expired predecessor commands together when a new prompt arrives;
+- still permits an explicit later recovery pass to reclaim a command after its lease expires.
+
+Permission requests and message events share the event stream, but permission requests themselves are durable in `session_interaction` and recoverable through authoritative state or `GET /permission`. `AbortError: Stream closed` identifies a client, sidecar, or external-driver transport interruption; it is not evidence that the permission row was lost.
