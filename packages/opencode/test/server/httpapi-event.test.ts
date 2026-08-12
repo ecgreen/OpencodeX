@@ -1,7 +1,9 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Layer, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
+import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
+import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -14,6 +16,22 @@ const EventData = Schema.Struct({
   type: Schema.String,
   properties: Schema.Record(Schema.String, Schema.Any),
 })
+
+const GlobalEventData = Schema.Union([
+  Schema.Struct({
+    directory: Schema.String,
+    project: Schema.optional(Schema.String),
+    workspace: Schema.optional(Schema.String),
+    payload: EventData,
+  }),
+  Schema.Struct({
+    payload: Schema.Struct({
+      id: Schema.optional(Schema.String),
+      type: Schema.Literals(["server.connected", "server.heartbeat"]),
+      properties: Schema.Record(Schema.String, Schema.Any),
+    }),
+  }),
+])
 
 const readEvent = (reader: Queue.Dequeue<Uint8Array>) =>
   Effect.gen(function* () {
@@ -31,6 +49,46 @@ const openEventStream = (directory: string) =>
     const response = yield* requestInDirectory(EventPaths.event, directory)
     const reader = yield* Queue.unbounded<Uint8Array>()
     yield* response.stream.pipe(
+      Stream.runForEach((value) => Queue.offer(reader, value)),
+      Effect.forkScoped,
+    )
+    return { response, reader }
+  })
+
+const readGlobalEvent = (reader: Queue.Dequeue<typeof GlobalEventData.Type>) =>
+  Queue.take(reader).pipe(
+    Effect.timeoutOrElse({
+      duration: "5 seconds",
+      orElse: () => Effect.fail(new Error("timed out waiting for global event")),
+    }),
+  )
+
+const readGlobalEventMatching = (
+  reader: Queue.Dequeue<typeof GlobalEventData.Type>,
+  predicate: (event: typeof GlobalEventData.Type) => boolean,
+): Effect.Effect<typeof GlobalEventData.Type, Error> =>
+  Effect.suspend(() =>
+    Queue.take(reader).pipe(
+      Effect.flatMap((event) =>
+        predicate(event) ? Effect.succeed(event) : readGlobalEventMatching(reader, predicate),
+      ),
+    ),
+  ).pipe(
+    Effect.timeoutOrElse({
+      duration: "5 seconds",
+      orElse: () => Effect.fail(new Error("timed out waiting for matching global event")),
+    }),
+  )
+
+const openGlobalEventStream = (directory: string) =>
+  Effect.gen(function* () {
+    const response = yield* requestInDirectory(GlobalPaths.event, directory)
+    const reader = yield* Queue.unbounded<typeof GlobalEventData.Type>()
+    yield* response.stream.pipe(
+      Stream.decodeText(),
+      Stream.splitLines,
+      Stream.filter((line) => line.startsWith("data:")),
+      Stream.map((line) => Schema.decodeUnknownSync(GlobalEventData)(JSON.parse(line.slice(5).trimStart()))),
       Stream.runForEach((value) => Queue.offer(reader, value)),
       Effect.forkScoped,
     )
@@ -91,6 +149,54 @@ describe("event HttpApi", () => {
         const created = yield* requestInDirectory("/session", directory, { method: "POST" })
         expect(created.status).toBe(200)
         expect(yield* readEvent(reader)).toMatchObject({ type: "session.created" })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+})
+
+describe("global event HttpApi", () => {
+  it.instance(
+    "delivers another client's prompt to an existing subscriber without refetching",
+    () =>
+      Effect.gen(function* () {
+        const { directory } = yield* TestInstance
+        const created = yield* requestInDirectory(SessionPaths.create, directory, { method: "POST" })
+        expect(created.status).toBe(200)
+        const session = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(yield* created.json)
+
+        const { response, reader } = yield* openGlobalEventStream(directory)
+        expect(response.status).toBe(200)
+        expect(yield* readGlobalEvent(reader)).toMatchObject({
+          payload: { type: "server.connected", properties: {} },
+        })
+
+        const text = "cross-client realtime prompt"
+        const prompt = yield* requestInDirectory(
+          SessionPaths.prompt.replace(":sessionID", session.id),
+          directory,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ agent: "build", noReply: true, parts: [{ type: "text", text }] }),
+          },
+        )
+        expect(prompt.status).toBe(200)
+
+        const partEvent = yield* readGlobalEventMatching(reader, (event) => event.payload.type === "message.part.updated")
+        expect(partEvent).toMatchObject({
+          directory,
+          payload: {
+            type: "message.part.updated",
+            properties: { part: { sessionID: session.id, type: "text", text } },
+          },
+        })
+
+        const messages = yield* requestInDirectory(
+          SessionPaths.messages.replace(":sessionID", session.id),
+          directory,
+        )
+        expect(messages.status).toBe(200)
+        expect(JSON.stringify(yield* messages.json)).toContain(text)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
