@@ -14,8 +14,8 @@ export function packagedExecutableCandidates(root: string) {
   }
   if (process.platform === "darwin") {
     return [
-      path.join(root, "release", "mac", "OpencodeX.app", "Contents", "MacOS", "opencodex-gui"),
-      path.join(root, "release", "mac-arm64", "OpencodeX.app", "Contents", "MacOS", "opencodex-gui"),
+      path.join(root, "release", "mac", "opencodex-gui.app", "Contents", "MacOS", "opencodex-gui"),
+      path.join(root, "release", "mac-arm64", "opencodex-gui.app", "Contents", "MacOS", "opencodex-gui"),
     ]
   }
   return [path.join(root, "release", "linux-unpacked", "opencodex-gui")]
