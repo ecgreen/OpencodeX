@@ -45,4 +45,12 @@ It does not prove that every deployed server/network path has low latency, so mo
 
 ## Upstream Strategy Finding
 
-OpencodeX currently retains upstream-compatible OpenCode HTTP contracts where practical, while adding fork-specific capabilities. The mobile client should prefer upstream SDK/contracts and negotiate OpencodeX-specific behavior explicitly. The repository's longer-term merge/rebase cadence with upstream OpenCode is not documented clearly enough to assume automatic compatibility; this remains a maintainer decision to clarify with ecgreen.
+OpencodeX has a documented upstream policy in `docs/UPSTREAM.md`, `upstream/lock.json`, and `upstream/policy.json`:
+
+- A monthly workflow detects new upstream OpenCode releases without merging them automatically.
+- A manual sync report and merge-tree rehearsal measure API, storage, provider, dependency, frontend, and shared-seam changes.
+- Actual updates use a dedicated `chore/upstream-vX.Y.Z` branch and draft PR.
+- Upstream-owned backend changes are accepted where compatible, fork-owned paths are preserved, and shared seams receive manual review.
+- The upstream lock advances only after migration, SDK, package, CLI, GUI, and surface-policy gates pass and the sync PR merges.
+
+The policy also states that the first formal upstream sync has not run yet. Mobile integrations should therefore prefer upstream SDK/contracts, negotiate OpencodeX-specific capabilities explicitly, and pin tested OpencodeX compatibility until that process has demonstrated its cadence in practice.
