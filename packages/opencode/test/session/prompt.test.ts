@@ -666,7 +666,7 @@ it.instance("cancel marks both active and queued prompt intents terminal", () =>
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const { db } = yield* Database.Service
-    const chat = yield* sessions.create({})
+    const chat = yield* sessions.create({ title: "Pinned" })
     yield* llm.hang
 
     yield* prompt.promptAsync({
