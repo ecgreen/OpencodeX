@@ -12,7 +12,7 @@ import {
   type MessageBoxOptions,
 } from "electron"
 import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
-import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
+import { type SidecarConnection, startSidecar, stopSidecar, waitForSidecarShutdown } from "./sidecar.js"
 import { editorCommand } from "./editor-command.js"
 import { registerBrowserIpc, secureSession } from "./browser-ipc.js"
 import { registerNotificationIpc } from "./notification-ipc.js"
@@ -46,6 +46,7 @@ const sidecarLifecycle = createSidecarLifecycle({
     authorizedSidecar = undefined
   },
   stop: stopSidecar,
+  awaitStopped: waitForSidecarShutdown,
 })
 
 function appIconPath() {
@@ -90,6 +91,10 @@ function ensureSidecar() {
 
 function stopOwnedSidecar() {
   return sidecarLifecycle.stop()
+}
+
+async function restartSidecar() {
+  return sidecarLifecycle.restart()
 }
 
 function registerSidecarAuthorization() {
@@ -216,6 +221,14 @@ ipcMain.handle("opencodex:connection", async () => {
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarRequestStarted)
   const connection = await ensureSidecar()
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
+  return { url: connection.url, directory: connection.directory }
+})
+
+ipcMain.handle("opencodex:restart", async (event) => {
+  if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Backend restart is only available from the main OpencodeX window.")
+  }
+  const connection = await restartSidecar()
   return { url: connection.url, directory: connection.directory }
 })
 

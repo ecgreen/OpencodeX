@@ -66,6 +66,8 @@ class CoordinatorVersionMismatchError extends Error {
    cold start well past 15s. The wait loop still returns the moment the
    manifest appears, so the ceiling only matters on slow starts. */
 const START_TIMEOUT = 45_000
+const RESTART_TIMEOUT = 10_000
+const RESTART_POLL_INTERVAL = 150
 const CLIENT_HEARTBEAT_INTERVAL = 2_000
 const state: SidecarState = { generation: 0 }
 
@@ -133,6 +135,25 @@ export async function stopSidecar() {
     child ? stopOwnedCoordinator(child) : undefined,
     startup?.catch(() => undefined),
   ])
+}
+
+export async function waitForSidecarShutdown() {
+  const database = await sidecarDatabase(workingDirectory())
+  const key = coordinatorKey(database)
+  const manifest = await readActiveManifest(key)
+  if (!manifest) return
+  const health = await fetchCoordinatorHealth(manifest)
+  if (health?.active) throw new Error("Backend restart is waiting for active work to finish.")
+
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < RESTART_TIMEOUT) {
+    if (!isCoordinatorProcessAlive(manifest.pid)) {
+      await removeCoordinatorManifest(key, manifest.token).catch(() => undefined)
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_INTERVAL))
+  }
+  throw new Error("Backend restart is waiting for another OpencodeX client to disconnect.")
 }
 
 async function coordinatorConnection(directory: string, signal: AbortSignal) {
