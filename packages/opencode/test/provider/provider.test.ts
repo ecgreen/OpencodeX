@@ -205,6 +205,32 @@ it.instance(
 )
 
 it.instance(
+  "claude code retains configured models after discovery",
+  Effect.gen(function* () {
+    const providers = yield* list
+    const claude = providers[ProviderV2.ID.make("claude-code")]
+    expect(claude).toBeDefined()
+    expect(claude.models[ProviderV2.ModelID.make("claude-opus-5")].name).toBe("Opus 5")
+  }),
+  {
+    config: {
+      provider: {
+        "claude-code": {
+          models: {
+            "claude-opus-5": {
+              name: "Opus 5",
+              reasoning: true,
+              tool_call: true,
+              limit: { context: 1_000_000, output: 64_000 },
+            },
+          },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
   "custom provider with npm package",
   Effect.gen(function* () {
     const providers = yield* list

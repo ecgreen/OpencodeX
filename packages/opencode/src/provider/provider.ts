@@ -1028,6 +1028,7 @@ async function refreshClaudeCodeProvider(state: State, config: Config.Info) {
     return
   }
   const provider = claudeCodeProviderInfo(await refreshClaudeCodeModels()) as Info
+  provider.models = { ...(state.providers[CLAUDE_CODE_PROVIDER_ID]?.models ?? {}), ...provider.models }
   state.providers[CLAUDE_CODE_PROVIDER_ID] = provider
   state.catalog[CLAUDE_CODE_PROVIDER_ID] = provider
 }
