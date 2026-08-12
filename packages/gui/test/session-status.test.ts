@@ -125,7 +125,7 @@ describe("GUI session status parity", () => {
       sessionUiState: {
         ...current.sessionUiState,
         [sessionID]: {
-          ...current.sessionUiState[sessionID]!,
+          ...current.sessionUiState[sessionID],
           seenAt: 200,
           reviewedAt: 200,
         },

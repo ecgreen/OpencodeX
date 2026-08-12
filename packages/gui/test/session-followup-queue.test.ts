@@ -65,7 +65,7 @@ describe("GUI session follow-up queue", () => {
 function followupHarness(input?: { queued?: QueuedSessionPrompt[] }) {
   const session = { id: "session-1" } as Session
   const [running, setRunning] = createSignal(true)
-  const [prompts, setPrompts] = createSignal<QueuedSessionPrompt[]>(input?.queued ?? [])
+  const [prompts, setPrompts] = createSignal(input?.queued ?? [])
   const sent: GuiPromptInfo[] = []
   let dispose!: () => void
   const controller = createRoot((disposer) => {

@@ -125,7 +125,10 @@ function installResizeObserver() {
       })
     },
     restore() {
-      if (descriptor) return Object.defineProperty(globalThis, "ResizeObserver", descriptor)
+      if (descriptor) {
+        Object.defineProperty(globalThis, "ResizeObserver", descriptor)
+        return
+      }
       Reflect.deleteProperty(globalThis, "ResizeObserver")
     },
   }

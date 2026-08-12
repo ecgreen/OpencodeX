@@ -289,8 +289,8 @@ export function make(deps: Deps) {
     const turnProviderID = selected?.providerID ?? providerID
     const turnModelID = (swarm ? swarm.swarmID : modelIdentifier(model)) ?? CLAUDE_CODE_DEFAULT_MODEL_ID
     const turnModel = {
-      providerID: ProviderV2.ID.make(String(turnProviderID)),
-      modelID: ProviderV2.ModelID.make(String(turnModelID)),
+      providerID: ProviderV2.ID.make(turnProviderID),
+      modelID: ProviderV2.ModelID.make(turnModelID),
     }
     return claudeDriver.runTurn({
       sessionID,

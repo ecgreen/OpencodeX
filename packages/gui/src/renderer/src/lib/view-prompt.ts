@@ -96,7 +96,7 @@ function normalizePromptInput(input: string | GuiPromptInfo): GuiPromptInfo {
 }
 
 export function prepareViewPromptSubmission(input: { gui?: GuiClient; item: ViewItem; prompt: GuiPromptInfo }): ViewPromptSubmission | undefined {
-  if (!input.gui || (!input.prompt.input.trim() && input.prompt.parts.length === 0)) return
+  if (!input.gui || (!input.prompt.input.trim() && input.prompt.parts.length === 0)) return undefined
   return { gui: input.gui, item: input.item, draftID: viewItemID(input.item), prompt: input.prompt }
 }
 

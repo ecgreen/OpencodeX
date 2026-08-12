@@ -361,7 +361,7 @@ export function subscribeEvents(
       try {
         const events = await gui.client.global.event({ signal: controller.signal, sseMaxRetryAttempts: 0 })
         const started = await gui.client.sync.start({ directory: gui.directory || undefined })
-        if (started.error || started.data !== true) throw new Error("Workspace sync failed to start")
+        if (started.error || !started.data) throw new Error("Workspace sync failed to start")
         attempt = 0
         for await (const event of events.stream) {
           if (controller.signal.aborted) break

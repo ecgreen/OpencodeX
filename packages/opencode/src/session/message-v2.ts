@@ -12,11 +12,9 @@ import {
   Info,
   OutputLengthError,
   Part,
-  StructuredOutputError,
   SubtaskPart,
   User,
   WithParts,
-  type ToolPart,
 } from "@opencode-ai/core/session/legacy"
 
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -605,10 +603,10 @@ function valueWeight(value: unknown, cap: number): number {
   if (typeof value === "string") return textWeight(value, cap)
   if (typeof value === "number" || typeof value === "boolean") return 24
   if (Array.isArray(value)) {
-    return Math.min(cap, value.reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
+    return Math.min(cap, value.reduce((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
   }
   if (typeof value === "object" && value !== null) {
-    return Math.min(cap, Object.values(value as Record<string, unknown>).reduce<number>((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
+    return Math.min(cap, Object.values(value as Record<string, unknown>).reduce((total, item) => total + valueWeight(item, Math.max(400, cap - total)), 0))
   }
   return 8
 }
@@ -620,7 +618,7 @@ export function stream(sessionID: SessionID) {
     let before: string | undefined
     while (true) {
       const next = yield* page({ sessionID, limit: size, before }).pipe(
-        Effect.catchIf(NotFoundError.isInstance, () =>
+        Effect.catchIf((error) => NotFoundError.isInstance(error), () =>
           Effect.succeed({ items: [] as WithParts[], more: false, cursor: undefined }),
         ),
       )
@@ -749,7 +747,7 @@ export function latest(msgs: WithParts[]) {
 
 function fromStreamError(e: unknown) {
   const parsed = ProviderError.parseStreamError(e instanceof Error ? e.message : e)
-  if (!parsed) return
+  if (!parsed) return undefined
   if (parsed.type === "context_overflow") {
     return new ContextOverflowError(
       {

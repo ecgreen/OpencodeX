@@ -54,7 +54,7 @@ export function createSessionSideBrowserController(input: {
     const signature = `${input.active() ? "1" : "0"}:${tab?.id ?? ""}:${tab?.kind ?? ""}:${tab?.kind === "web" ? tab.url ?? "" : ""}:${obscured ? "parked" : "ready"}`
     void signature
     if (!input.active() || !tab || tab.kind !== "web") {
-      native.hideAll()
+      void native.hideAll()
       return
     }
     if (obscured) {

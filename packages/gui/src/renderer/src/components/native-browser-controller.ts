@@ -100,14 +100,20 @@ export function createNativeBrowserController(input: {
     }
     if (!(await ensure(id))) return
     touchWarm(id)
-    if (!input.active() || input.activeID() !== id) return hide(id)
+    if (!input.active() || input.activeID() !== id) {
+      await hide(id)
+      return
+    }
     const url = input.url(id)?.trim()
     if (!url) {
       await hide(id)
       setLifecycle("ready")
       return
     }
-    if (loadedURLByID.get(id) !== url) return navigate(id, url)
+    if (loadedURLByID.get(id) !== url) {
+      await navigate(id, url)
+      return
+    }
     await syncBounds(id)
     await hideAll(id)
   }

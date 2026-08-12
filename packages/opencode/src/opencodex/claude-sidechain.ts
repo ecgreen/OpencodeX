@@ -111,7 +111,7 @@ export function createSidechainRouter(input: {
         const existing = chains.get(chainID)
         if (existing) return { handled: true, actions: existing.done ? [] : mapThrough(existing, chainID, event) }
         const spawning = mainToolParts.get(chainID)
-        const spawnInput = (spawning?.input ?? {}) as Record<string, unknown>
+        const spawnInput = spawning?.input ?? {}
         const title =
           (typeof spawnInput.description === "string" && spawnInput.description) ||
           (typeof spawnInput.subagent_type === "string" && `${spawnInput.subagent_type} subagent`) ||
@@ -152,7 +152,7 @@ export function createSidechainRouter(input: {
       // mapper.
       const actions: SidechainAction[] = []
       const message = record.message as Record<string, unknown> | undefined
-      const content = Array.isArray(message?.content) ? (message!.content as Array<Record<string, unknown>>) : []
+      const content = Array.isArray(message?.content) ? (message.content as Array<Record<string, unknown>>) : []
       if (record.type === "user") {
         for (const block of content) {
           if (block.type !== "tool_result" || typeof block.tool_use_id !== "string") continue

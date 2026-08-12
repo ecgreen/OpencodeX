@@ -413,7 +413,7 @@ export const layer = Layer.effect(
           }
 
           case "tool-result": {
-            const toolCall = yield* readToolCall(value.id)
+            yield* readToolCall(value.id)
             const rawOutput = toolResultOutput(value)
             const normalized = yield* Effect.forEach(rawOutput.attachments ?? [], (attachment) =>
               attachment.mime.startsWith("image/")
@@ -441,7 +441,7 @@ export const layer = Layer.effect(
           }
 
           case "tool-error": {
-            const toolCall = yield* readToolCall(value.id)
+            yield* readToolCall(value.id)
             yield* failToolCall(value.id, value.error ?? new Error(value.message))
             return
           }

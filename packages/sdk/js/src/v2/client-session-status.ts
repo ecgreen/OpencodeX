@@ -101,16 +101,12 @@ export function isActiveClientSessionStatus(status: ClientDerivedSessionStatus) 
 
 /** Lowercase label, for inline sentence use ("running", "needs input", ...). */
 export function clientSessionStatusLabel(status: ClientDerivedSessionStatus) {
-  switch (status) {
-    case "in_progress":
-      return "running"
-    case "input_needed":
-      return "needs input"
-    case "needs_review":
-      return "ready for review"
-    case "dormant":
-      return "idle"
-  }
+  return {
+    in_progress: "running",
+    input_needed: "needs input",
+    needs_review: "ready for review",
+    dormant: "idle",
+  }[status]
 }
 
 /**

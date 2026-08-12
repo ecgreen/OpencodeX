@@ -106,7 +106,7 @@ export function prepareSessionPromptSubmission(input: {
   questionCount: number
 }): SessionPromptSubmission | undefined {
   const route = sessionPromptRoute(input.route)
-  if (!input.gui || !route || !input.session || (!input.prompt.input.trim() && input.prompt.parts.length === 0) || input.permissionCount > 0 || input.questionCount > 0) return
+  if (!input.gui || !route || !input.session || (!input.prompt.input.trim() && input.prompt.parts.length === 0) || input.permissionCount > 0 || input.questionCount > 0) return undefined
   return { gui: input.gui, route, session: input.session, prompt: input.prompt }
 }
 
@@ -144,6 +144,7 @@ export function prepareSessionPromptSendTarget(input: {
 function sessionPromptRoute(route: { name: string; projectID?: string }): SessionPromptRoute | undefined {
   if (route.name === "session") return { name: "session" }
   if (route.name === "new-session") return { name: "new-session", projectID: route.projectID }
+  return undefined
 }
 
 function normalizePromptInput(input: string | GuiPromptInfo): GuiPromptInfo {

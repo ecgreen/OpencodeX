@@ -3,8 +3,8 @@ import { describe, expect, mock, test } from "bun:test"
 import type { MessageBundle } from "../src/renderer/src/lib/session-api"
 
 // Isolate pure exports from UI modules that load Vite worker URLs unsupported by Bun tests.
-mock.module("@opencode-ai/ui/file", () => ({ File: () => null }))
-mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
+await mock.module("@opencode-ai/ui/file", () => ({ File: () => null }))
+await mock.module("@opencode-ai/ui/markdown", () => ({ Markdown: () => null }))
 
 const { activeTranscriptStreamingPartID, groupTranscriptParts } = await import("../src/renderer/src/components/session-transcript")
 const { toolGroupSummary, toolGroupTitle } = await import("../src/renderer/src/lib/transcript-grouping")

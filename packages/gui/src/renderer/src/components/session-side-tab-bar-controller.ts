@@ -284,9 +284,9 @@ function placeMenu(anchor: HTMLElement | undefined, panel: HTMLElement | undefin
 }
 
 function popupRowsHeight(panel: HTMLElement | undefined, rows: number) {
-  if (!panel) return
+  if (!panel) return undefined
   const items = Array.from(panel.querySelectorAll<HTMLElement>("button")).slice(0, rows)
-  if (items.length === 0) return
+  if (items.length === 0) return undefined
   const style = getComputedStyle(panel)
   return Math.ceil(items.reduce((height, item) => height + item.getBoundingClientRect().height, 0) + Math.max(0, items.length - 1) * (cssPixelValue(style.rowGap) || cssPixelValue(style.gap)) + cssPixelValue(style.paddingTop) + cssPixelValue(style.paddingBottom))
 }

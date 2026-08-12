@@ -380,10 +380,10 @@ function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextA
 }
 
 function promptHistoryOffset(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) {
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return undefined
   const textarea = event.currentTarget
-  if (event.key === "ArrowUp" && textarea.value.slice(0, textarea.selectionStart).includes("\n") === false) return -1
-  if (event.key !== "ArrowDown") return
-  if (textarea.value.slice(textarea.selectionEnd).includes("\n")) return
+  if (event.key === "ArrowUp" && !textarea.value.slice(0, textarea.selectionStart).includes("\n")) return -1
+  if (event.key !== "ArrowDown") return undefined
+  if (textarea.value.slice(textarea.selectionEnd).includes("\n")) return undefined
   return 1
 }
