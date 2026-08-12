@@ -148,7 +148,7 @@ export async function inspectPackage(input: { appDir: string; platform: string; 
   const unpackedLimit = packageLimits.unpacked[key]
   if (!unpackedLimit) throw new Error(`No unpacked package limit is defined for ${key}`)
   const resources = input.platform === "darwin"
-    ? path.join(input.appDir, "OpencodeX.app", "Contents", "Resources")
+    ? path.join(input.appDir, "opencodex-gui.app", "Contents", "Resources")
     : path.join(input.appDir, "resources")
   const archive = path.join(resources, "app.asar")
   if (!existsSync(archive)) throw new Error(`Packaged app.asar is missing: ${archive}`)
