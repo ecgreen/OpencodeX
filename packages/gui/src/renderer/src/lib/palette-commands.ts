@@ -44,6 +44,7 @@ export type PaletteCommandActions = {
   transcriptLastUser: () => void
   focusComposer: () => void
   refresh: () => void | Promise<void>
+  restartBackend: () => void | Promise<void>
   installPlugin: () => void | Promise<void>
   openDocs: () => void
   exitApp: () => void

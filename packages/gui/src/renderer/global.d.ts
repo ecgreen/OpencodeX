@@ -17,6 +17,7 @@ declare global {
   interface Window {
     opencodex?: {
       connection(): Promise<GuiConnection>
+      restart(): Promise<GuiConnection>
       installationID(): Promise<string>
       claude: {
         status(): Promise<ClaudeCodeStatus>

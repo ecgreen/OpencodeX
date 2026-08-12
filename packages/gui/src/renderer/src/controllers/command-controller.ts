@@ -99,6 +99,11 @@ export function createCommandController(input: {
         transcriptLastUser: () => input.sessionActions.moveTranscript("last-user"),
         focusComposer: input.sessionActions.focusComposer,
         refresh: input.authoritative.refresh,
+        restartBackend: () => input.notices.run(async () => {
+          if (!window.opencodex?.restart) throw new Error("Backend restart requires the latest desktop bridge.")
+          await window.opencodex.restart()
+          await input.authoritative.retry()
+        }),
         installPlugin: () => input.navigation.setRoute({ name: "plugins" }),
         openDocs: () => window.open("https://opencode.ai/docs", "_blank", "noopener,noreferrer"),
         exitApp: () => void window.opencodex?.window("close"),

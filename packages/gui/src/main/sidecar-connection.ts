@@ -44,6 +44,14 @@ export function configuredBackendConnectSource(connection: ConfiguredBackendConn
   return connection?.url
 }
 
+export function restartOwnedSidecar<Connection>(
+  configured: ConfiguredBackendConnection | undefined,
+  restart: () => Promise<Connection>,
+) {
+  if (configured) return Promise.reject(new Error("Configured backend restart is not managed by this client."))
+  return restart()
+}
+
 function enabled(value: string | undefined) {
   return value === "1" || value?.toLowerCase() === "true"
 }

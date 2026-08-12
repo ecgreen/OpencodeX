@@ -94,6 +94,67 @@ describe("sidecar lifecycle", () => {
     expect(await restarting).toBe("connection-2")
   })
 
+  test("restarts through the serialized shutdown path", async () => {
+    const events: string[] = []
+    let starts = 0
+    const lifecycle = createSidecarLifecycle({
+      start: async () => {
+        events.push("start")
+        return `connection-${++starts}`
+      },
+      install: () => {},
+      reset: () => events.push("reset"),
+      stop: async () => {
+        events.push("stop")
+      },
+      awaitStopped: async () => {
+        events.push("stopped")
+      },
+    })
+
+    expect(await lifecycle.ensure()).toBe("connection-1")
+    expect(await lifecycle.restart()).toBe("connection-2")
+    expect(events).toEqual(["start", "reset", "stop", "stopped", "start"])
+  })
+
+  test("holds connection recovery until restart finishes", async () => {
+    const stopped = Promise.withResolvers<void>()
+    let starts = 0
+    const lifecycle = createSidecarLifecycle({
+      start: async () => `connection-${++starts}`,
+      install: () => {},
+      reset: () => {},
+      stop: () => {},
+      awaitStopped: () => stopped.promise,
+    })
+
+    expect(await lifecycle.ensure()).toBe("connection-1")
+    const restart = lifecycle.restart()
+    const recovery = lifecycle.ensure()
+    expect(recovery).toBe(restart)
+    expect(starts).toBe(1)
+    stopped.resolve()
+    expect(await restart).toBe("connection-2")
+    expect(starts).toBe(2)
+  })
+
+  test("reattaches when a safe restart is deferred", async () => {
+    let starts = 0
+    const lifecycle = createSidecarLifecycle({
+      start: async () => `connection-${++starts}`,
+      install: () => {},
+      reset: () => {},
+      stop: () => {},
+      awaitStopped: async () => {
+        throw new Error("active work")
+      },
+    })
+
+    expect(await lifecycle.ensure()).toBe("connection-1")
+    await expect(lifecycle.restart()).rejects.toThrow("active work")
+    expect(await lifecycle.ensure()).toBe("connection-2")
+  })
+
   test("aborts and rejects stale completion after stop", async () => {
     const pending = Promise.withResolvers<string>()
     const signals: AbortSignal[] = []

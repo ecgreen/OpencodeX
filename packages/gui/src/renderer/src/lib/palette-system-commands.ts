@@ -49,5 +49,12 @@ export function buildPaletteSystemCommands(actions: PaletteCommandActions): Pale
       shortcut: "Ctrl+R",
       run: input.actions.refresh,
     },
+    {
+      name: "backend.restart",
+      title: "Restart backend",
+      category: "System",
+      description: "Restart the backend without closing the desktop client",
+      run: input.actions.restartBackend,
+    },
   ]
 }
