@@ -236,6 +236,28 @@ export function make(deps: Deps) {
       )
     })
 
+    const wakeSession = Effect.fn("SessionPrompt.wakeSession")(function* (sessionID: SessionID) {
+      const now = Date.now()
+      const commands = yield* db
+        .select({ id: SessionCommandTable.id })
+        .from(SessionCommandTable)
+        .where(
+          and(
+            eq(SessionCommandTable.session_id, sessionID),
+            or(
+              eq(SessionCommandTable.status, "queued"),
+              and(
+                eq(SessionCommandTable.status, "running"),
+                or(isNull(SessionCommandTable.lease_expires_at), lt(SessionCommandTable.lease_expires_at, now)),
+              ),
+            ),
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      yield* Effect.forEach(commands, (command) => launchCommand(command.id), { discard: true })
+    })
+
     const recover = Effect.fn("SessionPrompt.recover")(function* () {
       const ctx = yield* InstanceState.context
       const commands = yield* db
@@ -261,6 +283,7 @@ export function make(deps: Deps) {
       waitForExecutionTurn,
       executeCommand,
       launchCommand,
+      wakeSession,
       recover,
     }
   })
