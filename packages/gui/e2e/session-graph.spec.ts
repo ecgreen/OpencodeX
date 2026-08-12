@@ -104,9 +104,9 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
 
   // Click a node at default zoom: the embedded transcript replaces the top
   // session's, and the way back works.
-  await page.locator(SESSION_NODE, { hasText: `Graph Child A ${suffix}` }).click()
+  const visibleChildTitle = await clickVisibleChild(page)
   await expect(page.locator(".session-graph-embedded")).toBeVisible()
-  await expect(page.locator(".session-graph-embedded-heading")).toContainText(`Graph Child A ${suffix}`)
+  await expect(page.locator(".session-graph-embedded-heading")).toContainText(visibleChildTitle)
   await page.getByRole("button", { name: "Back to top session" }).click()
   await expect(page.locator(".session-graph-embedded")).toHaveCount(0)
 
@@ -219,11 +219,11 @@ test("opening the graph and clicking nodes keeps the app responsive", async ({ p
   // Last, because it navigates away: "open as a full session" has to actually
   // leave the embedded pane behind. It used to route underneath a pane that
   // survived the change, so the button read as doing nothing at all.
-  await page.locator(SESSION_NODE, { hasText: `Graph Child A ${suffix}` }).click()
+  const visibleChildTitleAfterReopen = await clickVisibleChild(page)
   await expect(page.locator(".session-graph-embedded")).toBeVisible()
   await page.getByRole("button", { name: "Open this step as a full session" }).click()
   await expect(page.locator(".session-graph-embedded")).toHaveCount(0)
-  await expect(page.locator(".session-toolbar h1")).toContainText(`Graph Child A ${suffix}`)
+  await expect(page.locator(".session-toolbar h1")).toContainText(visibleChildTitleAfterReopen)
 })
 
 /** The graph is a launcher card in the workspace fly-out, beside Git. */
@@ -273,4 +273,22 @@ async function hoverVisibleNode(page: Page) {
     return
   }
   throw new Error("no graph node is fully inside the canvas")
+}
+
+/** Clicks a non-root session card fully inside the canvas and returns its title. */
+async function clickVisibleChild(page: Page) {
+  const canvas = await page.locator(".session-graph-canvas").boundingBox()
+  if (!canvas) throw new Error("graph canvas has no box")
+  const cards = page.locator(`${SESSION_NODE}:not(.root)`)
+  for (let index = 0; index < (await cards.count()); index += 1) {
+    const card = cards.nth(index)
+    const box = await card.boundingBox()
+    if (!box) continue
+    if (box.x < canvas.x || box.y < canvas.y) continue
+    if (box.x + box.width > canvas.x + canvas.width || box.y + box.height > canvas.y + canvas.height) continue
+    const title = await card.locator(".session-graph-node-title").innerText()
+    await card.click()
+    return title
+  }
+  throw new Error("no child session card is fully inside the canvas")
 }

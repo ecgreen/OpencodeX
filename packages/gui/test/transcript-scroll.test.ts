@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
   TRANSCRIPT_BOTTOM_FOLLOW_THRESHOLD,
+  TRANSCRIPT_JUMP_TOP_OFFSET,
   TRANSCRIPT_USER_SCROLL_RELEASE_MS,
+  transcriptMessageJumpScrollTop,
   isTranscriptNearBottom,
   transcriptBottomDistance,
   transcriptBottomScrollTop,
@@ -127,6 +129,26 @@ describe("GUI transcript scroll decisions", () => {
       forceBottomScroll: true,
       hasContent: true,
     })).toBe("hide")
+  })
+})
+
+describe("GUI transcript prompt jump position", () => {
+  test("lands the message near the viewport top with breathing room", () => {
+    expect(TRANSCRIPT_JUMP_TOP_OFFSET).toBe(12)
+    // Message renders 500px below the viewport top while scrolled to 300.
+    expect(transcriptMessageJumpScrollTop({ messageTop: 500, scrollTop: 300, scrollHeight: 2_000, clientHeight: 600 })).toBe(788)
+  })
+
+  test("clamps to the top for the first message", () => {
+    expect(transcriptMessageJumpScrollTop({ messageTop: 8, scrollTop: 0, scrollHeight: 2_000, clientHeight: 600 })).toBe(0)
+  })
+
+  test("clamps to the bottom for the last message", () => {
+    expect(transcriptMessageJumpScrollTop({ messageTop: 590, scrollTop: 1_390, scrollHeight: 2_000, clientHeight: 600 })).toBe(1_400)
+  })
+
+  test("content shorter than the viewport pins to the top", () => {
+    expect(transcriptMessageJumpScrollTop({ messageTop: 100, scrollTop: 0, scrollHeight: 300, clientHeight: 500 })).toBe(0)
   })
 })
 

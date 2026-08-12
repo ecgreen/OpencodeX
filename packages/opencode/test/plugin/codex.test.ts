@@ -175,6 +175,7 @@ describe("plugin.codex", () => {
       reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     })
+    expect(models["gpt-5.5"]?.limit).toEqual({ context: 256_000, input: 256_000, output: 128_000 })
   })
 
   test("adds xhigh variant for hyphenated GPT-5.5 OAuth models", async () => {
@@ -212,6 +213,7 @@ describe("plugin.codex", () => {
       reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     })
+    expect(models["gpt-5-5"]?.limit).toEqual({ context: 256_000, input: 256_000, output: 128_000 })
   })
 
   test("preserves max variant for GPT-5.6 Sol OAuth models", async () => {
@@ -248,6 +250,7 @@ describe("plugin.codex", () => {
 
     expect(models["gpt-5.6-sol"]?.variants?.max).toEqual({ reasoningEffort: "max" })
     expect(models["gpt-5.6-sol"]?.variants?.ultra).toBeUndefined()
+    expect(models["gpt-5.6-sol"]?.limit).toEqual({ context: 256_000, input: 256_000, output: 128_000 })
   })
 
   test("deduplicates concurrent Codex token refreshes", async () => {

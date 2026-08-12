@@ -16,6 +16,7 @@ import {
 import { shapeBrowserSnapshot, validExternalBrowserURL } from "./browser-capabilities.js"
 import { validString } from "./ipc-validation.js"
 import { createKeyedSingleFlight, ownerHasResourceCapacity } from "./native-resource-limits.js"
+import { browserViewBoundsForZoom } from "./browser-view-bounds.js"
 
 type BrowserView = {
   ownerID: number
@@ -129,7 +130,7 @@ export function registerBrowserIpc(openExternalURL: (url: string) => void) {
     const view = activeBrowserView(input.id, event.sender.id)
     if (!view) return undefined
     showBrowserView(input.id, window, view)
-    view.setBounds({ x: input.x, y: input.y, width: input.width, height: input.height })
+    view.setBounds(browserViewBoundsForZoom(input, event.sender.getZoomFactor()))
     return browserState(input.id, view)
   })
 

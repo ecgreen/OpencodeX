@@ -195,7 +195,7 @@ export function createSdkTransport(): ClaudeTransport {
  * subagent session on its configured model - visible in the transcript and
  * governed by OpencodeX permissions - rather than a Claude-internal subagent.
  */
-function delegateServer(
+export function delegateServer(
   sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
   delegate: DelegateCapability,
 ) {
@@ -235,6 +235,19 @@ function delegateServer(
               content: [{ type: "text" as const, text: cause instanceof Error ? cause.message : String(cause) }],
             }
           }
+        },
+        {
+          // The CLI runs in-process MCP tools serially unless the tool is
+          // concurrency-safe - `isConcurrencySafe()` is
+          // `annotations?.readOnlyHint ?? false`. A swarm orchestrator fans
+          // several minutes-long roles out in one message; without this hint
+          // the second role does not start until the first returns, so
+          // "parallel" delegation runs back to back. The hint only classifies
+          // the delegate call itself for the CLI's scheduler: each call still
+          // routes through `canUseTool` (verified empirically), and whatever a
+          // delegated role does to the workspace is gated by OpencodeX's own
+          // permissions on the child session, not by this annotation.
+          annotations: { readOnlyHint: true },
         },
       ),
     ],

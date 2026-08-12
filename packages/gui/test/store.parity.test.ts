@@ -39,6 +39,7 @@ describe("GUI store backend parity", () => {
       model: { providerID: "anthropic", modelID: "claude-sonnet" },
       variant: "fast",
     })
+    await sendPrompt(gui, "session-list", "focus on the regression test", { delivery: "direct" })
 
     expect(calls).toContain("project.create:C:/Work/OpencodeX")
     expect(calls).toContain("opencodex.session.create:project-1")
@@ -49,6 +50,8 @@ describe("GUI store backend parity", () => {
     expect(calls.find((call) => call.startsWith("session.promptAsync.messageID:"))).toMatch(
       /^session\.promptAsync\.messageID:msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
     )
+    expect(calls).toContain("session.promptAsync.delivery:immediate")
+    expect(calls).not.toContain("session.promptAsync.steering:true")
   })
 
   test("sends server command and shell payloads through TUI-equivalent APIs", async () => {
@@ -399,12 +402,21 @@ function fakeGui(
           agent?: string
           model?: { providerID: string; modelID: string }
           variant?: string
-          parts?: Array<{ type: string; text?: string }>
+          parts?: Array<{
+            type: string
+            text?: string
+            synthetic?: boolean
+            metadata?: Record<string, unknown>
+          }>
         }) => {
           calls.push(
             `session.promptAsync:${input.sessionID}:${input.parts?.[0]?.text}:${input.agent ?? ""}:${input.model ? `${input.model.providerID}/${input.model.modelID}` : ""}:${input.variant ?? ""}`,
           )
           calls.push(`session.promptAsync.messageID:${input.messageID ?? ""}`)
+          calls.push(`session.promptAsync.delivery:${input.delivery ?? ""}`)
+          calls.push(
+            `session.promptAsync.steering:${input.parts?.some((part) => part.type === "text" && part.synthetic === true && part.metadata?.steering === true) === true}`,
+          )
           return { data: true }
         },
         command: async (input: {

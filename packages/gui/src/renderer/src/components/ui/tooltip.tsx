@@ -13,6 +13,12 @@ export type TooltipProps = {
   /** Skip the tooltip without unmounting the trigger. */
   disabled?: boolean
   class?: string
+  /**
+   * Inline styles for the bubble itself. The bubble's component stylesheet is
+   * unlayered and outranks every layered app rule, so a surface that must
+   * restyle the bubble (not just its content) has to do it at this level.
+   */
+  contentStyle?: JSX.CSSProperties
   children: JSX.Element
 }
 
@@ -27,6 +33,7 @@ export function Tooltip(props: TooltipProps) {
       placement={props.placement ?? "top"}
       class={classes("ui-tooltip-trigger", props.class)}
       contentClass="ui-tooltip"
+      contentStyle={props.contentStyle}
       value={
         <>
           <span class="ui-tooltip-label">{props.label}</span>

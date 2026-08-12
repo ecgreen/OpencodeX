@@ -8,6 +8,7 @@ import type { Provider } from "@/provider/provider"
 import { SessionID, MessageID, PartID } from "../../src/session/schema"
 import { Question } from "../../src/question"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ProviderError } from "../../src/provider/error"
 
 const sessionID = SessionID.make("session")
 const providerID = ProviderV2.ID.make("test")
@@ -1484,6 +1485,18 @@ describe("session.message-v2.fromError", () => {
     })
     const result = MessageV2.fromError(error, { providerID })
     expect(SessionLegacy.ContextOverflowError.isInstance(result)).toBe(true)
+  })
+
+  test("detects context overflow from plain provider errors", () => {
+    const message = "context_length_exceeded: prompt too long"
+    const errors = [new Error(message), new ProviderError.ResponseStreamError(message)]
+
+    errors.forEach((error) => {
+      expect(MessageV2.fromError(error, { providerID })).toStrictEqual({
+        name: "ContextOverflowError",
+        data: { message, responseBody: message },
+      })
+    })
   })
 
   test("does not classify 429 no body as context overflow", () => {

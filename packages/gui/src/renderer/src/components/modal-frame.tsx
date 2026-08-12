@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js"
 import { Show } from "solid-js"
 import { Portal } from "solid-js/web"
+import { registerOverlay } from "../lib/overlay-registry"
 import { IconButton } from "./ui"
 
 export function ModalFrame(props: {
@@ -17,6 +18,9 @@ export function ModalFrame(props: {
   autofocusClose?: boolean
   mount?: Node
 }) {
+  // ModalFrame instances mount only while open, so mounting IS the overlay
+  // signal. Parks the native browser view that composites above the DOM.
+  registerOverlay()
   const card = () => (
     <>
       <header>

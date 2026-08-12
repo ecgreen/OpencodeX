@@ -2,12 +2,15 @@ import { IconButton, TextInput } from "./ui"
 import { For, Show, createMemo, createSignal } from "solid-js"
 import type { PaletteCommand } from "./command-palette"
 import { GUI_NAVIGATION_SHORTCUTS } from "../lib/keyboard-shortcuts"
+import { trackOverlay } from "../lib/overlay-registry"
 
 type KeyboardHelpEntry = Pick<PaletteCommand, "title" | "category" | "description" | "shortcut" | "disabled">
 
 export function KeyboardHelpModal(props: { open: boolean; commands: PaletteCommand[]; close: () => void }) {
   const [query, setQuery] = createSignal("")
   const groups = createMemo(() => keyboardHelpGroups(props.commands, query()))
+  // Parks the native browser view, which would otherwise paint over the modal.
+  trackOverlay(() => props.open)
   return (
     <Show when={props.open}>
       <div

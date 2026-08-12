@@ -57,7 +57,7 @@ function OpenCodeViewPane(props: {
       : EMPTY_SESSION_DATA,
   )
   const updatePane = props.model.authoritative.updateViewPaneState
-  const run = props.model.notices.run
+  const run = (action: () => Promise<void>) => props.model.notices.run(action)
 
   return (
     <ViewPaneHost
@@ -69,6 +69,10 @@ function OpenCodeViewPane(props: {
         props.item().kind === "session"
           ? (props.model.authoritative.snapshot()?.sessionStatus[paneID()]?.type ?? "idle")
           : "idle"
+      }
+      promptPending={
+        props.item().kind === "session" &&
+        props.model.authoritative.snapshot()?.sessionPendingPrompt?.[paneID()] === true
       }
       abortConfirmArmed={props.model.commands.abortConfirmSessionID() === paneID()}
       permissions={
@@ -123,7 +127,11 @@ function OpenCodeViewPane(props: {
       }
       focus={(sessionID, focusComposer) => props.model.view.focus(sessionID, { focusComposer })}
       openSidePanelTarget={props.model.view.openSidePanel}
-      submit={(event, item, text) => props.model.notices.attempt(() => props.model.view.submitPrompt(event, item, text))}
+      submit={(item, text, options) => props.model.notices.attempt(() => props.model.view.submitPrompt(item, text, options))}
+      queuedPrompts={props.model.sessionState.queuedPrompts(paneID())}
+      queuePrompt={props.model.sessionState.queuePrompt}
+      updateQueuedPrompt={props.model.sessionState.updateQueuedPrompt}
+      removeQueuedPrompt={props.model.sessionState.removeQueuedPrompt}
       replyPermission={(request, reply) => void run(() => props.model.management.permission(request, reply))}
       replyQuestion={(request, answers) => void run(() => props.model.management.replyToQuestion(request, answers))}
       rejectQuestion={(request) => void run(() => props.model.management.rejectQuestionRequest(request))}

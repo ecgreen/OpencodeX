@@ -17,25 +17,40 @@
   line-height: 1.4;
 }
 
-/* The model's accompanying words (and plan), quoted above the question. */
+/* The model's accompanying words (and plan), quoted above the question. It
+   never scrolls: long text clamps to a few lines and "Show more" reveals the
+   rest. Because it stays overflow-visible, the body grid cannot crush it. */
 .question-context {
   display: grid;
   justify-items: start;
   gap: var(--ds-space-2);
-  max-height: 180px;
-  overflow: auto;
   padding: var(--ds-space-2) var(--ds-space-3);
   border-left: 2px solid color-mix(in srgb,var(--ds-info) 45%,transparent);
   border-radius: 0 var(--ds-radius-control) var(--ds-radius-control) 0;
   background: color-mix(in srgb,var(--ds-info) 4%,transparent);
   color: var(--ds-text-muted);
   font-size: 12.5px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ds-border-strong) transparent;
 }
 
 .question-context-text {
+  display: -webkit-box;
   min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.question-context-text.is-expanded {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.question-context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-2);
 }
 
 .question-options {
@@ -251,7 +266,7 @@
 
 @media (max-width:720px) {
   .safety-card {
-    max-height: min(56vh,520px);
+    max-height: min(68vh,560px);
   }
 
   .safety-card-header,

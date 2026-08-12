@@ -67,6 +67,20 @@ describe("dispatch", () => {
     expect(plan.goal).toEqual({ status: "failed" })
   })
 
+  test("a failure never skips work already in flight", () => {
+    // "b" is running when "a" fails: it keeps running and its own job records
+    // how it ended. Only "c", which never started, is settled by the cascade.
+    const plan = planReconcile({
+      goal: goal([node("a", "failed"), node("b", "running"), node("c", "planned")], {
+        edges: [link("a", "b"), link("a", "c")],
+      }),
+      now: NOW,
+    })
+    expect(plan.skip).toEqual(["c"])
+    // The goal stays running until the in-flight node lands.
+    expect(plan.goal).toBeUndefined()
+  })
+
   test("a goal completes when every node is settled", () => {
     const plan = planReconcile({ goal: goal([node("a", "done"), node("b", "skipped")]), now: NOW })
     expect(plan.goal).toEqual({ status: "completed" })

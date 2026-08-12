@@ -364,6 +364,19 @@ describe("skip propagation", () => {
     const view = graph([node("a", "failed"), node("b", "done")], [link("a", "b")])
     expect(cascadeSkipIDs(view)).toEqual([])
   })
+
+  test("in-flight dependents are left to settle on their own", () => {
+    // A dispatched or running node already has a job and possibly a live child
+    // session. Stamping it skipped would strand it: settlement only touches
+    // dispatched/running nodes, so the overwrite makes the real outcome
+    // unrecordable while the sub-agent keeps working. The cascade only claims
+    // work that has not started.
+    const view = graph(
+      [node("a", "failed"), node("b", "dispatched"), node("c", "running"), node("d", "planned")],
+      [link("a", "b"), link("a", "c"), link("a", "d")],
+    )
+    expect(cascadeSkipIDs(view)).toEqual(["d"])
+  })
 })
 
 describe("loop outcome", () => {

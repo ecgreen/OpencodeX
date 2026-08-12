@@ -14,6 +14,7 @@ import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import {
   PermissionTable,
+  SessionCommandTable,
   SessionExecutionTable,
   SessionInteractionTable,
   SessionStatusTable,
@@ -207,6 +208,53 @@ it.instance("persists abort across graphs and interrupts the owner", () =>
       .pipe(Effect.orDie)
     expect(execution).toMatchObject({ state: "interrupted", owner_id: null })
     expect(yield* remote.status.get(sessionID)).toEqual({ type: "idle" })
+  }),
+)
+
+it.instance("interrupt stops a run owned by another graph and keeps queued commands", () =>
+  Effect.gen(function* () {
+    // A direct ("immediate") prompt pivots the session: the current turn must
+    // stop even when this process does not own the run, and the interrupting
+    // prompt - already recorded as a queued command - must stay queued so it
+    // launches next. `cancel` proves the durable path; `interrupt` must use it
+    // too instead of only checking the local in-memory runner.
+    const owner = yield* buildRunGraph()
+    const remote = yield* buildRunGraph()
+    const fiber = yield* owner.run
+      .ensureRunning(sessionID, Effect.succeed(output), Effect.never)
+      .pipe(Effect.forkScoped)
+    yield* pollWithTimeout(
+      owner.status.get(sessionID).pipe(Effect.map((status) => (status.type === "busy" ? true : undefined))),
+      "session never became busy",
+    )
+
+    const { db } = yield* Database.Service
+    const now = Date.now()
+    yield* db
+      .insert(SessionCommandTable)
+      .values({
+        id: "sec_direct_pivot",
+        session_id: sessionID,
+        message_id: MessageID.make("msg_direct_pivot"),
+        project_id: "prj_test",
+        directory: ".",
+        status: "queued",
+        time_created: now,
+        time_updated: now,
+      })
+      .run()
+      .pipe(Effect.orDie)
+
+    yield* remote.run.interrupt(sessionID)
+    expect(Exit.isSuccess(yield* Fiber.await(fiber))).toBe(true)
+
+    const command = yield* db
+      .select({ status: SessionCommandTable.status })
+      .from(SessionCommandTable)
+      .where(eq(SessionCommandTable.id, "sec_direct_pivot"))
+      .get()
+      .pipe(Effect.orDie)
+    expect(command?.status).toBe("queued")
   }),
 )
 

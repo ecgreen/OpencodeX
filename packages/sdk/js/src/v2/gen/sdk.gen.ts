@@ -374,6 +374,7 @@ import type {
   SessionDeleteMessageErrors,
   SessionDeleteMessageResponses,
   SessionDeleteResponses,
+  SessionDelivery,
   SessionDiffErrors,
   SessionDiffResponses,
   SessionForkErrors,
@@ -6302,6 +6303,7 @@ export class Session3 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      delivery?: SessionDelivery
       model?: {
         providerID: string
         modelID: string
@@ -6327,6 +6329,7 @@ export class Session3 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
@@ -6591,6 +6594,7 @@ export class Session3 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      delivery?: SessionDelivery
       model?: {
         providerID: string
         modelID: string
@@ -6616,6 +6620,7 @@ export class Session3 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
@@ -6651,6 +6656,7 @@ export class Session3 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      delivery?: SessionDelivery
       agent?: string
       model?: string
       arguments?: string
@@ -6676,6 +6682,7 @@ export class Session3 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "arguments" },
@@ -6709,6 +6716,7 @@ export class Session3 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      delivery?: SessionDelivery
       agent?: string
       model?: {
         providerID: string
@@ -6727,6 +6735,7 @@ export class Session3 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "command" },

@@ -399,10 +399,15 @@ export const TaskTool = Tool.define(
           ...(runInBackground ? { background: true } : {}),
         }
 
-        yield* ctx.metadata({
-          title: params.description,
-          metadata,
-        })
+        // The parent transcript links to the child before completion, so this
+        // stable identity must survive any session refresh during the run.
+        yield* ctx.metadata(
+          {
+            title: params.description,
+            metadata,
+          },
+          { durable: true },
+        )
 
         const ops = ctx.extra?.promptOps as TaskPromptOps
         if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))

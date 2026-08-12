@@ -6,6 +6,7 @@ import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import type { PromptMentionOption } from "../lib/prompt-autocomplete"
 import { partIcon, partLabel, partPreviewURL, partTitle, promptWithoutPart } from "../lib/composer-parts"
 import { Icon } from "./icon"
+import { ComposerDeliveryActions, ComposerQueuedPrompts } from "./session-composer-delivery"
 
 export function SessionComposer(props: {
   blocked: boolean
@@ -13,6 +14,10 @@ export function SessionComposer(props: {
   disconnectedProviderName?: string
   connectProvider?: () => void
   running: boolean
+  queuedPrompts: Array<{ id: string; text: string; input: string; hasAttachments: boolean }>
+  updateQueuedPrompt: (id: string, value: string) => void
+  removeQueuedPrompt: (id: string) => void
+  holdQueuedPrompts?: (held: boolean) => void
   mode: "plan" | "build" | "goal"
   draftPrompt: string
   draftParts: PromptPart[]
@@ -89,7 +94,9 @@ export function SessionComposer(props: {
           </div>
         )}
       </Show>
-      <div class={`composer-input ${props.mode}`}>
+      <div class="composer-card">
+      <ComposerQueuedPrompts prompts={props.queuedPrompts} update={props.updateQueuedPrompt} remove={props.removeQueuedPrompt} hold={props.holdQueuedPrompts} />
+      <div class={`composer-input ${props.mode}`} classList={{ "has-queued": props.queuedPrompts.length > 0 }}>
         <Show when={props.slashMenuVisible}>
           <div id={`${menuID}-slash`} class="slash-command-menu" role="listbox" aria-label="Session slash commands" onMouseDown={(event) => event.preventDefault()}>
             <For each={props.visibleSlashCommands} fallback={<p>No matching commands.</p>}>
@@ -237,10 +244,13 @@ export function SessionComposer(props: {
               </div>
             </Show>
           </div>
-          <Button appearance="ghost" class="send-button" type="submit" title={props.disconnectedProviderName ? `Connect ${props.disconnectedProviderName} to send` : "Send message"} aria-label="Send message" disabled={props.blocked || Boolean(props.disconnectedProviderName) || (props.draftText.length === 0 && props.draftParts.length === 0)}>
-            <Icon name="cursorArrow" />
-          </Button>
+          <ComposerDeliveryActions
+            running={props.running}
+            disconnectedProviderName={props.disconnectedProviderName}
+            disabled={props.blocked || Boolean(props.disconnectedProviderName) || (props.draftText.length === 0 && props.draftParts.length === 0)}
+          />
         </div>
+      </div>
       </div>
       <div class="composer-running" aria-live="polite">
         <span class="composer-running-left">
@@ -359,14 +369,21 @@ function handleComposerKeyDown(event: KeyboardEvent & { currentTarget: HTMLTextA
   }
   if (event.key !== "Enter" || event.shiftKey) return
   event.preventDefault()
+  // While a response is running, plain Enter queues (the safe default - it
+  // never interrupts). Ctrl+Enter is the explicit interrupt-and-send-now.
+  if (props.running && (event.ctrlKey || event.metaKey)) {
+    const direct = event.currentTarget.form?.querySelector<HTMLButtonElement>('button[name="delivery"][value="direct"]')
+    if (direct) event.currentTarget.form?.requestSubmit(direct)
+    return
+  }
   event.currentTarget.form?.requestSubmit()
 }
 
 function promptHistoryOffset(event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) {
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return undefined
   const textarea = event.currentTarget
-  if (event.key === "ArrowUp" && textarea.value.slice(0, textarea.selectionStart).includes("\n") === false) return -1
-  if (event.key !== "ArrowDown") return
-  if (textarea.value.slice(textarea.selectionEnd).includes("\n")) return
+  if (event.key === "ArrowUp" && !textarea.value.slice(0, textarea.selectionStart).includes("\n")) return -1
+  if (event.key !== "ArrowDown") return undefined
+  if (textarea.value.slice(textarea.selectionEnd).includes("\n")) return undefined
   return 1
 }

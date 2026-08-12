@@ -274,6 +274,124 @@ describe("claude stream-json mapper", () => {
     expect(step).toMatchObject({ tokens: { input: 12, output: 6, cache: { read: 0, write: 0 } } })
   })
 
+  test("stamps the completed message with the last request's usage, not the turn total", () => {
+    // The result event's usage sums every API request in the turn. A long
+    // tool-using turn re-reads its cached context on each step, so the summed
+    // cache reads grow into the millions - shown as context, that read
+    // "8.1m (808%)". The conversation's actual context is the LAST request's
+    // usage, reported per-request on assistant events.
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [{ type: "text", text: "step one" }],
+          usage: { input_tokens: 3, output_tokens: 10, cache_read_input_tokens: 50_000, cache_creation_input_tokens: 2_000 },
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          id: "m2",
+          content: [{ type: "text", text: "step two" }],
+          usage: { input_tokens: 5, output_tokens: 20, cache_read_input_tokens: 60_000, cache_creation_input_tokens: 1_000 },
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        usage: { input_tokens: 8, output_tokens: 30, cache_read_input_tokens: 110_000, cache_creation_input_tokens: 3_000 },
+      },
+    ])
+    const completed = messages(writes).findLast((message) => message.time.completed !== undefined)
+    expect(completed?.tokens).toEqual({
+      input: 5,
+      output: 20,
+      reasoning: 0,
+      cache: { read: 60_000, write: 1_000 },
+    })
+  })
+
+  test("a result without per-request usage still falls back to the reported usage", () => {
+    const { writes } = run([
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "hi" }] } },
+      { type: "result", subtype: "success", usage: { input_tokens: 12, output_tokens: 6 } },
+    ])
+    const completed = messages(writes).findLast((message) => message.time.completed !== undefined)
+    expect(completed?.tokens).toMatchObject({ input: 12, output: 6 })
+  })
+
+  test("completed edits carry metadata.diff so the transcript renders a patch", () => {
+    // The transcript's edit card renders ONLY metadata.diff / metadata.files.
+    // Native edits stamp diff server-side; the Claude CLI sends just the input
+    // snippets, so without synthesis the expander shows nothing but "The file
+    // has been updated successfully".
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            {
+              type: "tool_use",
+              id: "tool_edit",
+              name: "Edit",
+              input: { file_path: "C:/repo/app.ts", old_string: "const a = 1", new_string: "const a = 2" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "tool_edit", content: "The file C:/repo/app.ts has been updated successfully." }],
+        },
+      },
+    ])
+    const part = parts(writes).findLast((item) => item.type === "tool")
+    const metadata = part?.type === "tool" && part.state.status === "completed" ? part.state.metadata : undefined
+    const diff = typeof metadata?.diff === "string" ? metadata.diff : ""
+    expect(diff).toContain("-const a = 1")
+    expect(diff).toContain("+const a = 2")
+  })
+
+  test("completed multi-edits carry metadata.files with one patch per edit", () => {
+    const { writes } = run([
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            {
+              type: "tool_use",
+              id: "tool_multi",
+              name: "MultiEdit",
+              input: {
+                file_path: "C:/repo/app.ts",
+                edits: [
+                  { old_string: "let x", new_string: "let y" },
+                  { old_string: "return x", new_string: "return y" },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "tool_multi", content: "Applied 2 edits." }],
+        },
+      },
+    ])
+    const part = parts(writes).findLast((item) => item.type === "tool")
+    const metadata = part?.type === "tool" && part.state.status === "completed" ? part.state.metadata : undefined
+    const files = Array.isArray(metadata?.files) ? metadata.files : []
+    expect(files).toHaveLength(2)
+    expect(String((files[0] as Record<string, unknown>).patch)).toContain("+let y")
+    expect(String((files[1] as Record<string, unknown>).patch)).toContain("+return y")
+  })
+
   test("records an error and flags auth failures from a failed result", () => {
     const { writes, state } = run([
       { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "hi" }] } },
@@ -363,6 +481,65 @@ describe("claude stream-json mapper", () => {
       if (w.kind === "part" && (w.part.type === "text" || w.part.type === "reasoning")) ids.set(w.part.id, w.part.type)
     }
     expect([...ids.values()].sort()).toEqual(["reasoning", "text"])
+  })
+})
+
+describe("background subagents keep the turn open", () => {
+  // The SDK ends the main model's turn (a `result` event) while backgrounded
+  // subagents are still running, then re-wakes the model on the same stream
+  // when they report back. Finishing on that first result is what flipped
+  // sessions to idle mid-delegation and orphaned the continuation.
+  const agentTask = { task_id: "a1", task_type: "local_agent", description: "probe agent" }
+
+  test("a result while background tasks are live does not finish the turn", () => {
+    const { writes, state } = run([
+      { type: "system", subtype: "init", session_id: "cc-1" },
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "Waiting for the agents..." }] } },
+      { type: "system", subtype: "background_tasks_changed", tasks: [agentTask] } as ClaudeEvent,
+      { type: "result", subtype: "success", total_cost_usd: 0.02, usage: { input_tokens: 10, output_tokens: 5 } },
+    ])
+
+    expect(state.finished).toBeFalsy()
+    // The turn stays open: no completed assistant message yet.
+    expect(messages(writes).some((message) => message.time.completed !== undefined)).toBe(false)
+    // But the step's cost still lands, so billing survives even an abandoned wait.
+    expect(parts(writes).find((part) => part.type === "step-finish")).toMatchObject({ cost: 0.02 })
+  })
+
+  test("the turn finishes on the result that arrives after background tasks drain", () => {
+    const { writes, state } = run([
+      { type: "system", subtype: "init", session_id: "cc-1" },
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "Waiting for the agents..." }] } },
+      { type: "system", subtype: "background_tasks_changed", tasks: [agentTask] } as ClaudeEvent,
+      { type: "result", subtype: "success", total_cost_usd: 0.02, usage: { input_tokens: 10, output_tokens: 5 } },
+      // The agent reports back; the CLI re-wakes the model on the same stream.
+      { type: "assistant", message: { id: "m2", content: [{ type: "text", text: "FINISHED" }] } },
+      { type: "system", subtype: "background_tasks_changed", tasks: [] } as ClaudeEvent,
+      { type: "result", subtype: "success", total_cost_usd: 0.05, usage: { input_tokens: 20, output_tokens: 8 } },
+    ])
+
+    expect(state.finished).toBe(true)
+    const completed = messages(writes).at(-1)
+    expect(completed?.time.completed).toBeGreaterThan(0)
+    // The whole wait is one assistant message; the continuation lands on it.
+    const texts = parts(writes).flatMap((part) => (part.type === "text" ? [part] : []))
+    expect(texts.map((part) => part.text)).toEqual(["Waiting for the agents...", "FINISHED"])
+    expect(new Set(texts.map((part) => part.messageID)).size).toBe(1)
+    // Each step billed its own delta of the cumulative total; the message
+    // carries the whole turn's cost.
+    const steps = parts(writes).flatMap((part) => (part.type === "step-finish" ? [part] : []))
+    expect(steps.length).toBe(2)
+    expect(steps[0]?.cost).toBeCloseTo(0.02, 10)
+    expect(steps[1]?.cost).toBeCloseTo(0.03, 10)
+    expect(completed?.cost).toBeCloseTo(0.05, 10)
+  })
+
+  test("a malformed background_tasks_changed payload counts as no live tasks", () => {
+    const { state } = run([
+      { type: "system", subtype: "background_tasks_changed" } as ClaudeEvent,
+      { type: "result", subtype: "success", total_cost_usd: 0.01 },
+    ])
+    expect(state.finished).toBe(true)
   })
 })
 

@@ -1,5 +1,5 @@
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createMemo, createSignal, createUniqueId, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, createUniqueId, onCleanup } from "solid-js"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { finalQuestionAnswers, nextUnansweredStep, questionAnswersComplete, toggleQuestionAnswer } from "../lib/safety-present"
 import { isKeyboardEditingTarget } from "../lib/keyboard-shortcuts"
@@ -32,9 +32,26 @@ export function SessionQuestionCard(props: {
   const [confirmOpen, setConfirmOpen] = createSignal(false)
   const [planOpen, setPlanOpen] = createSignal(false)
   const [pulsing, setPulsing] = createSignal<string>()
+  const [contextOpen, setContextOpen] = createSignal(false)
+  const [contextClamped, setContextClamped] = createSignal(false)
   let card: HTMLElement | undefined
+  let contextText: HTMLElement | undefined
   let submitTimer: ReturnType<typeof setTimeout> | undefined
   let submitted = false
+  // The context quote clamps to a few lines instead of scrolling; the toggle
+  // only appears when the clamp actually hides something. Re-measured on
+  // resize (wrap changes) and whenever the quoted text itself changes.
+  const measureContext = () => {
+    const element = contextText
+    if (!element) return
+    setContextClamped(element.scrollHeight > element.clientHeight + 1)
+  }
+  const contextResize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measureContext)
+  onCleanup(() => contextResize?.disconnect())
+  createEffect(() => {
+    props.context?.text
+    measureContext()
+  })
   const question = createMemo(() => props.request.questions[props.step])
   const selected = createMemo(() => props.draft.answers[props.step] ?? [])
   const customValue = createMemo(() => props.draft.custom[props.step] ?? "")
@@ -124,10 +141,31 @@ export function SessionQuestionCard(props: {
         <Show when={props.context?.text || props.context?.plan}>
           <div class="question-context">
             <Show when={props.context?.text}>
-              {(text) => <div class="question-context-text"><Markdown text={text()} /></div>}
+              {(text) => (
+                <div
+                  class="question-context-text"
+                  classList={{ "is-expanded": contextOpen() }}
+                  ref={(element: HTMLElement) => {
+                    contextText = element
+                    contextResize?.disconnect()
+                    contextResize?.observe(element)
+                  }}
+                >
+                  <Markdown text={text()} />
+                </div>
+              )}
             </Show>
-            <Show when={props.context?.plan}>
-              <Button appearance="outline" size="compact" leadingIcon="file" onClick={() => setPlanOpen(true)}>View plan</Button>
+            <Show when={contextClamped() || contextOpen() || props.context?.plan}>
+              <div class="question-context-actions">
+                <Show when={contextClamped() || contextOpen()}>
+                  <Button appearance="ghost" size="compact" aria-expanded={contextOpen()} onClick={() => setContextOpen((open) => !open)}>
+                    {contextOpen() ? "Show less" : "Show more"}
+                  </Button>
+                </Show>
+                <Show when={props.context?.plan}>
+                  <Button appearance="outline" size="compact" leadingIcon="file" onClick={() => setPlanOpen(true)}>View plan</Button>
+                </Show>
+              </div>
             </Show>
           </div>
         </Show>

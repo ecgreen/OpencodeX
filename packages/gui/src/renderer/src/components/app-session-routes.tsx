@@ -4,7 +4,6 @@ import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { OpencodeXLogo } from "./chrome"
 import { Dashboard } from "./dashboard"
 import { findFiles } from "../lib/session-api"
-import { openSessionWorkspace } from "../lib/session-workspace-bridge"
 import { ClaudeTerminalPage } from "./claude-terminal-surface"
 import { Button, ErrorState, LoadingState } from "./ui"
 
@@ -150,7 +149,11 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       }}
       selectedVariant={model.sessionState.selectedVariant()}
       setSelectedVariant={model.sessionState.setSelectedVariant}
-      submit={(event, prompt) => model.notices.attempt(() => model.sessionComposer.submit(event, prompt))}
+      submit={(prompt, options) => model.notices.attempt(() => model.sessionComposer.submit(prompt, options))}
+      queuedPrompts={session() ? model.sessionState.queuedPrompts(session()!.id) : []}
+      queuePrompt={model.sessionState.queuePrompt}
+      updateQueuedPrompt={model.sessionState.updateQueuedPrompt}
+      removeQueuedPrompt={model.sessionState.removeQueuedPrompt}
       permissions={model.sessionSelection.selectedPermissions()}
       questions={model.sessionSelection.selectedQuestions()}
       replyPermission={(request, reply) => void model.notices.run(() => model.management.permission(request, reply))}
@@ -179,6 +182,7 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       toggleScrollbar={model.transcriptPreferences.handleToggleScrollbarSlash}
       toggleGenericToolOutput={model.transcriptPreferences.handleToggleGenericToolOutputSlash}
       status={session() ? model.authoritative.snapshot()?.sessionStatus[session()!.id]?.type : undefined}
+      promptPending={session() ? model.authoritative.snapshot()?.sessionPendingPrompt?.[session()!.id] === true : false}
       abortConfirmArmed={model.commands.abortConfirmSessionID() === session()?.id}
       readyForReview={
         session() ? model.authoritative.snapshot()?.sessionUiState[session()!.id]?.displayStatus === "needs_review" : false

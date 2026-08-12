@@ -2,7 +2,8 @@ import type { Agent, FileNode, OpencodeXSwarm, PermissionRequest, Provider, Ques
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { GuiSnapshot, SessionData } from "../lib/session-api"
+import type { GuiSnapshot, PromptDelivery, SessionData } from "../lib/session-api"
+import type { QueuedSessionPrompt } from "../controllers/session-state"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
 import { viewItemID, viewItemSession, type ViewItem } from "../lib/view-items"
@@ -14,6 +15,7 @@ export function ViewPaneHost(props: {
   data: SessionData
   loading: boolean
   status: string
+  promptPending?: boolean
   abortConfirmArmed?: boolean
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
@@ -40,7 +42,11 @@ export function ViewPaneHost(props: {
   setSelectedVariant: (sessionID: string, value: string) => void
   focus: (sessionID: string, focusComposer: boolean) => void
   openSidePanelTarget?: (sessionID: string, target: SessionSidePanelTarget) => void
-  submit: (event: SubmitEvent, item: ViewItem, prompt: GuiPromptInfo) => Promise<boolean>
+  submit: (item: ViewItem, prompt: GuiPromptInfo, options?: { delivery?: PromptDelivery; agent?: string; model?: string; variant?: string }) => Promise<boolean>
+  queuedPrompts?: QueuedSessionPrompt[]
+  queuePrompt?: (prompt: Omit<QueuedSessionPrompt, "id">) => void
+  updateQueuedPrompt?: (sessionID: string, id: string, value: string) => void
+  removeQueuedPrompt?: (sessionID: string, id: string) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
@@ -76,6 +82,7 @@ export function ViewPaneHost(props: {
       data={props.data}
       loading={props.loading}
       status={props.status}
+      promptPending={props.promptPending}
       abortConfirmArmed={props.abortConfirmArmed}
       composerState={props.composerState}
       updateComposerState={props.updateComposerState}
@@ -100,7 +107,11 @@ export function ViewPaneHost(props: {
       questions={props.questions}
       focus={(focusComposer) => props.focus(id(), focusComposer)}
       openSidePanelTarget={(target) => props.openSidePanelTarget?.(id(), target)}
-      submit={(event, text) => props.submit(event, props.item, text)}
+      submit={(text, options) => props.submit(props.item, text, options)}
+      queuedPrompts={props.queuedPrompts}
+      queuePrompt={props.queuePrompt}
+      updateQueuedPrompt={props.updateQueuedPrompt}
+      removeQueuedPrompt={props.removeQueuedPrompt}
       replyPermission={props.replyPermission}
       replyQuestion={props.replyQuestion}
       rejectQuestion={props.rejectQuestion}

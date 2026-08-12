@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js"
+import { createElementResizeTracker } from "../lib/element-resize-tracker"
 import { moveRelative } from "../lib/reorder"
 import { OPEN_TAB_LAYOUT_FALLBACK_MEASUREMENTS, numberedDuplicateOpenTabLabels, visibleOpenTabIDs } from "../lib/open-tabs"
 import { cssPixelValue, openTabLabel } from "./session-side-open-state"
@@ -64,6 +65,11 @@ export function createSessionSideTabBarController(input: {
   let rowRects = new Map<string, DOMRect>()
   let rowFrame = 0
   let measureFrame = 0
+  // The tab bar view unmounts whenever the session has no tabs and remounts
+  // with a fresh element, so the observer has to follow the latest handover:
+  // one bound at mount keeps watching the detached node and the zero width
+  // measured mid-remount latches every tab into the overflow menu.
+  const barResize = createElementResizeTracker(scheduleMeasure)
 
   createEffect(() => {
     if (overflowTabs().length > 0) return
@@ -117,14 +123,10 @@ export function createSessionSideTabBarController(input: {
       window.removeEventListener("resize", reposition)
       window.removeEventListener("scroll", reposition, true)
     })
-    if (!bar) return
-    scheduleMeasure()
-    const observer = new ResizeObserver(scheduleMeasure)
-    observer.observe(bar)
-    onCleanup(() => observer.disconnect())
   })
 
   onCleanup(() => {
+    barResize.dispose()
     cancelAnimationFrame(rowFrame)
     cancelAnimationFrame(measureFrame)
   })
@@ -259,7 +261,7 @@ export function createSessionSideTabBarController(input: {
     newMenuStyle: () => placementStyle(newMenuPlacement()), overflowMenuStyle: () => placementStyle(overflowMenuPlacement()),
     label, select, selectOverflow, closeTab: input.closeTab, hideWebTabs: input.hideWebTabs, startDrag, clearDrag, toggleNewMenu, toggleOverflowMenu,
     closeNewMenu: () => setNewMenuOpen(false), closeOverflowMenu: () => setOverflowMenuOpen(false),
-    setBar: (element: HTMLDivElement) => { bar = element },
+    setBar: (element: HTMLDivElement) => { bar = element; barResize.track(element) },
     setNewMenuAnchor: (element: HTMLButtonElement) => { newMenuAnchor = element }, setNewMenuPanel: (element: HTMLDivElement) => { newMenuPanel = element; requestAnimationFrame(updateMenuPlacements) },
     setOverflowMenuAnchor: (element: HTMLButtonElement) => { overflowMenuAnchor = element }, setOverflowMenuPanel: (element: HTMLDivElement) => { overflowMenuPanel = element; requestAnimationFrame(updateMenuPlacements) },
   }
@@ -282,9 +284,9 @@ function placeMenu(anchor: HTMLElement | undefined, panel: HTMLElement | undefin
 }
 
 function popupRowsHeight(panel: HTMLElement | undefined, rows: number) {
-  if (!panel) return
+  if (!panel) return undefined
   const items = Array.from(panel.querySelectorAll<HTMLElement>("button")).slice(0, rows)
-  if (items.length === 0) return
+  if (items.length === 0) return undefined
   const style = getComputedStyle(panel)
   return Math.ceil(items.reduce((height, item) => height + item.getBoundingClientRect().height, 0) + Math.max(0, items.length - 1) * (cssPixelValue(style.rowGap) || cssPixelValue(style.gap)) + cssPixelValue(style.paddingTop) + cssPixelValue(style.paddingBottom))
 }

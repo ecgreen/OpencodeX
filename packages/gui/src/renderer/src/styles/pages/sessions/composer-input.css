@@ -7,6 +7,13 @@
   background: transparent;
 }
 
+/* Wrapper that fuses the queued-prompts tray to the composer into one card
+   silhouette. With no queue it is a transparent passthrough. */
+.composer-card {
+  display: grid;
+  min-width: 0;
+}
+
 .composer-input {
   position: relative;
   display: grid;
@@ -29,6 +36,13 @@
 :root[data-theme="light"] .composer-input {
   background: var(--theme-surface-composer);
   border-color: var(--theme-border-composer);
+}
+
+/* With the tray fused on top, the card's top corners belong to the tray and
+   the composer's own top border becomes the hairline seam between them. */
+.composer-input.has-queued {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .composer-input.build {

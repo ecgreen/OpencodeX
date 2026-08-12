@@ -19,12 +19,24 @@ export function createSessionComposerInputController(input: {
   }, 250)
   const resizeNow = () => {
     if (!textarea) return
+    // Measuring requires releasing the inline height, which momentarily
+    // shrinks the textarea - and grows the transcript viewport sharing its
+    // column. The browser eagerly clamps the transcript's scrollTop during
+    // that forced layout, and when the re-applied height matches the old one
+    // (plain typing inside a tall draft) no resize event follows, so nothing
+    // re-pins the transcript: it drifts up from the bottom by the composer's
+    // grown height. Locking the wrapper for the measurement keeps the
+    // surrounding layout still, so the scroll position is never touched.
+    const wrapper = textarea.parentElement instanceof HTMLElement ? textarea.parentElement : undefined
+    const wrapperHeight = wrapper ? wrapper.style.height : ""
+    if (wrapper) wrapper.style.height = `${wrapper.offsetHeight}px`
     textarea.style.height = "auto"
     // Clamped so a long draft cannot swallow the transcript - and so clearing
     // it on submit doesn't yank hundreds of pixels back out of the viewport.
     const decision = composerHeightDecision(textarea.scrollHeight, window.innerHeight)
     textarea.style.height = `${decision.height}px`
     textarea.style.overflowY = decision.scrollable ? "auto" : "hidden"
+    if (wrapper) wrapper.style.height = wrapperHeight
   }
   const resize = createAnimationFrameTask(resizeNow)
 
@@ -61,9 +73,9 @@ export function createSessionComposerInputController(input: {
   return {
     textarea: () => textarea,
     setTextarea,
-    resize: resize.schedule,
+    resize: () => resize.schedule(),
     flush,
-    flushPending: persistence.flush,
-    schedule: persistence.schedule,
+    flushPending: () => persistence.flush(),
+    schedule: (value: { sessionID: string; draft: GuiPromptInfo }) => persistence.schedule(value),
   }
 }

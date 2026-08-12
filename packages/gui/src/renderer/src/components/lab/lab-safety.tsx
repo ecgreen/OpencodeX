@@ -1,5 +1,6 @@
 import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { Show, createSignal } from "solid-js"
+import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import type { MessageBundle } from "../../lib/session-api"
 import { SessionSafetyDock } from "../session-safety-dock"
 import { Button, useToast } from "../ui"
@@ -131,7 +132,11 @@ function mockMessages(): MessageBundle[] {
           sessionID: "ses_lab",
           messageID: "msg_lab_assistant",
           type: "text",
-          text: "I compared three approaches; **OAuth** keeps refresh handling server-side. The plan above covers the rollout - pick what fits.",
+          text: [
+            "I compared three approaches; **OAuth** keeps refresh handling server-side and rotation automatic, while API keys push that burden onto every client team and their deployment cadence, which historically meant keys living in dotfiles for months past their intended rotation window.",
+            "Sessions would tie us to sticky routing at the load balancer, which the infra team flagged as a risk during the last capacity review - failover drains would sever active sessions, and the workaround they proposed adds a shared session store we would then have to operate and monitor.",
+            "The plan above covers the rollout order, the flag we would gate it behind, and the audit events each path emits - pick what fits and I will wire up the first environment.",
+          ].join("\n\n"),
           time: { start: 3, end: 4 },
         },
       ],
@@ -201,8 +206,10 @@ function SafetyStage(props: { permissions: () => PermissionRequest[]; questions:
 }
 
 export function LabSafety() {
+  // The question card renders the model's words through Markdown, which needs
+  // the same MarkedProvider the session page mounts.
   return (
-    <>
+    <MarkedProvider>
       <Section
         title="Permissions only"
         detail="Three queued approvals with the slim one-line header. The title sits in the body; the X (or 3/Escape) opens a reject confirm. Keyboard: 1 allow once, 2 always allow, F expand, arrows page."
@@ -223,6 +230,6 @@ export function LabSafety() {
       >
         <SafetyStage permissions={mockPermissions} questions={mockQuestions} />
       </Section>
-    </>
+    </MarkedProvider>
   )
 }

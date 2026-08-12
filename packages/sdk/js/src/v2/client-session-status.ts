@@ -36,6 +36,12 @@ export type ClientSessionDisplayStatusInput = {
   updatedAt: number
   /** `uiState.reviewedAt`, if the reader has reviewed this session before. */
   reviewedAt?: number
+  /**
+   * `session.parentID`. A delegated child is never awaiting the reader's
+   * review - its parent consumes the report - so it settles to idle instead
+   * of `needs_review`. Must mirror the server's `deriveUiState`.
+   */
+  parentID?: string
 }
 
 export type ClientSessionActivityMessage = {
@@ -76,7 +82,7 @@ export function deriveClientSessionStatus(input: ClientSessionStatusInput): Clie
 export function deriveClientSessionDisplayStatus(input: ClientSessionDisplayStatusInput): ClientSessionDisplayStatus {
   if (input.hasPendingInteraction) return "input_needed"
   if (isClientSessionWorking(input)) return "in_progress"
-  if (input.updatedAt > (input.reviewedAt ?? 0)) return "needs_review"
+  if (!input.parentID && input.updatedAt > (input.reviewedAt ?? 0)) return "needs_review"
   return "idle"
 }
 
@@ -95,16 +101,12 @@ export function isActiveClientSessionStatus(status: ClientDerivedSessionStatus) 
 
 /** Lowercase label, for inline sentence use ("running", "needs input", ...). */
 export function clientSessionStatusLabel(status: ClientDerivedSessionStatus) {
-  switch (status) {
-    case "in_progress":
-      return "running"
-    case "input_needed":
-      return "needs input"
-    case "needs_review":
-      return "ready for review"
-    case "dormant":
-      return "idle"
-  }
+  return {
+    in_progress: "running",
+    input_needed: "needs input",
+    needs_review: "ready for review",
+    dormant: "idle",
+  }[status]
 }
 
 /**

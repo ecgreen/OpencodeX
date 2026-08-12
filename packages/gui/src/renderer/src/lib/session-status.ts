@@ -86,6 +86,7 @@ export function deriveSessionUiState(snapshot: GuiSnapshot, session: Session): O
       hasPendingInteraction: sessionNeedsInput(snapshot, session.id),
       updatedAt: session.time.updated,
       reviewedAt: state?.reviewedAt,
+      parentID: session.parentID,
     }),
     updated: session.time.updated > (state?.seenAt ?? 0),
   }

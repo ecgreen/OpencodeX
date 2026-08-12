@@ -61,6 +61,13 @@ export function createSidechainRouter(input: {
   makeContext: (sessionID: string, parentMessageID: string) => MapperContext
 }) {
   const chains = new Map<string, Chain>()
+  // Task calls whose agent runs in the background (the SDK default). The CLI
+  // announces these with `task_started` (carrying the spawning call's
+  // tool_use_id) BEFORE the call's tool_result - which for a background agent
+  // is only a launch ack, not completion. Settling the chain on that ack
+  // would freeze the child transcript at birth and drop everything the agent
+  // does; the real completion signal is the matching `task_notification`.
+  const backgroundLaunches = new Set<string>()
 
   function mapThrough(chain: Chain, chainID: string, event: ClaudeEvent): SidechainAction[] {
     if (!chain.context) {
@@ -91,10 +98,20 @@ export function createSidechainRouter(input: {
       const chainID = typeof record.parent_tool_use_id === "string" ? record.parent_tool_use_id : undefined
 
       if (chainID) {
+        // `parent_tool_use_id` does not, by itself, mean "subagent". The CLI
+        // also tags `tool_progress` heartbeat frames with it for any MAIN
+        // conversation tool call that runs longer than ~30s (e.g. the swarm
+        // delegate MCP tool) - there the field is the running call's own id.
+        // Only conversation events can open or feed a chain; progress
+        // telemetry is swallowed so it neither spawns a phantom "Claude
+        // subagent" session nor buffers unboundedly in `chain.pending`.
+        if (record.type !== "user" && record.type !== "assistant" && record.type !== "stream_event") {
+          return { handled: true, actions: [] }
+        }
         const existing = chains.get(chainID)
         if (existing) return { handled: true, actions: existing.done ? [] : mapThrough(existing, chainID, event) }
         const spawning = mainToolParts.get(chainID)
-        const spawnInput = (spawning?.input ?? {}) as Record<string, unknown>
+        const spawnInput = spawning?.input ?? {}
         const title =
           (typeof spawnInput.description === "string" && spawnInput.description) ||
           (typeof spawnInput.subagent_type === "string" && `${spawnInput.subagent_type} subagent`) ||
@@ -105,14 +122,41 @@ export function createSidechainRouter(input: {
         return { handled: true, actions: [{ kind: "spawn", chainID, title, prompt }] }
       }
 
+      // Task lifecycle telemetry marks background launches and settles them.
+      // These are main-stream system events, so they stay unhandled - the main
+      // mapper still sees them (it ignores what it does not know).
+      if (record.type === "system") {
+        if (record.subtype === "task_started" && typeof record.tool_use_id === "string") {
+          backgroundLaunches.add(record.tool_use_id)
+        }
+        if (record.subtype === "task_notification" && typeof record.tool_use_id === "string") {
+          backgroundLaunches.delete(record.tool_use_id)
+          const chain = chains.get(record.tool_use_id)
+          if (chain) {
+            const reason =
+              record.status === "failed"
+                ? "subagent failed"
+                : record.status === "stopped"
+                  ? "subagent stopped"
+                  : "subagent completed"
+            return { handled: false, actions: finalize(chain, record.tool_use_id, reason) }
+          }
+        }
+        return { handled: false, actions: [] }
+      }
+
       // Main-stream event: a tool_result closing a chain's spawning call settles
-      // that chain. The event itself still belongs to the main mapper.
+      // that chain - unless the call launched a background agent, where the
+      // tool_result is only the launch ack and the chain settles on its
+      // task_notification instead. The event itself still belongs to the main
+      // mapper.
       const actions: SidechainAction[] = []
       const message = record.message as Record<string, unknown> | undefined
-      const content = Array.isArray(message?.content) ? (message!.content as Array<Record<string, unknown>>) : []
+      const content = Array.isArray(message?.content) ? (message.content as Array<Record<string, unknown>>) : []
       if (record.type === "user") {
         for (const block of content) {
           if (block.type !== "tool_result" || typeof block.tool_use_id !== "string") continue
+          if (backgroundLaunches.has(block.tool_use_id)) continue
           const chain = chains.get(block.tool_use_id)
           if (chain) actions.push(...finalize(chain, block.tool_use_id))
         }

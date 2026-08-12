@@ -22,6 +22,9 @@
      border than --theme-border. Light mode only; dark uses the raised token. */
   --theme-surface-composer: #d6dade;
   --theme-border-composer: rgba(16, 21, 28, 0.24);
+  /* Queued-messages tray fused to the composer top: one visible step darker
+     than the composer surface. Light mode only; dark uses the surface token. */
+  --theme-surface-queue: #ccd1d7;
   --theme-surface-selected: #b8c1cc;
   --theme-surface-strong: #99a5b3;
   --theme-text: #10151c;

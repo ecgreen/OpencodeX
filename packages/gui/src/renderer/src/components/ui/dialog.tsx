@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js"
 import { Show, createUniqueId, onCleanup, onMount, splitProps } from "solid-js"
 import { Portal } from "solid-js/web"
+import { registerOverlay } from "../../lib/overlay-registry"
 import { IconButton } from "./button"
 import { classes } from "./shared"
 
@@ -36,6 +37,8 @@ export function Dialog(props: DialogProps) {
 }
 
 function DialogSurface(props: DialogProps) {
+  // Parks the native browser view, which would otherwise paint over the dialog.
+  registerOverlay()
   const [local] = splitProps(props, ["onClose", "title", "description", "size", "footer", "onSubmit", "dismissible", "class", "children"])
   const titleId = createUniqueId()
   const descriptionId = createUniqueId()

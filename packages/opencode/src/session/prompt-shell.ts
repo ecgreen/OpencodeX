@@ -192,6 +192,7 @@ export function make(deps: Deps) {
   const shell: (input: ShellInput) => Effect.Effect<SessionLegacy.WithParts, Session.BusyError> = Effect.fn(
     "SessionPrompt.shell",
   )(function* (input: ShellInput) {
+    if (input.delivery === "immediate") yield* state.interrupt(input.sessionID)
     const ready = yield* Latch.make()
     return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
   })

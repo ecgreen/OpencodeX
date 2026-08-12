@@ -48,6 +48,14 @@ const TERMINAL: readonly NodeStatus[] = ["done", "failed", "skipped", "cancelled
 const SATISFYING: readonly NodeStatus[] = ["done"]
 const POISONED: readonly NodeStatus[] = ["failed", "skipped", "cancelled"]
 const PENDING: readonly NodeStatus[] = ["planned", "ready", "dispatched", "running"]
+/**
+ * Only work that has not started can be cascade-skipped. A dispatched or
+ * running node already has a job - and possibly a live child session - so
+ * stamping it skipped would strand it: settlement only touches
+ * dispatched/running nodes, making the real outcome unrecordable while the
+ * sub-agent keeps working and its card reads "Skipped".
+ */
+const SKIPPABLE: readonly NodeStatus[] = ["planned", "ready"]
 
 export function isTerminal(status: NodeStatus) {
   return TERMINAL.includes(status)
@@ -131,6 +139,8 @@ function satisfied(node: NodeView | undefined) {
  * Nodes that can never run because something they depend on failed, was
  * skipped, or was cancelled. Transitive, so one failure settles its whole
  * downstream cone in a single pass instead of one reconcile tick per level.
+ * In-flight nodes are deliberately not claimed - see SKIPPABLE - so the
+ * cascade settles the future, never rewrites the present.
  */
 export function cascadeSkipIDs(graph: GraphView): string[] {
   const index = indexGraph(graph)
@@ -141,7 +151,7 @@ export function cascadeSkipIDs(graph: GraphView): string[] {
     changed = false
     for (const node of graph.nodes) {
       if (skipped.has(node.id)) continue
-      if (!isPending(status.get(node.id)!)) continue
+      if (!SKIPPABLE.includes(status.get(node.id)!)) continue
       const poisoned =
         dependencies(index, node.id).some((edge) => {
           const from = status.get(edge.fromNodeID)

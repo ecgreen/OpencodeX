@@ -105,6 +105,9 @@
 .workspaceStages { display: grid; gap: var(--ds-space-4); }
 .workspaceStage { display: grid; gap: var(--ds-space-2); padding: var(--ds-space-3); border: 1px dashed var(--ds-border-strong); border-radius: var(--ds-radius-card); background: var(--ds-canvas); }
 
+.composerStage { width: min(100%, 620px); min-width: 0; padding: var(--ds-space-3); border: 1px dashed var(--ds-border-strong); border-radius: var(--ds-radius-card); background: var(--ds-canvas); }
+.composerStage[data-narrow="true"] { width: 360px; max-width: 100%; }
+
 @media (max-width: 900px) {
   .lab { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .rail { height: auto; border-right: 0; border-bottom: 1px solid var(--ds-border-subtle); }

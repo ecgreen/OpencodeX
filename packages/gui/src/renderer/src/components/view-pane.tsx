@@ -2,7 +2,8 @@ import type { Agent, Config, FileNode, LspStatus, McpStatus, McpResource, Openco
 import type { GuiPromptInfo } from "../lib/prompt-state"
 import type { SessionMessageActionContext, SessionMessageActionKind } from "../lib/message-actions"
 import type { SessionSlashCommand } from "../lib/session-slash-commands"
-import type { SessionData } from "../lib/session-api"
+import type { PromptDelivery, SessionData } from "../lib/session-api"
+import type { QueuedSessionPrompt } from "../controllers/session-state"
 import type { ViewPaneRuntimeState } from "../lib/view-pane-state"
 import type { SessionSidePanelTarget } from "./session-side-panel"
 import { SessionPage } from "./session-page"
@@ -16,6 +17,7 @@ export function ViewPane(props: {
   data: SessionData
   loading: boolean
   status: string
+  promptPending?: boolean
   abortConfirmArmed?: boolean
   composerState: ViewPaneRuntimeState
   updateComposerState: (update: (state: ViewPaneRuntimeState) => ViewPaneRuntimeState) => void
@@ -40,7 +42,11 @@ export function ViewPane(props: {
   questions: QuestionRequest[]
   focus: (focusComposer: boolean) => void
   openSidePanelTarget?: (target: SessionSidePanelTarget) => void
-  submit: (event: SubmitEvent, prompt: GuiPromptInfo) => Promise<boolean>
+  submit: (prompt: GuiPromptInfo, options?: { delivery?: PromptDelivery; agent?: string; model?: string; variant?: string }) => Promise<boolean>
+  queuedPrompts?: QueuedSessionPrompt[]
+  queuePrompt?: (prompt: Omit<QueuedSessionPrompt, "id">) => void
+  updateQueuedPrompt?: (sessionID: string, id: string, value: string) => void
+  removeQueuedPrompt?: (sessionID: string, id: string) => void
   replyPermission: (request: PermissionRequest, reply: "once" | "always" | "reject") => void
   replyQuestion: (request: QuestionRequest, answers: QuestionAnswer[]) => void
   rejectQuestion: (request: QuestionRequest) => void
@@ -95,6 +101,10 @@ export function ViewPane(props: {
         selectedVariant={props.selectedVariant}
         setSelectedVariant={props.setSelectedVariant}
         submit={props.submit}
+        queuedPrompts={props.queuedPrompts}
+        queuePrompt={props.queuePrompt}
+        updateQueuedPrompt={props.updateQueuedPrompt}
+        removeQueuedPrompt={props.removeQueuedPrompt}
         permissions={props.permissions}
         questions={props.questions}
         replyPermission={props.replyPermission}
@@ -117,6 +127,7 @@ export function ViewPane(props: {
         toggleGenericToolOutput={props.toggleGenericToolOutput}
         toggleCodeConceal={props.toggleCodeConceal}
         status={props.status}
+        promptPending={props.promptPending}
         abortConfirmArmed={props.abortConfirmArmed}
         pending={props.pending}
         composerState={props.composerState}

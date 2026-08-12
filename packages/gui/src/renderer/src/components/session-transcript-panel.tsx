@@ -1,9 +1,9 @@
-import { Button } from "./ui"
+import { Button, Tooltip } from "./ui"
 import type { Provider } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import type { MessageBundle, SessionData } from "../lib/session-api"
 import type { SessionMessageActionKind } from "../lib/message-actions"
-import { visibleTranscriptMessageIDs, visibleTranscriptMessages } from "../lib/transcript-visibility"
+import { transcriptPromptHistory, visibleTranscriptMessageIDs, visibleTranscriptMessages, type TranscriptPromptEntry } from "../lib/transcript-visibility"
 import { Icon } from "./icon"
 import { MessageActions } from "./message-actions"
 import { sessionDisclosureStore } from "../lib/disclosure"
@@ -23,6 +23,79 @@ function assistantCompleted(info: MessageBundle["info"]) {
   return info.role === "assistant" && typeof info.time.completed === "number"
 }
 
+/**
+ * The prompt preview restyles the tooltip bubble itself, and the bubble's own
+ * component stylesheet is unlayered - it outranks every layered app rule, so
+ * these overrides ride inline where the cascade cannot be argued with. The
+ * card stays on theme: raised surface with a nudge of lift, a strong border,
+ * reading-size type, and a deep two-layer throw (tight contact shadow for
+ * edge definition plus a wide ambient) doing the separating from the prose.
+ */
+const PROMPT_PREVIEW_TOOLTIP_STYLE = {
+  padding: "var(--ds-space-2) var(--ds-space-3)",
+  "border-color": "var(--ds-border-strong)",
+  "border-radius": "var(--ds-radius-overlay)",
+  color: "var(--ds-text)",
+  background: "color-mix(in srgb, var(--ds-surface-raised) 94%, var(--ds-text))",
+  "box-shadow": "0 4px 16px var(--theme-shadow-medium), 0 24px 72px var(--theme-shadow-strong)",
+  "font-size": "var(--ds-text-md)",
+  "line-height": "var(--ds-leading-md)",
+  "font-weight": "450",
+  "letter-spacing": "normal",
+} satisfies JSX.CSSProperties
+
+/**
+ * One prompt-history rail, hosted on either transcript edge. The left rail is
+ * a pointer convenience mirroring the right one: it is hidden from assistive
+ * tech and skipped by Tab so keyboard and screen-reader users meet a single
+ * "Prompt history" landmark, not every prompt twice. Mirroring is a container
+ * `scaleX(-1)` in CSS - one set of geometry rules serves both edges.
+ */
+function PromptHistoryRail(props: {
+  side: "left" | "right"
+  entries: TranscriptPromptEntry[]
+  jump: (messageID: string) => void
+}) {
+  const mirrored = () => props.side === "left"
+  return (
+    <nav
+      class="transcript-prompt-history"
+      data-side={props.side}
+      aria-label={mirrored() ? undefined : "Prompt history"}
+      aria-hidden={mirrored() ? "true" : undefined}
+    >
+      <For each={props.entries}>
+        {(entry, index) => (
+          <Tooltip
+            placement={mirrored() ? "right" : "left"}
+            contentStyle={PROMPT_PREVIEW_TOOLTIP_STYLE}
+            label={<span class="transcript-prompt-history-preview">{entry.text}</span>}
+          >
+            <Button
+              appearance="ghost"
+              size="compact"
+              type="button"
+              class="transcript-prompt-history-item"
+              tabIndex={mirrored() ? -1 : undefined}
+              aria-label={`Prompt ${index() + 1} of ${props.entries.length}: ${promptPreviewLabel(entry.text)}`}
+              onClick={() => props.jump(entry.messageID)}
+            >
+              <span class="transcript-prompt-history-tick" aria-hidden="true" />
+            </Button>
+          </Tooltip>
+        )}
+      </For>
+    </nav>
+  )
+}
+
+/** Screen-reader label for a rail item: enough to identify the prompt without
+ * reading a 400-character preview aloud. */
+function promptPreviewLabel(text: string) {
+  return text.length > 100 ? `${text.slice(0, 99).trimEnd()}…` : text
+}
+
+
 export function TranscriptPanel(props: {
   sessionID: string
   data: SessionData
@@ -34,6 +107,9 @@ export function TranscriptPanel(props: {
   showScrollbar: boolean
   showGenericToolOutput: boolean
   concealCodeBlocks: boolean
+  /** Prompt-history rail on the right edge. Main session transcript only -
+   * embedded swarm and graph transcripts are too small to host it. */
+  showPromptHistory?: boolean
   running?: boolean
   emptyStateDismissed?: boolean
   emptyStateHandoff?: boolean
@@ -82,6 +158,9 @@ export function TranscriptPanel(props: {
   const streamingPartID = createMemo(() => activeTranscriptStreamingPartID(visibleMessages(), props.running === true))
   const activeAssistantHasProgress = createMemo(() => hasActiveAssistantProgress(visibleMessages()))
   const activeAssistantProgressKey = createMemo(() => activeAssistantProgressParts(visibleMessages()).join("|"))
+  const promptHistory = createMemo(() =>
+    warming() || props.showPromptHistory !== true ? [] : transcriptPromptHistory(props.data.messages),
+  )
   const emptyStateHandoff = () => props.emptyStateHandoff === true
   const transcriptHasContent = () => visibleMessages().length > 0 || assistantThinkingVisible()
   const pendingSession = () => props.sessionID.startsWith("pending:")
@@ -165,7 +244,7 @@ export function TranscriptPanel(props: {
 
   return (
     <TranscriptChromeProvider value={transcriptChrome}>
-    <div class="transcript-shell">
+    <div class="transcript-shell" classList={{ "has-prompt-history": props.showPromptHistory === true }}>
       <section
         class="transcript"
         classList={{ "hide-scrollbar": !props.showScrollbar }}
@@ -232,6 +311,10 @@ export function TranscriptPanel(props: {
           </Show>
         </div>
       </section>
+      <Show when={promptHistory().length > 0}>
+        <PromptHistoryRail side="left" entries={promptHistory()} jump={scroll.jumpToMessage} />
+        <PromptHistoryRail side="right" entries={promptHistory()} jump={scroll.jumpToMessage} />
+      </Show>
       <Show when={props.running === true}>
         <div class="transcript-streaming-indicator" aria-hidden="true"><span /></div>
       </Show>

@@ -13,10 +13,6 @@ export class HeaderTimeoutError extends Error {
 
 export class ResponseStreamError extends Error {
   public override readonly name = "ProviderResponseStreamError"
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
 }
 
 // Adapted from overflow detection patterns in:
@@ -133,11 +129,25 @@ export type ParsedStreamError =
 
 export function parseStreamError(input: unknown): ParsedStreamError | undefined {
   const raw = json(input)
+  if (!raw) {
+    if (typeof input !== "string" || !isOverflow(input)) return undefined
+    return {
+      type: "context_overflow",
+      message: input,
+      responseBody: input,
+    }
+  }
   const body = typeof raw?.message === "string" ? (json(raw.message) ?? raw) : raw
-  if (!body) return
 
   const responseBody = JSON.stringify(body)
-  if (body.type !== "error") return
+  if (body.type !== "error") {
+    if (typeof body.message !== "string" || !isOverflow(body.message)) return undefined
+    return {
+      type: "context_overflow",
+      message: body.message,
+      responseBody,
+    }
+  }
 
   switch (body?.error?.code) {
     case "context_length_exceeded":
@@ -176,6 +186,7 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
         responseBody,
       }
   }
+  return undefined
 }
 
 export type ParsedAPICallError =

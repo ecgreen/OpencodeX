@@ -79,6 +79,12 @@ function isOrphanedInterruptedTool(part: SessionLegacy.ToolPart) {
 
 const AUTO_CONTINUE_LIMIT = 3
 const UNFINISHED_TODO_STATUS = new Set(["pending", "in_progress"])
+const STEERING_REMINDER = [
+  "<system-reminder>",
+  "The user sent this message to steer the task already in progress.",
+  "Continue the existing task, incorporating the new information. Preserve prior progress and objectives unless the user explicitly asks to change them.",
+  "</system-reminder>",
+].join("\n")
 
 type UnfinishedWork = {
   todos: Todo.Info[]
@@ -120,7 +126,9 @@ function autoContinueText(reason: NonNullable<ReturnType<typeof autoContinueReas
   }
   const detail = [
     unfinished.todos.length > 0 ? `${unfinished.todos.length} todo(s) still pending or in progress` : undefined,
-    unfinished.backgroundJobs.length > 0 ? `${unfinished.backgroundJobs.length} background subagent task(s) still running` : undefined,
+    unfinished.backgroundJobs.length > 0
+      ? `${unfinished.backgroundJobs.length} background subagent task(s) still running`
+      : undefined,
   ]
     .filter(Boolean)
     .join("; ")
@@ -238,7 +246,7 @@ export const layer = Layer.effect(
       currentModel: (sessionID) => currentModel(sessionID),
     })
 
-    const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
+    const generateTitle = Effect.fn("SessionPrompt.generateTitle")(function* (input: {
       session: Session.Info
       history: SessionLegacy.WithParts[]
       providerID: ProviderV2.ID
@@ -251,7 +259,6 @@ export const layer = Layer.effect(
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
       const idx = input.history.findIndex(real)
       if (idx === -1) return
-      if (input.history.filter(real).length !== 1) return
 
       const context = input.history.slice(0, idx + 1)
       const firstUser = context[idx]
@@ -295,9 +302,24 @@ export const layer = Layer.effect(
         .find((line) => line.length > 0)
       if (!cleaned) return
       const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
+      const current = yield* sessions.get(input.session.id).pipe(Effect.orDie)
+      if (!Session.isDefaultTitle(current.title)) return
       yield* sessions
         .setTitle({ sessionID: input.session.id, title: t })
         .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))
+    })
+
+    const titles = new Set<SessionID>()
+    const ensureTitle = Effect.fn("SessionPrompt.ensureTitle")(function* (
+      input: Parameters<typeof generateTitle>[0],
+    ) {
+      const claimed = yield* Effect.sync(() => {
+        if (titles.has(input.session.id)) return false
+        titles.add(input.session.id)
+        return true
+      })
+      if (!claimed) return
+      yield* generateTitle(input).pipe(Effect.ensuring(Effect.sync(() => titles.delete(input.session.id))))
     })
 
     const { handleSubtask } = PromptSubtask.make({
@@ -383,10 +405,30 @@ export const layer = Layer.effect(
       return message
     })
 
+    const markSteering = Effect.fn("SessionPrompt.markSteering")(function* (message: SessionLegacy.WithParts) {
+      if (
+        message.parts.some(
+          (part) => part.type === "text" && part.synthetic === true && part.metadata?.steering === true,
+        )
+      )
+        return
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: message.info.id,
+        sessionID: message.info.sessionID,
+        type: "text",
+        text: STEERING_REMINDER,
+        synthetic: true,
+        metadata: { steering: true },
+      } satisfies SessionLegacy.TextPart)
+    })
+
     const prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
       const message = yield* acceptPrompt(input)
+      const steering = input.delivery === "immediate" && (yield* state.interrupt(input.sessionID))
+      if (steering) yield* markSteering(message)
       if (input.noReply === true) return message
       return yield* loop({ sessionID: input.sessionID })
     })
@@ -507,7 +549,7 @@ export const layer = Layer.effect(
 
           step++
           if (step === 1)
-            yield* title({
+            yield* ensureTitle({
               session,
               modelID: lastUser.model.modelID,
               providerID: lastUser.model.providerID,
@@ -837,6 +879,8 @@ export const layer = Layer.effect(
           { behavior: "immediate" },
         )
         .pipe(Effect.orDie)
+      const steering = input.delivery === "immediate" && (yield* state.interrupt(input.sessionID))
+      if (steering) yield* markSteering(message)
       if (input.noReply !== true) yield* launchCommand(acceptedCommandID)
     })
 
@@ -943,6 +987,7 @@ export const layer = Layer.effect(
       const result = yield* prompt({
         sessionID: input.sessionID,
         messageID: input.messageID,
+        delivery: input.delivery,
         model: userModel,
         agent: userAgent,
         parts,
@@ -971,45 +1016,47 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = Layer.suspend(() =>
-  layer.pipe(
-    Layer.provide(SessionRunState.defaultLayer),
-    Layer.provide(SessionStatus.defaultLayer),
-    Layer.provide(SessionCompaction.defaultLayer),
-    Layer.provide(SessionProcessor.defaultLayer),
-    Layer.provide(Command.defaultLayer),
-    Layer.provide(Permission.defaultLayer),
-    Layer.provide(Question.defaultLayer),
-    Layer.provide(MCP.defaultLayer),
-    Layer.provide(LSP.defaultLayer),
-    Layer.provide(ToolRegistry.defaultLayer),
-    Layer.provide(Truncate.defaultLayer),
-    Layer.provide(Provider.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(Instruction.defaultLayer),
-    Layer.provide(AppFileSystem.defaultLayer),
-    Layer.provide(Plugin.defaultLayer),
-    Layer.provide(Session.defaultLayer),
-    Layer.provide(SessionRevert.defaultLayer),
-    Layer.provide(OpencodeXClaudeDriver.defaultLayer),
-    Layer.provide(Skill.defaultLayer),
-  ).pipe(
-    Layer.provide(SessionSummary.defaultLayer),
-    Layer.provide(Image.defaultLayer),
-    Layer.provide(Todo.defaultLayer),
-    Layer.provide(BackgroundJob.defaultLayer),
-    Layer.provide(
-      Layer.mergeAll(
-        Agent.defaultLayer,
-        Database.defaultLayer,
-        SystemPrompt.defaultLayer,
-        LLM.defaultLayer,
-        Reference.defaultLayer,
-        CrossSpawnSpawner.defaultLayer,
-        RuntimeFlags.defaultLayer,
-        EventV2Bridge.defaultLayer,
+  layer
+    .pipe(
+      Layer.provide(SessionRunState.defaultLayer),
+      Layer.provide(SessionStatus.defaultLayer),
+      Layer.provide(SessionCompaction.defaultLayer),
+      Layer.provide(SessionProcessor.defaultLayer),
+      Layer.provide(Command.defaultLayer),
+      Layer.provide(Permission.defaultLayer),
+      Layer.provide(Question.defaultLayer),
+      Layer.provide(MCP.defaultLayer),
+      Layer.provide(LSP.defaultLayer),
+      Layer.provide(ToolRegistry.defaultLayer),
+      Layer.provide(Truncate.defaultLayer),
+      Layer.provide(Provider.defaultLayer),
+      Layer.provide(Config.defaultLayer),
+      Layer.provide(Instruction.defaultLayer),
+      Layer.provide(AppFileSystem.defaultLayer),
+      Layer.provide(Plugin.defaultLayer),
+      Layer.provide(Session.defaultLayer),
+      Layer.provide(SessionRevert.defaultLayer),
+      Layer.provide(OpencodeXClaudeDriver.defaultLayer),
+      Layer.provide(Skill.defaultLayer),
+    )
+    .pipe(
+      Layer.provide(SessionSummary.defaultLayer),
+      Layer.provide(Image.defaultLayer),
+      Layer.provide(Todo.defaultLayer),
+      Layer.provide(BackgroundJob.defaultLayer),
+      Layer.provide(
+        Layer.mergeAll(
+          Agent.defaultLayer,
+          Database.defaultLayer,
+          SystemPrompt.defaultLayer,
+          LLM.defaultLayer,
+          Reference.defaultLayer,
+          CrossSpawnSpawner.defaultLayer,
+          RuntimeFlags.defaultLayer,
+          EventV2Bridge.defaultLayer,
+        ),
       ),
     ),
-  ),
 )
 
 export * as SessionPrompt from "./prompt"

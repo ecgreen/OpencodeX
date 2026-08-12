@@ -1,0 +1,119 @@
+/* Prompt-history rail: one tick per user prompt (newest eight), a vertical
+   stack anchored to both transcript edges. At rest it reads as a faint
+   minimap; engaging the rail brightens the ticks and lengthens them a step,
+   and the hovered or focused tick reaches further and takes the accent, so
+   the eye lands on exactly one. Each tick previews its prompt in a tooltip
+   and clicking jumps the transcript to that turn. Oldest sits on top,
+   matching the transcript's reading order.
+
+   Engagement is hover or *visible* focus - `:focus-within` would also match
+   the plain focus a mouse click leaves behind, keeping the rail lit after a
+   jump; `:has(:focus-visible)` lights it for keyboard travel only. */
+
+/* Hosting the rails earns the transcript wider side gutters so they sit in
+   space of their own instead of over the message text. Keyed off the host
+   flag, not the prompt count, so the layout never shifts mid-session. */
+.transcript-shell.has-prompt-history .transcript {
+  padding-right: 24px;
+  padding-left: 24px;
+}
+
+.transcript-prompt-history {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  transform: translateY(-50%);
+}
+
+/* The left rail is the right one seen in a mirror: flipping the container
+   mirrors the anchor edge and the growth direction in one stroke, so every
+   rule below serves both edges unchanged. */
+.transcript-prompt-history[data-side="left"] {
+  right: auto;
+  left: 8px;
+  transform: translateY(-50%) scaleX(-1);
+}
+
+/* The tooltip trigger wraps each button in a div; it must not add height. */
+.transcript-prompt-history .ui-tooltip-trigger {
+  display: flex;
+}
+
+/* A ghost Button carries control chrome sized for text; a rail item is a
+   bare line, so the control metrics and hover fill are pared back here. The
+   24px pitch keeps the controls accessible while the 2px tick preserves the
+   appearance of a dense minimap. */
+.transcript-prompt-history-item.ui-button {
+  width: 36px;
+  height: 24px;
+  min-height: 24px;
+  justify-content: flex-end;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.transcript-prompt-history-item.ui-button:hover:not(:disabled),
+.transcript-prompt-history-item.ui-button:active:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+
+.transcript-prompt-history-item:focus-visible {
+  outline: 2px solid var(--ds-control-accent);
+  outline-offset: -2px;
+}
+
+.transcript-prompt-history-tick {
+  width: 12px;
+  height: 2px;
+  margin-right: 4px;
+  border-radius: 999px;
+  background: var(--ds-border);
+  transition:
+    width var(--ds-motion-route) var(--ds-ease-enter),
+    background var(--ds-motion-hover) var(--ds-ease-enter);
+}
+
+.transcript-prompt-history:hover .transcript-prompt-history-tick,
+.transcript-prompt-history:has(:focus-visible) .transcript-prompt-history-tick {
+  width: 16px;
+  background: var(--ds-text-subtle);
+}
+
+.transcript-prompt-history .transcript-prompt-history-item:hover .transcript-prompt-history-tick,
+.transcript-prompt-history .transcript-prompt-history-item:focus-visible .transcript-prompt-history-tick {
+  width: 24px;
+  background: var(--ds-control-accent);
+}
+
+/* A prompt preview is a paragraph, not a phrase: give the shared bubble room
+   and clamp instead of letting one prompt cover the screen. The card look
+   itself (inverted colors, reading-size type, deep shadow) lives inline on
+   the bubble - see PROMPT_PREVIEW_TOOLTIP_STYLE in the transcript panel -
+   because the bubble's own component stylesheet is unlayered and outranks
+   every rule this file could write. Only properties that sheet leaves alone
+   belong here. */
+.ui-tooltip:has(.transcript-prompt-history-preview) {
+  max-width: 360px;
+}
+
+/* Three lines is a reminder, not a reading pane: the clamp ellipsizes long
+   prompts so a pasted essay cannot turn the preview into a wall of text. */
+.transcript-prompt-history-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transcript-prompt-history-tick {
+    transition: none;
+  }
+}

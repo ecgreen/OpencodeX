@@ -14,6 +14,8 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
+// ChatGPT OAuth uses the subscription backend, not the larger public API context advertised by models.dev.
+const CHATGPT_CONTEXT_LIMIT = 256_000
 const ALLOWED_MODELS = new Set([
   "gpt-5.5",
   "gpt-5.2",
@@ -390,13 +392,14 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                   output: 0,
                   cache: { read: 0, write: 0 },
                 },
-                limit: model.id.includes("gpt-5.5")
-                  ? {
-                      context: 400_000,
-                      input: 272_000,
-                      output: 128_000,
-                    }
-                  : model.limit,
+                limit: {
+                  ...model.limit,
+                  context: Math.min(model.limit.context, CHATGPT_CONTEXT_LIMIT),
+                  input:
+                    model.limit.input === undefined
+                      ? undefined
+                      : Math.min(model.limit.input, model.limit.context, CHATGPT_CONTEXT_LIMIT),
+                },
                 variants: openaiModelVariants(model),
               },
             ]),

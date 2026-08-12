@@ -3644,6 +3644,8 @@ export type ConfigV2ExperimentalPolicy = {
   resource: string
 }
 
+export type SessionDelivery = "immediate" | "deferred"
+
 export type EventModelsDevRefreshed = {
   id: string
   type: "models-dev.refreshed"
@@ -10122,6 +10124,7 @@ export type SessionMessagesResponse = SessionMessagesResponses[keyof SessionMess
 export type SessionPromptData = {
   body?: {
     messageID?: string
+    delivery?: SessionDelivery
     model?: {
       providerID: string
       modelID: string
@@ -10393,6 +10396,7 @@ export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSu
 export type SessionPromptAsyncData = {
   body?: {
     messageID?: string
+    delivery?: SessionDelivery
     model?: {
       providerID: string
       modelID: string
@@ -10442,6 +10446,7 @@ export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof Sessi
 export type SessionCommandData = {
   body?: {
     messageID?: string
+    delivery?: SessionDelivery
     agent?: string
     model?: string
     arguments: string
@@ -10494,6 +10499,7 @@ export type SessionCommandResponse = SessionCommandResponses[keyof SessionComman
 export type SessionShellData = {
   body?: {
     messageID?: string
+    delivery?: SessionDelivery
     agent: string
     model?: {
       providerID: string
