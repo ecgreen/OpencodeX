@@ -46,7 +46,7 @@ export function make(deps: Deps) {
                 return { state: "done" as const }
               }
               if (current.status === "running" && current.lease_expires_at && current.lease_expires_at > now) {
-                return { state: "waiting" as const }
+                return { state: "occupied" as const }
               }
               const active = yield* transaction
                 .select({
@@ -90,7 +90,7 @@ export function make(deps: Deps) {
                 )
                 .returning()
                 .get()
-              if (!claimed) return { state: "waiting" as const }
+              if (!claimed) return { state: "occupied" as const }
               return { state: "ready" as const, command: claimed }
             }),
           { behavior: "immediate" },
@@ -136,22 +136,6 @@ export function make(deps: Deps) {
       }
       if (claimed.state !== "ready") return
       const command = claimed.command
-      if (!(yield* waitForExecutionTurn(commandID, command.session_id))) return
-      const admitted = yield* db
-        .select({ id: SessionCommandTable.id })
-        .from(SessionCommandTable)
-        .where(
-          and(
-            eq(SessionCommandTable.id, commandID),
-            eq(SessionCommandTable.status, "running"),
-            eq(SessionCommandTable.owner_id, commandOwner),
-            eq(SessionCommandTable.claim_generation, command.claim_generation),
-          ),
-        )
-        .get()
-        .pipe(Effect.orDie)
-      if (!admitted) return
-
       const heartbeat = yield* Effect.sleep(Math.floor(commandLeaseMillis / 3)).pipe(
         Effect.andThen(
           db
@@ -171,10 +155,24 @@ export function make(deps: Deps) {
         Effect.repeat(Schedule.forever),
         Effect.forkIn(scope),
       )
-      const exit = yield* loop({ sessionID: command.session_id, messageID: command.message_id }).pipe(
-        Effect.exit,
-        Effect.ensuring(Fiber.interrupt(heartbeat)),
-      )
+      const exit = yield* Effect.gen(function* () {
+        if (!(yield* waitForExecutionTurn(commandID, command.session_id))) return
+        const admitted = yield* db
+          .select({ id: SessionCommandTable.id })
+          .from(SessionCommandTable)
+          .where(
+            and(
+              eq(SessionCommandTable.id, commandID),
+              eq(SessionCommandTable.status, "running"),
+              eq(SessionCommandTable.owner_id, commandOwner),
+              eq(SessionCommandTable.claim_generation, command.claim_generation),
+            ),
+          )
+          .get()
+          .pipe(Effect.orDie)
+        if (!admitted) return
+        return yield* loop({ sessionID: command.session_id, messageID: command.message_id })
+      }).pipe(Effect.exit, Effect.ensuring(Fiber.interrupt(heartbeat)))
       const completedAt = Date.now()
       if (Exit.isSuccess(exit)) {
         yield* db
@@ -236,6 +234,28 @@ export function make(deps: Deps) {
       )
     })
 
+    const wakeSession = Effect.fn("SessionPrompt.wakeSession")(function* (sessionID: SessionID) {
+      const now = Date.now()
+      const commands = yield* db
+        .select({ id: SessionCommandTable.id })
+        .from(SessionCommandTable)
+        .where(
+          and(
+            eq(SessionCommandTable.session_id, sessionID),
+            or(
+              eq(SessionCommandTable.status, "queued"),
+              and(
+                eq(SessionCommandTable.status, "running"),
+                or(isNull(SessionCommandTable.lease_expires_at), lt(SessionCommandTable.lease_expires_at, now)),
+              ),
+            ),
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      yield* Effect.forEach(commands, (command) => launchCommand(command.id), { discard: true })
+    })
+
     const recover = Effect.fn("SessionPrompt.recover")(function* () {
       const ctx = yield* InstanceState.context
       const commands = yield* db
@@ -261,6 +281,7 @@ export function make(deps: Deps) {
       waitForExecutionTurn,
       executeCommand,
       launchCommand,
+      wakeSession,
       recover,
     }
   })

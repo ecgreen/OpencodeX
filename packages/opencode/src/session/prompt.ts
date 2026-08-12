@@ -771,7 +771,7 @@ export const layer = Layer.effect(
       },
     )
 
-    const { launchCommand, recover } = yield* PromptClaim.make({
+    const { wakeSession, recover } = yield* PromptClaim.make({
       database,
       events,
       scope,
@@ -792,7 +792,7 @@ export const layer = Layer.effect(
           .get()
           .pipe(Effect.orDie)
         if (existing) {
-          if (!["succeeded", "failed", "cancelled"].includes(existing.status)) yield* launchCommand(existing.id)
+          if (!["succeeded", "failed", "cancelled"].includes(existing.status)) yield* wakeSession(input.sessionID)
           return
         }
       }
@@ -800,7 +800,7 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       const now = Date.now()
       const commandID = `sec_${Identifier.ascending()}`
-      const acceptedCommandID = yield* db
+      yield* db
         .transaction(
           (transaction) =>
             Effect.gen(function* () {
@@ -881,7 +881,7 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie)
       const steering = input.delivery === "immediate" && (yield* state.interrupt(input.sessionID))
       if (steering) yield* markSteering(message)
-      if (input.noReply !== true) yield* launchCommand(acceptedCommandID)
+      if (input.noReply !== true) yield* wakeSession(input.sessionID)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {

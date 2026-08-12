@@ -760,6 +760,139 @@ it.instance("recover launches an accepted queued prompt intent", () =>
   }),
 )
 
+it.instance("foreign command requires a new recovery pass after its lease expires", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    const message = yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "owned by another process" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .insert(SessionCommandTable)
+      .values({
+        id: "sec_foreign_lease",
+        session_id: chat.id,
+        message_id: message.info.id,
+        project_id: session.project_id,
+        directory: session.directory,
+        status: "running",
+        owner_id: "local:999999:prompt:foreign",
+        claim_generation: 1,
+        lease_expires_at: now + 60_000,
+        started_at: now,
+        time_created: now,
+        time_updated: now,
+      })
+      .run()
+      .pipe(Effect.orDie)
+
+    yield* prompt.recover()
+    yield* db
+      .update(SessionCommandTable)
+      .set({ lease_expires_at: Date.now() - 1 })
+      .where(eq(SessionCommandTable.id, "sec_foreign_lease"))
+      .run()
+      .pipe(Effect.orDie)
+    yield* Effect.sleep("300 millis")
+
+    expect(yield* llm.hits).toHaveLength(0)
+    expect(
+      yield* db
+        .select({ owner: SessionCommandTable.owner_id, generation: SessionCommandTable.claim_generation })
+        .from(SessionCommandTable)
+        .where(eq(SessionCommandTable.id, "sec_foreign_lease"))
+        .get()
+        .pipe(Effect.orDie),
+    ).toEqual({ owner: "local:999999:prompt:foreign", generation: 1 })
+
+    yield* llm.text("recovered once")
+    yield* prompt.recover()
+    yield* llm.wait(1)
+    yield* pollWithTimeout(
+      db
+        .select({ status: SessionCommandTable.status, generation: SessionCommandTable.claim_generation })
+        .from(SessionCommandTable)
+        .where(eq(SessionCommandTable.id, "sec_foreign_lease"))
+        .get()
+        .pipe(
+          Effect.orDie,
+          Effect.map((command) =>
+            command?.status === "succeeded" && command.generation === 2 ? command : undefined,
+          ),
+      ),
+      "expired foreign command did not recover",
+    )
+  }),
+)
+
+it.instance("promptAsync reclaims an expired predecessor before a newer prompt", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({})
+    yield* llm.hang
+    const message = yield* prompt.prompt({
+      sessionID: chat.id,
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "claimed by a process that exited" }],
+    })
+    const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, chat.id)).get().pipe(Effect.orDie)
+    if (!session) return yield* Effect.die(new Error("missing session row"))
+    const now = Date.now()
+    yield* db
+      .insert(SessionCommandTable)
+      .values({
+        id: "sec_expired_predecessor",
+        session_id: chat.id,
+        message_id: message.info.id,
+        project_id: session.project_id,
+        directory: session.directory,
+        status: "running",
+        owner_id: "local:999999:prompt:dead",
+        claim_generation: 1,
+        lease_expires_at: now - 1,
+        started_at: now - 60_000,
+        time_created: now - 60_000,
+        time_updated: now - 1,
+      })
+      .run()
+      .pipe(Effect.orDie)
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "new prompt" }],
+    })
+    yield* llm.wait(1)
+
+    const reclaimed = yield* db
+      .select({
+        status: SessionCommandTable.status,
+        owner: SessionCommandTable.owner_id,
+        generation: SessionCommandTable.claim_generation,
+      })
+      .from(SessionCommandTable)
+      .where(eq(SessionCommandTable.id, "sec_expired_predecessor"))
+      .get()
+      .pipe(Effect.orDie)
+    expect(reclaimed).toMatchObject({ status: "running", generation: 2 })
+    expect(reclaimed?.owner).not.toBe("local:999999:prompt:dead")
+    yield* prompt.cancel(chat.id)
+  }),
+)
+
 it.instance("loop exits without an LLM request for interrupted orphan tool calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
