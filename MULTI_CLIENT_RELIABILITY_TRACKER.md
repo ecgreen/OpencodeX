@@ -85,7 +85,7 @@ Acceptance criteria:
 
 ### MCR-5: GUI Remote Backend Mode
 
-Status: pending
+Status: implemented locally; packaged smoke against a deployed canonical backend pending
 
 Allow desktop GUI to use the canonical backend without spawning a loopback coordinator.
 
@@ -96,6 +96,16 @@ Acceptance criteria:
 - Remote mode does not spawn or acquire a local coordinator.
 - Connection errors identify the configured backend and preserve retryable state.
 - Local sidecar mode remains available for standalone use.
+
+Runtime configuration:
+
+- `OPENCODEX_GUI_SERVER_URL`: canonical origin. HTTPS is required for non-loopback hosts by default.
+- `OPENCODEX_GUI_SERVER_USERNAME`: Basic-auth username, default `opencode`.
+- `OPENCODEX_GUI_SERVER_PASSWORD`: Basic-auth password. An empty value sends no authorization header.
+- `OPENCODEX_GUI_DIRECTORY`: canonical backend directory used for initial routing.
+- `OPENCODEX_GUI_ALLOW_INSECURE=1`: explicit opt-in for trusted HTTP LAN/Tailscale development.
+
+Remote mode authorizes only the exact configured origin, adds only that origin to renderer CSP, returns no credentials through preload, and does not start, lease, restart, or stop a local coordinator. Credential rotation currently requires an app restart.
 
 ### MCR-6: TUI Canonical Attach
 
