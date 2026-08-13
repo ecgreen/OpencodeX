@@ -6,9 +6,16 @@
 // and kills the process when the test scope closes. The OS-assigned port is
 // parsed off the "listening on http://..." line.
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { cliIt } from "../../lib/cli-process"
+
+const HealthIdentity = Schema.Struct({
+  processRole: Schema.String,
+  runID: Schema.String,
+  databaseID: Schema.String,
+  eventBusID: Schema.String,
+})
 
 describe("opencode serve (subprocess)", () => {
   // Smoke test: server starts, binds a port, and /global/health responds.
@@ -31,6 +38,30 @@ describe("opencode serve (subprocess)", () => {
         expect(body).toBeDefined()
       }),
     60_000,
+  )
+
+  cliIt.live(
+    "distinguishes process-local event buses sharing one database",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const first = yield* opencode.serve({ env: { OPENCODE_RUN_ID: "serve-first" } })
+        const second = yield* opencode.serve({ env: { OPENCODE_RUN_ID: "serve-second" } })
+        const client = yield* HttpClient.HttpClient
+        const firstHealth = Schema.decodeUnknownSync(HealthIdentity)(
+          yield* (yield* client.get(`${first.url}/global/health`)).json,
+        )
+        const secondHealth = Schema.decodeUnknownSync(HealthIdentity)(
+          yield* (yield* client.get(`${second.url}/global/health`)).json,
+        )
+
+        expect(firstHealth).toMatchObject({ processRole: "main", runID: "serve-first" })
+        expect(secondHealth).toMatchObject({ processRole: "main", runID: "serve-second" })
+        expect(firstHealth).toHaveProperty("databaseID")
+        expect(firstHealth).toHaveProperty("eventBusID")
+        expect(secondHealth).toHaveProperty("databaseID", firstHealth.databaseID)
+        expect(secondHealth.eventBusID).not.toBe(firstHealth.eventBusID)
+      }),
+    90_000,
   )
 
   // The scope-close finalizer must actually terminate the child. Without this

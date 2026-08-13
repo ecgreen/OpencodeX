@@ -1,5 +1,5 @@
 import { Config } from "@/config/config"
-import { GlobalBus, subscribeGlobalBus, type GlobalEvent } from "@/bus/global"
+import { GlobalBus, GlobalBusID, subscribeGlobalBus, type GlobalEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
@@ -22,6 +22,7 @@ import {
   SessionInteractionTable,
 } from "@opencode-ai/core/session/sql"
 import { and, eq, gt, inArray, notInArray, or } from "drizzle-orm"
+import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
 
 const log = Log.create({ service: "server" })
 
@@ -88,6 +89,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const bridge = yield* EffectBridge.make()
     const guiBridge = yield* makeGuiBridgeHandlers()
     const { db } = yield* Database.Service
+    const processMetadata = ensureProcessMetadata("main")
+    const databaseID = Bun.hash(Database.path()).toString(36)
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       const now = Date.now()
@@ -134,7 +137,15 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         ].map((query) => query.pipe(Effect.map((row) => row !== undefined), Effect.orDie)),
         { concurrency: "unbounded" },
       )
-      return { healthy: true as const, version: InstallationVersion, active: activity.some(Boolean) }
+      return {
+        healthy: true as const,
+        version: InstallationVersion,
+        active: activity.some(Boolean),
+        processRole: processMetadata.processRole,
+        runID: processMetadata.runID,
+        databaseID,
+        eventBusID: GlobalBusID,
+      }
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {

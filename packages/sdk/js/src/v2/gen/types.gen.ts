@@ -4473,6 +4473,10 @@ export type GlobalHealthResponses = {
     healthy: true
     version: string
     active: boolean
+    processRole: string
+    runID: string
+    databaseID: string
+    eventBusID: string
   }
 }
 

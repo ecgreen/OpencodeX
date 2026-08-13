@@ -20,6 +20,7 @@ class GlobalBusEmitter extends EventEmitter<{
 }
 
 export const GlobalBus = new GlobalBusEmitter()
+export const GlobalBusID = crypto.randomUUID()
 
 const subscribers = new Set<{ notify: (event: GlobalEvent) => void }>()
 const publish = (event: GlobalEvent) => subscribers.forEach((subscriber) => subscriber.notify(event))
