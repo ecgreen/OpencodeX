@@ -19,7 +19,11 @@ import { registerNotificationIpc } from "./notification-ipc.js"
 import { registerTerminalIpc } from "./terminal-ipc.js"
 import { validString } from "./ipc-validation.js"
 import { MAIN_PERFORMANCE_MILESTONES, markMainPerformance } from "./performance.js"
-import { loopbackSidecarURL } from "./sidecar-connection.js"
+import {
+  configuredBackendConnection,
+  configuredBackendConnectSource,
+  loopbackSidecarURL,
+} from "./sidecar-connection.js"
 import { createSidecarLifecycle } from "./sidecar-lifecycle.js"
 import { attachEditContextMenu } from "./context-menu.js"
 import { nextZoomLevel, zoomShortcutAction } from "./zoom-shortcuts.js"
@@ -27,17 +31,8 @@ import { nextZoomLevel, zoomShortcutAction } from "./zoom-shortcuts.js"
 markMainPerformance(MAIN_PERFORMANCE_MILESTONES.bootstrap)
 const isDev = !app.isPackaged
 const rendererURL = isDev ? developmentRendererURL() : undefined
-const RENDERER_CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "font-src 'self' data:",
-  "media-src 'self' data:",
-  "worker-src 'self' blob:",
-  "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* data:",
-].join("; ")
-let authorizedSidecar: { origin: string; header: string } | undefined
+const configuredBackend = configuredBackendConnection()
+let authorizedSidecar: { origin: string; header?: string } | undefined
 const sidecarLifecycle = createSidecarLifecycle({
   start: startSidecar,
   health: isCoordinatorHealthy,
@@ -76,25 +71,57 @@ function registerAppIcon() {
 }
 
 function authorizeSidecar(connection: SidecarConnection) {
-  const url = loopbackSidecarURL(connection.url)
+  const url = configuredBackend ? new URL(connection.url) : loopbackSidecarURL(connection.url)
   if (!url) throw new Error("OpencodeX sidecar URL must use HTTP on a loopback host")
+  if (configuredBackend && url.origin !== configuredBackend.url) {
+    throw new Error("OpencodeX backend URL does not match OPENCODEX_GUI_SERVER_URL")
+  }
   authorizedSidecar = {
     origin: url.origin,
-    header: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
+    ...(connection.password
+      ? { header: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}` }
+      : {}),
   }
 }
 
 function ensureSidecar() {
+  if (configuredBackend) {
+    authorizeSidecar(configuredBackend)
+    return Promise.resolve(configuredBackend)
+  }
   return sidecarLifecycle.ensure()
 }
 
 function stopOwnedSidecar() {
+  if (configuredBackend) return Promise.resolve()
   return sidecarLifecycle.stop()
+}
+
+function rendererContentSecurityPolicy() {
+  const remote = configuredBackendConnectSource(configuredBackend)
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    "media-src 'self' data:",
+    "worker-src 'self' blob:",
+    [
+      "connect-src 'self'",
+      "http://127.0.0.1:*",
+      "ws://127.0.0.1:*",
+      "http://localhost:*",
+      "ws://localhost:*",
+      ...(remote ? [remote] : []),
+      "data:",
+    ].join(" "),
+  ].join("; ")
 }
 
 function registerSidecarAuthorization() {
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    if (authorizedSidecar) {
+    if (authorizedSidecar?.header) {
       try {
         if (new URL(details.url).origin === authorizedSidecar.origin) {
           details.requestHeaders.authorization = authorizedSidecar.header
@@ -112,7 +139,7 @@ function registerContentSecurityPolicy() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        "Content-Security-Policy": [RENDERER_CSP],
+        "Content-Security-Policy": [rendererContentSecurityPolicy()],
       },
     })
   })

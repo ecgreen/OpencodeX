@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { loopbackSidecarURL } from "../src/main/sidecar-connection"
+import {
+  configuredBackendConnection,
+  configuredBackendConnectSource,
+  loopbackSidecarURL,
+} from "../src/main/sidecar-connection"
 
 describe("sidecar connection URL", () => {
   test("accepts only HTTP loopback URLs", () => {
@@ -9,5 +13,39 @@ describe("sidecar connection URL", () => {
     expect(loopbackSidecarURL("https://127.0.0.1:4096")).toBeUndefined()
     expect(loopbackSidecarURL("http://example.com:4096")).toBeUndefined()
     expect(loopbackSidecarURL("not a URL")).toBeUndefined()
+  })
+
+  test("accepts one explicitly configured canonical backend origin", () => {
+    expect(
+      configuredBackendConnection({
+        OPENCODEX_GUI_SERVER_URL: "http://100.103.153.85:4096",
+        OPENCODEX_GUI_ALLOW_INSECURE: "1",
+        OPENCODEX_GUI_SERVER_USERNAME: "opencode",
+        OPENCODEX_GUI_SERVER_PASSWORD: "secret",
+        OPENCODEX_GUI_DIRECTORY: "/srv/project",
+      }),
+    ).toEqual({
+      url: "http://100.103.153.85:4096",
+      username: "opencode",
+      password: "secret",
+      directory: "/srv/project",
+    })
+    expect(configuredBackendConnection({})).toBeUndefined()
+    expect(
+      configuredBackendConnectSource(
+        configuredBackendConnection({ OPENCODEX_GUI_SERVER_URL: "https://opencodex.example.test" }),
+      ),
+    ).toBe("https://opencodex.example.test")
+    expect(() => configuredBackendConnection({ OPENCODEX_GUI_SERVER_URL: "http://100.103.153.85:4096" })).toThrow(
+      "must use HTTPS",
+    )
+    expect(() =>
+      configuredBackendConnection({
+        OPENCODEX_GUI_SERVER_URL: "https://opencodex.example.test/base",
+      }),
+    ).toThrow("without a path")
+    expect(() => configuredBackendConnection({ OPENCODEX_GUI_SERVER_URL: "file:///tmp/opencode" })).toThrow(
+      "must use HTTP or HTTPS",
+    )
   })
 })
