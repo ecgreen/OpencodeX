@@ -112,7 +112,7 @@ Acceptance criteria:
 
 ### MCR-7: Deterministic Multi-Client E2E
 
-Status: pending
+Status: in progress; canonical prompt, reconnect, permission, and restart contracts implemented locally
 
 Add a real `opencodex serve` subprocess suite using mobile-like SDK clients.
 
@@ -126,6 +126,14 @@ Acceptance criteria:
 - Expired command recovery produces one external-model execution.
 - Tests use readiness signals and OS-assigned ports rather than fixed sleeps or port 4096.
 
+Implemented coverage:
+
+- Raw mobile-like client receives one correlated live prompt event.
+- The same client disconnects, misses a prompt, reconnects, and converges by transcript refetch.
+- A pending permission is recovered and settled after the event subscriber disconnects.
+- Transcript and pending permission survive a canonical backend restart on one SQLite file.
+- Requests after restart use the canonical session directory returned by the server rather than a client-side path alias.
+
 ### MCR-8: Client-Agnostic Mobile Conformance
 
 Status: ready for assignment after a mobile repository is selected
@@ -135,6 +143,7 @@ The mobile client must conform to the canonical backend rather than define an in
 Acceptance criteria:
 
 - Explicit canonical server URL; never silently default to device loopback.
+- Retain the canonical session directory returned by the server for subsequent routed requests.
 - Persist and resume the authoritative state cursor.
 - Handle reset-required by loading a fresh snapshot before rendering connected state.
 - Reconcile the visible transcript, permissions, and questions after every reconnect.
