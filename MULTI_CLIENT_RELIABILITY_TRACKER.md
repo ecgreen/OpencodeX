@@ -175,9 +175,24 @@ Acceptance criteria:
 - Compatibility failures are explicit rather than degraded silently.
 - Mobile can pin a tested OpencodeX capability set independently of upstream OpenCode SDK versions.
 
+### MCR-10: Session Root Guardrails
+
+Status: pending; live incident diagnosed
+
+Prevent clients from accidentally creating development sessions at `/` or another unintended routing root without making the mismatch visible.
+
+Acceptance criteria:
+
+- Session creation UI displays the canonical directory before the first prompt.
+- Creating a session at filesystem root requires explicit confirmation.
+- Session cards and connection diagnostics show backend identity plus canonical directory.
+- Reopening a session routes requests with the directory stored on the session, not the client's current working directory.
+- Because session directory is immutable, clients offer a clear "start correctly rooted replacement" flow rather than implying project assignment changes the working directory.
+- A queued or running command whose session directory differs from the active client scope produces an actionable warning.
+
 ## Priority
 
-1. MCR-1, MCR-3, MCR-7
+1. MCR-1, MCR-3, MCR-7, MCR-10
 2. MCR-5, MCR-6
 3. MCR-4, MCR-9
 4. MCR-8 after mobile repository selection
