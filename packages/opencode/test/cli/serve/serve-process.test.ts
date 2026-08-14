@@ -41,25 +41,34 @@ describe("opencode serve (subprocess)", () => {
   )
 
   cliIt.live(
-    "distinguishes process-local event buses sharing one database",
+    "refuses a second serve on the same database",
     ({ opencode }) =>
       Effect.gen(function* () {
         const first = yield* opencode.serve({ env: { OPENCODE_RUN_ID: "serve-first" } })
-        const second = yield* opencode.serve({ env: { OPENCODE_RUN_ID: "serve-second" } })
         const client = yield* HttpClient.HttpClient
         const firstHealth = Schema.decodeUnknownSync(HealthIdentity)(
           yield* (yield* client.get(`${first.url}/global/health`)).json,
         )
-        const secondHealth = Schema.decodeUnknownSync(HealthIdentity)(
-          yield* (yield* client.get(`${second.url}/global/health`)).json,
-        )
 
         expect(firstHealth).toMatchObject({ processRole: "main", runID: "serve-first" })
-        expect(secondHealth).toMatchObject({ processRole: "main", runID: "serve-second" })
         expect(firstHealth).toHaveProperty("databaseID")
         expect(firstHealth).toHaveProperty("eventBusID")
-        expect(secondHealth).toHaveProperty("databaseID", firstHealth.databaseID)
-        expect(secondHealth.eventBusID).not.toBe(firstHealth.eventBusID)
+
+        // Serve claims exclusive per-database backend authority: a second
+        // process on the same database must fail clearly, never replace the
+        // live authority.
+        const second = yield* opencode.spawn(
+          ["serve", "--port", "0", "--hostname", "127.0.0.1", "--mdns", "false"],
+          { env: { OPENCODE_RUN_ID: "serve-second" } },
+        )
+        expect(second.exitCode).not.toBe(0)
+        expect(second.stderr).toContain("A backend authority is already serving this database")
+
+        // The surviving authority is untouched.
+        const stillHealthy = Schema.decodeUnknownSync(HealthIdentity)(
+          yield* (yield* client.get(`${first.url}/global/health`)).json,
+        )
+        expect(stillHealthy).toMatchObject({ processRole: "main", runID: "serve-first" })
       }),
     90_000,
   )
