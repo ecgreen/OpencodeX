@@ -834,6 +834,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
   }
   const connect = async () => {
     const hasAuthoritativeData = state.phase === "ready"
+    const previousEpoch = state.epoch
     commit({
       ...state,
       lifecycle: {
@@ -904,6 +905,14 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
         Object.keys(state.dirtySessions),
         [],
       )
+      if (state.epoch === previousEpoch)
+        await Promise.all(
+          [...sessionTailOptions].flatMap(([sessionID, input]) => {
+            if (state.sessions.records[sessionID]) return [refreshSessionTail(sessionID, input, true)]
+            sessionTailOptions.delete(sessionID)
+            return []
+          }),
+        )
     }
     commit({
       ...state,

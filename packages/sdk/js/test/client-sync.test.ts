@@ -2336,6 +2336,47 @@ describe("client state sync", () => {
     controller.stop()
   })
 
+  test("reconciles retained session tails before reporting a reconnect as current", async () => {
+    let connections = 0
+    let sessionLoads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async () => {
+        sessionLoads += 1
+        return sessionSnapshot(
+          `cursor-detail-${sessionLoads}`,
+          `detail-${sessionLoads}`,
+          sessionLoads === 1 ? "before disconnect" : "missed while disconnected",
+        )
+      },
+      events: async ({ signal }) => {
+        connections += 1
+        const connection = connections
+        return (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          if (connection === 1) return
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })()
+      },
+    }
+    const controller = createClientStateSync({ transport, reconnectDelayMs: 1, reconnectJitter: () => 0.5 })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+    await waitFor(
+      () =>
+        connections === 2 &&
+        sessionLoads === 2 &&
+        controller.getState().lifecycle.status === "connected",
+    )
+
+    expect(controller.getState().sessionDetails["session-1"]?.snapshot.digest).toBe("detail-2")
+    expect(controller.getState().sessionDetails["session-1"]?.parts["message-2"]?.["part-2"]?.text).toBe(
+      "missed while disconnected",
+    )
+    expect(controller.getMetrics()).toMatchObject({ reconnects: 1, streamConnections: 2, sessionSnapshots: 2 })
+    controller.stop()
+  })
+
   test("coalesces sustained session invalidations into one trailing correction", async () => {
     let releaseEvents = () => {}
     let markEventsWaiting = () => {}
