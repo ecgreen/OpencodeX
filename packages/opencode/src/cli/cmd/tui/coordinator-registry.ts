@@ -291,7 +291,7 @@ export async function readBackendAuthority(file = BACKEND_AUTHORITY) {
     .catch(() => undefined)
 }
 
-async function preferredCoordinatorDatabase() {
+export async function preferredCoordinatorDatabase() {
   const fallback = coordinatorDatabaseIdentity()
   if (process.env.OPENCODE_DB) return fallback
   const persisted = await readBackendAuthority()

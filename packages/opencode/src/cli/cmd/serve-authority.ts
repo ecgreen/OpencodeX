@@ -60,7 +60,7 @@ export const runServeAuthority = Effect.fn("ServeAuthority.run")(function* (inpu
   const password = process.env.OPENCODE_SERVER_PASSWORD ?? ""
   const token = randomBytes(24).toString("base64url")
 
-  process.env[OPENCODE_PROCESS_ROLE] ??= "main"
+  process.env[OPENCODE_PROCESS_ROLE] = "main"
   ensureRunID()
 
   return yield* Effect.acquireUseRelease(

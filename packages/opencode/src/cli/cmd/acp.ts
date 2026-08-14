@@ -8,6 +8,9 @@ import { ServerAuth } from "@/server/auth"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { ACPProfile } from "@/acp/profile"
+import { UI } from "../ui"
+import { coordinatorHeaders, readPreferredCoordinator, startCoordinatorClientLease } from "./tui/coordinator-registry"
+import { createCoordinatorTransport } from "./tui/coordinator-transport"
 
 const log = Log.create({ service: "acp-command" })
 
@@ -25,12 +28,55 @@ export const AcpCommand = effectCmd({
     ACPProfile.mark("cli.acp.handler")
     process.env.OPENCODE_CLIENT = "acp"
     const opts = yield* resolveNetworkOptions(args)
-    const server = yield* Effect.promise(() => ACPProfile.measure("cli.acp.server.listen", () => Server.listen(opts)))
 
-    const sdk = createOpencodeClient({
-      baseUrl: `http://${server.hostname}:${server.port}`,
-      headers: ServerAuth.headers(),
-    })
+    // One writer per database: when an authority already serves the preferred
+    // database (the TUI coordinator, the GUI sidecar, or `opencode serve`),
+    // ACP attaches to it instead of racing a second backend. The requested
+    // network options are advisory in that case; the SDK simply points at the
+    // existing authority.
+    const coordinator = yield* Effect.promise(() => readPreferredCoordinator())
+    let sdk
+    let dispose = async () => {}
+    if (coordinator) {
+      UI.println(
+        UI.Style.TEXT_WARNING_BOLD + "!",
+        UI.Style.TEXT_NORMAL,
+        `requested network listener options were not used: this database already has an authority (pid ${coordinator.pid}, url ${coordinator.url})`,
+      )
+      const lease = startCoordinatorClientLease(coordinator.key)
+      yield* Effect.promise(async () => {
+        try {
+          await lease.ready
+        } catch (error) {
+          lease.dispose()
+          throw error
+        }
+      })
+      dispose = async () => {
+        lease.dispose()
+      }
+      const reattaching = createCoordinatorTransport({
+        manifest: coordinator,
+        resolve: async () => {
+          const next = await readPreferredCoordinator()
+          if (!next) throw new Error("No local authority available to recover")
+          return next
+        },
+      })
+      sdk = createOpencodeClient({
+        baseUrl: coordinator.url,
+        headers: coordinatorHeaders(coordinator),
+        fetch: reattaching.fetch,
+      })
+    } else {
+      const server = yield* Effect.promise(() =>
+        ACPProfile.measure("cli.acp.server.listen", () => Server.listen(opts)),
+      )
+      sdk = createOpencodeClient({
+        baseUrl: `http://${server.hostname}:${server.port}`,
+        headers: ServerAuth.headers(),
+      })
+    }
 
     const input = new WritableStream<Uint8Array>({
       write(chunk) {
@@ -65,12 +111,16 @@ export const AcpCommand = effectCmd({
 
     log.info("setup connection")
     process.stdin.resume()
-    yield* Effect.promise(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          process.stdin.on("end", () => resolve())
-          process.stdin.on("error", reject)
-        }),
-    )
+    try {
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            process.stdin.on("end", () => resolve())
+            process.stdin.on("error", reject)
+          }),
+      )
+    } finally {
+      yield* Effect.promise(() => dispose())
+    }
   }),
 })

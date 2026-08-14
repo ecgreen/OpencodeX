@@ -2,8 +2,9 @@
 //
 // Non-interactive only: sends a single prompt (or slash command) to a session,
 // streams the resulting events to stdout, and exits when the session goes idle.
-// By default the prompt runs against an in-process server; `--attach` targets a
-// running opencode server instead.
+// By default the prompt attaches to an existing authority (the TUI coordinator,
+// the GUI sidecar, or `opencode serve`) and only falls back to an in-process
+// server when none is available; `--attach` targets a specific running server.
 //
 // Also supports `--command` for slash-command execution, `--format json` for
 // raw event streaming, `--continue` / `--session` for session resumption,
@@ -22,6 +23,8 @@ import { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { InstanceRef } from "@/effect/instance-ref"
 import { FormatError, FormatUnknownError } from "../error"
+import { coordinatorHeaders, readPreferredCoordinator, startCoordinatorClientLease } from "./tui/coordinator-registry"
+import { createCoordinatorTransport } from "./tui/coordinator-transport"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -441,7 +444,7 @@ export const RunCommand = effectCmd({
           UI.println(
             UI.Style.TEXT_WARNING_BOLD + "!",
             UI.Style.TEXT_NORMAL,
-            `failed to list agents from ${args.attach}. Falling back to default agent`,
+            `failed to list agents from ${args.attach ?? "the local authority"}. Falling back to default agent`,
           )
           return undefined
         }
@@ -468,16 +471,16 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function pickAgent(sdk: OpencodeClient) {
+      async function pickAgent(sdk: OpencodeClient, remote = false) {
         if (!args.agent) return undefined
-        if (args.attach) {
+        if (args.attach || remote) {
           return attachAgent(sdk)
         }
 
         return localAgent()
       }
 
-      async function execute(sdk: OpencodeClient) {
+      async function execute(sdk: OpencodeClient, remote = false) {
         const sess = await session(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
@@ -631,7 +634,7 @@ export const RunCommand = effectCmd({
         const client = args.attach ? attachSDK(cwd) : sdk
 
         // Validate agent if specified
-        const agent = await pickAgent(client)
+        const agent = await pickAgent(client, remote)
 
         const events = await client.event.subscribe()
         loop(client, events).catch((e) => {
@@ -671,7 +674,41 @@ export const RunCommand = effectCmd({
 
       if (args.attach) {
         const sdk = attachSDK(directory)
-        return await execute(sdk)
+        return await execute(sdk, true)
+      }
+
+      // Attach to an existing healthy authority (the TUI coordinator, the GUI
+      // sidecar, or `opencode serve`) instead of starting a second backend.
+      // When none is present, fall back to the in-process ephemeral server.
+      const coordinator = await readPreferredCoordinator()
+      if (coordinator) {
+        const lease = startCoordinatorClientLease(coordinator.key)
+        try {
+          await lease.ready
+        } catch (error) {
+          lease.dispose()
+          throw error
+        }
+        const reattaching = createCoordinatorTransport({
+          manifest: coordinator,
+          resolve: async () => {
+            const next = await readPreferredCoordinator()
+            if (!next) throw new Error("No local authority available to recover")
+            return next
+          },
+        })
+        try {
+          const sdk = createOpencodeClient({
+            baseUrl: coordinator.url,
+            headers: coordinatorHeaders(coordinator),
+            directory,
+            fetch: reattaching.fetch,
+          })
+          await execute(sdk, true)
+        } finally {
+          lease.dispose()
+        }
+        return
       }
 
       const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
