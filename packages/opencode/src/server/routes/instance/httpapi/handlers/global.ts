@@ -1,6 +1,7 @@
 import { Config } from "@/config/config"
 import { GlobalBus, GlobalBusID, subscribeGlobalBus, type GlobalEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
+import { coordinatorKey } from "@opencode-ai/sdk/coordinator"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
@@ -144,6 +145,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         processRole: processMetadata.processRole,
         runID: processMetadata.runID,
         databaseID,
+        coordinatorKey: coordinatorKey(Database.path()),
         eventBusID: GlobalBusID,
       }
     })

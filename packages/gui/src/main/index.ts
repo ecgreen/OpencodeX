@@ -12,7 +12,13 @@ import {
   type MessageBoxOptions,
 } from "electron"
 import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
-import { type SidecarConnection, startSidecar, stopSidecar, waitForSidecarShutdown } from "./sidecar.js"
+import {
+  assertSidecarRestartAllowed,
+  type SidecarConnection,
+  startSidecar,
+  stopSidecar,
+  stopSidecarForRestart,
+} from "./sidecar.js"
 import { editorCommand } from "./editor-command.js"
 import { registerBrowserIpc, secureSession } from "./browser-ipc.js"
 import { registerNotificationIpc } from "./notification-ipc.js"
@@ -42,7 +48,8 @@ const sidecarLifecycle = createSidecarLifecycle({
     authorizedSidecar = undefined
   },
   stop: stopSidecar,
-  awaitStopped: waitForSidecarShutdown,
+  restartStop: stopSidecarForRestart,
+  beforeRestart: assertSidecarRestartAllowed,
 })
 
 function appIconPath() {

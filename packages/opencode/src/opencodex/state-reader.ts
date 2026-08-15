@@ -13,7 +13,8 @@ import { OpencodeXJob } from "./job"
 import { OpencodeXProject } from "./project"
 import { OpencodeXSessionCard, makeReader as makeSessionCardReader } from "./session-card"
 import { groupBySession, revision } from "./state-event"
-import { EPOCH, type OpencodeXStateScope } from "./state-schema"
+import { AUTHORITY_EPOCH } from "./state-epoch"
+import { type OpencodeXStateScope } from "./state-schema"
 import type { StateLog } from "./state-log"
 import { OpencodeXSessionState } from "./session-state"
 import { OpencodeXSwarm } from "./swarm"
@@ -161,7 +162,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
         const payloads = { catalog, operations }
         return {
           scope,
-          epoch: EPOCH,
+          epoch: AUTHORITY_EPOCH,
           cursor: log.cursorAt(scope, Math.max(...Object.values(revisions))),
           digest: Bun.hash(JSON.stringify(payloads)).toString(36),
           domains: {
@@ -182,7 +183,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
         const operationsRevision = revision(revisions.operations)
         return {
           scope,
-          epoch: EPOCH,
+          epoch: AUTHORITY_EPOCH,
           cursor: log.cursorAt(scope, Math.max(...Object.values(revisions))),
           revision: operationsRevision,
           digest: Bun.hash(JSON.stringify(payload)).toString(36),
@@ -247,7 +248,7 @@ export const makeStateReader = Effect.fn("OpencodeXState.makeReader")(function* 
         }
         return {
           scope,
-          epoch: EPOCH,
+          epoch: AUTHORITY_EPOCH,
           cursor: log.cursorAt(scope, yield* log.position(scope)),
           digest: Bun.hash(JSON.stringify(content)).toString(36),
           ...content,

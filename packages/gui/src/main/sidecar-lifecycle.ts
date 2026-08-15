@@ -6,7 +6,8 @@ type SidecarLifecycleOptions<Connection> = {
   install: (connection: Connection) => void
   reset: () => void
   stop: () => Promise<void> | void
-  awaitStopped?: () => Promise<void>
+  restartStop?: () => Promise<void> | void
+  beforeRestart?: () => Promise<void>
 }
 
 export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOptions<Connection>) {
@@ -47,7 +48,7 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
 
   const ensure = (): Promise<Connection> => restarting ?? ensureNow()
 
-  const stopNow = () => {
+  const stopNow = (stopSidecar = options.stop) => {
     if (stopping) return stopping
     const result = (async () => {
       generation += 1
@@ -56,7 +57,7 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
       current = undefined
       cached = undefined
       options.reset()
-      await Promise.all([options.stop(), pending?.catch(() => undefined)])
+      await Promise.all([stopSidecar(), pending?.catch(() => undefined)])
     })()
     stopping = result.finally(() => {
       stopping = undefined
@@ -64,18 +65,13 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
     return stopping
   }
 
-  const stop = () => restarting?.then(stopNow, stopNow) ?? stopNow()
+  const stop = () => restarting?.then(() => stopNow(), () => stopNow()) ?? stopNow()
 
   const restart = () => {
     if (restarting) return restarting
     const result = (async () => {
-      await stopNow()
-      try {
-        await options.awaitStopped?.()
-      } catch (error) {
-        await ensureNow()
-        throw error
-      }
+      await options.beforeRestart?.()
+      await stopNow(options.restartStop)
       return ensureNow()
     })()
     restarting = result.finally(() => {

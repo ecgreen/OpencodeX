@@ -67,6 +67,7 @@ export type CoordinatorHealth = {
   healthy: boolean
   version?: string
   active?: boolean
+  coordinatorKey?: string
 }
 
 export type CoordinatorCompatibilityReason =
@@ -261,6 +262,8 @@ export async function fetchCoordinatorHealth(
       healthy: "healthy" in body && body.healthy === true,
       version: "version" in body && typeof body.version === "string" ? body.version : undefined,
       active: "active" in body && typeof body.active === "boolean" ? body.active : undefined,
+      coordinatorKey:
+        "coordinatorKey" in body && typeof body.coordinatorKey === "string" ? body.coordinatorKey : undefined,
     }
   } catch {
     return undefined
@@ -274,6 +277,10 @@ export async function isCoordinatorHealthy(
   options?: { timeout?: number; fetch?: typeof globalThis.fetch },
 ) {
   return (await fetchCoordinatorHealth(manifest, options))?.healthy === true
+}
+
+export function isCoordinatorHealthForManifest(manifest: Pick<CoordinatorManifest, "key">, health: CoordinatorHealth) {
+  return health.healthy && health.coordinatorKey === manifest.key
 }
 
 /**

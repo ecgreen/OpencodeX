@@ -6,6 +6,7 @@ import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { MessageV2 } from "@/session/message-v2"
 import { and, eq, isNull, or } from "drizzle-orm"
 import { Effect } from "effect"
+import { AUTHORITY_EPOCH } from "./state-epoch"
 import { EPOCH, OpencodeXStateCursor, type OpencodeXStateEvent, type OpencodeXStateScope } from "./state-schema"
 
 export const currentStateScope = Effect.fn("OpencodeXState.scope")(function* () {
@@ -155,7 +156,7 @@ export function hydrateStateEvent(
   return {
     id: EventV2.ID.make(row.id),
     scope,
-    epoch: EPOCH,
+    epoch: AUTHORITY_EPOCH,
     cursor: encodeCursor(databaseID, scope, row.position),
     position: row.position,
     visibility,

@@ -15,6 +15,7 @@ const GlobalHealth = Schema.Struct({
   processRole: Schema.String,
   runID: Schema.String,
   databaseID: Schema.String,
+  coordinatorKey: Schema.String,
   eventBusID: Schema.String,
 })
 

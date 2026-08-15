@@ -2,9 +2,13 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { rememberBackendAuthority } from "./backend-authority.js"
 import fs from "node:fs"
+import path from "node:path"
 import {
   checkCoordinatorCompatibility,
+  coordinatorClientDir,
   fetchCoordinatorHealth,
+  isCoordinatorClientLease,
+  isCoordinatorHealthForManifest,
   isCoordinatorProcessAlive,
   isMissingCoordinatorFile,
   readCoordinatorManifestFile,
@@ -41,6 +45,7 @@ export type SidecarConnection = {
 
 type SidecarState = {
   child?: { process: ChildProcess; key: string; token: string }
+  owned?: { process: ChildProcess; key: string; token: string }
   connection?: SidecarConnection
   startup?: Promise<SidecarConnection>
   lease?: { dispose: () => Promise<void> }
@@ -66,9 +71,8 @@ class CoordinatorVersionMismatchError extends Error {
    cold start well past 15s. The wait loop still returns the moment the
    manifest appears, so the ceiling only matters on slow starts. */
 const START_TIMEOUT = 45_000
-const RESTART_TIMEOUT = 10_000
-const RESTART_POLL_INTERVAL = 150
 const CLIENT_HEARTBEAT_INTERVAL = 2_000
+const CLIENT_STALE_MS = 10_000
 const state: SidecarState = { generation: 0 }
 
 export function startSidecar(signal?: AbortSignal) {
@@ -103,6 +107,9 @@ export function startSidecar(signal?: AbortSignal) {
       state.lease = lease
       if (state.child?.process.pid === manifest.pid && process.env.OPENCODEX_GUI_SMOKE !== "1")
         state.child = undefined
+      if (state.owned && (state.owned.process.pid !== manifest.pid || state.owned.token !== manifest.token)) {
+        state.owned = undefined
+      }
       const connection = connectionFromManifest(manifest, directory)
       state.connection = connection
       return connection
@@ -119,17 +126,26 @@ export function startSidecar(signal?: AbortSignal) {
   return startup
 }
 
-export async function stopSidecar() {
+export function stopSidecar() {
+  return stopSidecarNow(false)
+}
+
+export function stopSidecarForRestart() {
+  return stopSidecarNow(true)
+}
+
+async function stopSidecarNow(restart: boolean) {
   state.generation += 1
   const startup = state.startup
   const lease = state.lease
-  const child = state.child
+  const child = restart ? state.owned ?? state.child : state.child
   state.controller?.abort()
   state.controller = undefined
   state.lease = undefined
   state.child = undefined
   state.connection = undefined
   state.startup = undefined
+  if (restart || state.owned === child) state.owned = undefined
   await Promise.all([
     lease?.dispose(),
     child ? stopOwnedCoordinator(child) : undefined,
@@ -137,23 +153,56 @@ export async function stopSidecar() {
   ])
 }
 
-export async function waitForSidecarShutdown() {
+export async function assertSidecarRestartAllowed() {
   const database = await sidecarDatabase(workingDirectory())
   const key = coordinatorKey(database)
   const manifest = await readActiveManifest(key)
-  if (!manifest) return
+  if (!manifest) {
+    if (state.owned?.process.pid !== undefined && isCoordinatorProcessAlive(state.owned.process.pid)) {
+      throw new Error("Backend restart is waiting for the coordinator manifest to recover.")
+    }
+    return
+  }
   const health = await fetchCoordinatorHealth(manifest)
-  if (health?.active) throw new Error("Backend restart is waiting for active work to finish.")
-
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < RESTART_TIMEOUT) {
+  if (health?.healthy !== true) {
     if (!isCoordinatorProcessAlive(manifest.pid)) {
       await removeCoordinatorManifest(key, manifest.token).catch(() => undefined)
       return
     }
-    await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_INTERVAL))
+    throw new Error("Backend restart is waiting for the coordinator health check to recover.")
   }
-  throw new Error("Backend restart is waiting for another OpencodeX client to disconnect.")
+  if (!isCoordinatorHealthForManifest(manifest, health)) {
+    throw new Error("Backend restart refused because the coordinator serves a different database.")
+  }
+  if (health.active) throw new Error("Backend restart is waiting for active work to finish.")
+  if (state.owned?.process.pid !== manifest.pid || state.owned.token !== manifest.token) {
+    throw new Error("Backend restart is not managed by this client.")
+  }
+  if (await hasOtherActiveClient(key)) {
+    throw new Error("Backend restart is waiting for another OpencodeX client to disconnect.")
+  }
+}
+
+async function hasOtherActiveClient(key: string) {
+  const dir = coordinatorClientDir(COORDINATOR_STATE_ROOT, key)
+  const clients = await Promise.all(
+    (await fs.promises.readdir(dir).catch(() => []))
+      .filter((name) => name.endsWith(".json"))
+      .map(async (name) => {
+        const pid = Number(name.split(".")[0])
+        if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid || !isCoordinatorProcessAlive(pid)) return false
+        const file = path.join(dir, name)
+        const lease = await fs.promises.readFile(file, "utf8")
+          .then((value) => JSON.parse(value) as unknown)
+          .catch(() => undefined)
+        if (isCoordinatorClientLease(lease)) {
+          return lease.key === key && Date.now() - lease.updatedAt <= CLIENT_STALE_MS
+        }
+        const stat = await fs.promises.stat(file).catch(() => undefined)
+        return stat !== undefined && Date.now() - stat.mtimeMs <= CLIENT_STALE_MS
+      }),
+  )
+  return clients.some(Boolean)
 }
 
 async function coordinatorConnection(directory: string, signal: AbortSignal) {
@@ -189,6 +238,15 @@ async function activeCoordinator(key: string, database: string) {
   }
   const health = await fetchCoordinatorHealth(manifest)
   if (health?.healthy === true) {
+    if (!isCoordinatorHealthForManifest(manifest, health)) {
+      if (isCoordinatorProcessAlive(manifest.pid)) {
+        throw new Error(
+          `OpencodeX coordinator process ${manifest.pid} answered for a different database; refusing to attach`,
+        )
+      }
+      await removeCoordinatorManifest(key, manifest.token)
+      return undefined
+    }
     const compatibility = checkCoordinatorCompatibility({
       manifest,
       clientVersion: sidecarVersion(),
@@ -278,11 +336,13 @@ async function spawnCoordinator(directory: string, key: string, database: string
   child.unref()
   const owned = { process: child, key, token }
   state.child = owned
+  state.owned = owned
   try {
     return await waitForCoordinator(directory, child, started, signal)
   } catch (error) {
     await stopOwnedCoordinator(owned)
     if (state.child === owned) state.child = undefined
+    if (state.owned === owned) state.owned = undefined
     throw error
   }
 }

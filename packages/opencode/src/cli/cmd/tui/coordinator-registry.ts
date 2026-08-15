@@ -14,6 +14,7 @@ import {
   coordinatorRoot,
   fetchCoordinatorHealth,
   isCoordinatorClientLease,
+  isCoordinatorHealthForManifest,
   isCoordinatorProcessAlive,
   isMissingCoordinatorFile,
   readCoordinatorManifestFile,
@@ -148,6 +149,13 @@ export async function readActiveCoordinator(key = coordinatorKey(), database = c
   }
   const health = await fetchCoordinatorHealth(manifest)
   if (health?.healthy === true) {
+    if (!isCoordinatorHealthForManifest(manifest, health)) {
+      if (isCoordinatorProcessAlive(manifest.pid)) {
+        throw new Error(`TUI coordinator process ${manifest.pid} answered for a different database; refusing to attach`)
+      }
+      await removeCoordinatorManifest(key, manifest.token)
+      return undefined
+    }
     const compatibility = checkCoordinatorCompatibility({
       manifest,
       clientVersion: InstallationVersion,
@@ -171,6 +179,22 @@ export async function readActiveCoordinator(key = coordinatorKey(), database = c
 export async function readPreferredCoordinator() {
   const database = await preferredCoordinatorDatabase()
   return readActiveCoordinator(coordinatorKey(database), database)
+}
+
+export async function acquirePreferredCoordinatorAccess() {
+  const database = await preferredCoordinatorDatabase()
+  const key = coordinatorKey(database)
+  const existing = await readActiveCoordinator(key, database)
+  if (existing) return { coordinator: existing, release: async () => {} }
+
+  const ownerLock = await acquireCoordinatorOwnerLock(key)
+  const claimed = await readActiveCoordinator(key, database).catch(async (error) => {
+    await ownerLock.release()
+    throw error
+  })
+  if (!claimed) return { coordinator: undefined, release: () => ownerLock.release() }
+  await ownerLock.release()
+  return { coordinator: claimed, release: async () => {} }
 }
 
 async function readActiveManifest(key: string) {
@@ -328,7 +352,9 @@ export async function discoverActiveGuiCoordinatorDatabase(root = ROOT) {
       manifest
         ? [
             hasActiveGuiClient(manifest.key, root).then(async (active) => {
-              if (!active || (await fetchCoordinatorHealth(manifest))?.healthy !== true) return undefined
+              if (!active) return undefined
+              const health = await fetchCoordinatorHealth(manifest)
+              if (health?.healthy !== true || !isCoordinatorHealthForManifest(manifest, health)) return undefined
               return coordinatorDatabaseIdentity(manifest.database)
             }),
           ]

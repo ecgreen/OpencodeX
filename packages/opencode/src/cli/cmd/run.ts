@@ -23,7 +23,12 @@ import { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { InstanceRef } from "@/effect/instance-ref"
 import { FormatError, FormatUnknownError } from "../error"
-import { coordinatorHeaders, readPreferredCoordinator, startCoordinatorClientLease } from "./tui/coordinator-registry"
+import {
+  acquirePreferredCoordinatorAccess,
+  coordinatorHeaders,
+  readPreferredCoordinator,
+  startCoordinatorClientLease,
+} from "./tui/coordinator-registry"
 import { createCoordinatorTransport } from "./tui/coordinator-transport"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
@@ -680,7 +685,8 @@ export const RunCommand = effectCmd({
       // Attach to an existing healthy authority (the TUI coordinator, the GUI
       // sidecar, or `opencode serve`) instead of starting a second backend.
       // When none is present, fall back to the in-process ephemeral server.
-      const coordinator = await readPreferredCoordinator()
+      const access = await acquirePreferredCoordinatorAccess()
+      const coordinator = access.coordinator
       if (coordinator) {
         const lease = startCoordinatorClientLease(coordinator.key)
         try {
@@ -707,6 +713,7 @@ export const RunCommand = effectCmd({
           await execute(sdk, true)
         } finally {
           lease.dispose()
+          await access.release()
         }
         return
       }
@@ -721,7 +728,11 @@ export const RunCommand = effectCmd({
         fetch: fetchFn,
         directory,
       })
-      await execute(sdk)
+      try {
+        await execute(sdk)
+      } finally {
+        await access.release()
+      }
     })
   }),
 })

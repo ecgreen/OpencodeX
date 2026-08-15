@@ -4476,6 +4476,7 @@ export type GlobalHealthResponses = {
     processRole: string
     runID: string
     databaseID: string
+    coordinatorKey: string
     eventBusID: string
   }
 }

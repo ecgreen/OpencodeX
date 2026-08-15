@@ -9,7 +9,12 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { ACPProfile } from "@/acp/profile"
 import { UI } from "../ui"
-import { coordinatorHeaders, readPreferredCoordinator, startCoordinatorClientLease } from "./tui/coordinator-registry"
+import {
+  acquirePreferredCoordinatorAccess,
+  coordinatorHeaders,
+  readPreferredCoordinator,
+  startCoordinatorClientLease,
+} from "./tui/coordinator-registry"
 import { createCoordinatorTransport } from "./tui/coordinator-transport"
 
 const log = Log.create({ service: "acp-command" })
@@ -34,9 +39,10 @@ export const AcpCommand = effectCmd({
     // ACP attaches to it instead of racing a second backend. The requested
     // network options are advisory in that case; the SDK simply points at the
     // existing authority.
-    const coordinator = yield* Effect.promise(() => readPreferredCoordinator())
+    const access = yield* Effect.promise(() => acquirePreferredCoordinatorAccess())
+    const coordinator = access.coordinator
     let sdk
-    let dispose = async () => {}
+    let dispose = access.release
     if (coordinator) {
       UI.println(
         UI.Style.TEXT_WARNING_BOLD + "!",
@@ -54,6 +60,7 @@ export const AcpCommand = effectCmd({
       })
       dispose = async () => {
         lease.dispose()
+        await access.release()
       }
       const reattaching = createCoordinatorTransport({
         manifest: coordinator,
@@ -70,8 +77,14 @@ export const AcpCommand = effectCmd({
       })
     } else {
       const server = yield* Effect.promise(() =>
-        ACPProfile.measure("cli.acp.server.listen", () => Server.listen(opts)),
+        ACPProfile.measure("cli.acp.server.listen", () => Server.listen(opts)).catch(async (error) => {
+          await access.release()
+          throw error
+        }),
       )
+      dispose = async () => {
+        await Promise.all([server.stop(true), access.release()])
+      }
       sdk = createOpencodeClient({
         baseUrl: `http://${server.hostname}:${server.port}`,
         headers: ServerAuth.headers(),

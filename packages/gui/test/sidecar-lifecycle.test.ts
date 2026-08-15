@@ -105,16 +105,19 @@ describe("sidecar lifecycle", () => {
       install: () => {},
       reset: () => events.push("reset"),
       stop: async () => {
-        events.push("stop")
+        events.push("ordinary-stop")
       },
-      awaitStopped: async () => {
-        events.push("stopped")
+      restartStop: async () => {
+        events.push("restart-stop")
+      },
+      beforeRestart: async () => {
+        events.push("allowed")
       },
     })
 
     expect(await lifecycle.ensure()).toBe("connection-1")
     expect(await lifecycle.restart()).toBe("connection-2")
-    expect(events).toEqual(["start", "reset", "stop", "stopped", "start"])
+    expect(events).toEqual(["start", "allowed", "reset", "restart-stop", "start"])
   })
 
   test("coalesces concurrent restart requests", async () => {
@@ -125,7 +128,7 @@ describe("sidecar lifecycle", () => {
       install: () => {},
       reset: () => {},
       stop: () => {},
-      awaitStopped: () => stopped.promise,
+      beforeRestart: () => stopped.promise,
     })
     await lifecycle.ensure()
 
@@ -146,7 +149,7 @@ describe("sidecar lifecycle", () => {
       install: () => {},
       reset: () => {},
       stop: () => {},
-      awaitStopped: () => stopped.promise,
+      beforeRestart: () => stopped.promise,
     })
 
     expect(await lifecycle.ensure()).toBe("connection-1")
@@ -159,21 +162,26 @@ describe("sidecar lifecycle", () => {
     expect(starts).toBe(2)
   })
 
-  test("reattaches when a safe restart is deferred", async () => {
+  test("preserves the current connection when restart is deferred", async () => {
     let starts = 0
+    let stops = 0
     const lifecycle = createSidecarLifecycle({
       start: async () => `connection-${++starts}`,
       install: () => {},
       reset: () => {},
-      stop: () => {},
-      awaitStopped: async () => {
+      stop: () => {
+        stops += 1
+      },
+      beforeRestart: async () => {
         throw new Error("active work")
       },
     })
 
     expect(await lifecycle.ensure()).toBe("connection-1")
     await expect(lifecycle.restart()).rejects.toThrow("active work")
-    expect(await lifecycle.ensure()).toBe("connection-2")
+    expect(await lifecycle.ensure()).toBe("connection-1")
+    expect(starts).toBe(1)
+    expect(stops).toBe(0)
   })
 
   test("aborts and rejects stale completion after stop", async () => {

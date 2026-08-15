@@ -17,6 +17,8 @@ import path from "node:path"
 import { Effect } from "effect"
 import { cliIt } from "../../lib/cli-process"
 import { awaitWithTimeout, pollWithTimeout } from "../../lib/effect"
+import { createAcpClient } from "../acp/acp-test-client"
+import { initialize } from "../acp/helpers"
 
 const root = path.resolve(import.meta.dir, "../../..")
 const cliEntry = path.join(root, "src", "index.ts")
@@ -178,6 +180,36 @@ describe("clients attach-first against a running serve authority", () => {
         expect(manifest.pid).not.toBe(process.pid)
       }),
     90_000,
+  )
+
+  cliIt.live(
+    "fallback acp owns the database until it shuts down",
+    ({ home, opencode }) =>
+      Effect.gen(function* () {
+        const database = path.join(home, "shared.db")
+        const handle = yield* opencode.acp({ env: { OPENCODE_DB: database } })
+        yield* initialize(createAcpClient(handle))
+
+        const collision = yield* opencode.spawn(["serve", "--port", "0"], {
+          env: { OPENCODE_DB: database },
+          timeoutMs: 30_000,
+        })
+        expect(collision.exitCode).not.toBe(0)
+        expect(collision.stderr).toContain("Timed out waiting for lock: tui-coordinator-owner:")
+
+        handle.close()
+        expect(
+          yield* awaitWithTimeout(
+            Effect.promise(() => handle.exited),
+            "fallback acp did not release the database",
+            "30 seconds",
+          ),
+        ).toBe(0)
+
+        const serve = yield* opencode.serve({ env: { OPENCODE_DB: database } })
+        expect(serve.port).toBePositive()
+      }),
+    120_000,
   )
 })
 
