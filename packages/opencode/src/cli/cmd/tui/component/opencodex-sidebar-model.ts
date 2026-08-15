@@ -15,8 +15,8 @@ export function modelLabel(session: Session) {
 
 export function sessionSwarmID(session: Session) {
   const opencodex = session.metadata?.opencodex
-  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return
-  return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
+  if (typeof opencodex === "object" && opencodex !== null && "swarmID" in opencodex && typeof opencodex.swarmID === "string") return opencodex.swarmID
+  return session.model?.providerID === "swarm" ? session.model.id : undefined
 }
 
 export function isSwarmSession(session: Session) {
