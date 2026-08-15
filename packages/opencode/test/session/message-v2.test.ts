@@ -1691,4 +1691,31 @@ describe("session.message-v2.latest", () => {
     expect(state.assistant?.id).toBe(wrappedAssistant.info.id)
     expect(state.finished?.id).toBe(wrappedAssistant.info.id)
   })
+
+  test("surfaces post-wrap tasks created after the latest finished assistant", () => {
+    const finished = {
+      info: {
+        ...assistantInfo(MessageID.make("msg_fff"), TAIL_USER),
+        time: { created: 1 },
+        finish: "stop" as const,
+      },
+      parts: [],
+    } satisfies SessionLegacy.WithParts
+    const next = {
+      info: { ...userInfo(MessageID.make("msg_000")), time: { created: 2 } },
+      parts: [
+        {
+          ...basePart(MessageID.make("msg_000"), "wrapped-task"),
+          type: "compaction" as const,
+          auto: true,
+        },
+      ],
+    } satisfies SessionLegacy.WithParts
+
+    const state = MessageV2.latest([finished, next])
+
+    expect(state.finished?.id).toBe(finished.info.id)
+    expect(state.user?.id).toBe(next.info.id)
+    expect(state.tasks).toEqual(next.parts)
+  })
 })

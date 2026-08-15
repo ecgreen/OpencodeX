@@ -55,6 +55,9 @@ export async function connectGuiClient(): Promise<GuiClient> {
         await response.body?.cancel().catch(() => undefined)
       } catch (cause) {
         if (request.signal.aborted || !window.opencodex) throw cause
+        await recover(failedGeneration)
+        if (!["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) throw cause
+        return rawFetch(routeRequest(request, connection, body))
       }
       await recover(failedGeneration)
       return rawFetch(routeRequest(request, connection, body))

@@ -117,6 +117,27 @@ describe("sidecar lifecycle", () => {
     expect(events).toEqual(["start", "reset", "stop", "stopped", "start"])
   })
 
+  test("coalesces concurrent restart requests", async () => {
+    const stopped = Promise.withResolvers<void>()
+    let starts = 0
+    const lifecycle = createSidecarLifecycle({
+      start: async () => `connection-${++starts}`,
+      install: () => {},
+      reset: () => {},
+      stop: () => {},
+      awaitStopped: () => stopped.promise,
+    })
+    await lifecycle.ensure()
+
+    const first = lifecycle.restart()
+    const second = lifecycle.restart()
+
+    expect(second).toBe(first)
+    stopped.resolve()
+    expect(await first).toBe("connection-2")
+    expect(starts).toBe(2)
+  })
+
   test("holds connection recovery until restart finishes", async () => {
     const stopped = Promise.withResolvers<void>()
     let starts = 0

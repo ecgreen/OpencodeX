@@ -2377,6 +2377,49 @@ describe("client state sync", () => {
     controller.stop()
   })
 
+  test("resets immediately when a reconnect ready frame changes epoch", async () => {
+    let connections = 0
+    let snapshots = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        snapshots += 1
+        return {
+          ...snapshot(`cursor-${snapshots}`, `digest-${snapshots}`, [
+            session("session-1", snapshots === 1 ? "Before restart" : "After restart"),
+          ]),
+          epoch: snapshots === 1 ? "epoch-1" : "epoch-2",
+        }
+      },
+      events: async ({ signal }) => {
+        connections += 1
+        const connection = connections
+        return (async function* () {
+          yield {
+            type: "ready",
+            scope: scope(),
+            epoch: connection === 1 ? "epoch-1" : "epoch-2",
+            cursor: `cursor-${connection}`,
+          }
+          if (connection === 1) return
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })()
+      },
+    }
+    const controller = createClientStateSync({ transport, reconnectDelayMs: 1, reconnectJitter: () => 0.5 })
+    await controller.start()
+    await waitFor(
+      () =>
+        connections === 3 &&
+        snapshots === 2 &&
+        controller.getState().lifecycle.status === "connected" &&
+        controller.getState().epoch === "epoch-2",
+    )
+
+    expect(controller.getState().sessions.records["session-1"]?.title).toBe("After restart")
+    expect(controller.getMetrics()).toMatchObject({ resets: 1, reconnects: 1, streamConnections: 3 })
+    controller.stop()
+  })
+
   test("coalesces sustained session invalidations into one trailing correction", async () => {
     let releaseEvents = () => {}
     let markEventsWaiting = () => {}

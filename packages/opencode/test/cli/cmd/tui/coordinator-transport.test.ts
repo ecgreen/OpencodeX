@@ -229,15 +229,7 @@ describe("coordinator transport", () => {
     })
   })
 
-  test("retries a POST body against the replacement coordinator without disturbing it", async () => {
-    // Regression test: SDK calls arrive as `Request` objects with a body
-    // (see client.gen.ts: `new Request(url, requestInit)`). The retry path
-    // used to build both send attempts straight off the caller's `Request`,
-    // which disturbs its body on the first construction and makes the
-    // second construction throw once the first attempt's body is actually
-    // read - exactly the prompt-send recovery case. This must fail under
-    // the old implementation (see streamBody's doc comment for why the body
-    // needs to be a real ReadableStream to reproduce it under Bun).
+  test("recovers but does not replay a POST after an ambiguous connection failure", async () => {
     const bodies: { origin: string; body: string }[] = []
     let resolves = 0
     const fetchWithBodyCapture: typeof globalThis.fetch = Object.assign(
@@ -268,12 +260,11 @@ describe("coordinator transport", () => {
       body: streamBody(payload),
     })
 
-    const response = await transport.fetch(request)
-    expect(response.status).toBe(200)
+    expect(await rejection(transport.fetch(request))).toMatchObject({ code: "ConnectionRefused" })
     expect(resolves).toBe(1)
-    expect(bodies).toHaveLength(2)
+    expect(bodies).toHaveLength(1)
     expect(bodies[0]).toEqual({ origin: new URL(manifestA.url).origin, body: payload })
-    expect(bodies[1]).toEqual({ origin: new URL(manifestB.url).origin, body: payload })
+    expect(transport.url).toBe(manifestB.url)
   })
 
   test("failed recovery cools down before it is attempted again", async () => {

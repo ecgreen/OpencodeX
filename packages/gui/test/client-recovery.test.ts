@@ -32,7 +32,7 @@ describe("GUI client recovery", () => {
     }
 
     const gui = await connectGuiClient()
-    const result = await gui.client.sync.start({ directory: gui.directory })
+    const result = await gui.client.global.health()
 
     expect(result.data).toBe(true)
     expect(requests.map((value) => new URL(value).port)).toEqual(["4100", "4200"])
@@ -40,7 +40,7 @@ describe("GUI client recovery", () => {
     expect(connection).toBe(2)
   })
 
-  test("preserves POST bodies and refreshes authentication when retrying", async () => {
+  test("refreshes authentication without replaying a POST after an ambiguous failure", async () => {
     const first = {
       url: "http://127.0.0.1:4100",
       directory: "/repo",
@@ -76,15 +76,17 @@ describe("GUI client recovery", () => {
     }
 
     const gui = await connectGuiClient()
-    await gui.client.session.promptAsync(
-      {
-        sessionID: "session-1",
-        directory: gui.directory,
-        messageID: "message-1",
-        parts: [{ type: "text", text: "hello" }],
-      },
-      { throwOnError: true },
-    )
+    await expect(
+      gui.client.session.promptAsync(
+        {
+          sessionID: "session-1",
+          directory: gui.directory,
+          messageID: "message-1",
+          parts: [{ type: "text", text: "hello" }],
+        },
+        { throwOnError: true },
+      ),
+    ).rejects.toThrow("connection refused")
 
     expect(requests.map((request) => ({
       port: new URL(request.url).port,
@@ -96,12 +98,6 @@ describe("GUI client recovery", () => {
         port: "4100",
         method: "POST",
         authorization: `Basic ${btoa("opencode:first-secret")}`,
-        body: { messageID: "message-1", parts: [{ type: "text", text: "hello" }] },
-      },
-      {
-        port: "4200",
-        method: "POST",
-        authorization: `Basic ${btoa("opencode:second-secret")}`,
         body: { messageID: "message-1", parts: [{ type: "text", text: "hello" }] },
       },
     ])

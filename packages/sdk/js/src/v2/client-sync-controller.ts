@@ -857,6 +857,10 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
     metrics.streamFrames += 1
     const ready = decodeClientStateFrame(first.value)
     if (ready.type !== "ready") throw new Error("State stream did not begin with ready")
+    if (previousEpoch && ready.epoch !== previousEpoch) {
+      await resetState()
+      return
+    }
     reconnectAttempt = 0
     const buffered = new Array<OpencodeXStateStreamFrame>()
     let bufferOverflowed = false
