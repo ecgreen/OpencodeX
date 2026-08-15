@@ -423,6 +423,7 @@
         "@types/luxon": "catalog:",
         "@typescript/native-preview": "catalog:",
         "typescript": "catalog:",
+        "vite": "catalog:",
       },
     },
   },
