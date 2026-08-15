@@ -3,7 +3,7 @@ import type { Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import type { MessageBundle, SessionData } from "../lib/session-api"
 import type { SessionMessageActionKind } from "../lib/message-actions"
-import { transcriptPromptHistory, visibleTranscriptMessageIDs, visibleTranscriptMessages, type TranscriptPromptEntry } from "../lib/transcript-visibility"
+import { samePromptEntries, transcriptPromptHistory, visibleTranscriptMessageIDs, visibleTranscriptMessages, type TranscriptPromptEntry } from "../lib/transcript-visibility"
 import { Icon } from "./icon"
 import { MessageActions } from "./message-actions"
 import { sessionDisclosureStore } from "../lib/disclosure"
@@ -158,8 +158,14 @@ export function TranscriptPanel(props: {
   const streamingPartID = createMemo(() => activeTranscriptStreamingPartID(visibleMessages(), props.running === true))
   const activeAssistantHasProgress = createMemo(() => hasActiveAssistantProgress(visibleMessages()))
   const activeAssistantProgressKey = createMemo(() => activeAssistantProgressParts(visibleMessages()).join("|"))
-  const promptHistory = createMemo(() =>
-    warming() || props.showPromptHistory !== true ? [] : transcriptPromptHistory(props.data.messages),
+  // Content-equal: the extractor reruns on every streaming chunk and always
+  // builds fresh entry objects; without `equals`, <For> would key on those new
+  // references and recreate every rail row per chunk - restarting the tick
+  // animation and flickering the open tooltip under the pointer.
+  const promptHistory = createMemo(
+    () => (warming() || props.showPromptHistory !== true ? [] : transcriptPromptHistory(props.data.messages)),
+    undefined,
+    { equals: samePromptEntries },
   )
   const emptyStateHandoff = () => props.emptyStateHandoff === true
   const transcriptHasContent = () => visibleMessages().length > 0 || assistantThinkingVisible()

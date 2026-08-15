@@ -31,6 +31,21 @@ export function transcriptPromptHistory(
   return entries.slice(-limit)
 }
 
+/**
+ * Content equality for prompt histories. The extractor builds fresh entry
+ * objects on every run, and it reruns for every streaming chunk the session
+ * receives; comparing by content lets a memo swallow those identical results
+ * so the rail's DOM (and its hover/tooltip state) survives streaming intact.
+ */
+export function samePromptEntries(a: TranscriptPromptEntry[] | undefined, b: TranscriptPromptEntry[]) {
+  // A memo's first evaluation compares against its seed, which has no value.
+  return (
+    a !== undefined &&
+    a.length === b.length &&
+    a.every((entry, index) => entry.messageID === b[index].messageID && entry.text === b[index].text)
+  )
+}
+
 function promptPreviewText(parts: MessageBundle["parts"]) {
   const text = parts
     .flatMap((part) => (part.type === "text" && isVisibleTranscriptPart(part) ? [part.text] : []))
