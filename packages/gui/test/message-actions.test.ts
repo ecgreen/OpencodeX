@@ -36,6 +36,23 @@ describe("message actions", () => {
     expect(availability).toEqual({ copy: true, edit: false, retry: false, fork: false })
   })
 
+  test("pending sessions forward copy while blocking mutating actions", () => {
+    const user = bundleOf("user", [{ type: "text", text: "copy me" }])
+    const actions: SessionMessageActionContext[] = []
+    const action = createSessionMessageActionHandler({
+      session: () => ({ id: "pending:new-session" } as Session),
+      data: () => ({ messages: [user], todos: [], diffs: [] }),
+      onMessageAction: (_action, context) => actions.push(context),
+      restorePrompt: () => undefined,
+    })
+
+    action("copy", user)
+    action("edit", user)
+
+    expect(actions).toHaveLength(1)
+    expect(messageTextForCopy(actions[0]!.bundle)).toBe("copy me")
+  })
+
   test("precedingUserMessage finds the closest earlier user message", () => {
     const messages = [
       bundleOf("user", [], "m1"),

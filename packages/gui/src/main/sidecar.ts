@@ -53,6 +53,12 @@ type SidecarState = {
   generation: number
 }
 
+let coordinatorVersionMismatchAllowed = false
+
+export function allowCoordinatorVersionMismatch() {
+  coordinatorVersionMismatchAllowed = true
+}
+
 /**
  * A coordinator whose server version this GUI cannot verify is refused, never
  * replaced: the manifest stays, the process keeps running, and any client that
@@ -252,7 +258,7 @@ async function activeCoordinator(key: string, database: string) {
       clientVersion: sidecarVersion(),
       healthVersion: health.version,
     })
-    if (!compatibility.compatible) {
+    if (!compatibility.compatible && !(coordinatorVersionMismatchAllowed && compatibility.reason === "mismatch")) {
       throw new CoordinatorVersionMismatchError(compatibility.message ?? "Coordinator version mismatch")
     }
     if (compatibility.reason === "local" && compatibility.message) console.warn(compatibility.message)
