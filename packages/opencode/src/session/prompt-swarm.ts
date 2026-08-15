@@ -22,6 +22,10 @@ import { Identifier } from "@/id/id"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
 import { SessionStatus } from "./status"
+import { prepareAttachments, withAttachmentNote } from "./swarm-attachments"
+import { mkdir, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 const log = Log.create({ service: "session.prompt-swarm" })
 
@@ -272,12 +276,49 @@ export function make(deps: Deps) {
     const providerID = model?.providerID
     if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
     if (!last || last.info.role !== "user") return undefined
-    const text = last.parts
+    const promptText = last.parts
       .flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text] : []))
       .join("\n")
       .trim()
+
+    // Attachments used to be dropped here along with every other non-text
+    // part, so an image attached in a client never reached the orchestrator --
+    // it persisted, the UI showed it, and the model simply never saw it. The
+    // CLI takes a prompt string rather than structured content, so materialise
+    // each attachment and name the paths; the orchestrator reads them itself.
+    const attachments = prepareAttachments(last.parts as never)
+    const attachmentPaths: string[] = []
+    if (attachments.length > 0) {
+      const dir = join(tmpdir(), "opencodex-attachments", last.info.id)
+      const written = yield* Effect.tryPromise({
+        try: async () => {
+          await mkdir(dir, { recursive: true })
+          const paths: string[] = []
+          for (const attachment of attachments) {
+            const target = join(dir, attachment.filename)
+            await writeFile(target, Buffer.from(attachment.base64, "base64"))
+            paths.push(target)
+          }
+          return paths
+        },
+        catch: (err) => err,
+      }).pipe(
+        // An attachment that cannot be written must not take the whole turn
+        // down -- the text is still worth sending.
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            log.warn("failed to materialise swarm attachments", { error: String(err) })
+            return [] as string[]
+          }),
+        ),
+      )
+      attachmentPaths.push(...written)
+    }
+
+    const text = withAttachmentNote(promptText, attachmentPaths)
+    // An image-only message has no text but is still a real turn.
     if (!text) return undefined
-    yield* ensureClaudeTitle(session, text)
+    yield* ensureClaudeTitle(session, promptText || text)
     const specialists = swarm?.roles.slice(1) ?? []
     // Attribute the turn to the route the reader picked, so a swarm session
     // stays labelled with the team rather than the orchestrator's model. The
