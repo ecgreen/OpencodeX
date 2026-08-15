@@ -140,6 +140,24 @@ describe("plugin.codex", () => {
     await enabled.dispose?.()
   })
 
+  test("identifies OpenAI chat requests as Codex CLI", async () => {
+    const hooks = await CodexAuthPlugin({} as never)
+    const output = { headers: {} as Record<string, string> }
+
+    await hooks["chat.headers"]!(
+      {
+        model: { providerID: "openai" },
+        sessionID: "ses_test",
+        agent: "build",
+      } as never,
+      output,
+    )
+
+    expect(output.headers.originator).toBe("codex_cli_rs")
+    expect(output.headers["User-Agent"]).toBe("codex_cli_rs/0.0.0 (OpenCode)")
+    expect(output.headers["session-id"]).toBe("ses_test")
+  })
+
   test("adds xhigh variant for GPT-5.5 OAuth models", async () => {
     const hooks = await CodexAuthPlugin({} as never)
     const models = await hooks.provider!.models!(

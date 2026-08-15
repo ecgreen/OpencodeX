@@ -1145,6 +1145,33 @@ it.instance("static loop consumes queued replies across turns", () =>
   }),
 )
 
+it.instance("loop exits when an assistant ID sorts before its parent after wrap", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Wrapped message ID",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const messageID = MessageID.make("msg_ffffffffffff00000000000000")
+    yield* prompt.prompt({
+      sessionID: session.id,
+      messageID,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.text("world")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+
+    expect(yield* llm.calls).toBe(1)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.parentID).toBe(messageID)
+  }),
+)
+
 it.instance("loop continues when finish is tool-calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
