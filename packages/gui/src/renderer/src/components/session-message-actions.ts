@@ -26,7 +26,7 @@ export function createSessionMessageActionHandler(input: {
 }) {
   return (action: SessionMessageActionKind, bundle: MessageBundle) => {
     const selected = input.session()
-    if (!selected || selected.id.startsWith("pending:") || !input.onMessageAction) return
+    if (!selected || !input.onMessageAction || (selected.id.startsWith("pending:") && action !== "copy")) return
     const data = input.data()
     void input.onMessageAction(action, {
       session: selected,

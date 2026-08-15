@@ -11,7 +11,7 @@
 //   - the explicit-network TUI (`--port`) attaches and warns instead of
 //     binding a second backend.
 import { describe, expect } from "bun:test"
-import { createHash } from "node:crypto"
+import { coordinatorKey } from "@opencode-ai/sdk/coordinator"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Effect } from "effect"
@@ -42,8 +42,7 @@ function stateRoot(home: string) {
 }
 
 function manifestFile(home: string, database: string) {
-  const key = createHash("sha1").update(path.resolve(database)).digest("hex")
-  return path.join(stateRoot(home), "tui-coordinators", `${key}.json`)
+  return path.join(stateRoot(home), "tui-coordinators", `${coordinatorKey(database)}.json`)
 }
 
 function readManifest(home: string, database: string) {
@@ -166,7 +165,7 @@ describe("clients attach-first against a running serve authority", () => {
     ({ home }) =>
       Effect.gen(function* () {
         const database = path.join(home, "shared.db")
-        const tui = yield* spawnHeadlessTui(home, database)
+        yield* spawnHeadlessTui(home, database)
 
         const manifest = yield* pollWithTimeout(
           readManifest(home, database),

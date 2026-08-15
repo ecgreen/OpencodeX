@@ -159,7 +159,6 @@ describe("client state sync", () => {
       next: "page-2",
       missing: [],
       sessionUiState: {},
-      sessionUiState: {},
     }
     const transport: ClientStateSyncTransport = {
       snapshot: async () => root,
@@ -884,7 +883,7 @@ describe("client state sync", () => {
     await controller.start()
     await controller.refreshSessionTail("session-1")
     releaseEvent.resolve()
-    await waitFor(() => Boolean(controller.getState().dirtySessions["session-1"]))
+    await waitFor(() => controller.getState().dirtySessions["session-1"])
 
     const before = controller.getState()
     let notifications = 0
@@ -927,7 +926,7 @@ describe("client state sync", () => {
     await controller.start()
     await controller.refreshSessionTail("session-1", { limit: 75 })
     releaseEvent.resolve()
-    await waitFor(() => Boolean(controller.getState().dirtySessions["session-1"]))
+    await waitFor(() => controller.getState().dirtySessions["session-1"])
 
     await controller.loadOlderSessionPage("session-1", { before: "message-2", limit: 25 })
     expect(controller.getState().dirtySessions["session-1"]).toBe(true)
@@ -1992,7 +1991,7 @@ describe("client state sync", () => {
         properties: { terminalSessionID: terminal.id },
       }),
     ).toBe(true)
-    await waitFor(() => snapshots === 2 && controller.getState().dirtyCatalog === false)
+    await waitFor(() => snapshots === 2 && !controller.getState().dirtyCatalog)
     expect(controller.getState().terminalSessions.records[terminal.id]).toBeUndefined()
     expect(detailLoads).toBe(0)
     controller.stop()
@@ -2000,7 +1999,6 @@ describe("client state sync", () => {
 
   test("retains and selects project and view-only sessions from the known ID union", () => {
     const projectOnly = { ...session("project-only", "Project only"), project: null }
-    const viewOnly = { ...session("view-only", "View only"), parentID: "parent", project: null }
     const firstSnapshot = snapshot("cursor-1", "digest-1", [])
     firstSnapshot.payloads.catalog.projects = [
       {
@@ -3062,7 +3060,7 @@ describe("client state sync", () => {
         properties: { viewID: "view-1" },
       }),
     ).toBe(true)
-    await waitFor(() => loads === 2 && controller.getState().dirtyCatalog === false)
+    await waitFor(() => loads === 2 && !controller.getState().dirtyCatalog)
 
     expect(controller.getMetrics().rootSnapshots).toBe(2)
     expect(controller.getState().dirtyCatalog).toBe(false)

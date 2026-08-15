@@ -13,6 +13,7 @@ import {
 } from "electron"
 import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
 import {
+  allowCoordinatorVersionMismatch,
   assertSidecarRestartAllowed,
   type SidecarConnection,
   startSidecar,
@@ -257,6 +258,13 @@ ipcMain.handle("opencodex:connection", async () => {
   const connection = await ensureSidecar()
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
   return { url: connection.url, directory: connection.directory }
+})
+
+ipcMain.handle("opencodex:attach-version-mismatch", (event) => {
+  if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Coordinator version override is only available from the main OpencodeX window.")
+  }
+  allowCoordinatorVersionMismatch()
 })
 
 ipcMain.handle("opencodex:restart", async (event) => {
