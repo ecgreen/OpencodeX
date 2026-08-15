@@ -166,7 +166,7 @@ describe("clients attach-first against a running serve authority", () => {
     ({ home }) =>
       Effect.gen(function* () {
         const database = path.join(home, "shared.db")
-        const tui = yield* spawnHeadlessTui(home, database)
+        yield* spawnHeadlessTui(home, database)
 
         const manifest = yield* pollWithTimeout(
           readManifest(home, database),

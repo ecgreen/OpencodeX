@@ -117,7 +117,7 @@ describe("OpencodeX state HTTP API", () => {
           }),
         ]),
       )
-      expect(responses.map((response) => response.status).toSorted()).toEqual([200, 200, 409])
+      expect(responses.map((response) => response.status).toSorted((a, b) => a - b)).toEqual([200, 200, 409])
       const snapshot = record(
         yield* Effect.promise(() =>
           request("/experimental/opencodex/state").then((response) => response.json()),
@@ -171,7 +171,7 @@ describe("OpencodeX state HTTP API", () => {
           ),
         ),
       )
-      expect(responses.map((response) => response.status).toSorted()).toEqual([200, 409])
+      expect(responses.map((response) => response.status).toSorted((a, b) => a - b)).toEqual([200, 409])
       const successful = responses.find((response) => response.ok)
       if (!successful) return yield* Effect.die(new Error("Concurrent view update had no winner"))
       const winner = record(yield* Effect.promise(() => successful.json()))
