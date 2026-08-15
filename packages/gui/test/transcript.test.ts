@@ -5,6 +5,7 @@ import { formatSessionTranscript } from "../src/renderer/src/lib/transcript"
 import {
   TRANSCRIPT_PROMPT_HISTORY_LIMIT,
   TRANSCRIPT_PROMPT_PREVIEW_LENGTH,
+  samePromptEntries,
   transcriptPromptHistory,
   visibleTranscriptMessageIDs,
   visibleTranscriptMessages,
@@ -148,6 +149,19 @@ describe("GUI transcript prompt history", () => {
 
     expect(entry.text.length).toBeLessThanOrEqual(TRANSCRIPT_PROMPT_PREVIEW_LENGTH)
     expect(entry.text.endsWith("…")).toBe(true)
+  })
+
+  test("streaming re-extractions compare content-equal so the rail never re-renders", () => {
+    const messages = [userMessage("msg_a", [textPart("first")]), userMessage("msg_b", [textPart("second")])]
+    // Two runs build fresh objects, as happens on every streaming chunk.
+    const before = transcriptPromptHistory(messages)
+    const after = transcriptPromptHistory(messages)
+
+    expect(after).not.toBe(before)
+    expect(samePromptEntries(before, after)).toBe(true)
+    expect(samePromptEntries(undefined, after)).toBe(false)
+    expect(samePromptEntries(before, transcriptPromptHistory(messages.slice(0, 1)))).toBe(false)
+    expect(samePromptEntries(before, transcriptPromptHistory([messages[0], userMessage("msg_b", [textPart("edited")])]))).toBe(false)
   })
 
   test("keeps duplicate prompt texts as distinct entries", () => {
