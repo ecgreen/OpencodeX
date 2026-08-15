@@ -92,9 +92,11 @@ describe("opencode serve authority (subprocess)", () => {
           }).compatible,
         ).toBe(true)
 
-        // Managed as 0600 like every coordinator manifest.
-        const stat = yield* Effect.promise(() => fs.stat(path.join(coordinatorRoot(home), `${manifest.key}.json`)))
-        expect(stat.mode & 0o777).toBe(0o600)
+        // Windows does not expose POSIX permission bits through stat.
+        if (process.platform !== "win32") {
+          const stat = yield* Effect.promise(() => fs.stat(path.join(coordinatorRoot(home), `${manifest.key}.json`)))
+          expect(stat.mode & 0o777).toBe(0o600)
+        }
 
         // The authority has been up the whole time with zero client leases -
         // serve does not idle-shutdown the way the lease-driven coordinator
