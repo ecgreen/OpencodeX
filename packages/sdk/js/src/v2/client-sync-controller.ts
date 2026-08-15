@@ -74,6 +74,8 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
   let paginationRequest: Promise<OpencodeXSessionCardPage> | undefined
   let rootRefresh: Promise<void> | undefined
   let rootRefreshQueued = false
+  let rootRefreshGeneration = 0
+  const rootRefreshWaiters = new Array<ClientRootRefreshWaiter>()
   let operationsRefresh: Promise<void> | undefined
   let operationsRefreshQueued = false
   let capabilityRefresh: Promise<void> | undefined
@@ -206,49 +208,71 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
   function rememberEventID(id: string) {
     seenEventIDs.remember(id)
   }
-  const refresh = () => {
-    rootRefreshQueued = true
-    if (rootRefresh) return rootRefresh
+  const settleRootRefreshWaiters = (generation: number, failure?: { error: unknown }) => {
+    const settled = rootRefreshWaiters.filter((waiter) => waiter.generation <= generation)
+    const pending = rootRefreshWaiters.filter((waiter) => waiter.generation > generation)
+    rootRefreshWaiters.splice(0, rootRefreshWaiters.length, ...pending)
+    settled.forEach((waiter) => (failure ? waiter.reject(failure.error) : waiter.resolve()))
+  }
+  const deferRootRefreshWaiters = (generation: number) => {
+    const deferred = rootRefreshWaiters.filter((waiter) => waiter.generation <= generation)
+    deferred.forEach((waiter) => (waiter.generation = generation + 1))
+    if (deferred.length > 0) rootRefreshQueued = true
+  }
+  function startRootRefresh() {
+    if (rootRefresh || stopped || !rootRefreshQueued) return
     rootRefresh = (async () => {
       while (rootRefreshQueued) {
         if (stopped) break
         rootRefreshQueued = false
+        const refreshGeneration = ++rootRefreshGeneration
         const requestID = ++catalogRequestID
         const cardGeneration = ++sessionCardGeneration
         rootCardRequests.add(cardGeneration)
         metrics.rootSnapshots += 1
-        const snapshot = await transport.snapshot().then(
-          (value) => value,
-          (error) => {
-            rootCardRequests.delete(cardGeneration)
-            clearSettledSessionCardGenerations()
-            throw error
-          },
-        )
-        if (requestID !== catalogRequestID || stopped) {
+        const cleanup = () => {
           rootCardRequests.delete(cardGeneration)
           clearSettledSessionCardGenerations()
-          continue
         }
-        const previous = state
-        const next = withoutStaleSessionCards(snapshot, cardGeneration)
-        resetPaginationLane()
-        markSessionCardPage(next.payloads.catalog.sessionCards, cardGeneration)
-        const resolved = applyClientStateSnapshot(state, next)
-        commit(resolved)
-        Object.keys(previous.sessionDetails).forEach((sessionID) => {
-          const before = previous.sessions.records[sessionID]
-          const after = resolved.sessions.records[sessionID]
-          if (after && before?.time.updated !== after.time.updated) scheduleSessionRefresh(sessionID)
-        })
-        rootCardRequests.delete(cardGeneration)
-        clearSettledDeletionGenerations()
-        clearSettledSessionCardGenerations()
+        try {
+          const snapshot = await transport.snapshot()
+          if (requestID !== catalogRequestID || stopped) {
+            cleanup()
+            if (!stopped) deferRootRefreshWaiters(refreshGeneration)
+            continue
+          }
+          const previous = state
+          const next = withoutStaleSessionCards(snapshot, cardGeneration)
+          resetPaginationLane()
+          markSessionCardPage(next.payloads.catalog.sessionCards, cardGeneration)
+          const resolved = applyClientStateSnapshot(state, next)
+          commit(resolved)
+          Object.keys(previous.sessionDetails).forEach((sessionID) => {
+            const before = previous.sessions.records[sessionID]
+            const after = resolved.sessions.records[sessionID]
+            if (after && before?.time.updated !== after.time.updated) scheduleSessionRefresh(sessionID)
+          })
+          cleanup()
+          clearSettledDeletionGenerations()
+          settleRootRefreshWaiters(refreshGeneration)
+        } catch (error) {
+          cleanup()
+          settleRootRefreshWaiters(refreshGeneration, { error })
+        }
       }
     })().finally(() => {
       rootRefresh = undefined
+      startRootRefresh()
     })
-    return rootRefresh
+  }
+  const refresh = () => {
+    if (stopped) return Promise.resolve()
+    rootRefreshQueued = true
+    const result = new Promise<void>((resolve, reject) => {
+      rootRefreshWaiters.push({ generation: rootRefreshGeneration + 1, resolve, reject })
+    })
+    startRootRefresh()
+    return result
   }
   const poll = () => {
     if (stopped || polling) return
@@ -1120,6 +1144,7 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       operationsRequestID += 1
       capabilityRequestID += 1
       rootRefreshQueued = false
+      settleRootRefreshWaiters(Number.POSITIVE_INFINITY)
       operationsRefreshQueued = false
       capabilityRefreshQueued = false
       abortSessionRequests()
@@ -1199,6 +1224,12 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
 }
 
 type PartDeltaEvent = Extract<Event, { type: "message.part.delta" }>
+
+type ClientRootRefreshWaiter = {
+  generation: number
+  resolve: () => void
+  reject: (error: unknown) => void
+}
 
 type ClientSessionRequest = {
   key: string

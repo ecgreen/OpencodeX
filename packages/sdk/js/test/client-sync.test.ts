@@ -3026,16 +3026,190 @@ describe("client state sync", () => {
     await controller.start()
 
     const first = controller.refresh()
+    await waitFor(() => loads === 2)
     const second = controller.refresh()
     const third = controller.refresh()
+    let secondSettled = false
+    void second.then(() => (secondSettled = true))
     expect(loads).toBe(2)
     releases.shift()?.()
-    await Bun.sleep(0)
+    await first
+    await waitFor(() => loads === 3)
     expect(loads).toBe(3)
+    expect(secondSettled).toBe(false)
     releases.shift()?.()
     await Promise.all([first, second, third])
 
     expect(controller.getMetrics().rootSnapshots).toBe(3)
+    controller.stop()
+  })
+
+  test("resolves a covered root refresh while a later invalidation remains in flight", async () => {
+    let loads = 0
+    const releases = new Array<() => void>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        loads += 1
+        if (loads > 1) await new Promise<void>((resolve) => releases.push(resolve))
+        return snapshot(`cursor-${loads}`, `digest-${loads}`, [])
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "old"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    controller.applyEvent({ id: "view-created", type: "opencodex.view.created", properties: { viewID: "view-1" } })
+    await waitFor(() => loads === 2)
+    const refresh = controller.refresh()
+    let settled = false
+    void refresh.then(() => (settled = true))
+    releases.shift()?.()
+    await waitFor(() => loads === 3)
+    controller.applyEvent({ id: "view-updated", type: "opencodex.view.updated", properties: { viewID: "view-1" } })
+    releases.shift()?.()
+    await waitFor(() => loads === 4)
+
+    expect(settled).toBe(true)
+    releases.shift()?.()
+    await waitFor(() => !controller.getState().dirtyCatalog)
+    controller.stop()
+  })
+
+  test("rejects only root refresh callers covered by a failed snapshot", async () => {
+    let loads = 0
+    let failSnapshot = () => {}
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        loads += 1
+        if (loads === 2) {
+          await new Promise<void>((resolve) => (failSnapshot = resolve))
+          throw new Error("snapshot failed")
+        }
+        return snapshot(`cursor-${loads}`, `digest-${loads}`, [])
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "old"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    const failed = controller.refresh()
+    await waitFor(() => loads === 2)
+    const recovered = controller.refresh()
+    failSnapshot()
+
+    await failed.then(
+      () => {
+        throw new Error("expected failed root refresh")
+      },
+      (error) => expect(error).toEqual(new Error("snapshot failed")),
+    )
+    await recovered
+    expect(loads).toBe(3)
+    controller.stop()
+  })
+
+  test("rejects a root refresh when the transport throws undefined synchronously", async () => {
+    let loads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: () => {
+        loads += 1
+        if (loads === 2) throw undefined
+        return Promise.resolve(snapshot(`cursor-${loads}`, `digest-${loads}`, []))
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "old"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    let rejected = false
+    await controller.refresh().then(
+      () => {
+        throw new Error("expected failed root refresh")
+      },
+      (error) => {
+        rejected = true
+        expect(error).toBeUndefined()
+      },
+    )
+
+    expect(rejected).toBe(true)
+    controller.stop()
+  })
+
+  test("carries a refresh waiter forward when its snapshot is discarded", async () => {
+    let loads = 0
+    const releases = new Array<() => void>()
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => {
+        loads += 1
+        if (loads > 1) await new Promise<void>((resolve) => releases.push(resolve))
+        return snapshot(`cursor-${loads}`, `digest-${loads}`, [])
+      },
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "old"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+
+    const refresh = controller.refresh()
+    let settled = false
+    void refresh.then(() => (settled = true))
+    await waitFor(() => loads === 2)
+    controller.applyEvent({
+      id: "session-deleted-during-refresh",
+      type: "session.deleted",
+      properties: { sessionID: "session-1", info: session("session-1", "Deleted") },
+    })
+    releases.shift()?.()
+    await waitFor(() => loads === 3)
+
+    expect(settled).toBe(false)
+    releases.shift()?.()
+    await refresh
+    expect(settled).toBe(true)
+    controller.stop()
+  })
+
+  test("rejects a root refresh when applying its snapshot throws", async () => {
+    let loads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot(`cursor-${++loads}`, `digest-${loads}`, []),
+      session: async () => sessionSnapshot("cursor-1", "detail-1", "old"),
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    const unsubscribe = controller.subscribe(() => {
+      throw new Error("snapshot listener failed")
+    })
+
+    await expect(controller.refresh()).rejects.toThrow("snapshot listener failed")
+    unsubscribe()
+    await controller.refresh()
+    expect(loads).toBe(3)
     controller.stop()
   })
 
