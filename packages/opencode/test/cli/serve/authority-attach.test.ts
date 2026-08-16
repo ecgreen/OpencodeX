@@ -11,8 +11,10 @@
 //   - the explicit-network TUI (`--port`) attaches and warns instead of
 //     binding a second backend.
 import { describe, expect } from "bun:test"
+import { Hash } from "@opencode-ai/core/util/hash"
 import { coordinatorKey } from "@opencode-ai/sdk/coordinator"
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
 import { cliIt } from "../../lib/cli-process"
@@ -34,6 +36,7 @@ type Manifest = {
   password: string
   token: string
   createdAt: string
+  serverVersion?: string
 }
 
 // stateRoot mirrors the harness's XDG_STATE_HOME/opencode.
@@ -165,7 +168,7 @@ describe("clients attach-first against a running serve authority", () => {
     ({ home }) =>
       Effect.gen(function* () {
         const database = path.join(home, "shared.db")
-        yield* spawnHeadlessTui(home, database, {
+        const tui = yield* spawnHeadlessTui(home, database, {
           OPENCODE_SERVER_USERNAME: "lan-user",
           OPENCODE_SERVER_PASSWORD: "lan-secret",
         })
@@ -174,6 +177,10 @@ describe("clients attach-first against a running serve authority", () => {
           readManifest(home, database),
           "tui worker did not publish a coordinator manifest",
           "45 seconds",
+        ).pipe(
+          Effect.mapError(
+            (error) => new Error(`${error.message}${tui.stderr ? `\ntui stderr:\n${tui.stderr}` : ""}`, { cause: error }),
+          ),
         )
         const health = yield* Effect.promise(() =>
           fetch(new URL("/global/health", manifest.url), { headers: coordinatorHeaders(manifest) }),
@@ -184,6 +191,93 @@ describe("clients attach-first against a running serve authority", () => {
         expect(manifest.password).toBe("lan-secret")
       }),
     90_000,
+  )
+
+  cliIt.live(
+    "acp attaches when an authority publishes while it waits for the owner lock",
+    ({ home, opencode }) =>
+      Effect.gen(function* () {
+        const database = path.join(home, "shared.db")
+        const key = coordinatorKey(database)
+        const lock = path.join(stateRoot(home), "locks", `${Hash.fast(`tui-coordinator-owner:${key}`)}.lock`)
+        yield* Effect.acquireRelease(
+          Effect.tryPromise(async () => {
+            await fs.mkdir(lock, { recursive: true })
+            await Promise.all([
+              fs.writeFile(path.join(lock, "heartbeat"), ""),
+              fs.writeFile(
+                path.join(lock, "meta.json"),
+                JSON.stringify({
+                  token: "boot-window-owner",
+                  pid: process.pid,
+                  hostname: os.hostname(),
+                  createdAt: new Date().toISOString(),
+                }),
+              ),
+            ])
+          }),
+          () => Effect.tryPromise(() => fs.rm(lock, { recursive: true, force: true })).pipe(Effect.ignore),
+        )
+
+        const file = manifestFile(home, database)
+        yield* Effect.tryPromise(async () => {
+          await fs.mkdir(path.dirname(file), { recursive: true })
+          await fs.writeFile(file, JSON.stringify({ token: "boot-window-manifest" }))
+        })
+        const acp = yield* opencode.acp({ env: { OPENCODE_DB: database } })
+        yield* pollWithTimeout(
+          Effect.tryPromise(() => fs.access(file)).pipe(
+            Effect.as(undefined),
+            Effect.catch(() => Effect.succeed(true as const)),
+          ),
+          "acp did not complete its initial manifest read",
+          "30 seconds",
+        )
+
+        const server = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            Bun.serve({
+              hostname: "127.0.0.1",
+              port: 0,
+              fetch: () =>
+                Response.json({
+                  healthy: true,
+                  active: false,
+                  version: "0.0.0-test",
+                  coordinatorKey: key,
+                }),
+            }),
+          ),
+          (server) => Effect.sync(() => server.stop(true)),
+        )
+        const manifest: Manifest = {
+          version: 2,
+          key,
+          directory: home,
+          database,
+          pid: process.pid,
+          url: `http://127.0.0.1:${server.port}`,
+          username: "boot-window-user",
+          password: "boot-window-secret",
+          token: "boot-window-manifest",
+          createdAt: new Date().toISOString(),
+          serverVersion: "0.0.0-test",
+        }
+        yield* Effect.tryPromise(() => fs.writeFile(file, JSON.stringify(manifest)))
+
+        yield* pollWithTimeout(
+          Effect.sync(() => (acp.stderr().includes("already has an authority") ? (true as const) : undefined)),
+          "acp timed out instead of attaching to the authority published during its lock wait",
+          "30 seconds",
+        )
+        expect(yield* readManifest(home, database)).toMatchObject({ pid: process.pid, token: manifest.token })
+
+        yield* Effect.sync(() => acp.close())
+        expect(
+          yield* awaitWithTimeout(Effect.promise(() => acp.exited), "acp did not exit after stdin closed", "10 seconds"),
+        ).toBe(0)
+      }),
+    120_000,
   )
 
   cliIt.live(
@@ -199,7 +293,9 @@ describe("clients attach-first against a running serve authority", () => {
           timeoutMs: 30_000,
         })
         expect(collision.exitCode).not.toBe(0)
-        expect(collision.stderr).toContain("Timed out waiting for lock: tui-coordinator-owner:")
+        expect(collision.stderr).toContain(
+          "Failed to acquire backend authority: Timed out waiting for lock: tui-coordinator-owner:",
+        )
 
         handle.close()
         expect(
@@ -241,7 +337,7 @@ function spawnHeadlessTui(home: string, database: string, extraEnv: Record<strin
       }
       const argv = [cliEntry, "--port", "0", "--prompt", "hello"]
       const command = process.env.OPENCODE_TEST_CLI_BUNDLE
-        ? [process.env.OPENCODE_TEST_CLI_BUNDLE, ...argv.slice(1)]
+        ? ["bun", process.env.OPENCODE_TEST_CLI_BUNDLE, ...argv.slice(1)]
         : ["bun", "run", "--conditions=browser", ...argv]
       const child = Bun.spawn(command, {
         cwd: workspace,

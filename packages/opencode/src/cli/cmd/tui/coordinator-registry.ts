@@ -189,7 +189,18 @@ export async function acquirePreferredCoordinatorAccess() {
   const existing = await readActiveCoordinator(key, database)
   if (existing) return { coordinator: existing, release: async () => {} }
 
-  const ownerLock = await acquireCoordinatorOwnerLock(key)
+  const access = await acquireCoordinatorOwnerLock(key).then(
+    (ownerLock) => ({ ownerLock }),
+    async (error) => {
+      // An authority can publish while this client is waiting on the lifetime
+      // owner lock. Attach to that winner instead of reporting a stale timeout.
+      const coordinator = await readActiveCoordinator(key, database)
+      if (coordinator) return { coordinator }
+      throw error
+    },
+  )
+  if ("coordinator" in access) return { coordinator: access.coordinator, release: async () => {} }
+  const ownerLock = access.ownerLock
   const claimed = await readActiveCoordinator(key, database).catch(async (error) => {
     await ownerLock.release()
     throw error
@@ -236,6 +247,7 @@ export function acquireCoordinatorOwnerLock(key: string) {
 
 function cliCommand() {
   if (process.argv[1]?.endsWith(".ts")) return [process.execPath, "--conditions=browser", process.argv[1]]
+  if (process.argv[1]?.endsWith(".js")) return [process.execPath, process.argv[1]]
   return [process.execPath]
 }
 

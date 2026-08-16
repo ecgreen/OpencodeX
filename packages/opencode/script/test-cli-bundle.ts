@@ -21,6 +21,7 @@ import path from "node:path"
 
 const dir = path.resolve(import.meta.dir, "..")
 const outdir = path.join(dir, ".artifacts/test-cli")
+const worker = path.join(outdir, "cli/cmd/tui/worker.js")
 
 process.chdir(dir)
 
@@ -41,11 +42,12 @@ const result = await Bun.build({
   sourcemap: "none",
   splitting: false,
   outdir,
-  entrypoints: ["./src/index.ts"],
+  entrypoints: ["./src/index.ts", "./src/cli/cmd/tui/worker.ts"],
   define: {
     OPENCODE_VERSION: "'0.0.0-test'",
     OPENCODE_CHANNEL: "'dev'",
     OPENCODE_LIBC: "''",
+    OPENCODE_WORKER_PATH: JSON.stringify(worker),
   },
 })
 
@@ -56,6 +58,7 @@ if (!result.success) {
 
 const entry = path.join(outdir, "index.js")
 if (!(await Bun.file(entry).exists())) throw new Error(`Bundle succeeded but ${entry} is missing`)
+if (!(await Bun.file(worker).exists())) throw new Error(`Bundle succeeded but ${worker} is missing`)
 
 console.error(`[build-test-cli] bundled in ${Date.now() - started}ms -> ${entry}`)
 console.log(entry)

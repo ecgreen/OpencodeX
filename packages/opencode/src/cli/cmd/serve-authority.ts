@@ -101,7 +101,10 @@ function startServeAuthority(
     // failure this protocol exists to prevent. Fail loudly instead.
     const existing = yield* Effect.promise(() => readActiveCoordinator(input.key, input.database))
     if (existing) return yield* Effect.fail(collidingAuthorityError(existing))
-    const ownerLock = yield* Effect.promise(() => acquireCoordinatorOwnerLock(input.key)).pipe(
+    const ownerLock = yield* Effect.tryPromise({
+      try: () => acquireCoordinatorOwnerLock(input.key),
+      catch: (error) => error,
+    }).pipe(
       Effect.catchIf(
         () => true,
         (error) =>
@@ -237,9 +240,9 @@ function stopServeAuthority(resource: OwnedServeAuthority, reason: string) {
     if (resource.stopped) return
     resource.stopped = true
     Log.Default.info("backend authority stopping", { reason })
-    // Dispose application state once, through the companion when one exists so
-    // connected clients on both sockets get the disposed event.
-    const disposeURL = resource.companion?.url ?? resource.listeners[0].url
+    // Dispose through the connectable URL published to clients. This is the
+    // companion for LAN binds and loopback for wildcard binds.
+    const disposeURL = resource.manifest.url
     yield* Effect.tryPromise(() =>
       fetch(new URL("/global/dispose", disposeURL), {
         method: "POST",

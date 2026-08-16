@@ -71,6 +71,10 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
     if (restarting) return restarting
     const result = (async () => {
       await options.beforeRestart?.()
+      // An ordinary stop intentionally leaves an attached owned authority
+      // running. A restart that races it must wait, then perform its stronger
+      // stop rather than coalescing into cleanup that cannot restart anything.
+      if (stopping) await stopping
       await stopNow(options.restartStop)
       return ensureNow()
     })()

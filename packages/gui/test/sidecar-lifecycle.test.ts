@@ -120,6 +120,33 @@ describe("sidecar lifecycle", () => {
     expect(events).toEqual(["start", "allowed", "reset", "restart-stop", "start"])
   })
 
+  test("performs the stronger restart stop after a racing ordinary stop", async () => {
+    const cleanup = Promise.withResolvers<void>()
+    let starts = 0
+    let restartStops = 0
+    const lifecycle = createSidecarLifecycle({
+      start: async () => `connection-${++starts}`,
+      install: () => {},
+      reset: () => {},
+      stop: () => cleanup.promise,
+      restartStop: () => {
+        restartStops += 1
+      },
+    })
+    expect(await lifecycle.ensure()).toBe("connection-1")
+
+    const stopping = lifecycle.stop()
+    const restarting = lifecycle.restart()
+    await Promise.resolve()
+    expect(starts).toBe(1)
+    expect(restartStops).toBe(0)
+
+    cleanup.resolve()
+    await stopping
+    expect(await restarting).toBe("connection-2")
+    expect(restartStops).toBe(1)
+  })
+
   test("coalesces concurrent restart requests", async () => {
     const stopped = Promise.withResolvers<void>()
     let starts = 0

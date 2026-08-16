@@ -169,24 +169,24 @@ export async function assertSidecarRestartAllowed() {
     }
     return
   }
-  const health = await fetchCoordinatorHealth(manifest)
-  if (health?.healthy !== true) {
-    if (!isCoordinatorProcessAlive(manifest.pid)) {
-      await removeCoordinatorManifest(key, manifest.token).catch(() => undefined)
-      return
-    }
-    throw new Error("Backend restart is waiting for the coordinator health check to recover.")
+  if (!isCoordinatorProcessAlive(manifest.pid)) {
+    await removeCoordinatorManifest(key, manifest.token).catch(() => undefined)
+    return
   }
-  if (!isCoordinatorHealthForManifest(manifest, health)) {
-    throw new Error("Backend restart refused because the coordinator serves a different database.")
-  }
-  if (health.active) throw new Error("Backend restart is waiting for active work to finish.")
   if (state.owned?.process.pid !== manifest.pid || state.owned.token !== manifest.token) {
     throw new Error("Backend restart is not managed by this client.")
   }
   if (await hasOtherActiveClient(key)) {
     throw new Error("Backend restart is waiting for another OpencodeX client to disconnect.")
   }
+  const health = await fetchCoordinatorHealth(manifest)
+  // A live process that this GUI owns, with no other clients, is safe to stop
+  // even when it is too hung to answer the health probe.
+  if (health?.healthy !== true) return
+  if (!isCoordinatorHealthForManifest(manifest, health)) {
+    throw new Error("Backend restart refused because the coordinator serves a different database.")
+  }
+  if (health.active) throw new Error("Backend restart is waiting for active work to finish.")
 }
 
 async function hasOtherActiveClient(key: string) {
