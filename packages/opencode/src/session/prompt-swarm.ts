@@ -21,10 +21,7 @@ import {
 import { Identifier } from "@/id/id"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
-import { prepareAttachments, withAttachmentNote } from "./swarm-attachments"
-import { mkdir, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { prepareImages } from "./swarm-attachments"
 
 const log = Log.create({ service: "session.prompt-swarm" })
 
@@ -199,16 +196,14 @@ export function make(deps: Deps) {
       startedAt: Date.now(),
     }
     const stamp = (record: DelegationRecord, expectRunID?: string) =>
-      sessions
-        .stampDelegation({ sessionID: child.id, record, ...(expectRunID ? { expectRunID } : {}) })
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.sync(() => {
-              log.error("swarm delegation stamp failed", { sessionID: child.id, runID, cause })
-              return false
-            }),
-          ),
-        )
+      sessions.stampDelegation({ sessionID: child.id, record, ...(expectRunID ? { expectRunID } : {}) }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            log.error("swarm delegation stamp failed", { sessionID: child.id, runID, cause })
+            return false
+          }),
+        ),
+      )
     const settle = (outcome: DelegationOutcome, summary?: string) =>
       stamp(settleDelegation(started, { outcome, summary }), runID).pipe(Effect.asVoid)
     yield* stamp(started)
@@ -282,44 +277,12 @@ export function make(deps: Deps) {
       .join("\n")
       .trim()
 
-    // Attachments used to be dropped here along with every other non-text
-    // part, so an image attached in a client never reached the orchestrator --
-    // it persisted, the UI showed it, and the model simply never saw it. The
-    // CLI takes a prompt string rather than structured content, so materialise
-    // each attachment and name the paths; the orchestrator reads them itself.
-    const attachments = prepareAttachments(last.parts as never)
-    const attachmentPaths: string[] = []
-    if (attachments.length > 0) {
-      const dir = join(tmpdir(), "opencodex-attachments", last.info.id)
-      const written = yield* Effect.tryPromise({
-        try: async () => {
-          await mkdir(dir, { recursive: true })
-          const paths: string[] = []
-          for (const attachment of attachments) {
-            const target = join(dir, attachment.filename)
-            await writeFile(target, Buffer.from(attachment.base64, "base64"))
-            paths.push(target)
-          }
-          return paths
-        },
-        catch: (err) => err,
-      }).pipe(
-        // An attachment that cannot be written must not take the whole turn
-        // down -- the text is still worth sending.
-        Effect.catch((err) =>
-          Effect.sync(() => {
-            log.warn("failed to materialise swarm attachments", { error: String(err) })
-            return [] as string[]
-          }),
-        ),
-      )
-      attachmentPaths.push(...written)
-    }
-
-    const text = withAttachmentNote(promptText, attachmentPaths)
+    const attachments = prepareImages(last.parts)
+    if (attachments.skipped.length > 0)
+      log.warn("skipped unsupported swarm attachments", { reasons: attachments.skipped })
     // An image-only message has no text but is still a real turn.
-    if (!text) return undefined
-    yield* ensureClaudeTitle(session, promptText || text)
+    if (!promptText && attachments.images.length === 0) return undefined
+    yield* ensureClaudeTitle(session, promptText || attachments.title || "Image attachment")
     const specialists = swarm?.roles.slice(1) ?? []
     // Attribute the turn to the route the reader picked, so a swarm session
     // stays labelled with the team rather than the orchestrator's model. The
@@ -336,7 +299,8 @@ export function make(deps: Deps) {
     return claudeDriver.runTurn({
       sessionID,
       parentMessageID: last.info.id,
-      text,
+      text: promptText,
+      ...(attachments.images.length > 0 ? { images: attachments.images } : {}),
       directory: session.directory,
       providerID: turnProviderID,
       modelID: turnModelID,
@@ -372,7 +336,9 @@ export function make(deps: Deps) {
             // Avoid doubling up when the subagent's own title already says
             // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
             // render as "code-reviewer subagent (@claude subagent)".
-            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
+            const title = /subagent/i.test(spawnInput.title)
+              ? spawnInput.title
+              : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,
