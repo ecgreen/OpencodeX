@@ -70,12 +70,13 @@ function clip(text: string) {
 
 /** Reasoning and synthetic parts are deliberately skipped: they are noise here. */
 function messageText(message: SessionLegacy.WithParts) {
-  return message.parts
-    .flatMap((part) =>
-      part.type === "text" && !isSynthetic(part) && part.text.trim() ? [part.text.trim()] : [],
-    )
-    .join("\n")
-    .trim()
+  const text = message.parts.flatMap((part) =>
+    part.type === "text" && !isSynthetic(part) && part.text.trim() ? [part.text.trim()] : [],
+  )
+  const images = message.parts.flatMap((part) =>
+    part.type === "file" && part.mime.startsWith("image/") ? ["[attached image]"] : [],
+  )
+  return [...text, ...images].join("\n").trim()
 }
 
 function messageTools(message: SessionLegacy.WithParts) {

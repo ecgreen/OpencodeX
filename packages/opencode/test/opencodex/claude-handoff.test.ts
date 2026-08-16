@@ -55,6 +55,13 @@ describe("claude handoff", () => {
     expect(handoffMessages([message("assistant", [{ type: "reasoning", text: "thinking out loud" }])])).toEqual([])
   })
 
+  test("retains an image marker when a Claude conversation must be rebuilt", () => {
+    const handoff = buildHandoff([
+      message("user", [{ type: "file", mime: "image/png", filename: "error.png", url: "data:image/png;base64,AAA=" }]),
+    ])
+    expect(handoff).toContain("User: [attached image]")
+  })
+
   test("records each tool once rather than per call", () => {
     const [entry] = handoffMessages([
       message("assistant", [

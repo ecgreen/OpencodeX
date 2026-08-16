@@ -16,6 +16,8 @@ import {
   ClaudeTransport,
   createSdkTransport,
   type ClaudeTransport as Transport,
+  type ClaudeImage,
+  type ClaudePrompt,
   type DelegateCapability,
 } from "./claude-transport"
 
@@ -26,9 +28,7 @@ type SessionID = typeof SessionSchema.ID.Type
  * system is meant to gate. Exported so a test can pin the list against the
  * mapper's normalized names.
  */
-export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [
-  { permission: "plan_exit", pattern: "*", action: "allow" },
-]
+export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [{ permission: "plan_exit", pattern: "*", action: "allow" }]
 
 const DELIVERY_FAILURE = "Claude response delivery failed before the turn completed."
 
@@ -69,6 +69,7 @@ export interface Interface {
     sessionID: SessionID
     parentMessageID: typeof SessionLegacy.MessageID.Type
     text: string
+    images?: ClaudeImage[]
     directory: string
     /**
      * The catalog route the reader picked, used for transcript attribution.
@@ -116,6 +117,7 @@ export function makeLayer(options: LayerOptions = {}) {
       sessionID: SessionID
       parentMessageID: typeof SessionLegacy.MessageID.Type
       text: string
+      images?: ClaudeImage[]
       directory: string
       providerID: string
       modelID: string
@@ -227,7 +229,10 @@ export function makeLayer(options: LayerOptions = {}) {
       // Claude keeps its own conversation state, so anything that came before is
       // invisible to a conversation it has not been resuming. Replay it once,
       // when opening a new one on a session that already has history.
-      const prompt = resumeID ? input.text : yield* primedPrompt(input.sessionID, input.parentMessageID, input.text)
+      const text = resumeID ? input.text : yield* primedPrompt(input.sessionID, input.parentMessageID, input.text)
+      const prompt: ClaudePrompt = input.images?.length
+        ? [...(text ? [{ type: "text" as const, text }] : []), ...input.images]
+        : text
 
       // Captured here so a permission prompt raised inside Claude's callback
       // still carries this request's instance and workspace context.
@@ -245,8 +250,9 @@ export function makeLayer(options: LayerOptions = {}) {
                 run: (delegated) =>
                   bridge
                     .promise(input.delegate!.run(delegated))
-                    .catch((cause: unknown) =>
-                      `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+                    .catch(
+                      (cause: unknown) =>
+                        `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
                     ),
               } satisfies DelegateCapability,
             }
@@ -377,7 +383,13 @@ export function makeLayer(options: LayerOptions = {}) {
       text: string,
     ) {
       const history = yield* sessions.messages({ sessionID }).pipe(Effect.orElseSucceed(() => []))
-      const prior = history.slice(0, Math.max(0, history.findIndex((message) => message.info.id === parentMessageID)))
+      const prior = history.slice(
+        0,
+        Math.max(
+          0,
+          history.findIndex((message) => message.info.id === parentMessageID),
+        ),
+      )
       return ClaudeHandoff.withHandoff(text, prior)
     })
 

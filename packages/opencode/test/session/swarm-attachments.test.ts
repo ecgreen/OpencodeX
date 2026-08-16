@@ -1,103 +1,78 @@
 import { describe, expect, test } from "bun:test"
-import {
-  extensionFor,
-  parseDataUrl,
-  prepareAttachments,
-  safeBasename,
-  withAttachmentNote,
-} from "@/session/swarm-attachments"
+import type { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { parseDataUrl, prepareImages } from "@/session/swarm-attachments"
 
 const jpeg = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+const file = (input: { mime: string; url: string; filename?: string }) =>
+  ({ type: "file", ...input }) as SessionLegacy.Part
 
 describe("parseDataUrl", () => {
-  test("parses a base64 data url", () => {
-    expect(parseDataUrl(jpeg)).toEqual({ mime: "image/jpeg", base64: "/9j/4AAQSkZJRg==" })
+  test("accepts parameters before the base64 marker", () => {
+    expect(parseDataUrl("data:image/png;charset=utf-8;base64,AAA=")).toEqual({ mime: "image/png", base64: "AAA=" })
   })
 
-  test("rejects non-data and non-base64 urls", () => {
-    expect(parseDataUrl("https://example.com/a.png")).toBeNull()
-    expect(parseDataUrl("data:image/png,notbase64")).toBeNull()
-    expect(parseDataUrl("")).toBeNull()
-  })
-})
-
-describe("safeBasename", () => {
-  test("strips directory traversal", () => {
-    expect(safeBasename("../../etc/passwd", "fallback.bin")).toBe("passwd")
-    expect(safeBasename("/absolute/path/x.png", "fallback.bin")).toBe("x.png")
-  })
-
-  test("neutralises characters that could confuse a path or shell", () => {
-    expect(safeBasename("a b;rm -rf.png", "fallback.bin")).toBe("a_b_rm_-rf.png")
-  })
-
-  test("falls back when nothing usable survives", () => {
-    expect(safeBasename("...", "fallback.bin")).toBe("fallback.bin")
-    expect(safeBasename("", "fallback.bin")).toBe("fallback.bin")
+  test("rejects remote and non-base64 urls", () => {
+    expect(parseDataUrl("https://example.com/a.png")).toBeUndefined()
+    expect(parseDataUrl("data:image/png,notbase64")).toBeUndefined()
   })
 })
 
-describe("extensionFor", () => {
-  test("prefers a sane extension from the filename", () => {
-    expect(extensionFor("image/jpeg", "shot.PNG")).toBe("png")
+describe("prepareImages", () => {
+  test("creates native Claude image blocks", () => {
+    expect(prepareImages([file({ mime: "image/jpeg", url: jpeg, filename: "screenshot.jpg" })])).toEqual({
+      images: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/jpeg", data: "/9j/4AAQSkZJRg==" },
+        },
+      ],
+      title: "screenshot.jpg",
+      skipped: [],
+    })
   })
 
-  test("falls back to the mime type, then to bin", () => {
-    expect(extensionFor("image/jpeg", undefined)).toBe("jpg")
-    expect(extensionFor("application/octet-stream", undefined)).toBe("bin")
-  })
-})
-
-describe("prepareAttachments", () => {
-  test("collects inline file parts", () => {
-    const out = prepareAttachments([
-      { type: "text", url: undefined },
-      { type: "file", mime: "image/jpeg", url: jpeg, filename: "screenshot.jpg" },
+  test("keeps same-named images as distinct content blocks", () => {
+    const prepared = prepareImages([
+      file({ mime: "image/png", url: "data:image/png;base64,AAA=", filename: "clipboard" }),
+      file({ mime: "image/png", url: "data:image/png;base64,BBB=", filename: "clipboard" }),
     ])
-    expect(out).toHaveLength(1)
-    expect(out[0]!.filename).toBe("screenshot.jpg")
-    expect(out[0]!.mime).toBe("image/jpeg")
+    expect(prepared.images.map((image) => image.source.data)).toEqual(["AAA=", "BBB="])
   })
 
-  test("skips remote urls rather than fetching them on the prompt path", () => {
-    expect(prepareAttachments([{ type: "file", url: "https://example.com/a.png", mime: "image/png" }])).toEqual([])
+  test("normalizes the common image/jpg alias for the SDK", () => {
+    const prepared = prepareImages([file({ mime: "image/jpg", url: "data:image/jpg;base64,AAA=" })])
+    expect(prepared.images[0]?.source.media_type).toBe("image/jpeg")
   })
 
-  test("names unnamed attachments predictably", () => {
-    const out = prepareAttachments([
-      { type: "file", mime: "image/png", url: "data:image/png;base64,AAA=" },
-      { type: "file", mime: "image/png", url: "data:image/png;base64,BBB=" },
-    ])
-    expect(out.map((a) => a.filename)).toEqual(["attachment-1.png", "attachment-2.png"])
+  test("reports unsupported attachments instead of silently dropping them", () => {
+    expect(
+      prepareImages([
+        file({ mime: "application/pdf", url: "data:application/pdf;base64,AAA=" }),
+        file({ mime: "image/png", url: "https://example.com/a.png" }),
+        file({ mime: "image/png", url: "data:image/png;base64,%%%" }),
+      ]).skipped,
+    ).toEqual(["unsupported-media-type", "not-inline", "invalid-base64"])
   })
 
-  test("tolerates an absent parts list", () => {
-    expect(prepareAttachments(undefined)).toEqual([])
-  })
-})
-
-describe("withAttachmentNote", () => {
-  // The whole point: non-attachment turns must be byte-identical to before.
-  test("returns the text untouched when there are no attachments", () => {
-    expect(withAttachmentNote("hello", [])).toBe("hello")
+  test("uses a stable title for an unnamed image-only message", () => {
+    expect(prepareImages([file({ mime: "image/jpeg", url: jpeg })]).title).toBe("Image attachment")
   })
 
-  test("names the paths so the orchestrator can read them", () => {
-    const out = withAttachmentNote("look at this", ["/tmp/a/shot.jpg"])
-    expect(out).toContain("look at this")
-    expect(out).toContain("/tmp/a/shot.jpg")
-    expect(out).toContain("attached a file")
+  test("keeps an untrusted filename on one bounded title line", () => {
+    const title = prepareImages([file({ mime: "image/jpeg", url: jpeg, filename: "  first\nsecond.jpg  " })]).title
+    expect(title).toBe("first second.jpg")
   })
 
-  test("pluralises for multiple attachments", () => {
-    const out = withAttachmentNote("", ["/tmp/a.jpg", "/tmp/b.jpg"])
-    expect(out).toContain("attached 2 files")
-    expect(out).toContain("/tmp/a.jpg")
-    expect(out).toContain("/tmp/b.jpg")
-  })
-
-  test("works when the user sent only an image with no text", () => {
-    const out = withAttachmentNote("", ["/tmp/a.jpg"])
-    expect(out.startsWith("The user attached")).toBe(true)
+  test("does not duplicate text attachments", () => {
+    expect(
+      prepareImages([
+        file({ mime: "text/plain", url: "data:text/plain;base64,SGk=" }),
+        file({ mime: "text/plain", url: "file:///tmp/note.txt" }),
+      ]),
+    ).toEqual({
+      images: [],
+      title: undefined,
+      skipped: [],
+    })
   })
 })

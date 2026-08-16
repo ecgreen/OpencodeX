@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises"
 import path from "node:path"
 import z from "zod"
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { ClaudeEvent } from "./claude-mapper"
 
 /**
@@ -66,9 +67,20 @@ export type TransportTurn = {
   interrupt: () => Promise<void>
 }
 
+export type ClaudeImage = {
+  type: "image"
+  source: {
+    type: "base64"
+    media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+    data: string
+  }
+}
+
+export type ClaudePrompt = string | ReadonlyArray<{ type: "text"; text: string } | ClaudeImage>
+
 export interface ClaudeTransport {
   /** Runs one prompt to completion, yielding events as they arrive. */
-  run: (prompt: string, options: TransportOptions) => TransportTurn
+  run: (prompt: ClaudePrompt, options: TransportOptions) => TransportTurn
 }
 
 export class ClaudeNotInstalledError extends Error {
@@ -136,7 +148,7 @@ export function createSdkTransport(): ClaudeTransport {
         const executable = options.executable ?? (await resolveClaudeExecutable())
         const delegation = options.delegate ? delegateServer(sdk, options.delegate) : undefined
         const running = sdk.query({
-          prompt,
+          prompt: sdkPrompt(prompt),
           options: {
             cwd: options.cwd,
             abortController: controller,
@@ -189,16 +201,27 @@ export function createSdkTransport(): ClaudeTransport {
   }
 }
 
+/** Native content requires the SDK's streaming user-message input form. */
+export function sdkPrompt(prompt: ClaudePrompt): string | AsyncIterable<SDKUserMessage> {
+  if (typeof prompt === "string") return prompt
+  return userPrompt(prompt)
+}
+
+async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerator<SDKUserMessage> {
+  yield {
+    type: "user",
+    message: { role: "user", content: [...content] },
+    parent_tool_use_id: null,
+  }
+}
+
 /**
  * An in-process MCP server carrying the one tool a swarm orchestrator needs.
  * The handler runs inside OpencodeX, so a delegated role becomes an OpencodeX
  * subagent session on its configured model - visible in the transcript and
  * governed by OpencodeX permissions - rather than a Claude-internal subagent.
  */
-export function delegateServer(
-  sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
-  delegate: DelegateCapability,
-) {
+export function delegateServer(sdk: typeof import("@anthropic-ai/claude-agent-sdk"), delegate: DelegateCapability) {
   const roster = delegate.roles
     .map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`)
     .join("\n")
