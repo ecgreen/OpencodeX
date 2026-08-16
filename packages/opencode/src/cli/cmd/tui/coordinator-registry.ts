@@ -247,7 +247,6 @@ export function acquireCoordinatorOwnerLock(key: string) {
 
 function cliCommand() {
   if (process.argv[1]?.endsWith(".ts")) return [process.execPath, "--conditions=browser", process.argv[1]]
-  if (process.argv[1]?.endsWith(".js")) return [process.execPath, process.argv[1]]
   return [process.execPath]
 }
 

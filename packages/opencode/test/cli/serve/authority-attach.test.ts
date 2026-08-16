@@ -336,10 +336,10 @@ function spawnHeadlessTui(home: string, database: string, extraEnv: Record<strin
         ...extraEnv,
       }
       const argv = [cliEntry, "--port", "0", "--prompt", "hello"]
-      const command = process.env.OPENCODE_TEST_CLI_BUNDLE
-        ? ["bun", process.env.OPENCODE_TEST_CLI_BUNDLE, ...argv.slice(1)]
-        : ["bun", "run", "--conditions=browser", ...argv]
-      const child = Bun.spawn(command, {
+      // The TUI starts a Worker from its source-relative path. Keep these two
+      // process tests on the source entry even when the outer harness has a
+      // single-file CLI bundle for ordinary commands.
+      const child = Bun.spawn(["bun", "run", "--conditions=browser", ...argv], {
         cwd: workspace,
         env: { ...process.env, ...tuiEnv },
         stdin: "ignore",
