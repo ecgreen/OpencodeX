@@ -16,6 +16,8 @@ export interface Deps {
   readonly events: Context.Service.Shape<typeof EventV2Bridge.Service>
   readonly scope: Scope.Scope
   readonly loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts>
+  readonly commandLeaseMillis?: number
+  readonly clock?: () => number
 }
 
 /**
@@ -29,10 +31,11 @@ export function make(deps: Deps) {
     const { database, events, scope, loop } = deps
     const { db } = database
     const commandOwner = `local:${process.pid}:prompt:${crypto.randomUUID()}`
-    const commandLeaseMillis = 30_000
+    const commandLeaseMillis = deps.commandLeaseMillis ?? 30_000
+    const clock = deps.clock ?? Date.now
 
     const claimCommandTurn = Effect.fn("SessionPrompt.claimCommandTurn")(function* (commandID: string) {
-      const now = Date.now()
+      const now = clock()
       return yield* db
         .transaction(
           (transaction) =>
@@ -52,6 +55,8 @@ export function make(deps: Deps) {
                 .select({
                   id: SessionCommandTable.id,
                   created: SessionCommandTable.time_created,
+                  status: SessionCommandTable.status,
+                  leaseExpiresAt: SessionCommandTable.lease_expires_at,
                 })
                 .from(SessionCommandTable)
                 .where(
@@ -61,13 +66,18 @@ export function make(deps: Deps) {
                   ),
                 )
                 .all()
-              const blocked = active.some(
+              const blocker = active.find(
                 (item) =>
                   item.id !== current.id &&
                   (item.created < current.time_created ||
                     (item.created === current.time_created && item.id.localeCompare(current.id) < 0)),
               )
-              if (blocked) return { state: "waiting" as const }
+              if (blocker) {
+                if (blocker.status === "running" && (!blocker.leaseExpiresAt || blocker.leaseExpiresAt <= now)) {
+                  return { state: "blocked" as const, commandID: blocker.id }
+                }
+                return { state: "waiting" as const }
+              }
               const claimed = yield* transaction
                 .update(SessionCommandTable)
                 .set({
@@ -121,16 +131,18 @@ export function make(deps: Deps) {
           { concurrency: "unbounded" },
         )
         if (!command || ["succeeded", "failed", "cancelled"].includes(command.status)) return false
-        if (execution?.state !== "running" || !execution.leaseExpiresAt || execution.leaseExpiresAt <= Date.now()) {
+        if (execution?.state !== "running" || !execution.leaseExpiresAt || execution.leaseExpiresAt <= clock()) {
           return true
         }
         yield* Effect.sleep("200 millis")
       }
     })
 
-    const executeCommand = Effect.fn("SessionPrompt.executeCommand")(function* (commandID: string) {
+    type ExecuteCommand = (commandID: string) => Effect.Effect<void>
+    const executeCommand: ExecuteCommand = Effect.fn("SessionPrompt.executeCommand")(function* (commandID: string) {
       let claimed = yield* claimCommandTurn(commandID)
-      while (claimed.state === "waiting") {
+      while (claimed.state === "waiting" || claimed.state === "occupied" || claimed.state === "blocked") {
+        if (claimed.state === "blocked") yield* executeCommand(claimed.commandID)
         yield* Effect.sleep("200 millis")
         claimed = yield* claimCommandTurn(commandID)
       }
@@ -138,19 +150,22 @@ export function make(deps: Deps) {
       const command = claimed.command
       const heartbeat = yield* Effect.sleep(Math.floor(commandLeaseMillis / 3)).pipe(
         Effect.andThen(
-          db
-            .update(SessionCommandTable)
-            .set({ lease_expires_at: Date.now() + commandLeaseMillis, time_updated: Date.now() })
-            .where(
-              and(
-                eq(SessionCommandTable.id, commandID),
-                eq(SessionCommandTable.status, "running"),
-                eq(SessionCommandTable.owner_id, commandOwner),
-                eq(SessionCommandTable.claim_generation, command.claim_generation),
-              ),
-            )
-            .run()
-            .pipe(Effect.orDie),
+          Effect.suspend(() => {
+            const now = clock()
+            return db
+              .update(SessionCommandTable)
+              .set({ lease_expires_at: now + commandLeaseMillis, time_updated: now })
+              .where(
+                and(
+                  eq(SessionCommandTable.id, commandID),
+                  eq(SessionCommandTable.status, "running"),
+                  eq(SessionCommandTable.owner_id, commandOwner),
+                  eq(SessionCommandTable.claim_generation, command.claim_generation),
+                ),
+              )
+              .run()
+              .pipe(Effect.orDie)
+          }),
         ),
         Effect.repeat(Schedule.forever),
         Effect.forkIn(scope),
@@ -173,7 +188,7 @@ export function make(deps: Deps) {
         if (!admitted) return
         return yield* loop({ sessionID: command.session_id, messageID: command.message_id })
       }).pipe(Effect.exit, Effect.ensuring(Fiber.interrupt(heartbeat)))
-      const completedAt = Date.now()
+      const completedAt = clock()
       if (Exit.isSuccess(exit)) {
         yield* db
           .update(SessionCommandTable)
@@ -235,7 +250,7 @@ export function make(deps: Deps) {
     })
 
     const wakeSession = Effect.fn("SessionPrompt.wakeSession")(function* (sessionID: SessionID) {
-      const now = Date.now()
+      const now = clock()
       const commands = yield* db
         .select({ id: SessionCommandTable.id })
         .from(SessionCommandTable)
@@ -286,3 +301,5 @@ export function make(deps: Deps) {
     }
   })
 }
+
+export * as PromptClaim from "./prompt-claim"

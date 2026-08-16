@@ -641,40 +641,59 @@ export const RunCommand = effectCmd({
         // Validate agent if specified
         const agent = await pickAgent(client, remote)
 
-        const events = await client.event.subscribe()
-        loop(client, events).catch((e) => {
-          console.error(e)
-          process.exit(1)
-        })
+        const eventController = new AbortController()
+        const events = await client.event.subscribe(undefined, { signal: eventController.signal })
+        const eventLoop = loop(client, events)
+
+        async function cancelEventLoop() {
+          eventController.abort()
+          await eventLoop.catch(() => undefined)
+        }
 
         if (args.command) {
-          const result = await client.session.command({
-            sessionID,
-            agent,
-            model: args.model,
-            command: args.command,
-            arguments: message,
-            variant: args.variant,
-          })
+          const result = await client.session
+            .command({
+              sessionID,
+              agent,
+              model: args.model,
+              command: args.command,
+              arguments: message,
+              variant: args.variant,
+            })
+            .catch(async (error) => {
+              await cancelEventLoop()
+              throw error
+            })
           if (result.error) {
+            await cancelEventLoop()
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
             process.exitCode = 1
+            return
           }
+          await eventLoop
           return
         }
 
         const model = pick(args.model)
-        const result = await client.session.prompt({
-          sessionID,
-          agent,
-          model,
-          variant: args.variant,
-          parts: [...files, { type: "text", text: message }],
-        })
+        const result = await client.session
+          .prompt({
+            sessionID,
+            agent,
+            model,
+            variant: args.variant,
+            parts: [...files, { type: "text", text: message }],
+          })
+          .catch(async (error) => {
+            await cancelEventLoop()
+            throw error
+          })
         if (result.error) {
+          await cancelEventLoop()
           if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
           process.exitCode = 1
+          return
         }
+        await eventLoop
       }
 
       if (args.attach) {

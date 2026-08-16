@@ -565,19 +565,18 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
           sessionID,
           sessionEventBuffers,
         )
-        commit(correction ? next : setClientSessionLoadState(next, sessionID, "initial", "ready"))
+        commit(setClientSessionLoadState(next, sessionID, "initial", "ready"))
         return snapshot
       },
       (error) => {
         if (sessionRequests.get(request.key)?.generation === request.generation) {
           const aborted = request.controller.signal.aborted
           finishSessionRequest(request)
-          if (!correction)
-            commit(
-              aborted
-                ? resetClientSessionLoadAfterAbort(state, sessionID, "initial")
-                : setClientSessionLoadState(state, sessionID, "initial", "error", clientStateSyncError(error)),
-            )
+          commit(
+            aborted
+              ? resetClientSessionLoadAfterAbort(state, sessionID, "initial")
+              : setClientSessionLoadState(state, sessionID, "initial", "error", clientStateSyncError(error)),
+          )
           if (aborted) throw sessionRequestAbortError(request.controller.signal)
         }
         if (!state.sessionDetails[sessionID]) clearClientSessionEventBuffers(sessionEventBuffers, sessionID)
@@ -936,7 +935,8 @@ export function createClientStateSync(options: ClientStateSyncOptions): ClientSt
       if (state.epoch === previousEpoch)
         await Promise.all(
           [...sessionTailOptions].flatMap(([sessionID, input]) => {
-            if (state.sessions.records[sessionID]) return [refreshSessionTail(sessionID, input, true)]
+            if (state.sessions.records[sessionID])
+              return [refreshSessionTail(sessionID, input, true).catch(() => undefined)]
             sessionTailOptions.delete(sessionID)
             return []
           }),

@@ -2375,6 +2375,41 @@ describe("client state sync", () => {
     controller.stop()
   })
 
+  test("keeps a reconnect current when one retained session correction fails", async () => {
+    let connections = 0
+    let sessionLoads = 0
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async () => {
+        sessionLoads += 1
+        if (sessionLoads > 1) throw new Error("retained session is unavailable")
+        return sessionSnapshot("cursor-detail-1", "detail-1", "before disconnect")
+      },
+      events: async ({ signal }) => {
+        connections += 1
+        const connection = connections
+        return (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          if (connection === 1) return
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })()
+      },
+    }
+    const controller = createClientStateSync({ transport, reconnectDelayMs: 1, reconnectJitter: () => 0.5 })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+    await waitFor(() => connections === 2 && controller.getState().lifecycle.status === "connected")
+    await Bun.sleep(20)
+
+    expect(connections).toBe(2)
+    expect(sessionLoads).toBe(2)
+    expect(controller.getState().sessionLoads["session-1"]).toMatchObject({
+      initial: "error",
+      error: "retained session is unavailable",
+    })
+    controller.stop()
+  })
+
   test("resets immediately when a reconnect ready frame changes epoch", async () => {
     let connections = 0
     let snapshots = 0

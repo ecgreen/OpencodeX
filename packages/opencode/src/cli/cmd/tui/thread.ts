@@ -192,8 +192,8 @@ export const TuiThreadCommand = cmd({
             // participates in the same authority protocol (owner lock, manifest,
             // token-matched teardown), so a racing client attaches instead of
             // starting a second writer.
-            const username = "opencodex-local"
-            const password = randomBytes(32).toString("base64url")
+            const username = process.env.OPENCODE_SERVER_USERNAME ?? "opencodex-local"
+            const password = process.env.OPENCODE_SERVER_PASSWORD ?? randomBytes(32).toString("base64url")
             const token = randomBytes(32).toString("base64url")
             const env = sanitizedProcessEnv({
               [OPENCODE_PROCESS_ROLE]: "worker",

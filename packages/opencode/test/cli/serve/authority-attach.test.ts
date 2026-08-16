@@ -165,7 +165,10 @@ describe("clients attach-first against a running serve authority", () => {
     ({ home }) =>
       Effect.gen(function* () {
         const database = path.join(home, "shared.db")
-        yield* spawnHeadlessTui(home, database)
+        yield* spawnHeadlessTui(home, database, {
+          OPENCODE_SERVER_USERNAME: "lan-user",
+          OPENCODE_SERVER_PASSWORD: "lan-secret",
+        })
 
         const manifest = yield* pollWithTimeout(
           readManifest(home, database),
@@ -177,6 +180,8 @@ describe("clients attach-first against a running serve authority", () => {
         )
         expect(health.status).toBe(200)
         expect(manifest.pid).not.toBe(process.pid)
+        expect(manifest.username).toBe("lan-user")
+        expect(manifest.password).toBe("lan-secret")
       }),
     90_000,
   )
@@ -212,7 +217,7 @@ describe("clients attach-first against a running serve authority", () => {
   )
 })
 
-function spawnHeadlessTui(home: string, database: string) {
+function spawnHeadlessTui(home: string, database: string, extraEnv: Record<string, string> = {}) {
   return Effect.acquireRelease(
     Effect.promise(async () => {
       const workspace = path.join(home, "workspace")
@@ -232,6 +237,7 @@ function spawnHeadlessTui(home: string, database: string) {
         OPENCODE_DISABLE_MODELS_FETCH: "1",
         OPENCODE_AUTH_CONTENT: "{}",
         OPENCODE_DB: database,
+        ...extraEnv,
       }
       const argv = [cliEntry, "--port", "0", "--prompt", "hello"]
       const command = process.env.OPENCODE_TEST_CLI_BUNDLE

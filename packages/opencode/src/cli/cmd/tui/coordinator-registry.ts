@@ -149,7 +149,9 @@ export async function readActiveCoordinator(key = coordinatorKey(), database = c
   }
   const health = await fetchCoordinatorHealth(manifest)
   if (health?.healthy === true) {
-    if (!isCoordinatorHealthForManifest(manifest, health)) {
+    // Coordinators predating the health identity fields are handled by the
+    // version compatibility check below, not misdiagnosed as another database.
+    if (health.coordinatorKey !== undefined && !isCoordinatorHealthForManifest(manifest, health)) {
       if (isCoordinatorProcessAlive(manifest.pid)) {
         throw new Error(`TUI coordinator process ${manifest.pid} answered for a different database; refusing to attach`)
       }

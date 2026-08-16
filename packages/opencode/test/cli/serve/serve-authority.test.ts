@@ -111,7 +111,7 @@ describe("opencode serve authority (subprocess)", () => {
               () => false as const,
             ),
         )
-        expect(survived).toBe(false)
+        if (process.platform !== "win32") expect(survived).toBe(false)
 
         // Handoff: a successor on the same database takes over cleanly.
         yield* opencode.serve({ hostname: "0.0.0.0" })

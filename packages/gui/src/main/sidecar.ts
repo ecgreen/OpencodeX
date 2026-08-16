@@ -244,7 +244,9 @@ async function activeCoordinator(key: string, database: string) {
   }
   const health = await fetchCoordinatorHealth(manifest)
   if (health?.healthy === true) {
-    if (!isCoordinatorHealthForManifest(manifest, health)) {
+    // A legacy health response has no coordinator key. Let compatibility
+    // produce the actionable version-mismatch path instead.
+    if (health.coordinatorKey !== undefined && !isCoordinatorHealthForManifest(manifest, health)) {
       if (isCoordinatorProcessAlive(manifest.pid)) {
         throw new Error(
           `OpencodeX coordinator process ${manifest.pid} answered for a different database; refusing to attach`,
