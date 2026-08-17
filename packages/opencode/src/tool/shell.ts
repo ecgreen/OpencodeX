@@ -296,6 +296,15 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
     })
   }
 
+  if (process.platform !== "win32" && Shell.posix(shell)) {
+    return ChildProcess.make(shell, Shell.args(shell, command, cwd), {
+      cwd,
+      env,
+      stdin: "ignore",
+      detached: true,
+    })
+  }
+
   return ChildProcess.make(command, [], {
     shell,
     cwd,

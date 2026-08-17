@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
+import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Config } from "@/config/config"
@@ -199,6 +200,70 @@ describe("tool.shell", () => {
       }),
     ),
   )
+
+  const zsh = process.platform === "win32" ? undefined : Bun.which("zsh")
+  if (zsh) {
+    it.live("matches direct zsh PATH initialization", () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped({ config: { shell: zsh } })
+        const zdotdir = path.join(tmp, "zdot")
+        const executable = path.join(zdotdir, "bin", "opencode-path-fixture")
+        yield* Effect.promise(() => fs.mkdir(path.dirname(executable), { recursive: true }))
+        yield* Effect.promise(() => Bun.write(path.join(zdotdir, ".zshrc"), 'export PATH="$ZDOTDIR/bin:$PATH"\n'))
+        yield* Effect.promise(() => Bun.write(executable, '#!/bin/sh\nprintf "%s" "$1"\n'))
+        yield* Effect.promise(() => fs.chmod(executable, 0o755))
+
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            const value = process.env.ZDOTDIR
+            process.env.ZDOTDIR = zdotdir
+            return value
+          }),
+          (value) =>
+            Effect.sync(() => {
+              if (value === undefined) delete process.env.ZDOTDIR
+              else process.env.ZDOTDIR = value
+            }),
+        )
+        const direct = (command: string) =>
+          Effect.promise(async () => {
+            const proc = Bun.spawn([zsh, ...Shell.args(zsh, command, tmp)], {
+              cwd: tmp,
+              env: { ...process.env, ZDOTDIR: zdotdir },
+              stdout: "pipe",
+              stderr: "pipe",
+            })
+            const [output, error, exit] = await Promise.all([
+              new Response(proc.stdout).text(),
+              new Response(proc.stderr).text(),
+              proc.exited,
+            ])
+            expect(error).toBe("")
+            expect(exit).toBe(0)
+            return output
+          })
+
+        yield* runIn(
+          tmp,
+          Effect.gen(function* () {
+            const bare = "opencode-path-fixture bare"
+            const directBare = yield* direct(bare)
+            const toolBare = yield* run({ command: bare, description: "Run PATH fixture" })
+            expect(toolBare.metadata.exit).toBe(0)
+            expect(toolBare.output).toBe(directBare)
+            expect(toolBare.output).toBe("bare")
+
+            const absolute = `${JSON.stringify(executable)} absolute`
+            const directAbsolute = yield* direct(absolute)
+            const toolAbsolute = yield* run({ command: absolute, description: "Run absolute fixture" })
+            expect(toolAbsolute.metadata.exit).toBe(0)
+            expect(toolAbsolute.output).toBe(directAbsolute)
+            expect(toolAbsolute.output).toBe("absolute")
+          }),
+        )
+      }),
+    )
+  }
 
   it.live("falls back from terminal-only configured shell", () =>
     Effect.gen(function* () {
