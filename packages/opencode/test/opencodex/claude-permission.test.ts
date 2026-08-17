@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { decideWith, permissionMetadata, permissionPatterns, questionInfos, withQuestionAnswers } from "../../src/opencodex/claude-permission"
 import type { Permission } from "../../src/permission"
+import type { Question } from "../../src/question"
 import { PermissionV2 } from "@opencode-ai/core/permission"
 import { CLAUDE_CONTROL_FLOW } from "../../src/opencodex/claude-driver"
 import { normalizeToolName } from "../../src/opencodex/claude-mapper"
@@ -62,6 +63,49 @@ describe("decideWith", () => {
 
     expect(permission.calls[0]?.ruleset).toEqual(ruleset)
     expect(permission.calls[0]?.ruleset).not.toHaveLength(0)
+  })
+
+  test("forwards a stopped turn's execution generation to permission and question decisions", async () => {
+    const permission = recordingPermission()
+    const questionCalls: Parameters<Question.Interface["ask"]>[0][] = []
+    const question = {
+      ask: (input: Parameters<Question.Interface["ask"]>[0]) => {
+        questionCalls.push(input)
+        return Effect.succeed([["Continue"]])
+      },
+    } as unknown as Question.Interface
+    const decide = decideWith(permission.service, question)
+    const executionGeneration = 1
+
+    await Effect.runPromise(
+      decide({
+        sessionID,
+        toolName: "Bash",
+        toolInput: { command: "pwd" },
+        executionGeneration,
+        ruleset: [],
+      }),
+    )
+    await Effect.runPromise(
+      decide({
+        sessionID,
+        toolName: "AskUserQuestion",
+        toolInput: {
+          questions: [
+            {
+              question: "Continue after restart?",
+              header: "Restart",
+              options: [{ label: "Continue", description: "Continue" }],
+            },
+          ],
+        },
+        executionGeneration,
+        ruleset: [],
+      }),
+    )
+
+    expect(permission.calls[0]?.executionGeneration).toBe(executionGeneration)
+    expect(questionCalls[0]?.executionGeneration).toBe(executionGeneration)
   })
 })
 

@@ -2,7 +2,7 @@ import { ConfigPermission } from "@/config/permission"
 import { InstanceState } from "@/effect/instance-state"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { MessageID, SessionID } from "@/session/schema"
-import { PermissionTable, SessionInteractionTable } from "@opencode-ai/core/session/sql"
+import { PermissionTable, SessionExecutionTable, SessionInteractionTable } from "@opencode-ai/core/session/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { and, eq } from "drizzle-orm"
 import * as Log from "@opencode-ai/core/util/log"
@@ -13,6 +13,7 @@ import { PermissionV2 } from "@opencode-ai/core/permission"
 import { PermissionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
+import { SessionStatus } from "@/session/status"
 
 const log = Log.create({ service: "permission" })
 
@@ -40,6 +41,7 @@ export const Request = Schema.Struct({
   patterns: Schema.Array(Schema.String),
   metadata: Schema.Record(Schema.String, Schema.Unknown),
   always: Schema.Array(Schema.String),
+  executionGeneration: Schema.optional(Schema.Number),
   tool: Schema.optional(
     Schema.Struct({
       messageID: MessageID,
@@ -71,6 +73,7 @@ function requestRecord(info: Request): Record<string, unknown> {
     patterns: [...info.patterns],
     metadata: { ...info.metadata },
     always: [...info.always],
+    executionGeneration: info.executionGeneration,
     tool: info.tool ? { ...info.tool } : undefined,
   }
 }
@@ -138,6 +141,7 @@ export interface Interface {
   readonly ask: (input: AskInput) => Effect.Effect<void, Error>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
+  readonly rejectForGeneration: (sessionID: SessionID, generation: number) => Effect.Effect<void>
 }
 
 interface PendingEntry {
@@ -161,6 +165,44 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
     const scope = yield* Scope.Scope
+
+    const rejectPending = Effect.fn("Permission.rejectPending")(function* (
+      requestID: PermissionID,
+      sessionID: SessionID,
+    ) {
+      const now = Date.now()
+      const committed = yield* events.barrier(
+        db
+          .transaction(
+            (transaction) =>
+              Effect.gen(function* () {
+                const updated = yield* transaction
+                  .update(SessionInteractionTable)
+                  .set({
+                    state: "rejected",
+                    response_json: { reply: "reject" },
+                    responded_at: now,
+                    time_updated: now,
+                  })
+                  .where(
+                    and(
+                      eq(SessionInteractionTable.id, String(requestID)),
+                      eq(SessionInteractionTable.kind, "permission"),
+                      eq(SessionInteractionTable.state, "pending"),
+                    ),
+                  )
+                  .returning({ id: SessionInteractionTable.id })
+                  .get()
+                if (!updated) return
+                return yield* events.commit(Event.Replied, { sessionID, requestID, reply: "reject" })
+              }),
+            { behavior: "immediate" },
+          )
+          .pipe(Effect.orDie),
+      )
+      if (committed) yield* events.broadcast(committed)
+    })
+
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* () {
         const state = {
@@ -171,6 +213,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             for (const item of state.pending.values()) {
               yield* Deferred.fail(item.deferred, new RejectedError())
+              yield* rejectPending(item.info.id, item.info.sessionID)
             }
             state.pending.clear()
           }),
@@ -182,8 +225,33 @@ export const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const pending = (yield* InstanceState.get(state)).pending
+      const active = yield* SessionStatus.ExecutionGeneration
+      const executionGeneration =
+        input.executionGeneration ?? (active?.sessionID === input.sessionID ? active.generation : undefined)
       const { ruleset, ...request } = input
       const ctx = yield* InstanceState.context
+      if (executionGeneration !== undefined) {
+        const valid = yield* db
+          .transaction(
+            (transaction) =>
+              transaction
+                .select({
+                  cancelRequestedAt: SessionExecutionTable.cancel_requested_at,
+                  generation: SessionExecutionTable.generation,
+                })
+                .from(SessionExecutionTable)
+                .where(eq(SessionExecutionTable.session_id, request.sessionID))
+                .get()
+                .pipe(
+                  Effect.map(
+                    (execution) => execution?.generation === executionGeneration && !execution.cancelRequestedAt,
+                  ),
+                ),
+            { behavior: "immediate" },
+          )
+          .pipe(Effect.orDie)
+        if (!valid) return yield* new RejectedError()
+      }
       const row = yield* db
         .select({ data: PermissionTable.data })
         .from(PermissionTable)
@@ -216,42 +284,62 @@ export const layer = Layer.effect(
         metadata: request.metadata,
         always: request.always,
         tool: request.tool,
+        executionGeneration,
       }
       log.info("asking", { id, permission: info.permission, patterns: info.patterns })
 
       const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
       pending.set(id, { info, deferred })
-      const now = Date.now()
-      const asked = yield* events.barrier(
-        db.transaction(
-          (transaction) =>
-            Effect.gen(function* () {
-              yield* transaction
-                .insert(SessionInteractionTable)
-                .values([{
-                  id: String(id),
-                  kind: "permission",
-                  session_id: info.sessionID,
-                  project_id: ctx.project.id,
-                  directory: ctx.directory,
-                  state: "pending",
-                  request_json: requestRecord(info),
-                  time_created: now,
-                  time_updated: now,
-                }])
-                .run()
-              return yield* events.commit(Event.Asked, info)
-            }),
-          { behavior: "immediate" },
-        ).pipe(Effect.orDie),
-      )
-      yield* events.broadcast(asked)
-      yield* observe(id, deferred).pipe(Effect.forkIn(scope))
-      return yield* Effect.ensuring(
-        Deferred.await(deferred),
-        Effect.sync(() => {
-          pending.delete(id)
-        }),
+      return yield* Effect.gen(function* () {
+        const now = Date.now()
+        const asked = yield* events.barrier(
+          db
+            .transaction(
+              (transaction) =>
+                Effect.gen(function* () {
+                  const execution = yield* transaction
+                    .select({
+                      cancelRequestedAt: SessionExecutionTable.cancel_requested_at,
+                      generation: SessionExecutionTable.generation,
+                    })
+                    .from(SessionExecutionTable)
+                    .where(eq(SessionExecutionTable.session_id, info.sessionID))
+                    .get()
+                  if (execution?.cancelRequestedAt) return
+                  if (executionGeneration !== undefined && execution?.generation !== executionGeneration) return
+                  yield* transaction
+                    .insert(SessionInteractionTable)
+                    .values([
+                      {
+                        id: String(id),
+                        kind: "permission",
+                        session_id: info.sessionID,
+                        project_id: ctx.project.id,
+                        directory: ctx.directory,
+                        state: "pending",
+                        request_json: requestRecord(info),
+                        time_created: now,
+                        time_updated: now,
+                      },
+                    ])
+                    .run()
+                  return yield* events.commit(Event.Asked, info)
+                }),
+              { behavior: "immediate" },
+            )
+            .pipe(Effect.orDie),
+        )
+        if (!asked) return yield* new RejectedError()
+        yield* events.broadcast(asked)
+        yield* observe(id, deferred).pipe(Effect.forkIn(scope))
+        return yield* Deferred.await(deferred)
+      }).pipe(
+        Effect.onInterrupt(() => rejectPending(id, info.sessionID)),
+        Effect.ensuring(
+          Effect.sync(() => {
+            pending.delete(id)
+          }),
+        ),
       )
     })
 
@@ -263,12 +351,7 @@ export const layer = Layer.effect(
         const row = yield* db
           .select({ state: SessionInteractionTable.state, response: SessionInteractionTable.response_json })
           .from(SessionInteractionTable)
-          .where(
-            and(
-              eq(SessionInteractionTable.id, String(requestID)),
-              eq(SessionInteractionTable.kind, "permission"),
-            ),
-          )
+          .where(and(eq(SessionInteractionTable.id, String(requestID)), eq(SessionInteractionTable.kind, "permission")))
           .get()
           .pipe(Effect.orDie)
         if (!row) {
@@ -295,118 +378,117 @@ export const layer = Layer.effect(
     const reply = Effect.fn("Permission.reply")(function* (input: ReplyInput) {
       const now = Date.now()
       const committed = yield* events.barrier(
-        db.transaction(
-          (transaction) =>
-            Effect.gen(function* () {
-              const existing = yield* transaction
-                .select()
-                .from(SessionInteractionTable)
-                .where(
-                  and(
-                    eq(SessionInteractionTable.id, String(input.requestID)),
-                    eq(SessionInteractionTable.kind, "permission"),
-                  ),
-                )
-                .get()
-              if (!existing) return { found: false as const, events: [] }
-              if (existing.state !== "pending") return { found: true as const, events: [] }
-              const request = Option.getOrUndefined(decodeRequest(existing.request_json))
-              if (!request) return yield* Effect.die(new Error(`Invalid permission request ${input.requestID}`))
-
-              const permissionRow = yield* transaction
-                .select({ data: PermissionTable.data })
-                .from(PermissionTable)
-                .where(eq(PermissionTable.project_id, existing.project_id))
-                .get()
-              const approved = [...(permissionRow?.data ?? [])]
-              if (input.reply === "always") {
-                approved.push(
-                  ...request.always.map((pattern) => ({
-                    permission: request.permission,
-                    pattern,
-                    action: "allow" as const,
-                  })),
-                )
-                yield* transaction
-                  .insert(PermissionTable)
-                  .values({
-                    project_id: existing.project_id,
-                    data: approved,
-                    time_created: now,
-                    time_updated: now,
-                  })
-                  .onConflictDoUpdate({
-                    target: PermissionTable.project_id,
-                    set: { data: approved, time_updated: now },
-                  })
-                  .run()
-              }
-
-              const candidates =
-                input.reply === "once"
-                  ? [existing]
-                  : yield* transaction
-                      .select()
-                      .from(SessionInteractionTable)
-                      .where(
-                        and(
-                          eq(SessionInteractionTable.kind, "permission"),
-                          eq(SessionInteractionTable.state, "pending"),
-                          eq(SessionInteractionTable.session_id, existing.session_id),
-                        ),
-                      )
-                      .all()
-              const selected: Array<{ row: (typeof candidates)[number]; item: Request; reply: Reply }> = []
-              for (const row of candidates) {
-                const item = Option.getOrUndefined(decodeRequest(row.request_json))
-                if (!item) continue
-                if (input.reply === "reject") {
-                  selected.push({ row, item, reply: "reject" })
-                  continue
-                }
-                if (row.id === String(input.requestID)) {
-                  selected.push({ row, item, reply: input.reply })
-                  continue
-                }
-                const allowed = item.patterns.every(
-                  (pattern) => evaluate(item.permission, pattern, approved).action === "allow",
-                )
-                if (allowed) selected.push({ row, item, reply: "always" })
-              }
-              const result: EventV2.Payload[] = []
-              for (const item of selected) {
-                const updated = yield* transaction
-                  .update(SessionInteractionTable)
-                  .set({
-                    state: item.reply === "reject" ? "rejected" : "replied",
-                    response_json: {
-                      reply: item.reply,
-                      ...(item.row.id === String(input.requestID) && input.message ? { message: input.message } : {}),
-                    },
-                    responded_at: now,
-                    time_updated: now,
-                  })
+        db
+          .transaction(
+            (transaction) =>
+              Effect.gen(function* () {
+                const existing = yield* transaction
+                  .select()
+                  .from(SessionInteractionTable)
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, item.row.id),
-                      eq(SessionInteractionTable.state, "pending"),
+                      eq(SessionInteractionTable.id, String(input.requestID)),
+                      eq(SessionInteractionTable.kind, "permission"),
                     ),
                   )
-                  .returning({ id: SessionInteractionTable.id })
                   .get()
-                if (!updated) continue
-                result.push(
-                  yield* events.commit(Event.Replied, {
-                    sessionID: item.item.sessionID,
-                    requestID: PermissionID.make(item.row.id),
-                    reply: item.reply,
-                  }),
-                )
-              }
-              return { found: true as const, events: result }
-            }),
-          { behavior: "immediate" },
-        ).pipe(Effect.orDie),
+                if (!existing) return { found: false as const, events: [] }
+                if (existing.state !== "pending") return { found: true as const, events: [] }
+                const request = Option.getOrUndefined(decodeRequest(existing.request_json))
+                if (!request) return yield* Effect.die(new Error(`Invalid permission request ${input.requestID}`))
+
+                const permissionRow = yield* transaction
+                  .select({ data: PermissionTable.data })
+                  .from(PermissionTable)
+                  .where(eq(PermissionTable.project_id, existing.project_id))
+                  .get()
+                const approved = [...(permissionRow?.data ?? [])]
+                if (input.reply === "always") {
+                  approved.push(
+                    ...request.always.map((pattern) => ({
+                      permission: request.permission,
+                      pattern,
+                      action: "allow" as const,
+                    })),
+                  )
+                  yield* transaction
+                    .insert(PermissionTable)
+                    .values({
+                      project_id: existing.project_id,
+                      data: approved,
+                      time_created: now,
+                      time_updated: now,
+                    })
+                    .onConflictDoUpdate({
+                      target: PermissionTable.project_id,
+                      set: { data: approved, time_updated: now },
+                    })
+                    .run()
+                }
+
+                const candidates =
+                  input.reply === "once"
+                    ? [existing]
+                    : yield* transaction
+                        .select()
+                        .from(SessionInteractionTable)
+                        .where(
+                          and(
+                            eq(SessionInteractionTable.kind, "permission"),
+                            eq(SessionInteractionTable.state, "pending"),
+                            eq(SessionInteractionTable.session_id, existing.session_id),
+                          ),
+                        )
+                        .all()
+                const selected: Array<{ row: (typeof candidates)[number]; item: Request; reply: Reply }> = []
+                for (const row of candidates) {
+                  const item = Option.getOrUndefined(decodeRequest(row.request_json))
+                  if (!item) continue
+                  if (input.reply === "reject") {
+                    selected.push({ row, item, reply: "reject" })
+                    continue
+                  }
+                  if (row.id === String(input.requestID)) {
+                    selected.push({ row, item, reply: input.reply })
+                    continue
+                  }
+                  const allowed = item.patterns.every(
+                    (pattern) => evaluate(item.permission, pattern, approved).action === "allow",
+                  )
+                  if (allowed) selected.push({ row, item, reply: "always" })
+                }
+                const result: EventV2.Payload[] = []
+                for (const item of selected) {
+                  const updated = yield* transaction
+                    .update(SessionInteractionTable)
+                    .set({
+                      state: item.reply === "reject" ? "rejected" : "replied",
+                      response_json: {
+                        reply: item.reply,
+                        ...(item.row.id === String(input.requestID) && input.message ? { message: input.message } : {}),
+                      },
+                      responded_at: now,
+                      time_updated: now,
+                    })
+                    .where(
+                      and(eq(SessionInteractionTable.id, item.row.id), eq(SessionInteractionTable.state, "pending")),
+                    )
+                    .returning({ id: SessionInteractionTable.id })
+                    .get()
+                  if (!updated) continue
+                  result.push(
+                    yield* events.commit(Event.Replied, {
+                      sessionID: item.item.sessionID,
+                      requestID: PermissionID.make(item.row.id),
+                      reply: item.reply,
+                    }),
+                  )
+                }
+                return { found: true as const, events: result }
+              }),
+            { behavior: "immediate" },
+          )
+          .pipe(Effect.orDie),
       )
       if (!committed.found) return yield* new NotFoundError({ requestID: input.requestID })
       yield* Effect.forEach(committed.events, events.broadcast, { discard: true })
@@ -416,12 +498,7 @@ export const layer = Layer.effect(
       const rows = yield* db
         .select({ request: SessionInteractionTable.request_json })
         .from(SessionInteractionTable)
-        .where(
-          and(
-            eq(SessionInteractionTable.kind, "permission"),
-            eq(SessionInteractionTable.state, "pending"),
-          ),
-        )
+        .where(and(eq(SessionInteractionTable.kind, "permission"), eq(SessionInteractionTable.state, "pending")))
         .all()
         .pipe(Effect.orDie)
       return rows.flatMap((row) => {
@@ -430,7 +507,65 @@ export const layer = Layer.effect(
       })
     })
 
-    return Service.of({ ask, reply, list })
+    const rejectForGeneration = Effect.fn("Permission.rejectForGeneration")(function* (
+      sessionID: SessionID,
+      generation: number,
+    ) {
+      const now = Date.now()
+      const committed = yield* events.barrier(
+        db
+          .transaction(
+            (transaction) =>
+              Effect.gen(function* () {
+                const rows = yield* transaction
+                  .select({ id: SessionInteractionTable.id, request: SessionInteractionTable.request_json })
+                  .from(SessionInteractionTable)
+                  .where(
+                    and(
+                      eq(SessionInteractionTable.kind, "permission"),
+                      eq(SessionInteractionTable.state, "pending"),
+                      eq(SessionInteractionTable.session_id, sessionID),
+                    ),
+                  )
+                  .all()
+                const result: EventV2.Payload[] = []
+                for (const row of rows) {
+                  const request = Option.getOrUndefined(decodeRequest(row.request))
+                  if (
+                    !request ||
+                    (request.executionGeneration !== undefined && request.executionGeneration !== generation)
+                  )
+                    continue
+                  const updated = yield* transaction
+                    .update(SessionInteractionTable)
+                    .set({
+                      state: "rejected",
+                      response_json: { reply: "reject" },
+                      responded_at: now,
+                      time_updated: now,
+                    })
+                    .where(and(eq(SessionInteractionTable.id, row.id), eq(SessionInteractionTable.state, "pending")))
+                    .returning({ id: SessionInteractionTable.id })
+                    .get()
+                  if (!updated) continue
+                  result.push(
+                    yield* events.commit(Event.Replied, {
+                      sessionID,
+                      requestID: PermissionID.make(row.id),
+                      reply: "reject",
+                    }),
+                  )
+                }
+                return result
+              }),
+            { behavior: "immediate" },
+          )
+          .pipe(Effect.orDie),
+      )
+      yield* Effect.forEach(committed, events.broadcast, { discard: true })
+    })
+
+    return Service.of({ ask, reply, list, rejectForGeneration })
   }),
 )
 

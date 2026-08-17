@@ -28,7 +28,7 @@ interface ActiveRunner {
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
-  readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly cancel: (sessionID: SessionID) => Effect.Effect<number>
   readonly interrupt: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly ensureRunning: (
     sessionID: SessionID,
@@ -377,9 +377,10 @@ export const layer = Layer.effect(
       ) {
         existing.interrupted = true
         yield* existing.runner.cancel
-        return
+        return target.generation
       }
       if (!target.active) yield* status.setForGeneration(sessionID, target.generation, { type: "idle" })
+      return target.generation
     })
 
     /**
