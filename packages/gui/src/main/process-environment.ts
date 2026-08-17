@@ -9,10 +9,10 @@ export function coordinatorEnvironment(
   if (platform === "win32") return { ...environment }
   const system = platform === "darwin" ? ["/opt/homebrew/bin", "/usr/local/bin"] : ["/usr/local/bin"]
   const entries = [
-    path.join(home, ".bun", "bin"),
-    path.join(home, ".local", "bin"),
+    path.posix.join(home, ".bun", "bin"),
+    path.posix.join(home, ".local", "bin"),
     ...system,
-    ...(environment.PATH ?? "").split(path.delimiter).filter(Boolean),
+    ...(environment.PATH ?? "").split(path.posix.delimiter).filter(Boolean),
     "/usr/bin",
     "/bin",
     "/usr/sbin",
@@ -20,6 +20,6 @@ export function coordinatorEnvironment(
   ]
   return {
     ...environment,
-    PATH: [...new Set(entries)].join(path.delimiter),
+    PATH: [...new Set(entries)].join(path.posix.delimiter),
   }
 }
