@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm"
 import { SessionStatus } from "@/session/status"
 
 const log = Log.create({ service: "question" })
+const encodeQuestionID = Schema.encodeSync(QuestionID)
 
 // Schemas — these are pure data; nothing checks class identity (see PR
 // description) so they're plain `Schema.Struct` + type alias. That lets
@@ -174,7 +175,7 @@ export const layer = Layer.effect(
                   .set({ state: "rejected", responded_at: now, time_updated: now })
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(requestID)),
+                      eq(SessionInteractionTable.id, encodeQuestionID(requestID)),
                       eq(SessionInteractionTable.kind, "question"),
                       eq(SessionInteractionTable.state, "pending"),
                     ),
@@ -255,7 +256,7 @@ export const layer = Layer.effect(
                     .insert(SessionInteractionTable)
                     .values([
                       {
-                        id: String(id),
+                        id: encodeQuestionID(id),
                         kind: "question",
                         session_id: info.sessionID,
                         project_id: ctx.project.id,
@@ -295,7 +296,12 @@ export const layer = Layer.effect(
         const row = yield* db
           .select({ state: SessionInteractionTable.state, response: SessionInteractionTable.response_json })
           .from(SessionInteractionTable)
-          .where(and(eq(SessionInteractionTable.id, String(requestID)), eq(SessionInteractionTable.kind, "question")))
+          .where(
+            and(
+              eq(SessionInteractionTable.id, encodeQuestionID(requestID)),
+              eq(SessionInteractionTable.kind, "question"),
+            ),
+          )
           .get()
           .pipe(Effect.orDie)
         if (!row || row.state === "rejected") {
@@ -327,7 +333,7 @@ export const layer = Layer.effect(
                   .from(SessionInteractionTable)
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(input.requestID)),
+                      eq(SessionInteractionTable.id, encodeQuestionID(input.requestID)),
                       eq(SessionInteractionTable.kind, "question"),
                     ),
                   )
@@ -345,7 +351,7 @@ export const layer = Layer.effect(
                   })
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(input.requestID)),
+                      eq(SessionInteractionTable.id, encodeQuestionID(input.requestID)),
                       eq(SessionInteractionTable.state, "pending"),
                     ),
                   )
@@ -382,7 +388,7 @@ export const layer = Layer.effect(
                   .from(SessionInteractionTable)
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(requestID)),
+                      eq(SessionInteractionTable.id, encodeQuestionID(requestID)),
                       eq(SessionInteractionTable.kind, "question"),
                     ),
                   )
@@ -394,7 +400,7 @@ export const layer = Layer.effect(
                   .set({ state: "rejected", responded_at: now, time_updated: now })
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(requestID)),
+                      eq(SessionInteractionTable.id, encodeQuestionID(requestID)),
                       eq(SessionInteractionTable.state, "pending"),
                     ),
                   )

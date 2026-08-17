@@ -16,6 +16,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { SessionStatus } from "@/session/status"
 
 const log = Log.create({ service: "permission" })
+const encodePermissionID = Schema.encodeSync(PermissionID)
 
 export const Action = PermissionV2.Action.annotate({ identifier: "PermissionAction" })
 export type Action = Schema.Schema.Type<typeof Action>
@@ -186,7 +187,7 @@ export const layer = Layer.effect(
                   })
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(requestID)),
+                      eq(SessionInteractionTable.id, encodePermissionID(requestID)),
                       eq(SessionInteractionTable.kind, "permission"),
                       eq(SessionInteractionTable.state, "pending"),
                     ),
@@ -311,7 +312,7 @@ export const layer = Layer.effect(
                     .insert(SessionInteractionTable)
                     .values([
                       {
-                        id: String(id),
+                        id: encodePermissionID(id),
                         kind: "permission",
                         session_id: info.sessionID,
                         project_id: ctx.project.id,
@@ -351,7 +352,12 @@ export const layer = Layer.effect(
         const row = yield* db
           .select({ state: SessionInteractionTable.state, response: SessionInteractionTable.response_json })
           .from(SessionInteractionTable)
-          .where(and(eq(SessionInteractionTable.id, String(requestID)), eq(SessionInteractionTable.kind, "permission")))
+          .where(
+            and(
+              eq(SessionInteractionTable.id, encodePermissionID(requestID)),
+              eq(SessionInteractionTable.kind, "permission"),
+            ),
+          )
           .get()
           .pipe(Effect.orDie)
         if (!row) {
@@ -387,7 +393,7 @@ export const layer = Layer.effect(
                   .from(SessionInteractionTable)
                   .where(
                     and(
-                      eq(SessionInteractionTable.id, String(input.requestID)),
+                      eq(SessionInteractionTable.id, encodePermissionID(input.requestID)),
                       eq(SessionInteractionTable.kind, "permission"),
                     ),
                   )
@@ -395,7 +401,10 @@ export const layer = Layer.effect(
                 if (!existing) return { found: false as const, events: [] }
                 if (existing.state !== "pending") return { found: true as const, events: [] }
                 const request = Option.getOrUndefined(decodeRequest(existing.request_json))
-                if (!request) return yield* Effect.die(new Error(`Invalid permission request ${input.requestID}`))
+                if (!request)
+                  return yield* Effect.die(
+                    new Error(`Invalid permission request ${encodePermissionID(input.requestID)}`),
+                  )
 
                 const permissionRow = yield* transaction
                   .select({ data: PermissionTable.data })
@@ -448,7 +457,7 @@ export const layer = Layer.effect(
                     selected.push({ row, item, reply: "reject" })
                     continue
                   }
-                  if (row.id === String(input.requestID)) {
+                  if (row.id === encodePermissionID(input.requestID)) {
                     selected.push({ row, item, reply: input.reply })
                     continue
                   }
@@ -465,7 +474,9 @@ export const layer = Layer.effect(
                       state: item.reply === "reject" ? "rejected" : "replied",
                       response_json: {
                         reply: item.reply,
-                        ...(item.row.id === String(input.requestID) && input.message ? { message: input.message } : {}),
+                        ...(item.row.id === encodePermissionID(input.requestID) && input.message
+                          ? { message: input.message }
+                          : {}),
                       },
                       responded_at: now,
                       time_updated: now,
