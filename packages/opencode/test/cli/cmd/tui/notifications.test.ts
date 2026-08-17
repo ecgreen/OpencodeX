@@ -21,6 +21,7 @@ async function setup() {
     session: session("session", "Demo session"),
     subagent: session("subagent", "Subagent session", "session"),
     abort: session("abort", "Abort session"),
+    swarm: session("swarm", "Swarm session"),
     timeout: session("timeout", "Timeout session"),
   }
 
@@ -225,37 +226,45 @@ describe("internal notifications TUI plugin", () => {
     ])
   })
 
-  test("special-cases aborts and model response timeouts", async () => {
+  test("suppresses abort alerts and following done sounds for normal, child, and swarm work", async () => {
+    const harness = await setup()
+
+    for (const sessionID of ["abort", "subagent", "swarm"]) {
+      harness.emit({
+        id: `${sessionID}-busy`,
+        type: "session.status",
+        properties: { sessionID, status: { type: "busy" } },
+      })
+      harness.emit({
+        id: `${sessionID}-abort`,
+        type: "session.error",
+        properties: { sessionID, error: { name: "MessageAbortedError", data: { message: "Aborted" } } },
+      })
+      harness.emit({
+        id: `${sessionID}-idle`,
+        type: "session.status",
+        properties: { sessionID, status: { type: "idle" } },
+      })
+    }
+
+    expect(harness.notifications).toEqual([])
+  })
+
+  test("special-cases model response timeouts", async () => {
     const harness = await setup()
 
     harness.emit({
       id: "event-1",
       type: "session.status",
-      properties: { sessionID: "abort", status: { type: "busy" } },
-    })
-    harness.emit({
-      id: "event-2",
-      type: "session.error",
-      properties: { sessionID: "abort", error: { name: "MessageAbortedError", data: { message: "Aborted" } } },
-    })
-    harness.emit({
-      id: "event-3",
-      type: "session.status",
       properties: { sessionID: "timeout", status: { type: "busy" } },
     })
     harness.emit({
-      id: "event-4",
+      id: "event-2",
       type: "session.error",
       properties: { sessionID: "timeout", error: { name: "UnknownError", data: { message: "SSE read timed out" } } },
     })
 
     expect(harness.notifications).toEqual([
-      {
-        title: "Abort session",
-        message: "Session aborted",
-        notification: { when: "blurred" },
-        sound: { name: "error", when: "always" },
-      },
       {
         title: "Timeout session",
         message: "Model stopped responding",
