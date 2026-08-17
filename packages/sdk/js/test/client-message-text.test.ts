@@ -69,6 +69,18 @@ describe("normalizeClientDisplayPart", () => {
     expect(isStreamingClientDisplayPart(part)).toBe(false)
     expect(normalizeClientDisplayPart(part)).toMatchObject({ text: "ask\nplease" })
   })
+
+  test("classifies marked compaction continuation when the synthetic flag is absent", () => {
+    const part = { ...textPart("continue", { start: 1 }), metadata: { compaction_continue: true } }
+    const normalized = normalizeClientDisplayPart(part)
+    expect(normalized).toMatchObject({ synthetic: true })
+    expect(normalizeClientDisplayPart(part)).toBe(normalized)
+  })
+
+  test("preserves explicit non-synthetic compaction text", () => {
+    const part = { ...textPart("continue", { start: 1 }), synthetic: false, metadata: { compaction_continue: true } }
+    expect(normalizeClientDisplayPart(part)).toBe(part)
+  })
 })
 
 function textPart(text: string, time?: { start: number; end?: number }): Part {

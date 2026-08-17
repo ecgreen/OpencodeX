@@ -46,9 +46,14 @@ export function displayClientMessageText(text: string) {
  */
 export function normalizeClientDisplayPart(part: Part): Part {
   if (part.type !== "text" && part.type !== "reasoning") return part
-  if (isStreamingClientDisplayPart(part)) return part
   const cached = normalizedDisplayParts.get(part)
   if (cached) return cached
+  if (part.type === "text" && part.synthetic === undefined && part.metadata?.compaction_continue === true) {
+    const normalized = { ...part, synthetic: true }
+    normalizedDisplayParts.set(part, normalized)
+    return normalized
+  }
+  if (isStreamingClientDisplayPart(part)) return part
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- narrowed to the two text-bearing part variants
   const normalized = { ...part, text: displayClientMessageText(part.text) } as Part
   normalizedDisplayParts.set(part, normalized)
