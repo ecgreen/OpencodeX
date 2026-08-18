@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import type { Part } from "@opencode-ai/sdk/v2/client"
 import { createRoot } from "solid-js"
 import { createComposerStashController } from "../src/renderer/src/components/session-composer-stash"
-import { readComposerStash, writeComposerStash } from "../src/renderer/src/lib/session-composer-helpers"
+import { readComposerStash, textPart, writeComposerStash } from "../src/renderer/src/lib/session-composer-helpers"
 
 /**
  * Parking a draft and getting it back. The stash lives in shared storage rather
@@ -104,5 +105,19 @@ describe("composer prompt stash", () => {
     expect(held.draft()).toBe("from another window")
     expect(stashed()).toEqual(["mine"])
     held.dispose()
+  })
+})
+
+describe("composer message text", () => {
+  const part = (text: string, flags?: { synthetic?: boolean; ignored?: boolean }) =>
+    ({ id: "part-1", sessionID: "session-1", messageID: "message-1", type: "text", text, ...flags }) as Part
+
+  test("keeps genuine user text including internal-looking markup", () => {
+    expect(textPart(part("<swarm-briefing>literal</swarm-briefing>"))).toBe("<swarm-briefing>literal</swarm-briefing>")
+  })
+
+  test("hides synthetic and ignored text by provenance", () => {
+    expect(textPart(part("internal briefing", { synthetic: true }))).toBe("")
+    expect(textPart(part("ignored context", { ignored: true }))).toBe("")
   })
 })

@@ -38,9 +38,13 @@ describe("displayClientMessageText", () => {
     expect(displayClientMessageText(raw)).toBe(raw)
   })
 
-  test("strips internal system reminders from persisted text", () => {
-    expect(displayClientMessageText("hello\n<system-reminder>secret</system-reminder>\nworld")).toBe("hello\nworld")
-    expect(displayClientMessageText("<system-reminder>secret</system-reminder>")).toBe("")
+  test("preserves literal internal-looking markup", () => {
+    expect(displayClientMessageText("hello\n<system-reminder>literal</system-reminder>\nworld")).toBe(
+      "hello\n<system-reminder>literal</system-reminder>\nworld",
+    )
+    expect(displayClientMessageText("<swarm-briefing>literal</swarm-briefing>")).toBe(
+      "<swarm-briefing>literal</swarm-briefing>",
+    )
   })
 })
 
@@ -65,9 +69,14 @@ describe("normalizeClientDisplayPart", () => {
   })
 
   test("normalizes parts that never carry timing, such as user prompts", () => {
-    const part = textPart("ask\n<system-reminder>internal</system-reminder>\nplease")
+    const part = textPart(JSON.stringify({ channel: "final", content: "done" }))
     expect(isStreamingClientDisplayPart(part)).toBe(false)
-    expect(normalizeClientDisplayPart(part)).toMatchObject({ text: "ask\nplease" })
+    expect(normalizeClientDisplayPart(part)).toMatchObject({ text: "done" })
+  })
+
+  test("preserves literal internal-looking markup in user prompts", () => {
+    const text = "show <system-reminder>literal</system-reminder> and <swarm-briefing>literal</swarm-briefing>"
+    expect(normalizeClientDisplayPart(textPart(text))).toMatchObject({ text })
   })
 
   test("classifies marked compaction continuation when the synthetic flag is absent", () => {

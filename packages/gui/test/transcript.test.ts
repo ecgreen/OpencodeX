@@ -61,6 +61,15 @@ describe("GUI session transcript formatting", () => {
     expect(result[0].parts.map((part) => part.type)).toEqual(["text"])
   })
 
+  test("uses provenance rather than internal-looking markup to decide visibility", () => {
+    const literal = textPart("<swarm-briefing>literal user text</swarm-briefing>")
+    const synthetic = textPart("<swarm-briefing>internal</swarm-briefing>", { synthetic: true })
+    const messages = [userMessage("msg_literal", [literal]), userMessage("msg_internal", [synthetic])]
+
+    expect(visibleTranscriptMessageIDs(messages)).toEqual(["msg_literal"])
+    expect(visibleTranscriptMessages(messages)[0].parts).toEqual([literal])
+  })
+
   test("preserves unchanged visible message identities", () => {
     const first = userMessage("msg_first", [textPart("first")])
     const second = userMessage("msg_second", [textPart("second")])
@@ -214,13 +223,14 @@ function userMessage(id: string, parts: Part[]): MessageBundle {
   } as MessageBundle
 }
 
-function textPart(text: string): Part {
+function textPart(text: string, flags?: { synthetic?: boolean; ignored?: boolean }): Part {
   return {
     id: "prt_text",
     sessionID: "ses_test",
     messageID: "msg_assistant",
     type: "text",
     text,
+    ...flags,
   } as Part
 }
 
