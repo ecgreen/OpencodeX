@@ -100,7 +100,11 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   // inside the `pr.comments.some` callback below.
   const prior = latest
 
-  if (prior.sha !== pr.headRefOid)
+  // `prior.sha` may be an abbreviated marker (7-40 hex chars, see
+  // MARKER_PATTERN), so this is a prefix test, not exact equality: a 7-char
+  // marker matching the current head means "already reviewed", not "new
+  // commits". The regex's 7-char floor makes a prefix collision negligible.
+  if (!pr.headRefOid.startsWith(prior.sha))
     return { ...base, action: "review", reason: "new commits since last review", ci, priorReview: prior }
 
   const authorReplied = pr.comments.some(

@@ -1,6 +1,12 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
-import { decidePullRequest, REVIEW_REPO, type CheckRun, type PullRequestSnapshot } from "./pr-review-select.js"
+import {
+  decidePullRequest,
+  REVIEW_REPO,
+  REVIEWER_LOGIN,
+  type CheckRun,
+  type PullRequestSnapshot,
+} from "./pr-review-select.js"
 
 // `statusCheckRollup` mixes CheckRun nodes (name/status/conclusion) with older
 // StatusContext nodes (context/state), so both shapes are optional here.
@@ -23,6 +29,20 @@ type GhPullRequest = {
   reviews: { author: { login: string } | null; body: string | null; submittedAt: string }[]
   comments: { author: { login: string } | null; createdAt: string }[]
   statusCheckRollup: GhRollupEntry[] | null
+}
+
+// If the authenticated `gh` account ever drifts from REVIEWER_LOGIN, every
+// marker posted from here on becomes invisible to the next pass's identity
+// check on GitHub review authorship, reproducing the unbounded re-review bug
+// this selection module otherwise guards against. Fail loudly before listing
+// anything.
+const authenticatedLogin = (await $`gh api user --jq .login`.text()).trim()
+if (authenticatedLogin !== REVIEWER_LOGIN) {
+  console.error(
+    `error: gh is authenticated as "${authenticatedLogin}", but reviews are posted as "${REVIEWER_LOGIN}". ` +
+      "Re-authenticate gh as the correct account before running this again.",
+  )
+  process.exit(1)
 }
 
 const FIELDS = "number,title,author,isDraft,headRefOid,commits,reviews,comments,statusCheckRollup"
@@ -49,7 +69,9 @@ const decisions = pulls.map((pull) => {
   const rollup = pull.statusCheckRollup ?? []
   const checks: CheckRun[] = rollup.map((entry) => ({
     name: entry.name ?? entry.context ?? "unnamed check",
-    // A StatusContext has no `status` field and is always already resolved.
+    // A StatusContext has no `status` field. Defaulting to COMPLETED is safe
+    // here because this repo's CI is GitHub Actions only — no classic status
+    // integration exists that would set and hold a real PENDING state.
     status: entry.status ?? "COMPLETED",
     conclusion: entry.conclusion ?? entry.state ?? null,
     completedAt: entry.completedAt ?? null,
