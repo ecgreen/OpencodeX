@@ -578,6 +578,60 @@ it.instance("promptAsync persists its message and execution intent before return
   }),
 )
 
+it.instance("promptAsync marks its durable command failed when the assistant returns an error", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const status = yield* SessionStatus.Service
+    const events = yield* EventV2Bridge.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const errors: string[] = []
+    const off = yield* events.listen((event) => {
+      if (event.type !== Session.Event.Error.type) return Effect.void
+      const data = event.data as typeof Session.Event.Error.data.Type
+      if (data.sessionID === chat.id && data.error) errors.push(data.error.name)
+      return Effect.void
+    })
+    yield* Effect.addFinalizer(() => off)
+    yield* llm.error(400, { error: { message: "no_kv_space" } })
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "fail durably" }],
+    })
+
+    const command = yield* pollWithTimeout(
+      db
+        .select()
+        .from(SessionCommandTable)
+        .where(eq(SessionCommandTable.session_id, chat.id))
+        .get()
+        .pipe(
+          Effect.orDie,
+          Effect.map((row) => (row?.status === "failed" ? row : undefined)),
+        ),
+      "errored assistant command did not fail",
+    )
+    const assistant = (yield* sessions.messages({ sessionID: chat.id })).find(
+      (message) => message.info.role === "assistant" && message.info.parentID === command.message_id,
+    )
+
+    expect(command.owner_id).toBeNull()
+    expect(command.lease_expires_at).toBeNull()
+    expect(command.completed_at).toBeNumber()
+    expect(command.error ? JSON.parse(command.error) : undefined).toEqual(
+      assistant?.info.role === "assistant" ? assistant.info.error : undefined,
+    )
+    expect(assistant?.info.role === "assistant" ? assistant.info.error?.name : undefined).toBe("APIError")
+    expect(yield* status.get(chat.id)).toEqual({ type: "idle" })
+    expect(yield* llm.calls).toBe(1)
+    expect(errors).toEqual(["APIError"])
+  }),
+)
+
 it.instance("retries title generation from the first prompt after more prompts arrive", () =>
   Effect.gen(function* () {
     yield* useServerConfig(providerCfg)
