@@ -29,8 +29,20 @@ const FIELDS = "number,title,author,isDraft,headRefOid,commits,reviews,comments,
 
 // --limit 50 exceeds GitHub's 500,000-node GraphQL query-cost budget for this
 // field set (the cost estimator scales with the requested limit, not the
-// actual PR count), so this is capped at 30 with margin to spare.
-const pulls = (await $`gh pr list --repo ${REVIEW_REPO} --state open --limit 30 --json ${FIELDS}`.json()) as GhPullRequest[]
+// actual PR count), so this is capped below that threshold with margin to
+// spare. Shared between the `gh` invocation and the truncation guard below
+// so the two can't drift apart.
+const PR_LIMIT = 30
+
+const pulls = (await $`gh pr list --repo ${REVIEW_REPO} --state open --limit ${PR_LIMIT} --json ${FIELDS}`.json()) as GhPullRequest[]
+
+if (pulls.length >= PR_LIMIT) {
+  console.error(
+    `warning: gh pr list returned ${pulls.length} open PRs, at or above the --limit ${PR_LIMIT} cap. ` +
+      "Older open PRs may have been silently dropped from this run. " +
+      "Raise PR_LIMIT in pr-review-select-cli.ts or reduce the requested field set to fit them back in.",
+  )
+}
 
 const now = new Date()
 const decisions = pulls.map((pull) => {
