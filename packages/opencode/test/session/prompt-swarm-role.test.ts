@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit } from "effect"
+import { Deferred, Effect, Exit } from "effect"
+import { EffectBridge } from "../../src/effect/bridge"
+import { ClaudeDelegate } from "../../src/opencodex/claude-delegate"
 import * as PromptSwarm from "../../src/session/prompt-swarm"
 import type { DelegationRecord } from "../../src/session/delegation-outcome"
 import { SessionID } from "../../src/session/schema"
@@ -26,7 +28,7 @@ describe("swarm role delegation prompt", () => {
       }),
     )
 
-    expect(report).toBe("done")
+    expect(report).toEqual({ ok: true, text: "done" })
     expect(prompts).toHaveLength(1)
     expect(prompts[0]).toBe(
       "You are the designer role. Review flows and states.\n\nPrefer boring layouts.\n\nReview the settings page.",
@@ -76,6 +78,33 @@ describe("swarm role delegation prompt", () => {
   })
 })
 
+describe("swarm role delegation validation", () => {
+  test("rejects an unknown role without creating or stamping child work", async () => {
+    const { runSwarmRole, prompts, stamps } = harness({ skills: {} })
+
+    expect(await Effect.runPromise(run(runSwarmRole, { role: "Unknown" }))).toEqual({
+      ok: false,
+      reason: "rejected",
+    })
+    expect(prompts).toHaveLength(0)
+    expect(stamps).toHaveLength(0)
+  })
+
+  test.each([
+    ["provider", role({ name: "Specialist", skill: null, instructions: "", providerID: null })],
+    ["model", role({ name: "Specialist", skill: null, instructions: "", modelID: null })],
+  ])("rejects a role missing its %s configuration", async (_field, configuredRole) => {
+    const { runSwarmRole, prompts, stamps } = harness({ skills: {} })
+
+    expect(await Effect.runPromise(run(runSwarmRole, { roles: [configuredRole] }))).toEqual({
+      ok: false,
+      reason: "rejected",
+    })
+    expect(prompts).toHaveLength(0)
+    expect(stamps).toHaveLength(0)
+  })
+})
+
 /**
  * The stamp is the graph's only witness to how a role run ended, so every
  * exit shape must settle it: assistant error, typed failure, defect, and
@@ -92,8 +121,64 @@ describe("swarm role delegation stamping", () => {
     })
 
     const report = await Effect.runPromise(run(runSwarmRole))
-    expect(report).toContain('Role "Specialist" failed')
+    expect(report).toEqual({ ok: false, reason: "errored" })
     expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "errored" } })
+  })
+
+  test("synthetic-only output becomes a structured error", async () => {
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.succeed({
+        info: { role: "assistant", error: undefined },
+        parts: [{ type: "text", text: "generated placeholder", synthetic: true }],
+      }),
+    })
+
+    expect(await Effect.runPromise(run(runSwarmRole))).toEqual({ ok: false, reason: "empty-output" })
+    expect(stamps[1]).toMatchObject({
+      record: {
+        phase: "settled",
+        outcome: "errored",
+        summary: "The delegated role completed without a usable report.",
+      },
+    })
+  })
+
+  test("literal empty and whitespace output becomes a structured error", async () => {
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.succeed({
+        info: { role: "assistant", error: undefined },
+        parts: [
+          { type: "text", text: "", synthetic: false },
+          { type: "text", text: "  \n\t", synthetic: false },
+        ],
+      }),
+    })
+
+    expect(await Effect.runPromise(run(runSwarmRole))).toEqual({ ok: false, reason: "empty-output" })
+    expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "errored" } })
+  })
+
+  test("assistant errors expose and persist only a generic message", async () => {
+    const secret = "sk-live-provider-secret"
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.succeed({
+        info: {
+          role: "assistant",
+          error: { data: { message: `provider failed with ${secret}` } },
+        },
+        parts: [],
+      }),
+    })
+
+    const result = await Effect.runPromise(run(runSwarmRole))
+    expect(result).toEqual({ ok: false, reason: "errored" })
+    expect(stamps[1]).toMatchObject({
+      record: { phase: "settled", outcome: "errored", summary: "The delegated role failed." },
+    })
+    expect(JSON.stringify({ result, stamp: stamps[1] })).not.toContain(secret)
   })
 
   test("a typed prompt failure settles the run as errored and still dies", async () => {
@@ -129,6 +214,63 @@ describe("swarm role delegation stamping", () => {
     expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "cancelled" } })
   })
 
+  test("request abort waits for the cancelled stamp before resolving", async () => {
+    const ready = await Effect.runPromise(Deferred.make<void>())
+    const controller = new AbortController()
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.gen(function* () {
+        yield* Deferred.succeed(ready, undefined)
+        return yield* Effect.never
+      }),
+    })
+    const capability = ClaudeDelegate.capability(await Effect.runPromise(EffectBridge.make()), {
+      roles: [{ name: "Specialist" }],
+      run: (input) =>
+        runSwarmRole({
+          sessionID: SessionID.make("ses_parent"),
+          swarmID: "swm_1",
+          roles: [role({ name: "Specialist", skill: null, instructions: "" })],
+          role: input.role,
+          prompt: input.prompt,
+        }),
+    })
+
+    const callback = capability.run({ role: "Specialist", prompt: "Do the task.", signal: controller.signal })
+    await Effect.runPromise(Deferred.await(ready))
+    controller.abort()
+
+    expect(await callback).toEqual({ ok: false, reason: "cancelled" })
+    expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "cancelled" } })
+  })
+
+  test("pre-aborted capability does not create child work, finalizers, or stamps", async () => {
+    const controller = new AbortController()
+    const events: string[] = []
+    controller.abort()
+    const { runSwarmRole, prompts, stamps } = harness({ skills: {} })
+    const capability = ClaudeDelegate.capability(await Effect.runPromise(EffectBridge.make()), {
+      roles: [{ name: "Specialist" }],
+      run: (input) => {
+        events.push("created")
+        return runSwarmRole({
+          sessionID: SessionID.make("ses_parent"),
+          swarmID: "swm_1",
+          roles: [role({ name: "Specialist", skill: null, instructions: "" })],
+          role: input.role,
+          prompt: input.prompt,
+        }).pipe(Effect.ensuring(Effect.sync(() => events.push("finalized"))))
+      },
+    })
+
+    expect(
+      await capability.run({ role: "Specialist", prompt: "Do the task.", signal: controller.signal }),
+    ).toEqual({ ok: false, reason: "cancelled" })
+    expect(events).toEqual([])
+    expect(prompts).toHaveLength(0)
+    expect(stamps).toHaveLength(0)
+  })
+
   test("a failure before the prompt begins still settles the created child", async () => {
     const { runSwarmRole, prompts, stamps } = harness({
       skills: {},
@@ -147,25 +289,31 @@ describe("swarm role delegation stamping", () => {
 
 function run(
   runSwarmRole: ReturnType<typeof PromptSwarm.make>["runSwarmRole"],
-  overrides: { roles?: PromptSwarm.SwarmRoleRow[] } = {},
+  overrides: { roles?: PromptSwarm.SwarmRoleRow[]; role?: string } = {},
 ) {
   return runSwarmRole({
     sessionID: SessionID.make("ses_parent"),
     swarmID: "swm_1",
     roles: overrides.roles ?? [role({ name: "Specialist", skill: null, instructions: "" })],
-    role: "Specialist",
+    role: overrides.role ?? "Specialist",
     prompt: "Do the task.",
   })
 }
 
-function role(input: { name: string; skill: string | null; instructions: string }): PromptSwarm.SwarmRoleRow {
+function role(input: {
+  name: string
+  skill: string | null
+  instructions: string
+  providerID?: string | null
+  modelID?: string | null
+}): PromptSwarm.SwarmRoleRow {
   return {
     name: input.name,
     agent: null,
     skill: input.skill,
     instructions: input.instructions,
-    provider_id: "anthropic",
-    model_id: "claude-sonnet-5",
+    provider_id: input.providerID === undefined ? "anthropic" : input.providerID,
+    model_id: input.modelID === undefined ? "claude-sonnet-5" : input.modelID,
     variant: null,
   }
 }

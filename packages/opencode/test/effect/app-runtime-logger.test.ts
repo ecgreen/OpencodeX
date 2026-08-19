@@ -118,7 +118,7 @@ it.instance(
             yield* Deferred.succeed(started, undefined)
             yield* Effect.never
           }).pipe(Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))),
-          controller.signal,
+          { signal: controller.signal },
         )
         .then(
           () => "resolved" as const,
@@ -143,7 +143,7 @@ it.instance(
       controller.abort()
 
       const result = yield* Effect.promise(() =>
-        bridge.promise(Effect.never, controller.signal).then(
+        bridge.promise(Effect.never, { signal: controller.signal }).then(
           () => "resolved" as const,
           () => "rejected" as const,
         ),

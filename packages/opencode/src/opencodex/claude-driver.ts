@@ -8,6 +8,7 @@ import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { ClaudeDriverMetadata } from "./claude-driver-metadata"
+import { ClaudeDelegate } from "./claude-delegate"
 import { ClaudeHandoff } from "./claude-handoff"
 import { ClaudeMapper, type MapperContext } from "./claude-mapper"
 import { ClaudePermission } from "./claude-permission"
@@ -46,7 +47,7 @@ export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [
  */
 export type SwarmDelegate = {
   roles: Array<{ name: string; description?: string }>
-  run: (input: { role: string; prompt: string }) => Effect.Effect<string>
+  run: (input: { role: string; prompt: string }) => Effect.Effect<ClaudeDelegate.Result, unknown>
 }
 
 export interface Interface {
@@ -222,15 +223,7 @@ export const layer = Layer.effect(
         ...(input.variant ? { effort: input.variant } : {}),
         ...(input.delegate
           ? {
-              delegate: {
-                roles: input.delegate.roles,
-                run: (delegated) =>
-                  bridge
-                    .promise(input.delegate!.run(delegated))
-                    .catch((cause: unknown) =>
-                      `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-                    ),
-              } satisfies DelegateCapability,
+              delegate: ClaudeDelegate.capability(bridge, input.delegate) satisfies DelegateCapability,
             }
           : {}),
         canUseTool: (toolName, toolInput, toolUseID, signal) =>
@@ -247,7 +240,7 @@ export const layer = Layer.effect(
                   : {}),
                 ruleset,
               }),
-              signal,
+              signal ? { signal } : undefined,
             )
             .then((decision) => {
               if (decision.allow && decision.input && toolUseID) decidedInputs.set(toolUseID, decision.input)

@@ -1180,7 +1180,7 @@ it.instance(
             always: [],
             ruleset: [],
           }),
-          controller.signal,
+          { signal: controller.signal },
         )
         .then(
           () => "resolved" as const,

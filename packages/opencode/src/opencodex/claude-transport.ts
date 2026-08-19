@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises"
 import path from "node:path"
 import z from "zod"
 import type { ClaudeEvent } from "./claude-mapper"
+import { ClaudeDelegate } from "./claude-delegate"
 
 /**
  * The process boundary for headless Claude Code. Everything SDK-specific lives
@@ -45,7 +46,7 @@ export type TransportOptions = {
 
 export type DelegateCapability = {
   roles: Array<{ name: string; description?: string }>
-  run: (input: { role: string; prompt: string }) => Promise<string>
+  run: (input: { role: string; prompt: string; signal?: AbortSignal }) => Promise<ClaudeDelegate.Result>
 }
 
 /** Namespaced by the CLI as `mcp__<server>__<tool>`. */
@@ -237,14 +238,23 @@ export function delegateServer(
             .string()
             .describe("Self-contained instructions: scope, expected output, and whether files may be edited."),
         },
-        async (args) => {
+        async (args, extra) => {
           try {
-            const text = await delegate.run({ role: args.role, prompt: args.prompt })
-            return { content: [{ type: "text" as const, text }] }
-          } catch (cause) {
+            const signal = requestSignal(extra)
+            const result = await delegate.run({
+              role: args.role,
+              prompt: args.prompt,
+              ...(signal ? { signal } : {}),
+            })
+            if (result.ok) return { content: [{ type: "text" as const, text: result.text }] }
             return {
               isError: true,
-              content: [{ type: "text" as const, text: cause instanceof Error ? cause.message : String(cause) }],
+              content: [{ type: "text" as const, text: ClaudeDelegate.failureMessage(result) }],
+            }
+          } catch {
+            return {
+              isError: true,
+              content: [{ type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) }],
             }
           }
         },
@@ -264,6 +274,11 @@ export function delegateServer(
       ),
     ],
   })
+}
+
+function requestSignal(extra: unknown): AbortSignal | undefined {
+  if (typeof extra !== "object" || extra === null || !("signal" in extra)) return undefined
+  return extra.signal instanceof AbortSignal ? extra.signal : undefined
 }
 
 /**
