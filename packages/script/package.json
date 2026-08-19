@@ -7,7 +7,8 @@
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "bun test test",
-    "test:ci": "mkdir -p .artifacts/unit && bun test test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+    "test:ci": "mkdir -p .artifacts/unit && bun test test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "pr-review:select": "bun run src/pr-review-select-cli.ts"
   },
   "dependencies": {
     "semver": "^7.6.3"
