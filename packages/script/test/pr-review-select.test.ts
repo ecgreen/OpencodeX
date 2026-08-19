@@ -171,6 +171,36 @@ describe("decidePullRequest", () => {
     expect(decision.reason).toBe("author replied since last review")
   })
 
+  // The author-replied and CI-arrived gates fire even once both passes are
+  // already posted at this head SHA (that responsiveness is intentional,
+  // not gated behind the pass cap). This is the case the fix-round-1 review
+  // flagged: nextPass can exceed 2 and priorBodies can hold more than one
+  // entry here, which the dispatch template must handle without hardcoding
+  // "at most 2" or dropping anything but the first entry.
+  test("re-reviews via author reply even after both passes are posted, carrying every prior body", () => {
+    const reviews = [
+      review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z"),
+      review(formatMarker(SHA, "present", 2), "2026-08-19T11:30:00Z"),
+    ]
+    const comments = [{ authorLogin: "omgoshjosh", createdAt: "2026-08-19T11:45:00Z" }]
+    const decision = decidePullRequest(snapshot({ reviews, comments }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("author replied since last review")
+    expect(decision.priorBodies.length).toBe(2)
+    expect(decision.priorBodies).toEqual([reviews[0]!.body, reviews[1]!.body])
+    expect(decision.nextPass).toBe(3)
+  })
+
+  test("orders priorBodies oldest first even when reviews arrive out of order", () => {
+    const older = review(formatMarker(SHA, "absent", 1), "2026-08-19T11:00:00Z")
+    const newer = review(formatMarker(SHA, "absent", 2), "2026-08-19T11:30:00Z")
+    const reviews = [newer, older] // deliberately out of chronological order
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("CI arrived after last review")
+    expect(decision.priorBodies).toEqual([older.body, newer.body])
+  })
+
   test("ignores comments from anyone but the PR author", () => {
     const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const comments = [{ authorLogin: "ecgreen", createdAt: "2026-08-19T11:30:00Z" }]

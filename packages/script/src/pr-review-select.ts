@@ -103,6 +103,9 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   const priorBodies = sameShaReviews.map((marked) => marked.body)
   const priorPass = sameShaReviews.length > 0 ? sameShaReviews[sameShaReviews.length - 1]!.pass : 0
 
+  // Unlike the defer branches below, draft uses the skip formula (priorPass,
+  // not priorPass + 1): a draft is never reviewed, so there is no upcoming
+  // pass to count toward, only whatever count (if any) already exists.
   if (pr.isDraft) return { ...base, action: "skip", reason: "draft", ci: "absent", nextPass: priorPass, priorBodies }
 
   const pending = pr.checks.filter((check) => check.status !== "COMPLETED")

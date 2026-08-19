@@ -234,6 +234,36 @@ describe("decidePullRequest", () => {
     expect(decision.reason).toBe("author replied since last review")
   })
 
+  // The author-replied and CI-arrived gates fire even once both passes are
+  // already posted at this head SHA (that responsiveness is intentional,
+  // not gated behind the pass cap). This is the case the fix-round-1 review
+  // flagged: nextPass can exceed 2 and priorBodies can hold more than one
+  // entry here, which the dispatch template must handle without hardcoding
+  // "at most 2" or dropping anything but the first entry.
+  test("re-reviews via author reply even after both passes are posted, carrying every prior body", () => {
+    const reviews = [
+      review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z"),
+      review(formatMarker(SHA, "present", 2), "2026-08-19T11:30:00Z"),
+    ]
+    const comments = [{ authorLogin: "omgoshjosh", createdAt: "2026-08-19T11:45:00Z" }]
+    const decision = decidePullRequest(snapshot({ reviews, comments }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("author replied since last review")
+    expect(decision.priorBodies.length).toBe(2)
+    expect(decision.priorBodies).toEqual([reviews[0]!.body, reviews[1]!.body])
+    expect(decision.nextPass).toBe(3)
+  })
+
+  test("orders priorBodies oldest first even when reviews arrive out of order", () => {
+    const older = review(formatMarker(SHA, "absent", 1), "2026-08-19T11:00:00Z")
+    const newer = review(formatMarker(SHA, "absent", 2), "2026-08-19T11:30:00Z")
+    const reviews = [newer, older] // deliberately out of chronological order
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("CI arrived after last review")
+    expect(decision.priorBodies).toEqual([older.body, newer.body])
+  })
+
   test("ignores comments from anyone but the PR author", () => {
     const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const comments = [{ authorLogin: "ecgreen", createdAt: "2026-08-19T11:30:00Z" }]
@@ -389,6 +419,9 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   const priorBodies = sameShaReviews.map((marked) => marked.body)
   const priorPass = sameShaReviews.length > 0 ? sameShaReviews[sameShaReviews.length - 1]!.pass : 0
 
+  // Unlike the defer branches below, draft uses the skip formula (priorPass,
+  // not priorPass + 1): a draft is never reviewed, so there is no upcoming
+  // pass to count toward, only whatever count (if any) already exists.
   if (pr.isDraft) return { ...base, action: "skip", reason: "draft", ci: "absent", nextPass: priorPass, priorBodies }
 
   const pending = pr.checks.filter((check) => check.status !== "COMPLETED")
@@ -483,7 +516,7 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
 
 Run: `bun run --cwd packages/script test`
 
-Expected: PASS, 24 tests.
+Expected: PASS, 26 tests.
 
 - [ ] **Step 7: Typecheck**
 
@@ -686,15 +719,17 @@ review.
 
 ## Second pass
 
-Every head SHA is sampled twice before a PR goes quiet. If your dispatch
-prompt says this is pass 2, you were also handed the first pass's review
-body. Live measurement showed a single pass's recall on findings that
-require comparing the diff against state *outside* the PR — code already
-merged to `main`, another tool's identity, prior repo history — is roughly
-one in three. The first pass genuinely misses real things; its silence on a
-topic is not evidence that topic is clean.
+Every head SHA is sampled twice before a PR goes quiet. Live measurement
+showed a single pass's recall on findings that require comparing the diff
+against state *outside* the PR — code already merged to `main`, another
+tool's identity, prior repo history — is roughly one in three. The first
+pass genuinely misses real things; its silence on a topic is not evidence
+that topic is clean.
 
-This is an **independent** review, not a review of the first pass:
+Your dispatch prompt tells you why this review was triggered, and that
+determines what follows. If it says this is the **second pass**, you were
+also handed the one prior pass's review body. This is an **independent**
+review, not a review of the first pass:
 
 - Do your own evidence gathering (the section above) and reach your own
   conclusions before you read the first pass's body.
@@ -705,6 +740,30 @@ This is an **independent** review, not a review of the first pass:
 - Your posted review's Blocking section is the union of every blocking
   finding either pass found — never drop a first-pass blocking finding
   because your own pass didn't happen to reproduce it.
+
+## Follow-up review
+
+If your dispatch prompt says this review was triggered by the PR author
+replying, or by CI arriving, at the *same* head SHA as one or more prior
+passes (not by new commits), you were handed every prior pass already posted
+at this SHA, oldest first — there can be more than two if the author keeps
+replying at the same commit. This is still an **independent** review, for the
+same reason as above:
+
+- Do your own evidence gathering and reach your own conclusions before you
+  read the prior passes' bodies.
+- Do not defer to them, and do not treat their silence on anything as
+  clearance.
+- If this was triggered by an author reply, address what the author said.
+- Carry forward, as still open, any blocking finding from any prior pass that
+  remains unresolved. Your posted review's Blocking section is the union of
+  every blocking finding still open across every prior pass plus anything new
+  you found — never drop one just because your own pass didn't happen to
+  reproduce it.
+
+If instead your dispatch prompt says this is a re-review after new commits,
+follow the "Since the last review" instructions below against the single
+prior review body you were given, unchanged from before.
 
 Do not run tests, typecheck, or builds locally. CI already ran `static`,
 `unit` on Linux and Windows, `cli-subprocess` on both, `gui-e2e`, and
@@ -940,7 +999,10 @@ writing review bodies there does not violate the "never modify the working
 tree" boundary.) Assign each PR its own output path,
 `.artifacts/pr-review/pr-<number>-review.md`.
 
-Give each subagent this prompt, substituting the bracketed values:
+Give each subagent this prompt, substituting the bracketed values. Which
+prior-context block to append is selected by exactly one thing — the
+decision's `reason` — never by the raw `nextPass` number and never by a
+second, independently-computed condition on `priorBodies`:
 
 ```
 Review pull request #<number> on ecgreen/OpencodeX: "<title>".
@@ -949,20 +1011,25 @@ Read .claude/skills/review-open-prs/review-rubric.md and follow it exactly.
 
 Reason this PR is being reviewed: <reason>
 CI presence for the current head: <ci>
-This is pass <nextPass> of at most 2 for this head SHA. Record pass=<nextPass>
-in your marker.
+Record pass=<nextPass> in your marker.
 
-<If priorReview exists, append:>
+<Select the one block below whose condition matches <reason>, and append it.
+These four cases are exhaustive and mutually exclusive:>
+
+<If reason is "new commits since last review", append:>
 This is a re-review. Here is the review you are following up on. Resolve every
 finding in it as Fixed, Still open, or New:
 
 <priorReview.body>
 
-<If priorBodies is non-empty (nextPass is 2), append:>
+<If reason is "second pass", append:>
 This is the second independent pass at this exact head SHA. Here is the first
-pass's review body:
+pass's review body (this reason only fires when exactly one prior pass
+exists, so the loop below always produces exactly one entry):
 
-<priorBodies[0]>
+<For each body in priorBodies, in order, append:>
+Pass <index + 1>:
+<body>
 
 Do your own evidence gathering and reach your own conclusions before you look
 at this. This second pass exists precisely because a single pass's recall on
@@ -976,11 +1043,37 @@ posted review's Blocking section must be the union of every blocking finding
 either pass found — never drop a first-pass blocking finding just because
 your own pass didn't reproduce it.
 
+<If reason is "author replied since last review" or "CI arrived after last
+review", append:>
+This review was prompted by <"the author's reply" if reason is "author
+replied since last review", else "CI arriving"> at this same head SHA, not by
+new commits. Every automated review already posted at this exact head SHA is
+included below, oldest first — there may be more than one:
+
+<For each body in priorBodies, in order, append:>
+Pass <index + 1>:
+<body>
+
+Do your own independent evidence gathering and reach your own conclusions
+first. Do not defer to the passes above, and do not treat their silence on a
+topic as evidence it is clean — that silence is exactly the failure mode this
+sampling exists to catch. <If reason is "author replied since last review":>
+Then address what the author said in their reply. Carry forward, as still
+open, any blocking finding from a prior pass that remains unresolved. Your
+posted review's Blocking section is the union of every blocking finding still
+open across all prior passes plus anything new you found.
+
 <If --dry-run was passed, append:>
 DRY RUN: do not post. Write the complete review body to
 .artifacts/pr-review/pr-<number>-review.md, then return the JSON with
 "posted": false and "bodyPath": ".artifacts/pr-review/pr-<number>-review.md".
 ```
+
+`priorBodies` is always empty for `reason: "no prior review"` and
+`reason: "new commits since last review"` — nothing is appended for those
+beyond the "new commits" block above (which uses `priorReview.body`, not
+`priorBodies`). Never interpolate `priorBodies[0]` alone anywhere: every place
+that reads from `priorBodies` iterates the whole array.
 
 A subagent that errors or returns nothing marks that PR `error` in the summary.
 Do not retry it this cycle — the next cycle picks it up naturally, because no

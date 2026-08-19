@@ -33,15 +33,17 @@ review.
 
 ## Second pass
 
-Every head SHA is sampled twice before a PR goes quiet. If your dispatch
-prompt says this is pass 2, you were also handed the first pass's review
-body. Live measurement showed a single pass's recall on findings that
-require comparing the diff against state *outside* the PR — code already
-merged to `main`, another tool's identity, prior repo history — is roughly
-one in three. The first pass genuinely misses real things; its silence on a
-topic is not evidence that topic is clean.
+Every head SHA is sampled twice before a PR goes quiet. Live measurement
+showed a single pass's recall on findings that require comparing the diff
+against state *outside* the PR — code already merged to `main`, another
+tool's identity, prior repo history — is roughly one in three. The first
+pass genuinely misses real things; its silence on a topic is not evidence
+that topic is clean.
 
-This is an **independent** review, not a review of the first pass:
+Your dispatch prompt tells you why this review was triggered, and that
+determines what follows. If it says this is the **second pass**, you were
+also handed the one prior pass's review body. This is an **independent**
+review, not a review of the first pass:
 
 - Do your own evidence gathering (the section above) and reach your own
   conclusions before you read the first pass's body.
@@ -52,6 +54,30 @@ This is an **independent** review, not a review of the first pass:
 - Your posted review's Blocking section is the union of every blocking
   finding either pass found — never drop a first-pass blocking finding
   because your own pass didn't happen to reproduce it.
+
+## Follow-up review
+
+If your dispatch prompt says this review was triggered by the PR author
+replying, or by CI arriving, at the *same* head SHA as one or more prior
+passes (not by new commits), you were handed every prior pass already posted
+at this SHA, oldest first — there can be more than two if the author keeps
+replying at the same commit. This is still an **independent** review, for the
+same reason as above:
+
+- Do your own evidence gathering and reach your own conclusions before you
+  read the prior passes' bodies.
+- Do not defer to them, and do not treat their silence on anything as
+  clearance.
+- If this was triggered by an author reply, address what the author said.
+- Carry forward, as still open, any blocking finding from any prior pass that
+  remains unresolved. Your posted review's Blocking section is the union of
+  every blocking finding still open across every prior pass plus anything new
+  you found — never drop one just because your own pass didn't happen to
+  reproduce it.
+
+If instead your dispatch prompt says this is a re-review after new commits,
+follow the "Since the last review" instructions below against the single
+prior review body you were given, unchanged from before.
 
 Do not run tests, typecheck, or builds locally. CI already ran `static`,
 `unit` on Linux and Windows, `cli-subprocess` on both, `gui-e2e`, and
