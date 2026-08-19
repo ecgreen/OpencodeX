@@ -62,16 +62,21 @@ export const goalServiceLayer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
-    const plan = Effect.fn("OpencodeXGoal.plan")(function* (goalID: string, input: PlanInput) {
+    const plan = Effect.fn("OpencodeXGoal.plan")(function* (
+      goalID: string,
+      input: PlanInput,
+      context?: { swarmID?: string | null; directory?: string },
+    ) {
       const goal = yield* store.get(goalID)
       if (goal.status !== "draft" && goal.status !== "planned") {
         return yield* new ValidationError({
           message: `This goal is ${goal.status}; use graph_update to change a plan that is already running.`,
         })
       }
-      const context = yield* executorNames(goal.swarmID)
+      const swarmID = context?.swarmID === undefined ? goal.swarmID : context.swarmID ?? undefined
+      const executors = context?.swarmID === null ? { roles: [] } : yield* executorNames(swarmID)
       const edges = input.edges ?? []
-      const issues = validatePlan({ nodes: input.nodes, edges }, context)
+      const issues = validatePlan({ nodes: input.nodes, edges }, executors)
       if (issues.length > 0) {
         return yield* new ValidationError({ message: `This plan cannot run: ${issues[0]}`, issues })
       }
@@ -81,6 +86,8 @@ export const goalServiceLayer = Layer.effect(
         edges,
         successCriteria: input.successCriteria,
         budget: input.budget,
+        swarmID: context?.swarmID,
+        directory: context?.directory,
       })
     })
 
