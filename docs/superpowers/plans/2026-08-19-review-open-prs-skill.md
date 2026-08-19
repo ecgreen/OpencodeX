@@ -149,6 +149,14 @@ describe("decidePullRequest", () => {
     expect(decidePullRequest(snapshot(), NOW).action).toBe("review")
   })
 
+  test("reviews a PR whose completed CI concluded in failure", () => {
+    const checks = [
+      { name: "unit (linux)", status: "COMPLETED", conclusion: "FAILURE", completedAt: "2026-08-19T10:05:00Z" },
+    ]
+    const decision = decidePullRequest(snapshot({ checks }), NOW)
+    expect(decision.action).toBe("review")
+  })
+
   test("skips when the marker matches head and the author has not replied", () => {
     const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
@@ -162,6 +170,13 @@ describe("decidePullRequest", () => {
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("new commits since last review")
+  })
+
+  test("skips when an abbreviated marker prefix-matches the current head", () => {
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present"), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("skip")
+    expect(decision.reason).toBe("awaiting author")
   })
 
   test("re-reviews after a rebase that backdates the head commit", () => {
@@ -330,7 +345,11 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   // inside the `pr.comments.some` callback below.
   const prior = latest
 
-  if (prior.sha !== pr.headRefOid)
+  // `prior.sha` may be an abbreviated marker (7-40 hex chars, see
+  // MARKER_PATTERN), so this is a prefix test, not exact equality: a 7-char
+  // marker matching the current head means "already reviewed", not "new
+  // commits". The regex's 7-char floor makes a prefix collision negligible.
+  if (!pr.headRefOid.startsWith(prior.sha))
     return { ...base, action: "review", reason: "new commits since last review", ci, priorReview: prior }
 
   const authorReplied = pr.comments.some(
@@ -350,7 +369,7 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
 
 Run: `bun run --cwd packages/script test`
 
-Expected: PASS, 19 tests.
+Expected: PASS, 21 tests.
 
 - [ ] **Step 7: Typecheck**
 
@@ -386,7 +405,7 @@ Create `packages/script/src/pr-review-select-cli.ts`:
 ```ts
 #!/usr/bin/env bun
 import { $ } from "bun"
-import { decidePullRequest, REVIEW_REPO, type CheckRun, type PullRequestSnapshot } from "./pr-review-select"
+import { decidePullRequest, REVIEW_REPO, REVIEWER_LOGIN, type CheckRun, type PullRequestSnapshot } from "./pr-review-select"
 
 // `statusCheckRollup` mixes CheckRun nodes (name/status/conclusion) with older
 // StatusContext nodes (context/state), so both shapes are optional here.
@@ -411,6 +430,20 @@ type GhPullRequest = {
   statusCheckRollup: GhRollupEntry[] | null
 }
 
+// If the authenticated `gh` account ever drifts from REVIEWER_LOGIN, every
+// marker posted from here on becomes invisible to the next pass's identity
+// check on GitHub review authorship, reproducing the unbounded re-review bug
+// this selection module otherwise guards against. Fail loudly before listing
+// anything.
+const authenticatedLogin = (await $`gh api user --jq .login`.text()).trim()
+if (authenticatedLogin !== REVIEWER_LOGIN) {
+  console.error(
+    `error: gh is authenticated as "${authenticatedLogin}", but reviews are posted as "${REVIEWER_LOGIN}". ` +
+      "Re-authenticate gh as the correct account before running this again.",
+  )
+  process.exit(1)
+}
+
 const FIELDS = "number,title,author,isDraft,headRefOid,commits,reviews,comments,statusCheckRollup"
 
 const pulls = (await $`gh pr list --repo ${REVIEW_REPO} --state open --limit 50 --json ${FIELDS}`.json()) as GhPullRequest[]
@@ -420,7 +453,9 @@ const decisions = pulls.map((pull) => {
   const rollup = pull.statusCheckRollup ?? []
   const checks: CheckRun[] = rollup.map((entry) => ({
     name: entry.name ?? entry.context ?? "unnamed check",
-    // A StatusContext has no `status` field and is always already resolved.
+    // A StatusContext has no `status` field. Defaulting to COMPLETED is safe
+    // here because this repo's CI is GitHub Actions only — no classic status
+    // integration exists that would set and hold a real PENDING state.
     status: entry.status ?? "COMPLETED",
     conclusion: entry.conclusion ?? entry.state ?? null,
     completedAt: entry.completedAt ?? null,
@@ -582,7 +617,7 @@ Verdict is mechanical, and one of three phrases:
 - **Any** Blocking finding → `Request changes`, posted with `--request-changes`.
 - No Blocking findings but at least one Non-blocking or Nit → `Looks good with
   notes`, posted with `--comment`.
-- No findings at all → `Looks good`, posted with `--comment`.
+- No findings at all → `No findings this pass`, posted with `--comment`.
 
 Never approve.
 
@@ -593,7 +628,7 @@ Write exactly this structure. `<SHA>` is the PR's current `headRefOid`;
 
 ```markdown
 <!-- opencodex-pr-review sha=<SHA> ci=<CI> -->
-**Verdict:** <Request changes|Looks good with notes|Looks good> — <N> blocking, <N> non-blocking, <N> nits
+**Verdict:** <Request changes|Looks good with notes|No findings this pass> — <N> blocking, <N> non-blocking, <N> nits
 
 | Goals | CI | Bugs | Code | Guidelines |
 |-------|----|------|------|------------|
@@ -612,6 +647,8 @@ Write exactly this structure. `<SHA>` is the PR's current `headRefOid`;
 
 ### Nits
 1. `path/to/file.ts:12` — ...
+
+_Automated single-pass review. Absence of findings is not an approval; this reviewer's recall on cross-file defects is known to be well under 100%._
 ```
 
 Rules for the template:
@@ -619,20 +656,26 @@ Rules for the template:
 - The verdict phrase is exactly one of three, chosen by findings:
   `Request changes` when there is at least one Blocking finding; `Looks good
   with notes` when there are zero Blocking findings but at least one
-  Non-blocking or Nit finding; `Looks good` when there are no findings at all.
+  Non-blocking or Nit finding; `No findings this pass` when there are no
+  findings at all.
 - Include the "Since the last review" section **only** when you were given a
   prior review body. Every finding from that prior review must appear in it as
   exactly one of Fixed / Still open / New.
 - Omit any of Blocking / Non-blocking / Nits that is empty.
 - If there are no findings at all, keep the marker, the verdict line, and the
-  table, then write a one-paragraph summary of what the PR does and why it
-  looks correct.
+  table, then write a one-paragraph summary of what the PR does.
 - Every finding cites `file:line`. No inline PR comments — this is one review
   body.
+- The footer line is mandatory on every posted review body, whatever the
+  verdict.
 
 ## Posting
 
-Write the body to a file in the session scratchpad, never into the repo. Then:
+On a normal run, write the body to a file in the session scratchpad, never
+into the repo. On a dry run, write it instead to the path given in the
+dispatch prompt (`.artifacts/pr-review/pr-<n>-review.md`); that directory is
+git-ignored (`.gitignore:37`, pattern `**/.artifacts/`), so writing there does
+not violate the never-modify-the-working-tree boundary. Then:
 
 ```
 gh pr review <n> --repo ecgreen/OpencodeX --request-changes --body-file <path>
@@ -667,8 +710,9 @@ Return one line of JSON and nothing else. The contract differs by mode:
 
 `"verdict"` is exactly `"request_changes"` or `"comment"` — the two ways the
 review is posted (or would be posted, on a dry run). It does not carry the
-three-way "Looks good" / "Looks good with notes" distinction from the body
-text; `blocking`, `nonBlocking`, and `nits` already carry that detail.
+three-way "No findings this pass" / "Looks good with notes" distinction from
+the body text; `blocking`, `nonBlocking`, and `nits` already carry that
+detail.
 
 On a normal run, set `"posted": false` and add `"error": "<message>"` if
 posting failed.

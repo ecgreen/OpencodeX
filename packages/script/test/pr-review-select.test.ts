@@ -86,6 +86,14 @@ describe("decidePullRequest", () => {
     expect(decidePullRequest(snapshot(), NOW).action).toBe("review")
   })
 
+  test("reviews a PR whose completed CI concluded in failure", () => {
+    const checks = [
+      { name: "unit (linux)", status: "COMPLETED", conclusion: "FAILURE", completedAt: "2026-08-19T10:05:00Z" },
+    ]
+    const decision = decidePullRequest(snapshot({ checks }), NOW)
+    expect(decision.action).toBe("review")
+  })
+
   test("skips when the marker matches head and the author has not replied", () => {
     const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
@@ -99,6 +107,13 @@ describe("decidePullRequest", () => {
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("new commits since last review")
+  })
+
+  test("skips when an abbreviated marker prefix-matches the current head", () => {
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present"), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("skip")
+    expect(decision.reason).toBe("awaiting author")
   })
 
   test("re-reviews after a rebase that backdates the head commit", () => {
