@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { DELEGATE_SERVER, DELEGATE_TOOL, delegateServer } from "../../src/opencodex/claude-transport"
+import {
+  DELEGATE_SERVER,
+  DELEGATE_TOOL,
+  delegateServer,
+  resolveToolPermission,
+  type TransportOptions,
+} from "../../src/opencodex/claude-transport"
 
 function fakeSdk() {
   const calls: { tool?: { name: string; description: string; extras?: Record<string, unknown> }; server?: Record<string, unknown> } = {}
@@ -36,5 +42,40 @@ describe("delegateServer", () => {
     const { sdk, calls } = fakeSdk()
     delegateServer(sdk, { roles: [{ name: "Researcher 1" }], run: async () => "ok" })
     expect(calls.tool?.extras).toMatchObject({ annotations: { readOnlyHint: true } })
+  })
+})
+
+describe("resolveToolPermission", () => {
+  test("forwards the SDK control-request signal to the permission callback", async () => {
+    const controller = new AbortController()
+    const seen: { toolUseID?: string; signal?: AbortSignal } = {}
+    const options = {
+      cwd: "/tmp",
+      canUseTool: async (_toolName, _input, toolUseID, signal) => {
+        seen.toolUseID = toolUseID
+        seen.signal = signal
+        return { allow: true as const, input: { path: "approved" } }
+      },
+    } satisfies TransportOptions
+
+    const result = await resolveToolPermission(options, "Read", { path: "original" }, {
+      toolUseID: "tool-1",
+      signal: controller.signal,
+    })
+
+    expect(seen).toEqual({ toolUseID: "tool-1", signal: controller.signal })
+    expect(result).toEqual({ behavior: "allow", updatedInput: { path: "approved" } })
+  })
+
+  test("maps a denied permission callback without rewriting its message", async () => {
+    const options = {
+      cwd: "/tmp",
+      canUseTool: async () => ({ allow: false as const, message: "Denied by policy." }),
+    } satisfies TransportOptions
+
+    expect(await resolveToolPermission(options, "Bash", { command: "pwd" })).toEqual({
+      behavior: "deny",
+      message: "Denied by policy.",
+    })
   })
 })

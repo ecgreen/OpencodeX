@@ -28,7 +28,12 @@ export type TransportOptions = {
   model?: string
   /** Reasoning effort, surfaced in OpencodeX as the model's variant chip. */
   effort?: string
-  canUseTool: (toolName: string, input: Record<string, unknown>, toolUseID?: string) => Promise<PermissionDecision>
+  canUseTool: (
+    toolName: string,
+    input: Record<string, unknown>,
+    toolUseID?: string,
+    signal?: AbortSignal,
+  ) => Promise<PermissionDecision>
   /**
    * Swarm delegation. When present the CLI is given an in-process tool that
    * hands work back to OpencodeX, so specialists run as OpencodeX sessions on
@@ -152,21 +157,7 @@ export function createSdkTransport(): ClaudeTransport {
             // OpencodeX is the sole permission gate: Claude defers every tool
             // decision to canUseTool, which bridges to OpencodeX permission cards.
             permissionMode: "default",
-            canUseTool: async (toolName, input, extra) => {
-              // Claude's own subagents would run inside the CLI on its models,
-              // bypassing the swarm's per-role routing. Redirect to the tool
-              // that hands work back to OpencodeX.
-              if (options.delegate && toolName === "Task") {
-                return {
-                  behavior: "deny" as const,
-                  message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
-                }
-              }
-              const decision = await options.canUseTool(toolName, input, extra?.toolUseID)
-              return decision.allow
-                ? { behavior: "allow", updatedInput: decision.input ?? input }
-                : { behavior: "deny", message: decision.message }
-            },
+            canUseTool: (toolName, input, extra) => resolveToolPermission(options, toolName, input, extra),
             ...(options.resumeID ? { resume: options.resumeID } : {}),
             ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
             ...(options.model && options.model !== DEFAULT_MODEL_VALUE ? { model: options.model } : {}),
@@ -187,6 +178,27 @@ export function createSdkTransport(): ClaudeTransport {
       }
     },
   }
+}
+
+export async function resolveToolPermission(
+  options: TransportOptions,
+  toolName: string,
+  input: Record<string, unknown>,
+  extra?: { toolUseID?: string; signal?: AbortSignal },
+) {
+  // Claude's own subagents would run inside the CLI on its models,
+  // bypassing the swarm's per-role routing. Redirect to the tool that hands
+  // work back to OpencodeX.
+  if (options.delegate && toolName === "Task") {
+    return {
+      behavior: "deny" as const,
+      message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
+    }
+  }
+  const decision = await options.canUseTool(toolName, input, extra?.toolUseID, extra?.signal)
+  return decision.allow
+    ? { behavior: "allow" as const, updatedInput: decision.input ?? input }
+    : { behavior: "deny" as const, message: decision.message }
 }
 
 /**

@@ -11,7 +11,9 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
-import { SessionExecutionTable } from "@opencode-ai/core/session/sql"
+import { SessionExecutionTable, SessionInteractionTable } from "@opencode-ai/core/session/sql"
+import { EffectBridge } from "../../src/effect/bridge"
+import { eq } from "drizzle-orm"
 
 const events = EventV2Bridge.defaultLayer
 const database = Database.defaultLayer
@@ -1156,6 +1158,47 @@ it.instance(
       expect(yield* waitForPending(1)).toHaveLength(1)
       yield* Fiber.interrupt(fiber)
       expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "aborted callback signal rejects and removes its durable pending permission",
+  () =>
+    Effect.gen(function* () {
+      const bridge = yield* EffectBridge.make()
+      const { db } = yield* Database.Service
+      const controller = new AbortController()
+      const result = bridge
+        .promise(
+          ask({
+            id: PermissionID.make("per_callback_aborted"),
+            sessionID: SessionID.make("session_callback_aborted"),
+            permission: "bash",
+            patterns: ["ls"],
+            metadata: {},
+            always: [],
+            ruleset: [],
+          }),
+          controller.signal,
+        )
+        .then(
+          () => "resolved" as const,
+          () => "rejected" as const,
+        )
+
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      controller.abort()
+
+      expect(yield* Effect.promise(() => result)).toBe("rejected")
+      expect(yield* waitForPending(0)).toHaveLength(0)
+      const row = yield* db
+        .select({ state: SessionInteractionTable.state, response: SessionInteractionTable.response_json })
+        .from(SessionInteractionTable)
+        .where(eq(SessionInteractionTable.id, "per_callback_aborted"))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row).toEqual({ state: "rejected", response: { reply: "reject" } })
     }),
   { git: true },
 )

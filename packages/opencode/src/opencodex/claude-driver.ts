@@ -233,7 +233,7 @@ export const layer = Layer.effect(
               } satisfies DelegateCapability,
             }
           : {}),
-        canUseTool: (toolName, toolInput, toolUseID) =>
+        canUseTool: (toolName, toolInput, toolUseID, signal) =>
           bridge
             .promise(
               decide({
@@ -247,6 +247,7 @@ export const layer = Layer.effect(
                   : {}),
                 ruleset,
               }),
+              signal,
             )
             .then((decision) => {
               if (decision.allow && decision.input && toolUseID) decidedInputs.set(toolUseID, decision.input)
