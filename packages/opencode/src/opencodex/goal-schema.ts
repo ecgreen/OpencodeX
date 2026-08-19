@@ -311,7 +311,11 @@ export interface Interface {
   readonly list: (input?: { projectID?: string; sessionID?: string }) => Effect.Effect<Info[]>
   readonly get: (goalID: string) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info, Project.NotFoundError | ValidationError>
-  readonly plan: (goalID: string, input: PlanInput) => Effect.Effect<Info, NotFoundError | ValidationError>
+  readonly plan: (
+    goalID: string,
+    input: PlanInput,
+    context?: { swarmID?: string | null; directory?: string },
+  ) => Effect.Effect<Info, NotFoundError | ValidationError>
   readonly updatePlan: (
     goalID: string,
     input: UpdatePlanInput,
