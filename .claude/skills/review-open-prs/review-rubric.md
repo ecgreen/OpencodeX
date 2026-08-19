@@ -140,15 +140,31 @@ Use `--request-changes` when there is at least one Blocking finding, otherwise
 
 ## What to return
 
-Return one line of JSON and nothing else:
+Return one line of JSON and nothing else. The contract differs by mode:
 
-```json
-{"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": true}
-```
+- **Normal run:** post the review (see Posting), then return:
+
+  ```json
+  {"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": true}
+  ```
+
+- **Dry run:** do not post. Write the complete review body to the output path
+  you were given in the dispatch prompt, then return the same shape with
+  `"posted": false` and an added `"bodyPath"` field holding that path:
+
+  ```json
+  {"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": false, "bodyPath": ".artifacts/pr-review/pr-25-review.md"}
+  ```
+
+  On a dry run, the review body belongs in the file, never in your returned
+  text. Returning the body as text instead of writing it to the given path is
+  a failure of this contract — the orchestrator only ever sees your one-line
+  JSON and the file at `bodyPath`, never anything else you print.
 
 `"verdict"` is exactly `"request_changes"` or `"comment"` — the two ways the
-review is posted. It does not carry the three-way "Looks good" / "Looks good
-with notes" distinction from the body text; `blocking`, `nonBlocking`, and
-`nits` already carry that detail.
+review is posted (or would be posted, on a dry run). It does not carry the
+three-way "Looks good" / "Looks good with notes" distinction from the body
+text; `blocking`, `nonBlocking`, and `nits` already carry that detail.
 
-Set `"posted": false` and add `"error": "<message>"` if posting failed.
+On a normal run, set `"posted": false` and add `"error": "<message>"` if
+posting failed.

@@ -644,18 +644,34 @@ Use `--request-changes` when there is at least one Blocking finding, otherwise
 
 ## What to return
 
-Return one line of JSON and nothing else:
+Return one line of JSON and nothing else. The contract differs by mode:
 
-```json
-{"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": true}
-```
+- **Normal run:** post the review (see Posting), then return:
+
+  ```json
+  {"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": true}
+  ```
+
+- **Dry run:** do not post. Write the complete review body to the output path
+  you were given in the dispatch prompt, then return the same shape with
+  `"posted": false` and an added `"bodyPath"` field holding that path:
+
+  ```json
+  {"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": false, "bodyPath": ".artifacts/pr-review/pr-25-review.md"}
+  ```
+
+  On a dry run, the review body belongs in the file, never in your returned
+  text. Returning the body as text instead of writing it to the given path is
+  a failure of this contract — the orchestrator only ever sees your one-line
+  JSON and the file at `bodyPath`, never anything else you print.
 
 `"verdict"` is exactly `"request_changes"` or `"comment"` — the two ways the
-review is posted. It does not carry the three-way "Looks good" / "Looks good
-with notes" distinction from the body text; `blocking`, `nonBlocking`, and
-`nits` already carry that detail.
+review is posted (or would be posted, on a dry run). It does not carry the
+three-way "Looks good" / "Looks good with notes" distinction from the body
+text; `blocking`, `nonBlocking`, and `nits` already carry that detail.
 
-Set `"posted": false` and add `"error": "<message>"` if posting failed.
+On a normal run, set `"posted": false` and add `"error": "<message>"` if
+posting failed.
 ````
 
 - [ ] **Step 2: Write the skill file**
@@ -678,9 +694,10 @@ ecgreen/OpencodeX."
 
 ## Arguments
 
-- `--dry-run` — do everything except post. Print each review body to the
-  terminal instead. No marker is written, so a later real run treats every PR
-  as unreviewed.
+- `--dry-run` — do everything except post. Each subagent writes its review
+  body to a file under `.artifacts/pr-review/` instead of posting; the
+  orchestrator reads those files back and prints them. No marker is written,
+  so a later real run treats every PR as unreviewed.
 
 ## Hard boundaries
 
@@ -719,6 +736,17 @@ stop.
 For each decision with `action: "review"`, dispatch one subagent. Run at most 5
 concurrently; if there are more, run them in batches of 5.
 
+On `--dry-run`, first create the output directory:
+
+```bash
+mkdir -p .artifacts/pr-review
+```
+
+(`.artifacts/` is git-ignored — `.gitignore:37`, pattern `**/.artifacts/` — so
+writing review bodies there does not violate the "never modify the working
+tree" boundary.) Assign each PR its own output path,
+`.artifacts/pr-review/pr-<number>-review.md`.
+
 Give each subagent this prompt, substituting the bracketed values:
 
 ```
@@ -736,8 +764,9 @@ finding in it as Fixed, Still open, or New:
 <priorReview.body>
 
 <If --dry-run was passed, append:>
-DRY RUN: do not post. Print the complete review body you would have submitted,
-then return the JSON with "posted": false.
+DRY RUN: do not post. Write the complete review body to
+.artifacts/pr-review/pr-<number>-review.md, then return the JSON with
+"posted": false and "bodyPath": ".artifacts/pr-review/pr-<number>-review.md".
 ```
 
 A subagent that errors or returns nothing marks that PR `error` in the summary.
@@ -776,8 +805,8 @@ Truncate titles to fit. Counts are Blocking / Non-blocking / nit. For
 `reviewed` rows, Verdict is exactly `request changes` or `comment`, matching
 the subagent's returned `"verdict"` value — never a body-only phrase like
 "Looks good with notes". Do not reproduce review bodies in the terminal on a
-real run — they are on GitHub. On `--dry-run`, print each body in full above
-the table.
+real run — they are on GitHub. On `--dry-run`, read each body from the
+`"bodyPath"` its subagent returned and print it in full above the table.
 
 Under `/loop`, a cycle where nothing changed should be this table and nothing
 else.
@@ -825,9 +854,11 @@ The skill's real test is a dry run against live PRs, then one live post.
 
 In a fresh session, run: `/review-open-prs --dry-run`
 
-Expected: every open PR is classified; each `review` PR prints a complete body
-starting with a marker line whose `sha` matches that PR's `headRefOid`; nothing
-is posted.
+Expected: every open PR is classified; each `review` PR's subagent writes a
+complete review body to `.artifacts/pr-review/pr-<number>-review.md`, and the
+orchestrator reads that file back and prints it in full above the table,
+starting with a marker line whose `sha` matches that PR's `headRefOid`;
+nothing is posted.
 
 - [ ] **Step 2: Confirm nothing was posted**
 
@@ -850,10 +881,12 @@ still shows as modified rather than reverted.
 
 - [ ] **Step 4: Judge the review quality**
 
-Read the dry-run body for PR #25 by hand. It should name the failing `unit`
-jobs on Linux and Windows, attribute them, and cite `file:line` on every
-finding. If the body is vague, generic, or invents findings, fix the rubric in
-`.claude/skills/review-open-prs/review-rubric.md` and repeat from Step 1.
+Read the dry-run body for PR #25, either from the orchestrator's printed
+output or directly from `.artifacts/pr-review/pr-25-review.md`. It should name
+the failing `unit` jobs on Linux and Windows, attribute them, and cite
+`file:line` on every finding. If the body is vague, generic, or invents
+findings, fix the rubric in `.claude/skills/review-open-prs/review-rubric.md`
+and repeat from Step 1.
 
 Do not proceed to Step 5 until the dry-run output is a review you would be
 willing to send someone.
