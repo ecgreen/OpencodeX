@@ -366,7 +366,7 @@ test("GUI and TUI render the same display text, raw while streaming and normaliz
 
   const complete = controller.getState()
   expect(guiParts(complete)).toEqual(tuiParts(complete))
-  expect(guiParts(complete).map((part) => part.text)).toEqual(["done", "keep this\n"])
+  expect(guiParts(complete).map((part) => part.text)).toEqual(["done", REMINDER_TEXT])
   controller.stop()
 })
 

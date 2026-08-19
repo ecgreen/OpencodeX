@@ -89,7 +89,7 @@ export function filePartFromPath(input: { path: string; type?: "file" | "directo
 }
 
 export function textPart(part: MessageBundle["parts"][number]) {
-  return part.type === "text" ? part.text : ""
+  return part.type === "text" && !part.synthetic && !part.ignored ? part.text : ""
 }
 
 export function isAssistantMessage(message: MessageBundle["info"]): message is AssistantMessage {
