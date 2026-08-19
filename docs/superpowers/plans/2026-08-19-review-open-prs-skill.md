@@ -18,7 +18,7 @@
 - Never modify the working tree, switch branches, or create worktrees. PR code is read via `git fetch origin pull/<n>/head:refs/pr-review/<n> --force` plus `git show`.
 - Repo style guide (`AGENTS.md`): avoid `try`/`catch`; avoid the `any` type; do not extract single-use helpers — inline logic at the call site unless it is genuinely reused.
 - Commit messages and PR titles are conventional: `type(scope): summary`, types `feat|fix|docs|chore|refactor|test`.
-- The reviewer account is `ecgreen`. The review marker is `<!-- opencodex-pr-review sha=<headRefOid> ci=present|absent -->`.
+- The reviewer account is `ecgreen`. The review marker is `<!-- opencodex-pr-review sha=<headRefOid> ci=present|absent pass=<N> -->`. `pass=<N>` is optional in the parser (defaults to 1) so markers posted before two-pass sampling existed keep parsing.
 - Root `bun test` is disabled by `bunfig.toml` (`[test] root = "./do-not-run-tests-from-root"`). Tests must run from inside a workspace package.
 
 ---
@@ -34,7 +34,7 @@ The decision logic, with no I/O. This is the only part of the system with real b
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision`, `parseMarker(body: string): Marker | undefined`, `formatMarker(sha: string, ci: CiPresence): string`, the constants `NO_CI_GRACE_MS`, `REVIEWER_LOGIN`, `REVIEW_REPO`, and the types `PullRequestSnapshot`, `Decision`, `DecisionAction`, `PriorReview`, `Marker`, `CiPresence`, `CheckRun`, `ReviewRecord`, `CommentRecord`. Task 2 imports `decidePullRequest`, `REVIEW_REPO`, `CheckRun`, and `PullRequestSnapshot`.
+- Produces: `decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision`, `parseMarker(body: string): Marker | undefined`, `formatMarker(sha: string, ci: CiPresence, pass: number): string`, the constants `NO_CI_GRACE_MS`, `REVIEWER_LOGIN`, `REVIEW_REPO`, and the types `PullRequestSnapshot`, `Decision`, `DecisionAction`, `PriorReview`, `Marker`, `CiPresence`, `CheckRun`, `ReviewRecord`, `CommentRecord`. `Marker` carries a `pass: number` (defaults to 1 when the marker text omits `pass=`); `Decision` carries `nextPass: number` and `priorBodies: string[]` (prior marked review bodies at the PR's current head SHA, oldest first). Task 2 imports `decidePullRequest`, `REVIEW_REPO`, `CheckRun`, and `PullRequestSnapshot`.
 
 - [ ] **Step 1: Add test scripts to the script package**
 
@@ -94,10 +94,11 @@ function review(body: string, submittedAt: string, authorLogin = "ecgreen") {
 }
 
 describe("parseMarker", () => {
-  test("reads sha and ci presence", () => {
-    expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present -->\nbody`)).toEqual({
+  test("reads sha, ci presence, and pass", () => {
+    expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present pass=2 -->\nbody`)).toEqual({
       sha: SHA,
       ci: "present",
+      pass: 2,
     })
   })
 
@@ -109,8 +110,19 @@ describe("parseMarker", () => {
     expect(parseMarker("<!-- opencodex-pr-review sha=zzz ci=maybe -->")).toBeUndefined()
   })
 
+  // Seven reviews are already posted on live PRs with no `pass=` segment.
+  // Treating them as pass 1 is what lets them naturally receive their second
+  // pass on the next cycle instead of failing to parse forever.
+  test("parses a marker without a pass segment as pass 1", () => {
+    expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present -->\nbody`)).toEqual({
+      sha: SHA,
+      ci: "present",
+      pass: 1,
+    })
+  })
+
   test("round-trips with formatMarker", () => {
-    expect(parseMarker(formatMarker(SHA, "absent"))).toEqual({ sha: SHA, ci: "absent" })
+    expect(parseMarker(formatMarker(SHA, "absent", 2))).toEqual({ sha: SHA, ci: "absent", pass: 2 })
   })
 })
 
@@ -146,7 +158,11 @@ describe("decidePullRequest", () => {
   })
 
   test("reviews a PR with no prior review", () => {
-    expect(decidePullRequest(snapshot(), NOW).action).toBe("review")
+    const decision = decidePullRequest(snapshot(), NOW)
+    expect(decision.action).toBe("review")
+    // No prior marked review anywhere: the review about to be posted is pass 1.
+    expect(decision.nextPass).toBe(1)
+    expect(decision.priorBodies).toEqual([])
   })
 
   test("reviews a PR whose completed CI concluded in failure", () => {
@@ -157,36 +173,61 @@ describe("decidePullRequest", () => {
     expect(decision.action).toBe("review")
   })
 
-  test("skips when the marker matches head and the author has not replied", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
+  test("returns 'second pass' when the prior marker's pass is 1", () => {
+    const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("second pass")
+    expect(decision.priorReview?.pass).toBe(1)
+    // The review about to be written records the next pass number, and reads
+    // the first pass's body to do an independent second look.
+    expect(decision.nextPass).toBe(2)
+    expect(decision.priorBodies).toEqual([reviews[0]!.body])
+  })
+
+  test("skips when the prior marker has already reached pass 2", () => {
+    const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("skip")
     expect(decision.reason).toBe("awaiting author")
     expect(decision.priorReview?.sha).toBe(SHA)
+    // For a skip, nextPass is simply the count already reached, not a further increment.
+    expect(decision.nextPass).toBe(2)
   })
 
   test("re-reviews when the head sha moved", () => {
-    const reviews = [review(formatMarker(OTHER_SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(OTHER_SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("new commits since last review")
+    // A new head SHA carries no prior marker of its own, however many passes
+    // the previous SHA reached: the two-pass count restarts per commit.
+    expect(decision.nextPass).toBe(1)
+    expect(decision.priorBodies).toEqual([])
   })
 
   test("skips when an abbreviated marker prefix-matches the current head", () => {
-    const reviews = [review(formatMarker(SHA.slice(0, 7), "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("skip")
     expect(decision.reason).toBe("awaiting author")
   })
 
+  test("an abbreviated pass=1 marker still prefix-matches and returns second pass", () => {
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 1), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("second pass")
+  })
+
   test("re-reviews after a rebase that backdates the head commit", () => {
-    const reviews = [review(formatMarker(OTHER_SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(OTHER_SHA, "present", 1), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews, headCommittedAt: "2026-08-01T00:00:00Z" }), NOW)
     expect(decision.action).toBe("review")
   })
 
   test("re-reviews when the PR author replied after the review", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z")]
     const comments = [{ authorLogin: "omgoshjosh", createdAt: "2026-08-19T11:30:00Z" }]
     const decision = decidePullRequest(snapshot({ reviews, comments }), NOW)
     expect(decision.action).toBe("review")
@@ -194,26 +235,26 @@ describe("decidePullRequest", () => {
   })
 
   test("ignores comments from anyone but the PR author", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const comments = [{ authorLogin: "ecgreen", createdAt: "2026-08-19T11:30:00Z" }]
     expect(decidePullRequest(snapshot({ reviews, comments }), NOW).action).toBe("skip")
   })
 
   test("re-reviews when CI arrived after a ci=absent review", () => {
-    const reviews = [review(formatMarker(SHA, "absent"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "absent", 1), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("CI arrived after last review")
   })
 
   test("still skips a ci=absent review while CI is still missing", () => {
-    const reviews = [review(formatMarker(SHA, "absent"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "absent", 2), "2026-08-19T11:00:00Z")]
     const headCommittedAt = new Date(NOW.getTime() - NO_CI_GRACE_MS - 60_000).toISOString()
     expect(decidePullRequest(snapshot({ reviews, checks: [], headCommittedAt }), NOW).action).toBe("skip")
   })
 
   test("ignores marked reviews from other accounts", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z", "someone-else")]
+    const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z", "someone-else")]
     expect(decidePullRequest(snapshot({ reviews }), NOW).action).toBe("review")
   })
 
@@ -224,8 +265,8 @@ describe("decidePullRequest", () => {
 
   test("uses the most recent marked review when several exist", () => {
     const reviews = [
-      review(formatMarker(OTHER_SHA, "present"), "2026-08-18T09:00:00Z"),
-      review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z"),
+      review(formatMarker(OTHER_SHA, "present", 2), "2026-08-18T09:00:00Z"),
+      review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z"),
     ]
     expect(decidePullRequest(snapshot({ reviews }), NOW).action).toBe("skip")
   })
@@ -247,13 +288,21 @@ export const REVIEWER_LOGIN = "ecgreen"
 export const REVIEW_REPO = "ecgreen/OpencodeX"
 export const NO_CI_GRACE_MS = 20 * 60 * 1000
 
-const MARKER_PATTERN = /<!--\s*opencodex-pr-review\s+sha=([0-9a-f]{7,40})\s+ci=(present|absent)\s*-->/
+// `pass=<N>` is optional and defaults to 1 when absent: markers posted before
+// two-pass sampling existed carry no `pass=` segment, and treating them as
+// pass 1 lets them pick up their second pass on the next cycle instead of
+// failing to parse. Making the segment required here would stop those
+// markers from parsing at all and put the PRs they're on into permanent
+// re-review — the exact failure mode a previous fix round already closed.
+const MARKER_PATTERN =
+  /<!--\s*opencodex-pr-review\s+sha=([0-9a-f]{7,40})\s+ci=(present|absent)(?:\s+pass=(\d+))?\s*-->/
 
 export type CiPresence = "present" | "absent"
 
 export type Marker = {
   sha: string
   ci: CiPresence
+  pass: number
 }
 
 export type CheckRun = {
@@ -300,16 +349,18 @@ export type Decision = {
   reason: string
   ci: CiPresence
   priorReview?: PriorReview
+  nextPass: number
+  priorBodies: string[]
 }
 
 export function parseMarker(body: string): Marker | undefined {
   const match = MARKER_PATTERN.exec(body)
   if (!match) return undefined
-  return { sha: match[1]!, ci: match[2] as CiPresence }
+  return { sha: match[1]!, ci: match[2] as CiPresence, pass: match[3] ? Number(match[3]) : 1 }
 }
 
-export function formatMarker(sha: string, ci: CiPresence): string {
-  return `<!-- opencodex-pr-review sha=${sha} ci=${ci} -->`
+export function formatMarker(sha: string, ci: CiPresence, pass: number): string {
+  return `<!-- opencodex-pr-review sha=${sha} ci=${ci} pass=${pass} -->`
 }
 
 // GitHub timestamps are all Z-suffixed ISO 8601 of identical width, so string
@@ -317,29 +368,55 @@ export function formatMarker(sha: string, ci: CiPresence): string {
 export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision {
   const base = { number: pr.number, title: pr.title }
 
-  if (pr.isDraft) return { ...base, action: "skip", reason: "draft", ci: "absent" }
-
-  const pending = pr.checks.filter((check) => check.status !== "COMPLETED")
-  if (pending.length > 0) {
-    const names = pending.map((check) => check.name).join(", ")
-    return { ...base, action: "defer", reason: `CI running (${names})`, ci: "present" }
-  }
-
-  const ci: CiPresence = pr.checks.length > 0 ? "present" : "absent"
-  if (ci === "absent" && now.getTime() - new Date(pr.headCommittedAt).getTime() < NO_CI_GRACE_MS) {
-    return { ...base, action: "defer", reason: "CI not yet registered", ci }
-  }
-
-  let latest: PriorReview | undefined
+  const markedReviews: (Marker & { body: string; submittedAt: string })[] = []
   for (const record of pr.reviews) {
     if (record.authorLogin !== REVIEWER_LOGIN) continue
     const marker = parseMarker(record.body)
     if (!marker) continue
-    if (latest && record.submittedAt <= latest.submittedAt) continue
-    latest = { ...marker, body: record.body, submittedAt: record.submittedAt }
+    markedReviews.push({ ...marker, body: record.body, submittedAt: record.submittedAt })
   }
 
-  if (!latest) return { ...base, action: "review", reason: "no prior review", ci }
+  // Prior marked reviews at the PR's *current* head SHA, oldest first: the
+  // bodies a second pass reads to see what a first pass already found, and
+  // the source of `nextPass`. A SHA change (new commits) leaves this empty,
+  // which is what resets the two-pass count per commit instead of letting it
+  // run away across the PR's whole history — without that reset, a PR with
+  // several rounds of commits would stop getting a genuine second look at
+  // each new head after its very first review.
+  const sameShaReviews = markedReviews
+    .filter((marked) => pr.headRefOid.startsWith(marked.sha))
+    .sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : a.submittedAt > b.submittedAt ? 1 : 0))
+  const priorBodies = sameShaReviews.map((marked) => marked.body)
+  const priorPass = sameShaReviews.length > 0 ? sameShaReviews[sameShaReviews.length - 1]!.pass : 0
+
+  if (pr.isDraft) return { ...base, action: "skip", reason: "draft", ci: "absent", nextPass: priorPass, priorBodies }
+
+  const pending = pr.checks.filter((check) => check.status !== "COMPLETED")
+  if (pending.length > 0) {
+    const names = pending.map((check) => check.name).join(", ")
+    return {
+      ...base,
+      action: "defer",
+      reason: `CI running (${names})`,
+      ci: "present",
+      nextPass: priorPass + 1,
+      priorBodies,
+    }
+  }
+
+  const ci: CiPresence = pr.checks.length > 0 ? "present" : "absent"
+  if (ci === "absent" && now.getTime() - new Date(pr.headCommittedAt).getTime() < NO_CI_GRACE_MS) {
+    return { ...base, action: "defer", reason: "CI not yet registered", ci, nextPass: priorPass + 1, priorBodies }
+  }
+
+  let latest: PriorReview | undefined
+  for (const marked of markedReviews) {
+    if (latest && marked.submittedAt <= latest.submittedAt) continue
+    latest = marked
+  }
+
+  if (!latest)
+    return { ...base, action: "review", reason: "no prior review", ci, nextPass: priorPass + 1, priorBodies }
 
   // Rebind to a const: TypeScript drops the not-undefined narrowing of a `let`
   // inside the `pr.comments.some` callback below.
@@ -350,18 +427,55 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   // marker matching the current head means "already reviewed", not "new
   // commits". The regex's 7-char floor makes a prefix collision negligible.
   if (!pr.headRefOid.startsWith(prior.sha))
-    return { ...base, action: "review", reason: "new commits since last review", ci, priorReview: prior }
+    return {
+      ...base,
+      action: "review",
+      reason: "new commits since last review",
+      ci,
+      priorReview: prior,
+      nextPass: priorPass + 1,
+      priorBodies,
+    }
 
   const authorReplied = pr.comments.some(
     (comment) => comment.authorLogin === pr.authorLogin && comment.createdAt > prior.submittedAt,
   )
   if (authorReplied)
-    return { ...base, action: "review", reason: "author replied since last review", ci, priorReview: prior }
+    return {
+      ...base,
+      action: "review",
+      reason: "author replied since last review",
+      ci,
+      priorReview: prior,
+      nextPass: priorPass + 1,
+      priorBodies,
+    }
 
   if (prior.ci === "absent" && ci === "present")
-    return { ...base, action: "review", reason: "CI arrived after last review", ci, priorReview: prior }
+    return {
+      ...base,
+      action: "review",
+      reason: "CI arrived after last review",
+      ci,
+      priorReview: prior,
+      nextPass: priorPass + 1,
+      priorBodies,
+    }
 
-  return { ...base, action: "skip", reason: "awaiting author", ci, priorReview: prior }
+  // Only two passes are ever sampled per head SHA. A prior pass below 2 means
+  // this PR still needs its independent second look before it can go quiet.
+  if (prior.pass < 2)
+    return {
+      ...base,
+      action: "review",
+      reason: "second pass",
+      ci,
+      priorReview: prior,
+      nextPass: priorPass + 1,
+      priorBodies,
+    }
+
+  return { ...base, action: "skip", reason: "awaiting author", ci, priorReview: prior, nextPass: priorPass, priorBodies }
 }
 ```
 
@@ -369,7 +483,7 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
 
 Run: `bun run --cwd packages/script test`
 
-Expected: PASS, 21 tests.
+Expected: PASS, 24 tests.
 
 - [ ] **Step 7: Typecheck**
 
@@ -570,6 +684,28 @@ review.
    Get `<runId>` from the rollup entry's `detailsUrl`.
 6. If you were given a prior review body, read it before judging anything.
 
+## Second pass
+
+Every head SHA is sampled twice before a PR goes quiet. If your dispatch
+prompt says this is pass 2, you were also handed the first pass's review
+body. Live measurement showed a single pass's recall on findings that
+require comparing the diff against state *outside* the PR — code already
+merged to `main`, another tool's identity, prior repo history — is roughly
+one in three. The first pass genuinely misses real things; its silence on a
+topic is not evidence that topic is clean.
+
+This is an **independent** review, not a review of the first pass:
+
+- Do your own evidence gathering (the section above) and reach your own
+  conclusions before you read the first pass's body.
+- Do not defer to the first pass, and do not treat its silence on anything as
+  clearance.
+- Once you have your own findings, read the first pass's body and include any
+  finding from it you independently agree with.
+- Your posted review's Blocking section is the union of every blocking
+  finding either pass found — never drop a first-pass blocking finding
+  because your own pass didn't happen to reproduce it.
+
 Do not run tests, typecheck, or builds locally. CI already ran `static`,
 `unit` on Linux and Windows, `cli-subprocess` on both, `gui-e2e`, and
 `packaged-gui`. Reading those results is the CI check.
@@ -624,10 +760,12 @@ Never approve.
 ## Review body template
 
 Write exactly this structure. `<SHA>` is the PR's current `headRefOid`;
-`<CI>` is `present` if the rollup had any entry, otherwise `absent`.
+`<CI>` is `present` if the rollup had any entry, otherwise `absent`; `<PASS>`
+is the pass number given to you in the dispatch prompt — do not compute it
+yourself.
 
 ```markdown
-<!-- opencodex-pr-review sha=<SHA> ci=<CI> -->
+<!-- opencodex-pr-review sha=<SHA> ci=<CI> pass=<PASS> -->
 **Verdict:** <Request changes|Looks good with notes|No findings this pass> — <N> blocking, <N> non-blocking, <N> nits
 
 | Goals | CI | Bugs | Code | Guidelines |
@@ -762,8 +900,19 @@ bun run --cwd packages/script pr-review:select
 ```
 
 This prints a JSON array of decisions, one per open PR, each with `number`,
-`title`, `action` (`review` | `skip` | `defer`), `reason`, `ci`, and for
-re-reviews a `priorReview` object holding the previous review `body`.
+`title`, `action` (`review` | `skip` | `defer`), `reason`, `ci`, `nextPass`
+(the pass number the review about to be written should record), `priorBodies`
+(the bodies of every prior marked review at the current head SHA, oldest
+first — empty if none), and for re-reviews a `priorReview` object holding the
+previous review `body`.
+
+Every PR is sampled twice at each head SHA before it goes quiet: live
+measurement showed a single review pass catches roughly one in three
+blocking findings that require comparing the diff against state outside the
+PR itself (e.g. "this diff is byte-identical to code already on `main`", or
+"this changes the client's identity to impersonate another tool"). A `reason`
+of `"second pass"` means the PR's current head has exactly one prior marked
+review and needs its independent second look before it can be skipped.
 
 Do not second-guess these decisions. The gate chain is unit tested in
 `packages/script/test/pr-review-select.test.ts`; re-deriving it by hand each
@@ -800,12 +949,32 @@ Read .claude/skills/review-open-prs/review-rubric.md and follow it exactly.
 
 Reason this PR is being reviewed: <reason>
 CI presence for the current head: <ci>
+This is pass <nextPass> of at most 2 for this head SHA. Record pass=<nextPass>
+in your marker.
 
 <If priorReview exists, append:>
 This is a re-review. Here is the review you are following up on. Resolve every
 finding in it as Fixed, Still open, or New:
 
 <priorReview.body>
+
+<If priorBodies is non-empty (nextPass is 2), append:>
+This is the second independent pass at this exact head SHA. Here is the first
+pass's review body:
+
+<priorBodies[0]>
+
+Do your own evidence gathering and reach your own conclusions before you look
+at this. This second pass exists precisely because a single pass's recall on
+findings that require comparing the diff against state outside the PR itself
+— code already on `main`, another tool's identity, prior repo history — is
+roughly one in three: the first pass genuinely misses real things, and its
+silence on a topic is not evidence that topic is clean. Do not defer to the
+first pass or treat it as authoritative. Once you have your own independent
+findings, include any first-pass finding you independently agree with. Your
+posted review's Blocking section must be the union of every blocking finding
+either pass found — never drop a first-pass blocking finding just because
+your own pass didn't reproduce it.
 
 <If --dry-run was passed, append:>
 DRY RUN: do not post. Write the complete review body to
