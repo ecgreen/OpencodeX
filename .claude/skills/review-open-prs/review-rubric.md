@@ -1,7 +1,17 @@
 # PR Review Rubric
 
 You are reviewing exactly one pull request on `ecgreen/OpencodeX`. Produce one
-review. Do not modify any code, branch, or working tree.
+review.
+
+## Hard boundaries
+
+- Every `gh` invocation carries `--repo ecgreen/OpencodeX`. A bare `gh`
+  command in this checkout resolves to the upstream repo `anomalyco/opencode`
+  and would act on strangers' PRs.
+- Never merge, close, label, push, or modify a PR branch.
+- Never modify any code or the working tree; never switch branches or create
+  a worktree.
+- Only `--comment` and `--request-changes` reviews. Never `--approve`.
 
 ## Evidence to gather first
 
@@ -64,8 +74,13 @@ Do not run tests, typecheck, or builds locally. CI already ran `static`,
   unhandled unlikely edge case.
 - **Nit** — naming, wording, formatting preference.
 
-Verdict is mechanical: **any** Blocking finding means request changes.
-Otherwise, comment. Never approve.
+Verdict is mechanical, and one of three phrases:
+- **Any** Blocking finding → `Request changes`, posted with `--request-changes`.
+- No Blocking findings but at least one Non-blocking or Nit → `Looks good with
+  notes`, posted with `--comment`.
+- No findings at all → `Looks good`, posted with `--comment`.
+
+Never approve.
 
 ## Review body template
 
@@ -74,7 +89,7 @@ Write exactly this structure. `<SHA>` is the PR's current `headRefOid`;
 
 ````markdown
 <!-- opencodex-pr-review sha=<SHA> ci=<CI> -->
-**Verdict:** <Request changes|Looks good> — <N> blocking, <N> non-blocking, <N> nits
+**Verdict:** <Request changes|Looks good with notes|Looks good> — <N> blocking, <N> non-blocking, <N> nits
 
 | Goals | CI | Bugs | Code | Guidelines |
 |-------|----|------|------|------------|
@@ -97,6 +112,10 @@ Write exactly this structure. `<SHA>` is the PR's current `headRefOid`;
 
 Rules for the template:
 - The marker line is mandatory and must be the first line.
+- The verdict phrase is exactly one of three, chosen by findings:
+  `Request changes` when there is at least one Blocking finding; `Looks good
+  with notes` when there are zero Blocking findings but at least one
+  Non-blocking or Nit finding; `Looks good` when there are no findings at all.
 - Include the "Since the last review" section **only** when you were given a
   prior review body. Every finding from that prior review must appear in it as
   exactly one of Fixed / Still open / New.
@@ -126,5 +145,10 @@ Return one line of JSON and nothing else:
 ```json
 {"number": 25, "verdict": "request_changes", "blocking": 2, "nonBlocking": 3, "nits": 1, "posted": true}
 ```
+
+`"verdict"` is exactly `"request_changes"` or `"comment"` — the two ways the
+review is posted. It does not carry the three-way "Looks good" / "Looks good
+with notes" distinction from the body text; `blocking`, `nonBlocking`, and
+`nits` already carry that detail.
 
 Set `"posted": false` and add `"error": "<message>"` if posting failed.

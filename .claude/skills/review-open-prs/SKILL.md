@@ -101,14 +101,18 @@ Print one table for the cycle, nothing more:
 ```
 PR    Title                                    Action     Verdict           Findings
 #25   fix(opencode): preserve goal graph...    reviewed   request changes   2B 3N 1n
+#24   fix(gui): debounce resize handler...     reviewed   comment           0B 2N 1n
 #23   fix(opencode): use file times for...     skipped    awaiting author   -
 #22   docs: define mobile child interaction    deferred   CI running        -
 #16   fix(swarm): stop dropping image atta...  error      -                 -
 ```
 
-Truncate titles to fit. Counts are Blocking / Non-blocking / nit. Do not
-reproduce review bodies in the terminal on a real run — they are on GitHub.
-On `--dry-run`, print each body in full above the table.
+Truncate titles to fit. Counts are Blocking / Non-blocking / nit. For
+`reviewed` rows, Verdict is exactly `request changes` or `comment`, matching
+the subagent's returned `"verdict"` value — never a body-only phrase like
+"Looks good with notes". Do not reproduce review bodies in the terminal on a
+real run — they are on GitHub. On `--dry-run`, print each body in full above
+the table.
 
 Under `/loop`, a cycle where nothing changed should be this table and nothing
 else.
