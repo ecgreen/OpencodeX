@@ -21,6 +21,7 @@ import {
 import { Identifier } from "@/id/id"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
+import { SessionStatus } from "./status"
 
 const log = Log.create({ service: "session.prompt-swarm" })
 
@@ -195,16 +196,14 @@ export function make(deps: Deps) {
       startedAt: Date.now(),
     }
     const stamp = (record: DelegationRecord, expectRunID?: string) =>
-      sessions
-        .stampDelegation({ sessionID: child.id, record, ...(expectRunID ? { expectRunID } : {}) })
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.sync(() => {
-              log.error("swarm delegation stamp failed", { sessionID: child.id, runID, cause })
-              return false
-            }),
-          ),
-        )
+      sessions.stampDelegation({ sessionID: child.id, record, ...(expectRunID ? { expectRunID } : {}) }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            log.error("swarm delegation stamp failed", { sessionID: child.id, runID, cause })
+            return false
+          }),
+        ),
+      )
     const settle = (outcome: DelegationOutcome, summary?: string) =>
       stamp(settleDelegation(started, { outcome, summary }), runID).pipe(Effect.asVoid)
     yield* stamp(started)
@@ -292,6 +291,7 @@ export function make(deps: Deps) {
       providerID: ProviderV2.ID.make(turnProviderID),
       modelID: ProviderV2.ModelID.make(turnModelID),
     }
+    const execution = yield* SessionStatus.ExecutionGeneration
     return claudeDriver.runTurn({
       sessionID,
       parentMessageID: last.info.id,
@@ -300,6 +300,7 @@ export function make(deps: Deps) {
       providerID: turnProviderID,
       modelID: turnModelID,
       claudeModelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+      ...(execution?.sessionID === sessionID ? { executionGeneration: execution.generation } : {}),
       // "default" is the sentinel for "no variant" everywhere else in the loop.
       ...(selected?.variant && selected.variant !== "default" ? { variant: selected.variant } : {}),
       ...(specialists.length > 0
@@ -331,7 +332,9 @@ export function make(deps: Deps) {
             // Avoid doubling up when the subagent's own title already says
             // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
             // render as "code-reviewer subagent (@claude subagent)".
-            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
+            const title = /subagent/i.test(spawnInput.title)
+              ? spawnInput.title
+              : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,

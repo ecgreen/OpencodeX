@@ -66,6 +66,7 @@ export interface Interface {
     claudeModelID?: string
     /** The selected variant, which for this provider is the effort level. */
     variant?: string
+    executionGeneration?: number
     /**
      * Present when the turn is a swarm orchestrator: gives the CLI a tool that
      * runs specialist roles back inside OpencodeX on their own models.
@@ -104,6 +105,7 @@ export const layer = Layer.effect(
       modelID: string
       claudeModelID?: string
       variant?: string
+      executionGeneration?: number
       delegate?: SwarmDelegate
       sidechain?: {
         spawn: (input: { title: string; prompt: string }) => Effect.Effect<{ sessionID: string; userMessageID: string }>
@@ -240,6 +242,9 @@ export const layer = Layer.effect(
                 toolInput,
                 messageID: live.messageID,
                 callID: toolUseID,
+                ...(input.executionGeneration !== undefined
+                  ? { executionGeneration: input.executionGeneration }
+                  : {}),
                 ruleset,
               }),
             )
