@@ -37,8 +37,19 @@ bun run --cwd packages/script pr-review:select
 ```
 
 This prints a JSON array of decisions, one per open PR, each with `number`,
-`title`, `action` (`review` | `skip` | `defer`), `reason`, `ci`, and for
-re-reviews a `priorReview` object holding the previous review `body`.
+`title`, `action` (`review` | `skip` | `defer`), `reason`, `ci`, `nextPass`
+(the pass number the review about to be written should record), `priorBodies`
+(the bodies of every prior marked review at the current head SHA, oldest
+first — empty if none), and for re-reviews a `priorReview` object holding the
+previous review `body`.
+
+Every PR is sampled twice at each head SHA before it goes quiet: live
+measurement showed a single review pass catches roughly one in three
+blocking findings that require comparing the diff against state outside the
+PR itself (e.g. "this diff is byte-identical to code already on `main`", or
+"this changes the client's identity to impersonate another tool"). A `reason`
+of `"second pass"` means the PR's current head has exactly one prior marked
+review and needs its independent second look before it can be skipped.
 
 Do not second-guess these decisions. The gate chain is unit tested in
 `packages/script/test/pr-review-select.test.ts`; re-deriving it by hand each
@@ -75,12 +86,32 @@ Read .claude/skills/review-open-prs/review-rubric.md and follow it exactly.
 
 Reason this PR is being reviewed: <reason>
 CI presence for the current head: <ci>
+This is pass <nextPass> of at most 2 for this head SHA. Record pass=<nextPass>
+in your marker.
 
 <If priorReview exists, append:>
 This is a re-review. Here is the review you are following up on. Resolve every
 finding in it as Fixed, Still open, or New:
 
 <priorReview.body>
+
+<If priorBodies is non-empty (nextPass is 2), append:>
+This is the second independent pass at this exact head SHA. Here is the first
+pass's review body:
+
+<priorBodies[0]>
+
+Do your own evidence gathering and reach your own conclusions before you look
+at this. This second pass exists precisely because a single pass's recall on
+findings that require comparing the diff against state outside the PR itself
+— code already on `main`, another tool's identity, prior repo history — is
+roughly one in three: the first pass genuinely misses real things, and its
+silence on a topic is not evidence that topic is clean. Do not defer to the
+first pass or treat it as authoritative. Once you have your own independent
+findings, include any first-pass finding you independently agree with. Your
+posted review's Blocking section must be the union of every blocking finding
+either pass found — never drop a first-pass blocking finding just because
+your own pass didn't reproduce it.
 
 <If --dry-run was passed, append:>
 DRY RUN: do not post. Write the complete review body to

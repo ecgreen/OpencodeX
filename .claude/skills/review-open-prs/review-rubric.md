@@ -31,6 +31,28 @@ review.
    Get `<runId>` from the rollup entry's `detailsUrl`.
 6. If you were given a prior review body, read it before judging anything.
 
+## Second pass
+
+Every head SHA is sampled twice before a PR goes quiet. If your dispatch
+prompt says this is pass 2, you were also handed the first pass's review
+body. Live measurement showed a single pass's recall on findings that
+require comparing the diff against state *outside* the PR — code already
+merged to `main`, another tool's identity, prior repo history — is roughly
+one in three. The first pass genuinely misses real things; its silence on a
+topic is not evidence that topic is clean.
+
+This is an **independent** review, not a review of the first pass:
+
+- Do your own evidence gathering (the section above) and reach your own
+  conclusions before you read the first pass's body.
+- Do not defer to the first pass, and do not treat its silence on anything as
+  clearance.
+- Once you have your own findings, read the first pass's body and include any
+  finding from it you independently agree with.
+- Your posted review's Blocking section is the union of every blocking
+  finding either pass found — never drop a first-pass blocking finding
+  because your own pass didn't happen to reproduce it.
+
 Do not run tests, typecheck, or builds locally. CI already ran `static`,
 `unit` on Linux and Windows, `cli-subprocess` on both, `gui-e2e`, and
 `packaged-gui`. Reading those results is the CI check.
@@ -85,10 +107,12 @@ Never approve.
 ## Review body template
 
 Write exactly this structure. `<SHA>` is the PR's current `headRefOid`;
-`<CI>` is `present` if the rollup had any entry, otherwise `absent`.
+`<CI>` is `present` if the rollup had any entry, otherwise `absent`; `<PASS>`
+is the pass number given to you in the dispatch prompt — do not compute it
+yourself.
 
 ````markdown
-<!-- opencodex-pr-review sha=<SHA> ci=<CI> -->
+<!-- opencodex-pr-review sha=<SHA> ci=<CI> pass=<PASS> -->
 **Verdict:** <Request changes|Looks good with notes|No findings this pass> — <N> blocking, <N> non-blocking, <N> nits
 
 | Goals | CI | Bugs | Code | Guidelines |

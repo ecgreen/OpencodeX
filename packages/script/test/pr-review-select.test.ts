@@ -31,10 +31,11 @@ function review(body: string, submittedAt: string, authorLogin = "ecgreen") {
 }
 
 describe("parseMarker", () => {
-  test("reads sha and ci presence", () => {
-    expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present -->\nbody`)).toEqual({
+  test("reads sha, ci presence, and pass", () => {
+    expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present pass=2 -->\nbody`)).toEqual({
       sha: SHA,
       ci: "present",
+      pass: 2,
     })
   })
 
@@ -46,8 +47,19 @@ describe("parseMarker", () => {
     expect(parseMarker("<!-- opencodex-pr-review sha=zzz ci=maybe -->")).toBeUndefined()
   })
 
+  // Seven reviews are already posted on live PRs with no `pass=` segment.
+  // Treating them as pass 1 is what lets them naturally receive their second
+  // pass on the next cycle instead of failing to parse forever.
+  test("parses a marker without a pass segment as pass 1", () => {
+    expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present -->\nbody`)).toEqual({
+      sha: SHA,
+      ci: "present",
+      pass: 1,
+    })
+  })
+
   test("round-trips with formatMarker", () => {
-    expect(parseMarker(formatMarker(SHA, "absent"))).toEqual({ sha: SHA, ci: "absent" })
+    expect(parseMarker(formatMarker(SHA, "absent", 2))).toEqual({ sha: SHA, ci: "absent", pass: 2 })
   })
 })
 
@@ -83,7 +95,11 @@ describe("decidePullRequest", () => {
   })
 
   test("reviews a PR with no prior review", () => {
-    expect(decidePullRequest(snapshot(), NOW).action).toBe("review")
+    const decision = decidePullRequest(snapshot(), NOW)
+    expect(decision.action).toBe("review")
+    // No prior marked review anywhere: the review about to be posted is pass 1.
+    expect(decision.nextPass).toBe(1)
+    expect(decision.priorBodies).toEqual([])
   })
 
   test("reviews a PR whose completed CI concluded in failure", () => {
@@ -94,36 +110,61 @@ describe("decidePullRequest", () => {
     expect(decision.action).toBe("review")
   })
 
-  test("skips when the marker matches head and the author has not replied", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
+  test("returns 'second pass' when the prior marker's pass is 1", () => {
+    const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("second pass")
+    expect(decision.priorReview?.pass).toBe(1)
+    // The review about to be written records the next pass number, and reads
+    // the first pass's body to do an independent second look.
+    expect(decision.nextPass).toBe(2)
+    expect(decision.priorBodies).toEqual([reviews[0]!.body])
+  })
+
+  test("skips when the prior marker has already reached pass 2", () => {
+    const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("skip")
     expect(decision.reason).toBe("awaiting author")
     expect(decision.priorReview?.sha).toBe(SHA)
+    // For a skip, nextPass is simply the count already reached, not a further increment.
+    expect(decision.nextPass).toBe(2)
   })
 
   test("re-reviews when the head sha moved", () => {
-    const reviews = [review(formatMarker(OTHER_SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(OTHER_SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("new commits since last review")
+    // A new head SHA carries no prior marker of its own, however many passes
+    // the previous SHA reached: the two-pass count restarts per commit.
+    expect(decision.nextPass).toBe(1)
+    expect(decision.priorBodies).toEqual([])
   })
 
   test("skips when an abbreviated marker prefix-matches the current head", () => {
-    const reviews = [review(formatMarker(SHA.slice(0, 7), "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("skip")
     expect(decision.reason).toBe("awaiting author")
   })
 
+  test("an abbreviated pass=1 marker still prefix-matches and returns second pass", () => {
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 1), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.action).toBe("review")
+    expect(decision.reason).toBe("second pass")
+  })
+
   test("re-reviews after a rebase that backdates the head commit", () => {
-    const reviews = [review(formatMarker(OTHER_SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(OTHER_SHA, "present", 1), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews, headCommittedAt: "2026-08-01T00:00:00Z" }), NOW)
     expect(decision.action).toBe("review")
   })
 
   test("re-reviews when the PR author replied after the review", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z")]
     const comments = [{ authorLogin: "omgoshjosh", createdAt: "2026-08-19T11:30:00Z" }]
     const decision = decidePullRequest(snapshot({ reviews, comments }), NOW)
     expect(decision.action).toBe("review")
@@ -131,26 +172,26 @@ describe("decidePullRequest", () => {
   })
 
   test("ignores comments from anyone but the PR author", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const comments = [{ authorLogin: "ecgreen", createdAt: "2026-08-19T11:30:00Z" }]
     expect(decidePullRequest(snapshot({ reviews, comments }), NOW).action).toBe("skip")
   })
 
   test("re-reviews when CI arrived after a ci=absent review", () => {
-    const reviews = [review(formatMarker(SHA, "absent"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "absent", 1), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("CI arrived after last review")
   })
 
   test("still skips a ci=absent review while CI is still missing", () => {
-    const reviews = [review(formatMarker(SHA, "absent"), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA, "absent", 2), "2026-08-19T11:00:00Z")]
     const headCommittedAt = new Date(NOW.getTime() - NO_CI_GRACE_MS - 60_000).toISOString()
     expect(decidePullRequest(snapshot({ reviews, checks: [], headCommittedAt }), NOW).action).toBe("skip")
   })
 
   test("ignores marked reviews from other accounts", () => {
-    const reviews = [review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z", "someone-else")]
+    const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z", "someone-else")]
     expect(decidePullRequest(snapshot({ reviews }), NOW).action).toBe("review")
   })
 
@@ -161,8 +202,8 @@ describe("decidePullRequest", () => {
 
   test("uses the most recent marked review when several exist", () => {
     const reviews = [
-      review(formatMarker(OTHER_SHA, "present"), "2026-08-18T09:00:00Z"),
-      review(formatMarker(SHA, "present"), "2026-08-19T11:00:00Z"),
+      review(formatMarker(OTHER_SHA, "present", 2), "2026-08-18T09:00:00Z"),
+      review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z"),
     ]
     expect(decidePullRequest(snapshot({ reviews }), NOW).action).toBe("skip")
   })
