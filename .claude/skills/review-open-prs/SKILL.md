@@ -13,9 +13,10 @@ ecgreen/OpencodeX."
 
 ## Arguments
 
-- `--dry-run` — do everything except post. Print each review body to the
-  terminal instead. No marker is written, so a later real run treats every PR
-  as unreviewed.
+- `--dry-run` — do everything except post. Each subagent writes its review
+  body to a file under `.artifacts/pr-review/` instead of posting; the
+  orchestrator reads those files back and prints them. No marker is written,
+  so a later real run treats every PR as unreviewed.
 
 ## Hard boundaries
 
@@ -54,6 +55,17 @@ stop.
 For each decision with `action: "review"`, dispatch one subagent. Run at most 5
 concurrently; if there are more, run them in batches of 5.
 
+On `--dry-run`, first create the output directory:
+
+```bash
+mkdir -p .artifacts/pr-review
+```
+
+(`.artifacts/` is git-ignored — `.gitignore:37`, pattern `**/.artifacts/` — so
+writing review bodies there does not violate the "never modify the working
+tree" boundary.) Assign each PR its own output path,
+`.artifacts/pr-review/pr-<number>-review.md`.
+
 Give each subagent this prompt, substituting the bracketed values:
 
 ```
@@ -71,8 +83,9 @@ finding in it as Fixed, Still open, or New:
 <priorReview.body>
 
 <If --dry-run was passed, append:>
-DRY RUN: do not post. Print the complete review body you would have submitted,
-then return the JSON with "posted": false.
+DRY RUN: do not post. Write the complete review body to
+.artifacts/pr-review/pr-<number>-review.md, then return the JSON with
+"posted": false and "bodyPath": ".artifacts/pr-review/pr-<number>-review.md".
 ```
 
 A subagent that errors or returns nothing marks that PR `error` in the summary.
@@ -111,8 +124,8 @@ Truncate titles to fit. Counts are Blocking / Non-blocking / nit. For
 `reviewed` rows, Verdict is exactly `request changes` or `comment`, matching
 the subagent's returned `"verdict"` value — never a body-only phrase like
 "Looks good with notes". Do not reproduce review bodies in the terminal on a
-real run — they are on GitHub. On `--dry-run`, print each body in full above
-the table.
+real run — they are on GitHub. On `--dry-run`, read each body from the
+`"bodyPath"` its subagent returned and print it in full above the table.
 
 Under `/loop`, a cycle where nothing changed should be this table and nothing
 else.
