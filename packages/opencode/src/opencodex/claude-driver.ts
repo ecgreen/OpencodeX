@@ -30,6 +30,21 @@ export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [
   { permission: "plan_exit", pattern: "*", action: "allow" },
 ]
 
+const DELIVERY_FAILURE = "Claude response delivery failed before the turn completed."
+
+export type LayerOptions = {
+  transport?: Transport
+  resolveExecutable?: () => Promise<string | undefined>
+}
+
+/** Keeps iterator rejection as data so Effect interruption remains distinct. */
+export async function nextClaudeEvent(iterator: AsyncIterator<ClaudeMapper.ClaudeEvent>) {
+  return iterator.next().then(
+    (next) => ({ next }),
+    (failure: unknown) => ({ failure }),
+  )
+}
+
 /**
  * Runs a session's turns through the user's local Claude Code CLI in headless
  * mode and writes the conversation into the session as native transcript parts.
@@ -85,7 +100,8 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/OpencodeXClaudeDriver") {}
 
-export const layer = Layer.effect(
+export function makeLayer(options: LayerOptions = {}) {
+  return Layer.effect(
   Service,
   Effect.gen(function* () {
     const sessions = yield* Session.Service
@@ -94,7 +110,7 @@ export const layer = Layer.effect(
     const question = yield* Question.Service
     const agents = yield* Agent.Service
     const decide = ClaudePermission.decideWith(permission, question)
-    const transport: Transport = createSdkTransport()
+    const transport = options.transport ?? createSdkTransport()
 
     const runTurn = Effect.fn("OpencodeXClaudeDriver.runTurn")(function* (input: {
       sessionID: SessionID
@@ -196,7 +212,9 @@ export const layer = Layer.effect(
         }
       })
 
-      const executable = yield* Effect.promise(() => ClaudeTransport.resolveClaudeExecutable())
+      const executable = yield* Effect.promise(() =>
+        (options.resolveExecutable ?? ClaudeTransport.resolveClaudeExecutable)(),
+      )
       if (!executable) {
         return yield* failTurn(
           context,
@@ -280,18 +298,20 @@ export const layer = Layer.effect(
           .pipe(Effect.ignore)
       })
 
+      const interruptTurn = Effect.sync(() => {
+        void turn.interrupt().catch(() => undefined)
+      })
+
       const iterator = turn.events[Symbol.asyncIterator]()
-      let failure: unknown
+      let deliveryFailed = false
       const consume = Effect.gen(function* () {
         while (true) {
-          const next = yield* Effect.promise(() =>
-            iterator.next().catch((cause: unknown) => ({ done: true as const, value: undefined, failure: cause })),
-          )
-          const raised = (next as { failure?: unknown }).failure
-          if (raised) {
-            failure = raised
+          const result = yield* Effect.promise(() => nextClaudeEvent(iterator))
+          if ("failure" in result) {
+            deliveryFailed = true
             break
           }
+          const next = result.next
           if (next.done) break
           if (sidechain) {
             const routed = sidechain.route(next.value, live.toolParts)
@@ -312,7 +332,7 @@ export const layer = Layer.effect(
       yield* consume.pipe(
         Effect.onInterrupt(() =>
           Effect.gen(function* () {
-            yield* Effect.promise(() => turn.interrupt().catch(() => undefined))
+            yield* interruptTurn
             yield* finalize("abort")
             if (sidechain)
               yield* interpretSidechainActions(
@@ -323,14 +343,16 @@ export const layer = Layer.effect(
         ),
       )
 
-      if (failure) {
-        // `failure` is whatever the SDK iterator threw; String() on an object
-        // would surface a useless "[object Object]" in the transcript.
-        const message =
-          failure instanceof Error ? failure.message : typeof failure === "string" ? failure : JSON.stringify(failure)
-        yield* finalize("error", message)
-      } else if (!live.finished) {
-        yield* finalize("stop")
+      if (deliveryFailed || !live.finished) {
+        return yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            yield* interruptTurn
+            yield* finalize("delivery-failed", DELIVERY_FAILURE)
+            if (sidechain) yield* interpretSidechainActions(sidechain.finalizeAll(DELIVERY_FAILURE))
+            yield* saveConversation()
+            return yield* readTurn(input.sessionID, live.messageID)
+          }),
+        )
       }
 
       // Any sidechain still open when the turn ends (the main turn finished,
@@ -404,7 +426,10 @@ export const layer = Layer.effect(
 
     return Service.of({ runTurn })
   }),
-)
+  )
+}
+
+export const layer = makeLayer()
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Session.defaultLayer),
