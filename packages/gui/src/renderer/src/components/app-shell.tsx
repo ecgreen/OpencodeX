@@ -294,7 +294,7 @@ export function AppShell(props: { model: GuiAppModel }) {
               >
                 Retry now
               </Button>
-              <Show when={window.opencodex && canAttachCoordinatorAnyway(model.authoritative.error())}>
+              <Show when={window.opencodex && canAttachCoordinatorAnyway(model.authoritative.connectionError())}>
                 <Button
                   appearance="outline"
                   type="button"

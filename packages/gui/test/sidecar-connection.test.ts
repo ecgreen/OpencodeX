@@ -5,6 +5,7 @@ import {
   loopbackSidecarURL,
   restartOwnedSidecar,
 } from "../src/main/sidecar-connection"
+import { coordinatorManifestOwnedBy } from "../src/main/sidecar-state"
 
 describe("sidecar connection URL", () => {
   test("accepts only HTTP loopback URLs", () => {
@@ -70,5 +71,12 @@ describe("sidecar connection URL", () => {
       ),
     ).rejects.toThrow("not managed by this client")
     expect(restarts).toBe(1)
+  })
+
+  test("derives restart capability from the active manifest identity", () => {
+    const owned = { process: { pid: 42 }, key: "database-key", token: "gui-token" }
+    expect(coordinatorManifestOwnedBy(owned, { pid: 42, key: "database-key", token: "gui-token" })).toBe(true)
+    expect(coordinatorManifestOwnedBy(undefined, { pid: 42, key: "database-key", token: "tui-token" })).toBe(false)
+    expect(coordinatorManifestOwnedBy(owned, { pid: 42, key: "database-key", token: "serve-token" })).toBe(false)
   })
 })

@@ -35,6 +35,12 @@ import {
   type SidecarLaunch,
 } from "./sidecar-launch.js"
 import { stopDetachedChild } from "./sidecar-lifecycle.js"
+import {
+  CoordinatorVersionMismatchError,
+  coordinatorManifestOwnedBy,
+  createCoordinatorMismatchApproval,
+  type CoordinatorIdentity,
+} from "./sidecar-state.js"
 
 export type SidecarConnection = {
   url: string
@@ -53,10 +59,14 @@ type SidecarState = {
   generation: number
 }
 
-let coordinatorVersionMismatchAllowed = false
+const coordinatorMismatchApproval = createCoordinatorMismatchApproval()
 
-export function allowCoordinatorVersionMismatch() {
-  coordinatorVersionMismatchAllowed = true
+export function pendingCoordinatorVersionMismatch() {
+  return coordinatorMismatchApproval.pending()
+}
+
+export function allowCoordinatorVersionMismatch(identity: CoordinatorIdentity) {
+  coordinatorMismatchApproval.approve(identity)
 }
 
 /**
@@ -65,13 +75,6 @@ export function allowCoordinatorVersionMismatch() {
  * does match it stays attached. Killing it would put a second writer on the
  * same database, which is the failure the whole attach protocol prevents.
  */
-class CoordinatorVersionMismatchError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "CoordinatorVersionMismatchError"
-  }
-}
-
 /* Generous on purpose: the coordinator is `bun run` over the full opencode
    source graph, and a dev machine under load (builds, test suites) can push a
    cold start well past 15s. The wait loop still returns the moment the
@@ -118,7 +121,12 @@ export function startSidecar(signal?: AbortSignal) {
       }
       const connection = connectionFromManifest(manifest, directory)
       state.connection = connection
+      coordinatorMismatchApproval.clear()
       return connection
+    })
+    .catch((error) => {
+      if (!(error instanceof CoordinatorVersionMismatchError)) coordinatorMismatchApproval.clear()
+      throw error
     })
     .finally(() => {
       signal?.removeEventListener("abort", abort)
@@ -141,6 +149,7 @@ export function stopSidecarForRestart() {
 }
 
 async function stopSidecarNow(restart: boolean) {
+  coordinatorMismatchApproval.clear()
   state.generation += 1
   const startup = state.startup
   const lease = state.lease
@@ -189,6 +198,13 @@ export async function assertSidecarRestartAllowed() {
   if (health.active) throw new Error("Backend restart is waiting for active work to finish.")
 }
 
+export async function sidecarRestartAvailable() {
+  if (!state.owned) return false
+  const manifest = await readCoordinatorManifest(state.owned.key).catch(() => undefined)
+  if (!manifest || !coordinatorManifestOwnedBy(state.owned, manifest)) return false
+  return isCoordinatorProcessAlive(manifest.pid)
+}
+
 async function hasOtherActiveClient(key: string) {
   const dir = coordinatorClientDir(COORDINATOR_STATE_ROOT, key)
   const clients = await Promise.all(
@@ -234,11 +250,15 @@ function connectionFromManifest(manifest: CoordinatorManifest, directory: string
 
 async function activeCoordinator(key: string, database: string) {
   const manifest = await readActiveManifest(key)
-  if (!manifest) return undefined
+  if (!manifest) {
+    coordinatorMismatchApproval.clear()
+    return undefined
+  }
   if (
     manifest.key !== key ||
     coordinatorDatabaseIdentity(manifest.database) !== coordinatorDatabaseIdentity(database)
   ) {
+    coordinatorMismatchApproval.clear()
     await removeCoordinatorManifest(key, manifest.token)
     return undefined
   }
@@ -247,6 +267,7 @@ async function activeCoordinator(key: string, database: string) {
     // A legacy health response has no coordinator key. Let compatibility
     // produce the actionable version-mismatch path instead.
     if (health.coordinatorKey !== undefined && !isCoordinatorHealthForManifest(manifest, health)) {
+      coordinatorMismatchApproval.clear()
       if (isCoordinatorProcessAlive(manifest.pid)) {
         throw new Error(
           `OpencodeX coordinator process ${manifest.pid} answered for a different database; refusing to attach`,
@@ -260,12 +281,21 @@ async function activeCoordinator(key: string, database: string) {
       clientVersion: sidecarVersion(),
       healthVersion: health.version,
     })
-    if (!compatibility.compatible && !(coordinatorVersionMismatchAllowed && compatibility.reason === "mismatch")) {
+    if (!compatibility.compatible) {
+      if (compatibility.reason !== "mismatch") {
+        coordinatorMismatchApproval.clear()
+        throw new Error(compatibility.message ?? "Coordinator compatibility check failed")
+      }
+      const identity = { key: manifest.key, token: manifest.token }
+      if (coordinatorMismatchApproval.consume(identity)) return manifest
+      coordinatorMismatchApproval.observe(identity)
       throw new CoordinatorVersionMismatchError(compatibility.message ?? "Coordinator version mismatch")
     }
+    coordinatorMismatchApproval.clear()
     if (compatibility.reason === "local" && compatibility.message) console.warn(compatibility.message)
     return manifest
   }
+  coordinatorMismatchApproval.clear()
   if (isCoordinatorProcessAlive(manifest.pid)) {
     throw new Error(`OpencodeX coordinator process ${manifest.pid} is alive but unhealthy; refusing to replace it`)
   }
@@ -305,6 +335,7 @@ function startCoordinatorClientLease(key: string) {
 }
 
 async function spawnCoordinator(directory: string, key: string, database: string, signal: AbortSignal) {
+  coordinatorMismatchApproval.clear()
   throwIfStartupStopped(signal)
   const password = randomBytes(32).toString("base64url")
   const token = randomBytes(32).toString("base64url")

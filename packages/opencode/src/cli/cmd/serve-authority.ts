@@ -1,6 +1,6 @@
 import { Database } from "@opencode-ai/core/database/database"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import * as Log from "@opencode-ai/core/util/log"
+import { Log } from "@opencode-ai/core/util/log"
 import { ensureRunID, OPENCODE_PROCESS_ROLE } from "@opencode-ai/core/util/opencode-process"
 import { Effect } from "effect"
 import { randomBytes } from "crypto"
@@ -40,7 +40,6 @@ export type ServeAuthorityOptions = {
   mdnsDomain?: string
   cors?: string[]
   signal?: AbortSignal
-  startupLock?: boolean
 }
 
 type OwnedServeAuthority = {
@@ -179,7 +178,6 @@ function startServeAuthority(
     return yield* launch.pipe(Effect.onError(() => Effect.promise(() => ownerLock.release()).pipe(Effect.ignore)))
   })
 
-  if (input.startupLock === false) return start()
   return Effect.scoped(
     Effect.gen(function* () {
       yield* coordinatorStartupLock(input.key)

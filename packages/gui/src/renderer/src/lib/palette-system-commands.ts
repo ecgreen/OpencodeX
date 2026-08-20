@@ -1,8 +1,10 @@
 import type { PaletteCommand } from "../components/command-palette"
 import type { PaletteCommandActions } from "./palette-commands"
 
-export function buildPaletteSystemCommands(actions: PaletteCommandActions): PaletteCommand[] {
-  const input = { actions }
+export function buildPaletteSystemCommands(input: {
+  actions: PaletteCommandActions
+  restartBackend: boolean
+}): PaletteCommand[] {
   return [
     {
       name: "docs.open",
@@ -49,12 +51,14 @@ export function buildPaletteSystemCommands(actions: PaletteCommandActions): Pale
       shortcut: "Ctrl+R",
       run: input.actions.refresh,
     },
-    {
-      name: "backend.restart",
-      title: "Restart backend",
-      category: "System",
-      description: "Restart the backend without closing the desktop client",
-      run: input.actions.restartBackend,
-    },
+    ...(input.restartBackend
+      ? [{
+          name: "backend.restart",
+          title: "Restart backend",
+          category: "System",
+          description: "Restart the backend without closing the desktop client",
+          run: input.actions.restartBackend,
+        }]
+      : []),
   ]
 }

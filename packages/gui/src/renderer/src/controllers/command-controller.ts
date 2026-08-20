@@ -55,6 +55,7 @@ export function createCommandController(input: {
         input.authoritative.snapshot()?.providers ?? [],
         input.state.selectedModel(),
       ).length,
+      restartBackend: input.authoritative.client()?.restartBackend ?? false,
       actions: {
         switchSession: input.switcher.openSearch,
         createSession: () => input.management.createSession(),

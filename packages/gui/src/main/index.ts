@@ -15,6 +15,8 @@ import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
 import {
   allowCoordinatorVersionMismatch,
   assertSidecarRestartAllowed,
+  pendingCoordinatorVersionMismatch,
+  sidecarRestartAvailable,
   type SidecarConnection,
   startSidecar,
   stopSidecar,
@@ -32,6 +34,9 @@ import {
   loopbackSidecarURL,
   restartOwnedSidecar,
 } from "./sidecar-connection.js"
+import type { GuiConnectionResult } from "../shared/connection.js"
+import { failedGuiConnection } from "./connection-result.js"
+import { confirmCoordinatorVersionMismatch } from "./version-mismatch-confirmation.js"
 import { createSidecarLifecycle } from "./sidecar-lifecycle.js"
 import { attachEditContextMenu } from "./context-menu.js"
 import { nextZoomLevel, zoomShortcutAction } from "./zoom-shortcuts.js"
@@ -255,24 +260,47 @@ async function createWindow() {
 
 ipcMain.handle("opencodex:connection", async () => {
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarRequestStarted)
-  const connection = await ensureSidecar()
-  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
-  return { url: connection.url, directory: connection.directory }
+  try {
+    const connection = await ensureSidecar()
+    markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
+    return {
+      ok: true,
+      value: {
+        url: connection.url,
+        directory: connection.directory,
+        restartBackend: configuredBackend ? false : await sidecarRestartAvailable(),
+      },
+    } satisfies GuiConnectionResult
+  } catch (error) {
+    console.error("Failed to connect to the OpencodeX backend", error)
+    return failedGuiConnection(error)
+  }
 })
 
-ipcMain.handle("opencodex:attach-version-mismatch", (event) => {
-  if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) {
+ipcMain.handle("opencodex:attach-version-mismatch", async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window || event.senderFrame !== event.sender.mainFrame) {
     throw new Error("Coordinator version override is only available from the main OpencodeX window.")
   }
-  allowCoordinatorVersionMismatch()
+  await confirmCoordinatorVersionMismatch({
+    window,
+    pending: pendingCoordinatorVersionMismatch,
+    approve: allowCoordinatorVersionMismatch,
+    showMessageBox: (owner, options) => dialog.showMessageBox(owner, options),
+  })
 })
 
 ipcMain.handle("opencodex:restart", async (event) => {
   if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) {
     throw new Error("Backend restart is only available from the main OpencodeX window.")
   }
-  const connection = await restartSidecar()
-  return { url: connection.url, directory: connection.directory }
+  try {
+    const connection = await restartSidecar()
+    return { url: connection.url, directory: connection.directory, restartBackend: true }
+  } catch (error) {
+    console.error("Failed to restart the OpencodeX backend", error)
+    throw new Error("Unable to restart the OpencodeX backend.")
+  }
 })
 
 ipcMain.handle("opencodex:window", (event, action: unknown) => {

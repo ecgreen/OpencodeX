@@ -20,7 +20,7 @@ describe("GUI client recovery", () => {
       configurable: true,
       value: {
         opencodex: {
-          connection: async () => (connection++ === 0 ? first : second),
+          connection: async () => ({ ok: true as const, value: connection++ === 0 ? first : second }),
         },
       },
     })
@@ -59,7 +59,7 @@ describe("GUI client recovery", () => {
       configurable: true,
       value: {
         opencodex: {
-          connection: async () => (connection++ === 0 ? first : second),
+          connection: async () => ({ ok: true as const, value: connection++ === 0 ? first : second }),
         },
       },
     })

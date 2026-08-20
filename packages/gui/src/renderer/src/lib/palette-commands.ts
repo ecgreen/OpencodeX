@@ -55,6 +55,7 @@ export function buildPaletteCommands(input: {
   currentRouteName: string
   workspacePath?: string
   variantCount: number
+  restartBackend: boolean
   actions: PaletteCommandActions
 }): PaletteCommand[] {
   return [
@@ -344,6 +345,6 @@ export function buildPaletteCommands(input: {
       shortcut: "Alt+U",
       run: input.actions.transcriptLastUser,
     },
-    ...buildPaletteSystemCommands(input.actions),
+    ...buildPaletteSystemCommands({ actions: input.actions, restartBackend: input.restartBackend }),
   ]
 }
