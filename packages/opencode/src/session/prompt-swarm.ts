@@ -282,7 +282,7 @@ export function make(deps: Deps) {
       log.warn("skipped unsupported swarm attachments", { reasons: attachments.skipped })
     // An image-only message has no text but is still a real turn.
     if (!promptText && attachments.images.length === 0) return undefined
-    yield* ensureClaudeTitle(session, promptText || attachments.title || "Image attachment")
+    yield* ensureClaudeTitle(session, promptText || attachments.title!)
     const specialists = swarm?.roles.slice(1) ?? []
     // Attribute the turn to the route the reader picked, so a swarm session
     // stays labelled with the team rather than the orchestrator's model. The
