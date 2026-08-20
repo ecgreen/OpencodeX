@@ -111,6 +111,17 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
+/*
+ * The config-scoped plugin package below resolves `zod` through a copy of the
+ * real package, and only its runtime files take part in that: the TypeScript
+ * sources and the type declarations are two thirds of the file count and most
+ * of the bytes, read by nobody. Copying them made this the most expensive step
+ * in the test by a wide margin, which on a Windows runner - three shards
+ * competing for one disk, every written file scanned - is how a two-second test
+ * reaches its 30s budget.
+ */
+const runtimeFilesOnly = (source: string) => !/\.(ts|mts|cts|md)$/.test(source) && !/[\\/](src|LICENSE)$/.test(source)
+
 const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
@@ -367,6 +378,7 @@ describe("tool.registry", () => {
           fs.cp(path.dirname(fileURLToPath(import.meta.resolve("zod"))), path.join(opencode, "node_modules", "zod"), {
             dereference: true,
             recursive: true,
+            filter: runtimeFilesOnly,
           }),
         )
         yield* Effect.promise(() =>

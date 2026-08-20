@@ -20,10 +20,22 @@ const it = testEffect(
   Layer.mergeAll(Provider.defaultLayer, Env.defaultLayer, Plugin.defaultLayer, CrossSpawnSpawner.defaultLayer),
 )
 
+/*
+ * The "timer is cleared once headers arrive" case is pinned between two real
+ * clocks: the timeout has to outlast however long the response headers
+ * actually take, and the body has to outlast the timeout so an uncleared timer
+ * would still abort and fail the test. A 50ms budget lost the first half on
+ * loaded CI runners - loopback headers there land well past 50ms - so the
+ * budget is now an order of magnitude clear of measured header latency while
+ * the body still finishes long after an uncleared timer would have fired.
+ */
+const HEADER_TIMEOUT = 1_000
+const HEADER_TIMEOUT_BODY_DELAY = 2_000
+
 it.live("headerTimeout does not abort delayed SSE body after headers arrive", () =>
   Effect.gen(function* () {
     const server = yield* Effect.acquireRelease(
-      Effect.promise(() => delayedBodyServer(250)),
+      Effect.promise(() => delayedBodyServer(HEADER_TIMEOUT_BODY_DELAY)),
       (server) => Effect.sync(() => server.server.close()),
     )
 
@@ -39,7 +51,7 @@ it.live("headerTimeout does not abort delayed SSE body after headers arrive", ()
 
           expect(yield* Effect.promise(() => result.text)).toBe("late")
         }),
-      { config: providerConfig(server.url, { headerTimeout: 50 }) },
+      { config: providerConfig(server.url, { headerTimeout: HEADER_TIMEOUT }) },
     )
   }),
 )

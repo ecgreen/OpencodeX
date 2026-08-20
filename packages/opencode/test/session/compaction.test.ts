@@ -1173,6 +1173,16 @@ describe("session.compaction.process", () => {
     }),
   )
 
+  /*
+   * The provider asks for a long backoff and the test proves interruption does
+   * not sit through it. Only that gap carries meaning, so the numbers below are
+   * derived from it rather than guessed: the waits that merely get the run into
+   * its backoff are generous, and the promptness assertion is a fraction of the
+   * backoff instead of a hand-picked millisecond count that a loaded runner can
+   * overshoot without anything being wrong.
+   */
+  const RETRY_AFTER_MS = 10_000
+
   itCompaction.instance(
     "stops quickly when aborted during retry backoff",
     () => {
@@ -1187,7 +1197,7 @@ describe("session.compaction.process", () => {
                 url: "https://example.com/v1/chat/completions",
                 requestBodyValues: {},
                 statusCode: 503,
-                responseHeaders: { "retry-after-ms": "10000" },
+                responseHeaders: { "retry-after-ms": String(RETRY_AFTER_MS) },
                 responseBody: '{"error":"boom"}',
                 isRetryable: true,
               })
@@ -1222,15 +1232,15 @@ describe("session.compaction.process", () => {
           })
           .pipe(Effect.forkChild)
 
-        yield* Deferred.await(ready).pipe(Effect.timeout("1 second"))
+        yield* Deferred.await(ready).pipe(Effect.timeout("10 seconds"))
         const start = Date.now()
         yield* Fiber.interrupt(fiber)
-        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("1 second"))
+        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout(RETRY_AFTER_MS / 2))
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
-          expect(Date.now() - start).toBeLessThan(750)
+          expect(Date.now() - start).toBeLessThan(RETRY_AFTER_MS / 4)
         }
       }).pipe(withCompaction({ llm: stub.layer }))
     },
