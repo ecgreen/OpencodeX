@@ -3,11 +3,10 @@ export const REVIEW_REPO = "ecgreen/OpencodeX"
 export const NO_CI_GRACE_MS = 20 * 60 * 1000
 
 // `pass=<N>` is optional and defaults to 1 when absent: markers posted before
-// two-pass sampling existed carry no `pass=` segment, and treating them as
-// pass 1 lets them pick up their second pass on the next cycle instead of
-// failing to parse. Making the segment required here would stop those
-// markers from parsing at all and put the PRs they're on into permanent
-// re-review — the exact failure mode a previous fix round already closed.
+// the segment existed carry no `pass=`, and reading them as pass 1 keeps them
+// parsing. Making the segment required would stop those markers from parsing
+// at all and put the PRs they're on into permanent re-review — the exact
+// failure mode a previous fix round already closed.
 const MARKER_PATTERN = /<!--\s*opencodex-pr-review\s+sha=([0-9a-f]{7,40})\s+ci=(present|absent)(?:\s+pass=(\d+))?\s*-->/
 
 export type CiPresence = "present" | "absent"
@@ -91,12 +90,11 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   })
 
   // Prior marked reviews at the PR's *current* head SHA, oldest first: the
-  // bodies a second pass reads to see what a first pass already found, and
-  // the source of `nextPass`. A SHA change (new commits) leaves this empty,
-  // which is what resets the two-pass count per commit instead of letting it
-  // run away across the PR's whole history — without that reset, a PR with
-  // several rounds of commits would stop getting a genuine second look at
-  // each new head after its very first review.
+  // bodies a follow-up review reads to see what was already found here, and
+  // the source of `nextPass`. A SHA change (new commits) leaves this empty, so
+  // the count restarts per commit rather than running away across the PR's
+  // whole history. More than one entry means the author replied or CI landed
+  // at this same commit; unchanged code is never re-reviewed on its own.
   const sameShaReviews = markedReviews
     .filter((marked) => pr.headRefOid.startsWith(marked.sha))
     .sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : a.submittedAt > b.submittedAt ? 1 : 0))
@@ -171,19 +169,6 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
       ...base,
       action: "review",
       reason: "CI arrived after last review",
-      ci,
-      priorReview: prior,
-      nextPass: priorPass + 1,
-      priorBodies,
-    }
-
-  // Only two passes are ever sampled per head SHA. A prior pass below 2 means
-  // this PR still needs its independent second look before it can go quiet.
-  if (prior.pass < 2)
-    return {
-      ...base,
-      action: "review",
-      reason: "second pass",
       ci,
       priorReview: prior,
       nextPass: priorPass + 1,

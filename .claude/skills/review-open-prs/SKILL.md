@@ -44,13 +44,12 @@ first — empty if none), `selfAuthored` (whether this PR was opened by the
 account the review posts as), and for re-reviews a `priorReview` object
 holding the previous review `body`.
 
-Every PR is sampled twice at each head SHA before it goes quiet: live
-measurement showed a single review pass catches roughly one in three
-blocking findings that require comparing the diff against state outside the
-PR itself (e.g. "this diff is byte-identical to code already on `main`", or
-"this changes the client's identity to impersonate another tool"). A `reason`
-of `"second pass"` means the PR's current head has exactly one prior marked
-review and needs its independent second look before it can be skipped.
+One review per head SHA. A commit that has already been reviewed and that
+nothing has happened to since is skipped — `reason: "awaiting author"` — no
+matter how many cycles run over it. A PR comes back only when something
+actually changed: new commits, the author replying, or CI arriving where
+there was none. Re-reading unchanged code and posting a second verdict on it
+is noise to the author, whatever the second read turns up.
 
 Do not second-guess these decisions. The gate chain is unit tested in
 `packages/script/test/pr-review-select.test.ts`; re-deriving it by hand each
@@ -99,39 +98,14 @@ rubric's Posting section describes.
 
 <Now select the block below whose condition matches <reason>, and append it.
 "no prior review" matches none of them — there is no prior context to hand
-over — so for that reason append nothing here. The remaining four reasons are
-mutually exclusive and each matches exactly one block:>
+over — so for that reason append nothing here. The remaining three reasons
+are mutually exclusive and each matches exactly one block:>
 
 <If reason is "new commits since last review", append:>
 This is a re-review. Here is the review you are following up on. Resolve every
 finding in it as Fixed, Still open, or New:
 
 <priorReview.body>
-
-<If reason is "second pass", append:>
-This is the second independent pass at this exact head SHA. Here is the first
-pass's review body (this reason only fires when exactly one prior pass
-exists, so the loop below always produces exactly one entry):
-
-<For each body in priorBodies, in order, append:>
-Pass <index + 1>:
-<body>
-
-Do your own evidence gathering and reach your own conclusions before you look
-at this. This second pass exists precisely because a single pass's recall on
-findings that require comparing the diff against state outside the PR itself
-— code already on `main`, another tool's identity, prior repo history — is
-roughly one in three: the first pass genuinely misses real things, and its
-silence on a topic is not evidence that topic is clean. Do not defer to the
-first pass or treat it as authoritative.
-
-Then carry the first pass's still-standing findings forward the way the
-rubric's "Carrying findings forward without repeating them" section requires:
-one line each under "Since the last review", never a second copy of their
-prose. Your Blocking / Non-blocking / Nits sections hold only what is new at
-this head SHA. Nothing is dropped — the verdict and the counts still cover the
-union of both passes — but the author reads one new review, not the same
-review twice.
 
 <If reason is "author replied since last review" or "CI arrived after last
 review", append:>
@@ -146,8 +120,8 @@ Pass <index + 1>:
 
 Do your own independent evidence gathering and reach your own conclusions
 first. Do not defer to the passes above, and do not treat their silence on a
-topic as evidence it is clean — that silence is exactly the failure mode this
-sampling exists to catch. <If reason is "author replied since last review":>
+topic as evidence it is clean — a pass that did not mention something usually
+did not check it. <If reason is "author replied since last review":>
 Then address what the author said in their reply.
 
 Carry every still-unresolved finding from every prior pass forward the way the
@@ -193,9 +167,9 @@ last review's marker is missing, or carries a different SHA or pass, mark that
 PR `error`: the subagent claimed a post that did not happen.
 
 Checking authorship alone is not enough, and fails on exactly the PRs that need
-it most. Every re-review reason — `"second pass"`, `"author replied since last
-review"`, `"CI arrived after last review"`, `"new commits since last review"` —
-by construction already has an `ecgreen` review sitting on the PR. If the new
+it most. Every re-review reason — `"author replied since last review"`,
+`"CI arrived after last review"`, `"new commits since last review"` — by
+construction already has an `ecgreen` review sitting on the PR. If the new
 post silently fails, an authorship check reads the *previous* pass and passes.
 It has force only on `"no prior review"`, the one case where a silent failure
 costs least, because the next cycle re-selects the PR anyway.

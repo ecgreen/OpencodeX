@@ -124,26 +124,17 @@ describe("decidePullRequest", () => {
     expect(decision.action).toBe("review")
   })
 
-  test("returns 'second pass' when the prior marker's pass is 1", () => {
+  // One review per head SHA. A reviewed commit that nobody has touched since
+  // has nothing new to say about it, so it goes quiet until something actually
+  // changes: new commits, an author reply, or CI arriving.
+  test("skips a reviewed head that nothing has happened to since", () => {
     const reviews = [review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z")]
-    const decision = decidePullRequest(snapshot({ reviews }), NOW)
-    expect(decision.action).toBe("review")
-    expect(decision.reason).toBe("second pass")
-    expect(decision.priorReview?.pass).toBe(1)
-    // The review about to be written records the next pass number, and reads
-    // the first pass's body to do an independent second look.
-    expect(decision.nextPass).toBe(2)
-    expect(decision.priorBodies).toEqual([reviews[0]!.body])
-  })
-
-  test("skips when the prior marker has already reached pass 2", () => {
-    const reviews = [review(formatMarker(SHA, "present", 2), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("skip")
     expect(decision.reason).toBe("awaiting author")
-    expect(decision.priorReview?.sha).toBe(SHA)
+    expect(decision.priorReview?.pass).toBe(1)
     // For a skip, nextPass is simply the count already reached, not a further increment.
-    expect(decision.nextPass).toBe(2)
+    expect(decision.nextPass).toBe(1)
   })
 
   test("re-reviews when the head sha moved", () => {
@@ -177,7 +168,7 @@ describe("decidePullRequest", () => {
       review(formatMarker(OTHER_SHA, "present", 1), "2026-08-19T11:00:00Z"),
     ]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
-    expect(decision.reason).toBe("second pass")
+    expect(decision.reason).toBe("awaiting author")
     expect(decision.priorReview?.sha).toBe(SHA)
     expect(decision.priorBodies).toEqual([reviews[0]!.body])
   })
@@ -191,17 +182,10 @@ describe("decidePullRequest", () => {
   })
 
   test("skips when an abbreviated marker prefix-matches the current head", () => {
-    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 2), "2026-08-19T11:00:00Z")]
+    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 1), "2026-08-19T11:00:00Z")]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.action).toBe("skip")
     expect(decision.reason).toBe("awaiting author")
-  })
-
-  test("an abbreviated pass=1 marker still prefix-matches and returns second pass", () => {
-    const reviews = [review(formatMarker(SHA.slice(0, 7), "present", 1), "2026-08-19T11:00:00Z")]
-    const decision = decidePullRequest(snapshot({ reviews }), NOW)
-    expect(decision.action).toBe("review")
-    expect(decision.reason).toBe("second pass")
   })
 
   test("re-reviews after a rebase that backdates the head commit", () => {
@@ -224,7 +208,7 @@ describe("decidePullRequest", () => {
   // flagged: nextPass can exceed 2 and priorBodies can hold more than one
   // entry here, which the dispatch template must handle without hardcoding
   // "at most 2" or dropping anything but the first entry.
-  test("re-reviews via author reply even after both passes are posted, carrying every prior body", () => {
+  test("re-reviews via author reply after several reviews here, carrying every prior body", () => {
     const reviews = [
       review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z"),
       review(formatMarker(SHA, "present", 2), "2026-08-19T11:30:00Z"),

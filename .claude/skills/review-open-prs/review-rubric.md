@@ -49,42 +49,27 @@ review.
    is only as good as this command.
 6. If you were given a prior review body, read it before judging anything.
 
-## Second pass
-
-Every head SHA is sampled twice before a PR goes quiet. Live measurement
-showed a single pass's recall on findings that require comparing the diff
-against state *outside* the PR — code already merged to `main`, another
-tool's identity, prior repo history — is roughly one in three. The first
-pass genuinely misses real things; its silence on a topic is not evidence
-that topic is clean.
-
-Your dispatch prompt tells you why this review was triggered, and that
-determines what follows. If it says this is the **second pass**, you were
-also handed the one prior pass's review body. This is an **independent**
-review, not a review of the first pass:
-
-- Do your own evidence gathering (the section above) and reach your own
-  conclusions before you read the first pass's body.
-- Do not defer to the first pass, and do not treat its silence on anything as
-  clearance.
-- Once you have your own findings, read the first pass's body and carry every
-  finding you still agree with forward — by reference, per "Carrying findings
-  forward without repeating them" below. Never drop a first-pass blocking
-  finding because your own pass didn't happen to reproduce it.
-
 ## Follow-up review
+
+Unchanged code is never re-reviewed: one review per head SHA, and the PR goes
+quiet until something happens to it. So if you are reading a prior pass's body
+at all, something did — new commits, an author reply, or CI arriving where
+there was none — and your dispatch prompt says which.
 
 If your dispatch prompt says this review was triggered by the PR author
 replying, or by CI arriving, at the *same* head SHA as one or more prior
 passes (not by new commits), you were handed every prior pass already posted
-at this SHA, oldest first — there can be more than two if the author keeps
-replying at the same commit. This is still an **independent** review, for the
-same reason as above:
+at this SHA, oldest first — there can be several if the author keeps replying
+at the same commit. This is an **independent** review: the prior passes are
+context, not a verdict to ratify.
 
 - Do your own evidence gathering and reach your own conclusions before you
   read the prior passes' bodies.
 - Do not defer to them, and do not treat their silence on anything as
-  clearance.
+  clearance: a pass that did not mention something usually did not check it.
+  Recall on findings that need the diff compared against state outside the PR
+  — code already on `main`, another tool's identity, prior repo history — is
+  the weakest part of any single read.
 - If this was triggered by an author reply, address what the author said.
 - Carry forward every finding from every prior pass that remains unresolved —
   by reference, per "Carrying findings forward without repeating them" below.
@@ -205,7 +190,7 @@ below.)
 ### Nits
 1. `path/to/file.ts:12` — ...
 
-_Automated review, pass <PASS> of 2. Absence of findings is not an approval; this reviewer's recall on cross-file defects is known to be well under 100%._
+_Automated review, pass <PASS>. Absence of findings is not an approval; this reviewer's recall on cross-file defects is known to be well under 100%._
 ````
 
 Rules for the template:
@@ -216,8 +201,8 @@ Rules for the template:
   Non-blocking or Nit finding; `No findings this pass` when there are no
   findings at all.
 - Include the "Since the last review" section whenever you were given any
-  prior review body — after new commits, on a second pass, and on an
-  author-reply or CI-arrival follow-up alike. Every finding from every prior
+  prior review body — after new commits, and on an author-reply or
+  CI-arrival follow-up alike. Every finding from every prior
   body you were given appears there exactly once.
 - Which labels apply depends on whether the code moved. After new commits, all
   three are live: Fixed / Still open / New. On a pass at the *same* head SHA
@@ -229,10 +214,9 @@ Rules for the template:
 - Every finding cites `file:line`. No inline PR comments — this is one review
   body.
 - The footer line is mandatory on every posted review body, whatever the
-  verdict, and its `<PASS>` is the same number as the marker's. Two-pass
-  sampling is the mitigation this footer exists to describe, so a pass-2 review
-  that still calls itself single-pass misdescribes the one thing it is there
-  to convey.
+  verdict, and its `<PASS>` is the same number as the marker's. Pass 1 is the
+  ordinary case; a higher number means the author or CI brought you back to a
+  commit already reviewed, and the footer should not claim otherwise.
 
 ## Posting
 
