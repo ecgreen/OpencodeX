@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { Effect, Exit, Stream } from "effect"
+import { Effect, Exit, Fiber, Option, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -272,6 +272,51 @@ describe("cross-spawn spawner", () => {
 
         expect(Date.now() - started).toBeLessThan(1_000)
         expect(Exit.isFailure(exit) ? true : exit.value !== ChildProcessSpawner.ExitCode(0)).toBe(true)
+      }),
+    )
+
+    fx.live(
+      "stops waiting on a killed child whose stdio outlives it",
+      Effect.gen(function* () {
+        /*
+         * A command that leaves something running behind it - a backgrounded
+         * daemon, a detached helper - hands that survivor its stdout and
+         * stderr, so 'close' never fires when the child itself dies. Keying the
+         * kill path off 'close' parks the finalizer forever on a process that
+         * is already gone, which is how `SessionPrompt.cancel` stopped
+         * settling. 'exit' is the event that means dead.
+         */
+        const tmp = yield* Effect.acquireRelease(
+          Effect.promise(() => tmpdir()),
+          (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+        )
+        const script = path.join(tmp.path, "leaves-an-orphan.cjs")
+        yield* Effect.promise(() =>
+          fs.writeFile(
+            script,
+            [
+              'const { spawn } = require("child_process")',
+              'spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"], {',
+              "  detached: true,",
+              '  stdio: ["ignore", "inherit", "inherit"],',
+              "}).unref()",
+              "setTimeout(() => {}, 20000)",
+              "",
+            ].join(os.EOL),
+          ),
+        )
+
+        const started = Date.now()
+        const closing = yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* ChildProcess.make("node", [script])
+            yield* Effect.sleep("500 millis")
+          }),
+        ).pipe(Effect.exit, Effect.forkDetach)
+
+        const settled = yield* Fiber.await(closing).pipe(Effect.timeoutOption("15 seconds"))
+        expect(Option.isSome(settled)).toBe(true)
+        expect(Date.now() - started).toBeLessThan(10_000)
       }),
     )
 
