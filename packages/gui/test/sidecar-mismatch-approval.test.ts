@@ -8,8 +8,8 @@ describe("coordinator mismatch approval", () => {
     let dialogs = 0
     await expect(confirmCoordinatorVersionMismatch({
       window: { id: "requesting-window" },
-      pending: approval.pending,
-      approve: approval.approve,
+      pending: () => approval.pending(),
+      approve: (identity) => approval.approve(identity),
       showMessageBox: async () => {
         dialogs += 1
         return { response: 1 }
@@ -27,8 +27,8 @@ describe("coordinator mismatch approval", () => {
 
     expect(await confirmCoordinatorVersionMismatch({
       window,
-      pending: approval.pending,
-      approve: approval.approve,
+      pending: () => approval.pending(),
+      approve: (identity) => approval.approve(identity),
       showMessageBox: async (owner, options) => {
         dialogWindow = owner
         expect(options).toMatchObject({
@@ -52,8 +52,8 @@ describe("coordinator mismatch approval", () => {
 
     expect(await confirmCoordinatorVersionMismatch({
       window: { id: "requesting-window" },
-      pending: approval.pending,
-      approve: approval.approve,
+      pending: () => approval.pending(),
+      approve: (identity) => approval.approve(identity),
       showMessageBox: async () => ({ response: 0 }),
     })).toBe(false)
     expect(approval.consume(identity)).toBe(false)
