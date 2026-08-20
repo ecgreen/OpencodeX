@@ -8,8 +8,7 @@ export const NO_CI_GRACE_MS = 20 * 60 * 1000
 // failing to parse. Making the segment required here would stop those
 // markers from parsing at all and put the PRs they're on into permanent
 // re-review — the exact failure mode a previous fix round already closed.
-const MARKER_PATTERN =
-  /<!--\s*opencodex-pr-review\s+sha=([0-9a-f]{7,40})\s+ci=(present|absent)(?:\s+pass=(\d+))?\s*-->/
+const MARKER_PATTERN = /<!--\s*opencodex-pr-review\s+sha=([0-9a-f]{7,40})\s+ci=(present|absent)(?:\s+pass=(\d+))?\s*-->/
 
 export type CiPresence = "present" | "absent"
 
@@ -19,11 +18,12 @@ export type Marker = {
   pass: number
 }
 
+// Only what the gate chain reads. Conclusions are not consulted here: a red
+// job still gets reviewed, and the reviewer reads the conclusions itself from
+// the rollup when it writes up dimension 2.
 export type CheckRun = {
   name: string
   status: string
-  conclusion: string | null
-  completedAt: string | null
 }
 
 export type ReviewRecord = {
@@ -65,6 +65,12 @@ export type Decision = {
   priorReview?: PriorReview
   nextPass: number
   priorBodies: string[]
+  // GitHub refuses REQUEST_CHANGES on your own pull request, so a review of a
+  // PR this account authored can only be posted with `--comment`. The reviewer
+  // has to know that before it picks a command, or a blocking finding on a
+  // self-authored PR fails to post, writes no marker, and is re-selected with
+  // the same findings every cycle forever.
+  selfAuthored: boolean
 }
 
 export function parseMarker(body: string): Marker | undefined {
@@ -73,22 +79,16 @@ export function parseMarker(body: string): Marker | undefined {
   return { sha: match[1]!, ci: match[2] as CiPresence, pass: match[3] ? Number(match[3]) : 1 }
 }
 
-export function formatMarker(sha: string, ci: CiPresence, pass: number): string {
-  return `<!-- opencodex-pr-review sha=${sha} ci=${ci} pass=${pass} -->`
-}
-
 // GitHub timestamps are all Z-suffixed ISO 8601 of identical width, so string
 // comparison is chronological and avoids a Date allocation per comment.
 export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision {
-  const base = { number: pr.number, title: pr.title }
+  const base = { number: pr.number, title: pr.title, selfAuthored: pr.authorLogin === REVIEWER_LOGIN }
 
-  const markedReviews: (Marker & { body: string; submittedAt: string })[] = []
-  for (const record of pr.reviews) {
-    if (record.authorLogin !== REVIEWER_LOGIN) continue
+  const markedReviews: PriorReview[] = pr.reviews.flatMap((record) => {
+    if (record.authorLogin !== REVIEWER_LOGIN) return []
     const marker = parseMarker(record.body)
-    if (!marker) continue
-    markedReviews.push({ ...marker, body: record.body, submittedAt: record.submittedAt })
-  }
+    return marker ? [{ ...marker, body: record.body, submittedAt: record.submittedAt }] : []
+  })
 
   // Prior marked reviews at the PR's *current* head SHA, oldest first: the
   // bodies a second pass reads to see what a first pass already found, and
@@ -126,18 +126,16 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
     return { ...base, action: "defer", reason: "CI not yet registered", ci, nextPass: priorPass + 1, priorBodies }
   }
 
-  let latest: PriorReview | undefined
-  for (const marked of markedReviews) {
-    if (latest && marked.submittedAt <= latest.submittedAt) continue
-    latest = marked
-  }
+  // A review at the current head wins over a newer one at some other SHA. Take
+  // the newest overall instead and a force-push back onto an already-reviewed
+  // commit reads as "new commits since last review" while `priorBodies` is
+  // non-empty — and the dispatch block for that reason appends only
+  // `priorReview.body`, so the bodies that actually describe the current head
+  // get silently dropped. Preferring the same-SHA review keeps the invariant
+  // the orchestrator relies on: `priorBodies` is empty for that reason.
+  const prior = sameShaReviews.at(-1) ?? newestOf(markedReviews)
 
-  if (!latest)
-    return { ...base, action: "review", reason: "no prior review", ci, nextPass: priorPass + 1, priorBodies }
-
-  // Rebind to a const: TypeScript drops the not-undefined narrowing of a `let`
-  // inside the `pr.comments.some` callback below.
-  const prior = latest
+  if (!prior) return { ...base, action: "review", reason: "no prior review", ci, nextPass: priorPass + 1, priorBodies }
 
   // `prior.sha` may be an abbreviated marker (7-40 hex chars, see
   // MARKER_PATTERN), so this is a prefix test, not exact equality: a 7-char
@@ -192,5 +190,20 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
       priorBodies,
     }
 
-  return { ...base, action: "skip", reason: "awaiting author", ci, priorReview: prior, nextPass: priorPass, priorBodies }
+  return {
+    ...base,
+    action: "skip",
+    reason: "awaiting author",
+    ci,
+    priorReview: prior,
+    nextPass: priorPass,
+    priorBodies,
+  }
+}
+
+function newestOf(reviews: PriorReview[]): PriorReview | undefined {
+  return reviews.reduce<PriorReview | undefined>(
+    (newest, review) => (newest && review.submittedAt <= newest.submittedAt ? newest : review),
+    undefined,
+  )
 }

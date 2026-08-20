@@ -40,8 +40,9 @@ This prints a JSON array of decisions, one per open PR, each with `number`,
 `title`, `action` (`review` | `skip` | `defer`), `reason`, `ci`, `nextPass`
 (the pass number the review about to be written should record), `priorBodies`
 (the bodies of every prior marked review at the current head SHA, oldest
-first — empty if none), and for re-reviews a `priorReview` object holding the
-previous review `body`.
+first — empty if none), `selfAuthored` (whether this PR was opened by the
+account the review posts as), and for re-reviews a `priorReview` object
+holding the previous review `body`.
 
 Every PR is sampled twice at each head SHA before it goes quiet: live
 measurement showed a single review pass catches roughly one in three
@@ -91,8 +92,15 @@ Reason this PR is being reviewed: <reason>
 CI presence for the current head: <ci>
 Record pass=<nextPass> in your marker.
 
-<Select the one block below whose condition matches <reason>, and append it.
-These four cases are exhaustive and mutually exclusive:>
+<If selfAuthored is true, append:>
+You authored this PR. GitHub rejects --request-changes on your own pull
+request, so post with --comment whatever your verdict, exactly as the
+rubric's Posting section describes.
+
+<Now select the block below whose condition matches <reason>, and append it.
+"no prior review" matches none of them — there is no prior context to hand
+over — so for that reason append nothing here. The remaining four reasons are
+mutually exclusive and each matches exactly one block:>
 
 <If reason is "new commits since last review", append:>
 This is a re-review. Here is the review you are following up on. Resolve every
@@ -115,11 +123,15 @@ findings that require comparing the diff against state outside the PR itself
 — code already on `main`, another tool's identity, prior repo history — is
 roughly one in three: the first pass genuinely misses real things, and its
 silence on a topic is not evidence that topic is clean. Do not defer to the
-first pass or treat it as authoritative. Once you have your own independent
-findings, include any first-pass finding you independently agree with. Your
-posted review's Blocking section must be the union of every blocking finding
-either pass found — never drop a first-pass blocking finding just because
-your own pass didn't reproduce it.
+first pass or treat it as authoritative.
+
+Then carry the first pass's still-standing findings forward the way the
+rubric's "Carrying findings forward without repeating them" section requires:
+one line each under "Since the last review", never a second copy of their
+prose. Your Blocking / Non-blocking / Nits sections hold only what is new at
+this head SHA. Nothing is dropped — the verdict and the counts still cover the
+union of both passes — but the author reads one new review, not the same
+review twice.
 
 <If reason is "author replied since last review" or "CI arrived after last
 review", append:>
@@ -136,10 +148,14 @@ Do your own independent evidence gathering and reach your own conclusions
 first. Do not defer to the passes above, and do not treat their silence on a
 topic as evidence it is clean — that silence is exactly the failure mode this
 sampling exists to catch. <If reason is "author replied since last review":>
-Then address what the author said in their reply. Carry forward, as still
-open, any blocking finding from a prior pass that remains unresolved. Your
-posted review's Blocking section is the union of every blocking finding still
-open across all prior passes plus anything new you found.
+Then address what the author said in their reply.
+
+Carry every still-unresolved finding from every prior pass forward the way the
+rubric's "Carrying findings forward without repeating them" section requires:
+one line each under "Since the last review", never a second copy of their
+prose. Your Blocking / Non-blocking / Nits sections hold only what is new at
+this head SHA. The verdict and the counts still cover the union, so a
+carried-forward blocking finding keeps the verdict at Request changes.
 
 <If --dry-run was passed, append:>
 DRY RUN: do not post. Write the complete review body to
@@ -150,8 +166,13 @@ DRY RUN: do not post. Write the complete review body to
 `priorBodies` is always empty for `reason: "no prior review"` and
 `reason: "new commits since last review"` — nothing is appended for those
 beyond the "new commits" block above (which uses `priorReview.body`, not
-`priorBodies`). Never interpolate `priorBodies[0]` alone anywhere: every place
-that reads from `priorBodies` iterates the whole array.
+`priorBodies`). That is enforced in the gate chain, not just asserted here:
+`decidePullRequest` prefers a prior review at the current head over a newer
+one at an abandoned SHA, so a force-push back onto a reviewed commit cannot
+produce "new commits" with bodies attached. Both halves are covered by
+`packages/script/test/pr-review-select.test.ts`. Never interpolate
+`priorBodies[0]` alone anywhere: every place that reads from `priorBodies`
+iterates the whole array.
 
 A subagent that errors or returns nothing marks that PR `error` in the summary.
 Do not retry it this cycle — the next cycle picks it up naturally, because no
@@ -159,16 +180,25 @@ marker was written.
 
 ### 3. Verify what was posted
 
-For each subagent that reported `"posted": true`, confirm the review landed:
+For each subagent that reported `"posted": true`, confirm *this cycle's*
+review landed — not merely that some review of yours exists:
 
 ```bash
-gh pr view <number> --repo ecgreen/OpencodeX --json reviews \
-  --jq '.reviews[-1] | "\(.author.login) \(.state)"'
+gh pr view <number> --repo ecgreen/OpencodeX --json reviews --jq '.reviews[-1].body' | head -1
 ```
 
-Expected: `ecgreen COMMENTED` or `ecgreen CHANGES_REQUESTED`. If the last review
-is not yours, mark that PR `error` — the subagent claimed a post that did not
-happen.
+Expected: a marker line carrying both this PR's current head SHA and
+`pass=<nextPass>` — the values the dispatch prompt handed the subagent. If the
+last review's marker is missing, or carries a different SHA or pass, mark that
+PR `error`: the subagent claimed a post that did not happen.
+
+Checking authorship alone is not enough, and fails on exactly the PRs that need
+it most. Every re-review reason — `"second pass"`, `"author replied since last
+review"`, `"CI arrived after last review"`, `"new commits since last review"` —
+by construction already has an `ecgreen` review sitting on the PR. If the new
+post silently fails, an authorship check reads the *previous* pass and passes.
+It has force only on `"no prior review"`, the one case where a silent failure
+costs least, because the next cycle re-selects the PR anyway.
 
 Skip this step entirely on `--dry-run`.
 

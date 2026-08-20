@@ -46,9 +46,14 @@ work landed after the last review.
   40,000+ unrelated PRs. Every `gh` invocation in this skill must pass
   `--repo ecgreen/OpencodeX` explicitly. This is the single highest-risk detail
   in the design.
-- Open PRs are authored by `omgoshjosh`; reviews are submitted as `ecgreen`.
-  Because these are different accounts, GitHub permits `REQUEST_CHANGES` (it
-  blocks non-`COMMENT` reviews only on your own PRs).
+- Reviews are submitted as `ecgreen`. Most open PRs are authored by
+  `omgoshjosh`, and for those GitHub permits `REQUEST_CHANGES`. It refuses any
+  non-`COMMENT` review on your own PR, though, and `ecgreen` authors PRs here
+  too — so authorship is decided per PR at runtime (`Decision.selfAuthored`)
+  rather than assumed. A self-authored PR is still reviewed; it is posted with
+  `--comment` whatever the verdict, which keeps the marker landing and the
+  cycle converging. Assuming the two accounts always differ is what left the
+  first `ecgreen`-authored PR unable to complete a review at all.
 - Repo guidelines live in `AGENTS.md` and `CONTRIBUTING.md`.
 - CI is `.github/workflows/ci.yml`.
 
