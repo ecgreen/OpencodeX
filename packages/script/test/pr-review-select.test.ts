@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import {
-  decidePullRequest,
-  formatMarker,
-  parseMarker,
-  NO_CI_GRACE_MS,
-  type PullRequestSnapshot,
-} from "../src/pr-review-select"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+import { decidePullRequest, parseMarker, NO_CI_GRACE_MS, type PullRequestSnapshot } from "../src/pr-review-select.js"
+
+// Nothing in `src` renders a marker: the one that reaches GitHub is written by
+// the review subagent from the template in review-rubric.md. This local
+// stand-in builds fixtures for the gate-chain tests; the template itself is
+// held to `parseMarker` by "the rubric's own marker template parses" below,
+// which is what actually catches the two drifting apart.
+function formatMarker(sha: string, ci: "present" | "absent", pass: number): string {
+  return `<!-- opencodex-pr-review sha=${sha} ci=${ci} pass=${pass} -->`
+}
 
 const NOW = new Date("2026-08-19T12:00:00Z")
 const SHA = "efa8c2ad2cc604ee64195c4acb5091d24ead7342"
@@ -21,7 +26,7 @@ function snapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnap
     headCommittedAt: "2026-08-19T10:00:00Z",
     reviews: [],
     comments: [],
-    checks: [{ name: "unit (linux)", status: "COMPLETED", conclusion: "SUCCESS", completedAt: "2026-08-19T10:05:00Z" }],
+    checks: [{ name: "unit (linux)", status: "COMPLETED" }],
     ...overrides,
   }
 }
@@ -58,8 +63,17 @@ describe("parseMarker", () => {
     })
   })
 
-  test("round-trips with formatMarker", () => {
-    expect(parseMarker(formatMarker(SHA, "absent", 2))).toEqual({ sha: SHA, ci: "absent", pass: 2 })
+  // The marker that actually reaches GitHub is rendered by the review subagent
+  // from the template in review-rubric.md, so that template - not any helper in
+  // `src` - is what has to satisfy MARKER_PATTERN. Drift between the two makes
+  // every posted review unparseable and puts every PR into permanent
+  // re-review, silently, which is exactly what this asserts against.
+  test("the rubric's own marker template parses", () => {
+    const rubricPath = path.join(import.meta.dir, "../../../.claude/skills/review-open-prs/review-rubric.md")
+    const template = /<!-- opencodex-pr-review.*?-->/.exec(readFileSync(rubricPath, "utf8"))?.[0]
+    expect(template).toBeDefined()
+    const rendered = template!.replace("<SHA>", SHA).replace("<CI>", "present").replace("<PASS>", "2")
+    expect(parseMarker(rendered)).toEqual({ sha: SHA, ci: "present", pass: 2 })
   })
 })
 
@@ -72,8 +86,8 @@ describe("decidePullRequest", () => {
 
   test("defers while any check is still running", () => {
     const checks = [
-      { name: "unit (linux)", status: "COMPLETED", conclusion: "SUCCESS", completedAt: "2026-08-19T10:05:00Z" },
-      { name: "gui e2e (chromium)", status: "IN_PROGRESS", conclusion: null, completedAt: null },
+      { name: "unit (linux)", status: "COMPLETED" },
+      { name: "gui e2e (chromium)", status: "IN_PROGRESS" },
     ]
     const decision = decidePullRequest(snapshot({ checks }), NOW)
     expect(decision.action).toBe("defer")
@@ -102,11 +116,11 @@ describe("decidePullRequest", () => {
     expect(decision.priorBodies).toEqual([])
   })
 
-  test("reviews a PR whose completed CI concluded in failure", () => {
-    const checks = [
-      { name: "unit (linux)", status: "COMPLETED", conclusion: "FAILURE", completedAt: "2026-08-19T10:05:00Z" },
-    ]
-    const decision = decidePullRequest(snapshot({ checks }), NOW)
+  // Conclusions are not part of the gate: a red run is reviewed exactly like a
+  // green one, and it is the reviewer that reads conclusions off the rollup.
+  // Only "did every check finish" decides review-versus-defer.
+  test("reviews a PR once every check has completed, whatever it concluded", () => {
+    const decision = decidePullRequest(snapshot({ checks: [{ name: "unit (linux)", status: "COMPLETED" }] }), NOW)
     expect(decision.action).toBe("review")
   })
 
@@ -140,6 +154,39 @@ describe("decidePullRequest", () => {
     // A new head SHA carries no prior marker of its own, however many passes
     // the previous SHA reached: the two-pass count restarts per commit.
     expect(decision.nextPass).toBe(1)
+    expect(decision.priorBodies).toEqual([])
+  })
+
+  // GitHub refuses REQUEST_CHANGES on your own PR, so the reviewer needs this
+  // flag to pick `--comment` up front. Without it a blocking finding on a
+  // self-authored PR fails to post, writes no marker, and comes back with the
+  // same findings every cycle forever.
+  test("flags a PR authored by the reviewer", () => {
+    expect(decidePullRequest(snapshot({ authorLogin: "ecgreen" }), NOW).selfAuthored).toBe(true)
+    expect(decidePullRequest(snapshot(), NOW).selfAuthored).toBe(false)
+  })
+
+  // A force-push back onto an already-reviewed commit leaves a newer review
+  // sitting at the abandoned SHA. Reading that one as "the last review" would
+  // report "new commits since last review" while priorBodies described the
+  // current head - and the dispatch block for that reason only forwards
+  // priorReview.body, so those bodies would be dropped on the floor.
+  test("prefers a review at the current head over a newer one at an abandoned sha", () => {
+    const reviews = [
+      review(formatMarker(SHA, "present", 1), "2026-08-19T10:00:00Z"),
+      review(formatMarker(OTHER_SHA, "present", 1), "2026-08-19T11:00:00Z"),
+    ]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.reason).toBe("second pass")
+    expect(decision.priorReview?.sha).toBe(SHA)
+    expect(decision.priorBodies).toEqual([reviews[0]!.body])
+  })
+
+  // The invariant SKILL.md's dispatch step relies on, asserted directly.
+  test("leaves priorBodies empty whenever the reason is new commits", () => {
+    const reviews = [review(formatMarker(OTHER_SHA, "present", 1), "2026-08-19T11:00:00Z")]
+    const decision = decidePullRequest(snapshot({ reviews }), NOW)
+    expect(decision.reason).toBe("new commits since last review")
     expect(decision.priorBodies).toEqual([])
   })
 

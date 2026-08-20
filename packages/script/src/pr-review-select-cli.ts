@@ -8,15 +8,12 @@ import {
   type PullRequestSnapshot,
 } from "./pr-review-select.js"
 
-// `statusCheckRollup` mixes CheckRun nodes (name/status/conclusion) with older
+// `statusCheckRollup` mixes CheckRun nodes (name/status) with older
 // StatusContext nodes (context/state), so both shapes are optional here.
 type GhRollupEntry = {
   name?: string
   context?: string
   status?: string
-  state?: string
-  conclusion?: string | null
-  completedAt?: string | null
 }
 
 type GhPullRequest = {
@@ -54,7 +51,8 @@ const FIELDS = "number,title,author,isDraft,headRefOid,commits,reviews,comments,
 // so the two can't drift apart.
 const PR_LIMIT = 30
 
-const pulls = (await $`gh pr list --repo ${REVIEW_REPO} --state open --limit ${PR_LIMIT} --json ${FIELDS}`.json()) as GhPullRequest[]
+const listed = await $`gh pr list --repo ${REVIEW_REPO} --state open --limit ${PR_LIMIT} --json ${FIELDS}`.json()
+const pulls = listed as GhPullRequest[]
 
 if (pulls.length >= PR_LIMIT) {
   console.error(
@@ -73,8 +71,6 @@ const decisions = pulls.map((pull) => {
     // here because this repo's CI is GitHub Actions only — no classic status
     // integration exists that would set and hold a real PENDING state.
     status: entry.status ?? "COMPLETED",
-    conclusion: entry.conclusion ?? entry.state ?? null,
-    completedAt: entry.completedAt ?? null,
   }))
 
   const snapshot: PullRequestSnapshot = {
