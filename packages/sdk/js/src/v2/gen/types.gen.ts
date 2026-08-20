@@ -18,6 +18,8 @@ export type Event =
   | EventMessagePartUpdated
   | EventMessagePartRemoved
   | EventMessagePartDelta
+  | EventSessionStatus
+  | EventSessionIdle
   | EventPermissionAsked
   | EventPermissionReplied
   | EventSessionDiff
@@ -27,8 +29,6 @@ export type Event =
   | EventQuestionReplied
   | EventQuestionRejected
   | EventTodoUpdated
-  | EventSessionStatus
-  | EventSessionIdle
   | EventSessionCompacted
   | EventLspUpdated
   | EventOpencodexJobCreated
@@ -628,6 +628,20 @@ export type Part =
   | RetryPart
   | CompactionPart
 
+export type SessionStatus =
+  | {
+      type: "idle"
+    }
+  | {
+      type: "retry"
+      attempt: number
+      message: string
+      next: number
+    }
+  | {
+      type: "busy"
+    }
+
 export type QuestionOption = {
   /**
    * Display text (1-5 words, concise)
@@ -677,20 +691,6 @@ export type Todo = {
    */
   priority: string
 }
-
-export type SessionStatus =
-  | {
-      type: "idle"
-    }
-  | {
-      type: "retry"
-      attempt: number
-      message: string
-      next: number
-    }
-  | {
-      type: "busy"
-    }
 
 export type OpencodeXSessionState = {
   sessionID: string
@@ -812,6 +812,21 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.status"
+        properties: {
+          sessionID: string
+          status: SessionStatus
+        }
+      }
+    | {
+        id: string
+        type: "session.idle"
+        properties: {
+          sessionID: string
+        }
+      }
+    | {
+        id: string
         type: "permission.asked"
         properties: {
           id: string
@@ -822,6 +837,7 @@ export type GlobalEvent = {
             [key: string]: unknown
           }
           always: Array<string>
+          executionGeneration?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
           tool?: {
             messageID: string
             callID: string
@@ -878,6 +894,7 @@ export type GlobalEvent = {
            */
           questions: Array<QuestionInfo>
           tool?: QuestionTool
+          executionGeneration?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
         }
       }
     | {
@@ -903,21 +920,6 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           todos: Array<Todo>
-        }
-      }
-    | {
-        id: string
-        type: "session.status"
-        properties: {
-          sessionID: string
-          status: SessionStatus
-        }
-      }
-    | {
-        id: string
-        type: "session.idle"
-        properties: {
-          sessionID: string
         }
       }
     | {
@@ -2370,6 +2372,7 @@ export type PermissionRequest = {
     [key: string]: unknown
   }
   always: Array<string>
+  executionGeneration?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   tool?: {
     messageID: string
     callID: string
@@ -2384,6 +2387,7 @@ export type QuestionRequest = {
    */
   questions: Array<QuestionInfo>
   tool?: QuestionTool
+  executionGeneration?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type OpencodeXCatalogSnapshot = {
@@ -3862,6 +3866,23 @@ export type EventMessagePartDelta = {
   }
 }
 
+export type EventSessionStatus = {
+  id: string
+  type: "session.status"
+  properties: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
+export type EventSessionIdle = {
+  id: string
+  type: "session.idle"
+  properties: {
+    sessionID: string
+  }
+}
+
 export type EventPermissionAsked = {
   id: string
   type: "permission.asked"
@@ -3874,6 +3895,7 @@ export type EventPermissionAsked = {
       [key: string]: unknown
     }
     always: Array<string>
+    executionGeneration?: number | "NaN" | "Infinity" | "-Infinity"
     tool?: {
       messageID: string
       callID: string
@@ -3935,6 +3957,7 @@ export type EventQuestionAsked = {
      */
     questions: Array<QuestionInfo>
     tool?: QuestionTool
+    executionGeneration?: number | "NaN" | "Infinity" | "-Infinity"
   }
 }
 
@@ -3963,23 +3986,6 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
-  }
-}
-
-export type EventSessionStatus = {
-  id: string
-  type: "session.status"
-  properties: {
-    sessionID: string
-    status: SessionStatus
-  }
-}
-
-export type EventSessionIdle = {
-  id: string
-  type: "session.idle"
-  properties: {
-    sessionID: string
   }
 }
 

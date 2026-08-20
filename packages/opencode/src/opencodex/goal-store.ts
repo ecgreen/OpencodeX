@@ -185,6 +185,8 @@ export function createGoalStore(db: Database.Interface["db"], events: EventV2.In
     edges: readonly EdgeInput[]
     successCriteria?: readonly string[]
     budget?: Budget
+    swarmID?: string | null
+    directory?: string
   }) {
     return yield* mutate(input.goalID, (transaction) =>
       Effect.gen(function* () {
@@ -199,6 +201,8 @@ export function createGoalStore(db: Database.Interface["db"], events: EventV2.In
             status_reason: null,
             ...(input.successCriteria ? { success_criteria_json: [...input.successCriteria] } : {}),
             ...(input.budget ? { budget_json: encode(input.budget) } : {}),
+            ...(input.swarmID !== undefined ? { swarm_id: input.swarmID } : {}),
+            ...(input.directory !== undefined ? { directory: input.directory } : {}),
           })
           .where(eq(OpencodeXGoalTable.id, input.goalID))
           .run()

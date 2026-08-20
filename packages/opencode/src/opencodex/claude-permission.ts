@@ -31,6 +31,7 @@ export const decideWith = (permission: Permission.Interface, question: Question.
   toolInput: Record<string, unknown>
   messageID?: typeof SessionLegacy.MessageID.Type
   callID?: string
+  executionGeneration?: number
   /**
    * The agent ruleset merged with any session rules, resolved by the caller for
    * this turn. It carries the user's `permission_mode` (applied in `Agent.get`),
@@ -49,6 +50,7 @@ export const decideWith = (permission: Permission.Interface, question: Question.
         .ask({
           sessionID: input.sessionID,
           questions,
+          ...(input.executionGeneration !== undefined ? { executionGeneration: input.executionGeneration } : {}),
           ...(input.messageID && input.callID
             ? { tool: { messageID: input.messageID, callID: input.callID } }
             : {}),
@@ -79,6 +81,7 @@ export const decideWith = (permission: Permission.Interface, question: Question.
       // The card shows the real Claude tool name alongside its full input.
       metadata: { ...permissionMetadata(tool, input.toolInput), claudeTool: input.toolName },
       always: patterns,
+      ...(input.executionGeneration !== undefined ? { executionGeneration: input.executionGeneration } : {}),
       ...(input.messageID && input.callID
         ? { tool: { messageID: input.messageID, callID: input.callID } }
         : {}),

@@ -266,7 +266,11 @@ export function finalizeAbandonedTurn(
 ): { writes: SessionWrite[]; state: MapperState } {
   const writes: SessionWrite[] = []
   const next: MapperState = { ...state, toolParts: new Map(state.toolParts), textParts: new Map(state.textParts), streamText: new Map(state.streamText), tasks: new Map(state.tasks) }
-  if (!next.messageID) return { writes, state: next }
+  // An explicit delivery failure must be visible even when the stream closed
+  // before its first event. Error-free aborts retain the existing no-op path.
+  if (!next.messageID && !input.error) return { writes, state: next }
+  ensureMessage(writes, next, context)
+  const messageID = next.messageID!
   const now = context.now()
   for (const [callID, pending] of next.toolParts) {
     writes.push({
@@ -274,7 +278,7 @@ export function finalizeAbandonedTurn(
       part: {
         id: pending.partID,
         sessionID: context.sessionID,
-        messageID: next.messageID,
+        messageID,
         type: "tool",
         callID,
         tool: pending.tool,

@@ -31,6 +31,7 @@ import {
   type SidecarLaunch,
 } from "./sidecar-launch.js"
 import { stopDetachedChild } from "./sidecar-lifecycle.js"
+import { coordinatorEnvironment } from "./process-environment.js"
 
 export type SidecarConnection = {
   url: string
@@ -236,7 +237,7 @@ async function spawnCoordinator(directory: string, key: string, database: string
         detached: true,
         stdio: ["ignore", startupLog, startupLog],
         env: {
-          ...process.env,
+          ...coordinatorEnvironment(),
           ...selectedDatabaseEnv(started.database),
           OPENCODE_CLI_NAME: "opencodex",
           OPENCODE_TUI_COORDINATOR_USERNAME: COORDINATOR_USERNAME,

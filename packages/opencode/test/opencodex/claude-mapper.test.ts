@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { nextClaudeEvent } from "../../src/opencodex/claude-driver"
 import {
   finalizeAbandonedTurn,
   initialState,
@@ -420,6 +421,51 @@ describe("claude stream-json mapper", () => {
     expect(parts(writes).some((part) => part.type === "step-finish")).toBe(true)
     expect(messages(writes).at(-1)?.time.completed).toBeGreaterThan(0)
     expect(state.toolParts.size).toBe(0)
+  })
+
+  test("creates a failed assistant turn when delivery closes before the first event", async () => {
+    const result = await nextClaudeEvent({ next: () => Promise.resolve({ done: true, value: undefined }) })
+    const ctx = context()
+    const error = "Claude response delivery failed before the turn completed."
+    const { writes, state } = finalizeAbandonedTurn(initialState(), ctx, { reason: "delivery-failed", error })
+
+    expect("next" in result ? result.next.done : undefined).toBe(true)
+    expect(parts(writes).map((part) => part.type)).toEqual(["step-start", "step-finish"])
+    expect([...new Set(messages(writes).map((message) => String(message.id)))]).toEqual(["msg_1"])
+    expect(messages(writes).at(-1)).toMatchObject({
+      time: { completed: expect.any(Number) },
+      error: { name: "UnknownError", data: { message: error } },
+    })
+    expect(state.finished).toBe(true)
+  })
+
+  test("preserves partial content when delivery closes", () => {
+    const ctx = context()
+    const started = run(
+      [{ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "Partial answer" }] } }],
+      ctx,
+    )
+    const error = "Claude response delivery failed before the turn completed."
+    const closed = finalizeAbandonedTurn(started.state, ctx, { reason: "delivery-failed", error })
+
+    expect(parts(started.writes).find((part) => part.type === "text")).toMatchObject({ text: "Partial answer" })
+    expect(closed.state.messageID).toBe(started.state.messageID)
+    expect(messages(closed.writes).at(-1)?.error).toMatchObject({ name: "UnknownError", data: { message: error } })
+  })
+
+  test("captures iterator AbortError without formatting its details", async () => {
+    const failure = new Error("The operation was aborted.")
+    failure.name = "AbortError"
+    const result = await nextClaudeEvent({ next: () => Promise.reject(failure) })
+
+    expect("failure" in result ? result.failure : undefined).toBe(failure)
+  })
+
+  test("keeps an interruption before the first event as an error-free abort", () => {
+    const { writes, state } = finalizeAbandonedTurn(initialState(), context(), { reason: "abort" })
+    expect(writes).toEqual([])
+    expect(state.messageID).toBeUndefined()
+    expect(state.finished).toBeUndefined()
   })
 
   test("flags a refused resume so the unusable conversation id gets dropped", () => {

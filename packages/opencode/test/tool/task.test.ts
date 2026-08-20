@@ -361,6 +361,51 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("execute cancels child session when abort signal already fired", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const cancelled = defer<SessionID>()
+      let prompted = false
+      const abort = new AbortController()
+      abort.abort()
+      const promptOps: TaskPromptOps = {
+        cancel: (sessionID) =>
+          Effect.sync(() => {
+            cancelled.resolve(sessionID)
+          }),
+        resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+        prompt: (input) =>
+          Effect.sync(() => {
+            prompted = true
+            return reply(input, "unexpected")
+          }),
+      }
+
+      const fiber = yield* def
+        .execute(
+          { description: "inspect bug", prompt: "look into the cache key path", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            directory: chat.directory,
+            agent: "build",
+            abort: abort.signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.forkChild)
+
+      expect(yield* Effect.promise(() => cancelled.promise)).toBeString()
+      expect(Exit.isSuccess(yield* Fiber.await(fiber))).toBe(true)
+      expect(prompted).toBe(false)
+    }),
+  )
+
   it.instance("execute creates a child when task_id does not exist", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

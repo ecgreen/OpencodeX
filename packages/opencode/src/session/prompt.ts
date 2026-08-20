@@ -202,29 +202,9 @@ export const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* elog.info("cancel", { sessionID })
-      yield* rejectPendingInteractions(sessionID)
-      yield* state.cancel(sessionID)
-    })
-
-    /**
-     * A stopped turn can no longer consume an answer, so any card still waiting
-     * on the user would be an unanswerable zombie in the dock. Reject them so
-     * the UI clears alongside the turn (the Claude driver's asks run on a
-     * captured bridge runtime, so fiber interruption alone never reaches them).
-     */
-    const rejectPendingInteractions = Effect.fn("SessionPrompt.rejectPendingInteractions")(function* (
-      sessionID: SessionID,
-    ) {
-      const permissions = yield* permission.list().pipe(Effect.orElseSucceed(() => []))
-      yield* Effect.forEach(
-        permissions.filter((request) => request.sessionID === sessionID),
-        (request) => permission.reply({ requestID: request.id, reply: "reject" }).pipe(Effect.ignore),
-        { discard: true },
-      )
-      const questions = yield* question.list().pipe(Effect.orElseSucceed(() => []))
-      yield* Effect.forEach(
-        questions.filter((request) => request.sessionID === sessionID),
-        (request) => question.reject(request.id).pipe(Effect.ignore),
+      const generation = yield* state.cancel(sessionID)
+      yield* Effect.all(
+        [permission.rejectForGeneration(sessionID, generation), question.rejectForGeneration(sessionID, generation)],
         { discard: true },
       )
     })
@@ -310,9 +290,7 @@ export const layer = Layer.effect(
     })
 
     const titles = new Set<SessionID>()
-    const ensureTitle = Effect.fn("SessionPrompt.ensureTitle")(function* (
-      input: Parameters<typeof generateTitle>[0],
-    ) {
+    const ensureTitle = Effect.fn("SessionPrompt.ensureTitle")(function* (input: Parameters<typeof generateTitle>[0]) {
       const claimed = yield* Effect.sync(() => {
         if (titles.has(input.session.id)) return false
         titles.add(input.session.id)
@@ -766,7 +744,9 @@ export const layer = Layer.effect(
         // Every prompt entry point funnels through here, so this is the one
         // place that has to know a turn may belong to an external driver.
         yield* ensureSwarmBriefing(input.sessionID, input.messageID).pipe(Effect.ignore)
-        const work = (yield* claudeCodeTurn(input.sessionID, input.messageID)) ?? runLoop(input.sessionID)
+        const work = claudeCodeTurn(input.sessionID, input.messageID).pipe(
+          Effect.flatMap((turn) => turn ?? runLoop(input.sessionID)),
+        )
         return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
       },
     )

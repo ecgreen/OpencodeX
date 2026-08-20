@@ -3,9 +3,8 @@
  *
  * Providers persist assistant text in whatever envelope they emitted it in:
  * harmony channel objects, OpenAI `output`/`choices` responses, or a plain
- * JSON-encoded string. Prompts also carry `<system-reminder>` blocks that are
- * instructions to the model, not content for the reader. This module turns any
- * of those into the prose a person should see. It used to live only in the GUI,
+ * JSON-encoded string. This module turns any of those into the prose a person
+ * should see. It used to live only in the GUI,
  * which is why the same stored message rendered as clean prose there and as raw
  * JSON in the TUI.
  *
@@ -31,12 +30,11 @@ type JsonRecord = Record<string, unknown>
 const normalizedDisplayParts = new WeakMap<Part, Part>()
 
 export function displayClientMessageText(text: string) {
-  const clean = stripInternalReminders(text)
-  const parsed = parseCompleteJson(clean.trim())
-  if (parsed === undefined) return clean
+  const parsed = parseCompleteJson(text.trim())
+  if (parsed === undefined) return text
 
   const extracted = extractVisibleText(parsed)
-  return extracted?.trim() ? stripInternalReminders(extracted) : clean
+  return extracted?.trim() ? extracted : text
 }
 
 /**
@@ -46,9 +44,14 @@ export function displayClientMessageText(text: string) {
  */
 export function normalizeClientDisplayPart(part: Part): Part {
   if (part.type !== "text" && part.type !== "reasoning") return part
-  if (isStreamingClientDisplayPart(part)) return part
   const cached = normalizedDisplayParts.get(part)
   if (cached) return cached
+  if (part.type === "text" && part.synthetic === undefined && part.metadata?.compaction_continue === true) {
+    const normalized = { ...part, synthetic: true }
+    normalizedDisplayParts.set(part, normalized)
+    return normalized
+  }
+  if (isStreamingClientDisplayPart(part)) return part
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- narrowed to the two text-bearing part variants
   const normalized = { ...part, text: displayClientMessageText(part.text) } as Part
   normalizedDisplayParts.set(part, normalized)
@@ -66,12 +69,6 @@ export function selectClientSessionDisplayMessages(state: ClientStateSyncState, 
     ...message,
     parts: message.parts.map(normalizeClientDisplayPart),
   }))
-}
-
-function stripInternalReminders(text: string) {
-  return text.replace(/(?:^|\n)<system-reminder>[\s\S]*?<\/system-reminder>\s*/g, (match) =>
-    match.startsWith("\n") ? "\n" : "",
-  )
 }
 
 function parseCompleteJson(text: string): unknown | undefined {

@@ -22,6 +22,7 @@ import { Identifier } from "@/id/id"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
 import { prepareImages } from "./swarm-attachments"
+import { SessionStatus } from "./status"
 
 const log = Log.create({ service: "session.prompt-swarm" })
 
@@ -296,6 +297,7 @@ export function make(deps: Deps) {
       providerID: ProviderV2.ID.make(turnProviderID),
       modelID: ProviderV2.ModelID.make(turnModelID),
     }
+    const execution = yield* SessionStatus.ExecutionGeneration
     return claudeDriver.runTurn({
       sessionID,
       parentMessageID: last.info.id,
@@ -305,6 +307,7 @@ export function make(deps: Deps) {
       providerID: turnProviderID,
       modelID: turnModelID,
       claudeModelID: modelIdentifier(model) ?? CLAUDE_CODE_DEFAULT_MODEL_ID,
+      ...(execution?.sessionID === sessionID ? { executionGeneration: execution.generation } : {}),
       // "default" is the sentinel for "no variant" everywhere else in the loop.
       ...(selected?.variant && selected.variant !== "default" ? { variant: selected.variant } : {}),
       ...(specialists.length > 0

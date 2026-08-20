@@ -11,9 +11,8 @@ import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
 import { ProviderV2 } from "@opencode-ai/core/provider"
-import { Cause, Effect, Exit, Schema, Scope } from "effect"
+import { Cause, Deferred, Effect, Exit, Schema, Scope } from "effect"
 import { asc, eq } from "drizzle-orm"
-import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import {
   DELEGATION_RECORD_VERSION,
@@ -539,21 +538,30 @@ export const TaskTool = Tool.define(
           }
         }
 
-        const runCancel = yield* EffectBridge.make()
         const cancel = ops.cancel(nextSession.id)
-
-        function onAbort() {
+        const aborted = yield* Deferred.make<"aborted">()
+        const onAbort = () => {
           cancelState.requested = true
-          runCancel.fork(cancel)
+          Deferred.doneUnsafe(aborted, Effect.succeed("aborted" as const))
         }
 
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => {
-            ctx.abort.addEventListener("abort", onAbort)
+            ctx.abort.addEventListener("abort", onAbort, { once: true })
+            if (ctx.abort.aborted) onAbort()
           }),
           () =>
             Effect.gen(function* () {
-              const result = yield* runTask()
+              const result = yield* Deferred.await(aborted).pipe(Effect.raceFirst(runTask()))
+              if (result === "aborted") {
+                yield* cancel
+                yield* settle("cancelled")
+                return {
+                  title: params.description,
+                  metadata,
+                  output: output(nextSession.id, "The subagent was cancelled."),
+                }
+              }
               yield* settleResult(result)
               return {
                 title: params.description,
@@ -563,16 +571,9 @@ export const TaskTool = Tool.define(
             }),
           (_, exit) =>
             Effect.gen(function* () {
-              if (Exit.hasInterrupts(exit)) {
-                yield* cancel
-              }
-            }).pipe(
-              Effect.ensuring(
-                Effect.sync(() => {
-                  ctx.abort.removeEventListener("abort", onAbort)
-                }),
-              ),
-            ),
+              if (Exit.hasInterrupts(exit)) yield* cancel
+              ctx.abort.removeEventListener("abort", onAbort)
+            }),
         )
       }).pipe(
         // The outer exit boundary: anything that escapes between the running

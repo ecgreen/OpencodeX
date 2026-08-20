@@ -1,5 +1,6 @@
 import { OpencodeXGoal } from "@/opencodex/goal"
 import { OpencodeXProject } from "@/opencodex/project"
+import { MessageV2 } from "@/session/message-v2"
 import { Effect, Schema } from "effect"
 import { Tool } from "./tool"
 import {
@@ -108,7 +109,14 @@ export const GraphPlanTool = Tool.define<typeof PlanParameters, PlanMetadata, Op
               metadata: {},
             }
           }
-          const model = sessionModel(ctx.extra?.model)
+          const directModel = sessionModel(ctx.extra?.model)
+          const latestUserModel = MessageV2.latest(ctx.messages).user?.model
+          const swarmID =
+            directModel?.providerID === "swarm" && directModel.modelID
+              ? directModel.modelID
+              : latestUserModel?.providerID === "swarm"
+                ? latestUserModel.modelID
+                : undefined
           const existing = (yield* goals.list({ sessionID: ctx.sessionID })).find(
             (goal) => !OpencodeXGoal.TERMINAL_STATUSES.includes(goal.status),
           )
@@ -120,7 +128,8 @@ export const GraphPlanTool = Tool.define<typeof PlanParameters, PlanMetadata, Op
                 statement: params.goal,
                 successCriteria: params.successCriteria,
                 ownerSessionID: ctx.sessionID,
-                ...(model?.providerID === "swarm" && model.modelID ? { swarmID: model.modelID } : {}),
+                swarmID,
+                directory: ctx.directory,
                 source: "manual",
                 budget: params.budget,
                 metadata: { createdByTool: "graph_plan", agent: ctx.agent },
@@ -129,12 +138,16 @@ export const GraphPlanTool = Tool.define<typeof PlanParameters, PlanMetadata, Op
 
           const planned = yield* attempt(
             goals
-              .plan(goal.id, {
-                nodes: params.nodes.map(toNodeInput),
-                edges: (params.edges ?? []).map((edge) => ({ from: edge.from, to: edge.to, kind: edge.kind })),
-                successCriteria: params.successCriteria,
-                budget: params.budget,
-              })
+              .plan(
+                goal.id,
+                {
+                  nodes: params.nodes.map(toNodeInput),
+                  edges: (params.edges ?? []).map((edge) => ({ from: edge.from, to: edge.to, kind: edge.kind })),
+                  successCriteria: params.successCriteria,
+                  budget: params.budget,
+                },
+                { swarmID: swarmID ?? null, directory: ctx.directory },
+              )
               .pipe(Effect.catchTag("OpencodeX.Goal.NotFoundError", Effect.die)),
           )
           if (!planned.ok) {
@@ -318,14 +331,15 @@ function rejection(headline: string, error: OpencodeXGoal.ValidationError) {
 }
 
 function toNodeInput(node: Schema.Schema.Type<typeof NodeParam>) {
+  const parentNodeID = node.parentNodeID?.trim() || undefined
   return {
     id: node.id,
     kind: node.kind,
     title: node.title,
     brief: node.brief,
     executor: node.executor ? resolveExecutorParam(node.executor) : undefined,
-    parentNodeID: node.parentNodeID,
-    loop: node.loop,
+    parentNodeID,
+    loop: node.kind === "loop" ? node.loop : undefined,
   }
 }
 
