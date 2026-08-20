@@ -11,11 +11,14 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
+import { SessionExecutionTable } from "@opencode-ai/core/session/sql"
 
 const events = EventV2Bridge.defaultLayer
+const database = Database.defaultLayer
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const env = Layer.mergeAll(
-  Permission.layer.pipe(Layer.provide(Database.defaultLayer), Layer.provide(events)),
+  Permission.layer.pipe(Layer.provide(database), Layer.provide(events)),
+  database,
   events,
   CrossSpawnSpawner.defaultLayer,
   InstanceStore.defaultLayer.pipe(Layer.provide(noopBootstrap)),
@@ -739,6 +742,7 @@ it.instance(
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Permission.RejectedError)
+      expect(yield* list()).toHaveLength(0)
     }),
   { git: true },
 )
@@ -1013,6 +1017,150 @@ it.live("permission requests remain visible and actionable across directories", 
 )
 
 it.instance(
+  "ask rejects an allowed request from an older execution generation",
+  () =>
+    Effect.gen(function* () {
+      const sessionID = SessionID.make("session_restarted_allowed")
+      const now = Date.now()
+      const test = yield* TestInstance
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionExecutionTable)
+        .values({
+          session_id: sessionID,
+          project_id: "project_restarted_allowed",
+          directory: test.directory,
+          state: "running",
+          generation: 2,
+          time_created: now,
+          time_updated: now,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(
+        yield* fail(
+          ask({
+            id: PermissionID.make("per_stale_generation_allowed"),
+            sessionID,
+            permission: "bash",
+            patterns: ["ls"],
+            metadata: {},
+            always: [],
+            ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+            executionGeneration: 1,
+          }),
+        ),
+      ).toBeInstanceOf(Permission.RejectedError)
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "ask rejects a request from an older execution generation",
+  () =>
+    Effect.gen(function* () {
+      const sessionID = SessionID.make("session_restarted")
+      const now = Date.now()
+      const test = yield* TestInstance
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionExecutionTable)
+        .values({
+          session_id: sessionID,
+          project_id: "project_restarted",
+          directory: test.directory,
+          state: "running",
+          generation: 2,
+          time_created: now,
+          time_updated: now,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(
+        yield* fail(
+          ask({
+            id: PermissionID.make("per_stale_generation"),
+            sessionID,
+            permission: "bash",
+            patterns: ["ls"],
+            metadata: {},
+            always: [],
+            ruleset: [],
+            executionGeneration: 1,
+          }),
+        ),
+      ).toBeInstanceOf(Permission.RejectedError)
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "ask rejects after the session execution was cancelled",
+  () =>
+    Effect.gen(function* () {
+      const sessionID = SessionID.make("session_cancelled")
+      const now = Date.now()
+      const test = yield* TestInstance
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(SessionExecutionTable)
+        .values({
+          session_id: sessionID,
+          project_id: "project_cancelled",
+          directory: test.directory,
+          state: "interrupted",
+          generation: 1,
+          cancel_requested_at: now,
+          time_created: now,
+          time_updated: now,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(
+        yield* fail(
+          ask({
+            id: PermissionID.make("per_cancelled"),
+            sessionID,
+            permission: "bash",
+            patterns: ["ls"],
+            metadata: {},
+            always: [],
+            ruleset: [],
+          }),
+        ),
+      ).toBeInstanceOf(Permission.RejectedError)
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "interrupted permission removes its durable pending row",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionID.make("per_interrupted"),
+        sessionID: SessionID.make("session_interrupted"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      yield* Fiber.interrupt(fiber)
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+it.instance(
   "pending permission rejects on instance dispose",
   () =>
     Effect.gen(function* () {
@@ -1035,6 +1183,7 @@ it.instance(
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Permission.RejectedError)
+      expect(yield* list()).toHaveLength(0)
     }),
   { git: true },
 )
@@ -1061,6 +1210,7 @@ it.instance(
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Permission.RejectedError)
+      expect(yield* list()).toHaveLength(0)
     }),
   { git: true },
 )

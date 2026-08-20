@@ -5,6 +5,7 @@ import { formatSessionTranscript } from "../src/renderer/src/lib/transcript"
 import {
   TRANSCRIPT_PROMPT_HISTORY_LIMIT,
   TRANSCRIPT_PROMPT_PREVIEW_LENGTH,
+  samePromptEntries,
   transcriptPromptHistory,
   visibleTranscriptMessageIDs,
   visibleTranscriptMessages,
@@ -58,6 +59,15 @@ describe("GUI session transcript formatting", () => {
     expect(visibleTranscriptMessageIDs(messages)).toEqual(["msg_real"])
     expect(result.map((message) => message.info.id)).toEqual(["msg_real"])
     expect(result[0].parts.map((part) => part.type)).toEqual(["text"])
+  })
+
+  test("uses provenance rather than internal-looking markup to decide visibility", () => {
+    const literal = textPart("<swarm-briefing>literal user text</swarm-briefing>")
+    const synthetic = textPart("<swarm-briefing>internal</swarm-briefing>", { synthetic: true })
+    const messages = [userMessage("msg_literal", [literal]), userMessage("msg_internal", [synthetic])]
+
+    expect(visibleTranscriptMessageIDs(messages)).toEqual(["msg_literal"])
+    expect(visibleTranscriptMessages(messages)[0].parts).toEqual([literal])
   })
 
   test("preserves unchanged visible message identities", () => {
@@ -150,6 +160,19 @@ describe("GUI transcript prompt history", () => {
     expect(entry.text.endsWith("…")).toBe(true)
   })
 
+  test("streaming re-extractions compare content-equal so the rail never re-renders", () => {
+    const messages = [userMessage("msg_a", [textPart("first")]), userMessage("msg_b", [textPart("second")])]
+    // Two runs build fresh objects, as happens on every streaming chunk.
+    const before = transcriptPromptHistory(messages)
+    const after = transcriptPromptHistory(messages)
+
+    expect(after).not.toBe(before)
+    expect(samePromptEntries(before, after)).toBe(true)
+    expect(samePromptEntries(undefined, after)).toBe(false)
+    expect(samePromptEntries(before, transcriptPromptHistory(messages.slice(0, 1)))).toBe(false)
+    expect(samePromptEntries(before, transcriptPromptHistory([messages[0], userMessage("msg_b", [textPart("edited")])]))).toBe(false)
+  })
+
   test("keeps duplicate prompt texts as distinct entries", () => {
     const messages = [
       userMessage("msg_a", [textPart("run the tests")]),
@@ -200,13 +223,14 @@ function userMessage(id: string, parts: Part[]): MessageBundle {
   } as MessageBundle
 }
 
-function textPart(text: string): Part {
+function textPart(text: string, flags?: { synthetic?: boolean; ignored?: boolean }): Part {
   return {
     id: "prt_text",
     sessionID: "ses_test",
     messageID: "msg_assistant",
     type: "text",
     text,
+    ...flags,
   } as Part
 }
 

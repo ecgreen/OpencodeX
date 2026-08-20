@@ -58,6 +58,58 @@ test("legacy page key aliases compile as page keys", async () => {
   }
 })
 
+test("ctrl+x then down dispatches first-child navigation exactly", async () => {
+  const calls: string[] = []
+  const pending: string[][] = []
+
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const config = createTuiResolvedConfig()
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const commands = [
+      "session.child.first",
+      "opencodex.dashboard.open",
+      "opencodex.swarm.list",
+      "opencodex.swarm.route.down",
+    ]
+    const offLayer = keymap.registerLayer({
+      commands: commands.map((name) => ({
+        name,
+        run: () => {
+          calls.push(name)
+        },
+      })),
+      bindings: config.keybinds.gather("test.navigation", commands),
+    })
+    const offPending = keymap.on("pendingSequence", (sequence) => {
+      pending.push(sequence.map((part) => part.tokenName ?? part.stroke.name))
+    })
+    onCleanup(() => {
+      offPending()
+      offLayer()
+      offKeymap()
+    })
+
+    return (
+      <OpencodeKeymapProvider keymap={keymap}>
+        <box />
+      </OpencodeKeymapProvider>
+    )
+  }
+
+  const app = await testRender(() => <Harness />)
+  try {
+    app.mockInput.pressKey("x", { ctrl: true })
+    app.mockInput.pressArrow("down")
+
+    expect(pending).toEqual([["leader"], []])
+    expect(calls).toEqual(["session.child.first"])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("mode-less bindings stay active when opencode mode changes", async () => {
   const counts: Record<string, Record<string, number>> = {}
 

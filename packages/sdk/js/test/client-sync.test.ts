@@ -21,6 +21,7 @@ import {
   selectClientKnownSessionIDs,
   selectClientOperationsSnapshot,
   selectClientSessionChildren,
+  selectClientSessionDisplayMessages,
   selectClientStateSyncSnapshot,
   selectClientSessionMessages,
   type ClientCapabilitiesSnapshot,
@@ -2800,6 +2801,85 @@ describe("client state sync", () => {
     expect(controller.getMetrics()).toMatchObject({ liveEvents: 1, liveEventDuplicates: 1, commits: 1 })
     expect(controller.applyEvent(duplicate)).toBe(true)
     expect(controller.getMetrics()).toMatchObject({ liveEvents: 1, liveEventDuplicates: 2, commits: 1 })
+  })
+
+  test("keeps compaction continuation synthetic across live, snapshot, and repeated delivery", async () => {
+    const internal = [{ id: "compaction", text: "continue", metadata: { compaction_continue: true } }]
+    let detail = sessionSnapshot("detail-1", "detail-1", "stable")
+    const transport: ClientStateSyncTransport = {
+      snapshot: async () => snapshot("cursor-1", "digest-1", [session("session-1", "First")]),
+      session: async () => detail,
+      events: async ({ signal }) =>
+        (async function* () {
+          yield { type: "ready", scope: scope(), epoch: "epoch-1", cursor: "cursor-1" }
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+        })(),
+    }
+    const controller = createClientStateSync({ transport })
+    await controller.start()
+    await controller.refreshSessionTail("session-1")
+
+    internal.forEach((item, index) => {
+      controller.applyEvent({
+        id: `message-${item.id}`,
+        type: "message.updated",
+        properties: { sessionID: "session-1", info: message(`message-${item.id}`, index + 3) },
+      })
+      controller.applyEvent({
+        id: `part-${item.id}`,
+        type: "message.part.updated",
+        properties: {
+          sessionID: "session-1",
+          time: 2,
+          part: {
+            ...part(`message-${item.id}`, `part-${item.id}`, item.text),
+            ...(item.metadata ? { metadata: item.metadata } : {}),
+          },
+        },
+      })
+    })
+    expect(
+      selectClientSessionDisplayMessages(controller.getState(), "session-1")
+        .slice(-internal.length)
+        .map((item) => item.parts[0]?.synthetic),
+    ).toEqual([true])
+
+    detail = sessionSnapshot("detail-2", "detail-2", "stable")
+    detail.messages.items.push(
+      ...internal.map((item, index) => ({
+        info: message(`message-${item.id}`, index + 3),
+        parts: [
+          {
+            ...part(`message-${item.id}`, `part-${item.id}`, item.text),
+            synthetic: true,
+            ...(item.metadata ? { metadata: item.metadata } : {}),
+          },
+        ],
+      })),
+    )
+    detail.messages.coverage.lastMessageID = "message-compaction"
+    await controller.refreshSessionTail("session-1")
+
+    internal.forEach((item) =>
+      controller.applyEvent({
+        id: `part-${item.id}-repeat`,
+        type: "message.part.updated",
+        properties: {
+          sessionID: "session-1",
+          time: 3,
+          part: {
+            ...part(`message-${item.id}`, `part-${item.id}`, item.text),
+            ...(item.metadata ? { metadata: item.metadata } : {}),
+          },
+        },
+      }),
+    )
+    expect(
+      selectClientSessionDisplayMessages(controller.getState(), "session-1")
+        .slice(-internal.length)
+        .map((item) => item.parts[0]?.synthetic),
+    ).toEqual([true])
+    controller.stop()
   })
 
   test("preserves fallback and invalidation boundaries in live event batches", async () => {

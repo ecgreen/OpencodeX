@@ -158,6 +158,36 @@ describe("goal store", () => {
     }),
   )
 
+  it.live("updates dispatch context atomically with a valid plan", () =>
+    Effect.gen(function* () {
+      const created = yield* project
+      const goals = yield* OpencodeXGoal.Service
+      const goal = yield* goals.create({
+        projectID: created.id,
+        statement: "x",
+        directory: "/tmp/stale",
+      })
+
+      const planned = yield* goals.plan(goal.id, { nodes: [node("a")] }, { swarmID: null, directory: "/tmp/current" })
+      expect(planned.swarmID).toBeUndefined()
+      expect(planned.directory).toBe("/tmp/current")
+
+      const rejected = yield* goals
+        .plan(
+          goal.id,
+          { nodes: [node("b", { executor: { type: "swarm_role", role: "Backend" } })] },
+          { swarmID: null, directory: "/tmp/rejected" },
+        )
+        .pipe(Effect.flip)
+      expect(rejected.message).toContain('unknown swarm role "Backend"')
+
+      const unchanged = yield* goals.get(goal.id)
+      expect(unchanged.swarmID).toBeUndefined()
+      expect(unchanged.directory).toBe("/tmp/current")
+      expect(unchanged.nodes.map((item) => item.id)).toEqual(["a"])
+    }),
+  )
+
   it.live("will not replan a goal that is already running", () =>
     Effect.gen(function* () {
       const created = yield* project

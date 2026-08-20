@@ -643,11 +643,21 @@ export const RunCommand = effectCmd({
 
         const eventController = new AbortController()
         const events = await client.event.subscribe(undefined, { signal: eventController.signal })
-        const eventLoop = loop(client, events)
+        const completed = loop(client, events).catch((error) => {
+          if (eventController.signal.aborted) return
+          console.error(error)
+          process.exitCode = 1
+        })
 
         async function cancelEventLoop() {
           eventController.abort()
-          await eventLoop.catch(() => undefined)
+          await completed
+        }
+
+        async function finish() {
+          if (args.attach) return cancelEventLoop()
+          const error = await completed
+          if (error) process.exitCode = 1
         }
 
         if (args.command) {
@@ -670,7 +680,7 @@ export const RunCommand = effectCmd({
             process.exitCode = 1
             return
           }
-          await eventLoop
+          await finish()
           return
         }
 
@@ -693,7 +703,7 @@ export const RunCommand = effectCmd({
           process.exitCode = 1
           return
         }
-        await eventLoop
+        await finish()
       }
 
       if (args.attach) {

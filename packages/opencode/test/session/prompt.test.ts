@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -19,6 +19,7 @@ import { Config } from "@/config/config"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
+import { PermissionID } from "../../src/permission/schema"
 import { Plugin } from "../../src/plugin"
 import { Provider as ProviderSvc } from "@/provider/provider"
 import { Env } from "../../src/env"
@@ -28,7 +29,12 @@ import { Image } from "../../src/image/image"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionCommandTable, SessionExecutionTable, SessionTable } from "@opencode-ai/core/session/sql"
+import {
+  SessionCommandTable,
+  SessionExecutionTable,
+  SessionInteractionTable,
+  SessionTable,
+} from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -205,6 +211,7 @@ function makePrompt(input?: {
   processor?: "blocking"
   /** Replaces the Claude driver, so a test can script `runTurn` (e.g. to exercise the sidechain spawn). */
   claudeDriver?: Layer.Layer<OpencodeXClaudeDriver.Service>
+  runState?: Layer.Layer<SessionRunState.Service>
 }) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
@@ -269,7 +276,7 @@ function makePrompt(input?: {
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(summary),
-    Layer.provideMerge(run),
+    Layer.provideMerge(input?.runState ?? run),
     Layer.provideMerge(compact),
     Layer.provideMerge(proc),
     Layer.provideMerge(registry),
@@ -296,6 +303,19 @@ const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
+
+const cancelHooks: Array<(sessionID: SessionID) => Effect.Effect<void>> = []
+const racingRunState = Layer.succeed(
+  SessionRunState.Service,
+  SessionRunState.Service.of({
+    assertNotBusy: () => Effect.void,
+    cancel: (sessionID) => (cancelHooks.shift()?.(sessionID) ?? Effect.void).pipe(Effect.as(1)),
+    interrupt: () => Effect.succeed(false),
+    ensureRunning: (_sessionID, _onInterrupt, work) => work,
+    startShell: (_sessionID, _onInterrupt, work) => work,
+  }),
+)
+const cancelRaceIt = testEffect(makePrompt({ runState: racingRunState }))
 
 // Config that registers a custom "test" provider with a "test-model" model
 // so provider model lookup succeeds inside the loop.
@@ -559,6 +579,60 @@ it.instance("promptAsync persists its message and execution intent before return
   }),
 )
 
+it.instance("promptAsync marks its durable command failed when the assistant returns an error", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const status = yield* SessionStatus.Service
+    const events = yield* EventV2Bridge.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const errors: string[] = []
+    const off = yield* events.listen((event) => {
+      if (event.type !== Session.Event.Error.type) return Effect.void
+      const data = event.data as typeof Session.Event.Error.data.Type
+      if (data.sessionID === chat.id && data.error) errors.push(data.error.name)
+      return Effect.void
+    })
+    yield* Effect.addFinalizer(() => off)
+    yield* llm.error(400, { error: { message: "no_kv_space" } })
+
+    yield* prompt.promptAsync({
+      sessionID: chat.id,
+      model: ref,
+      parts: [{ type: "text", text: "fail durably" }],
+    })
+
+    const command = yield* pollWithTimeout(
+      db
+        .select()
+        .from(SessionCommandTable)
+        .where(eq(SessionCommandTable.session_id, chat.id))
+        .get()
+        .pipe(
+          Effect.orDie,
+          Effect.map((row) => (row?.status === "failed" ? row : undefined)),
+        ),
+      "errored assistant command did not fail",
+    )
+    const assistant = (yield* sessions.messages({ sessionID: chat.id })).find(
+      (message) => message.info.role === "assistant" && message.info.parentID === command.message_id,
+    )
+
+    expect(command.owner_id).toBeNull()
+    expect(command.lease_expires_at).toBeNull()
+    expect(command.completed_at).toBeNumber()
+    expect(command.error ? JSON.parse(command.error) : undefined).toEqual(
+      assistant?.info.role === "assistant" ? assistant.info.error : undefined,
+    )
+    expect(assistant?.info.role === "assistant" ? assistant.info.error?.name : undefined).toBe("APIError")
+    expect(yield* status.get(chat.id)).toEqual({ type: "idle" })
+    expect(yield* llm.calls).toBe(1)
+    expect(errors).toEqual(["APIError"])
+  }),
+)
+
 it.instance("retries title generation from the first prompt after more prompts arrive", () =>
   Effect.gen(function* () {
     yield* useServerConfig(providerCfg)
@@ -693,6 +767,137 @@ it.instance("cancel marks both active and queued prompt intents terminal", () =>
     expect(commands.every((command) => command.status === "cancelled")).toBe(true)
     yield* Effect.sleep(100)
     expect((yield* llm.inputs).length).toBe(1)
+  }),
+)
+
+cancelRaceIt.instance("cancel rejects an unprovenanced interaction inserted during cancellation", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const permission = yield* Permission.Service
+    const scope = yield* Scope.Scope
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const requestID = PermissionID.make("per_between_cancel_sweeps")
+    let askFiber: Fiber.Fiber<void, Permission.Error> | undefined
+
+    cancelHooks.push(() =>
+      Effect.gen(function* () {
+        askFiber = yield* permission
+          .ask({
+            id: requestID,
+            sessionID: chat.id,
+            permission: "bash",
+            patterns: ["pwd"],
+            metadata: {},
+            always: [],
+            ruleset: [],
+          })
+          .pipe(Effect.forkIn(scope))
+        yield* pollWithTimeout(
+          permission
+            .list()
+            .pipe(Effect.map((items) => (items.some((item) => item.id === requestID) ? true : undefined))),
+          "interaction was not inserted between cancel sweeps",
+        )
+      }).pipe(Effect.orDie),
+    )
+
+    yield* prompt.cancel(chat.id)
+
+    if (!askFiber) return yield* Effect.die(new Error("cancel hook did not start the permission ask"))
+    expect(Exit.isFailure(yield* Fiber.await(askFiber))).toBe(true)
+    expect(yield* permission.list()).toHaveLength(0)
+    expect(
+      yield* db
+        .select({ state: SessionInteractionTable.state })
+        .from(SessionInteractionTable)
+        .where(eq(SessionInteractionTable.id, String(requestID)))
+        .get()
+        .pipe(Effect.orDie),
+    ).toEqual({ state: "rejected" })
+  }),
+)
+
+cancelRaceIt.instance("cancel preserves replacement-generation interactions", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const permission = yield* Permission.Service
+    const question = yield* Question.Service
+    const scope = yield* Scope.Scope
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const permissionID = PermissionID.make("per_replacement_generation")
+    let permissionFiber: Fiber.Fiber<void, Permission.Error> | undefined
+    let questionFiber: Fiber.Fiber<ReadonlyArray<Question.Answer>, Question.RejectedError> | undefined
+
+    cancelHooks.push(() =>
+      Effect.gen(function* () {
+        const now = Date.now()
+        yield* db
+          .insert(SessionExecutionTable)
+          .values({
+            session_id: chat.id,
+            project_id: "prj_replacement",
+            directory: ".",
+            state: "running",
+            owner_id: "replacement",
+            generation: 2,
+            lease_expires_at: now + 15_000,
+            started_at: now,
+            time_created: now,
+            time_updated: now,
+          })
+          .run()
+          .pipe(Effect.orDie)
+        permissionFiber = yield* permission
+          .ask({
+            id: permissionID,
+            sessionID: chat.id,
+            permission: "bash",
+            patterns: ["pwd"],
+            metadata: {},
+            always: [],
+            ruleset: [],
+            executionGeneration: 2,
+          })
+          .pipe(Effect.forkIn(scope))
+        questionFiber = yield* question
+          .ask({
+            sessionID: chat.id,
+            questions: [
+              {
+                question: "Keep the replacement running?",
+                header: "Replacement",
+                options: [{ label: "Yes", description: "Keep running" }],
+              },
+            ],
+            executionGeneration: 2,
+          })
+          .pipe(Effect.forkIn(scope))
+        yield* pollWithTimeout(
+          Effect.all([permission.list(), question.list()]).pipe(
+            Effect.map(([permissions, questions]) =>
+              permissions.length === 1 && questions.length === 1 ? true : undefined,
+            ),
+          ),
+          "replacement interactions were not inserted",
+        )
+      }).pipe(Effect.orDie),
+    )
+
+    yield* prompt.cancel(chat.id)
+
+    const permissions = yield* permission.list()
+    const questions = yield* question.list()
+    expect(permissions).toMatchObject([{ id: permissionID, executionGeneration: 2 }])
+    expect(questions).toMatchObject([{ executionGeneration: 2 }])
+    yield* permission.reply({ requestID: permissionID, reply: "reject" })
+    yield* question.reject(questions[0]!.id)
+    if (!permissionFiber || !questionFiber) return yield* Effect.die(new Error("replacement asks did not start"))
+    expect(Exit.isFailure(yield* Fiber.await(permissionFiber))).toBe(true)
+    expect(Exit.isFailure(yield* Fiber.await(questionFiber))).toBe(true)
   }),
 )
 
@@ -2231,13 +2436,17 @@ unixNoLLMServer(
     withSh(() =>
       Effect.gen(function* () {
         const { prompt, run, chat } = yield* boot()
+        const { directory: dir } = yield* TestInstance
+        const afs = yield* AppFileSystem.Service
+        const ready = path.join(dir, ".shell-ready")
 
-        /* Outlives the busy check without outliving the budget - see the note
-           on the busy-rejection case below. */
         const sh = yield* prompt
-          .shell({ sessionID: chat.id, agent: "build", command: "sleep 5" })
+          .shell({ sessionID: chat.id, agent: "build", command: ": > '.shell-ready'; sleep 5" })
           .pipe(Effect.forkChild)
-        yield* waitForBusy(chat.id)
+        yield* pollWithTimeout(
+          afs.existsSafe(ready).pipe(Effect.map((exists) => (exists ? (true as const) : undefined))),
+          "shell never created readiness marker",
+        )
 
         yield* awaitWithTimeout(prompt.cancel(chat.id), "cancel never settled", "10 seconds")
 
@@ -3249,6 +3458,47 @@ it.instance("a swarm with a Claude Code orchestrator routes to the CLI driver, n
     expect(briefingText).toContain("mcp__opencodex_swarm__delegate")
     expect(briefingText).toContain("Do not use the built-in Task tool")
     expect(briefingText).toContain("Designer")
+  }),
+)
+
+const claimedClaudeTurns: Array<{ input?: number; context?: number }> = []
+const claimingDriver = Layer.succeed(
+  OpencodeXClaudeDriver.Service,
+  OpencodeXClaudeDriver.Service.of({
+    runTurn: (input) =>
+      Effect.gen(function* () {
+        const execution = yield* SessionStatus.ExecutionGeneration
+        claimedClaudeTurns.push({ input: input.executionGeneration, context: execution?.generation })
+        return { info: { id: input.parentMessageID, sessionID: input.sessionID }, parts: [] } as never
+      }),
+  }),
+)
+const claimDriverIt = testEffect(Layer.mergeAll(TestLLMServer.layer, makePrompt({ claudeDriver: claimingDriver })))
+
+claimDriverIt.instance("a fresh Claude turn receives its claimed execution generation", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { db } = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      model: { providerID: ProviderV2.ID.make("claude-code"), modelID: ProviderV2.ModelID.make("sonnet") },
+      noReply: true,
+      parts: [{ type: "text", text: "claim before starting Claude" }],
+    })
+
+    yield* prompt.loop({ sessionID: chat.id })
+
+    expect(claimedClaudeTurns.at(-1)).toEqual({ input: 1, context: 1 })
+    expect(
+      yield* db
+        .select({ generation: SessionExecutionTable.generation })
+        .from(SessionExecutionTable)
+        .where(eq(SessionExecutionTable.session_id, chat.id))
+        .get()
+        .pipe(Effect.orDie),
+    ).toEqual({ generation: 1 })
   }),
 )
 

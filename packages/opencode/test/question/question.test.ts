@@ -4,16 +4,20 @@ import { Question } from "../../src/question"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceStore } from "../../src/project/instance-store"
 import { QuestionID } from "../../src/question/schema"
-import { disposeAllInstances, provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
+import { disposeAllInstances, provideInstance, TestInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import { SessionID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
+import { SessionExecutionTable, SessionInteractionTable } from "@opencode-ai/core/session/sql"
+import { eq } from "drizzle-orm"
 
+const database = Database.defaultLayer
 const it = testEffect(
   Layer.mergeAll(
-    Question.layer.pipe(Layer.provide(Database.defaultLayer), Layer.provideMerge(EventV2Bridge.defaultLayer)),
+    Question.layer.pipe(Layer.provide(database), Layer.provideMerge(EventV2Bridge.defaultLayer)),
+    database,
     CrossSpawnSpawner.defaultLayer,
   ),
 )
@@ -29,6 +33,7 @@ const askEffect = Effect.fn("QuestionTest.ask")(function* (input: {
   sessionID: SessionID
   questions: ReadonlyArray<Question.Info>
   tool?: Question.Tool
+  executionGeneration?: number
 }) {
   const question = yield* Question.Service
   return yield* question.ask(input)
@@ -273,6 +278,35 @@ it.instance(
   { git: true },
 )
 
+it.instance("ask - fiber interruption rejects the durable pending row", () =>
+  Effect.gen(function* () {
+    const fiber = yield* askEffect({
+      sessionID: SessionID.make("ses_interrupted"),
+      questions: [
+        {
+          question: "Will this survive interruption?",
+          header: "Interrupt",
+          options: [{ label: "No", description: "No" }],
+        },
+      ],
+    }).pipe(Effect.forkScoped)
+
+    const [pending] = yield* waitForPending(1)
+    yield* Fiber.interrupt(fiber)
+
+    expect(yield* listEffect).toHaveLength(0)
+    const { db } = yield* Database.Service
+    expect(
+      yield* db
+        .select({ state: SessionInteractionTable.state })
+        .from(SessionInteractionTable)
+        .where(eq(SessionInteractionTable.id, String(pending.id)))
+        .get()
+        .pipe(Effect.orDie),
+    ).toEqual({ state: "rejected" })
+  }),
+)
+
 it.instance(
   "reject - fails for unknown requestID",
   () =>
@@ -443,6 +477,81 @@ lifecycle.live("pending question rejects on instance dispose", () =>
     const exit = yield* Fiber.await(fiber)
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+    expect(yield* listEffect.pipe(provideInstance(dir))).toHaveLength(0)
+  }),
+)
+
+it.instance("ask rejects after the session execution was cancelled", () =>
+  Effect.gen(function* () {
+    const sessionID = SessionID.make("ses_cancelled")
+    const now = Date.now()
+    const test = yield* TestInstance
+    const { db } = yield* Database.Service
+    yield* db
+      .insert(SessionExecutionTable)
+      .values({
+        session_id: sessionID,
+        project_id: "project_cancelled",
+        directory: test.directory,
+        state: "interrupted",
+        generation: 1,
+        cancel_requested_at: now,
+        time_created: now,
+        time_updated: now,
+      })
+      .run()
+      .pipe(Effect.orDie)
+
+    const exit = yield* askEffect({
+      sessionID,
+      questions: [
+        {
+          question: "Should this appear?",
+          header: "Cancelled",
+          options: [{ label: "No", description: "No" }],
+        },
+      ],
+    }).pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+    expect(yield* listEffect).toHaveLength(0)
+  }),
+)
+
+it.instance("ask rejects a request from an older execution generation", () =>
+  Effect.gen(function* () {
+    const sessionID = SessionID.make("ses_restarted")
+    const now = Date.now()
+    const test = yield* TestInstance
+    const { db } = yield* Database.Service
+    yield* db
+      .insert(SessionExecutionTable)
+      .values({
+        session_id: sessionID,
+        project_id: "project_restarted",
+        directory: test.directory,
+        state: "running",
+        generation: 2,
+        time_created: now,
+        time_updated: now,
+      })
+      .run()
+      .pipe(Effect.orDie)
+
+    const exit = yield* askEffect({
+      sessionID,
+      executionGeneration: 1,
+      questions: [
+        {
+          question: "Should this stale question appear?",
+          header: "Stale",
+          options: [{ label: "No", description: "No" }],
+        },
+      ],
+    }).pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+    expect(yield* listEffect).toHaveLength(0)
   }),
 )
 
@@ -466,5 +575,6 @@ lifecycle.live("pending question rejects on instance reload", () =>
     const exit = yield* Fiber.await(fiber)
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+    expect(yield* listEffect.pipe(provideInstance(dir))).toHaveLength(0)
   }),
 )

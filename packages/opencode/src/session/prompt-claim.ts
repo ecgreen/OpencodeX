@@ -189,7 +189,14 @@ export function make(deps: Deps) {
         return yield* loop({ sessionID: command.session_id, messageID: command.message_id })
       }).pipe(Effect.exit, Effect.ensuring(Fiber.interrupt(heartbeat)))
       const completedAt = clock()
-      if (Exit.isSuccess(exit)) {
+      const error = Exit.isFailure(exit)
+        ? Cause.pretty(exit.cause)
+        : exit.value?.info.role === "assistant" &&
+            exit.value.info.error &&
+            exit.value.info.error.name !== "MessageAbortedError"
+          ? JSON.stringify(exit.value.info.error)
+          : undefined
+      if (!error) {
         yield* db
           .update(SessionCommandTable)
           .set({
@@ -212,7 +219,6 @@ export function make(deps: Deps) {
         return
       }
 
-      const error = Cause.pretty(exit.cause)
       yield* db
         .update(SessionCommandTable)
         .set({
@@ -233,6 +239,7 @@ export function make(deps: Deps) {
         )
         .run()
         .pipe(Effect.orDie)
+      if (Exit.isSuccess(exit)) return
       yield* Effect.logError("prompt_async failed").pipe(
         Effect.annotateLogs({ sessionID: command.session_id, cause: exit.cause }),
       )
