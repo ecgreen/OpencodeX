@@ -16,6 +16,7 @@ import {
   startCoordinatorClientLease,
 } from "./tui/coordinator-registry"
 import { createCoordinatorTransport } from "./tui/coordinator-transport"
+import { validateServeAuthorityNetwork } from "./serve-authority"
 
 const log = Log.create({ service: "acp-command" })
 
@@ -77,7 +78,14 @@ export const AcpCommand = effectCmd({
       })
     } else {
       const server = yield* Effect.promise(() =>
-        ACPProfile.measure("cli.acp.server.listen", () => Server.listen(opts)).catch(async (error) => {
+        ACPProfile.measure("cli.acp.server.listen", () => {
+          validateServeAuthorityNetwork({
+            hostname: opts.hostname,
+            password: process.env.OPENCODE_SERVER_PASSWORD ?? "",
+            allowInsecureLan: process.env.OPENCODE_SERVER_ALLOW_INSECURE_LAN,
+          })
+          return Server.listen(opts)
+        }).catch(async (error) => {
           await access.release()
           throw error
         }),

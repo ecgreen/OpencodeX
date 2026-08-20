@@ -31,19 +31,6 @@ export function createCoordinatorMismatchApproval() {
   }
 }
 
-export function coordinatorManifestOwnedBy(
-  owned: { process: { pid?: number }; key: string; token: string } | undefined,
-  manifest: { pid: number; key: string; token: string } | undefined,
-) {
-  return Boolean(
-    owned?.process.pid !== undefined &&
-    manifest &&
-    owned.process.pid === manifest.pid &&
-    owned.key === manifest.key &&
-    owned.token === manifest.token,
-  )
-}
-
 export class CoordinatorVersionMismatchError extends Error {
   constructor(message: string) {
     super(message)

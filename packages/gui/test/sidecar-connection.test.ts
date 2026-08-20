@@ -3,9 +3,7 @@ import {
   configuredBackendConnection,
   configuredBackendConnectSource,
   loopbackSidecarURL,
-  restartOwnedSidecar,
 } from "../src/main/sidecar-connection"
-import { coordinatorManifestOwnedBy } from "../src/main/sidecar-state"
 
 describe("sidecar connection URL", () => {
   test("accepts only HTTP loopback URLs", () => {
@@ -49,34 +47,5 @@ describe("sidecar connection URL", () => {
     expect(() => configuredBackendConnection({ OPENCODEX_GUI_SERVER_URL: "file:///tmp/opencode" })).toThrow(
       "must use HTTP or HTTPS",
     )
-  })
-
-  test("restarts only a backend owned by this client", async () => {
-    let restarts = 0
-    const restart = async () => {
-      restarts += 1
-      return "restarted"
-    }
-
-    expect(await restartOwnedSidecar(undefined, restart)).toBe("restarted")
-    await expect(
-      restartOwnedSidecar(
-        {
-          url: "https://opencodex.example.test",
-          username: "opencode",
-          password: "",
-          directory: "/srv/project",
-        },
-        restart,
-      ),
-    ).rejects.toThrow("not managed by this client")
-    expect(restarts).toBe(1)
-  })
-
-  test("derives restart capability from the active manifest identity", () => {
-    const owned = { process: { pid: 42 }, key: "database-key", token: "gui-token" }
-    expect(coordinatorManifestOwnedBy(owned, { pid: 42, key: "database-key", token: "gui-token" })).toBe(true)
-    expect(coordinatorManifestOwnedBy(undefined, { pid: 42, key: "database-key", token: "tui-token" })).toBe(false)
-    expect(coordinatorManifestOwnedBy(owned, { pid: 42, key: "database-key", token: "serve-token" })).toBe(false)
   })
 })

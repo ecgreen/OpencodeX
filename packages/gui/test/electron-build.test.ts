@@ -30,6 +30,8 @@ describe("Electron bundling", () => {
     expect(firstMain).not.toContain(".exit(1)")
     expect(firstMain).toContain(".exitCode=")
     expect(firstPreload).toContain('require("electron")')
+    expect(firstMain).not.toContain("opencodex:restart")
+    expect(firstPreload).not.toContain("opencodex:restart")
     const sqliteImports = Object.values(second.builds.main.inputs)
       .flatMap((input) => input.imports)
       .filter((item) => item.path === "node:sqlite")

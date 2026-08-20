@@ -9,8 +9,8 @@ describe("coordinator version mismatch recovery", () => {
   test("preserves the mismatch code while unwrapping the serialized IPC result", () => {
     expect(unwrapGuiConnection({
       ok: true,
-      value: { url: "http://127.0.0.1:4096", directory: "/repo", restartBackend: true },
-    })).toEqual({ url: "http://127.0.0.1:4096", directory: "/repo", restartBackend: true })
+      value: { url: "http://127.0.0.1:4096", directory: "/repo" },
+    })).toEqual({ url: "http://127.0.0.1:4096", directory: "/repo" })
 
     const envelope = structuredClone(
       failedGuiConnection(new CoordinatorVersionMismatchError("versions: secret-build-id")),

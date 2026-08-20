@@ -42,6 +42,22 @@ export type ServeAuthorityOptions = {
   signal?: AbortSignal
 }
 
+export function validateServeAuthorityNetwork(input: {
+  hostname: string
+  password: string
+  allowInsecureLan?: string
+}) {
+  if (LOOPBACK_HOSTS.has(input.hostname)) return
+  if (!input.password.trim()) {
+    throw new Error("Non-loopback server listeners require a non-empty OPENCODE_SERVER_PASSWORD")
+  }
+  const allowed = input.allowInsecureLan?.toLowerCase()
+  if (allowed === "1" || allowed === "true") return
+  throw new Error(
+    "Non-loopback server listeners use HTTP Basic authentication without TLS; set OPENCODE_SERVER_ALLOW_INSECURE_LAN=1 to allow this insecure listener",
+  )
+}
+
 type OwnedServeAuthority = {
   manifest: TuiCoordinatorManifest
   ownerLock: { release: () => Promise<void> }
@@ -57,6 +73,11 @@ export const runServeAuthority = Effect.fn("ServeAuthority.run")(function* (inpu
   const key = coordinatorKey(database)
   const username = process.env.OPENCODE_SERVER_USERNAME ?? DEFAULT_USERNAME
   const password = process.env.OPENCODE_SERVER_PASSWORD ?? ""
+  validateServeAuthorityNetwork({
+    hostname: input.hostname,
+    password,
+    allowInsecureLan: process.env.OPENCODE_SERVER_ALLOW_INSECURE_LAN,
+  })
   const token = randomBytes(24).toString("base64url")
 
   process.env[OPENCODE_PROCESS_ROLE] = "main"

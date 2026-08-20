@@ -44,7 +44,6 @@ export type PaletteCommandActions = {
   transcriptLastUser: () => void
   focusComposer: () => void
   refresh: () => void | Promise<void>
-  restartBackend: () => void | Promise<void>
   installPlugin: () => void | Promise<void>
   openDocs: () => void
   exitApp: () => void
@@ -55,7 +54,6 @@ export function buildPaletteCommands(input: {
   currentRouteName: string
   workspacePath?: string
   variantCount: number
-  restartBackend: boolean
   actions: PaletteCommandActions
 }): PaletteCommand[] {
   return [
@@ -345,6 +343,6 @@ export function buildPaletteCommands(input: {
       shortcut: "Alt+U",
       run: input.actions.transcriptLastUser,
     },
-    ...buildPaletteSystemCommands({ actions: input.actions, restartBackend: input.restartBackend }),
+    ...buildPaletteSystemCommands(input.actions),
   ]
 }

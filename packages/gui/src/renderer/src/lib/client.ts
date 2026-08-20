@@ -24,7 +24,6 @@ export type GuiClient = {
   url: string
   directory: string
   authHeader: string
-  restartBackend: boolean
 }
 
 type BackendConnection = {
@@ -32,7 +31,6 @@ type BackendConnection = {
   directory?: string
   username?: string
   password?: string
-  restartBackend?: boolean
 }
 
 function encodeBasic(username: string, password: string) {
@@ -102,9 +100,6 @@ export async function connectGuiClient(): Promise<GuiClient> {
     },
     get authHeader() {
       return connectionAuthHeader(connection)
-    },
-    get restartBackend() {
-      return Boolean(window.opencodex?.restart && connection.restartBackend)
     },
   }
 }

@@ -111,7 +111,14 @@ describe("clients attach-first against a running serve authority", () => {
           "serve did not publish a coordinator manifest",
           "30 seconds",
         )
-        const acp = yield* opencode.acp({ env: { OPENCODE_DB: database } })
+        const acp = yield* opencode.acp({
+          extraArgs: ["--hostname", "0.0.0.0"],
+          env: {
+            OPENCODE_DB: database,
+            OPENCODE_SERVER_PASSWORD: "",
+            OPENCODE_SERVER_ALLOW_INSECURE_LAN: "",
+          },
+        })
 
         yield* pollWithTimeout(
           Effect.gen(function* () {
@@ -171,6 +178,7 @@ describe("clients attach-first against a running serve authority", () => {
         const tui = yield* spawnHeadlessTui(home, database, {
           OPENCODE_SERVER_USERNAME: "lan-user",
           OPENCODE_SERVER_PASSWORD: "lan-secret",
+          OPENCODE_SERVER_ALLOW_INSECURE_LAN: "1",
         })
 
         const manifest = yield* pollWithTimeout(

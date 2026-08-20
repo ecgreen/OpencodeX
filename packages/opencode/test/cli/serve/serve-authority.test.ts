@@ -20,7 +20,7 @@ import {
   parseCoordinatorManifest,
 } from "@opencode-ai/sdk/coordinator"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { manifestURLFor } from "@/cli/cmd/serve-authority"
+import { manifestURLFor, validateServeAuthorityNetwork } from "@/cli/cmd/serve-authority"
 import { cliIt } from "../../lib/cli-process"
 
 const HealthIdentity = Schema.Struct({
@@ -59,7 +59,11 @@ describe("opencode serve authority (subprocess)", () => {
       Effect.gen(function* () {
         const first = yield* opencode.serve({
           hostname: "0.0.0.0",
-          env: { OPENCODE_RUN_ID: "serve-authority-wildcard" },
+          env: {
+            OPENCODE_RUN_ID: "serve-authority-wildcard",
+            OPENCODE_SERVER_PASSWORD: "serve-test-password",
+            OPENCODE_SERVER_ALLOW_INSECURE_LAN: "1",
+          },
         })
         const manifest = yield* Effect.promise(() => readServeManifest(home))
 
@@ -76,9 +80,10 @@ describe("opencode serve authority (subprocess)", () => {
         expect(url.hostname).toBe("127.0.0.1")
         expect(Number(url.port)).toBe(first.port)
 
-        // Unauthenticated serve publishes effective defaults (empty password).
+        // The wildcard listener publishes its configured credentials only to
+        // the owner-readable local manifest.
         expect(manifest.username).toBe("opencode")
-        expect(manifest.password).toBe("")
+        expect(manifest.password).toBe("serve-test-password")
 
         // Old readers must accept the manifest: schema stays v2 and the only
         // addition is the same additive serverVersion the coordinator uses.
@@ -114,7 +119,13 @@ describe("opencode serve authority (subprocess)", () => {
         if (process.platform !== "win32") expect(survived).toBe(false)
 
         // Handoff: a successor on the same database takes over cleanly.
-        yield* opencode.serve({ hostname: "0.0.0.0" })
+        yield* opencode.serve({
+          hostname: "0.0.0.0",
+          env: {
+            OPENCODE_SERVER_PASSWORD: "serve-test-password",
+            OPENCODE_SERVER_ALLOW_INSECURE_LAN: "1",
+          },
+        })
         const successorManifest = yield* Effect.promise(() => readServeManifest(home))
         expect(successorManifest.key).toBe(manifest.key)
         expect(successorManifest.pid).toBePositive()
@@ -130,7 +141,13 @@ describe("opencode serve authority (subprocess)", () => {
       "LAN listener gets a loopback companion sharing one event bus",
       ({ opencode, home }) =>
         Effect.gen(function* () {
-          const server = yield* opencode.serve({ hostname: lanIP })
+          const server = yield* opencode.serve({
+            hostname: lanIP,
+            env: {
+              OPENCODE_SERVER_PASSWORD: "serve-test-password",
+              OPENCODE_SERVER_ALLOW_INSECURE_LAN: "true",
+            },
+          })
           const manifest = yield* Effect.promise(() => readServeManifest(home))
           const url = yield* Effect.sync(() => new URL(manifest.url))
 
@@ -138,12 +155,19 @@ describe("opencode serve authority (subprocess)", () => {
           // The companion is a separate ephemeral socket, not the LAN bind.
           expect(Number(url.port)).not.toBe(server.port)
 
-          const client = yield* HttpClient.HttpClient
           const primary = Schema.decodeUnknownSync(HealthIdentity)(
-            yield* (yield* client.get(`${server.url}/global/health`)).json,
+            yield* Effect.promise(() =>
+              fetch(`${server.url}/global/health`, { headers: coordinatorHeaders(manifest) }).then((response) =>
+                response.json(),
+              ),
+            ),
           )
           const companion = Schema.decodeUnknownSync(HealthIdentity)(
-            yield* (yield* client.get(`${manifest.url}/global/health`)).json,
+            yield* Effect.promise(() =>
+              fetch(`${manifest.url}/global/health`, { headers: coordinatorHeaders(manifest) }).then((response) =>
+                response.json(),
+              ),
+            ),
           )
           expect(primary.databaseID).toBe(companion.databaseID)
           // One in-process event bus: the companion is not a second authority.
@@ -253,5 +277,29 @@ describe("serve-authority manifest URL helper", () => {
     expect(manifestURLFor("127.0.0.1", 1234)).toBe("http://127.0.0.1:1234/")
     expect(manifestURLFor("::1", 1234)).toBe("http://[::1]:1234/")
     expect(manifestURLFor("localhost", 1234)).toBe("http://localhost:1234/")
+  })
+})
+
+describe("serve-authority network validation", () => {
+  test("allows loopback without a password or insecure-LAN opt-in", () => {
+    expect(() => validateServeAuthorityNetwork({ hostname: "127.0.0.1", password: "" })).not.toThrow()
+  })
+
+  test("rejects a non-loopback listener without a password", () => {
+    expect(() =>
+      validateServeAuthorityNetwork({ hostname: "0.0.0.0", password: "", allowInsecureLan: "1" }),
+    ).toThrow("OPENCODE_SERVER_PASSWORD")
+  })
+
+  test("rejects a non-loopback listener without explicit insecure-LAN opt-in", () => {
+    expect(() => validateServeAuthorityNetwork({ hostname: "192.0.2.1", password: "secret" })).toThrow(
+      "OPENCODE_SERVER_ALLOW_INSECURE_LAN",
+    )
+  })
+
+  test("allows a password-protected non-loopback listener with explicit opt-in", () => {
+    expect(() =>
+      validateServeAuthorityNetwork({ hostname: "192.0.2.1", password: "secret", allowInsecureLan: "true" }),
+    ).not.toThrow()
   })
 })

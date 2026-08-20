@@ -14,7 +14,7 @@ import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
-import { manifestURLFor } from "@/cli/cmd/serve-authority"
+import { manifestURLFor, validateServeAuthorityNetwork } from "@/cli/cmd/serve-authority"
 import { errorMessage } from "@/util/error"
 import { Filesystem } from "@/util/filesystem"
 import {
@@ -106,13 +106,18 @@ export const rpc = {
     return result
   },
   async server(input: { port: number; hostname: string; mdns?: boolean; mdnsDomain?: string; cors?: string[] }) {
+    const username = process.env.OPENCODE_TUI_COORDINATOR_USERNAME ?? DEFAULT_USERNAME
+    const password = process.env.OPENCODE_TUI_COORDINATOR_PASSWORD ?? ""
+    validateServeAuthorityNetwork({
+      hostname: input.hostname,
+      password,
+      allowInsecureLan: process.env.OPENCODE_SERVER_ALLOW_INSECURE_LAN,
+    })
     await stopOwnedBackend("reconfigured").catch((error) => {
       Log.Default.warn("worker backend authority stop on reconfigure failed", { error: errorMessage(error) })
     })
     const database = coordinatorDatabaseIdentity()
     const key = coordinatorKey(database)
-    const username = process.env.OPENCODE_TUI_COORDINATOR_USERNAME ?? DEFAULT_USERNAME
-    const password = process.env.OPENCODE_TUI_COORDINATOR_PASSWORD ?? ""
     const token = process.env.OPENCODE_TUI_COORDINATOR_TOKEN ?? randomBytes(24).toString("base64url")
     process.env.OPENCODE_SERVER_USERNAME = username
     process.env.OPENCODE_SERVER_PASSWORD = password

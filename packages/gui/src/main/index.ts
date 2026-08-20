@@ -14,13 +14,10 @@ import {
 import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
 import {
   allowCoordinatorVersionMismatch,
-  assertSidecarRestartAllowed,
   pendingCoordinatorVersionMismatch,
-  sidecarRestartAvailable,
   type SidecarConnection,
   startSidecar,
   stopSidecar,
-  stopSidecarForRestart,
 } from "./sidecar.js"
 import { editorCommand } from "./editor-command.js"
 import { registerBrowserIpc, secureSession } from "./browser-ipc.js"
@@ -32,7 +29,6 @@ import {
   configuredBackendConnection,
   configuredBackendConnectSource,
   loopbackSidecarURL,
-  restartOwnedSidecar,
 } from "./sidecar-connection.js"
 import type { GuiConnectionResult } from "../shared/connection.js"
 import { failedGuiConnection } from "./connection-result.js"
@@ -54,8 +50,6 @@ const sidecarLifecycle = createSidecarLifecycle({
     authorizedSidecar = undefined
   },
   stop: stopSidecar,
-  restartStop: stopSidecarForRestart,
-  beforeRestart: assertSidecarRestartAllowed,
 })
 
 function appIconPath() {
@@ -132,10 +126,6 @@ function rendererContentSecurityPolicy() {
       "data:",
     ].join(" "),
   ].join("; ")
-}
-
-async function restartSidecar() {
-  return restartOwnedSidecar(configuredBackend, () => sidecarLifecycle.restart())
 }
 
 function registerSidecarAuthorization() {
@@ -268,7 +258,6 @@ ipcMain.handle("opencodex:connection", async () => {
       value: {
         url: connection.url,
         directory: connection.directory,
-        restartBackend: configuredBackend ? false : await sidecarRestartAvailable(),
       },
     } satisfies GuiConnectionResult
   } catch (error) {
@@ -288,19 +277,6 @@ ipcMain.handle("opencodex:attach-version-mismatch", async (event) => {
     approve: allowCoordinatorVersionMismatch,
     showMessageBox: (owner, options) => dialog.showMessageBox(owner, options),
   })
-})
-
-ipcMain.handle("opencodex:restart", async (event) => {
-  if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) {
-    throw new Error("Backend restart is only available from the main OpencodeX window.")
-  }
-  try {
-    const connection = await restartSidecar()
-    return { url: connection.url, directory: connection.directory, restartBackend: true }
-  } catch (error) {
-    console.error("Failed to restart the OpencodeX backend", error)
-    throw new Error("Unable to restart the OpencodeX backend.")
-  }
 })
 
 ipcMain.handle("opencodex:window", (event, action: unknown) => {

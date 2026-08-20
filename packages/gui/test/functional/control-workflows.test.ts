@@ -91,7 +91,6 @@ describe("GUI functional control workflows", () => {
       currentRouteName: "session",
       workspacePath: "C:/Work/OpencodeX",
       variantCount: 2,
-      restartBackend: false,
       actions: {
         switchSession: () => calls.push("switch-session"),
         createSession: () => calls.push("new-session"),

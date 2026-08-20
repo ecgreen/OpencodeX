@@ -4,7 +4,6 @@ import type {
   BrowserState,
   ClaudeCodeStatus,
   ContextPath,
-  GuiConnection,
   GuiConnectionResult,
   NotificationActivateEvent,
   NotificationRequest,
@@ -19,7 +18,6 @@ declare global {
     opencodex?: {
       connection(): Promise<GuiConnectionResult>
       attachVersionMismatch(): Promise<void>
-      restart(): Promise<GuiConnection>
       installationID(): Promise<string>
       claude: {
         status(): Promise<ClaudeCodeStatus>

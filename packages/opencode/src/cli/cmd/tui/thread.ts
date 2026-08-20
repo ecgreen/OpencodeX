@@ -55,6 +55,15 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
   return Filesystem.resolve(cwd)
 }
 
+export async function initializeTuiTransport<T>(initialize: () => Promise<T>, cleanup: () => Promise<void>) {
+  try {
+    return await initialize()
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
+}
+
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
   describe: "start opencode tui",
@@ -258,7 +267,7 @@ export const TuiThreadCommand = cmd({
             }, 1000).unref?.()
 
             return {
-              url: (await client.call("server", network)).url,
+              url: (await initializeTuiTransport(() => client.call("server", network), () => stop())).url,
               headers: { authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` },
             }
           })()

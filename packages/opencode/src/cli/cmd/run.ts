@@ -14,7 +14,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect } from "effect"
 import { UI } from "../ui"
-import { effectCmd } from "../effect-cmd"
+import { CliError, effectCmd } from "../effect-cmd"
 import { ServerAuth } from "@/server/auth"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
@@ -600,7 +600,6 @@ export const RunCommand = effectCmd({
               }
               error = error ? error + EOL + err : err
               if (emit("error", { error: props.error })) continue
-              UI.error(err)
             }
 
             if (
@@ -657,7 +656,7 @@ export const RunCommand = effectCmd({
         async function finish() {
           if (args.attach) return cancelEventLoop()
           const error = await completed
-          if (error) process.exitCode = 1
+          if (error) throw new CliError({ message: error })
         }
 
         if (args.command) {
@@ -704,6 +703,18 @@ export const RunCommand = effectCmd({
           return
         }
         await finish()
+        const responseError =
+          result.data?.info.error ??
+          (await client.session
+            .messages({ sessionID })
+            .then((response) => {
+              const message = response.data?.findLast((item) => item.info.role === "assistant")
+              return message?.info.role === "assistant" ? message.info.error : undefined
+            })
+            .catch(() => undefined))
+        if (!responseError) return
+        if (args.format === "json") emit("error", { error: responseError })
+        throw new CliError({ message: formatRunError(responseError) })
       }
 
       if (args.attach) {

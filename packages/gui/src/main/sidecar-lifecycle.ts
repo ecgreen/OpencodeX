@@ -6,8 +6,6 @@ type SidecarLifecycleOptions<Connection> = {
   install: (connection: Connection) => void
   reset: () => void
   stop: () => Promise<void> | void
-  restartStop?: () => Promise<void> | void
-  beforeRestart?: () => Promise<void>
 }
 
 export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOptions<Connection>) {
@@ -15,9 +13,8 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
   let cached: Connection | undefined
   let current: { controller: AbortController; promise: Promise<Connection> } | undefined
   let stopping: Promise<void> | undefined
-  let restarting: Promise<Connection> | undefined
 
-  const ensureNow = (): Promise<Connection> => {
+  const ensure = (): Promise<Connection> => {
     if (stopping) return stopping.then(ensure)
     if (current) return current.promise
 
@@ -46,9 +43,7 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
     return promise
   }
 
-  const ensure = (): Promise<Connection> => restarting ?? ensureNow()
-
-  const stopNow = (stopSidecar = options.stop) => {
+  const stop = () => {
     if (stopping) return stopping
     const result = (async () => {
       generation += 1
@@ -57,7 +52,7 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
       current = undefined
       cached = undefined
       options.reset()
-      await Promise.all([stopSidecar(), pending?.catch(() => undefined)])
+      await Promise.all([options.stop(), pending?.catch(() => undefined)])
     })()
     stopping = result.finally(() => {
       stopping = undefined
@@ -65,26 +60,7 @@ export function createSidecarLifecycle<Connection>(options: SidecarLifecycleOpti
     return stopping
   }
 
-  const stop = () => restarting?.then(() => stopNow(), () => stopNow()) ?? stopNow()
-
-  const restart = () => {
-    if (restarting) return restarting
-    const result = (async () => {
-      await options.beforeRestart?.()
-      // An ordinary stop intentionally leaves an attached owned authority
-      // running. A restart that races it must wait, then perform its stronger
-      // stop rather than coalescing into cleanup that cannot restart anything.
-      if (stopping) await stopping
-      await stopNow(options.restartStop)
-      return ensureNow()
-    })()
-    restarting = result.finally(() => {
-      restarting = undefined
-    })
-    return restarting
-  }
-
-  return { ensure, restart, stop }
+  return { ensure, stop }
 }
 
 function stoppedError() {

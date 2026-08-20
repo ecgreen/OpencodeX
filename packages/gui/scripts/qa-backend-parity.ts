@@ -25,7 +25,6 @@ const gui: GuiClient = {
   url,
   directory,
   authHeader,
-  restartBackend: false,
   client: createOpencodeClient({
     baseUrl: url,
     directory,

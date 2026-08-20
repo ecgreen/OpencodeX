@@ -5,10 +5,10 @@ import type {
   TerminalLaunchProfile,
   TerminalResult,
 } from "../shared/terminal.js"
-import type { GuiConnection, GuiConnectionResult } from "../shared/connection.js"
+import type { GuiConnectionResult } from "../shared/connection.js"
 
 export type { ClaudeCodeStatus, TerminalCreateInput, TerminalLaunchProfile, TerminalResult }
-export type { GuiConnection, GuiConnectionResult }
+export type { GuiConnectionResult }
 
 export type BrowserState = {
   id: string
@@ -83,7 +83,6 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 contextBridge.exposeInMainWorld("opencodex", {
   connection: () => invoke<GuiConnectionResult>("opencodex:connection"),
   attachVersionMismatch: () => invoke<void>("opencodex:attach-version-mismatch"),
-  restart: () => invoke<GuiConnection>("opencodex:restart"),
   installationID: () => invoke<string>("opencodex:installation-id"),
   claude: {
     status: () => invoke<ClaudeCodeStatus>("opencodex:claude:status"),

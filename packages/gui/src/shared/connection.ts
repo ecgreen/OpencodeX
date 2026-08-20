@@ -3,7 +3,6 @@ export const COORDINATOR_VERSION_MISMATCH = "COORDINATOR_VERSION_MISMATCH"
 export type GuiConnection = {
   url: string
   directory?: string
-  restartBackend: boolean
 }
 
 export type GuiConnectionResult =

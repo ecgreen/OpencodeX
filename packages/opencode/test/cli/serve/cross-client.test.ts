@@ -240,7 +240,7 @@ describe("canonical serve cross-client contract", () => {
   )
 
   cliIt.live(
-    "preserves transcript and pending permission across backend restart",
+    "preserves transcript and settles pending permission across backend restart",
     ({ home, llm, opencode }) =>
       Effect.gen(function* () {
         yield* llm.tool("bash", { command: "pwd", description: "Show working directory" })
@@ -273,13 +273,12 @@ describe("canonical serve cross-client contract", () => {
             }),
           })
           expect(prompt.status).toBe(204)
-          const asked = await matchingEvent(events, (event) => event.payload.type === "permission.asked")
+          await matchingEvent(events, (event) => event.payload.type === "permission.asked")
           await events.close()
           return {
             sessionID: session.id,
             directory: session.directory,
             databaseID: firstHealth.databaseID,
-            permissionID: String(asked.payload.properties.id),
             text,
           }
         })
@@ -304,21 +303,7 @@ describe("canonical serve cross-client contract", () => {
 
           const pendingResponse = await request(second.url, state.directory, "/permission")
           expect(pendingResponse.status).toBe(200)
-          const pending = Schema.decodeUnknownSync(Permissions)(await pendingResponse.json())
-          expect(pending).toContainEqual({
-            id: state.permissionID,
-            sessionID: state.sessionID,
-            permission: "bash",
-          })
-
-          const reply = await request(second.url, state.directory, `/permission/${state.permissionID}/reply`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ reply: "reject" }),
-          })
-          expect(reply.status).toBe(200)
-          const settled = await request(second.url, state.directory, "/permission")
-          expect(Schema.decodeUnknownSync(Permissions)(await settled.json())).toHaveLength(0)
+          expect(Schema.decodeUnknownSync(Permissions)(await pendingResponse.json())).toHaveLength(0)
         })
       }),
     90_000,

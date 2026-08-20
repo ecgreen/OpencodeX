@@ -8,7 +8,6 @@ describe("GUI palette command catalog", () => {
       currentRouteName: "session",
       workspacePath: "C:\\Work\\OpencodeX",
       variantCount: 0,
-      restartBackend: true,
       actions: actions([]),
     })
 
@@ -27,7 +26,7 @@ describe("GUI palette command catalog", () => {
     expect(command(commands, "settings.open")?.description).toBe(
       "Appearance, security, transcript, and connection preferences",
     )
-    expect(command(commands, "backend.restart")?.title).toBe("Restart backend")
+    expect(command(commands, "backend.restart")).toBeUndefined()
   })
 
   test("routes commands through injected app actions", async () => {
@@ -36,7 +35,6 @@ describe("GUI palette command catalog", () => {
       visibleSessionCount: 0,
       currentRouteName: "dashboard",
       variantCount: 2,
-      restartBackend: true,
       actions: actions(calls),
     })
 
@@ -62,20 +60,6 @@ describe("GUI palette command catalog", () => {
       "open-docs",
       "exit",
     ])
-  })
-
-  test("offers backend restart only for an owned desktop backend", () => {
-    const build = (input: { desktopBridge: boolean; ownedBackend: boolean }) => buildPaletteCommands({
-      visibleSessionCount: 0,
-      currentRouteName: "dashboard",
-      variantCount: 0,
-      restartBackend: input.desktopBridge && input.ownedBackend,
-      actions: actions([]),
-    })
-
-    expect(command(build({ desktopBridge: true, ownedBackend: true }), "backend.restart")).toBeDefined()
-    expect(command(build({ desktopBridge: true, ownedBackend: false }), "backend.restart")).toBeUndefined()
-    expect(command(build({ desktopBridge: false, ownedBackend: false }), "backend.restart")).toBeUndefined()
   })
 })
 
@@ -116,7 +100,6 @@ function actions(calls: string[]) {
     showHelp: () => calls.push("show-help"),
     focusComposer: () => calls.push("focus-composer"),
     refresh: () => calls.push("refresh"),
-    restartBackend: () => calls.push("restart-backend"),
     openDocs: () => calls.push("open-docs"),
     exitApp: () => calls.push("exit"),
   }

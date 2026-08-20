@@ -74,7 +74,7 @@ describe("sidecar lifecycle", () => {
     await first
   })
 
-  test("waits for shutdown cleanup before restarting", async () => {
+  test("waits for shutdown cleanup before starting again", async () => {
     const cleanup = Promise.withResolvers<void>()
     let starts = 0
     const lifecycle = createSidecarLifecycle({
@@ -86,129 +86,12 @@ describe("sidecar lifecycle", () => {
     expect(await lifecycle.ensure()).toBe("connection-1")
 
     const stopping = lifecycle.stop()
-    const restarting = lifecycle.ensure()
+    const nextStart = lifecycle.ensure()
     expect(starts).toBe(1)
     cleanup.resolve()
 
     await stopping
-    expect(await restarting).toBe("connection-2")
-  })
-
-  test("restarts through the serialized shutdown path", async () => {
-    const events: string[] = []
-    let starts = 0
-    const lifecycle = createSidecarLifecycle({
-      start: async () => {
-        events.push("start")
-        return `connection-${++starts}`
-      },
-      install: () => {},
-      reset: () => events.push("reset"),
-      stop: async () => {
-        events.push("ordinary-stop")
-      },
-      restartStop: async () => {
-        events.push("restart-stop")
-      },
-      beforeRestart: async () => {
-        events.push("allowed")
-      },
-    })
-
-    expect(await lifecycle.ensure()).toBe("connection-1")
-    expect(await lifecycle.restart()).toBe("connection-2")
-    expect(events).toEqual(["start", "allowed", "reset", "restart-stop", "start"])
-  })
-
-  test("performs the stronger restart stop after a racing ordinary stop", async () => {
-    const cleanup = Promise.withResolvers<void>()
-    let starts = 0
-    let restartStops = 0
-    const lifecycle = createSidecarLifecycle({
-      start: async () => `connection-${++starts}`,
-      install: () => {},
-      reset: () => {},
-      stop: () => cleanup.promise,
-      restartStop: () => {
-        restartStops += 1
-      },
-    })
-    expect(await lifecycle.ensure()).toBe("connection-1")
-
-    const stopping = lifecycle.stop()
-    const restarting = lifecycle.restart()
-    await Promise.resolve()
-    expect(starts).toBe(1)
-    expect(restartStops).toBe(0)
-
-    cleanup.resolve()
-    await stopping
-    expect(await restarting).toBe("connection-2")
-    expect(restartStops).toBe(1)
-  })
-
-  test("coalesces concurrent restart requests", async () => {
-    const stopped = Promise.withResolvers<void>()
-    let starts = 0
-    const lifecycle = createSidecarLifecycle({
-      start: async () => `connection-${++starts}`,
-      install: () => {},
-      reset: () => {},
-      stop: () => {},
-      beforeRestart: () => stopped.promise,
-    })
-    await lifecycle.ensure()
-
-    const first = lifecycle.restart()
-    const second = lifecycle.restart()
-
-    expect(second).toBe(first)
-    stopped.resolve()
-    expect(await first).toBe("connection-2")
-    expect(starts).toBe(2)
-  })
-
-  test("holds connection recovery until restart finishes", async () => {
-    const stopped = Promise.withResolvers<void>()
-    let starts = 0
-    const lifecycle = createSidecarLifecycle({
-      start: async () => `connection-${++starts}`,
-      install: () => {},
-      reset: () => {},
-      stop: () => {},
-      beforeRestart: () => stopped.promise,
-    })
-
-    expect(await lifecycle.ensure()).toBe("connection-1")
-    const restart = lifecycle.restart()
-    const recovery = lifecycle.ensure()
-    expect(recovery).toBe(restart)
-    expect(starts).toBe(1)
-    stopped.resolve()
-    expect(await restart).toBe("connection-2")
-    expect(starts).toBe(2)
-  })
-
-  test("preserves the current connection when restart is deferred", async () => {
-    let starts = 0
-    let stops = 0
-    const lifecycle = createSidecarLifecycle({
-      start: async () => `connection-${++starts}`,
-      install: () => {},
-      reset: () => {},
-      stop: () => {
-        stops += 1
-      },
-      beforeRestart: async () => {
-        throw new Error("active work")
-      },
-    })
-
-    expect(await lifecycle.ensure()).toBe("connection-1")
-    await expect(lifecycle.restart()).rejects.toThrow("active work")
-    expect(await lifecycle.ensure()).toBe("connection-1")
-    expect(starts).toBe(1)
-    expect(stops).toBe(0)
+    expect(await nextStart).toBe("connection-2")
   })
 
   test("aborts and rejects stale completion after stop", async () => {
