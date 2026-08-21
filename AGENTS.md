@@ -209,3 +209,18 @@ Part B finding 3). When asking the user to approve or choose anything, put the
 material they need INSIDE the question payload (the `question` field renders
 long text) or in a committed file the question references - never rely on
 turn-middle message text being visible.
+
+## Specs and Plans Are Never Committed
+
+Everything under `docs/superpowers/` — design specs in `specs/`, implementation
+plans in `plans/` — is a working artifact for the session that produced it.
+Write them to disk so they can be read and revised, but **never `git add` or
+commit them**, and never include them in a PR. If a commit is being prepared and
+one of these files is staged, unstage it.
+
+This is also why commit steps inside a plan list explicit paths: `git add -A` or
+`git add .` would sweep the plan itself into the commit.
+
+Anything from a spec or plan that the codebase needs to keep belongs in the
+code, in a comment next to what it explains, or in this file — not in a
+committed document.

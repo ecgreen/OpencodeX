@@ -3,11 +3,10 @@ import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import { nextPromptHistoryState } from "../lib/prompt-state"
 import { removeTrailingMentionQuery, type PromptMentionOption } from "../lib/prompt-autocomplete"
 import { filePartFromFile, filePartFromPath, readComposerDraft } from "../lib/session-composer-helpers"
-import { readClaudeDriverMarker } from "../lib/claude-driver-marker"
 import { createStableEffect } from "../lib/stable-effect"
-import { Button, InlineNotice } from "./ui"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
+import { SessionClaudeSignInBanner } from "./session-claude-signin-banner"
 import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
@@ -206,29 +205,19 @@ export function SessionPage(props: SessionPageProps) {
     composerInput.schedule({ sessionID: id, draft: value })
     if (!value.input && value.parts.length === 0) composerInput.flushPending()
   })
-  // A mirrored Claude Code session cannot run headlessly until the CLI is
-  // signed in; the raw terminal page is where that happens.
-  const claudeDriver = createMemo(() => readClaudeDriverMarker(session()?.metadata))
   // The session column is hidden rather than unmounted when it collapses: the
   // transcript keeps its scroll position and its subscriptions, so restoring it
   // is instant and does not re-fetch what the reader was already looking at.
   return (
     <div class="page session-page" data-session-id={session()?.id} data-center-collapsed={sidePanel.centerCollapsed() ? "" : undefined}>
       <SessionPageToolbar props={props} sidePanel={sidePanel} />
-      <Show when={claudeDriver()?.authState === "needs-login" ? claudeDriver() : undefined}>
-        {(marker) => (
-          <InlineNotice tone="warning" title="Claude Code needs to be signed in">
-            <p>Open the raw terminal to complete sign-in, then return to this session.</p>
-            <Button
-              appearance="outline"
-              size="compact"
-              onClick={() => props.openTerminalSession?.(marker().terminalSessionID)}
-            >
-              Open terminal to sign in
-            </Button>
-          </InlineNotice>
-        )}
-      </Show>
+      <SessionClaudeSignInBanner
+        session={session()}
+        messages={props.data.messages}
+        claudeSignInConfirmed={props.claudeSignInConfirmed}
+        signInToClaude={props.signInToClaude}
+        retry={(bundle) => handleMessageAction("retry", bundle)}
+      />
       {/* Transcript agent rows stamp `data-subagent-session`; a click on one
           opens the same embedded view a graph node opens into. Everything else
           falls through to the side panel's file and link targets. */}

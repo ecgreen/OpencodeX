@@ -2,6 +2,7 @@ import { createTwoFilesPatch } from "diff"
 import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import type { SessionSchema } from "@opencode-ai/core/session/schema"
 import type { ConversationTask } from "./claude-driver-metadata"
+import { classifyClaudeError, type ClaudeAuthFailure } from "./claude-auth-error"
 
 type SessionID = typeof SessionSchema.ID.Type
 type MessageID = typeof SessionLegacy.MessageID.Type
@@ -92,7 +93,8 @@ export type MapperState = {
   claudeSessionID?: string
   /** Set when a `--resume` was refused, so the stored id can be discarded. */
   resumeRejected?: boolean
-  authFailed?: boolean
+  /** Set when the CLI failed because the user has to sign in again. */
+  authFailure?: ClaudeAuthFailure
   finished?: boolean
   /**
    * Live background tasks (backgrounded subagents, background shells) as
@@ -549,7 +551,12 @@ function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperSta
   state.turnCost += cost
   const failed = event.is_error === true || (event.subtype !== undefined && event.subtype !== "success")
   const error = failed ? readResultError(event) : undefined
-  if (error && /not logged in|unauthorized|authentication|please run .*login/i.test(error)) state.authFailed = true
+  // A non-"success" subtype alone (e.g. error_max_turns) does not mean the CLI
+  // is reporting a real error - `result` there is often just the model's own
+  // final text, cut off by the turn limit rather than failed. Only a genuine
+  // `is_error` lets the weak credential+failure-word tier fire; the strong,
+  // unambiguous patterns stay active either way.
+  if (error) state.authFailure = classifyClaudeError(error, { weakTierAllowed: event.is_error === true })
   // A refused resume never reaches `system.init`, so the turn ends without ever
   // naming a conversation. That is the signal to stop reusing the stored id.
   if (failed && !state.claudeSessionID) state.resumeRejected = true
@@ -590,6 +597,13 @@ function assistantMessage(
   context: MapperContext,
   input: { completed?: number; cost?: number; tokens?: SessionLegacy.StepFinishPart["tokens"]; error?: string },
 ): SessionLegacy.Assistant {
+  // A sign-in failure is labelled as the auth error both clients already know
+  // how to render with a recovery action; everything else stays unknown.
+  const error = state.authFailure
+    ? { name: "ProviderAuthError" as const, data: { providerID: context.providerID, message: state.authFailure.message } }
+    : input.error
+      ? { name: "UnknownError" as const, data: { message: input.error } }
+      : undefined
   return {
     id: state.messageID!,
     sessionID: context.sessionID,
@@ -603,9 +617,7 @@ function assistantMessage(
     path: { cwd: context.directory, root: context.directory },
     cost: input.cost ?? 0,
     tokens: input.tokens ?? emptyTokens(),
-    ...(input.error
-      ? { error: { name: "UnknownError" as const, data: { message: input.error } } }
-      : {}),
+    ...(error ? { error } : {}),
   } as SessionLegacy.Assistant
 }
 

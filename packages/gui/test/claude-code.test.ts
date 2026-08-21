@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import path from "node:path"
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { claudeArguments, resolveClaudeExecutable } from "../src/main/claude-code"
+import { claudeArguments, readClaudeAuthStatus, resolveClaudeExecutable } from "../src/main/claude-code"
 import { isUUID, readInstallationID } from "../src/main/installation-id-store"
 
 const directories: string[] = []
@@ -68,6 +68,27 @@ describe("Claude Code launch contract", () => {
     await mkdir(path.join(bin, "claude.exe"), { recursive: true })
 
     expect(await resolveClaudeExecutable({ path: bin, home: path.join(root, "home"), platform: "win32" })).toBeUndefined()
+  })
+
+  test("reads the CLI's own auth verdict from its json payload", () => {
+    expect(readClaudeAuthStatus('{"loggedIn":true,"authMethod":"claudeai","apiProvider":"firstParty"}')).toEqual({
+      state: "signed-in",
+      authMethod: "claudeai",
+    })
+    expect(readClaudeAuthStatus('{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}')).toEqual({
+      state: "signed-out",
+      authMethod: "none",
+    })
+  })
+
+  test("treats an unreadable verdict as unknown, never as signed out", () => {
+    // Clearing the sign-in banner because the CLI changed its output shape
+    // would strand the user again, so only an explicit false means signed out.
+    expect(readClaudeAuthStatus("not json at all")).toEqual({ state: "unknown" })
+    expect(readClaudeAuthStatus('{"apiProvider":"firstParty"}')).toEqual({ state: "unknown" })
+    expect(readClaudeAuthStatus('{"loggedIn":"yes"}')).toEqual({ state: "unknown" })
+    expect(readClaudeAuthStatus("[]")).toEqual({ state: "unknown" })
+    expect(readClaudeAuthStatus("")).toEqual({ state: "unknown" })
   })
 })
 

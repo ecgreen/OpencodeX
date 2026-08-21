@@ -138,6 +138,8 @@ function OpenCodeViewPane(props: {
       renameSession={(session) => void run(() => props.model.sessionActions.rename(session))}
       moveSession={(session) => void run(() => props.model.sessionActions.move(session))}
       deleteSession={(session) => void run(() => props.model.sessionActions.remove(session))}
+      signInToClaude={() => void props.model.claudeAuth.signIn()}
+      claudeSignInConfirmed={props.model.claudeAuth.phase() === "signed-in"}
       slashCommands={props.model.sessionSlash.commands(session(), {
         data: data(),
         selectedAgent: props.model.view.agentValue(paneID(), session()),

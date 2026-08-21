@@ -1,0 +1,205 @@
+import { createMemo, createSignal, onCleanup } from "solid-js"
+import type { ClaudeAuthStatus, TerminalCreateInput, TerminalResult } from "../../../preload/index.cts"
+import { terminalSurface } from "../components/session-side-terminal-views"
+import { claudeSessionAuthState } from "../lib/claude-session-auth"
+
+/** One PTY for the whole app: a second sign-in shell would race the first. */
+export const LOGIN_TERMINAL_ID = "claude-login"
+
+export type ClaudeAuthPhase = "idle" | "signing-in" | "checking" | "signed-in" | "failed"
+
+/**
+ * The real `write`/`openURL` callbacks for the login PTY's terminal view.
+ * Exported so `claude-sign-in-dialog.tsx` can hand `terminalSurface.attach`
+ * this exact pair rather than a second, hand-rolled copy: `ensure()` binds
+ * whichever caller's callbacks win the race to create the view first (the
+ * controller's own `onData` handler, or the dialog's `attach` on open), and
+ * a diverging `openURL` there would silently stop the OAuth link the CLI
+ * prints from opening.
+ */
+export function claudeAuthTerminalWrite(id: string, data: string) {
+  window.opencodex?.terminal?.write({ id, data })
+}
+
+export function claudeAuthTerminalOpenURL(url: string) {
+  void window.opencodex?.browser?.external(url)
+}
+
+export type ClaudeAuthDeps = {
+  authStatus: () => Promise<ClaudeAuthStatus>
+  createTerminal: (input: TerminalCreateInput) => Promise<TerminalResult>
+  destroyTerminal: (id: string) => Promise<boolean>
+  onExit: (listener: (event: { id: string }) => void) => () => void
+  onData: (listener: (event: { id: string; data: string }) => void) => () => void
+  write: (id: string, data: string) => void
+  openURL: (url: string) => void
+}
+
+/**
+ * Recovery for an expired Claude Code sign-in.
+ *
+ * The credential is machine-wide, so the stranded state is derived from the
+ * session snapshot rather than stored: any session in `needs-login` means every
+ * Claude Subscription session is stuck. Session metadata only returns to
+ * `ready` on the next successful turn, so a confirmed sign-in suppresses the
+ * banner locally - keyed on *which* sessions are stranded, so that a later,
+ * genuinely new failure brings it back instead of being swallowed by a boolean.
+ */
+export function createClaudeAuthController(input: {
+  sessions: () => Array<{ id: string; metadata?: unknown }>
+  deps?: Partial<ClaudeAuthDeps>
+}) {
+  const deps: ClaudeAuthDeps = {
+    authStatus: () => window.opencodex!.claude.authStatus(),
+    createTerminal: (create) => window.opencodex!.terminal!.create(create),
+    destroyTerminal: (id) => window.opencodex!.terminal!.destroy(id),
+    onExit: (listener) => window.opencodex?.terminal?.onExit(listener) ?? (() => undefined),
+    onData: (listener) => window.opencodex?.terminal?.onData(listener) ?? (() => undefined),
+    write: claudeAuthTerminalWrite,
+    openURL: claudeAuthTerminalOpenURL,
+    ...input.deps,
+  }
+
+  const [phase, setPhase] = createSignal<ClaudeAuthPhase>("idle")
+  const [message, setMessage] = createSignal<string>()
+  const [open, setOpen] = createSignal(false)
+  const [suppressed, setSuppressed] = createSignal<string>()
+  // Bumped on every signIn(). Lets a stale close() (its destroy still in
+  // flight when a new sign-in starts) recognize it no longer owns the view,
+  // and lets a stale check() (still awaiting authStatus() when a new sign-in
+  // starts) recognize its verdict no longer applies - see close() and check().
+  let generation = 0
+
+  const strandedKey = createMemo(() =>
+    input
+      .sessions()
+      .filter((session) => claudeSessionAuthState(session.metadata) === "needs-login")
+      .map((session) => session.id)
+      .sort()
+      .join(","),
+  )
+
+  const visible = createMemo(() => strandedKey().length > 0 && strandedKey() !== suppressed())
+
+  onCleanup(
+    deps.onExit((event) => {
+      if (event.id !== LOGIN_TERMINAL_ID) return
+      void check()
+    }),
+  )
+
+  // Subscribed here, before any signIn() call, so no byte the PTY writes
+  // between opening the dialog and its first output can be lost to the race.
+  // `persistent: true` matches how real Claude Code session terminals open
+  // (session-side-terminal-views only evicts non-persistent views to free a
+  // slot), so once this view exists it keeps the OAuth URL the CLI printed
+  // rather than losing it to eviction the next time some other terminal needs
+  // room. That does mean `ensure()` can throw here - the shared view budget
+  // is global, and 8 already-open persistent session terminals leave nothing
+  // to evict - so this mirrors claude-terminal-controller.ts's onData handler
+  // and turns that throw into a visible failure instead of an unhandled
+  // exception inside an IPC listener.
+  /** Shared by the onData catch below and the dialog's own attach() guard. */
+  function fail(text: string) {
+    setPhase("failed")
+    setMessage(text)
+  }
+
+  onCleanup(
+    deps.onData((event) => {
+      if (event.id !== LOGIN_TERMINAL_ID) return
+      try {
+        terminalSurface.ensure(event.id, deps.write, deps.openURL, true).terminal.write(event.data)
+        terminalSurface.markOpen(event.id)
+      } catch (error) {
+        fail(error instanceof Error ? error.message : "Could not open the sign-in terminal.")
+      }
+    }),
+  )
+
+  async function check() {
+    // Captured before the await: if a new signIn() starts while this probe is
+    // in flight, its own state has already moved on and this verdict is stale.
+    const attempt = generation
+    setPhase("checking")
+    const status = await deps.authStatus()
+    if (attempt !== generation) return
+    if (status.state === "signed-in") {
+      setSuppressed(strandedKey())
+      setMessage(undefined)
+      setPhase("signed-in")
+      return
+    }
+    setPhase("failed")
+    setMessage(
+      status.state === "signed-out"
+        ? "Sign-in did not complete. Try again."
+        : (status.message ?? "Could not confirm the sign-in. Retry your message to find out."),
+    )
+  }
+
+  async function signIn() {
+    generation += 1
+    setPhase("signing-in")
+    setMessage(undefined)
+    setOpen(true)
+    // A shell left over from an abandoned attempt would be answered as a
+    // duplicate rather than restarted.
+    await deps.destroyTerminal(LOGIN_TERMINAL_ID).catch(() => false)
+    // A rejection (IPC error, destroyed renderer) must land here too, or phase
+    // stays "signing-in" forever with no way for the user to retry.
+    const result = await deps
+      .createTerminal({ id: LOGIN_TERMINAL_ID, profile: { kind: "claude-login" }, cols: 100, rows: 30 })
+      .catch((error): TerminalResult => ({ ok: false, message: error instanceof Error ? error.message : String(error) }))
+    if (result.ok) return
+    setPhase("failed")
+    setMessage(result.message ?? "Could not start Claude Code sign-in.")
+  }
+
+  return {
+    terminalID: LOGIN_TERMINAL_ID,
+    phase,
+    message,
+    visible,
+    isOpen: open,
+    // Lets the dialog surface an attach() failure (e.g. the shared 8-terminal
+    // budget is full) through this controller's own phase/message channel,
+    // the same path the onData catch above already uses, instead of letting
+    // it throw uncaught out of a createEffect with no ErrorBoundary above it.
+    fail,
+    close: () => {
+      // Captured before setOpen/destroy: if a new signIn() starts while this
+      // close() is still tearing down, that attempt now owns the view and
+      // the phase - this close() must not dispose the fresh view out from
+      // under it, or resolve a phase for an attempt it never saw finish.
+      const attempt = generation
+      setOpen(false)
+      // Persistent views never get evicted on their own, so this login view
+      // would otherwise sit in the shared 8-slot budget forever after the
+      // dialog closes, permanently starving session terminals of one slot -
+      // but the teardown must wait for the PTY to actually be gone first.
+      // The onData subscription above stays live across close()/signIn()
+      // cycles, so disposing the view before destroy settles would let a
+      // chunk in flight re-enter ensure() and rebuild a brand-new, orphaned
+      // terminal - reopening the very leak this teardown exists to close.
+      void deps
+        .destroyTerminal(LOGIN_TERMINAL_ID)
+        .catch(() => false)
+        .finally(() => {
+          if (attempt !== generation) return
+          terminalSurface.markClosed(LOGIN_TERMINAL_ID)
+          terminalSurface.dispose(LOGIN_TERMINAL_ID)
+          // destroyTerminal() tears down the PTY without ever emitting the
+          // `opencodex:terminal:exit` IPC event (terminal-ipc.ts disposes the
+          // pty's own exit listener before killing the process), so the
+          // onExit subscription above never fires for an explicit close().
+          // Without this, closing the dialog right after a completed sign-in
+          // leaves phase stuck on "signing-in" forever - the global banner's
+          // button reads "Signing in..." and stays disabled for the rest of
+          // the app session, exactly the dead end this feature exists to fix.
+          void check()
+        })
+    },
+    signIn,
+  }
+}

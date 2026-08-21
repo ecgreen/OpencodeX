@@ -1,0 +1,7 @@
+.host {
+  height: 22rem;
+}
+
+.host :global(.xterm) {
+  height: 100%;
+}

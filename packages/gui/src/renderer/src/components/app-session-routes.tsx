@@ -165,6 +165,8 @@ export function SessionRoute(props: { model: GuiAppModel }) {
       moveSession={(session) => void model.notices.run(() => model.sessionActions.move(session))}
       deleteSession={(session) => void model.notices.run(() => model.sessionActions.remove(session))}
       openTerminalSession={(terminalSessionID) => model.navigation.setRoute({ name: "terminal-session", terminalSessionID })}
+      signInToClaude={() => void model.claudeAuth.signIn()}
+      claudeSignInConfirmed={model.claudeAuth.phase() === "signed-in"}
       slashCommands={model.sessionSlash.commands(session(), {
         data: model.sessionSelection.activeSessionData(),
         restorePrompt: model.sessionState.setPrompt,

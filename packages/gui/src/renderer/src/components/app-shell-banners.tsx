@@ -1,5 +1,6 @@
 import { Show } from "solid-js"
 import type { GuiAppModel } from "../controllers/app-model"
+import { claudeSignInBusy, claudeSignInLabel } from "../lib/claude-sign-in-presentation"
 import { shouldShowConnectionWarning } from "../lib/connection-warning"
 import { Button } from "./ui"
 
@@ -42,6 +43,22 @@ export function AppShellBanners(props: { model: GuiAppModel }) {
             </Button>
           </div>
         )}
+      </Show>
+      <Show when={model.claudeAuth.visible()}>
+        <div class="sync-status-banner" role="status" aria-live="polite">
+          <span>
+            <strong>Claude Code sign-in expired.</strong> Claude Subscription sessions cannot run until you sign in again.
+          </span>
+          <Button
+            appearance="solid"
+            tone="accent"
+            type="button"
+            disabled={claudeSignInBusy(model.claudeAuth.phase())}
+            onClick={() => void model.claudeAuth.signIn()}
+          >
+            {claudeSignInLabel(model.claudeAuth.phase())}
+          </Button>
+        </div>
       </Show>
     </>
   )

@@ -100,6 +100,9 @@ export type SessionPageProps = {
   deleteSession: (session: Session) => void
   /** Opens the raw Claude Code terminal page, used for sign-in recovery. */
   openTerminalSession?: (terminalSessionID: string) => void
+  signInToClaude?: () => void
+  /** True once the sign-in controller has confirmed a fresh, working credential. */
+  claudeSignInConfirmed?: boolean
   slashCommands: SessionSlashCommand[]
   concealCodeBlocks?: boolean
   showTimestamps: boolean

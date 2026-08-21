@@ -1,5 +1,6 @@
 export type TerminalLaunchProfile =
   | { kind: "shell" }
+  | { kind: "claude-login" }
   | {
       kind: "claude-code"
       mode: "new" | "resume"
@@ -36,6 +37,12 @@ export type ClaudeCodeStatus = {
   available: boolean
   executable?: string
   version?: string
+  message?: string
+}
+
+export type ClaudeAuthStatus = {
+  state: "signed-in" | "signed-out" | "unknown"
+  authMethod?: string
   message?: string
 }
 

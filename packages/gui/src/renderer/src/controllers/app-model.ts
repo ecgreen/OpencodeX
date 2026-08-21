@@ -1,6 +1,7 @@
 import type { createAppearanceController } from "./appearance-controller"
 import type { createAuthoritativeStateController } from "./authoritative-state-controller"
 import type { createCapabilityActionsController } from "./capability-actions-controller"
+import type { createClaudeAuthController } from "./claude-auth-controller"
 import type { createClaudeTerminalController } from "./claude-terminal-controller"
 import type { createCommandController } from "./command-controller"
 import type { createDialogController } from "./dialog-controller"
@@ -27,6 +28,7 @@ export type GuiAppModel = {
   appearance: ReturnType<typeof createAppearanceController>
   authoritative: ReturnType<typeof createAuthoritativeStateController>
   capabilities: ReturnType<typeof createCapabilityActionsController>
+  claudeAuth: ReturnType<typeof createClaudeAuthController>
   claudeTerminals: ReturnType<typeof createClaudeTerminalController>
   commands: ReturnType<typeof createCommandController>
   dialogs: ReturnType<typeof createDialogController>
