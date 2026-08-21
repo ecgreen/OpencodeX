@@ -21,6 +21,7 @@ import {
 import { Identifier } from "@/id/id"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
+import { prepareImages } from "./swarm-attachments"
 import { SessionStatus } from "./status"
 
 const log = Log.create({ service: "session.prompt-swarm" })
@@ -272,12 +273,19 @@ export function make(deps: Deps) {
     const providerID = model?.providerID
     if (!providerID || !isClaudeCodeProvider(providerID)) return undefined
     if (!last || last.info.role !== "user") return undefined
-    const text = last.parts
+    const promptText = last.parts
       .flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text] : []))
       .join("\n")
       .trim()
-    if (!text) return undefined
-    yield* ensureClaudeTitle(session, text)
+
+    const attachments = prepareImages(last.parts)
+    if (attachments.skipped.length > 0)
+      log.warn("skipped unsupported swarm attachments", { reasons: attachments.skipped })
+    // An image-only message has no text but is still a real turn.
+    if (!promptText) {
+      if (!attachments.hasImages) return undefined
+      yield* ensureClaudeTitle(session, attachments.title)
+    } else yield* ensureClaudeTitle(session, promptText)
     const specialists = swarm?.roles.slice(1) ?? []
     // Attribute the turn to the route the reader picked, so a swarm session
     // stays labelled with the team rather than the orchestrator's model. The
@@ -295,7 +303,8 @@ export function make(deps: Deps) {
     return claudeDriver.runTurn({
       sessionID,
       parentMessageID: last.info.id,
-      text,
+      text: promptText,
+      ...(attachments.images.length > 0 ? { images: attachments.images } : {}),
       directory: session.directory,
       providerID: turnProviderID,
       modelID: turnModelID,
@@ -332,9 +341,7 @@ export function make(deps: Deps) {
             // Avoid doubling up when the subagent's own title already says
             // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
             // render as "code-reviewer subagent (@claude subagent)".
-            const title = /subagent/i.test(spawnInput.title)
-              ? spawnInput.title
-              : `${spawnInput.title} (@claude subagent)`
+            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,
