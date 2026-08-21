@@ -147,6 +147,47 @@ export function make(deps: Deps) {
   })
 
   /**
+   * Records the delegated child on the orchestrator's own tool part, the way
+   * the task tool does for a native subagent (src/tool/task.ts): the GUI's
+   * transcript link reads `metadata.sessionId` off that part, so this stamp is
+   * what turns a delegation row into a drill-down. Failing to stamp only costs
+   * the link, never the delegation, so every outcome is swallowed.
+   */
+  const stampDelegateToolPart = Effect.fnUntraced(function* (input: {
+    sessionID: SessionID
+    toolUseID: string
+    childSessionID: string
+    role: string
+  }) {
+    const isCall = (part: SessionLegacy.Part) => part.type === "tool" && part.callID === input.toolUseID
+    const match = yield* sessions
+      .findMessage(input.sessionID, (message) => message.parts.some(isCall))
+      .pipe(Effect.orElseSucceed(() => Option.none<SessionLegacy.WithParts>()))
+    const part = Option.getOrUndefined(match)?.parts.find(isCall)
+    // A pending part has no metadata to hang the link on; by the time a
+    // delegation runs the call is always running, so this is only a guard.
+    if (part?.type !== "tool" || part.state.status === "pending") return
+    yield* sessions
+      .updatePart({
+        ...part,
+        state: {
+          ...part.state,
+          metadata: {
+            ...part.state.metadata,
+            parentSessionId: input.sessionID,
+            sessionId: input.childSessionID,
+            swarmRole: input.role,
+          },
+        },
+      })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.error("swarm delegate stamp failed", { sessionID: input.sessionID, cause })),
+        ),
+      )
+  })
+
+  /**
    * Runs one specialist role as its own OpencodeX session on the model
    * configured for it, and returns its report. This is what the Claude Code
    * orchestrator's delegation tool calls, so specialists stay OpencodeX
@@ -158,6 +199,12 @@ export function make(deps: Deps) {
     roles: SwarmRoleRow[]
     role: string
     prompt: string
+    /**
+     * The orchestrator's tool call id for this delegation, when the driver
+     * could correlate one. It is what links the parent's transcript row to the
+     * session this role runs in.
+     */
+    toolUseID?: string
   }) {
     const role = SwarmBriefing.matchSwarmRole(input.roles, input.role)
     if (!role) {
@@ -175,6 +222,15 @@ export function make(deps: Deps) {
         ...(parent.permission ? { permission: parent.permission } : {}),
       })
       .pipe(Effect.orDie)
+    // Written before the role starts, so the orchestrator's transcript row
+    // drills into a running delegation and not only a finished one.
+    if (input.toolUseID)
+      yield* stampDelegateToolPart({
+        sessionID: input.sessionID,
+        toolUseID: input.toolUseID,
+        childSessionID: child.id,
+        role: role.name,
+      })
     // The role's skill is its base definition; the built-in role skills carry
     // the full role prompt. The task-tool path gets it through the specialist
     // loading the skill itself, but a delegated specialist never sees the
@@ -326,6 +382,7 @@ export function make(deps: Deps) {
                   roles: swarm!.roles,
                   role: delegated.role,
                   prompt: delegated.prompt,
+                  ...(delegated.toolUseID ? { toolUseID: delegated.toolUseID } : {}),
                 }),
             },
           }

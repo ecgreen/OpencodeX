@@ -32,6 +32,27 @@ describe("GUI tool display helpers", () => {
     expect(toolDisplayTitle("browser_snapshot", {}, { url: "https://example.com/" })).toBe("Snapshot browser https://example.com/")
   })
 
+  test("titles a swarm delegation by its role and prompt", () => {
+    // The delegate tool normalizes onto `task` but carries {role, prompt}
+    // instead of {subagent_type, description}, which used to render as the
+    // placeholder "Task general: subagent" for every delegation in the swarm.
+    expect(toolDisplayTitle("task", { role: "Goomba - Code", prompt: "Fix the title builder" }, {})).toBe(
+      "Task Goomba - Code: Fix the title builder",
+    )
+    expect(
+      toolDisplayTitle("task", { role: "Reviewer", prompt: "  Review the diff  \n\nThen report back" }, {}),
+    ).toBe("Task Reviewer: Review the diff")
+    expect(toolDisplayTitle("task", { role: "Reviewer", prompt: `${"x".repeat(80)} tail` }, {})).toBe(
+      `Task Reviewer: ${"x".repeat(60)}…`,
+    )
+    expect(toolDisplayTitle("task", { role: "Reviewer" }, {})).toBe("Task Reviewer: delegation")
+    // A native task call keeps its own shape even when both are somehow present.
+    expect(toolDisplayTitle("task", { role: "Reviewer", subagent_type: "review", description: "check changes" }, {})).toBe(
+      "Task review: check changes",
+    )
+    expect(toolDisplayTitle("task", {}, {})).toBe("Task general: subagent")
+  })
+
   test("titles Claude-shaped file inputs and harness tools", () => {
     expect(toolDisplayTitle("read", { file_path: "C:/repo/a.ts" }, {})).toBe("Read C:/repo/a.ts")
     expect(toolDisplayTitle("toolsearch", { query: "select:TaskCreate" }, {})).toBe('Search tools "select:TaskCreate"')

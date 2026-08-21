@@ -63,7 +63,8 @@ export async function nextClaudeEvent(iterator: AsyncIterator<ClaudeMapper.Claud
  */
 export type SwarmDelegate = {
   roles: Array<{ name: string; description?: string }>
-  run: (input: { role: string; prompt: string }) => Effect.Effect<string>
+  /** `toolUseID` is the orchestrator's tool call id for this delegation. */
+  run: (input: { role: string; prompt: string; toolUseID?: string }) => Effect.Effect<string>
 }
 
 export interface Interface {
@@ -158,6 +159,11 @@ export function makeLayer(options: LayerOptions = {}) {
       // always resolves before the CLI executes the tool, so the entry is in
       // place by the time the tool_result event is mapped.
       const decidedInputs = new Map<string, Record<string, unknown>>()
+      // Tool calls this turn that were handed to a swarm role. The role stamps
+      // the child session onto the parent's tool part while it runs, and the
+      // mapper rebuilds that part from the tool_result alone - so these are the
+      // calls whose stamp has to be carried across a rewrite.
+      const delegatedCallIDs = new Set<string>()
       const context: MapperContext = {
         sessionID: input.sessionID,
         parentMessageID: input.parentMessageID,
@@ -249,12 +255,14 @@ export function makeLayer(options: LayerOptions = {}) {
           ? {
               delegate: {
                 roles: input.delegate.roles,
-                run: (delegated) =>
-                  bridge
+                run: (delegated) => {
+                  if (delegated.toolUseID) delegatedCallIDs.add(delegated.toolUseID)
+                  return bridge
                     .promise(input.delegate!.run(delegated))
                     .catch((cause: unknown) =>
                       `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-                    ),
+                    )
+                },
               } satisfies DelegateCapability,
             }
           : {}),
@@ -283,7 +291,7 @@ export function makeLayer(options: LayerOptions = {}) {
       const finalize = Effect.fn("OpencodeXClaudeDriver.finalize")(function* (reason: string, error?: string) {
         const closing = ClaudeMapper.finalizeAbandonedTurn(live, context, { reason, ...(error ? { error } : {}) })
         live = closing.state
-        yield* applyWrites(closing.writes, input.sessionID)
+        yield* applyWrites(closing.writes, input.sessionID, { delegatedCallIDs })
       })
 
       const saveConversation = Effect.fn("OpencodeXClaudeDriver.saveConversation")(function* () {
@@ -327,7 +335,7 @@ export function makeLayer(options: LayerOptions = {}) {
           }
           const mapped = ClaudeMapper.mapEvent(next.value, live, context)
           live = mapped.state
-          yield* applyWrites(mapped.writes, input.sessionID)
+          yield* applyWrites(mapped.writes, input.sessionID, { delegatedCallIDs })
           if (live.finished) break
         }
       })
@@ -401,13 +409,39 @@ export function makeLayer(options: LayerOptions = {}) {
       return yield* readTurn(context.sessionID, closing.state.messageID)
     })
 
+    /**
+     * A delegated swarm role stamps the child session it spawned onto the
+     * orchestrator's running tool part (prompt-swarm.runSwarmRole), which is
+     * what the transcript's sub-agent link reads. The mapper rebuilds that part
+     * from the tool_result event alone, so without carrying the stamp forward
+     * the row would lose its drill-down the moment the delegation returned.
+     * Only delegated calls are re-read, so an ordinary turn does no extra work.
+     */
+    const withDelegationStamp = Effect.fn("OpencodeXClaudeDriver.withDelegationStamp")(function* (
+      part: SessionLegacy.Part,
+      sessionID: SessionID,
+      delegatedCallIDs?: ReadonlySet<string>,
+    ) {
+      if (part.type !== "tool" || part.state.status === "pending") return part
+      if (!delegatedCallIDs?.has(part.callID)) return part
+      const existing = yield* sessions
+        .getPart({ sessionID, messageID: part.messageID, partID: part.id })
+        .pipe(Effect.orElseSucceed(() => undefined))
+      if (existing?.type !== "tool" || existing.state.status === "pending") return part
+      const stamped = existing.state.metadata
+      if (!stamped) return part
+      return { ...part, state: { ...part.state, metadata: { ...stamped, ...part.state.metadata } } }
+    })
+
     const applyWrites = Effect.fn("OpencodeXClaudeDriver.applyWrites")(function* (
       writes: ClaudeMapper.SessionWrite[],
       sessionID: SessionID,
+      options?: { delegatedCallIDs?: ReadonlySet<string> },
     ) {
       for (const write of writes) {
         if (write.kind === "message") yield* sessions.updateMessage(write.message)
-        else if (write.kind === "part") yield* sessions.updatePart(write.part)
+        else if (write.kind === "part")
+          yield* sessions.updatePart(yield* withDelegationStamp(write.part, sessionID, options?.delegatedCallIDs))
         else
           // `Todo.update` can defect (e.g. a NOT NULL violation) rather than fail
           // typed, and `Effect.ignore` does not catch defects - an uncaught one

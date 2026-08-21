@@ -1,5 +1,13 @@
 import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
-import { arrayValue, fileBasename, isRecordValue, numberValue, pluralize, stringValue } from "./tool-values"
+import {
+  arrayValue,
+  collapseWhitespace,
+  fileBasename,
+  isRecordValue,
+  numberValue,
+  pluralize,
+  stringValue,
+} from "./tool-values"
 
 type ToolTitleBuilder = (input: Record<string, unknown>, metadata: Record<string, unknown>) => string
 type PermissionTitleBuilder = (request: PermissionRequest, input: Record<string, unknown>) => string | undefined
@@ -19,7 +27,7 @@ const TOOL_TITLE_BY_ID: Record<string, ToolTitleBuilder | undefined> = {
   apply_patch: (_input, metadata) => patchTitle(metadata),
   todowrite: () => "Update todos",
   question: (input) => `Ask ${arrayValue(input.questions).length || ""} ${pluralize("question", arrayValue(input.questions).length)}`.replace(/\s+/g, " ").trim(),
-  task: (input) => `Task ${stringValue(input.subagent_type) ?? "general"}: ${stringValue(input.description) ?? "subagent"}`,
+  task: taskTitle,
   webfetch: (input) => stringFieldTitle("Fetch", input.url) ?? "Fetch page",
   websearch: (input) => `Search ${quoteValue(input.query)}`.trim(),
   skill: (input) => stringFieldTitle("Load skill", input.name) ?? "Load skill",
@@ -127,6 +135,30 @@ function patchTitle(metadata: Record<string, unknown>) {
 function quoteValue(value: unknown) {
   const text = stringValue(value)
   return text ? `"${text}"` : ""
+}
+
+/** The longest a delegated prompt's opening line may run inside a title. */
+const TASK_PROMPT_TITLE_LENGTH = 60
+
+/**
+ * Native task calls carry `{subagent_type, description}`. The swarm delegation
+ * tool normalizes onto `task` too (claude-mapper.ts) but carries `{role,
+ * prompt}` - which read as the placeholder "Task general: subagent" until the
+ * role and prompt were given their own shape.
+ */
+function taskTitle(input: Record<string, unknown>) {
+  const role = stringValue(input.role)
+  if (role && !stringValue(input.description))
+    return `Task ${role}: ${firstLine(input.prompt, TASK_PROMPT_TITLE_LENGTH) ?? "delegation"}`
+  return `Task ${stringValue(input.subagent_type) ?? "general"}: ${stringValue(input.description) ?? "subagent"}`
+}
+
+/** The opening non-empty line of a multi-line value, collapsed to one row. */
+function firstLine(value: unknown, max: number) {
+  const line = stringValue(value)
+    ?.split("\n")
+    .find((candidate) => candidate.trim())
+  return line ? collapseWhitespace(line, max) : undefined
 }
 
 function shellTitle(input: Record<string, unknown>) {
