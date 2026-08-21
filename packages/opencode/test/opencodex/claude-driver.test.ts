@@ -22,6 +22,7 @@ let prompt: ClaudePrompt | undefined
 let transportOptions: TransportOptions | undefined
 let metadata: Record<string, unknown> = {}
 let history: SessionLegacy.WithParts[] = []
+let persistedMetadata: Record<string, unknown> | undefined
 
 const transport: ClaudeTransport = {
   run(nextPrompt, nextOptions) {
@@ -45,7 +46,10 @@ const sessions = Layer.mock(Session.Service)({
       permission: [],
     } as unknown as Session.Info),
   messages: () => Effect.succeed(history),
-  setMetadata: () => Effect.void,
+  setMetadata: (input) =>
+    Effect.sync(() => {
+      persistedMetadata = input.metadata
+    }),
   updateMessage: (next) =>
     Effect.sync(() => {
       message = next
@@ -91,6 +95,7 @@ function reset(
   transportOptions = undefined
   metadata = options?.metadata ?? {}
   history = options?.history ?? []
+  persistedMetadata = undefined
 }
 
 function runTurn(input?: { text?: string; images?: ClaudeImage[] }) {
@@ -160,6 +165,27 @@ describe("Claude driver delivery finalization", () => {
         name: "UnknownError",
         data: { message: "Claude response delivery failed before the turn completed." },
       })
+    }),
+  )
+
+  it.effect("classifies an SDK auth throw and persists needs-login", () =>
+    Effect.gen(function* () {
+      reset(() => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.reject(new Error("Failed to authenticate: OAuth session expired and could not be refreshed")),
+        }),
+      }))
+
+      const result = yield* runTurn()
+
+      expect(interrupts).toBe(1)
+      expect(assistantInfo(result).error).toMatchObject({
+        name: "ProviderAuthError",
+        data: { message: expect.stringContaining("Your Claude Code sign-in has expired") },
+      })
+      const message = (assistantInfo(result).error?.data as { message?: string } | undefined)?.message
+      expect(message).not.toBe("Claude response delivery failed before the turn completed.")
+      expect(persistedMetadata).toMatchObject({ claudeCode: { authState: "needs-login" } })
     }),
   )
 
