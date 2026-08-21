@@ -1,5 +1,5 @@
 import path from "path"
-import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Ref, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Global } from "./global"
 import { Flag } from "./flag/flag"
@@ -142,8 +142,19 @@ export const layer = Layer.effect(
       Global.Path.cache,
       source === "https://models.dev" ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
+    const catalogPath = Flag.OPENCODE_MODELS_PATH ?? filepath
     const ttl = Duration.minutes(5)
     const lockKey = `models-dev:${filepath}`
+
+    const diskVersion = fs.stat(catalogPath).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+      Effect.map((stat) => {
+        if (!stat) return undefined
+        const mtime = Option.getOrElse(stat.mtime, () => new Date(0)).getTime()
+        return `${mtime}:${Number(stat.size)}`
+      }),
+    )
+    const loadedVersion = yield* Ref.make<string | undefined>(undefined)
 
     const fresh = Effect.fnUntraced(function* () {
       const stat = yield* fs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -161,10 +172,13 @@ export const layer = Layer.effect(
       )
     })
 
-    const loadFromDisk = fs.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
-      Effect.map((v) => v as Record<string, Provider> | undefined),
-    )
+    const loadFromDisk = Effect.gen(function* () {
+      const version = yield* diskVersion
+      const value = yield* fs.readJson(catalogPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (!value) return undefined
+      yield* Ref.set(loadedVersion, version)
+      return value as Record<string, Provider>
+    })
 
     const loadSnapshot = Effect.sync(() =>
       typeof OPENCODE_MODELS_DEV === "undefined" ? undefined : OPENCODE_MODELS_DEV,
@@ -194,7 +208,15 @@ export const layer = Layer.effect(
 
     const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)
 
-    const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
+    const get = Effect.fn("ModelsDev.get")(function* () {
+      const cached = yield* cachedGet
+      const version = yield* diskVersion
+      if (!version || version === (yield* Ref.get(loadedVersion))) return cached
+      yield* invalidate
+      const next = yield* cachedGet
+      yield* events.publish(Event.Refreshed, {})
+      return next
+    })
 
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
       if (!force && (yield* fresh())) return

@@ -1229,6 +1229,7 @@ export interface Interface {
 }
 
 interface State {
+  catalogSource: Record<string, ModelsDev.Provider>
   models: Map<string, LanguageModelV3>
   providers: Record<ProviderV2.ID, Info>
   catalog: Record<ProviderV2.ID, Info>
@@ -1690,7 +1691,15 @@ export const layer = Layer.effect(
 
         yield* Effect.promise(() =>
           refreshLocalProviders({
-            state: { models: languages, providers, catalog, sdk, modelLoaders, varsLoaders },
+            state: {
+              catalogSource: modelsDev,
+              models: languages,
+              providers,
+              catalog,
+              sdk,
+              modelLoaders,
+              varsLoaders,
+            },
             config: cfg,
             env: envs,
             enableExperimentalModels: runtimeFlags.enableExperimentalModels,
@@ -1749,6 +1758,7 @@ export const layer = Layer.effect(
         }
 
         return {
+          catalogSource: modelsDev,
           models: languages,
           providers,
           catalog,
@@ -1758,6 +1768,13 @@ export const layer = Layer.effect(
         }
       }),
     )
+
+    const getState = Effect.fn("Provider.getState")(function* () {
+      const current = yield* InstanceState.get(state)
+      if (current.catalogSource === (yield* modelsDevSvc.get())) return current
+      yield* InstanceState.invalidate(state)
+      return yield* InstanceState.get(state)
+    })
 
     /**
      * Swarms are user data, so the "swarm" provider is rebuilt from the
@@ -1800,7 +1817,7 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("Provider.list")(function* () {
-      const s = yield* InstanceState.get(state)
+      const s = yield* getState()
       const cfg = yield* config.get()
       const envs = yield* env.all()
       yield* Effect.promise(() =>
@@ -1976,11 +1993,11 @@ export const layer = Layer.effect(
     }
 
     const getProvider = Effect.fn("Provider.getProvider")((providerID: ProviderV2.ID) =>
-      InstanceState.use(state, (s) => s.providers[providerID]),
+      Effect.map(getState(), (s) => s.providers[providerID]),
     )
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ProviderV2.ModelID) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* getState()
       // A swarm model is a facade: resolve it to the orchestrator's real model
       // so SDK auth, pricing, and limits all come from the actual provider.
       // Rewrites the ids in place instead of recursing so the rest of the
@@ -2030,7 +2047,7 @@ export const layer = Layer.effect(
     })
 
     const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* getState()
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
       if (s.models.has(key)) return s.models.get(key)!
@@ -2056,7 +2073,7 @@ export const layer = Layer.effect(
     })
 
     const closest = Effect.fn("Provider.closest")(function* (providerID: ProviderV2.ID, query: string[]) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* getState()
       const provider = s.providers[providerID]
       if (!provider) return undefined
       for (const item of query) {
@@ -2077,7 +2094,7 @@ export const layer = Layer.effect(
         )
       }
 
-      const s = yield* InstanceState.get(state)
+      const s = yield* getState()
       const provider = s.providers[providerID]
       if (!provider) return undefined
 
@@ -2129,7 +2146,7 @@ export const layer = Layer.effect(
       const cfg = yield* config.get()
       if (cfg.model) return parseModel(cfg.model)
 
-      const s = yield* InstanceState.get(state)
+      const s = yield* getState()
       const recent = yield* fs.readJson(path.join(Global.Path.state, "model.json")).pipe(
         Effect.map((x): { providerID: ProviderV2.ID; modelID: ProviderV2.ModelID }[] => {
           if (!isRecord(x) || !Array.isArray(x.recent)) return []

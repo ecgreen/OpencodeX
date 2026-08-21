@@ -6,6 +6,7 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { OpencodeXStateAggregateSequenceTable, OpencodeXStateEventTable } from "@opencode-ai/core/opencodex/sql"
 import { PluginV2 } from "@opencode-ai/core/plugin"
+import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { and, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { makeStateLog } from "../../src/opencodex/state-log"
@@ -103,6 +104,49 @@ describe("OpencodeX state log", () => {
       )
       expect(firstScopeEvents.some((event) => event.visibility === "instance")).toBe(false)
       expect(secondScopeEvents.find((event) => event.visibility === "instance")?.directory).toBe(secondDirectory)
+    }),
+  )
+
+  it.live("publishes models.dev catalog refresh as a global capability invalidation", () =>
+    Effect.gen(function* () {
+      const firstDirectory = yield* tmpdirScoped({ git: true })
+      const secondDirectory = yield* tmpdirScoped({ git: true })
+      const database = yield* Database.Service
+      const eventLayer = EventV2.layer.pipe(Layer.provide(Layer.succeed(Database.Service, database)))
+      const events = Context.get(yield* Layer.build(eventLayer), EventV2.Service)
+      const log = yield* makeStateLog(database.db, events)
+      const received: { visibility: string; domain: string; eventType: string }[] = []
+      yield* log
+        .listen((event) =>
+          received.push({
+            visibility: event.visibility,
+            domain: event.domain,
+            eventType: event.payload.eventType,
+          }),
+        )
+        .pipe(provideInstance(firstDirectory))
+      yield* log
+        .listen((event) =>
+          received.push({
+            visibility: event.visibility,
+            domain: event.domain,
+            eventType: event.payload.eventType,
+          }),
+        )
+        .pipe(provideInstance(secondDirectory))
+
+      // Published outside any instance scope, exactly like the background
+      // ModelsDev refresh loop does.
+      yield* events.publish(ModelsDev.Event.Refreshed, {})
+      yield* pollWithTimeout(
+        Effect.sync(() => (received.length === 2 ? true : undefined)),
+        "models-dev.refreshed was not delivered to every connected scope",
+      )
+
+      expect(received).toEqual([
+        { visibility: "global", domain: "capabilities", eventType: "models-dev.refreshed" },
+        { visibility: "global", domain: "capabilities", eventType: "models-dev.refreshed" },
+      ])
     }),
   )
 
