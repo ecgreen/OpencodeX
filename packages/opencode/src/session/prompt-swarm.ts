@@ -282,8 +282,10 @@ export function make(deps: Deps) {
     if (attachments.skipped.length > 0)
       log.warn("skipped unsupported swarm attachments", { reasons: attachments.skipped })
     // An image-only message has no text but is still a real turn.
-    if (!promptText && attachments.images.length === 0) return undefined
-    yield* ensureClaudeTitle(session, promptText || attachments.title!)
+    if (!promptText) {
+      if (!attachments.hasImages) return undefined
+      yield* ensureClaudeTitle(session, attachments.title)
+    } else yield* ensureClaudeTitle(session, promptText)
     const specialists = swarm?.roles.slice(1) ?? []
     // Attribute the turn to the route the reader picked, so a swarm session
     // stays labelled with the team rather than the orchestrator's model. The
@@ -339,9 +341,7 @@ export function make(deps: Deps) {
             // Avoid doubling up when the subagent's own title already says
             // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
             // render as "code-reviewer subagent (@claude subagent)".
-            const title = /subagent/i.test(spawnInput.title)
-              ? spawnInput.title
-              : `${spawnInput.title} (@claude subagent)`
+            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,

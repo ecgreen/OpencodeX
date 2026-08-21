@@ -221,7 +221,10 @@ async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerat
  * subagent session on its configured model - visible in the transcript and
  * governed by OpencodeX permissions - rather than a Claude-internal subagent.
  */
-export function delegateServer(sdk: typeof import("@anthropic-ai/claude-agent-sdk"), delegate: DelegateCapability) {
+export function delegateServer(
+  sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
+  delegate: DelegateCapability,
+) {
   const roster = delegate.roles
     .map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`)
     .join("\n")
