@@ -1,8 +1,39 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { createClaudeAuthController, LOGIN_TERMINAL_ID } from "../src/renderer/src/controllers/claude-auth-controller"
+
+type EnsureCall = { id: string; data: string }
+
+const ensureCalls: EnsureCall[] = []
+const markOpenCalls: string[] = []
+
+// The real terminal surface creates an xterm `Terminal`, which needs
+// `MutationObserver`/DOM APIs this test runner doesn't provide. Stub it so the
+// onData plumbing can be asserted without a browser, following the same
+// mock.module pattern used elsewhere in this suite (e.g.
+// terminal-launch-profile.test.ts) for a dependency that can't load here.
+await mock.module("../src/renderer/src/components/session-side-terminal-views", () => ({
+  terminalSurface: {
+    ensure: (id: string) => ({
+      terminal: {
+        write: (data: string) => {
+          ensureCalls.push({ id, data })
+        },
+      },
+    }),
+    markOpen: (id: string) => {
+      markOpenCalls.push(id)
+    },
+    markClosed: () => undefined,
+    attach: () => () => undefined,
+    dispose: () => undefined,
+    focus: () => undefined,
+  },
+}))
+
+const { createClaudeAuthController, LOGIN_TERMINAL_ID } = await import("../src/renderer/src/controllers/claude-auth-controller")
 
 type Session = { id: string; metadata?: unknown }
+type AuthStatus = { state: "signed-in" | "signed-out" | "unknown"; message?: string }
 
 function stranded(id: string): Session {
   return { id, metadata: { claudeCode: { launched: true, authState: "needs-login" } } }
@@ -12,10 +43,15 @@ function healthy(id: string): Session {
   return { id, metadata: { claudeCode: { launched: true, authState: "ready" } } }
 }
 
-function harness(initial: Session[], authStatus: () => Promise<{ state: "signed-in" | "signed-out" | "unknown"; message?: string }>) {
+type CreateTerminalResult = { ok: boolean; pid?: number; message?: string }
+type CreateTerminalDep = (input: { id: string }) => Promise<CreateTerminalResult>
+
+function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, createTerminal?: CreateTerminalDep) {
   const [sessions, setSessions] = createSignal(initial)
   const exits: Array<(event: { id: string }) => void> = []
+  const dataListeners: Array<(event: { id: string; data: string }) => void> = []
   const created: string[] = []
+  const create = createTerminal ?? defaultCreateTerminal
   return createRoot((dispose) => {
     const controller = createClaudeAuthController({
       sessions,
@@ -23,17 +59,25 @@ function harness(initial: Session[], authStatus: () => Promise<{ state: "signed-
         authStatus,
         createTerminal: async (input) => {
           created.push(input.id)
-          return { ok: true, pid: 1 }
+          return create(input)
         },
         destroyTerminal: async () => true,
         onExit: (listener) => {
           exits.push(listener)
           return () => undefined
         },
+        onData: (listener) => {
+          dataListeners.push(listener)
+          return () => undefined
+        },
       },
     })
-    return { controller, setSessions, exits, created, dispose }
+    return { controller, setSessions, exits, dataListeners, created, dispose }
   })
+}
+
+async function defaultCreateTerminal(): Promise<CreateTerminalResult> {
+  return { ok: true, pid: 1 }
 }
 
 describe("claude sign-in controller", () => {
@@ -88,5 +132,36 @@ describe("claude sign-in controller", () => {
     await Promise.resolve()
     expect(test5.controller.phase()).toBe("signing-in")
     test5.dispose()
+  })
+
+  test("a rejecting createTerminal still lands in failed, leaving phase free for a retry", async () => {
+    let attempts = 0
+    const test6 = harness([stranded("a")], async () => ({ state: "signed-in" }), async () => {
+      attempts += 1
+      if (attempts === 1) throw new Error("IPC channel closed")
+      return { ok: true, pid: 1 }
+    })
+    await test6.controller.signIn()
+    expect(test6.controller.phase()).toBe("failed")
+    expect(test6.controller.message()).toBe("IPC channel closed")
+    // Not stuck: a second attempt can run right after, instead of being
+    // wedged on "signing-in" forever by the first attempt's unhandled rejection.
+    await test6.controller.signIn()
+    expect(test6.controller.phase()).toBe("signing-in")
+    expect(test6.created).toEqual([LOGIN_TERMINAL_ID, LOGIN_TERMINAL_ID])
+    test6.dispose()
+  })
+
+  test("sign-in shell output reaches the shared terminal surface; other ids are ignored", () => {
+    ensureCalls.length = 0
+    markOpenCalls.length = 0
+    const test7 = harness([stranded("a")], async () => ({ state: "signed-in" }))
+    test7.dataListeners.forEach((listener) => {
+      listener({ id: LOGIN_TERMINAL_ID, data: "Visit https://example.com to finish sign-in" })
+      listener({ id: "terminal-session:oxts_other", data: "should not reach the surface" })
+    })
+    expect(ensureCalls).toEqual([{ id: LOGIN_TERMINAL_ID, data: "Visit https://example.com to finish sign-in" }])
+    expect(markOpenCalls).toEqual([LOGIN_TERMINAL_ID])
+    test7.dispose()
   })
 })

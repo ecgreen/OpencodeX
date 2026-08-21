@@ -1,5 +1,6 @@
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import type { ClaudeAuthStatus, TerminalCreateInput, TerminalResult } from "../../../preload/index.cts"
+import { terminalSurface } from "../components/session-side-terminal-views"
 import { claudeSessionAuthState } from "../lib/claude-session-auth"
 
 /** One PTY for the whole app: a second sign-in shell would race the first. */
@@ -12,6 +13,9 @@ export type ClaudeAuthDeps = {
   createTerminal: (input: TerminalCreateInput) => Promise<TerminalResult>
   destroyTerminal: (id: string) => Promise<boolean>
   onExit: (listener: (event: { id: string }) => void) => () => void
+  onData: (listener: (event: { id: string; data: string }) => void) => () => void
+  write: (id: string, data: string) => void
+  openURL: (url: string) => void
 }
 
 /**
@@ -33,6 +37,9 @@ export function createClaudeAuthController(input: {
     createTerminal: (create) => window.opencodex!.terminal!.create(create),
     destroyTerminal: (id) => window.opencodex!.terminal!.destroy(id),
     onExit: (listener) => window.opencodex?.terminal?.onExit(listener) ?? (() => undefined),
+    onData: (listener) => window.opencodex?.terminal?.onData(listener) ?? (() => undefined),
+    write: (id, data) => window.opencodex?.terminal?.write({ id, data }),
+    openURL: (url) => void window.opencodex?.browser?.external(url),
     ...input.deps,
   }
 
@@ -56,6 +63,16 @@ export function createClaudeAuthController(input: {
     deps.onExit((event) => {
       if (event.id !== LOGIN_TERMINAL_ID) return
       void check()
+    }),
+  )
+
+  // Subscribed here, before any signIn() call, so no byte the PTY writes
+  // between opening the dialog and its first output can be lost to the race.
+  onCleanup(
+    deps.onData((event) => {
+      if (event.id !== LOGIN_TERMINAL_ID) return
+      terminalSurface.ensure(event.id, deps.write, deps.openURL, true).terminal.write(event.data)
+      terminalSurface.markOpen(event.id)
     }),
   )
 
@@ -83,7 +100,11 @@ export function createClaudeAuthController(input: {
     // A shell left over from an abandoned attempt would be answered as a
     // duplicate rather than restarted.
     await deps.destroyTerminal(LOGIN_TERMINAL_ID).catch(() => false)
-    const result = await deps.createTerminal({ id: LOGIN_TERMINAL_ID, profile: { kind: "claude-login" }, cols: 100, rows: 30 })
+    // A rejection (IPC error, destroyed renderer) must land here too, or phase
+    // stays "signing-in" forever with no way for the user to retry.
+    const result = await deps
+      .createTerminal({ id: LOGIN_TERMINAL_ID, profile: { kind: "claude-login" }, cols: 100, rows: 30 })
+      .catch((error): TerminalResult => ({ ok: false, message: error instanceof Error ? error.message : String(error) }))
     if (result.ok) return
     setPhase("failed")
     setMessage(result.message ?? "Could not start Claude Code sign-in.")
