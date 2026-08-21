@@ -7,6 +7,7 @@ import { Permission } from "@/permission"
 import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
+import { classifyClaudeError } from "./claude-auth-error"
 import { ClaudeDriverMetadata } from "./claude-driver-metadata"
 import { ClaudeHandoff } from "./claude-handoff"
 import { ClaudeMapper, type MapperContext } from "./claude-mapper"
@@ -311,11 +312,16 @@ export function makeLayer(options: LayerOptions = {}) {
 
       const iterator = turn.events[Symbol.asyncIterator]()
       let deliveryFailed = false
+      // The rejection text is the only place an SDK-level auth failure appears -
+      // it never reaches the mapper as a `result` event - so it is kept rather
+      // than collapsed into the generic delivery message.
+      let deliveryFailure: string | undefined
       const consume = Effect.gen(function* () {
         while (true) {
           const result = yield* Effect.promise(() => nextClaudeEvent(iterator))
           if ("failure" in result) {
             deliveryFailed = true
+            deliveryFailure = result.failure instanceof Error ? result.failure.message : String(result.failure)
             break
           }
           const next = result.next
@@ -351,11 +357,17 @@ export function makeLayer(options: LayerOptions = {}) {
       )
 
       if (deliveryFailed || !live.finished) {
+        const authFailure = deliveryFailure ? classifyClaudeError(deliveryFailure) : undefined
+        // Setting it on the live state is what makes `saveConversation` persist
+        // `needs-login` and what makes the mapper label the closing message as
+        // an auth error rather than an unknown one.
+        if (authFailure) live.authFailure = authFailure
+        const reported = authFailure?.message ?? DELIVERY_FAILURE
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
             yield* interruptTurn
-            yield* finalize("delivery-failed", DELIVERY_FAILURE)
-            if (sidechain) yield* interpretSidechainActions(sidechain.finalizeAll(DELIVERY_FAILURE))
+            yield* finalize("delivery-failed", reported)
+            if (sidechain) yield* interpretSidechainActions(sidechain.finalizeAll(reported))
             yield* saveConversation()
             return yield* readTurn(input.sessionID, live.messageID)
           }),
