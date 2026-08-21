@@ -83,22 +83,27 @@ export function parseMarker(body: string): Marker | undefined {
 export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision {
   const base = { number: pr.number, title: pr.title, selfAuthored: pr.authorLogin === REVIEWER_LOGIN }
 
-  const markedReviews: PriorReview[] = pr.reviews.flatMap((record) => {
-    if (record.authorLogin !== REVIEWER_LOGIN) return []
-    const marker = parseMarker(record.body)
-    return marker ? [{ ...marker, body: record.body, submittedAt: record.submittedAt }] : []
-  })
-
-  // Prior marked reviews at the PR's *current* head SHA, oldest first: the
-  // bodies a follow-up review reads to see what was already found here, and
-  // the source of `nextPass`. A SHA change (new commits) leaves this empty, so
-  // the count restarts per commit rather than running away across the PR's
-  // whole history. More than one entry means the author replied or CI landed
-  // at this same commit; unchanged code is never re-reviewed on its own.
-  const sameShaReviews = markedReviews
-    .filter((marked) => pr.headRefOid.startsWith(marked.sha))
+  const markedReviews: PriorReview[] = pr.reviews
+    .flatMap((record) => {
+      if (record.authorLogin !== REVIEWER_LOGIN) return []
+      const marker = parseMarker(record.body)
+      return marker ? [{ ...marker, body: record.body, submittedAt: record.submittedAt }] : []
+    })
     .sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : a.submittedAt > b.submittedAt ? 1 : 0))
-  const priorBodies = sameShaReviews.map((marked) => marked.body)
+
+  // The pass count is per commit, but a new-commit review still needs every
+  // review body from the latest previously reviewed commit. A later pass can
+  // carry an older finding by label alone, so forwarding only that latest body
+  // would discard the finding's original explanation.
+  const sameShaReviews = markedReviews.filter((marked) => pr.headRefOid.startsWith(marked.sha))
+  const prior = sameShaReviews.at(-1) ?? markedReviews.at(-1)
+  const priorBodies = (
+    sameShaReviews.length > 0
+      ? sameShaReviews
+      : prior
+        ? markedReviews.filter((marked) => marked.sha.startsWith(prior.sha) || prior.sha.startsWith(marked.sha))
+        : []
+  ).map((marked) => marked.body)
   const priorPass = sameShaReviews.length > 0 ? sameShaReviews[sameShaReviews.length - 1]!.pass : 0
 
   // Unlike the defer branches below, draft uses the skip formula (priorPass,
@@ -123,15 +128,6 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
   if (ci === "absent" && now.getTime() - new Date(pr.headCommittedAt).getTime() < NO_CI_GRACE_MS) {
     return { ...base, action: "defer", reason: "CI not yet registered", ci, nextPass: priorPass + 1, priorBodies }
   }
-
-  // A review at the current head wins over a newer one at some other SHA. Take
-  // the newest overall instead and a force-push back onto an already-reviewed
-  // commit reads as "new commits since last review" while `priorBodies` is
-  // non-empty — and the dispatch block for that reason appends only
-  // `priorReview.body`, so the bodies that actually describe the current head
-  // get silently dropped. Preferring the same-SHA review keeps the invariant
-  // the orchestrator relies on: `priorBodies` is empty for that reason.
-  const prior = sameShaReviews.at(-1) ?? newestOf(markedReviews)
 
   if (!prior) return { ...base, action: "review", reason: "no prior review", ci, nextPass: priorPass + 1, priorBodies }
 
@@ -184,11 +180,4 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
     nextPass: priorPass,
     priorBodies,
   }
-}
-
-function newestOf(reviews: PriorReview[]): PriorReview | undefined {
-  return reviews.reduce<PriorReview | undefined>(
-    (newest, review) => (newest && review.submittedAt <= newest.submittedAt ? newest : review),
-    undefined,
-  )
 }

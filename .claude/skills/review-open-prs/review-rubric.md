@@ -47,7 +47,17 @@ review.
    are reliably none of the failure - the failing test names sit above all of
    it. Attribution is the one dimension this rubric calls authoritative, and it
    is only as good as this command.
-6. If you were given a prior review body, read it before judging anything.
+6. If you were given prior review bodies, gather your own evidence first, then
+   read every body before writing the verdict.
+
+Do not run tests, typecheck, or builds locally. CI already ran `static`,
+`unit` on Linux and Windows, `cli-subprocess` on both, `gui-e2e`, and
+`packaged-gui`. Reading those results is the CI check. This holds even when
+there is no CI to read: you are reviewing a SHA the working tree is not on
+(evidence gathering above uses `git show`, never a checkout), so a local run
+would exercise different code and its result would be worse than no signal.
+When the rollup is empty, say so in dimension 2 and treat the missing test
+signal as a finding in its own right, sized by what the diff touches.
 
 ## Follow-up review
 
@@ -76,16 +86,18 @@ context, not a verdict to ratify.
   Never drop one just because your own pass didn't happen to reproduce it.
 
 If instead your dispatch prompt says this is a re-review after new commits,
-follow the "Since the last review" instructions below against the single
-prior review body you were given, unchanged from before.
+you were handed every pass from the latest previously reviewed head, oldest
+first. Follow the "Since the last review" instructions below against their
+combined findings; a later pass may carry an older finding only by label, so
+the earlier body remains authoritative for its full explanation.
 
 ## Carrying findings forward without repeating them
 
-Whenever you were handed a prior pass's body, every finding in it that is still
+Whenever you were handed prior pass bodies, every finding in them that is still
 true must survive into your review — but as a **one-line reference**, not as a
-second copy of its prose. Restating them in full is how two passes at one
-commit turn into two long reviews that read as the same review posted twice,
-which is what the author actually experiences and learns to skim.
+second copy of its prose. Restating them in full is how multiple passes turn
+into long reviews that read as the same review posted repeatedly, which is
+what the author actually experiences and learns to skim.
 
 - "Since the last review" is the only place a carried-forward finding appears.
   One line each: `` `file.ts:42` — one-clause label (pass 1) ``.
@@ -100,15 +112,6 @@ which is what the author actually experiences and learns to skim.
 Nothing is lost by this — a reader who wants the full argument for a
 carried-forward finding follows the reference to the pass that made it, which
 is one click up the same page.
-
-Do not run tests, typecheck, or builds locally. CI already ran `static`,
-`unit` on Linux and Windows, `cli-subprocess` on both, `gui-e2e`, and
-`packaged-gui`. Reading those results is the CI check. This holds even when
-there is no CI to read: you are reviewing a SHA the working tree is not on
-(evidence gathering above uses `git show`, never a checkout), so a local run
-would exercise different code and its result would be worse than no signal.
-When the rollup is empty, say so in dimension 2 and treat the missing test
-signal as a finding in its own right, sized by what the diff touches.
 
 ## The five dimensions
 

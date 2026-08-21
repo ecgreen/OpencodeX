@@ -39,10 +39,10 @@ bun run --cwd packages/script pr-review:select
 This prints a JSON array of decisions, one per open PR, each with `number`,
 `title`, `action` (`review` | `skip` | `defer`), `reason`, `ci`, `nextPass`
 (the pass number the review about to be written should record), `priorBodies`
-(the bodies of every prior marked review at the current head SHA, oldest
-first — empty if none), `selfAuthored` (whether this PR was opened by the
-account the review posts as), and for re-reviews a `priorReview` object
-holding the previous review `body`.
+(oldest first: every marked review body at the current head, or, on new
+commits, every body at the latest previously reviewed head), `selfAuthored`
+(whether this PR was opened by the account the review posts as), and for
+re-reviews a `priorReview` object holding the latest previous review.
 
 One review per head SHA. A commit that has already been reviewed and that
 nothing has happened to since is skipped — `reason: "awaiting author"` — no
@@ -102,10 +102,13 @@ over — so for that reason append nothing here. The remaining three reasons
 are mutually exclusive and each matches exactly one block:>
 
 <If reason is "new commits since last review", append:>
-This is a re-review. Here is the review you are following up on. Resolve every
-finding in it as Fixed, Still open, or New:
+This is a re-review after new commits. Every automated review posted at the
+latest previously reviewed head SHA is included below, oldest first. Resolve
+every finding across them as Fixed, Still open, or New:
 
-<priorReview.body>
+<For each body in priorBodies, in order, append:>
+Pass <index + 1>:
+<body>
 
 <If reason is "author replied since last review" or "CI arrived after last
 review", append:>
@@ -137,16 +140,15 @@ DRY RUN: do not post. Write the complete review body to
 "posted": false and "bodyPath": ".artifacts/pr-review/pr-<number>-review.md".
 ```
 
-`priorBodies` is always empty for `reason: "no prior review"` and
-`reason: "new commits since last review"` — nothing is appended for those
-beyond the "new commits" block above (which uses `priorReview.body`, not
-`priorBodies`). That is enforced in the gate chain, not just asserted here:
-`decidePullRequest` prefers a prior review at the current head over a newer
-one at an abandoned SHA, so a force-push back onto a reviewed commit cannot
-produce "new commits" with bodies attached. Both halves are covered by
+`priorBodies` is empty only for `reason: "no prior review"`. For new commits it
+contains all bodies from the latest previously reviewed head, including the
+original prose for findings a later pass may carry by label alone. For a
+same-head trigger it contains all bodies at the current head. A force-push
+back onto a reviewed commit prefers that commit's own reviews over newer
+reviews at an abandoned SHA. These cases are covered by
 `packages/script/test/pr-review-select.test.ts`. Never interpolate
-`priorBodies[0]` alone anywhere: every place that reads from `priorBodies`
-iterates the whole array.
+`priorBodies[0]` alone: every place that reads `priorBodies` iterates the whole
+array.
 
 A subagent that errors or returns nothing marks that PR `error` in the summary.
 Do not retry it this cycle — the next cycle picks it up naturally, because no

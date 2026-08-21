@@ -52,9 +52,8 @@ describe("parseMarker", () => {
     expect(parseMarker("<!-- opencodex-pr-review sha=zzz ci=maybe -->")).toBeUndefined()
   })
 
-  // Seven reviews are already posted on live PRs with no `pass=` segment.
-  // Treating them as pass 1 is what lets them naturally receive their second
-  // pass on the next cycle instead of failing to parse forever.
+  // Reviews posted before the pass segment existed must remain readable so
+  // they continue to gate the same head and can be carried into a re-review.
   test("parses a marker without a pass segment as pass 1", () => {
     expect(parseMarker(`<!-- opencodex-pr-review sha=${SHA} ci=present -->\nbody`)).toEqual({
       sha: SHA,
@@ -143,9 +142,9 @@ describe("decidePullRequest", () => {
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("new commits since last review")
     // A new head SHA carries no prior marker of its own, however many passes
-    // the previous SHA reached: the two-pass count restarts per commit.
+    // the previous SHA reached: the pass count restarts per commit.
     expect(decision.nextPass).toBe(1)
-    expect(decision.priorBodies).toEqual([])
+    expect(decision.priorBodies).toEqual([reviews[0]!.body])
   })
 
   // GitHub refuses REQUEST_CHANGES on your own PR, so the reviewer needs this
@@ -158,10 +157,7 @@ describe("decidePullRequest", () => {
   })
 
   // A force-push back onto an already-reviewed commit leaves a newer review
-  // sitting at the abandoned SHA. Reading that one as "the last review" would
-  // report "new commits since last review" while priorBodies described the
-  // current head - and the dispatch block for that reason only forwards
-  // priorReview.body, so those bodies would be dropped on the floor.
+  // sitting at the abandoned SHA. The review at the current head must win.
   test("prefers a review at the current head over a newer one at an abandoned sha", () => {
     const reviews = [
       review(formatMarker(SHA, "present", 1), "2026-08-19T10:00:00Z"),
@@ -173,12 +169,17 @@ describe("decidePullRequest", () => {
     expect(decision.priorBodies).toEqual([reviews[0]!.body])
   })
 
-  // The invariant SKILL.md's dispatch step relies on, asserted directly.
-  test("leaves priorBodies empty whenever the reason is new commits", () => {
-    const reviews = [review(formatMarker(OTHER_SHA, "present", 1), "2026-08-19T11:00:00Z")]
+  test("carries every body from the latest previously reviewed head into a new-commit review", () => {
+    const abandonedSha = "2222222222222222222222222222222222222222"
+    const reviews = [
+      review(formatMarker(abandonedSha, "present", 1), "2026-08-19T09:00:00Z"),
+      review(formatMarker(OTHER_SHA, "present", 2), "2026-08-19T11:30:00Z"),
+      review(formatMarker(OTHER_SHA.slice(0, 7), "present", 1), "2026-08-19T11:00:00Z"),
+    ]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.reason).toBe("new commits since last review")
-    expect(decision.priorBodies).toEqual([])
+    expect(decision.priorBodies).toEqual([reviews[2]!.body, reviews[1]!.body])
+    expect(decision.nextPass).toBe(1)
   })
 
   test("skips when an abbreviated marker prefix-matches the current head", () => {
@@ -202,12 +203,8 @@ describe("decidePullRequest", () => {
     expect(decision.reason).toBe("author replied since last review")
   })
 
-  // The author-replied and CI-arrived gates fire even once both passes are
-  // already posted at this head SHA (that responsiveness is intentional,
-  // not gated behind the pass cap). This is the case the fix-round-1 review
-  // flagged: nextPass can exceed 2 and priorBodies can hold more than one
-  // entry here, which the dispatch template must handle without hardcoding
-  // "at most 2" or dropping anything but the first entry.
+  // Author replies and newly arrived CI keep triggering at the same head.
+  // nextPass can exceed 2 and the dispatch must retain every prior body.
   test("re-reviews via author reply after several reviews here, carrying every prior body", () => {
     const reviews = [
       review(formatMarker(SHA, "present", 1), "2026-08-19T11:00:00Z"),
