@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises"
 import type { IPty } from "@lydell/node-pty"
 import { app, ipcMain, type WebContents } from "electron"
 import { CLAUDE_MISSING_MESSAGE, type ClaudeCodeStatus, type TerminalCreateInput, type TerminalLaunchProfile, type TerminalResult } from "../shared/terminal.js"
-import { claudeArguments, probeClaudeCode, resolveClaudeExecutable } from "./claude-code.js"
+import { claudeArguments, probeClaudeAuth, probeClaudeCode, resolveClaudeExecutable } from "./claude-code.js"
 import { installationID, isUUID } from "./installation-id.js"
 import { validString } from "./ipc-validation.js"
 import { ownerHasResourceCapacity } from "./native-resource-limits.js"
@@ -37,6 +37,9 @@ const terminalOwners = new Set<number>()
 export function registerTerminalIpc() {
   ipcMain.handle("opencodex:installation-id", () => installationID())
   ipcMain.handle("opencodex:claude:status", () => claudeStatus())
+  // Deliberately uncached, unlike `claude:status`: this is called right after a
+  // sign-in attempt, and a cached "signed out" would defeat the whole flow.
+  ipcMain.handle("opencodex:claude:auth-status", () => probeClaudeAuth(app.getPath("home")))
 
   ipcMain.handle("opencodex:terminal:create", async (event, raw: unknown): Promise<TerminalResult> => {
     const input = validTerminalCreateInput(raw)

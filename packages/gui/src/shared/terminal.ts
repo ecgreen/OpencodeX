@@ -39,5 +39,11 @@ export type ClaudeCodeStatus = {
   message?: string
 }
 
+export type ClaudeAuthStatus = {
+  state: "signed-in" | "signed-out" | "unknown"
+  authMethod?: string
+  message?: string
+}
+
 export const CLAUDE_MISSING_MESSAGE =
   "Claude Code was not found. Install it from code.claude.com/docs/en/installation, then check again."

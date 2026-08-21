@@ -1,7 +1,7 @@
 import path from "node:path"
 import { stat } from "node:fs/promises"
 import { execFile } from "node:child_process"
-import { CLAUDE_MISSING_MESSAGE, type ClaudeCodeStatus, type TerminalLaunchProfile } from "../shared/terminal.js"
+import { CLAUDE_MISSING_MESSAGE, type ClaudeAuthStatus, type ClaudeCodeStatus, type TerminalLaunchProfile } from "../shared/terminal.js"
 
 type ClaudeProfile = Extract<TerminalLaunchProfile, { kind: "claude-code" }>
 
@@ -61,4 +61,46 @@ export async function probeClaudeCode(home: string): Promise<ClaudeCodeStatus> {
       resolve({ available: true, executable, version: (stdout || stderr).trim() || undefined })
     })
   })
+}
+
+/**
+ * `claude auth status --json` exits 0 whether or not the user is signed in, so
+ * the verdict is entirely in the payload. Anything unparseable, or missing
+ * `loggedIn`, is "unknown" rather than "signed out" - clearing the sign-in
+ * banner because the CLI changed its output shape would strand the user.
+ */
+export function readClaudeAuthStatus(stdout: string): ClaudeAuthStatus {
+  const parsed = parseJson(stdout)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { state: "unknown" }
+  const value = parsed as { loggedIn?: unknown; authMethod?: unknown }
+  if (typeof value.loggedIn !== "boolean") return { state: "unknown" }
+  return {
+    state: value.loggedIn ? "signed-in" : "signed-out",
+    ...(typeof value.authMethod === "string" ? { authMethod: value.authMethod } : {}),
+  }
+}
+
+export async function probeClaudeAuth(home: string): Promise<ClaudeAuthStatus> {
+  const executable = await resolveClaudeExecutable({ home })
+  if (!executable) return { state: "unknown", message: CLAUDE_MISSING_MESSAGE }
+  return await new Promise<ClaudeAuthStatus>((resolve) => {
+    execFile(executable, ["auth", "status", "--json"], { windowsHide: true, timeout: 10_000 }, (error, stdout) => {
+      // A non-zero exit or a timeout says nothing about the credential, only
+      // that the probe failed.
+      if (error) {
+        console.error("claude auth status probe failed", error)
+        resolve({ state: "unknown", message: "Could not read Claude Code's authentication status." })
+        return
+      }
+      resolve(readClaudeAuthStatus(stdout))
+    })
+  })
+}
+
+function parseJson(value: string) {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return undefined
+  }
 }
