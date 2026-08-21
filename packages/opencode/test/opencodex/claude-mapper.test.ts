@@ -399,8 +399,43 @@ describe("claude stream-json mapper", () => {
       { type: "result", subtype: "error_during_execution", is_error: true, result: "Not logged in. Please run /login" },
     ])
 
-    expect(state.authFailed).toBe(true)
-    expect(messages(writes).at(-1)?.error).toMatchObject({ data: { message: "Not logged in. Please run /login" } })
+    expect(state.authFailure?.kind).toBe("auth-missing")
+    expect(messages(writes).at(-1)?.error).toMatchObject({
+      name: "ProviderAuthError",
+      data: { providerID: "claude-code" },
+    })
+  })
+
+  test("re-labels an expired sign-in so the clients can offer recovery", () => {
+    const { writes, state } = run([
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "hi" }] } },
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        result: "Failed to authenticate: OAuth session expired and could not be refreshed",
+      },
+    ])
+
+    expect(state.authFailure?.kind).toBe("auth-expired")
+    const error = messages(writes).at(-1)?.error
+    expect(error?.name).toBe("ProviderAuthError")
+    const message = error?.name === "ProviderAuthError" ? error.data.message : undefined
+    expect(message).toContain("sign-in has expired")
+    expect(message).toContain("OAuth session expired and could not be refreshed")
+  })
+
+  test("leaves an ordinary failure as an unknown error", () => {
+    const { writes, state } = run([
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "hi" }] } },
+      { type: "result", subtype: "error_during_execution", is_error: true, result: "Claude Code stopped: disk full" },
+    ])
+
+    expect(state.authFailure).toBeUndefined()
+    expect(messages(writes).at(-1)?.error).toMatchObject({
+      name: "UnknownError",
+      data: { message: "Claude Code stopped: disk full" },
+    })
   })
 
   test("closes running tools and the message when a turn is abandoned", () => {

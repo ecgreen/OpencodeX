@@ -298,7 +298,7 @@ export function makeLayer(options: LayerOptions = {}) {
               launched: true,
               modelID: live.modelID,
               billed: live.billed,
-              ...(live.authFailed ? { authState: "needs-login" as const } : { authState: "ready" as const }),
+              ...(live.authFailure ? { authState: "needs-login" as const } : { authState: "ready" as const }),
               ...(live.tasks.size > 0 ? { tasks: [...live.tasks].map(([id, task]) => ({ id, ...task })) } : {}),
             }),
           })
