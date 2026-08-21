@@ -305,6 +305,9 @@ describe("canonical serve cross-client contract", () => {
           const pendingResponse = await request(second.url, state.directory, "/permission")
           expect(pendingResponse.status).toBe(200)
           const pending = Schema.decodeUnknownSync(Permissions)(await pendingResponse.json())
+          // POSIX SIGTERM runs graceful instance disposal, which rejects pending
+          // interactions. Windows process termination is abrupt, so the durable
+          // request remains available for successor recovery.
           if (process.platform !== "win32") {
             expect(pending).toHaveLength(0)
             return

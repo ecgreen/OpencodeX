@@ -58,11 +58,12 @@ export function matchOpencodeXSwarm(swarms: OpencodeXPromptSwarm[], query: strin
   )
 }
 
-export function sessionOpencodeXSwarmID(session: { metadata?: unknown; model?: { id: string; providerID: string } } | undefined) {
+export function sessionOpencodeXSwarmID(session: { metadata?: unknown } | undefined) {
   const metadata = session?.metadata
-  const opencodex = typeof metadata === "object" && metadata !== null && "opencodex" in metadata ? metadata.opencodex : undefined
-  if (typeof opencodex === "object" && opencodex !== null && "swarmID" in opencodex && typeof opencodex.swarmID === "string") return opencodex.swarmID
-  return session?.model?.providerID === "swarm" ? session.model.id : undefined
+  if (typeof metadata !== "object" || metadata === null || !("opencodex" in metadata)) return undefined
+  const opencodex = metadata.opencodex
+  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return undefined
+  return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
 }
 
 export function promptHistoryEntry(parts: Part[]): PromptInfo | undefined {

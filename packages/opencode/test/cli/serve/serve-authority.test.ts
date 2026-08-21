@@ -20,7 +20,11 @@ import {
   parseCoordinatorManifest,
 } from "@opencode-ai/sdk/coordinator"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { manifestURLFor, validateServeAuthorityNetwork } from "@/cli/cmd/serve-authority"
+import {
+  manifestURLFor,
+  ServeAuthorityNetworkError,
+  validateServeAuthorityNetwork,
+} from "@/cli/cmd/serve-authority"
 import { cliIt } from "../../lib/cli-process"
 
 const HealthIdentity = Schema.Struct({
@@ -282,24 +286,28 @@ describe("serve-authority manifest URL helper", () => {
 
 describe("serve-authority network validation", () => {
   test("allows loopback without a password or insecure-LAN opt-in", () => {
-    expect(() => validateServeAuthorityNetwork({ hostname: "127.0.0.1", password: "" })).not.toThrow()
+    expect(Effect.runSync(validateServeAuthorityNetwork({ hostname: "127.0.0.1", password: "" }))).toBeUndefined()
   })
 
   test("rejects a non-loopback listener without a password", () => {
-    expect(() =>
-      validateServeAuthorityNetwork({ hostname: "0.0.0.0", password: "", allowInsecureLan: "1" }),
-    ).toThrow("OPENCODE_SERVER_PASSWORD")
+    const error = Effect.runSync(
+      Effect.flip(validateServeAuthorityNetwork({ hostname: "0.0.0.0", password: "", allowInsecureLan: "1" })),
+    )
+    expect(error).toBeInstanceOf(ServeAuthorityNetworkError)
+    expect(error.message).toContain("OPENCODE_SERVER_PASSWORD")
   })
 
   test("rejects a non-loopback listener without explicit insecure-LAN opt-in", () => {
-    expect(() => validateServeAuthorityNetwork({ hostname: "192.0.2.1", password: "secret" })).toThrow(
+    expect(() => Effect.runSync(validateServeAuthorityNetwork({ hostname: "192.0.2.1", password: "secret" }))).toThrow(
       "OPENCODE_SERVER_ALLOW_INSECURE_LAN",
     )
   })
 
   test("allows a password-protected non-loopback listener with explicit opt-in", () => {
     expect(() =>
-      validateServeAuthorityNetwork({ hostname: "192.0.2.1", password: "secret", allowInsecureLan: "true" }),
+      Effect.runSync(
+        validateServeAuthorityNetwork({ hostname: "192.0.2.1", password: "secret", allowInsecureLan: "true" }),
+      ),
     ).not.toThrow()
   })
 })

@@ -140,7 +140,7 @@ describe("plugin.codex", () => {
     await enabled.dispose?.()
   })
 
-  test("identifies OpenAI chat requests as Codex CLI", async () => {
+  test("truthfully identifies OpenAI chat requests as opencode", async () => {
     const hooks = await CodexAuthPlugin({} as never)
     const output = { headers: {} as Record<string, string> }
 
@@ -153,8 +153,8 @@ describe("plugin.codex", () => {
       output,
     )
 
-    expect(output.headers.originator).toBe("codex_cli_rs")
-    expect(output.headers["User-Agent"]).toBe("codex_cli_rs/0.0.0 (OpenCode)")
+    expect(output.headers.originator).toBe("opencode")
+    expect(output.headers["User-Agent"]).toMatch(/^opencode\/\S+ \(.+ .+; .+\)$/)
     expect(output.headers["session-id"]).toBe("ses_test")
   })
 

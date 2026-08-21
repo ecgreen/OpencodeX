@@ -47,5 +47,6 @@ describe("sidecar connection URL", () => {
     expect(() => configuredBackendConnection({ OPENCODEX_GUI_SERVER_URL: "file:///tmp/opencode" })).toThrow(
       "must use HTTP or HTTPS",
     )
+    expect(() => configuredBackendConnection({ OPENCODEX_GUI_SERVER_URL: "not a URL" })).toThrow()
   })
 })

@@ -77,8 +77,8 @@ export function sessionMetadata(session: DashboardSession): Record<string, unkno
 
 export function sessionSwarmID(session: DashboardSession) {
   const opencodex = sessionMetadata(session)?.opencodex
-  if (typeof opencodex === "object" && opencodex !== null && "swarmID" in opencodex && typeof opencodex.swarmID === "string") return opencodex.swarmID
-  return session.model?.providerID === "swarm" ? session.model.id : undefined
+  if (typeof opencodex !== "object" || opencodex === null || !("swarmID" in opencodex)) return
+  return typeof opencodex.swarmID === "string" ? opencodex.swarmID : undefined
 }
 
 export function sessionSwarmTitle(session: DashboardSession, swarms: OpencodeXSwarm[]) {

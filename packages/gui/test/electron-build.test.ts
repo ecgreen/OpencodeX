@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { buildElectron, validateElectronMetafile } from "../scripts/build-electron"
+import { packagedExecutableCandidates } from "../scripts/packaged-executable"
 
 const artifacts = path.join(import.meta.dirname, "..", ".artifacts")
 await mkdir(artifacts, { recursive: true })
@@ -10,6 +11,12 @@ const output = await mkdtemp(path.join(artifacts, "electron-build-test-"))
 afterAll(() => rm(output, { recursive: true, force: true }))
 
 describe("Electron bundling", () => {
+  test("discovers both supported macOS bundle names", () => {
+    const candidates = packagedExecutableCandidates("/repo", "darwin")
+    expect(candidates.filter((candidate) => candidate.includes("/OpencodeX.app/"))).toHaveLength(2)
+    expect(candidates.filter((candidate) => candidate.includes("/opencodex-gui.app/"))).toHaveLength(2)
+  })
+
   test("emits deterministic single-file bundles and rejects unexpected externals", async () => {
     const first = await buildElectron(output)
     const firstMain = await Bun.file(path.join(output, "main", "index.js")).text()

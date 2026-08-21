@@ -18,6 +18,20 @@ const HealthIdentity = Schema.Struct({
 })
 
 describe("opencode serve (subprocess)", () => {
+  cliIt.live(
+    "fails closed for a passwordless non-loopback listener without a warning",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.spawn(["serve", "--port", "0", "--hostname", "0.0.0.0"], {
+          env: { OPENCODE_SERVER_PASSWORD: "", OPENCODE_SERVER_ALLOW_INSECURE_LAN: "1" },
+        })
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("OPENCODE_SERVER_PASSWORD")
+        expect(result.stdout).not.toContain("server is unsecured")
+      }),
+    60_000,
+  )
+
   // Smoke test: server starts, binds a port, and /global/health responds.
   // If this fails, all other serve tests likely will too — debug here first.
   cliIt.live(

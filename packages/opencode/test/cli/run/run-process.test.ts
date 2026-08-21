@@ -6,7 +6,7 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { cliIt } from "../../lib/cli-process"
-import { httpError } from "../../lib/llm-server"
+import { reply } from "../../lib/llm-server"
 
 describe("opencode run (non-interactive subprocess)", () => {
   // Happy path: prompt completes, output reaches stdout, process exits 0.
@@ -53,11 +53,32 @@ describe("opencode run (non-interactive subprocess)", () => {
       Effect.gen(function* () {
         yield* llm.pushMatch(
           (hit) => JSON.stringify(hit.body).includes("trigger midstream error"),
-          httpError(400, { error: { message: "upstream provider exploded mid-stream" } }),
+          ...Array.from({ length: 5 }, () => reply().text("partial response").reset()),
         )
         const result = yield* opencode.run("trigger midstream error")
         expect(result.exitCode).not.toBe(0)
-        expect(result.stderr).toContain("upstream provider exploded mid-stream")
+        expect(result.stderr.trim()).not.toBe("")
+      }),
+    60_000,
+  )
+
+  cliIt.live(
+    "attached --command reports its session error and exits nonzero",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        const server = yield* opencode.serve()
+        yield* llm.pushMatch(
+          () => true,
+          ...Array.from({ length: 5 }, () => reply().text("partial attached command response").reset()),
+        )
+        const result = yield* opencode.run("", {
+          command: "init",
+          extraArgs: ["--attach", server.url],
+          timeoutMs: 30_000,
+        })
+
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr.trim()).not.toBe("")
       }),
     60_000,
   )

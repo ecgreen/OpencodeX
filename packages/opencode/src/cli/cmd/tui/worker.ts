@@ -108,11 +108,13 @@ export const rpc = {
   async server(input: { port: number; hostname: string; mdns?: boolean; mdnsDomain?: string; cors?: string[] }) {
     const username = process.env.OPENCODE_TUI_COORDINATOR_USERNAME ?? DEFAULT_USERNAME
     const password = process.env.OPENCODE_TUI_COORDINATOR_PASSWORD ?? ""
-    validateServeAuthorityNetwork({
-      hostname: input.hostname,
-      password,
-      allowInsecureLan: process.env.OPENCODE_SERVER_ALLOW_INSECURE_LAN,
-    })
+    await Effect.runPromise(
+      validateServeAuthorityNetwork({
+        hostname: input.hostname,
+        password,
+        allowInsecureLan: process.env.OPENCODE_SERVER_ALLOW_INSECURE_LAN,
+      }),
+    )
     await stopOwnedBackend("reconfigured").catch((error) => {
       Log.Default.warn("worker backend authority stop on reconfigure failed", { error: errorMessage(error) })
     })

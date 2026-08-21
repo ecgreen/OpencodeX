@@ -107,6 +107,8 @@ Runtime configuration:
 
 Remote mode authorizes only the exact configured origin, adds only that origin to renderer CSP, returns no credentials through preload, and does not start, lease, restart, or stop a local coordinator. Credential rotation currently requires an app restart.
 
+Direct non-loopback listeners started by `serve`, ACP, or explicit-network TUI require both a non-empty `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_ALLOW_INSECURE_LAN=1`. The opt-in permits Basic authentication over plaintext HTTP; it does not provide TLS, including on LAN or Tailscale networks.
+
 ### MCR-6: TUI Canonical Attach
 
 Status: existing command, operational/default integration pending
@@ -141,7 +143,7 @@ Implemented coverage:
 - Raw mobile-like client receives one correlated live prompt event.
 - The same client disconnects, misses a prompt, reconnects, and converges by transcript refetch.
 - A pending permission is recovered and settled after the event subscriber disconnects.
-- Transcript and pending permission survive a canonical backend restart on one SQLite file.
+- Transcript survives canonical backend replacement on one SQLite file. Pending permission recovery is platform-specific: graceful POSIX shutdown rejects it, while abrupt Windows termination leaves it available to the successor.
 - Requests after restart use the canonical session directory returned by the server rather than a client-side path alias.
 
 ### MCR-8: Client-Agnostic Mobile Conformance

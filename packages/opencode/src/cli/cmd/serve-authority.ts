@@ -2,7 +2,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Log } from "@opencode-ai/core/util/log"
 import { ensureRunID, OPENCODE_PROCESS_ROLE } from "@opencode-ai/core/util/opencode-process"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { randomBytes } from "crypto"
 import { ServerAuth } from "@/server/auth"
 import { Server, type Listener } from "@/server/server"
@@ -42,20 +42,30 @@ export type ServeAuthorityOptions = {
   signal?: AbortSignal
 }
 
+export class ServeAuthorityNetworkError extends Schema.TaggedErrorClass<ServeAuthorityNetworkError>()(
+  "ServeAuthorityNetworkError",
+  { message: Schema.String },
+) {}
+
 export function validateServeAuthorityNetwork(input: {
   hostname: string
   password: string
   allowInsecureLan?: string
 }) {
-  if (LOOPBACK_HOSTS.has(input.hostname)) return
-  if (!input.password.trim()) {
-    throw new Error("Non-loopback server listeners require a non-empty OPENCODE_SERVER_PASSWORD")
-  }
-  const allowed = input.allowInsecureLan?.toLowerCase()
-  if (allowed === "1" || allowed === "true") return
-  throw new Error(
-    "Non-loopback server listeners use HTTP Basic authentication without TLS; set OPENCODE_SERVER_ALLOW_INSECURE_LAN=1 to allow this insecure listener",
-  )
+  return Effect.gen(function* () {
+    if (LOOPBACK_HOSTS.has(input.hostname)) return
+    if (!input.password.trim()) {
+      return yield* new ServeAuthorityNetworkError({
+        message: "Non-loopback server listeners require a non-empty OPENCODE_SERVER_PASSWORD",
+      })
+    }
+    const allowed = input.allowInsecureLan?.toLowerCase()
+    if (allowed === "1" || allowed === "true") return
+    return yield* new ServeAuthorityNetworkError({
+      message:
+        "Non-loopback server listeners use HTTP Basic authentication without TLS; set OPENCODE_SERVER_ALLOW_INSECURE_LAN=1 to allow this insecure listener",
+    })
+  })
 }
 
 type OwnedServeAuthority = {
@@ -73,7 +83,7 @@ export const runServeAuthority = Effect.fn("ServeAuthority.run")(function* (inpu
   const key = coordinatorKey(database)
   const username = process.env.OPENCODE_SERVER_USERNAME ?? DEFAULT_USERNAME
   const password = process.env.OPENCODE_SERVER_PASSWORD ?? ""
-  validateServeAuthorityNetwork({
+  yield* validateServeAuthorityNetwork({
     hostname: input.hostname,
     password,
     allowInsecureLan: process.env.OPENCODE_SERVER_ALLOW_INSECURE_LAN,

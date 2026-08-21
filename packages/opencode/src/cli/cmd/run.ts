@@ -654,7 +654,6 @@ export const RunCommand = effectCmd({
         }
 
         async function finish() {
-          if (args.attach) return cancelEventLoop()
           const error = await completed
           if (error) throw new CliError({ message: error })
         }
@@ -680,7 +679,10 @@ export const RunCommand = effectCmd({
             return
           }
           await finish()
-          return
+          const responseError = result.data?.info.error
+          if (!responseError) return
+          if (args.format === "json") emit("error", { error: responseError })
+          throw new CliError({ message: formatRunError(responseError) })
         }
 
         const model = pick(args.model)
@@ -703,15 +705,7 @@ export const RunCommand = effectCmd({
           return
         }
         await finish()
-        const responseError =
-          result.data?.info.error ??
-          (await client.session
-            .messages({ sessionID })
-            .then((response) => {
-              const message = response.data?.findLast((item) => item.info.role === "assistant")
-              return message?.info.role === "assistant" ? message.info.error : undefined
-            })
-            .catch(() => undefined))
+        const responseError = result.data?.info.error
         if (!responseError) return
         if (args.format === "json") emit("error", { error: responseError })
         throw new CliError({ message: formatRunError(responseError) })
