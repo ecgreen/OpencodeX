@@ -130,7 +130,16 @@ export function createClaudeAuthController(input: {
     message,
     visible,
     isOpen: open,
-    open: () => setOpen(true),
+    // Clears any stale message from a previous attempt before the dialog
+    // becomes visible again, regardless of how it was opened. `phase` is left
+    // alone: `signIn()` already re-derives it, and the stage/session banners
+    // read a "failed" phase while the dialog is closed, so resetting it here
+    // (or in `close()`) would blank the banner's "Try again" state the moment
+    // the dialog that produced it goes away.
+    open: () => {
+      setMessage(undefined)
+      setOpen(true)
+    },
     close: () => {
       setOpen(false)
       // Persistent views never get evicted on their own, so this login view

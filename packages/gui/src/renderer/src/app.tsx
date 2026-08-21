@@ -4,6 +4,7 @@ import { sessionErrorNotice } from "./lib/message-error"
 import { createAppearanceController } from "./controllers/appearance-controller"
 import { createAuthoritativeStateController } from "./controllers/authoritative-state-controller"
 import { createCapabilityActionsController } from "./controllers/capability-actions-controller"
+import { createClaudeAuthController } from "./controllers/claude-auth-controller"
 import { createClaudeTerminalController } from "./controllers/claude-terminal-controller"
 import { createCommandController } from "./controllers/command-controller"
 import { createGuiBridgeController } from "./controllers/gui-bridge-controller"
@@ -61,6 +62,7 @@ export function App() {
     alert: notices.alert,
   })
   const updateNotice = createUpdateNoticeController({ authoritative, alert: notices.alert })
+  const claudeAuth = createClaudeAuthController({ sessions: () => authoritative.snapshot()?.sessions ?? [] })
   createAttentionNotifications({
     items: authoritative.attentionItems,
     enabled: settings.attentionNotifications,
@@ -244,6 +246,7 @@ export function App() {
     appearance,
     authoritative,
     capabilities,
+    claudeAuth,
     claudeTerminals,
     commands,
     dialogs,

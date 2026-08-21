@@ -19,6 +19,7 @@ import { AppRoutes } from "./app-routes"
 import { RouteLoadingSkeleton } from "./route-loading"
 import { Titlebar } from "./chrome"
 import type { TitlebarBreadcrumb } from "./titlebar"
+import { ClaudeSignInDialog } from "./claude-sign-in-dialog"
 import { CommandPaletteModal, type PaletteTarget } from "./command-palette"
 import { DialogModal } from "./dialog-modal"
 import { KeyboardHelpModal } from "./keyboard-help"
@@ -358,6 +359,7 @@ export function AppShell(props: { model: GuiAppModel }) {
         )}
       </Show>
       <DialogModal dialog={model.dialogs.dialog()} close={model.dialogs.close} />
+      <ClaudeSignInDialog controller={model.claudeAuth} />
     </div>
   )
 }
