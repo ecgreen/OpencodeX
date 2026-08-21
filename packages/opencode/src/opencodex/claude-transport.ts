@@ -41,8 +41,50 @@ export type TransportOptions = {
 
 export type DelegateCapability = {
   roles: Array<{ name: string; description?: string }>
-  run: (input: { role: string; prompt: string }) => Promise<string>
+  /**
+   * `toolUseID` is the orchestrator's own tool call id for this delegation,
+   * present whenever the permission gate saw the call. It is what the parent
+   * transcript keys its tool part by, so it is what lets a delegation link to
+   * the session it spawned.
+   */
+  run: (input: { role: string; prompt: string; toolUseID?: string }) => Promise<string>
 }
+
+/** The delegate tool's arguments, as both the gate and the handler see them. */
+export type DelegateArgs = { role: string; prompt: string }
+
+/**
+ * The CLI hands an in-process MCP tool its arguments but not the tool call id
+ * the transcript is keyed by. `canUseTool` sees both, and always resolves
+ * before the CLI executes the tool (the same ordering `decidedInputs` in
+ * claude-driver.ts relies on), so the id is recorded there and claimed here.
+ *
+ * Identical arguments queue FIFO, so an orchestrator that fans the same role
+ * and prompt out twice in one turn still gives each call a distinct id rather
+ * than pointing both at the first.
+ */
+export function createDelegateCorrelator() {
+  const pending = new Map<string, string[]>()
+  const key = (args: DelegateArgs) => JSON.stringify([args.role, args.prompt])
+  return {
+    record(input: Record<string, unknown>, toolUseID?: string) {
+      if (!toolUseID) return
+      const { role, prompt } = input
+      if (typeof role !== "string" || typeof prompt !== "string") return
+      const queue = pending.get(key({ role, prompt }))
+      if (queue) queue.push(toolUseID)
+      else pending.set(key({ role, prompt }), [toolUseID])
+    },
+    claim(args: DelegateArgs) {
+      const queue = pending.get(key(args))
+      const toolUseID = queue?.shift()
+      if (queue && queue.length === 0) pending.delete(key(args))
+      return toolUseID
+    },
+  }
+}
+
+export type DelegateCorrelator = ReturnType<typeof createDelegateCorrelator>
 
 /** Namespaced by the CLI as `mcp__<server>__<tool>`. */
 export const DELEGATE_SERVER = "opencodex_swarm"
@@ -141,12 +183,15 @@ export function createSdkTransport(): ClaudeTransport {
       }
       // Only `interrupt` is used here, and its result is discarded.
       let query: { interrupt?: () => Promise<unknown> } | undefined
+      // Shared by the permission gate (which sees the tool call id) and the
+      // delegate tool handler (which does not).
+      const correlator = createDelegateCorrelator()
 
       async function* events(): AsyncIterable<ClaudeEvent> {
         const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
         if (!sdk?.query) throw new ClaudeNotInstalledError("The Claude Code SDK is unavailable.")
         const executable = options.executable ?? (await resolveClaudeExecutable())
-        const delegation = options.delegate ? delegateServer(sdk, options.delegate) : undefined
+        const delegation = options.delegate ? delegateServer(sdk, options.delegate, correlator) : undefined
         const running = sdk.query({
           prompt: sdkPrompt(prompt),
           options: {
@@ -175,9 +220,13 @@ export function createSdkTransport(): ClaudeTransport {
                 }
               }
               const decision = await options.canUseTool(toolName, input, extra?.toolUseID)
-              return decision.allow
-                ? { behavior: "allow", updatedInput: decision.input ?? input }
-                : { behavior: "deny", message: decision.message }
+              if (!decision.allow) return { behavior: "deny", message: decision.message }
+              const updatedInput = decision.input ?? input
+              // Recorded only once the call is going to run, and against the
+              // input the tool will actually receive, so the handler's own
+              // arguments are what it looks the id up by.
+              if (toolName === DELEGATE_TOOL_NAME) correlator.record(updatedInput, extra?.toolUseID)
+              return { behavior: "allow", updatedInput }
             },
             ...(options.resumeID ? { resume: options.resumeID } : {}),
             ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
@@ -224,6 +273,7 @@ async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerat
 export function delegateServer(
   sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
   delegate: DelegateCapability,
+  correlator?: DelegateCorrelator,
 ) {
   const roster = delegate.roles
     .map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`)
@@ -253,7 +303,12 @@ export function delegateServer(
         },
         async (args) => {
           try {
-            const text = await delegate.run({ role: args.role, prompt: args.prompt })
+            const toolUseID = correlator?.claim(args)
+            const text = await delegate.run({
+              role: args.role,
+              prompt: args.prompt,
+              ...(toolUseID ? { toolUseID } : {}),
+            })
             return { content: [{ type: "text" as const, text }] }
           } catch (cause) {
             return {

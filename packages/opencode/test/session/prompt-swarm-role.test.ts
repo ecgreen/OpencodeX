@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Option } from "effect"
 import * as PromptSwarm from "../../src/session/prompt-swarm"
 import type { DelegationRecord } from "../../src/session/delegation-outcome"
 import { SessionID } from "../../src/session/schema"
@@ -145,9 +145,87 @@ describe("swarm role delegation stamping", () => {
   })
 })
 
+/**
+ * The GUI's transcript link reads `metadata.sessionId` off the parent's tool
+ * part - the same stamp the native task tool writes. Without it a delegation
+ * row is a dead end: the child session exists in the graph but nothing on the
+ * orchestrator's transcript points at it.
+ */
+describe("swarm role delegation drill-down", () => {
+  test("stamps the child session onto the orchestrator's own tool part", async () => {
+    const { runSwarmRole, parts } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_1" })],
+    })
+
+    await Effect.runPromise(run(runSwarmRole, { toolUseID: "toolu_1" }))
+
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toMatchObject({
+      id: "prt_1",
+      callID: "toolu_1",
+      state: {
+        status: "running",
+        // Preserved alongside the stamp, not replaced by it.
+        metadata: { seen: true, parentSessionId: "ses_parent", sessionId: "ses_child", swarmRole: "Specialist" },
+      },
+    })
+  })
+
+  test("stamps before the role's prompt runs, so a running delegation already links", async () => {
+    const order: string[] = []
+    const { runSwarmRole } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_1" })],
+      onUpdatePart: () => order.push("stamp"),
+      onPrompt: () => order.push("prompt"),
+    })
+
+    await Effect.runPromise(run(runSwarmRole, { toolUseID: "toolu_1" }))
+
+    expect(order).toEqual(["stamp", "prompt"])
+  })
+
+  test("delegates unstamped rather than failing when the call cannot be found", async () => {
+    const { runSwarmRole, parts, prompts } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_other" })],
+    })
+
+    const report = await Effect.runPromise(run(runSwarmRole, { toolUseID: "toolu_1" }))
+
+    expect(report).toBe("done")
+    expect(prompts).toHaveLength(1)
+    expect(parts).toHaveLength(0)
+  })
+
+  test("leaves the part alone when the driver could not correlate a call id", async () => {
+    const { runSwarmRole, parts } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_1" })],
+    })
+
+    await Effect.runPromise(run(runSwarmRole))
+
+    expect(parts).toHaveLength(0)
+  })
+})
+
+function toolPart(input: { id: string; callID: string }) {
+  return {
+    id: input.id,
+    sessionID: "ses_parent",
+    messageID: "msg_1",
+    type: "tool",
+    callID: input.callID,
+    tool: "task",
+    state: { status: "running", input: { role: "Specialist", prompt: "Do the task." }, metadata: { seen: true } },
+  }
+}
+
 function run(
   runSwarmRole: ReturnType<typeof PromptSwarm.make>["runSwarmRole"],
-  overrides: { roles?: PromptSwarm.SwarmRoleRow[] } = {},
+  overrides: { roles?: PromptSwarm.SwarmRoleRow[]; toolUseID?: string } = {},
 ) {
   return runSwarmRole({
     sessionID: SessionID.make("ses_parent"),
@@ -155,6 +233,7 @@ function run(
     roles: overrides.roles ?? [role({ name: "Specialist", skill: null, instructions: "" })],
     role: "Specialist",
     prompt: "Do the task.",
+    ...(overrides.toolUseID ? { toolUseID: overrides.toolUseID } : {}),
   })
 }
 
@@ -180,9 +259,15 @@ function harness(input: {
   promptResult?: Effect.Effect<unknown, unknown>
   /** Overrides the skill lookup, for pre-prompt failure tests. */
   skillFailure?: Effect.Effect<never>
+  /** The parent transcript the delegate call's tool part is looked up in. */
+  parentParts?: Array<Record<string, unknown>>
+  onUpdatePart?: () => void
+  onPrompt?: () => void
 }) {
   const prompts: string[] = []
   const stamps: Array<{ record: DelegationRecord; expectRunID?: string }> = []
+  const parts: Array<Record<string, unknown>> = []
+  const parentMessage = { info: { id: "msg_1", role: "assistant" }, parts: input.parentParts ?? [] }
   const deps = {
     claudeDriver: {} as never,
     database: {} as never,
@@ -193,6 +278,14 @@ function harness(input: {
         stamps.push({ record: write.record, ...(write.expectRunID ? { expectRunID: write.expectRunID } : {}) })
         return Effect.succeed(true)
       },
+      findMessage: (_sessionID: string, predicate: (message: typeof parentMessage) => boolean) =>
+        Effect.succeed(predicate(parentMessage) ? Option.some(parentMessage) : Option.none()),
+      updatePart: (part: Record<string, unknown>) =>
+        Effect.sync(() => {
+          input.onUpdatePart?.()
+          parts.push(part)
+          return part
+        }),
     } as never,
     skills: {
       get: (name: string) =>
@@ -204,6 +297,7 @@ function harness(input: {
         ),
     } as never,
     prompt: (promptInput: { parts: Array<{ type: string; text?: string }> }) => {
+      input.onPrompt?.()
       if (input.promptResult) return input.promptResult
       const text = promptInput.parts.flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n")
       prompts.push(text)
@@ -214,5 +308,5 @@ function harness(input: {
     },
   }
   const { runSwarmRole } = PromptSwarm.make(deps as never)
-  return { runSwarmRole, prompts, stamps }
+  return { runSwarmRole, prompts, stamps, parts }
 }

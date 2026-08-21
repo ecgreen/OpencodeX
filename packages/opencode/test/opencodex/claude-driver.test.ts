@@ -56,6 +56,7 @@ const sessions = Layer.mock(Session.Service)({
       parts = [...parts.filter((part) => part.id !== next.id), next]
       return next
     }),
+  getPart: ({ partID }) => Effect.sync(() => parts.find((part) => part.id === partID)),
   findMessage: (_sessionID, predicate) =>
     Effect.sync(() => {
       if (!message) return Option.none()
@@ -93,7 +94,11 @@ function reset(
   history = options?.history ?? []
 }
 
-function runTurn(input?: { text?: string; images?: ClaudeImage[] }) {
+function runTurn(input?: {
+  text?: string
+  images?: ClaudeImage[]
+  delegate?: OpencodeXClaudeDriver.SwarmDelegate
+}) {
   return Effect.gen(function* () {
     const service = yield* OpencodeXClaudeDriver.Service
     return yield* service.runTurn({
@@ -101,6 +106,7 @@ function runTurn(input?: { text?: string; images?: ClaudeImage[] }) {
       parentMessageID: parentMessageID as never,
       text: input?.text ?? "hello",
       ...(input?.images ? { images: input.images } : {}),
+      ...(input?.delegate ? { delegate: input.delegate } : {}),
       directory: "/test",
       providerID: "claude-code",
       modelID: "sonnet",
@@ -205,6 +211,82 @@ describe("Claude driver delivery finalization", () => {
     }),
   )
 })
+
+/**
+ * A delegated role stamps the child session onto the orchestrator's tool part
+ * while it runs (prompt-swarm.runSwarmRole), and that stamp is the transcript's
+ * only route into the child. The mapper rebuilds the part from the tool_result
+ * alone, so the driver has to carry the stamp across that rewrite.
+ */
+describe("Claude driver swarm delegation", () => {
+  it.effect("keeps the delegated child on the tool part after the delegation returns", () =>
+    Effect.gen(function* () {
+      reset(delegationStream)
+
+      const result = yield* runTurn({ delegate: { roles: [{ name: "Coder" }], run: () => stampChild } })
+
+      const part = result.parts.find((item) => item.type === "tool")
+      expect(part).toMatchObject({
+        tool: "task",
+        callID: "toolu_1",
+        state: {
+          status: "completed",
+          output: "the role's report",
+          // The mapper's own metadata still lands; the stamp rides alongside.
+          metadata: { sessionId: "ses_child", swarmRole: "Coder" },
+        },
+      })
+    }),
+  )
+
+  it.effect("carries the stamp onto a delegation the turn abandons", () =>
+    Effect.gen(function* () {
+      reset(async function* () {
+        yield toolUse()
+        yield { type: "text", text: await transportOptions!.delegate!.run(delegated) } as never
+      })
+
+      const result = yield* runTurn({ delegate: { roles: [{ name: "Coder" }], run: () => stampChild } })
+
+      expect(result.parts.find((item) => item.type === "tool")).toMatchObject({
+        state: { status: "error", metadata: { sessionId: "ses_child", interrupted: true } },
+      })
+    }),
+  )
+})
+
+const delegated = { role: "Coder", prompt: "Ship it", toolUseID: "toolu_1" }
+
+const toolUse = () => ({
+  type: "assistant" as const,
+  message: {
+    id: "m1",
+    content: [
+      { type: "tool_use", id: "toolu_1", name: "mcp__opencodex_swarm__delegate", input: { role: "Coder", prompt: "Ship it" } },
+    ],
+  },
+})
+
+/** Mirrors what prompt-swarm writes onto the parent's running tool part. */
+const stampChild = Effect.sync(() => {
+  const part = parts.find((item) => item.type === "tool")
+  if (part?.type === "tool" && part.state.status === "running")
+    parts = [
+      ...parts.filter((item) => item.id !== part.id),
+      { ...part, state: { ...part.state, metadata: { sessionId: "ses_child", swarmRole: "Coder" } } },
+    ]
+  return "the role's report"
+})
+
+async function* delegationStream() {
+  yield toolUse()
+  const report = await transportOptions!.delegate!.run(delegated)
+  yield {
+    type: "user" as const,
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: report }] },
+  }
+  yield { type: "result" as const, subtype: "success", total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 0 } }
+}
 
 describe("Claude driver prompt assembly", () => {
   it.effect("preserves the text-only transport prompt", () =>
