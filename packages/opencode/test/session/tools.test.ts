@@ -1,5 +1,5 @@
 import { expect } from "bun:test"
-import { Effect, Layer, Schema } from "effect"
+import { Deferred, Effect, Layer, Schema } from "effect"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
@@ -54,7 +54,7 @@ const services = (tool: Tool.Def) =>
     } as unknown as Truncate.Interface),
   )
 
-const run = (tool: Tool.Def) =>
+const run = (tool: Tool.Def, onWrite?: (count: number) => Effect.Effect<void>) =>
   Effect.gen(function* () {
     writes.length = 0
     const resolved = yield* SessionTools.resolve({
@@ -64,12 +64,13 @@ const run = (tool: Tool.Def) =>
       processor: {
         message: { id: "msg_probe" } as any,
         updateToolCall: (_callID, update, options) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             const next = update({ state: { status: "running" } } as any)
             writes.push({
               title: next.state.status === "running" ? next.state.title : undefined,
               transient: options?.transient,
             })
+            if (onWrite) yield* onWrite(writes.length)
             return next
           }),
         completeToolCall: () => Effect.void,
@@ -112,23 +113,21 @@ it.live("collapses a burst of metadata writes into a single leading write", () =
 
 it.live("drains the newest pending value once per interval", () =>
   Effect.gen(function* () {
+    const drained = yield* Deferred.make<void>()
     const tool = probe((ctx) =>
       Effect.gen(function* () {
         for (let index = 0; index < 50; index++) {
           yield* ctx.metadata({ title: `chunk ${index}`, metadata: {} })
         }
-        // Real time so the drain fiber gets a turn regardless of the test clock.
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, INTERVAL_MS * 3)))
+        yield* Deferred.await(drained).pipe(Effect.timeout("5 seconds"), Effect.orDie)
       }),
     )
-    yield* run(tool)
+    yield* run(tool, (count) => (count === 2 ? Deferred.succeed(drained, undefined) : Effect.void))
 
-    // Leading write plus at most one per elapsed interval - nowhere near 50.
-    expect(writes.length).toBeGreaterThanOrEqual(2)
-    expect(writes.length).toBeLessThanOrEqual(5)
-    expect(writes[0]?.title).toBe("chunk 0")
-    // The trailing drain always carries the newest value, never a stale one.
-    expect(writes.at(-1)?.title).toBe("chunk 49")
+    expect(writes).toEqual([
+      { title: "chunk 0", transient: true },
+      { title: "chunk 49", transient: true },
+    ])
   }),
 )
 
