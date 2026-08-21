@@ -9,7 +9,9 @@ const ensureArgs: EnsureArgs[] = []
 const markOpenCalls: string[] = []
 const markClosedCalls: string[] = []
 const disposeCalls: string[] = []
+const liveViews = new Set<string>()
 let ensureShouldThrow = false
+let createCalls = 0
 
 // The real terminal surface creates an xterm Terminal, which needs
 // MutationObserver / DOM APIs this test runner does not provide. Stub it so
@@ -17,12 +19,20 @@ let ensureShouldThrow = false
 // mock.module pattern used elsewhere in this suite (e.g.
 // terminal-launch-profile.test.ts) for a dependency that cannot load here.
 // ensureShouldThrow lets one test reproduce the real ensure()'s "8 terminals
-// open" failure without needing 8 real views.
+// open" failure without needing 8 real views. liveViews/createCalls mirror
+// the real surface's own contract - ensure() reuses an id already in the map
+// and only builds a fresh view (and counts toward createCalls) for an id it
+// has not seen or has since disposed - so tests can tell a reused view apart
+// from an orphaned rebuild.
 await mock.module("../src/renderer/src/components/session-side-terminal-views", () => ({
   terminalSurface: {
     ensure: (id: string, write: unknown, openURL: unknown, persistent: unknown) => {
       ensureArgs.push({ id, write, openURL, persistent })
       if (ensureShouldThrow) throw new Error("This window already has the maximum of 8 terminals open.")
+      if (!liveViews.has(id)) {
+        liveViews.add(id)
+        createCalls += 1
+      }
       return {
         terminal: {
           write: (data: string) => {
@@ -40,6 +50,7 @@ await mock.module("../src/renderer/src/components/session-side-terminal-views", 
     attach: () => () => undefined,
     dispose: (id: string) => {
       disposeCalls.push(id)
+      liveViews.delete(id)
     },
     focus: () => undefined,
   },
@@ -60,8 +71,14 @@ function healthy(id: string): Session {
 
 type CreateTerminalResult = { ok: boolean; pid?: number; message?: string }
 type CreateTerminalDep = (input: { id: string }) => Promise<CreateTerminalResult>
+type DestroyTerminalDep = (id: string) => Promise<boolean>
 
-function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, createTerminal?: CreateTerminalDep) {
+function harness(
+  initial: Session[],
+  authStatus: () => Promise<AuthStatus>,
+  createTerminal?: CreateTerminalDep,
+  destroyTerminal?: DestroyTerminalDep,
+) {
   const [sessions, setSessions] = createSignal(initial)
   const exits: Array<(event: { id: string }) => void> = []
   const dataListeners: Array<(event: { id: string; data: string }) => void> = []
@@ -69,6 +86,7 @@ function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, crea
   const write = (_id: string, _data: string) => undefined
   const openURL = (_url: string) => undefined
   const create = createTerminal ?? defaultCreateTerminal
+  const destroy = destroyTerminal ?? defaultDestroyTerminal
   return createRoot((dispose) => {
     const controller = createClaudeAuthController({
       sessions,
@@ -78,7 +96,7 @@ function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, crea
           created.push(input.id)
           return create(input)
         },
-        destroyTerminal: async () => true,
+        destroyTerminal: destroy,
         onExit: (listener) => {
           exits.push(listener)
           return () => undefined
@@ -97,6 +115,10 @@ function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, crea
 
 async function defaultCreateTerminal(): Promise<CreateTerminalResult> {
   return { ok: true, pid: 1 }
+}
+
+async function defaultDestroyTerminal(): Promise<boolean> {
+  return true
 }
 
 describe("claude sign-in controller", () => {
@@ -192,7 +214,7 @@ describe("claude sign-in controller", () => {
     test7.dispose()
   })
 
-  test("a terminal-surface failure while receiving sign-in output cannot escape the listener, and is surfaced instead", () => {
+  test("a terminal-surface failure while receiving sign-in output cannot escape the listener, and is surfaced instead", async () => {
     // Reproduces ensure() throwing "This window already has the maximum of 8
     // terminals open.", which happens for real once the shared, global view
     // budget (session terminals plus this login terminal) is full of views
@@ -207,11 +229,76 @@ describe("claude sign-in controller", () => {
     expect(test8.controller.phase()).toBe("failed")
     expect(test8.controller.message()).toBe("This window already has the maximum of 8 terminals open.")
     // The failure is also visible through close(), which frees the login
-    // view's slot in the shared budget instead of leaking it forever.
+    // view's slot in the shared budget instead of leaking it forever. Teardown
+    // now waits for destroyTerminal to settle, so give it a couple of turns.
     test8.controller.close()
+    await Promise.resolve()
+    await Promise.resolve()
     expect(markClosedCalls).toEqual([LOGIN_TERMINAL_ID])
     expect(disposeCalls).toEqual([LOGIN_TERMINAL_ID])
     ensureShouldThrow = false
     test8.dispose()
+  })
+
+  test("dispose waits for destroyTerminal to settle, so a chunk in flight cannot rebuild an orphaned view", async () => {
+    ensureCalls.length = 0
+    ensureArgs.length = 0
+    markClosedCalls.length = 0
+    disposeCalls.length = 0
+    liveViews.clear()
+    createCalls = 0
+    let resolveDestroy: (value: boolean) => void = () => undefined
+    const pendingDestroy = new Promise<boolean>((resolve) => {
+      resolveDestroy = resolve
+    })
+    const test9 = harness([stranded("a")], async () => ({ state: "signed-in" }), undefined, () => pendingDestroy)
+    // Establish the view the way a live sign-in would.
+    test9.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "prompt" }))
+    expect(createCalls).toBe(1)
+    test9.controller.close()
+    // destroyTerminal has not settled yet: the old (buggy) ordering disposed
+    // the view synchronously right here, so a chunk arriving now would find
+    // no view and rebuild an orphaned one. With teardown deferred until
+    // destroy settles, the original view must still be live.
+    await Promise.resolve()
+    expect(disposeCalls).toEqual([])
+    test9.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "more output" }))
+    expect(createCalls).toBe(1)
+    // Once destroyTerminal actually settles, teardown proceeds and the slot
+    // is freed for real.
+    resolveDestroy(true)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(disposeCalls).toEqual([LOGIN_TERMINAL_ID])
+    expect(markClosedCalls).toEqual([LOGIN_TERMINAL_ID])
+    test9.dispose()
+  })
+
+  test("close after a real sign-in tears down the view once destroy resolves, and a second sign-in still gets a working terminal", async () => {
+    ensureCalls.length = 0
+    ensureArgs.length = 0
+    markClosedCalls.length = 0
+    disposeCalls.length = 0
+    liveViews.clear()
+    createCalls = 0
+    const test10 = harness([stranded("a")], async () => ({ state: "signed-in" }))
+    await test10.controller.signIn()
+    test10.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "Visit https://example.com" }))
+    expect(createCalls).toBe(1)
+    test10.controller.close()
+    // The default destroyTerminal here resolves immediately, so the deferred
+    // teardown settles within a couple of microtask turns.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(disposeCalls).toEqual([LOGIN_TERMINAL_ID])
+    expect(markClosedCalls).toEqual([LOGIN_TERMINAL_ID])
+    await test10.controller.signIn()
+    test10.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "prompt again" }))
+    expect(test10.controller.phase()).toBe("signing-in")
+    // The view was really gone, so this is a fresh build, not a stale reuse -
+    // and it still ends up working: the new chunk reaches the surface.
+    expect(createCalls).toBe(2)
+    expect(ensureCalls.at(-1)).toEqual({ id: LOGIN_TERMINAL_ID, data: "prompt again" })
+    test10.dispose()
   })
 })

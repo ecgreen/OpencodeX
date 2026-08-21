@@ -135,10 +135,19 @@ export function createClaudeAuthController(input: {
       setOpen(false)
       // Persistent views never get evicted on their own, so this login view
       // would otherwise sit in the shared 8-slot budget forever after the
-      // dialog closes, permanently starving session terminals of one slot.
-      terminalSurface.markClosed(LOGIN_TERMINAL_ID)
-      terminalSurface.dispose(LOGIN_TERMINAL_ID)
-      void deps.destroyTerminal(LOGIN_TERMINAL_ID).catch(() => false)
+      // dialog closes, permanently starving session terminals of one slot -
+      // but the teardown must wait for the PTY to actually be gone first.
+      // The onData subscription above stays live across close()/signIn()
+      // cycles, so disposing the view before destroy settles would let a
+      // chunk in flight re-enter ensure() and rebuild a brand-new, orphaned
+      // terminal - reopening the very leak this teardown exists to close.
+      void deps
+        .destroyTerminal(LOGIN_TERMINAL_ID)
+        .catch(() => false)
+        .finally(() => {
+          terminalSurface.markClosed(LOGIN_TERMINAL_ID)
+          terminalSurface.dispose(LOGIN_TERMINAL_ID)
+        })
     },
     signIn,
   }
