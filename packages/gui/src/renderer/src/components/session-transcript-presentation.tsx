@@ -1,7 +1,7 @@
 import type { AssistantMessage, Provider } from "@opencode-ai/sdk/v2/client"
 import { For, Show } from "solid-js"
 import type { MessageBundle } from "../lib/session-api"
-import { bundleError, messageErrorDetail, messageErrorProviderID, messageErrorStatusCode, messageErrorTitle } from "../lib/message-error"
+import { bundleError, CLAUDE_CODE_PROVIDER_ID, messageErrorDetail, messageErrorProviderID, messageErrorStatusCode, messageErrorTitle } from "../lib/message-error"
 import { formatTokenCount } from "../lib/session-composer-helpers"
 import { OpencodeXLogo } from "./chrome"
 import { Icon } from "./icon"
@@ -32,7 +32,12 @@ export function TranscriptMessageError(props: {
               {(status) => <small>HTTP {status()}</small>}
             </Show>
           </div>
-          <Show when={providerID() ? props.connectProvider : undefined}>
+          {/* Claude Subscription auth lives in the Claude Code CLI, not an API
+              key - the session banner above already offers the real sign-in
+              action, so this generic "Connect" control (which only knows how
+              to prompt for an API key) is suppressed for it rather than
+              offering a control that asks for the wrong credential. */}
+          <Show when={providerID() && providerID() !== CLAUDE_CODE_PROVIDER_ID ? props.connectProvider : undefined}>
             {(connect) => (
               <Button appearance="outline" type="button" onClick={() => connect()(providerID())}>
                 Connect {providerName()}

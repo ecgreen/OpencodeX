@@ -20,19 +20,29 @@ import styles from "./claude-sign-in-dialog.module.css"
  * the two call sites cannot drift. They are needed here only because
  * `attach`'s first call for a given id is the one that constructs the view
  * (via `ensure`) if no PTY byte has arrived yet.
+ *
+ * That first call can throw - `ensure()` rejects once the shared 8-terminal
+ * budget is full (session-side-terminal-views.ts) - and there is no
+ * ErrorBoundary above this component, so an uncaught throw here would take
+ * down the renderer. `claude-terminal-controller.ts`'s own `attach()` wraps
+ * the same call for the same reason; this call site needs the same guard.
  */
 export function ClaudeSignInDialog(props: { controller: ReturnType<typeof createClaudeAuthController> }) {
   let host: HTMLDivElement | undefined
   createEffect(() => {
     if (!props.controller.isOpen() || !host) return
-    const detach = terminalSurface.attach(
-      props.controller.terminalID,
-      host,
-      claudeAuthTerminalWrite,
-      claudeAuthTerminalOpenURL,
-      true,
-    )
-    onCleanup(detach)
+    try {
+      const detach = terminalSurface.attach(
+        props.controller.terminalID,
+        host,
+        claudeAuthTerminalWrite,
+        claudeAuthTerminalOpenURL,
+        true,
+      )
+      onCleanup(detach)
+    } catch (error) {
+      props.controller.fail(error instanceof Error ? error.message : "Could not open the sign-in terminal.")
+    }
   })
   return (
     <Dialog

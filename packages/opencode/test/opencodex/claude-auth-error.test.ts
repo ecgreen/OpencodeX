@@ -33,4 +33,30 @@ describe("claude auth error classification", () => {
     expect(classifyClaudeError("")).toBeUndefined()
     expect(classifyClaudeError("   ")).toBeUndefined()
   })
+
+  test("recognizes the real 401 shape the CLI emits for a bad API key", () => {
+    const result = classifyClaudeError('API Error: 401 {"type":"authentication_error","message":"invalid x-api-key"}')
+    expect(result?.kind).toBe("auth-missing")
+  })
+
+  test("recognizes the CLI's backticked login instruction", () => {
+    expect(classifyClaudeError("Please run `/login` to continue.")?.kind).toBe("auth-missing")
+    // The un-backticked form the old pattern already caught keeps working.
+    expect(classifyClaudeError("Please run /login")?.kind).toBe("auth-missing")
+  })
+
+  test("weakTierAllowed:false suppresses the weak credential+failure-word tier but not the strong patterns", () => {
+    expect(
+      classifyClaudeError("...the api key is invalid in the fixture", { weakTierAllowed: false }),
+    ).toBeUndefined()
+    expect(
+      classifyClaudeError("...the api key is invalid in the fixture", { weakTierAllowed: true }),
+    ).toBeDefined()
+    // Unambiguous CLI text still classifies even with the weak tier off.
+    expect(
+      classifyClaudeError("Failed to authenticate: OAuth session expired and could not be refreshed", {
+        weakTierAllowed: false,
+      })?.kind,
+    ).toBe("auth-expired")
+  })
 })

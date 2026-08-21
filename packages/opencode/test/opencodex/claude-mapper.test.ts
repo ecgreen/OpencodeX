@@ -438,6 +438,28 @@ describe("claude stream-json mapper", () => {
     })
   })
 
+  test("does not classify a max-turns result that merely mentions an invalid api key in the model's own prose", () => {
+    // error_max_turns can carry the model's own final text as `result` rather
+    // than a real CLI error, and is_error is not set - it is a turn-limit
+    // stop, not a genuine failure. That text should not get relabeled as an
+    // auth failure just because it happens to say "api key" and "invalid".
+    const { writes, state } = run([
+      { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "hi" }] } },
+      {
+        type: "result",
+        subtype: "error_max_turns",
+        is_error: false,
+        result: "...the api key is invalid in the fixture",
+      },
+    ])
+
+    expect(state.authFailure).toBeUndefined()
+    expect(messages(writes).at(-1)?.error).toMatchObject({
+      name: "UnknownError",
+      data: { message: "...the api key is invalid in the fixture" },
+    })
+  })
+
   test("closes running tools and the message when a turn is abandoned", () => {
     const ctx = context()
     const started = run(

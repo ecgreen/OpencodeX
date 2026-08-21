@@ -64,6 +64,11 @@ export function createClaudeAuthController(input: {
   const [message, setMessage] = createSignal<string>()
   const [open, setOpen] = createSignal(false)
   const [suppressed, setSuppressed] = createSignal<string>()
+  // Bumped on every signIn(). Lets a stale close() (its destroy still in
+  // flight when a new sign-in starts) recognize it no longer owns the view,
+  // and lets a stale check() (still awaiting authStatus() when a new sign-in
+  // starts) recognize its verdict no longer applies - see close() and check().
+  let generation = 0
 
   const strandedKey = createMemo(() =>
     input
@@ -94,6 +99,12 @@ export function createClaudeAuthController(input: {
   // to evict - so this mirrors claude-terminal-controller.ts's onData handler
   // and turns that throw into a visible failure instead of an unhandled
   // exception inside an IPC listener.
+  /** Shared by the onData catch below and the dialog's own attach() guard. */
+  function fail(text: string) {
+    setPhase("failed")
+    setMessage(text)
+  }
+
   onCleanup(
     deps.onData((event) => {
       if (event.id !== LOGIN_TERMINAL_ID) return
@@ -101,15 +112,18 @@ export function createClaudeAuthController(input: {
         terminalSurface.ensure(event.id, deps.write, deps.openURL, true).terminal.write(event.data)
         terminalSurface.markOpen(event.id)
       } catch (error) {
-        setPhase("failed")
-        setMessage(error instanceof Error ? error.message : "Could not open the sign-in terminal.")
+        fail(error instanceof Error ? error.message : "Could not open the sign-in terminal.")
       }
     }),
   )
 
   async function check() {
+    // Captured before the await: if a new signIn() starts while this probe is
+    // in flight, its own state has already moved on and this verdict is stale.
+    const attempt = generation
     setPhase("checking")
     const status = await deps.authStatus()
+    if (attempt !== generation) return
     if (status.state === "signed-in") {
       setSuppressed(strandedKey())
       setMessage(undefined)
@@ -125,6 +139,7 @@ export function createClaudeAuthController(input: {
   }
 
   async function signIn() {
+    generation += 1
     setPhase("signing-in")
     setMessage(undefined)
     setOpen(true)
@@ -147,17 +162,17 @@ export function createClaudeAuthController(input: {
     message,
     visible,
     isOpen: open,
-    // Clears any stale message from a previous attempt before the dialog
-    // becomes visible again, regardless of how it was opened. `phase` is left
-    // alone: `signIn()` already re-derives it, and the stage/session banners
-    // read a "failed" phase while the dialog is closed, so resetting it here
-    // (or in `close()`) would blank the banner's "Try again" state the moment
-    // the dialog that produced it goes away.
-    open: () => {
-      setMessage(undefined)
-      setOpen(true)
-    },
+    // Lets the dialog surface an attach() failure (e.g. the shared 8-terminal
+    // budget is full) through this controller's own phase/message channel,
+    // the same path the onData catch above already uses, instead of letting
+    // it throw uncaught out of a createEffect with no ErrorBoundary above it.
+    fail,
     close: () => {
+      // Captured before setOpen/destroy: if a new signIn() starts while this
+      // close() is still tearing down, that attempt now owns the view and
+      // the phase - this close() must not dispose the fresh view out from
+      // under it, or resolve a phase for an attempt it never saw finish.
+      const attempt = generation
       setOpen(false)
       // Persistent views never get evicted on their own, so this login view
       // would otherwise sit in the shared 8-slot budget forever after the
@@ -171,8 +186,18 @@ export function createClaudeAuthController(input: {
         .destroyTerminal(LOGIN_TERMINAL_ID)
         .catch(() => false)
         .finally(() => {
+          if (attempt !== generation) return
           terminalSurface.markClosed(LOGIN_TERMINAL_ID)
           terminalSurface.dispose(LOGIN_TERMINAL_ID)
+          // destroyTerminal() tears down the PTY without ever emitting the
+          // `opencodex:terminal:exit` IPC event (terminal-ipc.ts disposes the
+          // pty's own exit listener before killing the process), so the
+          // onExit subscription above never fires for an explicit close().
+          // Without this, closing the dialog right after a completed sign-in
+          // leaves phase stuck on "signing-in" forever - the global banner's
+          // button reads "Signing in..." and stays disabled for the rest of
+          // the app session, exactly the dead end this feature exists to fix.
+          void check()
         })
     },
     signIn,

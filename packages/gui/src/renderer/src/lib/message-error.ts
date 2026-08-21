@@ -4,6 +4,14 @@ import type { MessageBundle } from "./store-types"
 export type MessageError = NonNullable<AssistantMessage["error"]>
 
 /**
+ * Matches `CLAUDE_CODE_PROVIDER_ID` in
+ * `packages/opencode/src/provider/claude-code-provider.ts`. Duplicated rather
+ * than imported: the gui package depends on `@opencode-ai/sdk`, not on the
+ * opencode package itself, so there is no cross-package import path here.
+ */
+export const CLAUDE_CODE_PROVIDER_ID = "claude-code"
+
+/**
  * A failed turn often produces no parts at all — a missing API key fails before
  * the model is ever reached. Without a rendered error the session just looks
  * empty, so every error here has to resolve to something a reader can act on.

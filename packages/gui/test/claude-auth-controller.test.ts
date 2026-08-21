@@ -121,6 +121,12 @@ async function defaultDestroyTerminal(): Promise<boolean> {
   return true
 }
 
+/** Lets a chain of real microtask hops (destroy -> finally -> check -> await
+ * authStatus) settle before assertions, without guessing an exact tick count. */
+async function flush(turns = 5) {
+  for (let i = 0; i < turns; i += 1) await Promise.resolve()
+}
+
 describe("claude sign-in controller", () => {
   test("shows once when any session is stranded, since the credential is machine-wide", () => {
     const test1 = harness([healthy("a")], async () => ({ state: "signed-in" }))
@@ -300,5 +306,88 @@ describe("claude sign-in controller", () => {
     expect(createCalls).toBe(2)
     expect(ensureCalls.at(-1)).toEqual({ id: LOGIN_TERMINAL_ID, data: "prompt again" })
     test10.dispose()
+  })
+
+  test("close() after signIn() resolves the phase instead of wedging the global button on 'Signing in...' forever", async () => {
+    // Reproduces destroyTerminal() tearing down the PTY without ever emitting
+    // opencodex:terminal:exit (terminal-ipc.ts's destroyTerminal disposes the
+    // pty's own exit listener before killing the process) - so onExit, the
+    // controller's only other route to check(), never fires for an explicit
+    // close(). Before the fix, phase stayed "signing-in" - claudeSignInBusy -
+    // permanently, even though the sign-in genuinely succeeded.
+    const test11 = harness([stranded("a")], async () => ({ state: "signed-in" }))
+    await test11.controller.signIn()
+    expect(test11.controller.phase()).toBe("signing-in")
+    test11.controller.close()
+    await flush()
+    expect(test11.controller.phase()).toBe("signed-in")
+    expect(test11.controller.visible()).toBe(false)
+    test11.dispose()
+  })
+
+  test("close() after signIn() lands in 'failed', not stuck busy, when the probe cannot confirm sign-in", async () => {
+    const test12 = harness([stranded("a")], async () => ({ state: "signed-out" }))
+    await test12.controller.signIn()
+    test12.controller.close()
+    await flush()
+    expect(test12.controller.phase()).toBe("failed")
+    expect(test12.controller.message()).toBe("Sign-in did not complete. Try again.")
+    test12.dispose()
+  })
+
+  test("close() racing a new signIn() does not tear down the view the new attempt is using, or resolve its phase", async () => {
+    // Reproduces: close() starts tearing down while its destroyTerminal is
+    // still pending (the view is therefore still live and un-disposed);
+    // before that settles, the user clicks Sign in again, which reuses the
+    // still-live view - exactly like the real terminalSurface/attach() would.
+    // The stale close()'s deferred teardown must have no effect once it is
+    // superseded: it must not dispose the view the new attempt is now using
+    // (which the real dialog is attached to - disposing it out from under an
+    // attached view is the "empty rectangle" symptom this guards against),
+    // and must not resolve a phase for an attempt it never saw finish.
+    liveViews.clear()
+    createCalls = 0
+    disposeCalls.length = 0
+    markClosedCalls.length = 0
+    let resolveCloseDestroy: (value: boolean) => void = () => undefined
+    const pendingCloseDestroy = new Promise<boolean>((resolve) => {
+      resolveCloseDestroy = resolve
+    })
+    // destroyTerminal is called three times here, in order: signIn() #1's own
+    // leftover-shell guard (must resolve, or the first `await signIn()` below
+    // never returns), then close()'s teardown (held pending - this is the one
+    // the race is about), then signIn() #2's own leftover-shell guard (must
+    // also resolve immediately, same reason as the first).
+    let destroyCalls = 0
+    const test13 = harness(
+      [stranded("a")],
+      async () => ({ state: "signed-in" }),
+      undefined,
+      () => {
+        destroyCalls += 1
+        return destroyCalls === 2 ? pendingCloseDestroy : Promise.resolve(true)
+      },
+    )
+    await test13.controller.signIn()
+    test13.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "prompt" }))
+    expect(createCalls).toBe(1)
+
+    test13.controller.close() // destroy #2: pending, not yet settled - view still live
+    await test13.controller.signIn() // destroy #3 (its own leftover-shell guard): resolves immediately
+    test13.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "prompt again" }))
+    // Still the same, still-live view - the stale close() has not disposed it.
+    expect(createCalls).toBe(1)
+    expect(test13.controller.phase()).toBe("signing-in")
+
+    resolveCloseDestroy(true) // the stale close() finally settles
+    await flush()
+
+    // The stale close() must have no observable effect: it neither disposed
+    // the view the new attempt is using nor touched phase/message for an
+    // attempt it never saw.
+    expect(disposeCalls).toEqual([])
+    expect(markClosedCalls).toEqual([])
+    expect(test13.controller.phase()).toBe("signing-in")
+    test13.dispose()
   })
 })

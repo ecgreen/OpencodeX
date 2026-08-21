@@ -551,7 +551,12 @@ function finishTurn(event: ClaudeEvent, writes: SessionWrite[], state: MapperSta
   state.turnCost += cost
   const failed = event.is_error === true || (event.subtype !== undefined && event.subtype !== "success")
   const error = failed ? readResultError(event) : undefined
-  if (error) state.authFailure = classifyClaudeError(error)
+  // A non-"success" subtype alone (e.g. error_max_turns) does not mean the CLI
+  // is reporting a real error - `result` there is often just the model's own
+  // final text, cut off by the turn limit rather than failed. Only a genuine
+  // `is_error` lets the weak credential+failure-word tier fire; the strong,
+  // unambiguous patterns stay active either way.
+  if (error) state.authFailure = classifyClaudeError(error, { weakTierAllowed: event.is_error === true })
   // A refused resume never reaches `system.init`, so the turn ends without ever
   // naming a conversation. That is the signal to stop reusing the stored id.
   if (failed && !state.claudeSessionID) state.resumeRejected = true
