@@ -129,8 +129,19 @@ export function nextSwarmRolePreset(roles: readonly Pick<OpencodeXSwarmRoleInput
   return SWARM_ROLE_PRESETS.find((preset) => !used.has(preset.skill))
 }
 
-export function swarmProviderSelectionKey(roles: readonly Pick<OpencodeXSwarmRoleInput, "providerID">[]) {
-  return [...new Set(roles.flatMap((role) => role.providerID ? [role.providerID] : []))].toSorted().join("\0")
+export function swarmProviderSelectionKey(
+  roles: readonly Pick<OpencodeXSwarmRoleInput, "providerID" | "fallbackModels">[],
+) {
+  return [
+    ...new Set(
+      roles.flatMap((role) => [
+        ...(role.providerID ? [role.providerID] : []),
+        ...(role.fallbackModels ?? []).map((model) => model.providerID),
+      ]),
+    ),
+  ]
+    .toSorted()
+    .join("\0")
 }
 
 export function swarmRolePresetBySkill(skill: string | undefined) {
@@ -164,7 +175,12 @@ export function roleInput(input: Partial<OpencodeXSwarmRoleInput> & { name: stri
     skill: cleanOptional(input.skill),
     providerID: cleanOptional(input.providerID),
     modelID: cleanOptional(input.modelID),
-    variant: cleanOptional(input.variant),
+    variant: cleanVariant(input.variant),
+    fallbackModels: input.fallbackModels?.map((model) => ({
+      providerID: model.providerID.trim(),
+      modelID: model.modelID.trim(),
+      variant: cleanVariant(model.variant),
+    })),
     modelProfile: cleanOptional(input.modelProfile),
     instructions: input.instructions?.trim() ?? "",
     metadata: input.metadata,
@@ -178,4 +194,9 @@ export function numericTime(value: number | string | undefined) {
 function cleanOptional(value: string | undefined) {
   const next = value?.trim()
   return next ? next : undefined
+}
+
+function cleanVariant(value: string | undefined) {
+  const variant = cleanOptional(value)
+  return variant === "default" ? undefined : variant
 }

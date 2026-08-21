@@ -27,6 +27,8 @@ import { Database } from "@opencode-ai/core/database/database"
 import { OpencodeXSwarmRoleTable } from "@opencode-ai/core/opencodex/sql"
 import { SwarmBriefing } from "@/opencodex/swarm-briefing"
 import { isSwarmProvider } from "@/provider/swarm-provider"
+import { hydrateFallbackModels } from "@/opencodex/swarm-model"
+import { shouldAdvanceModelFallback } from "@/session/model-fallback"
 
 const log = Log.create({ service: "tool.task" })
 
@@ -34,6 +36,7 @@ export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
   resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
   prompt(input: SessionPrompt.PromptInput): Effect.Effect<SessionLegacy.WithParts>
+  loop(input: SessionPrompt.LoopInput): Effect.Effect<SessionLegacy.WithParts>
 }
 
 const id = "task"
@@ -157,6 +160,33 @@ function swarmRoleModel(role: { provider_id: string | null; model_id: string | n
   return { providerID: ProviderV2.ID.make(role.provider_id), modelID: ProviderV2.ModelID.make(role.model_id) }
 }
 
+function swarmRoleModels(
+  role:
+    | {
+        provider_id: string | null
+        model_id: string | null
+        variant: string | null
+        fallback_models: string
+        sort_order: number
+      }
+    | undefined,
+) {
+  if (!role?.provider_id || !role.model_id) return []
+  return [
+    {
+      providerID: ProviderV2.ID.make(role.provider_id),
+      modelID: ProviderV2.ModelID.make(role.model_id),
+      ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
+    },
+    ...(role.sort_order === 0
+      ? []
+      : hydrateFallbackModels(role.fallback_models, {
+          providerID: role.provider_id,
+          modelID: role.model_id,
+        })),
+  ]
+}
+
 /**
  * Parses a "providerID/modelID" override. Malformed values fall back to the
  * agent default rather than failing the delegation; a wrong-but-well-formed
@@ -196,6 +226,9 @@ export const TaskTool = Tool.define(
           name: OpencodeXSwarmRoleTable.name,
           provider_id: OpencodeXSwarmRoleTable.provider_id,
           model_id: OpencodeXSwarmRoleTable.model_id,
+          variant: OpencodeXSwarmRoleTable.variant,
+          fallback_models: OpencodeXSwarmRoleTable.fallback_models,
+          sort_order: OpencodeXSwarmRoleTable.sort_order,
         })
         .from(OpencodeXSwarmRoleTable)
         .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
@@ -322,16 +355,14 @@ export const TaskTool = Tool.define(
       // completed child rendered as unknown - so failures are logged, not
       // silently ignored.
       const stamp = (record: DelegationRecord, expectRunID?: string) =>
-        sessions
-          .stampDelegation({ sessionID: nextSession.id, record, ...(expectRunID ? { expectRunID } : {}) })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.sync(() => {
-                log.error("delegation stamp failed", { sessionID: nextSession.id, runID, cause })
-                return false
-              }),
-            ),
-          )
+        sessions.stampDelegation({ sessionID: nextSession.id, record, ...(expectRunID ? { expectRunID } : {}) }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              log.error("delegation stamp failed", { sessionID: nextSession.id, runID, cause })
+              return false
+            }),
+          ),
+        )
       const settle = (outcome: DelegationOutcome, summary?: string) =>
         stamp(
           settleDelegation(started, {
@@ -368,7 +399,9 @@ export const TaskTool = Tool.define(
         // model comes next: a role spawning helpers of itself should run them on
         // what it is running, not on whatever its agent happens to configure.
         // Outside a swarm the agent's model keeps priority, as it always has.
-        const requested = parseModelOverride(params.model) ??
+        const override = parseModelOverride(params.model)
+        const requested =
+          override ??
           swarmRoleModel(swarmRole) ??
           (swarm && !isSwarmProvider(caller.providerID) ? caller : undefined) ??
           next.model ??
@@ -381,7 +414,7 @@ export const TaskTool = Tool.define(
         // (the orchestrator delegating), so the fallback is the concrete model
         // that facade stands for.
         const model = isSwarmProvider(requested.providerID)
-          ? (yield* orchestratorModel(requested.modelID)) ?? next.model
+          ? ((yield* orchestratorModel(requested.modelID)) ?? next.model)
           : requested
         if (!model || isSwarmProvider(model.providerID))
           return yield* Effect.fail(
@@ -390,6 +423,21 @@ export const TaskTool = Tool.define(
                 `Give its orchestrator role a model, or pass one on the task call.`,
             ),
           )
+        // The chain is built from the role's raw configuration, so its primary
+        // can still be the swarm facade the guard above just resolved away. A
+        // child on the facade would be handed a briefing and a team and start
+        // delegating recursively, so any facade entry routes to the resolved
+        // concrete model instead.
+        const configuredModels = swarmRoleModels(swarmRole).map((entry) =>
+          isSwarmProvider(entry.providerID) ? { ...model, variant: undefined } : entry,
+        )
+        const models =
+          configuredModels.length > 0 &&
+          (!override ||
+            (override.providerID === configuredModels[0].providerID &&
+              override.modelID === configuredModels[0].modelID))
+            ? configuredModels
+            : [{ ...model, variant: undefined }]
         const metadata = {
           parentSessionId: ctx.sessionID,
           sessionId: nextSession.id,
@@ -413,21 +461,18 @@ export const TaskTool = Tool.define(
 
         const runTask = Effect.fn("TaskTool.runTask")(function* () {
           const parts = yield* ops.resolvePromptParts(params.prompt)
-          const result = yield* ops.prompt({
-            messageID: MessageID.ascending(),
+          const userMessageID = MessageID.ascending()
+          const first = models[0]!
+          metadata.model = { providerID: first.providerID, modelID: first.modelID }
+          const initial = yield* ops.prompt({
+            messageID: userMessageID,
             sessionID: nextSession.id,
-            model: {
-              modelID: model.modelID,
-              providerID: model.providerID,
-            },
+            model: { modelID: first.modelID, providerID: first.providerID },
+            ...(first.variant ? { variant: first.variant } : {}),
             agent: next.name,
             tools: {
               ...(next.permission.some((rule) => rule.permission === "todowrite") ? {} : { todowrite: false }),
-              // A swarm role must be able to fan its own work out and to hand it
-              // to the next layer, so a swarm member keeps the task tool even
-              // when its agent does not grant it explicitly - up to the depth cap,
-              // past which delegation stops rather than recursing forever.
-              ...(( swarm && childDepth < MAX_SWARM_DELEGATION_DEPTH) ||
+              ...((swarm && childDepth < MAX_SWARM_DELEGATION_DEPTH) ||
               next.permission.some((rule) => rule.permission === id)
                 ? {}
                 : { task: false }),
@@ -435,12 +480,53 @@ export const TaskTool = Tool.define(
             },
             parts,
           })
+          // `undefined` marks a turn that completed as something other than
+          // this task's assistant reply; a bare throw here would become an
+          // unhandled defect and kill the fiber past the error handling below.
+          const advance = (
+            result: SessionLegacy.WithParts,
+            index: number,
+          ): Effect.Effect<SessionLegacy.WithParts | undefined> =>
+            Effect.gen(function* () {
+              const attempt = models[index]
+              if (!attempt) return result
+              const turn = yield* sessions.messageWithChildren({ sessionID: nextSession.id, messageID: userMessageID })
+              if (!shouldAdvanceModelFallback(turn, userMessageID)) return result
+              const user = turn.find(
+                (message): message is SessionLegacy.WithParts & { info: SessionLegacy.User } =>
+                  message.info.role === "user" && message.info.id === userMessageID,
+              )
+              if (!user) return result
+              metadata.model = { providerID: attempt.providerID, modelID: attempt.modelID }
+              yield* sessions.updateMessage({
+                ...user.info,
+                model: {
+                  providerID: attempt.providerID,
+                  modelID: attempt.modelID,
+                  ...(attempt.variant ? { variant: attempt.variant } : {}),
+                },
+              })
+              const next = yield* ops.loop({ sessionID: nextSession.id, messageID: userMessageID })
+              if (next.info.role !== "assistant" || next.info.parentID !== userMessageID) {
+                return undefined
+              }
+              return yield* advance(next, index + 1)
+            })
+          const result = yield* advance(initial, 1)
+          if (!result) {
+            return {
+              state: "error",
+              text: `Task ${nextSession.id} completed a different user turn.`,
+            } satisfies TaskRunResult
+          }
           // The report is the last real text part. Synthetic parts are injected
           // briefings, and a silent "" for a failed subagent reads as success to
           // the caller - that is exactly the "completed but empty" confusion.
           const report =
             result.parts
-              .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
+              .flatMap((part) =>
+                part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : [],
+              )
               .at(-1) ?? ""
           if (result.info.role === "assistant" && result.info.error) {
             const failure = [`The subagent failed: ${JSON.stringify(result.info.error)}`, report]
@@ -520,10 +606,9 @@ export const TaskTool = Tool.define(
                     ? inject("error", result.text).pipe(Effect.andThen(Effect.fail(new Error(result.text))))
                     : inject("completed", result.text).pipe(Effect.as(result.text)),
                 onFailure: (cause) =>
-                  (Cause.hasInterruptsOnly(cause)
-                    ? Effect.void
-                    : inject("error", errorText(Cause.squash(cause)))
-                  ).pipe(Effect.andThen(Effect.failCause(cause))),
+                  (Cause.hasInterruptsOnly(cause) ? Effect.void : inject("error", errorText(Cause.squash(cause)))).pipe(
+                    Effect.andThen(Effect.failCause(cause)),
+                  ),
               }),
             ),
           })

@@ -17,6 +17,8 @@ import {
 import {
   defaultRoles,
   defaultTitle,
+  normalizeRole,
+  serializeFallbackModels,
   serializeMetadata,
   validateRoles,
 } from "./swarm-model"
@@ -35,7 +37,7 @@ export const planLayer = Layer.effect(
       const swarmID = `swm_${Identifier.ascending()}`
       const now = Date.now()
       const prompt = input.prompt?.trim() ?? ""
-      const roles = input.roles && input.roles.length > 0 ? [...input.roles] : defaultRoles(prompt)
+      const roles = (input.roles && input.roles.length > 0 ? [...input.roles] : defaultRoles(prompt)).map(normalizeRole)
       const invalid = validateRoles(roles)
       if (invalid) return yield* new ValidationError({ message: invalid })
       const title = input.title?.trim() || defaultTitle(prompt)
@@ -72,6 +74,7 @@ export const planLayer = Layer.effect(
                       provider_id: role.providerID,
                       model_id: role.modelID,
                       variant: role.variant,
+                      fallback_models: serializeFallbackModels(role.fallbackModels),
                       model_profile: role.modelProfile,
                       status: "planned",
                       instructions: role.instructions,

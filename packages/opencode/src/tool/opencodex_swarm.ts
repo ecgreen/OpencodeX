@@ -11,6 +11,16 @@ const RoleInput = Schema.Struct({
   skill: Schema.optional(Schema.String).annotate({ description: "Optional role skill name, for example architect" }),
   providerID: Schema.optional(Schema.String).annotate({ description: "Optional provider id for this role" }),
   modelID: Schema.optional(Schema.String).annotate({ description: "Optional model id for this role" }),
+  variant: Schema.optional(Schema.String).annotate({ description: "Optional model variant for this role" }),
+  fallbackModels: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        providerID: Schema.String,
+        modelID: Schema.String,
+        variant: Schema.optional(Schema.String),
+      }),
+    ),
+  ).annotate({ description: "Optional ordered fallback models for this delegated specialist role" }),
   modelProfile: Schema.optional(Schema.String).annotate({ description: "Optional model profile label" }),
 })
 
@@ -82,6 +92,11 @@ export const OpencodeXSwarmCreateTool = Tool.define<typeof Parameters, Metadata,
               ...role,
               providerID: role.providerID ? ProviderV2.ID.make(role.providerID) : undefined,
               modelID: role.modelID ? ProviderV2.ModelID.make(role.modelID) : undefined,
+              fallbackModels: role.fallbackModels?.map((model) => ({
+                ...model,
+                providerID: ProviderV2.ID.make(model.providerID),
+                modelID: ProviderV2.ModelID.make(model.modelID),
+              })),
             })),
             metadata: { createdByTool: "opencodex_swarm_create", sessionID: ctx.sessionID },
           })

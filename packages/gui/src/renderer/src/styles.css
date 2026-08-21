@@ -225,6 +225,7 @@
 @import "./styles/global/shell/route-loading.css" layer(layout);
 @import "./styles/pages/swarms/base.css" layer(features);
 @import "./styles/pages/swarms/editor.css" layer(features);
+@import "./styles/pages/swarms/fallback-models.css" layer(features);
 @import "./styles/pages/swarms/role-templates.css" layer(features);
 @import "./styles/pages/swarms/responsive.css" layer(features);
 @import "./styles/pages/swarms/states.css" layer(features);

@@ -10,6 +10,13 @@ import {
 } from "../src/renderer/src/lib/swarm-actions"
 import { defaultTeamRun, sessionSwarm, swarmTeamChildren, swarmTeamView, teamMemberForSession } from "../src/renderer/src/lib/swarm-team"
 import type { GuiSnapshot } from "../src/renderer/src/lib/session-api"
+import {
+  canSelectSwarmRoleModel,
+  canAddSwarmRoleFallback,
+  moveSwarmRoleFallback,
+  removeSwarmRoleFallback,
+  setSwarmRoleFallback,
+} from "../src/renderer/src/lib/swarm-role-fallbacks"
 
 describe("GUI swarm action helpers", () => {
   test("normalizes role payloads without empty optional fields", () => {
@@ -31,6 +38,19 @@ describe("GUI swarm action helpers", () => {
     expect(roleInput({ name: "Lead", variant: " high " }).variant).toBe("high")
     expect(roleInput({ name: "Lead", variant: "  " }).variant).toBeUndefined()
     expect(roleInput({ name: "Lead" }).variant).toBeUndefined()
+  })
+
+  test("normalizes and preserves ordered fallback models", () => {
+    expect(roleInput({
+      name: "Lead",
+      fallbackModels: [
+        { providerID: " openai ", modelID: " gpt-5 ", variant: " default " },
+        { providerID: "google", modelID: "gemini-3", variant: " high " },
+      ],
+    }).fallbackModels).toEqual([
+      { providerID: "openai", modelID: "gpt-5", variant: undefined },
+      { providerID: "google", modelID: "gemini-3", variant: "high" },
+    ])
   })
 
   test("starts new swarms with an unconfigured orchestrator", () => {
@@ -65,6 +85,38 @@ describe("GUI swarm action helpers", () => {
     expect(swarmProviderSelectionKey([{ providerID: "z" }, { providerID: "a" }])).toBe(
       swarmProviderSelectionKey([{ providerID: "a" }, { providerID: "z" }]),
     )
+    expect(swarmProviderSelectionKey([
+      { providerID: "anthropic", fallbackModels: [{ providerID: "openai", modelID: "gpt-5" }] },
+    ])).toBe("anthropic\0openai")
+  })
+
+  test("orders, removes, and replaces fallback models without mutation", () => {
+    const first = { providerID: "openai", modelID: "gpt-5" }
+    const second = { providerID: "google", modelID: "gemini-3" }
+    expect(setSwarmRoleFallback([first], "new", second)).toEqual([first, second])
+    expect(setSwarmRoleFallback([first, second], 0, second)).toEqual([second, second])
+    expect(moveSwarmRoleFallback([first, second], 1, -1)).toEqual([second, first])
+    expect(removeSwarmRoleFallback([first, second], 0)).toEqual([second])
+  })
+
+  test("caps GUI fallback additions at four models", () => {
+    const models = Array.from({ length: 4 }, (_, index) => ({ providerID: "provider", modelID: `model-${index}` }))
+    expect(canAddSwarmRoleFallback(models.slice(0, 3))).toBe(true)
+    expect(canAddSwarmRoleFallback(models)).toBe(false)
+  })
+
+  test("prevents primary and fallback model duplicates regardless of variant", () => {
+    const role = roleInput({
+      name: "Builder",
+      providerID: "anthropic",
+      modelID: "claude",
+      variant: "high",
+      fallbackModels: [{ providerID: "openai", modelID: "gpt-5", variant: "low" }],
+    })
+    expect(canSelectSwarmRoleModel(role, { providerID: "anthropic", modelID: "claude", variant: "low" }, "new")).toBe(false)
+    expect(canSelectSwarmRoleModel(role, { providerID: "openai", modelID: "gpt-5" }, "primary")).toBe(false)
+    expect(canSelectSwarmRoleModel(role, { providerID: "google", modelID: "gemini-3" }, "new")).toBe(true)
+    expect(canSelectSwarmRoleModel(role, { providerID: "openai", modelID: "gpt-5" }, 0)).toBe(true)
   })
 
   test("a swarm is working when any session on it is busy", () => {

@@ -23,6 +23,8 @@ import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
 import { SessionStatus } from "./status"
 import { prepareImages } from "./swarm-attachments"
+import { hydrateFallbackModels } from "@/opencodex/swarm-model"
+import { shouldAdvanceModelFallback } from "./model-fallback"
 
 const log = Log.create({ service: "session.prompt-swarm" })
 
@@ -36,6 +38,7 @@ export type SwarmRoleRow = {
   model_id: string | null
   /** The model variant (effort level) the role runs at, when one is chosen. */
   variant: string | null
+  fallback_models: string
 }
 
 export interface Deps {
@@ -44,6 +47,7 @@ export interface Deps {
   readonly sessions: Context.Service.Shape<typeof Session.Service>
   readonly skills: Context.Service.Shape<typeof Skill.Service>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
+  readonly loop: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<SessionLegacy.WithParts>
 }
 
 /**
@@ -129,6 +133,7 @@ export function make(deps: Deps) {
         provider_id: OpencodeXSwarmRoleTable.provider_id,
         model_id: OpencodeXSwarmRoleTable.model_id,
         variant: OpencodeXSwarmRoleTable.variant,
+        fallback_models: OpencodeXSwarmRoleTable.fallback_models,
       })
       .from(OpencodeXSwarmRoleTable)
       .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
@@ -211,6 +216,11 @@ export function make(deps: Deps) {
       return `Unknown role "${input.role}". Available roles: ${input.roles.map((item) => item.name).join(", ")}.`
     }
     if (!role.provider_id || !role.model_id) return `Role "${role.name}" has no model configured.`
+    // A role stored on the swarm facade has no concrete model to run: a child
+    // prompted on the facade would take the swarm route itself and recurse.
+    if (isSwarmProvider(role.provider_id)) {
+      return `Role "${role.name}" is configured on a swarm facade, not a concrete model.`
+    }
     const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     const child = yield* sessions
       .create({
@@ -274,17 +284,63 @@ export function make(deps: Deps) {
       const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
         .filter(Boolean)
         .join("\n\n")
-      const result = yield* prompt({
+      const models = [
+        { providerID: role.provider_id!, modelID: role.model_id!, variant: role.variant ?? undefined },
+        ...(role.skill === "orchestrator" || role.name.trim().toLowerCase() === "orchestrator"
+          ? []
+          : hydrateFallbackModels(role.fallback_models, {
+              providerID: role.provider_id!,
+              modelID: role.model_id!,
+            })),
+      ]
+      const userMessageID = MessageID.ascending()
+      const primary = models[0]!
+      const initial = yield* prompt({
+        messageID: userMessageID,
         sessionID: child.id,
         model: {
-          providerID: ProviderV2.ID.make(role.provider_id!),
-          modelID: ProviderV2.ModelID.make(role.model_id!),
+          providerID: ProviderV2.ID.make(primary.providerID),
+          modelID: ProviderV2.ModelID.make(primary.modelID),
         },
         ...(role.agent ? { agent: role.agent } : {}),
-        // "default" is the sentinel for "no variant" everywhere in the loop.
-        ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
+        ...(primary.variant && primary.variant !== "default" ? { variant: primary.variant } : {}),
         parts: [{ type: "text", text }],
       })
+      // `undefined` marks a turn that completed as something other than this
+      // role's assistant reply; a bare throw here would become an unhandled
+      // defect and kill the fiber past the role-failure handling below.
+      const advance = (
+        result: SessionLegacy.WithParts,
+        index: number,
+      ): Effect.Effect<SessionLegacy.WithParts | undefined> =>
+        Effect.gen(function* () {
+          const model = models[index]
+          if (!model) return result
+          const turn = yield* sessions.messageWithChildren({ sessionID: child.id, messageID: userMessageID })
+          if (!shouldAdvanceModelFallback(turn, userMessageID)) return result
+          const user = turn.find(
+            (message): message is SessionLegacy.WithParts & { info: SessionLegacy.User } =>
+              message.info.role === "user" && message.info.id === userMessageID,
+          )
+          if (!user) return result
+          yield* sessions.updateMessage({
+            ...user.info,
+            model: {
+              providerID: ProviderV2.ID.make(model.providerID),
+              modelID: ProviderV2.ModelID.make(model.modelID),
+              ...(model.variant && model.variant !== "default" ? { variant: model.variant } : {}),
+            },
+          })
+          const next = yield* deps.loop({ sessionID: child.id, messageID: userMessageID })
+          if (next.info.role !== "assistant" || next.info.parentID !== userMessageID) {
+            return undefined
+          }
+          return yield* advance(next, index + 1)
+        })
+      const result = yield* advance(initial, 1)
+      if (!result) {
+        return { state: "error" as const, text: `Role "${role.name}" completed a different user turn.` }
+      }
       if (result.info.role === "assistant" && result.info.error) {
         return { state: "error" as const, text: `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}` }
       }
@@ -398,7 +454,9 @@ export function make(deps: Deps) {
             // Avoid doubling up when the subagent's own title already says
             // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
             // render as "code-reviewer subagent (@claude subagent)".
-            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
+            const title = /subagent/i.test(spawnInput.title)
+              ? spawnInput.title
+              : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,

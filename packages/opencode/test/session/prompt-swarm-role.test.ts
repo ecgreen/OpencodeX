@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit, Option } from "effect"
+import { SessionLegacy } from "@opencode-ai/core/session/legacy"
 import * as PromptSwarm from "../../src/session/prompt-swarm"
 import type { DelegationRecord } from "../../src/session/delegation-outcome"
 import { SessionID } from "../../src/session/schema"
@@ -73,6 +74,64 @@ describe("swarm role delegation prompt", () => {
     )
 
     expect(prompts[0]).toBe("Do the task.")
+  })
+})
+
+describe("swarm role model fallback", () => {
+  test("tries configured models in order and stops on success", async () => {
+    const { runSwarmRole, models, prompts, loops, userMessages } = harness({
+      skills: {},
+      promptResults: [failure("insufficient_quota"), success("fallback worked")],
+    })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, {
+        roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })],
+      }),
+    )
+    expect(report).toBe("fallback worked")
+    expect(models).toEqual(["anthropic/claude-sonnet-5", "openai/gpt-5"])
+    expect(prompts).toHaveLength(1)
+    expect(loops()).toBe(1)
+    expect(userMessages()).toBe(1)
+  })
+
+  test("stops on partial text and returns the primary failure", async () => {
+    const partial = failure("quota_exceeded")
+    partial.parts = [{ type: "text", text: "partial", synthetic: false }] as never
+    const { runSwarmRole, models } = harness({ skills: {}, promptResults: [partial, success("unused")] })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, { roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })] }),
+    )
+    expect(report).toContain("failed")
+    expect(models).toEqual(["anthropic/claude-sonnet-5"])
+  })
+
+  test("returns the final error after exhausting the ordered chain", async () => {
+    const { runSwarmRole, models } = harness({
+      skills: {},
+      promptResults: [failure("quota_exceeded"), failure("usage_limit_reached")],
+    })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, { roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })] }),
+    )
+    expect(report).toContain("usage_limit_reached")
+    expect(models).toHaveLength(2)
+  })
+
+  test("a prior tool part in the same persisted turn permanently blocks fallback", async () => {
+    const { runSwarmRole, models, prompts, loops, userMessages } = harness({
+      skills: {},
+      priorAssistantParts: [[{ type: "tool", state: { status: "completed" } }]],
+      promptResults: [failure("insufficient_quota"), success("must not run")],
+    })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, { roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })] }),
+    )
+    expect(report).toContain("failed")
+    expect(models).toEqual(["anthropic/claude-sonnet-5"])
+    expect(prompts).toHaveLength(1)
+    expect(loops()).toBe(0)
+    expect(userMessages()).toBe(1)
   })
 })
 
@@ -237,7 +296,7 @@ function run(
   })
 }
 
-function role(input: { name: string; skill: string | null; instructions: string }): PromptSwarm.SwarmRoleRow {
+function role(input: { name: string; skill: string | null; instructions: string; fallbacks?: boolean }): PromptSwarm.SwarmRoleRow {
   return {
     name: input.name,
     agent: null,
@@ -246,6 +305,9 @@ function role(input: { name: string; skill: string | null; instructions: string 
     provider_id: "anthropic",
     model_id: "claude-sonnet-5",
     variant: null,
+    fallback_models: input.fallbacks
+      ? JSON.stringify([{ providerID: "openai", modelID: "gpt-5" }])
+      : "[]",
   }
 }
 
@@ -257,6 +319,8 @@ function harness(input: {
   skills: Record<string, string>
   /** Overrides what the child prompt resolves to, for exit-shape tests. */
   promptResult?: Effect.Effect<unknown, unknown>
+  promptResults?: SessionLegacy.WithParts[]
+  priorAssistantParts?: Array<Array<Record<string, unknown>>>
   /** Overrides the skill lookup, for pre-prompt failure tests. */
   skillFailure?: Effect.Effect<never>
   /** The parent transcript the delegate call's tool part is looked up in. */
@@ -265,15 +329,33 @@ function harness(input: {
   onPrompt?: () => void
 }) {
   const prompts: string[] = []
+  const models: string[] = []
   const stamps: Array<{ record: DelegationRecord; expectRunID?: string }> = []
   const parts: Array<Record<string, unknown>> = []
   const parentMessage = { info: { id: "msg_1", role: "assistant" }, parts: input.parentParts ?? [] }
+  const turn: SessionLegacy.WithParts[] = []
+  let loopCount = 0
+  const record = (result: SessionLegacy.WithParts, parentID: string) => {
+    const message = {
+      ...result,
+      info: { ...result.info, id: `msg_assistant_${turn.length}`, parentID },
+    } as SessionLegacy.WithParts
+    turn.push(message)
+    return message
+  }
   const deps = {
     claudeDriver: {} as never,
     database: {} as never,
     sessions: {
       get: () => Effect.succeed({ permission: undefined, metadata: { opencodex: { swarmID: "swm_1" } } }),
       create: () => Effect.succeed({ id: "ses_child" }),
+      messageWithChildren: () => Effect.succeed([...turn]),
+      updateMessage: (message: SessionLegacy.Info) => {
+        const index = turn.findIndex((item) => item.info.id === message.id)
+        if (index >= 0) turn[index] = { ...turn[index]!, info: message }
+        if (message.role === "user") models.push(`${message.model.providerID}/${message.model.modelID}`)
+        return Effect.succeed(message)
+      },
       stampDelegation: (write: { sessionID: string; record: DelegationRecord; expectRunID?: string }) => {
         stamps.push({ record: write.record, ...(write.expectRunID ? { expectRunID: write.expectRunID } : {}) })
         return Effect.succeed(true)
@@ -296,17 +378,55 @@ function harness(input: {
             : undefined,
         ),
     } as never,
-    prompt: (promptInput: { parts: Array<{ type: string; text?: string }> }) => {
+    prompt: (promptInput: { messageID?: string; model?: { providerID: string; modelID: string }; parts: Array<{ type: string; text?: string }> }) => {
       input.onPrompt?.()
-      if (input.promptResult) return input.promptResult
+      if (promptInput.model) models.push(`${promptInput.model.providerID}/${promptInput.model.modelID}`)
+      const messageID = promptInput.messageID ?? "msg_user"
+      turn.push({
+        info: { id: messageID, role: "user", model: promptInput.model },
+        parts: promptInput.parts,
+      } as unknown as SessionLegacy.WithParts)
       const text = promptInput.parts.flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n")
       prompts.push(text)
+      for (const parts of input.priorAssistantParts ?? []) record(failure("insufficient_quota", parts), messageID)
+      if (input.promptResults?.length) return Effect.succeed(record(input.promptResults.shift()!, messageID))
+      if (input.promptResult) return input.promptResult
       return Effect.succeed({
         info: { role: "assistant", error: undefined },
         parts: [{ type: "text", text: "done", synthetic: false }],
       })
     },
+    loop: (loopInput: { messageID?: string }) => {
+      loopCount++
+      return Effect.succeed(record(input.promptResults?.shift() ?? success("done"), loopInput.messageID ?? "msg_user"))
+    },
   }
   const { runSwarmRole } = PromptSwarm.make(deps as never)
-  return { runSwarmRole, prompts, stamps, parts }
+  return {
+    runSwarmRole,
+    prompts,
+    models,
+    stamps,
+    parts,
+    loops: () => loopCount,
+    userMessages: () => turn.filter((message) => message.info.role === "user").length,
+  }
+}
+
+function failure(code: string, parts: Array<Record<string, unknown>> = []): SessionLegacy.WithParts {
+  return {
+    info: {
+      role: "assistant",
+      error: new SessionLegacy.APIError({
+        message: "request failed",
+        responseBody: JSON.stringify({ error: { code } }),
+        isRetryable: false,
+      }),
+    },
+    parts,
+  } as unknown as SessionLegacy.WithParts
+}
+
+function success(text: string): SessionLegacy.WithParts {
+  return { info: { role: "assistant", error: undefined }, parts: [{ type: "text", text, synthetic: false }] } as SessionLegacy.WithParts
 }
