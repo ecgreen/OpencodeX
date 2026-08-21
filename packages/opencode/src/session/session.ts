@@ -999,7 +999,11 @@ export const layer: Layer.Layer<
     })
 
     const setTitle = Effect.fn("Session.setTitle")(function* (input: { sessionID: SessionID; title: string }) {
-      yield* patch(input.sessionID, { title: input.title }).pipe(Effect.orDie)
+      yield* mutate(input.sessionID, (current) => ({
+        ...current,
+        title: input.title,
+        time: { ...current.time, updated: Math.max(Date.now(), current.time.updated + 1) },
+      })).pipe(Effect.orDie)
     })
 
     const setModel = Effect.fn("Session.setModel")(function* (input: { sessionID: SessionID; model: Info["model"] }) {

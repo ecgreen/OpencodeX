@@ -16,6 +16,7 @@ import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { EventTable } from "@opencode-ai/core/event/sql"
+import { SessionTable } from "@opencode-ai/core/session/sql"
 import { eq } from "drizzle-orm"
 import {
   DELEGATION_RECORD_VERSION,
@@ -109,6 +110,29 @@ describe("session.created event", () => {
       expect(receivedEvents).toContain("updated")
       expect(receivedEvents.indexOf("created")).toBeLessThan(receivedEvents.indexOf("updated"))
 
+      yield* session.remove(info.id)
+    }),
+  )
+
+  it.instance("title changes advance the session update time monotonically", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const { db } = yield* Database.Service
+      const info = yield* session.create({})
+      const future = Date.now() + 60_000
+      yield* db
+        .update(SessionTable)
+        .set({ time_updated: future })
+        .where(eq(SessionTable.id, info.id))
+        .run()
+        .pipe(Effect.orDie)
+
+      yield* session.setTitle({ sessionID: info.id, title: "updated" })
+
+      expect(yield* session.get(info.id)).toMatchObject({
+        title: "updated",
+        time: { updated: future + 1 },
+      })
       yield* session.remove(info.id)
     }),
   )
