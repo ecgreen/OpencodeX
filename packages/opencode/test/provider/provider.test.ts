@@ -81,6 +81,41 @@ const languageBaseURL = (language: unknown) => (language as { config: { baseURL:
 const it = testEffect(Layer.mergeAll(Provider.defaultLayer, Env.defaultLayer, Plugin.defaultLayer))
 const experimentalModels = testEffect(providerLayer({ enableExperimentalModels: true }))
 
+const refreshCatalog = {
+  current: catalogWithModels(["old-free"]),
+}
+const refreshModelsDevLayer = Layer.succeed(
+  ModelsDev.Service,
+  ModelsDev.Service.of({
+    get: () => Effect.sync(() => refreshCatalog.current),
+    refresh: () => Effect.void,
+  }),
+)
+const refreshProviderLayer = Provider.layer.pipe(
+  Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(Env.defaultLayer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(Auth.defaultLayer),
+  Layer.provide(Plugin.defaultLayer),
+  Layer.provide(refreshModelsDevLayer),
+  Layer.provide(RuntimeFlags.defaultLayer),
+  Layer.provide(Database.defaultLayer),
+)
+const refreshModels = testEffect(refreshProviderLayer)
+
+refreshModels.instance("rebuilds provider state when models.dev cache changes", () =>
+  Effect.gen(function* () {
+    const providerID = ProviderV2.ID.make("opencode")
+    refreshCatalog.current = catalogWithModels(["old-free"])
+    expect((yield* Provider.Service.use((service) => service.list()))[providerID]?.models["old-free"]).toBeDefined()
+
+    refreshCatalog.current = catalogWithModels(["old-free", "x-preview-f-free"])
+    expect(
+      (yield* Provider.Service.use((service) => service.list()))[providerID]?.models["x-preview-f-free"],
+    ).toBeDefined()
+  }),
+)
+
 const withOpenAIModelServer = <A, E, R>(models: string[], fn: (url: URL) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
@@ -95,6 +130,34 @@ const withOpenAIModelServer = <A, E, R>(models: string[], fn: (url: URL) => Effe
     (server) => fn(server.url),
     (server) => Effect.sync(() => server.stop(true)),
   )
+
+function catalogWithModels(ids: string[]): Record<string, ModelsDev.Provider> {
+  return {
+    opencode: {
+      id: "opencode",
+      name: "OpenCode Zen",
+      env: [],
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://opencode.ai/zen/v1",
+      models: Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            id,
+            name: id === "x-preview-f-free" ? "Ox Alpha Free (Unlimited)" : "Old Free",
+            release_date: "2026-08-21",
+            attachment: false,
+            reasoning: false,
+            temperature: true,
+            tool_call: true,
+            cost: { input: 0, output: 0 },
+            limit: { context: 128_000, output: 16_384 },
+          },
+        ]),
+      ),
+    },
+  }
+}
 
 const alphaProviderConfig = {
   provider: {

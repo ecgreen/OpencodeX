@@ -79,8 +79,10 @@ describe("GUI live session projection", () => {
     })
     expect(globalEventAction(event("session.deleted", { sessionID: "ses_gone" }))).toEqual({ type: "snapshot" })
     expect(isCapabilityRefreshEvent(event("lsp.updated", {}))).toBe(true)
+    expect(isCapabilityRefreshEvent(event("models-dev.refreshed", {}))).toBe(true)
     expect(globalEventAction(event("file.watcher.updated", { file: "src/app.tsx" }))).toEqual({ type: "ignore" })
     expect(globalEventAction(event("plugin.added", {}))).toEqual({ type: "refresh", root: false })
+    expect(globalEventAction(event("models-dev.refreshed", {}))).toEqual({ type: "refresh", root: false })
     expect(globalEventAction(event("server.instance.disposed", {}))).toEqual({ type: "refresh", root: true })
   })
 

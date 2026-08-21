@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Provider, Session } from "@opencode-ai/sdk/v2/client"
 import {
   firstAvailableModel,
+  modelPickerOptions,
   modelPickerProviders,
   selectedModelVariants,
   sessionModelDefaults,
@@ -15,6 +16,17 @@ describe("GUI model selection helpers", () => {
         provider("opencode", "Opencode", { old: model("old", "Old", "deprecated"), free: model("free", "Free") }),
       ]),
     ).toBe("opencode/free")
+  })
+
+  test("keeps alpha catalog models visible while excluding deprecated ones from the picker", () => {
+    const options = modelPickerOptions([
+      provider("opencode", "Opencode", {
+        "x-preview-f-free": model("x-preview-f-free", "Ox Alpha Free", "alpha"),
+        old: model("old", "Old", "deprecated"),
+      }),
+    ])
+
+    expect(options.map((option) => option.model.id)).toEqual(["x-preview-f-free"])
   })
 
   test("builds session composer defaults from session, recents, and providers", () => {

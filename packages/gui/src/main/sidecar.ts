@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
+import { app } from "electron"
 import { rememberBackendAuthority } from "./backend-authority.js"
 import fs from "node:fs"
 import {
@@ -142,9 +143,41 @@ async function coordinatorConnection(directory: string, signal: AbortSignal) {
   throwIfStartupStopped(signal)
   const existing = await activeCoordinator(key, database)
   throwIfStartupStopped(signal)
-  if (existing) return existing
+  if (existing && app.isPackaged) return existing
+  if (existing) await stopDevelopmentCoordinator(existing, signal)
   throwIfStartupStopped(signal)
   return spawnCoordinator(directory, key, database, signal)
+}
+
+async function stopDevelopmentCoordinator(manifest: CoordinatorManifest, signal: AbortSignal) {
+  console.warn(`Replacing development coordinator process ${manifest.pid} with the current worktree`)
+  if (isCoordinatorProcessAlive(manifest.pid)) {
+    if (process.platform === "win32") {
+      const stopped = spawn("taskkill", ["/pid", String(manifest.pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      })
+      await new Promise<void>((resolve, reject) => {
+        stopped.once("error", reject)
+        stopped.once("exit", () => resolve())
+      })
+    } else {
+      process.kill(manifest.pid, "SIGTERM")
+    }
+  }
+
+  for (const _ of Array.from({ length: 40 })) {
+    throwIfStartupStopped(signal)
+    if (!isCoordinatorProcessAlive(manifest.pid)) {
+      const current = await readCoordinatorManifest(manifest.key).catch(() => undefined)
+      if (current?.pid === manifest.pid && current.token === manifest.token) {
+        await removeCoordinatorManifest(manifest.key, manifest.token)
+      }
+      return
+    }
+    await startupDelay(signal)
+  }
+  throw new Error(`Timed out stopping stale development coordinator process ${manifest.pid}`)
 }
 
 function connectionFromManifest(manifest: CoordinatorManifest, directory: string) {

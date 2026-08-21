@@ -92,7 +92,13 @@ export function isSnapshotPatchEvent(event: GlobalEvent) {
 
 export function isCapabilityRefreshEvent(event: GlobalEvent) {
   const kind = eventKind(event)
-  return kind === "plugin.added" || kind === "lsp.updated" || kind === "mcp.tools.changed" || kind === "server.instance.disposed"
+  return (
+    kind === "models-dev.refreshed" ||
+    kind === "plugin.added" ||
+    kind === "lsp.updated" ||
+    kind === "mcp.tools.changed" ||
+    kind === "server.instance.disposed"
+  )
 }
 
 /**

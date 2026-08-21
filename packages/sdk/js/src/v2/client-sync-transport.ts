@@ -80,7 +80,12 @@ export function clientStateSyncTransport(options: ClientStateSyncOptions): Clien
 }
 
 export function clientEventInvalidation(event: Event): "capabilities" | "catalog" | "operations" | undefined {
-  if (event.type === "plugin.added" || event.type === "lsp.updated" || event.type === "mcp.tools.changed")
+  if (
+    event.type === "models-dev.refreshed" ||
+    event.type === "plugin.added" ||
+    event.type === "lsp.updated" ||
+    event.type === "mcp.tools.changed"
+  )
     return "capabilities" as const
   if (
     event.type === "opencodex.project.created" ||

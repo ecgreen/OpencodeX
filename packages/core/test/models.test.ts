@@ -168,7 +168,7 @@ describe("ModelsDev Service", () => {
     }),
   )
 
-  it.live("get() caches across calls (later disk writes are ignored until invalidate)", () =>
+  it.live("get() reloads cache files updated by another process", () =>
     Effect.gen(function* () {
       yield* writeCache(fixture)
       const state = yield* Ref.make(initialState)
@@ -177,14 +177,15 @@ describe("ModelsDev Service", () => {
         Effect.gen(function* () {
           const svc = yield* ModelsDev.Service
           const a = yield* svc.get()
-          // mutate disk between calls — cache should mask the change
+          // Another OpenCode process can update the shared catalog while this
+          // process keeps running.
           yield* writeCache(fixture2)
           const b = yield* svc.get()
           return { a, b }
         }),
       )
       expect(first.a).toEqual(fixture)
-      expect(first.b).toEqual(fixture)
+      expect(first.b).toEqual(fixture2)
     }),
   )
 
