@@ -144,7 +144,7 @@ describe("decidePullRequest", () => {
     // A new head SHA carries no prior marker of its own, however many passes
     // the previous SHA reached: the pass count restarts per commit.
     expect(decision.nextPass).toBe(1)
-    expect(decision.priorBodies).toEqual([reviews[0]!.body])
+    expect(decision.priorBodies).toEqual([reviews[0].body])
   })
 
   // GitHub refuses REQUEST_CHANGES on your own PR, so the reviewer needs this
@@ -166,7 +166,7 @@ describe("decidePullRequest", () => {
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.reason).toBe("awaiting author")
     expect(decision.priorReview?.sha).toBe(SHA)
-    expect(decision.priorBodies).toEqual([reviews[0]!.body])
+    expect(decision.priorBodies).toEqual([reviews[0].body])
   })
 
   test("carries every body from the latest previously reviewed head into a new-commit review", () => {
@@ -178,7 +178,7 @@ describe("decidePullRequest", () => {
     ]
     const decision = decidePullRequest(snapshot({ reviews }), NOW)
     expect(decision.reason).toBe("new commits since last review")
-    expect(decision.priorBodies).toEqual([reviews[2]!.body, reviews[1]!.body])
+    expect(decision.priorBodies).toEqual([reviews[2].body, reviews[1].body])
     expect(decision.nextPass).toBe(1)
   })
 
@@ -215,7 +215,7 @@ describe("decidePullRequest", () => {
     expect(decision.action).toBe("review")
     expect(decision.reason).toBe("author replied since last review")
     expect(decision.priorBodies.length).toBe(2)
-    expect(decision.priorBodies).toEqual([reviews[0]!.body, reviews[1]!.body])
+    expect(decision.priorBodies).toEqual([reviews[0].body, reviews[1].body])
     expect(decision.nextPass).toBe(3)
   })
 

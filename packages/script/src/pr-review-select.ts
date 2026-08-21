@@ -75,7 +75,9 @@ export type Decision = {
 export function parseMarker(body: string): Marker | undefined {
   const match = MARKER_PATTERN.exec(body)
   if (!match) return undefined
-  return { sha: match[1]!, ci: match[2] as CiPresence, pass: match[3] ? Number(match[3]) : 1 }
+  const ci = match[2]
+  if (ci !== "present" && ci !== "absent") return undefined
+  return { sha: match[1], ci, pass: match[3] ? Number(match[3]) : 1 }
 }
 
 // GitHub timestamps are all Z-suffixed ISO 8601 of identical width, so string
@@ -104,7 +106,7 @@ export function decidePullRequest(pr: PullRequestSnapshot, now: Date): Decision 
         ? markedReviews.filter((marked) => marked.sha.startsWith(prior.sha) || prior.sha.startsWith(marked.sha))
         : []
   ).map((marked) => marked.body)
-  const priorPass = sameShaReviews.length > 0 ? sameShaReviews[sameShaReviews.length - 1]!.pass : 0
+  const priorPass = sameShaReviews.at(-1)?.pass ?? 0
 
   // Unlike the defer branches below, draft uses the skip formula (priorPass,
   // not priorPass + 1): a draft is never reviewed, so there is no upcoming

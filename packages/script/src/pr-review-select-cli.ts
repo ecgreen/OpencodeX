@@ -51,8 +51,10 @@ const FIELDS = "number,title,author,isDraft,headRefOid,commits,reviews,comments,
 // so the two can't drift apart.
 const PR_LIMIT = 30
 
-const listed = await $`gh pr list --repo ${REVIEW_REPO} --state open --limit ${PR_LIMIT} --json ${FIELDS}`.json()
-const pulls = listed as GhPullRequest[]
+const listed: unknown = await $`gh pr list --repo ${REVIEW_REPO} --state open --limit ${PR_LIMIT} --json ${FIELDS}`.json()
+if (!Array.isArray(listed)) throw new Error("gh pr list returned an invalid response")
+const pulls = listed.filter(isGhPullRequest)
+if (pulls.length !== listed.length) throw new Error("gh pr list returned an invalid pull request")
 
 if (pulls.length >= PR_LIMIT) {
   console.error(
@@ -96,3 +98,39 @@ const decisions = pulls.map((pull) => {
 })
 
 console.log(JSON.stringify(decisions, null, 2))
+
+function isGhPullRequest(value: unknown): value is GhPullRequest {
+  if (!record(value)) return false
+  if (typeof value.number !== "number" || typeof value.title !== "string") return false
+  if (typeof value.isDraft !== "boolean" || typeof value.headRefOid !== "string") return false
+  if (value.author !== null && (!record(value.author) || typeof value.author.login !== "string")) return false
+  if (!Array.isArray(value.commits) || !value.commits.every(isCommit)) return false
+  if (!Array.isArray(value.reviews) || !value.reviews.every(isReview)) return false
+  if (!Array.isArray(value.comments) || !value.comments.every(isComment)) return false
+  return value.statusCheckRollup === null || (Array.isArray(value.statusCheckRollup) && value.statusCheckRollup.every(isCheck))
+}
+
+function isCommit(value: unknown) {
+  return record(value) && typeof value.committedDate === "string"
+}
+
+function isReview(value: unknown) {
+  if (!record(value)) return false
+  if (value.author !== null && (!record(value.author) || typeof value.author.login !== "string")) return false
+  return (value.body === null || typeof value.body === "string") && typeof value.submittedAt === "string"
+}
+
+function isComment(value: unknown) {
+  if (!record(value)) return false
+  if (value.author !== null && (!record(value.author) || typeof value.author.login !== "string")) return false
+  return typeof value.createdAt === "string"
+}
+
+function isCheck(value: unknown) {
+  if (!record(value)) return false
+  return [value.name, value.context, value.status].every((entry) => entry === undefined || typeof entry === "string")
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
