@@ -13,8 +13,8 @@ afterAll(() => rm(output, { recursive: true, force: true }))
 describe("Electron bundling", () => {
   test("discovers both supported macOS bundle names", () => {
     const candidates = packagedExecutableCandidates("/repo", "darwin")
-    expect(candidates.filter((candidate) => candidate.includes("/OpencodeX.app/"))).toHaveLength(2)
-    expect(candidates.filter((candidate) => candidate.includes("/opencodex-gui.app/"))).toHaveLength(2)
+    expect(candidates.filter((candidate) => candidate.split(path.sep).includes("OpencodeX.app"))).toHaveLength(2)
+    expect(candidates.filter((candidate) => candidate.split(path.sep).includes("opencodex-gui.app"))).toHaveLength(2)
   })
 
   test("emits deterministic single-file bundles and rejects unexpected externals", async () => {

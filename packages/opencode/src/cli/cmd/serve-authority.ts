@@ -51,21 +51,23 @@ export function validateServeAuthorityNetwork(input: {
   hostname: string
   password: string
   allowInsecureLan?: string
-}) {
-  return Effect.gen(function* () {
-    if (LOOPBACK_HOSTS.has(input.hostname)) return
-    if (!input.password.trim()) {
-      return yield* new ServeAuthorityNetworkError({
+}): Effect.Effect<void, ServeAuthorityNetworkError> {
+  if (LOOPBACK_HOSTS.has(input.hostname)) return Effect.void
+  if (!input.password.trim()) {
+    return Effect.fail(
+      new ServeAuthorityNetworkError({
         message: "Non-loopback server listeners require a non-empty OPENCODE_SERVER_PASSWORD",
-      })
-    }
-    const allowed = input.allowInsecureLan?.toLowerCase()
-    if (allowed === "1" || allowed === "true") return
-    return yield* new ServeAuthorityNetworkError({
+      }),
+    )
+  }
+  const allowed = input.allowInsecureLan?.toLowerCase()
+  if (allowed === "1" || allowed === "true") return Effect.void
+  return Effect.fail(
+    new ServeAuthorityNetworkError({
       message:
         "Non-loopback server listeners use HTTP Basic authentication without TLS; set OPENCODE_SERVER_ALLOW_INSECURE_LAN=1 to allow this insecure listener",
-    })
-  })
+    }),
+  )
 }
 
 type OwnedServeAuthority = {
