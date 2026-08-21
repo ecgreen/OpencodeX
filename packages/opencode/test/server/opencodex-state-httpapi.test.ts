@@ -37,6 +37,10 @@ function record(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {}
 }
 
+function records(value: unknown) {
+  return Array.isArray(value) ? value.map(record) : []
+}
+
 function stream(response: Response) {
   const reader = response.body?.getReader()
   if (!reader) throw new Error("SSE response has no body")
@@ -380,12 +384,33 @@ describe("OpencodeX state HTTP API", () => {
       const ready = record(yield* Effect.promise(() => events.next()))
       expect(ready.type).toBe("ready")
 
-      yield* Effect.promise(() =>
-        request(firstDirectory, `/session/${sessionID}`, {
-          method: "PATCH",
-          body: JSON.stringify({ title: "updated" }),
-        }),
+      const beforeRename = record(records(cards.items).find((item) => item.id === sessionID))
+      const renamed = record(
+        yield* Effect.promise(() =>
+          request(firstDirectory, `/session/${sessionID}`, {
+            method: "PATCH",
+            body: JSON.stringify({ title: "updated" }),
+          }).then((response) => response.json()),
+        ),
       )
+      expect(renamed.title).toBe("updated")
+      const beforeUpdated = record(beforeRename.time).updated
+      const renamedUpdated = record(renamed.time).updated
+      expect(
+        typeof beforeUpdated === "number" && typeof renamedUpdated === "number" && renamedUpdated > beforeUpdated,
+      ).toBe(true)
+      const renamedCards = record(
+        yield* Effect.promise(() =>
+          request(
+            firstDirectory,
+            `/experimental/opencodex/state/session-card?ids=${encodeURIComponent(sessionID)}`,
+          ).then((response) => response.json()),
+        ),
+      )
+      expect(records(renamedCards.items).find((item) => item.id === sessionID)).toMatchObject({
+        title: "updated",
+        time: renamed.time,
+      })
       const live = record(yield* Effect.promise(() => events.next()))
       expect(live.type).toBe("event")
       expect(record(live.event).scope).toEqual(snapshot.scope)
