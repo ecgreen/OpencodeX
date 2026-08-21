@@ -53,6 +53,9 @@ export function ViewPaneHost(props: {
   renameSession: (session: Session) => void
   moveSession: (session: Session) => void
   deleteSession: (session: Session) => void
+  signInToClaude?: () => void
+  /** True once the sign-in controller has confirmed a fresh, working credential. */
+  claudeSignInConfirmed?: boolean
   slashCommands: SessionSlashCommand[]
   concealCodeBlocks?: boolean
   showTimestamps: boolean
@@ -118,6 +121,8 @@ export function ViewPaneHost(props: {
       renameSession={props.renameSession}
       moveSession={props.moveSession}
       deleteSession={props.deleteSession}
+      signInToClaude={props.signInToClaude}
+      claudeSignInConfirmed={props.claudeSignInConfirmed}
       slashCommands={props.slashCommands}
       concealCodeBlocks={props.concealCodeBlocks}
       showTimestamps={props.showTimestamps}

@@ -8,6 +8,23 @@ export const LOGIN_TERMINAL_ID = "claude-login"
 
 export type ClaudeAuthPhase = "idle" | "signing-in" | "checking" | "signed-in" | "failed"
 
+/**
+ * The real `write`/`openURL` callbacks for the login PTY's terminal view.
+ * Exported so `claude-sign-in-dialog.tsx` can hand `terminalSurface.attach`
+ * this exact pair rather than a second, hand-rolled copy: `ensure()` binds
+ * whichever caller's callbacks win the race to create the view first (the
+ * controller's own `onData` handler, or the dialog's `attach` on open), and
+ * a diverging `openURL` there would silently stop the OAuth link the CLI
+ * prints from opening.
+ */
+export function claudeAuthTerminalWrite(id: string, data: string) {
+  window.opencodex?.terminal?.write({ id, data })
+}
+
+export function claudeAuthTerminalOpenURL(url: string) {
+  void window.opencodex?.browser?.external(url)
+}
+
 export type ClaudeAuthDeps = {
   authStatus: () => Promise<ClaudeAuthStatus>
   createTerminal: (input: TerminalCreateInput) => Promise<TerminalResult>
@@ -38,8 +55,8 @@ export function createClaudeAuthController(input: {
     destroyTerminal: (id) => window.opencodex!.terminal!.destroy(id),
     onExit: (listener) => window.opencodex?.terminal?.onExit(listener) ?? (() => undefined),
     onData: (listener) => window.opencodex?.terminal?.onData(listener) ?? (() => undefined),
-    write: (id, data) => window.opencodex?.terminal?.write({ id, data }),
-    openURL: (url) => void window.opencodex?.browser?.external(url),
+    write: claudeAuthTerminalWrite,
+    openURL: claudeAuthTerminalOpenURL,
     ...input.deps,
   }
 
