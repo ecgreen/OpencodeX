@@ -197,6 +197,7 @@ export const layer = Layer.effect(
         cancel: (sessionID: SessionID) => cancel(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
+        loop: (input: LoopInput) => loop(input),
       } satisfies TaskPromptOps
     })
 
@@ -412,7 +413,7 @@ export const layer = Layer.effect(
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
+      const match = yield* sessions.findMessage(sessionID, (message) => message.info.role !== "user").pipe(Effect.orDie)
       if (Option.isSome(match)) return match.value
       const msgs = yield* sessions.messages({ sessionID, limit: 1 }).pipe(Effect.orDie)
       if (msgs.length > 0) return msgs[0]
@@ -737,6 +738,7 @@ export const layer = Layer.effect(
       sessions,
       skills,
       prompt: (input) => prompt(input),
+      loop: (input) => loop(input),
     })
 
     const loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts> = Effect.fn("SessionPrompt.loop")(

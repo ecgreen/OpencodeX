@@ -21,9 +21,11 @@ import { SwarmPageHeader } from "./swarm-page-header"
 import { SwarmRoleModelPicker } from "./swarm-role-model-picker"
 import { SwarmRoleTemplateEditor } from "./swarm-role-template-editor"
 import { Button, TextInput } from "./ui"
+import { canSelectSwarmRoleModel, setSwarmRoleFallback } from "../lib/swarm-role-fallbacks"
 
 /** What the template modal is editing: an existing template, or a fresh draft. */
 type TemplateEditorState = { template?: SwarmRoleTemplate; initial?: { name: string; instructions: string } }
+type ModelPickerTarget = { roleIndex: number; fallbackIndex?: number | "new" }
 
 /**
  * The one swarm surface: creating, viewing, and editing are the same page.
@@ -51,6 +53,7 @@ export function SwarmEditorPage(props: {
         providerID: role.providerID,
         modelID: role.modelID,
         variant: role.variant,
+        fallbackModels: role.fallbackModels,
         modelProfile: role.modelProfile,
         instructions: role.instructions,
         metadata: role.metadata,
@@ -58,7 +61,8 @@ export function SwarmEditorPage(props: {
       : defaultSwarmRoles(),
   )
   const [selectedIndex, setSelectedIndex] = createSignal(0)
-  const [modelPickerIndex, setModelPickerIndex] = createSignal<number>()
+  const [modelPickerTarget, setModelPickerTarget] = createSignal<ModelPickerTarget>()
+  const [modelPickerError, setModelPickerError] = createSignal("")
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal("")
   const editing = createMemo(() => props.swarm !== undefined)
@@ -147,6 +151,13 @@ export function SwarmEditorPage(props: {
     setRoles((current) => current.filter((_, roleIndex) => roleIndex !== index))
   }
 
+  function pickerModelValue(target: ModelPickerTarget) {
+    const role = roles()[target.roleIndex]
+    if (target.fallbackIndex === undefined) return roleModelValue(role)
+    if (target.fallbackIndex === "new") return ""
+    return fallbackModelValue(role?.fallbackModels?.[target.fallbackIndex])
+  }
+
   return (
     <form class="page swarm-editor-page" onSubmit={save}>
       <SwarmPageHeader
@@ -181,7 +192,14 @@ export function SwarmEditorPage(props: {
         addTemplate={addTemplate}
         editTemplate={(template) => setTemplateEditor({ template })}
         saveRoleAsTemplate={saveRoleAsTemplate}
-        openModelPicker={setModelPickerIndex}
+        openModelPicker={(roleIndex) => {
+          setModelPickerError("")
+          setModelPickerTarget({ roleIndex })
+        }}
+        openFallbackModelPicker={(roleIndex, fallbackIndex) => {
+          setModelPickerError("")
+          setModelPickerTarget({ roleIndex, fallbackIndex })
+        }}
       />
       <Show when={error()}>
         <div class="notice error">{error()}</div>
@@ -219,21 +237,51 @@ export function SwarmEditorPage(props: {
           />
         )}
       </Show>
-      <Show when={modelPickerIndex() !== undefined}>
-        <SwarmRoleModelPicker
-          providers={props.providers}
-          connectedProviderIDs={props.connectedProviderIDs}
-          recentModels={props.recentModels}
-          selectedModel={roleModelValue(roles()[modelPickerIndex()!])}
-          // A variant belongs to the model it was picked for; changing the
-          // model resets the effort to that model's default.
-          select={(providerID, modelID) => updateRole(modelPickerIndex()!, (current) => ({ ...current, providerID, modelID, variant: undefined }))}
-          close={() => setModelPickerIndex(undefined)}
-          connectProvider={props.connectProvider}
-        />
+      <Show when={modelPickerTarget()}>
+        {(target) => (
+          <SwarmRoleModelPicker
+            providers={props.providers}
+            connectedProviderIDs={props.connectedProviderIDs}
+            recentModels={props.recentModels}
+            selectedModel={pickerModelValue(target())}
+            error={modelPickerError()}
+            select={(providerID, modelID) => {
+              const role = roles()[target().roleIndex]
+              if (!role) return false
+              const model = { providerID, modelID, variant: undefined }
+              const selectionTarget = target().fallbackIndex ?? "primary"
+              if (!canSelectSwarmRoleModel(role, model, selectionTarget)) {
+                setModelPickerError("That model is already used by this role.")
+                return false
+              }
+              updateRole(target().roleIndex, (current) =>
+                target().fallbackIndex === undefined
+                  ? { ...current, providerID, modelID, variant: undefined }
+                  : {
+                      ...current,
+                      fallbackModels: setSwarmRoleFallback(
+                        current.fallbackModels ?? [],
+                        target().fallbackIndex!,
+                        model,
+                      ),
+                    },
+              )
+              return true
+            }}
+            close={() => {
+              setModelPickerTarget(undefined)
+              setModelPickerError("")
+            }}
+            connectProvider={props.connectProvider}
+          />
+        )}
       </Show>
     </form>
   )
+}
+
+function fallbackModelValue(model?: { providerID: string; modelID: string }) {
+  return model ? `${model.providerID}/${model.modelID}` : ""
 }
 
 function roleModelValue(role?: OpencodeXSwarmRoleInput) {

@@ -33,6 +33,9 @@ export type Event =
   | EventLspUpdated
   | EventOpencodexJobCreated
   | EventOpencodexJobTransitioned
+  | EventOpencodexSwarmCreated
+  | EventOpencodexSwarmUpdated
+  | EventOpencodexSwarmDeleted
   | EventTuiPromptAppend2
   | EventTuiCommandExecute2
   | EventTuiToastShow2
@@ -61,9 +64,6 @@ export type Event =
   | EventWorktreeFailed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
-  | EventOpencodexSwarmCreated
-  | EventOpencodexSwarmUpdated
-  | EventOpencodexSwarmDeleted
   | EventOpencodexViewCreated
   | EventOpencodexViewUpdated
   | EventOpencodexViewReordered
@@ -954,6 +954,27 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "opencodex.swarm.created"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.updated"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
+        type: "opencodex.swarm.deleted"
+        properties: {
+          swarmID: string
+        }
+      }
+    | {
+        id: string
         type: "tui.prompt.append"
         properties: {
           text: string
@@ -1216,27 +1237,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "opencodex.swarm.created"
-        properties: {
-          swarmID: string
-        }
-      }
-    | {
-        id: string
-        type: "opencodex.swarm.updated"
-        properties: {
-          swarmID: string
-        }
-      }
-    | {
-        id: string
-        type: "opencodex.swarm.deleted"
-        properties: {
-          swarmID: string
-        }
-      }
-    | {
-        id: string
         type: "opencodex.view.created"
         properties: {
           viewID: string
@@ -1304,6 +1304,9 @@ export type GlobalEvent = {
     | SyncEventSessionStatus
     | SyncEventOpencodexJobCreated
     | SyncEventOpencodexJobTransitioned
+    | SyncEventOpencodexSwarmCreated
+    | SyncEventOpencodexSwarmUpdated
+    | SyncEventOpencodexSwarmDeleted
     | SyncEventOpencodexTerminalSessionCreated
     | SyncEventOpencodexTerminalSessionUpdated
     | SyncEventOpencodexTerminalSessionDeleted
@@ -1315,9 +1318,6 @@ export type GlobalEvent = {
     | SyncEventOpencodexGoalCreated
     | SyncEventOpencodexGoalUpdated
     | SyncEventOpencodexGoalDeleted
-    | SyncEventOpencodexSwarmCreated
-    | SyncEventOpencodexSwarmUpdated
-    | SyncEventOpencodexSwarmDeleted
     | SyncEventOpencodexViewCreated
     | SyncEventOpencodexViewUpdated
     | SyncEventOpencodexViewReordered
@@ -2446,6 +2446,12 @@ export type OpencodeXJob = {
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
+export type OpencodeXSwarmFallbackModel = {
+  providerID: string
+  modelID: string
+  variant?: string
+}
+
 export type OpencodeXSwarmRole = {
   id: string
   swarmID: string
@@ -2455,6 +2461,7 @@ export type OpencodeXSwarmRole = {
   providerID?: string
   modelID?: string
   variant?: string
+  fallbackModels: Array<OpencodeXSwarmFallbackModel>
   modelProfile?: string
   status: "planned" | "queued" | "running" | "cancelling" | "blocked" | "failed" | "completed" | "cancelled"
   instructions: string
@@ -2807,6 +2814,7 @@ export type OpencodeXSwarmRoleInput = {
   providerID?: string
   modelID?: string
   variant?: string
+  fallbackModels?: Array<OpencodeXSwarmFallbackModel>
   modelProfile?: string
   instructions: string
   metadata?: {
@@ -2845,6 +2853,7 @@ export type OpencodeXSwarmUpdateRoleInput = {
   providerID?: string
   modelID?: string
   variant?: string
+  fallbackModels?: Array<OpencodeXSwarmFallbackModel>
   modelProfile?: string
   instructions?: string
   metadata?: {
@@ -3429,6 +3438,39 @@ export type SyncEventOpencodexJobTransitioned = {
   }
 }
 
+export type SyncEventOpencodexSwarmCreated = {
+  type: "sync"
+  name: "opencodex.swarm.created.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexSwarmUpdated = {
+  type: "sync"
+  name: "opencodex.swarm.updated.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
+export type SyncEventOpencodexSwarmDeleted = {
+  type: "sync"
+  name: "opencodex.swarm.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "swarmID"
+  data: {
+    swarmID: string
+  }
+}
+
 export type SyncEventOpencodexTerminalSessionCreated = {
   type: "sync"
   name: "opencodex.terminal_session.created.1"
@@ -3548,39 +3590,6 @@ export type SyncEventOpencodexGoalDeleted = {
   aggregateID: "goalID"
   data: {
     goalID: string
-  }
-}
-
-export type SyncEventOpencodexSwarmCreated = {
-  type: "sync"
-  name: "opencodex.swarm.created.1"
-  id: string
-  seq: number
-  aggregateID: "swarmID"
-  data: {
-    swarmID: string
-  }
-}
-
-export type SyncEventOpencodexSwarmUpdated = {
-  type: "sync"
-  name: "opencodex.swarm.updated.1"
-  id: string
-  seq: number
-  aggregateID: "swarmID"
-  data: {
-    swarmID: string
-  }
-}
-
-export type SyncEventOpencodexSwarmDeleted = {
-  type: "sync"
-  name: "opencodex.swarm.deleted.1"
-  id: string
-  seq: number
-  aggregateID: "swarmID"
-  data: {
-    swarmID: string
   }
 }
 
@@ -4023,6 +4032,30 @@ export type EventOpencodexJobTransitioned = {
   }
 }
 
+export type EventOpencodexSwarmCreated = {
+  id: string
+  type: "opencodex.swarm.created"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexSwarmUpdated = {
+  id: string
+  type: "opencodex.swarm.updated"
+  properties: {
+    swarmID: string
+  }
+}
+
+export type EventOpencodexSwarmDeleted = {
+  id: string
+  type: "opencodex.swarm.deleted"
+  properties: {
+    swarmID: string
+  }
+}
+
 export type EventMcpToolsChanged = {
   id: string
   type: "mcp.tools.changed"
@@ -4256,30 +4289,6 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
-  }
-}
-
-export type EventOpencodexSwarmCreated = {
-  id: string
-  type: "opencodex.swarm.created"
-  properties: {
-    swarmID: string
-  }
-}
-
-export type EventOpencodexSwarmUpdated = {
-  id: string
-  type: "opencodex.swarm.updated"
-  properties: {
-    swarmID: string
-  }
-}
-
-export type EventOpencodexSwarmDeleted = {
-  id: string
-  type: "opencodex.swarm.deleted"
-  properties: {
-    swarmID: string
   }
 }
 

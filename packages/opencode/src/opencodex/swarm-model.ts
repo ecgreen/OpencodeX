@@ -1,14 +1,21 @@
-import {
-  OpencodeXSwarmEventTable,
-  OpencodeXSwarmRoleTable,
-  OpencodeXSwarmTable,
-} from "@opencode-ai/core/opencodex/sql"
+import { OpencodeXSwarmEventTable, OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { OpencodeXJob } from "@/opencodex/job"
 import { Option, Schema } from "effect"
-import { Metadata, RoleStatus, Status, type Event, type Info, type Role, type RoleInput } from "./swarm-schema"
+import {
+  FallbackModel,
+  Metadata,
+  RoleStatus,
+  Status,
+  type Event,
+  type Info,
+  type Role,
+  type RoleInput,
+} from "./swarm-schema"
 
 const decodeMetadata = Schema.decodeUnknownOption(Schema.fromJsonString(Metadata))
+const decodeFallbackModels = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+const decodeFallbackModel = Schema.decodeUnknownOption(FallbackModel)
 
 function metadata(value: string | null) {
   return value ? Option.getOrUndefined(decodeMetadata(value)) : undefined
@@ -16,6 +23,89 @@ function metadata(value: string | null) {
 
 export function serializeMetadata(metadata: Record<string, unknown> | undefined) {
   return metadata ? JSON.stringify(metadata) : undefined
+}
+
+export function normalizeRole<T extends RoleInput>(role: T): T {
+  return {
+    ...role,
+    ...(role.variant === "default" ? { variant: undefined } : {}),
+    ...(role.fallbackModels
+      ? {
+          fallbackModels: role.fallbackModels.map((model) => ({
+            ...model,
+            ...(model.variant === "default" ? { variant: undefined } : {}),
+          })),
+        }
+      : {}),
+  }
+}
+
+export function serializeFallbackModels(models: RoleInput["fallbackModels"]) {
+  return JSON.stringify(models ?? [])
+}
+
+export function hydrateFallbackModels(value: string, primary?: { providerID: string; modelID: string }) {
+  const seen = new Set(primary ? [`${primary.providerID}\u0000${primary.modelID}`] : [])
+  const decoded = Option.getOrUndefined(decodeFallbackModels(value))
+  if (!Array.isArray(decoded)) return []
+  return decoded
+    .flatMap((value) => {
+      const model = Option.getOrUndefined(decodeFallbackModel(value))
+      if (!model) return []
+      const providerID = ProviderV2.ID.make(model.providerID.trim())
+      const modelID = ProviderV2.ModelID.make(model.modelID.trim())
+      if (!providerID || !modelID || providerID === "swarm") return []
+      const key = `${providerID}\u0000${modelID}`
+      if (seen.has(key)) return []
+      seen.add(key)
+      return [
+        {
+          providerID,
+          modelID,
+          ...(model.variant?.trim() && model.variant.trim() !== "default" ? { variant: model.variant.trim() } : {}),
+        },
+      ]
+    })
+    .slice(0, 4)
+}
+
+export function mergeRoleFallbacks(roles: readonly RoleInput[], existing: readonly Role[]) {
+  // A client that sends fallbackModels on any role understands the field, so
+  // its roster is authoritative. Requiring every role to carry it would treat a
+  // freshly added role - which has no fallbacks to send - as an old client and
+  // reject renames and deletions the payload already spelled out in full.
+  const explicit = roles.some((role) => role.fallbackModels !== undefined)
+  // Roles pair by normalized name, never by array index: a roster that
+  // reorders roles while omitting fallbackModels must keep every stored
+  // chain, so only a rename or deletion of a chain-carrying role is a
+  // compatibility question.
+  const incompatible = existing.some((previous) => {
+    if (!previous.fallbackModels.length) return false
+    if (explicit) return false
+    return !roles.some((role) => roleName(previous.name) === roleName(role.name))
+  })
+  if (incompatible) {
+    return {
+      error:
+        "This swarm has model fallbacks that cannot be safely updated by this client. Refresh or use a current client.",
+    } as const
+  }
+  return {
+    roles: roles.map((role) => {
+      const normalized = normalizeRole(role)
+      if (normalized.fallbackModels !== undefined) return normalized
+      const previous = existing.find((item) => roleName(item.name) === roleName(normalized.name))
+      if (!previous) return normalized
+      return { ...normalized, fallbackModels: previous.fallbackModels }
+    }),
+  } as const
+}
+
+function roleName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "")
 }
 
 export function defaultTitle(prompt?: string) {
@@ -77,6 +167,26 @@ export function validateRoles(roles: readonly RoleInput[]) {
     return "A swarm requires at least one non-Orchestrator role."
   }
   if (roles.some((role) => role.name.trim().length === 0)) return "Every swarm role needs a name."
+  const names = roles.map((role) => roleName(role.name))
+  if (new Set(names).size !== names.length) return "Every swarm role needs a unique name."
+  for (const role of roles) {
+    if ((role.fallbackModels?.length ?? 0) > 4) return `Role "${role.name}" can use at most 4 fallback models.`
+    if (!role.fallbackModels?.length) continue
+    if (isOrchestratorRole(role)) return "The Orchestrator cannot use fallback models."
+    if (!role.providerID || !role.modelID) return `Role "${role.name}" needs a complete primary model before fallbacks.`
+    if (role.fallbackModels.some((model) => !model.providerID.trim() || !model.modelID.trim())) {
+      return `Role "${role.name}" has an incomplete model fallback.`
+    }
+    const models = [
+      { providerID: role.providerID, modelID: role.modelID, variant: role.variant },
+      ...role.fallbackModels,
+    ]
+    if (role.fallbackModels.some((model) => model.providerID === "swarm")) {
+      return `Role "${role.name}" cannot use the swarm provider as a fallback.`
+    }
+    const tuples = models.map((model) => `${model.providerID}\u0000${model.modelID}`)
+    if (new Set(tuples).size !== tuples.length) return `Role "${role.name}" has a duplicate model fallback.`
+  }
   return undefined
 }
 
@@ -90,6 +200,13 @@ export function hydrateRole(row: typeof OpencodeXSwarmRoleTable.$inferSelect): R
     providerID: row.provider_id ? ProviderV2.ID.make(row.provider_id) : undefined,
     modelID: row.model_id ? ProviderV2.ModelID.make(row.model_id) : undefined,
     variant: row.variant ?? undefined,
+    fallbackModels:
+      row.sort_order === 0
+        ? []
+        : hydrateFallbackModels(
+            row.fallback_models,
+            row.provider_id && row.model_id ? { providerID: row.provider_id, modelID: row.model_id } : undefined,
+          ),
     modelProfile: row.model_profile ?? undefined,
     status: Schema.decodeUnknownSync(RoleStatus)(row.status),
     instructions: row.instructions,
