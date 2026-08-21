@@ -1,0 +1,104 @@
+name: Daily upstream sync
+
+on:
+  schedule:
+    - cron: "0 11 * * *" # 4 AM Los Angeles (UTC-7/PDT)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/ecgreen/OpencodeX.git 2>/dev/null || true
+          git fetch --prune upstream
+          git fetch --prune origin
+
+      - name: Reconcile main with upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git checkout main
+          git reset --hard origin/main
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "main is up to date with upstream/main"
+            exit 0
+          fi
+          AHEAD=$(git rev-list --count upstream/main..HEAD)
+          echo "main is $BEHIND behind, $AHEAD ahead of upstream/main"
+          if git merge --no-edit upstream/main; then
+            echo "main reconciled cleanly - pushing"
+            git push origin main
+          else
+            echo "main conflicts - auto-resolving in favor of upstream (theirs)"
+            git merge --abort 2>/dev/null || true
+            if git merge --no-edit -X theirs upstream/main; then
+              git push origin main
+              echo "main reconciled (theirs) - pushed"
+            else
+              echo "main could not be auto-resolved, leaving upstream changes for manual attention"
+            fi
+          fi
+
+      - name: Reconcile fork-only work branches
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git checkout main
+          comm -23 \
+            <(git for-each-ref --format='%(refname:short)' refs/remotes/origin/ | sed 's#origin/##' | sort) \
+            <(git for-each-ref --format='%(refname:short)' refs/remotes/upstream/ | sed 's#upstream/##' | sort) \
+            | grep -v '^main$' \
+            > /tmp/fork-only-branches.txt
+          echo "fork-only branches: $(tr '\n' ' ' < /tmp/fork-only-branches.txt)"
+          while IFS= read -r branch; do
+            [ -z "$branch" ] && continue
+            echo "=== reconciling $branch ==="
+            git reset --hard "origin/$branch" 2>/dev/null || { echo "no origin/$branch, skipping"; continue; }
+            BEHIND=$(git rev-list --count HEAD..upstream/main)
+            if [ "$BEHIND" -eq 0 ]; then
+              echo "$branch is up to date with upstream/main, skipping"
+              continue
+            fi
+            TBRANCH="reconcile/$branch-$(date +%Y%m%d)"
+            git checkout -B "$TBRANCH" "origin/$branch"
+            if git merge --no-edit upstream/main; then
+              echo "$branch reconciled cleanly - updating the work branch"
+              git push origin "$TBRANCH:$branch"
+            else
+              echo "$branch conflicts - auto-resolving in favor of upstream (theirs)"
+              git merge --abort 2>/dev/null || true
+              if git merge --no-edit -X theirs upstream/main; then
+                echo "reconcile finished clean (theirs) - pushing reconcile branch and opening PR"
+                git push origin "$TBRANCH" 2>/dev/null || true
+                if ! gh pr list --repo "${{ github.repository }}" --head "$TBRANCH" --state open --json number --jq '. | length' | grep -q '^1$'; then
+                  gh pr create --repo "${{ github.repository }}" \
+                    --title "chore: reconcile $branch with upstream ($(date +%Y-%m-%d))" \
+                    --body "Merging upstream/main into $branch conflicted, so upstream's version was favored on conflicting hunks (\`-X theirs\`). Review the reconcile before merging this PR into $branch." \
+                    --base "$branch" --head "$TBRANCH" || true
+                else
+                  echo "reconcile PR already exists for $TBRANCH, skipping"
+                fi
+              else
+                echo "$branch could not be auto-resolved, leaving for manual attention"
+                git merge --abort 2>/dev/null || true
+              fi
+            fi
+          done < /tmp/fork-only-branches.txt
