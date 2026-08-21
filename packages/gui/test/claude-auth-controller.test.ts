@@ -2,30 +2,45 @@ import { describe, expect, mock, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 
 type EnsureCall = { id: string; data: string }
+type EnsureArgs = { id: string; write: unknown; openURL: unknown; persistent: unknown }
 
 const ensureCalls: EnsureCall[] = []
+const ensureArgs: EnsureArgs[] = []
 const markOpenCalls: string[] = []
+const markClosedCalls: string[] = []
+const disposeCalls: string[] = []
+let ensureShouldThrow = false
 
-// The real terminal surface creates an xterm `Terminal`, which needs
-// `MutationObserver`/DOM APIs this test runner doesn't provide. Stub it so the
-// onData plumbing can be asserted without a browser, following the same
+// The real terminal surface creates an xterm Terminal, which needs
+// MutationObserver / DOM APIs this test runner does not provide. Stub it so
+// the onData plumbing can be asserted without a browser, following the same
 // mock.module pattern used elsewhere in this suite (e.g.
-// terminal-launch-profile.test.ts) for a dependency that can't load here.
+// terminal-launch-profile.test.ts) for a dependency that cannot load here.
+// ensureShouldThrow lets one test reproduce the real ensure()'s "8 terminals
+// open" failure without needing 8 real views.
 await mock.module("../src/renderer/src/components/session-side-terminal-views", () => ({
   terminalSurface: {
-    ensure: (id: string) => ({
-      terminal: {
-        write: (data: string) => {
-          ensureCalls.push({ id, data })
+    ensure: (id: string, write: unknown, openURL: unknown, persistent: unknown) => {
+      ensureArgs.push({ id, write, openURL, persistent })
+      if (ensureShouldThrow) throw new Error("This window already has the maximum of 8 terminals open.")
+      return {
+        terminal: {
+          write: (data: string) => {
+            ensureCalls.push({ id, data })
+          },
         },
-      },
-    }),
+      }
+    },
     markOpen: (id: string) => {
       markOpenCalls.push(id)
     },
-    markClosed: () => undefined,
+    markClosed: (id: string) => {
+      markClosedCalls.push(id)
+    },
     attach: () => () => undefined,
-    dispose: () => undefined,
+    dispose: (id: string) => {
+      disposeCalls.push(id)
+    },
     focus: () => undefined,
   },
 }))
@@ -51,6 +66,8 @@ function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, crea
   const exits: Array<(event: { id: string }) => void> = []
   const dataListeners: Array<(event: { id: string; data: string }) => void> = []
   const created: string[] = []
+  const write = (_id: string, _data: string) => undefined
+  const openURL = (_url: string) => undefined
   const create = createTerminal ?? defaultCreateTerminal
   return createRoot((dispose) => {
     const controller = createClaudeAuthController({
@@ -70,9 +87,11 @@ function harness(initial: Session[], authStatus: () => Promise<AuthStatus>, crea
           dataListeners.push(listener)
           return () => undefined
         },
+        write,
+        openURL,
       },
     })
-    return { controller, setSessions, exits, dataListeners, created, dispose }
+    return { controller, setSessions, exits, dataListeners, created, write, openURL, dispose }
   })
 }
 
@@ -152,8 +171,9 @@ describe("claude sign-in controller", () => {
     test6.dispose()
   })
 
-  test("sign-in shell output reaches the shared terminal surface; other ids are ignored", () => {
+  test("sign-in shell output reaches the shared terminal surface, threading write/openURL; other ids are ignored", () => {
     ensureCalls.length = 0
+    ensureArgs.length = 0
     markOpenCalls.length = 0
     const test7 = harness([stranded("a")], async () => ({ state: "signed-in" }))
     test7.dataListeners.forEach((listener) => {
@@ -162,6 +182,36 @@ describe("claude sign-in controller", () => {
     })
     expect(ensureCalls).toEqual([{ id: LOGIN_TERMINAL_ID, data: "Visit https://example.com to finish sign-in" }])
     expect(markOpenCalls).toEqual([LOGIN_TERMINAL_ID])
+    // The dialog needs the login shell to be typeable and its OAuth link
+    // clickable, so this controller's own write/openURL must be the exact
+    // functions handed to ensure(), not dropped in favor of some default.
+    expect(ensureArgs).toHaveLength(1)
+    expect(ensureArgs[0]?.write).toBe(test7.write)
+    expect(ensureArgs[0]?.openURL).toBe(test7.openURL)
+    expect(ensureArgs[0]?.persistent).toBe(true)
     test7.dispose()
+  })
+
+  test("a terminal-surface failure while receiving sign-in output cannot escape the listener, and is surfaced instead", () => {
+    // Reproduces ensure() throwing "This window already has the maximum of 8
+    // terminals open.", which happens for real once the shared, global view
+    // budget (session terminals plus this login terminal) is full of views
+    // the surface will not evict to make room.
+    ensureShouldThrow = true
+    markClosedCalls.length = 0
+    disposeCalls.length = 0
+    const test8 = harness([stranded("a")], async () => ({ state: "signed-in" }))
+    expect(() => {
+      test8.dataListeners.forEach((listener) => listener({ id: LOGIN_TERMINAL_ID, data: "prompt" }))
+    }).not.toThrow()
+    expect(test8.controller.phase()).toBe("failed")
+    expect(test8.controller.message()).toBe("This window already has the maximum of 8 terminals open.")
+    // The failure is also visible through close(), which frees the login
+    // view's slot in the shared budget instead of leaking it forever.
+    test8.controller.close()
+    expect(markClosedCalls).toEqual([LOGIN_TERMINAL_ID])
+    expect(disposeCalls).toEqual([LOGIN_TERMINAL_ID])
+    ensureShouldThrow = false
+    test8.dispose()
   })
 })

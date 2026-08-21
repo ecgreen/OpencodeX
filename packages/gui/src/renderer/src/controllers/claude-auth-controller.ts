@@ -68,11 +68,25 @@ export function createClaudeAuthController(input: {
 
   // Subscribed here, before any signIn() call, so no byte the PTY writes
   // between opening the dialog and its first output can be lost to the race.
+  // `persistent: true` matches how real Claude Code session terminals open
+  // (session-side-terminal-views only evicts non-persistent views to free a
+  // slot), so once this view exists it keeps the OAuth URL the CLI printed
+  // rather than losing it to eviction the next time some other terminal needs
+  // room. That does mean `ensure()` can throw here - the shared view budget
+  // is global, and 8 already-open persistent session terminals leave nothing
+  // to evict - so this mirrors claude-terminal-controller.ts's onData handler
+  // and turns that throw into a visible failure instead of an unhandled
+  // exception inside an IPC listener.
   onCleanup(
     deps.onData((event) => {
       if (event.id !== LOGIN_TERMINAL_ID) return
-      terminalSurface.ensure(event.id, deps.write, deps.openURL, true).terminal.write(event.data)
-      terminalSurface.markOpen(event.id)
+      try {
+        terminalSurface.ensure(event.id, deps.write, deps.openURL, true).terminal.write(event.data)
+        terminalSurface.markOpen(event.id)
+      } catch (error) {
+        setPhase("failed")
+        setMessage(error instanceof Error ? error.message : "Could not open the sign-in terminal.")
+      }
     }),
   )
 
@@ -119,6 +133,11 @@ export function createClaudeAuthController(input: {
     open: () => setOpen(true),
     close: () => {
       setOpen(false)
+      // Persistent views never get evicted on their own, so this login view
+      // would otherwise sit in the shared 8-slot budget forever after the
+      // dialog closes, permanently starving session terminals of one slot.
+      terminalSurface.markClosed(LOGIN_TERMINAL_ID)
+      terminalSurface.dispose(LOGIN_TERMINAL_ID)
       void deps.destroyTerminal(LOGIN_TERMINAL_ID).catch(() => false)
     },
     signIn,
