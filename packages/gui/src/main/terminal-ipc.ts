@@ -191,7 +191,7 @@ function validTerminalCreateInput(value: unknown) {
   }
 }
 
-function validTerminalLaunchProfile(value: unknown): TerminalLaunchProfile | undefined {
+export function validTerminalLaunchProfile(value: unknown): TerminalLaunchProfile | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const profile = value as {
     kind?: unknown
@@ -201,6 +201,9 @@ function validTerminalLaunchProfile(value: unknown): TerminalLaunchProfile | und
     installationID?: unknown
   }
   if (profile.kind === "shell") return { kind: "shell" }
+  // Returned bare: a sign-in shell has no conversation, so nothing else on the
+  // payload may reach argv.
+  if (profile.kind === "claude-login") return { kind: "claude-login" }
   if (profile.kind !== "claude-code" || (profile.mode !== "new" && profile.mode !== "resume")) return undefined
   const resumeID = validString(profile.resumeID)?.trim()
   const installation = validString(profile.installationID)?.trim()
@@ -251,6 +254,13 @@ async function terminalLaunch(input: TerminalCreateInput & { profile: TerminalLa
   if (input.profile.kind === "shell") {
     const shell = terminalShell()
     return { ...shell, cwd: input.cwd || app.getPath("home") }
+  }
+  if (input.profile.kind === "claude-login") {
+    const command = await resolveClaudeExecutable({ home: app.getPath("home") })
+    if (!command) return failure("missing-cli", CLAUDE_MISSING_MESSAGE)
+    // `--claudeai` is the CLI's current default, named explicitly so a future
+    // default of Console billing cannot silently redirect subscription users.
+    return { command, args: ["auth", "login", "--claudeai"], cwd: app.getPath("home") }
   }
   if (!/^terminal-session:oxts_[a-z0-9]+$/i.test(input.id) || !isUUID(input.profile.resumeID)) {
     return failure("invalid-request", "Invalid Claude Code terminal identity.")

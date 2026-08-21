@@ -1,5 +1,6 @@
 export type TerminalLaunchProfile =
   | { kind: "shell" }
+  | { kind: "claude-login" }
   | {
       kind: "claude-code"
       mode: "new" | "resume"
