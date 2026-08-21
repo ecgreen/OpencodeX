@@ -3,11 +3,10 @@ import type { SessionSlashCommand } from "../lib/session-slash-commands"
 import { nextPromptHistoryState } from "../lib/prompt-state"
 import { removeTrailingMentionQuery, type PromptMentionOption } from "../lib/prompt-autocomplete"
 import { filePartFromFile, filePartFromPath, readComposerDraft } from "../lib/session-composer-helpers"
-import { claudeSessionAuthState } from "../lib/claude-session-auth"
 import { createStableEffect } from "../lib/stable-effect"
-import { Button, InlineNotice } from "./ui"
 import { SessionComposer } from "./session-composer"
 import { createComposerPromptRestore, createSessionMessageActionHandler } from "./session-message-actions"
+import { SessionClaudeSignInBanner } from "./session-claude-signin-banner"
 import { SessionSafetyDock } from "./session-safety-dock"
 import { SessionSidePanelLoading } from "./panel-loading-state"
 import { TranscriptPanel } from "./session-transcript-panel"
@@ -206,45 +205,19 @@ export function SessionPage(props: SessionPageProps) {
     composerInput.schedule({ sessionID: id, draft: value })
     if (!value.input && value.parts.length === 0) composerInput.flushPending()
   })
-  // A Claude Code session cannot run headlessly until the CLI is signed in.
-  const claudeNeedsLogin = createMemo(() => claudeSessionAuthState(session()?.metadata) === "needs-login")
-  // Session metadata only flips back to `ready` on the next successful turn, so
-  // after a confirmed sign-in this banner is what invites that turn to happen.
-  const lastAssistant = createMemo(() => props.data.messages.findLast((message) => message.info.role === "assistant"))
   // The session column is hidden rather than unmounted when it collapses: the
   // transcript keeps its scroll position and its subscriptions, so restoring it
   // is instant and does not re-fetch what the reader was already looking at.
   return (
     <div class="page session-page" data-session-id={session()?.id} data-center-collapsed={sidePanel.centerCollapsed() ? "" : undefined}>
       <SessionPageToolbar props={props} sidePanel={sidePanel} />
-      <Show when={claudeNeedsLogin()}>
-        <InlineNotice
-          tone={props.claudeSignInConfirmed ? "success" : "warning"}
-          title={props.claudeSignInConfirmed ? "Signed in to Claude Code" : "Claude Code sign-in expired"}
-        >
-          <Show
-            when={props.claudeSignInConfirmed}
-            fallback={<p>This session cannot run until Claude Code is signed in again.</p>}
-          >
-            <p>Retry the message that failed to continue where you left off.</p>
-          </Show>
-          <Show when={props.claudeSignInConfirmed ? lastAssistant() : undefined} fallback={
-            <Show when={props.signInToClaude}>
-              {(signIn) => (
-                <Button appearance="outline" size="compact" onClick={() => signIn()()}>
-                  Sign in to Claude Code
-                </Button>
-              )}
-            </Show>
-          }>
-            {(bundle) => (
-              <Button appearance="outline" size="compact" onClick={() => handleMessageAction("retry", bundle())}>
-                Retry
-              </Button>
-            )}
-          </Show>
-        </InlineNotice>
-      </Show>
+      <SessionClaudeSignInBanner
+        session={session()}
+        messages={props.data.messages}
+        claudeSignInConfirmed={props.claudeSignInConfirmed}
+        signInToClaude={props.signInToClaude}
+        retry={(bundle) => handleMessageAction("retry", bundle)}
+      />
       {/* Transcript agent rows stamp `data-subagent-session`; a click on one
           opens the same embedded view a graph node opens into. Everything else
           falls through to the side panel's file and link targets. */}
