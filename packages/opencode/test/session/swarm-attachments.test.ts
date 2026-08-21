@@ -15,11 +15,16 @@ describe("parseDataUrl", () => {
     expect(parseDataUrl("https://example.com/a.png")).toBeUndefined()
     expect(parseDataUrl("data:image/png,notbase64")).toBeUndefined()
   })
+
+  test("rejects ambiguous parameter runs without pathological backtracking", () => {
+    expect(parseDataUrl(`data:image/png${";".repeat(1_000)}x`)).toBeUndefined()
+  })
 })
 
 describe("prepareImages", () => {
   test("creates native Claude image blocks", () => {
     expect(prepareImages([file({ mime: "image/jpeg", url: jpeg, filename: "screenshot.jpg" })])).toEqual({
+      hasImages: true,
       images: [
         {
           type: "image",
@@ -49,9 +54,22 @@ describe("prepareImages", () => {
       prepareImages([
         file({ mime: "application/pdf", url: "data:application/pdf;base64,AAA=" }),
         file({ mime: "image/png", url: "https://example.com/a.png" }),
+        file({ mime: "image/png", url: "data:image/png,notbase64" }),
         file({ mime: "image/png", url: "data:image/png;base64,%%%" }),
       ]).skipped,
-    ).toEqual(["unsupported-media-type", "not-inline", "invalid-base64"])
+    ).toEqual(["unsupported-media-type", "not-an-attachment", "malformed-data-url", "invalid-base64"])
+  })
+
+  test("uses the normalized part mime and does not bypass image normalization", () => {
+    expect(
+      prepareImages([file({ mime: "image/jpeg", url: "data:image/png;base64,AAA=" })]).images[0]?.source.media_type,
+    ).toBe("image/jpeg")
+    expect(
+      prepareImages([file({ mime: "application/octet-stream", url: "data:image/png;base64,AAA=" })]).skipped,
+    ).toEqual(["unsupported-media-type"])
+    expect(prepareImages([file({ mime: "IMAGE/PNG", url: "data:image/png;base64,AAA=" })]).skipped).toEqual([
+      "unsupported-media-type",
+    ])
   })
 
   test("uses a stable title for an unnamed image-only message", () => {
@@ -70,8 +88,8 @@ describe("prepareImages", () => {
         file({ mime: "text/plain", url: "file:///tmp/note.txt" }),
       ]),
     ).toEqual({
+      hasImages: false,
       images: [],
-      title: undefined,
       skipped: [],
     })
   })

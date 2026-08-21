@@ -4,7 +4,7 @@ import { Effect, Layer, Option } from "effect"
 import { Agent } from "@/agent/agent"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
 import type { ClaudeMapper } from "@/opencodex/claude-mapper"
-import type { ClaudeTransport } from "@/opencodex/claude-transport"
+import type { ClaudeImage, ClaudePrompt, ClaudeTransport, TransportOptions } from "@/opencodex/claude-transport"
 import { Permission } from "@/permission"
 import { Question } from "@/question"
 import { Session } from "@/session/session"
@@ -18,25 +18,33 @@ let interrupts = 0
 let interruptSettles = true
 let message: SessionLegacy.Info | undefined
 let parts: SessionLegacy.Part[] = []
+let prompt: ClaudePrompt | undefined
+let transportOptions: TransportOptions | undefined
+let metadata: Record<string, unknown> = {}
+let history: SessionLegacy.WithParts[] = []
 
 const transport: ClaudeTransport = {
-  run: () => ({
-    events: script(),
-    interrupt: async () => {
-      interrupts += 1
-      if (!interruptSettles) await new Promise(() => undefined)
-    },
-  }),
+  run(nextPrompt, nextOptions) {
+    prompt = nextPrompt
+    transportOptions = nextOptions
+    return {
+      events: script(),
+      interrupt: async () => {
+        interrupts += 1
+        if (!interruptSettles) await new Promise(() => undefined)
+      },
+    }
+  },
 }
 
 const sessions = Layer.mock(Session.Service)({
   get: () =>
     Effect.succeed({
       id: sessionID,
-      metadata: {},
+      metadata,
       permission: [],
     } as unknown as Session.Info),
-  messages: () => Effect.succeed([]),
+  messages: () => Effect.succeed(history),
   setMetadata: () => Effect.void,
   updateMessage: (next) =>
     Effect.sync(() => {
@@ -70,27 +78,47 @@ const driver = OpencodeXClaudeDriver.makeLayer({
 }).pipe(Layer.provide(dependencies))
 const it = testEffect(driver)
 
-function reset(next: () => AsyncIterable<ClaudeMapper.ClaudeEvent>, options?: { interruptSettles?: boolean }) {
+function reset(
+  next: () => AsyncIterable<ClaudeMapper.ClaudeEvent>,
+  options?: { interruptSettles?: boolean; metadata?: Record<string, unknown>; history?: SessionLegacy.WithParts[] },
+) {
   script = next
   interrupts = 0
   interruptSettles = options?.interruptSettles ?? true
   message = undefined
   parts = []
+  prompt = undefined
+  transportOptions = undefined
+  metadata = options?.metadata ?? {}
+  history = options?.history ?? []
 }
 
-function runTurn() {
+function runTurn(input?: { text?: string; images?: ClaudeImage[] }) {
   return Effect.gen(function* () {
     const service = yield* OpencodeXClaudeDriver.Service
     return yield* service.runTurn({
       sessionID: sessionID as never,
       parentMessageID: parentMessageID as never,
-      text: "hello",
+      text: input?.text ?? "hello",
+      ...(input?.images ? { images: input.images } : {}),
       directory: "/test",
       providerID: "claude-code",
       modelID: "sonnet",
     })
   })
 }
+
+async function* success() {
+  yield { type: "result" as const, subtype: "success", total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 0 } }
+}
+
+const image: ClaudeImage = {
+  type: "image",
+  source: { type: "base64", media_type: "image/png", data: "AAA=" },
+}
+
+const historyMessage = (id: string, role: string, text: string) =>
+  ({ info: { id, role }, parts: [{ type: "text", text }] }) as SessionLegacy.WithParts
 
 function assistantInfo(result: SessionLegacy.WithParts) {
   if (result.info.role !== "assistant") throw new Error("Expected an assistant message")
@@ -174,6 +202,55 @@ describe("Claude driver delivery finalization", () => {
       expect(interrupts).toBe(0)
       expect(assistantInfo(result).error).toBeUndefined()
       expect(result.parts.map((part) => part.type)).toEqual(["step-start", "step-finish"])
+    }),
+  )
+})
+
+describe("Claude driver prompt assembly", () => {
+  it.effect("preserves the text-only transport prompt", () =>
+    Effect.gen(function* () {
+      reset(success)
+      yield* runTurn()
+      expect(prompt).toBe("hello")
+    }),
+  )
+
+  it.effect("sends an image-only turn without an empty text block", () =>
+    Effect.gen(function* () {
+      reset(success)
+      yield* runTurn({ text: "", images: [image] })
+      expect(prompt).toEqual([image])
+    }),
+  )
+
+  it.effect("places text before images in a mixed turn", () =>
+    Effect.gen(function* () {
+      reset(success)
+      yield* runTurn({ text: "describe this", images: [image] })
+      expect(prompt).toEqual([{ type: "text", text: "describe this" }, image])
+    }),
+  )
+
+  it.effect("places the handoff primer before a first-turn image", () =>
+    Effect.gen(function* () {
+      reset(success, {
+        history: [historyMessage("msg_prior", "user", "Earlier request"), historyMessage(parentMessageID, "user", "")],
+      })
+      yield* runTurn({ text: "", images: [image] })
+      expect(prompt).toEqual([{ type: "text", text: expect.stringContaining("User: Earlier request") }, image])
+      expect((prompt as Exclude<ClaudePrompt, string>)[0]).toMatchObject({ text: expect.stringMatching(/\n\n$/) })
+    }),
+  )
+
+  it.effect("does not replay a primer when resuming an image turn", () =>
+    Effect.gen(function* () {
+      reset(success, {
+        metadata: { claudeCode: { conversationID: "conversation-1", launched: true } },
+        history: [historyMessage("msg_prior", "user", "Earlier request"), historyMessage(parentMessageID, "user", "")],
+      })
+      yield* runTurn({ text: "", images: [image] })
+      expect(prompt).toEqual([image])
+      expect(transportOptions?.resumeID).toBe("conversation-1")
     }),
   )
 })

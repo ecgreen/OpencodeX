@@ -2,20 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { DELEGATE_SERVER, DELEGATE_TOOL, delegateServer, sdkPrompt } from "../../src/opencodex/claude-transport"
 
 function fakeSdk() {
-  const calls: {
-    tool?: { name: string; description: string; extras?: Record<string, unknown> }
-    server?: Record<string, unknown>
-  } = {}
+  const calls: { tool?: { name: string; description: string; extras?: Record<string, unknown> }; server?: Record<string, unknown> } = {}
   return {
     calls,
     sdk: {
-      tool: (
-        name: string,
-        description: string,
-        _schema: unknown,
-        _handler: unknown,
-        extras?: Record<string, unknown>,
-      ) => {
+      tool: (name: string, description: string, _schema: unknown, _handler: unknown, extras?: Record<string, unknown>) => {
         calls.tool = { name, description, extras }
         return { name, description }
       },

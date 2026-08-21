@@ -28,7 +28,9 @@ type SessionID = typeof SessionSchema.ID.Type
  * system is meant to gate. Exported so a test can pin the list against the
  * mapper's normalized names.
  */
-export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [{ permission: "plan_exit", pattern: "*", action: "allow" }]
+export const CLAUDE_CONTROL_FLOW: Permission.Ruleset = [
+  { permission: "plan_exit", pattern: "*", action: "allow" },
+]
 
 const DELIVERY_FAILURE = "Claude response delivery failed before the turn completed."
 
@@ -250,9 +252,8 @@ export function makeLayer(options: LayerOptions = {}) {
                 run: (delegated) =>
                   bridge
                     .promise(input.delegate!.run(delegated))
-                    .catch(
-                      (cause: unknown) =>
-                        `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+                    .catch((cause: unknown) =>
+                      `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
                     ),
               } satisfies DelegateCapability,
             }
@@ -383,13 +384,7 @@ export function makeLayer(options: LayerOptions = {}) {
       text: string,
     ) {
       const history = yield* sessions.messages({ sessionID }).pipe(Effect.orElseSucceed(() => []))
-      const prior = history.slice(
-        0,
-        Math.max(
-          0,
-          history.findIndex((message) => message.info.id === parentMessageID),
-        ),
-      )
+      const prior = history.slice(0, Math.max(0, history.findIndex((message) => message.info.id === parentMessageID)))
       return ClaudeHandoff.withHandoff(text, prior)
     })
 
