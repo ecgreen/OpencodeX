@@ -8,6 +8,7 @@ import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { ClaudeDriverMetadata } from "./claude-driver-metadata"
+import { ClaudeDelegate } from "./claude-delegate"
 import { ClaudeHandoff } from "./claude-handoff"
 import { ClaudeMapper, type MapperContext } from "./claude-mapper"
 import { ClaudePermission } from "./claude-permission"
@@ -64,7 +65,23 @@ export async function nextClaudeEvent(iterator: AsyncIterator<ClaudeMapper.Claud
 export type SwarmDelegate = {
   roles: Array<{ name: string; description?: string }>
   /** `toolUseID` is the orchestrator's tool call id for this delegation. */
-  run: (input: { role: string; prompt: string; toolUseID?: string }) => Effect.Effect<string>
+  run: (input: { role: string; prompt: string; toolUseID?: string }) => Effect.Effect<ClaudeDelegate.Result, unknown>
+}
+
+/**
+ * The bridged delegate the transport's in-process tool calls. On top of
+ * ClaudeDelegate.capability's signal bridging, this records each delegation's
+ * tool call id so sidechain writes can be told apart from delegate progress.
+ */
+function delegateCapability(bridge: EffectBridge.Shape, delegate: SwarmDelegate, delegatedCallIDs: Set<string>) {
+  const capability = ClaudeDelegate.capability(bridge, delegate)
+  return {
+    roles: capability.roles,
+    run: (input: { role: string; prompt: string; toolUseID?: string; signal?: AbortSignal }) => {
+      if (input.toolUseID) delegatedCallIDs.add(input.toolUseID)
+      return capability.run(input)
+    },
+  }
 }
 
 export interface Interface {
@@ -253,20 +270,10 @@ export function makeLayer(options: LayerOptions = {}) {
         ...(input.variant ? { effort: input.variant } : {}),
         ...(input.delegate
           ? {
-              delegate: {
-                roles: input.delegate.roles,
-                run: (delegated) => {
-                  if (delegated.toolUseID) delegatedCallIDs.add(delegated.toolUseID)
-                  return bridge
-                    .promise(input.delegate!.run(delegated))
-                    .catch((cause: unknown) =>
-                      `Delegation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-                    )
-                },
-              } satisfies DelegateCapability,
+              delegate: delegateCapability(bridge, input.delegate, delegatedCallIDs) satisfies DelegateCapability,
             }
           : {}),
-        canUseTool: (toolName, toolInput, toolUseID) =>
+        canUseTool: (toolName, toolInput, toolUseID, signal) =>
           bridge
             .promise(
               decide({
@@ -280,6 +287,7 @@ export function makeLayer(options: LayerOptions = {}) {
                   : {}),
                 ruleset,
               }),
+              signal ? { signal } : undefined,
             )
             .then((decision) => {
               if (decision.allow && decision.input && toolUseID) decidedInputs.set(toolUseID, decision.input)

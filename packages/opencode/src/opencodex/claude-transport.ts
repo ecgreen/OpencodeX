@@ -3,6 +3,7 @@ import path from "node:path"
 import z from "zod"
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { ClaudeEvent } from "./claude-mapper"
+import { ClaudeDelegate } from "./claude-delegate"
 
 /**
  * The process boundary for headless Claude Code. Everything SDK-specific lives
@@ -29,7 +30,12 @@ export type TransportOptions = {
   model?: string
   /** Reasoning effort, surfaced in OpencodeX as the model's variant chip. */
   effort?: string
-  canUseTool: (toolName: string, input: Record<string, unknown>, toolUseID?: string) => Promise<PermissionDecision>
+  canUseTool: (
+    toolName: string,
+    input: Record<string, unknown>,
+    toolUseID?: string,
+    signal?: AbortSignal,
+  ) => Promise<PermissionDecision>
   /**
    * Swarm delegation. When present the CLI is given an in-process tool that
    * hands work back to OpencodeX, so specialists run as OpencodeX sessions on
@@ -45,9 +51,9 @@ export type DelegateCapability = {
    * `toolUseID` is the orchestrator's own tool call id for this delegation,
    * present whenever the permission gate saw the call. It is what the parent
    * transcript keys its tool part by, so it is what lets a delegation link to
-   * the session it spawned.
+   * the session it spawned. `signal` is the SDK request's abort signal.
    */
-  run: (input: { role: string; prompt: string; toolUseID?: string }) => Promise<string>
+  run: (input: { role: string; prompt: string; toolUseID?: string; signal?: AbortSignal }) => Promise<ClaudeDelegate.Result>
 }
 
 /** The delegate tool's arguments, as both the gate and the handler see them. */
@@ -209,25 +215,7 @@ export function createSdkTransport(): ClaudeTransport {
             // OpencodeX is the sole permission gate: Claude defers every tool
             // decision to canUseTool, which bridges to OpencodeX permission cards.
             permissionMode: "default",
-            canUseTool: async (toolName, input, extra) => {
-              // Claude's own subagents would run inside the CLI on its models,
-              // bypassing the swarm's per-role routing. Redirect to the tool
-              // that hands work back to OpencodeX.
-              if (options.delegate && toolName === "Task") {
-                return {
-                  behavior: "deny" as const,
-                  message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
-                }
-              }
-              const decision = await options.canUseTool(toolName, input, extra?.toolUseID)
-              if (!decision.allow) return { behavior: "deny", message: decision.message }
-              const updatedInput = decision.input ?? input
-              // Recorded only once the call is going to run, and against the
-              // input the tool will actually receive, so the handler's own
-              // arguments are what it looks the id up by.
-              if (toolName === DELEGATE_TOOL_NAME) correlator.record(updatedInput, extra?.toolUseID)
-              return { behavior: "allow", updatedInput }
-            },
+            canUseTool: (toolName, input, extra) => resolveToolPermission(options, toolName, input, extra, correlator),
             ...(options.resumeID ? { resume: options.resumeID } : {}),
             ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
             ...(options.model && options.model !== DEFAULT_MODEL_VALUE ? { model: options.model } : {}),
@@ -262,6 +250,32 @@ async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerat
     message: { role: "user", content: [...content] },
     parent_tool_use_id: null,
   }
+}
+
+export async function resolveToolPermission(
+  options: TransportOptions,
+  toolName: string,
+  input: Record<string, unknown>,
+  extra?: { toolUseID?: string; signal?: AbortSignal },
+  correlator?: DelegateCorrelator,
+) {
+  // Claude's own subagents would run inside the CLI on its models,
+  // bypassing the swarm's per-role routing. Redirect to the tool that hands
+  // work back to OpencodeX.
+  if (options.delegate && toolName === "Task") {
+    return {
+      behavior: "deny" as const,
+      message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
+    }
+  }
+  const decision = await options.canUseTool(toolName, input, extra?.toolUseID, extra?.signal)
+  if (!decision.allow) return { behavior: "deny" as const, message: decision.message }
+  const updatedInput = decision.input ?? input
+  // Recorded only once the call is going to run, and against the input the
+  // tool will actually receive, so the handler's own arguments are what it
+  // looks the id up by.
+  if (toolName === DELEGATE_TOOL_NAME) correlator?.record(updatedInput, extra?.toolUseID)
+  return { behavior: "allow" as const, updatedInput }
 }
 
 /**
@@ -301,19 +315,25 @@ export function delegateServer(
             .string()
             .describe("Self-contained instructions: scope, expected output, and whether files may be edited."),
         },
-        async (args) => {
+        async (args, extra) => {
           try {
             const toolUseID = correlator?.claim(args)
-            const text = await delegate.run({
+            const signal = requestSignal(extra)
+            const result = await delegate.run({
               role: args.role,
               prompt: args.prompt,
               ...(toolUseID ? { toolUseID } : {}),
+              ...(signal ? { signal } : {}),
             })
-            return { content: [{ type: "text" as const, text }] }
-          } catch (cause) {
+            if (result.ok) return { content: [{ type: "text" as const, text: result.text }] }
             return {
               isError: true,
-              content: [{ type: "text" as const, text: cause instanceof Error ? cause.message : String(cause) }],
+              content: [{ type: "text" as const, text: ClaudeDelegate.failureMessage(result) }],
+            }
+          } catch {
+            return {
+              isError: true,
+              content: [{ type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) }],
             }
           }
         },
@@ -333,6 +353,11 @@ export function delegateServer(
       ),
     ],
   })
+}
+
+function requestSignal(extra: unknown): AbortSignal | undefined {
+  if (typeof extra !== "object" || extra === null || !("signal" in extra)) return undefined
+  return extra.signal instanceof AbortSignal ? extra.signal : undefined
 }
 
 /**

@@ -6,6 +6,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 import { Image } from "@/image/image"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
+import { ClaudeDelegate } from "@/opencodex/claude-delegate"
 import { SwarmBriefing } from "@/opencodex/swarm-briefing"
 import { Skill } from "@/skill"
 import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
@@ -212,15 +213,11 @@ export function make(deps: Deps) {
     toolUseID?: string
   }) {
     const role = SwarmBriefing.matchSwarmRole(input.roles, input.role)
-    if (!role) {
-      return `Unknown role "${input.role}". Available roles: ${input.roles.map((item) => item.name).join(", ")}.`
-    }
-    if (!role.provider_id || !role.model_id) return `Role "${role.name}" has no model configured.`
+    if (!role) return ClaudeDelegate.failure("rejected")
+    if (!role.provider_id || !role.model_id) return ClaudeDelegate.failure("rejected")
     // A role stored on the swarm facade has no concrete model to run: a child
     // prompted on the facade would take the swarm route itself and recurse.
-    if (isSwarmProvider(role.provider_id)) {
-      return `Role "${role.name}" is configured on a swarm facade, not a concrete model.`
-    }
+    if (isSwarmProvider(role.provider_id)) return ClaudeDelegate.failure("rejected")
     const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     const child = yield* sessions
       .create({
@@ -274,7 +271,7 @@ export function make(deps: Deps) {
     const settle = (outcome: DelegationOutcome, summary?: string) =>
       stamp(settleDelegation(started, { outcome, summary }), runID).pipe(Effect.asVoid)
     yield* stamp(started)
-    const outcome: { state: "completed" | "error"; text: string } = yield* Effect.gen(function* () {
+    const outcome: ClaudeDelegate.Result = yield* Effect.gen(function* () {
       // The role's skill is its base definition; the built-in role skills carry
       // the full role prompt. The task-tool path gets it through the specialist
       // loading the skill itself, but a delegated specialist never sees the
@@ -338,30 +335,31 @@ export function make(deps: Deps) {
           return yield* advance(next, index + 1)
         })
       const result = yield* advance(initial, 1)
-      if (!result) {
-        return { state: "error" as const, text: `Role "${role.name}" completed a different user turn.` }
-      }
+      if (!result) return ClaudeDelegate.failure("errored")
       if (result.info.role === "assistant" && result.info.error) {
-        return { state: "error" as const, text: `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}` }
+        return ClaudeDelegate.failure("errored")
       }
       const report = result.parts
         .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
         .join("\n")
-      return { state: "completed" as const, text: report }
+      if (!report) return { ok: false as const, reason: "empty-output" as const }
+      return { ok: true as const, text: report }
     }).pipe(
       // Every exit settles the record: clean return, subagent error, typed
       // failure, defect, and interruption alike.
       Effect.onExit((exit) =>
         Exit.isSuccess(exit)
-          ? settle(exit.value.state === "error" ? "errored" : "completed", exit.value.text)
+          ? settle(
+              exit.value.ok ? "completed" : "errored",
+              exit.value.ok ? exit.value.text : ClaudeDelegate.failureMessage(exit.value),
+            )
           : Cause.hasInterruptsOnly(exit.cause)
             ? settle("cancelled")
             : settle("errored"),
       ),
       Effect.catch(Effect.die),
     )
-    if (outcome.state === "error") return outcome.text
-    return outcome.text || `Role "${role.name}" produced no output.`
+    return outcome
   })
 
   /**

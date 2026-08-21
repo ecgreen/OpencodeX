@@ -275,7 +275,7 @@ const stampChild = Effect.sync(() => {
       ...parts.filter((item) => item.id !== part.id),
       { ...part, state: { ...part.state, metadata: { sessionId: "ses_child", swarmRole: "Coder" } } },
     ]
-  return "the role's report"
+  return { ok: true as const, text: "the role's report" }
 })
 
 async function* delegationStream() {
@@ -283,7 +283,9 @@ async function* delegationStream() {
   const report = await transportOptions!.delegate!.run(delegated)
   yield {
     type: "user" as const,
-    message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: report }] },
+    message: {
+      content: [{ type: "tool_result", tool_use_id: "toolu_1", content: report.ok ? report.text : "failed" }],
+    },
   }
   yield { type: "result" as const, subtype: "success", total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 0 } }
 }
