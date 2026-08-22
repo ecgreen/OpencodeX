@@ -45,8 +45,8 @@ export function moveSwarmRoleFallback(
   const target = index + direction
   if (target < 0 || target >= fallbacks.length) return [...fallbacks]
   return fallbacks.map((model, currentIndex) => {
-    if (currentIndex === index) return fallbacks[target]!
-    if (currentIndex === target) return fallbacks[index]!
+    if (currentIndex === index) return fallbacks[target]
+    if (currentIndex === target) return fallbacks[index]
     return model
   })
 }

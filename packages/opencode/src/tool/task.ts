@@ -462,7 +462,7 @@ export const TaskTool = Tool.define(
         const runTask = Effect.fn("TaskTool.runTask")(function* () {
           const parts = yield* ops.resolvePromptParts(params.prompt)
           const userMessageID = MessageID.ascending()
-          const first = models[0]!
+          const first = models[0]
           metadata.model = { providerID: first.providerID, modelID: first.modelID }
           const initial = yield* ops.prompt({
             messageID: userMessageID,

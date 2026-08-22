@@ -293,7 +293,7 @@ export function make(deps: Deps) {
             })),
       ]
       const userMessageID = MessageID.ascending()
-      const primary = models[0]!
+      const primary = models[0]
       const initial = yield* prompt({
         messageID: userMessageID,
         sessionID: child.id,

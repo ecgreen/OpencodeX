@@ -26,7 +26,7 @@ export function emit(event: string, data: unknown) {
 
 export function client<T extends Definition>(target: {
   postMessage: (data: string) => void | null
-  onmessage: ((this: Worker, ev: MessageEvent<any>) => any) | null
+  onmessage: ((this: Worker, ev: MessageEvent) => any) | null
 }) {
   const pending = new Map<number, { resolve: (result: any) => void; reject: (error: Error) => void }>()
   const listeners = new Map<string, Set<(data: any) => void>>()
@@ -72,7 +72,7 @@ export function client<T extends Definition>(target: {
       }
       handlers.add(handler)
       return () => {
-        handlers!.delete(handler)
+        handlers.delete(handler)
       }
     },
   }

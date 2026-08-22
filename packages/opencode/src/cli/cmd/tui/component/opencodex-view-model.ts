@@ -126,7 +126,7 @@ export function metadataWithPendingSessions(
   metadata: Record<string, unknown> | undefined,
   pending: PendingViewSession[],
 ) {
-  const next = { ...(metadata ?? {}) }
+  const next = { ...metadata }
   const opencodex = isRecord(next.opencodex) ? { ...next.opencodex } : {}
   if (pending.length) {
     opencodex.pendingSessions = pending
