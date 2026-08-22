@@ -59,6 +59,7 @@ export async function initializeTuiTransport<T>(initialize: () => Promise<T>, cl
   try {
     return await initialize()
   } catch (error) {
+    Log.Default.warn("tui stopping: transport initialization failed", { error: errorMessage(error) })
     await cleanup()
     throw error
   }
@@ -267,7 +268,12 @@ export const TuiThreadCommand = cmd({
             }, 1000).unref?.()
 
             return {
-              url: (await initializeTuiTransport(() => client.call("server", network), () => stop())).url,
+              url: (
+                await initializeTuiTransport(
+                  () => client.call("server", network),
+                  () => stop(),
+                )
+              ).url,
               headers: { authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` },
             }
           })()
@@ -285,6 +291,10 @@ export const TuiThreadCommand = cmd({
           headers: transport.headers,
         })
       } catch (error) {
+        // OpencodeX-l1v layer 1: name every shutdown trigger, so a CI worker
+        // log can say WHY the headless TUI stopped instead of leaving only
+        // the disposal fallout as evidence.
+        Log.Default.warn("tui stopping: session validation failed", { error: errorMessage(error) })
         UI.error(errorMessage(error))
         process.exitCode = 1
         await stop()
@@ -312,6 +322,10 @@ export const TuiThreadCommand = cmd({
           },
         })
         await handle.done
+        Log.Default.info("tui stopping: renderer handle completed", {
+          tty: process.stdout.isTTY === true,
+          platform: process.platform,
+        })
       } finally {
         await stop()
       }
