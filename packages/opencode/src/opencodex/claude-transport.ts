@@ -4,6 +4,7 @@ import z from "zod"
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { ClaudeEvent } from "./claude-mapper"
 import { ClaudeDelegate } from "./claude-delegate"
+import { createChannelRegistry, type CreateQuery } from "./claude-channel"
 
 /**
  * The process boundary for headless Claude Code. Everything SDK-specific lives
@@ -43,6 +44,27 @@ export type TransportOptions = {
    */
   delegate?: DelegateCapability
   signal?: AbortSignal
+  /**
+   * Keys a persistent per-session query channel (normally the daemon session
+   * id). Present, the transport keeps one CLI child alive across the
+   * session's turns instead of spawning one per turn with `--resume` — the
+   * fix for the stale close-out result a resume spawn can emit
+   * (OpencodeX-div). Absent, each run is its own query (the historical
+   * behavior, kept for one-shot callers and as the
+   * OPENCODE_CLAUDE_PER_TURN_QUERY=1 escape hatch).
+   */
+  channelKey?: string
+}
+
+/** The per-turn callbacks a persistent channel's fixed SDK query reads. */
+export type TurnHandlers = {
+  canUseTool: (
+    toolName: string,
+    input: Record<string, unknown>,
+    extra?: { toolUseID?: string; signal?: AbortSignal },
+  ) => Promise<{ behavior: "allow"; updatedInput: Record<string, unknown> } | { behavior: "deny"; message: string }>
+  delegate?: DelegateCapability
+  correlator: DelegateCorrelator
 }
 
 export type DelegateCapability = {
@@ -53,7 +75,12 @@ export type DelegateCapability = {
    * transcript keys its tool part by, so it is what lets a delegation link to
    * the session it spawned. `signal` is the SDK request's abort signal.
    */
-  run: (input: { role: string; prompt: string; toolUseID?: string; signal?: AbortSignal }) => Promise<ClaudeDelegate.Result>
+  run: (input: {
+    role: string
+    prompt: string
+    toolUseID?: string
+    signal?: AbortSignal
+  }) => Promise<ClaudeDelegate.Result>
 }
 
 /** The delegate tool's arguments, as both the gate and the handler see them. */
@@ -187,8 +214,121 @@ async function* idlePrompt(): AsyncGenerator<never> {
 }
 
 export function createSdkTransport(): ClaudeTransport {
+  const registry = createChannelRegistry<TurnHandlers>()
+
+  function turnHandlers(options: TransportOptions): TurnHandlers {
+    const correlator = createDelegateCorrelator()
+    return {
+      canUseTool: (toolName, input, extra) => resolveToolPermission(options, toolName, input, extra, correlator),
+      ...(options.delegate ? { delegate: options.delegate } : {}),
+      correlator,
+    }
+  }
+
+  function runPersistent(prompt: ClaudePrompt, options: TransportOptions, channelKey: string): TransportTurn {
+    let active: ReturnType<import("./claude-channel").Channel<TurnHandlers>["turn"]> | undefined
+    // An interrupt can land while the generator is still importing the SDK or
+    // acquiring the channel; the flag makes it stick so the cancelled prompt
+    // is never pushed into the persistent child as a headless turn.
+    let cancelled = false
+
+    async function* events(): AsyncGenerator<ClaudeEvent> {
+      const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
+      if (!sdk?.query) throw new ClaudeNotInstalledError("The Claude Code SDK is unavailable.")
+      const executable = options.executable ?? (await resolveClaudeExecutable())
+
+      const createQuery: CreateQuery<TurnHandlers> = async (input) => {
+        const controller = new AbortController()
+        const delegation = options.delegate
+          ? delegateServer(sdk, options.delegate.roles, () => {
+              const handlers = input.handlers()
+              return handlers?.delegate ? { run: handlers.delegate.run, correlator: handlers.correlator } : undefined
+            })
+          : undefined
+        const running = sdk.query({
+          prompt: input.prompt,
+          options: {
+            cwd: options.cwd,
+            abortController: controller,
+            includePartialMessages: true,
+            forwardSubagentText: true,
+            permissionMode: "default",
+            canUseTool: (
+              toolName: string,
+              toolInput: Record<string, unknown>,
+              extra: { toolUseID?: string; signal?: AbortSignal },
+            ) => {
+              const handlers = input.handlers()
+              if (!handlers)
+                return Promise.resolve({ behavior: "deny" as const, message: "No turn is active for this session." })
+              return handlers.canUseTool(toolName, toolInput, extra)
+            },
+            ...(input.resumeID ? { resume: input.resumeID } : {}),
+            ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
+            ...(options.model && options.model !== DEFAULT_MODEL_VALUE ? { model: options.model } : {}),
+            ...(options.effort && EFFORT_LEVELS.includes(options.effort) ? { effort: options.effort } : {}),
+            ...(delegation ? { mcpServers: { [DELEGATE_SERVER]: delegation } } : {}),
+          },
+        } as Parameters<typeof sdk.query>[0]) as AsyncIterable<ClaudeEvent> & { interrupt?: () => Promise<unknown> }
+        return {
+          events: running,
+          interrupt: async () => {
+            await running.interrupt?.()
+          },
+          abort: () => controller.abort(),
+        }
+      }
+
+      // Everything the spawned child is pinned to; a change recycles the
+      // channel so the next child resumes the conversation with the new shape.
+      const config = JSON.stringify([
+        options.cwd,
+        options.model ?? "",
+        options.effort ?? "",
+        executable ?? "",
+        options.delegate?.roles ?? null,
+      ])
+      const channel = await registry.acquire(
+        channelKey,
+        config,
+        createQuery,
+        options.resumeID ? { resumeID: options.resumeID } : undefined,
+      )
+      if (cancelled || options.signal?.aborted) return
+      active = channel.turn([userMessage(prompt)], turnHandlers(options))
+      if (cancelled) {
+        // The interrupt raced the turn start: unwind what was just attached.
+        await active.interrupt()
+      }
+      yield* active.events as AsyncGenerator<ClaudeEvent>
+    }
+
+    if (options.signal) {
+      if (options.signal.aborted) cancelled = true
+      else
+        options.signal.addEventListener(
+          "abort",
+          () => {
+            cancelled = true
+            void active?.interrupt()
+          },
+          { once: true },
+        )
+    }
+
+    return {
+      events: events(),
+      interrupt: async () => {
+        cancelled = true
+        await active?.interrupt()
+      },
+    }
+  }
+
   return {
     run(prompt, options) {
+      if (options.channelKey && process.env.OPENCODE_CLAUDE_PER_TURN_QUERY !== "1")
+        return runPersistent(prompt, options, options.channelKey)
       const controller = new AbortController()
       if (options.signal) {
         if (options.signal.aborted) controller.abort()
@@ -204,7 +344,9 @@ export function createSdkTransport(): ClaudeTransport {
         const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
         if (!sdk?.query) throw new ClaudeNotInstalledError("The Claude Code SDK is unavailable.")
         const executable = options.executable ?? (await resolveClaudeExecutable())
-        const delegation = options.delegate ? delegateServer(sdk, options.delegate, correlator) : undefined
+        const delegation = options.delegate
+          ? delegateServer(sdk, options.delegate.roles, () => ({ run: options.delegate!.run, correlator }))
+          : undefined
         const running = sdk.query({
           prompt: sdkPrompt(prompt),
           options: {
@@ -251,6 +393,15 @@ export function sdkPrompt(prompt: ClaudePrompt): string | AsyncIterable<SDKUserM
   return userPrompt(prompt)
 }
 
+/** One turn's prompt as the streaming user message a persistent channel pushes. */
+export function userMessage(prompt: ClaudePrompt): SDKUserMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: typeof prompt === "string" ? prompt : [...prompt] },
+    parent_tool_use_id: null,
+  } as SDKUserMessage
+}
+
 async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerator<SDKUserMessage> {
   yield {
     type: "user",
@@ -293,12 +444,17 @@ export async function resolveToolPermission(
  */
 export function delegateServer(
   sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
-  delegate: DelegateCapability,
-  correlator?: DelegateCorrelator,
+  roles: DelegateCapability["roles"],
+  /**
+   * The current turn's delegate run + correlator. The MCP server is fixed at
+   * query spawn, but on a persistent channel each turn brings a fresh bridge
+   * and correlator, so the handler reads them through this accessor; between
+   * turns (or on a turn without delegation) it returns undefined and the call
+   * fails as an errored delegation instead of crossing turn boundaries.
+   */
+  current: () => { run: DelegateCapability["run"]; correlator?: DelegateCorrelator } | undefined,
 ) {
-  const roster = delegate.roles
-    .map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`)
-    .join("\n")
+  const roster = roles.map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`).join("\n")
   return sdk.createSdkMcpServer({
     name: DELEGATE_SERVER,
     version: "1.0.0",
@@ -324,9 +480,18 @@ export function delegateServer(
         },
         async (args, extra) => {
           try {
-            const toolUseID = correlator?.claim(args)
+            const turn = current()
+            if (!turn) {
+              return {
+                isError: true,
+                content: [
+                  { type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) },
+                ],
+              }
+            }
+            const toolUseID = turn.correlator?.claim(args)
             const signal = requestSignal(extra)
-            const result = await delegate.run({
+            const result = await turn.run({
               role: args.role,
               prompt: args.prompt,
               ...(toolUseID ? { toolUseID } : {}),
@@ -340,7 +505,9 @@ export function delegateServer(
           } catch {
             return {
               isError: true,
-              content: [{ type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) }],
+              content: [
+                { type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) },
+              ],
             }
           }
         },

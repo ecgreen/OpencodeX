@@ -6,18 +6,40 @@ import {
   createDelegateCorrelator,
   DELEGATE_SERVER,
   DELEGATE_TOOL,
-  delegateServer,
+  delegateServer as delegateServerWith,
   resolveToolPermission,
   sdkPrompt,
   type TransportOptions,
+  type DelegateCapability,
+  type DelegateCorrelator,
 } from "../../src/opencodex/claude-transport"
+
+/**
+ * The production signature takes the roster plus a current-turn accessor (the
+ * server is fixed at query spawn on persistent channels). These tests all
+ * exercise single-turn semantics, so this shim binds one capability for the
+ * server's lifetime - the shape the per-turn path still uses.
+ */
+function delegateServer(
+  sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
+  capability: DelegateCapability,
+  correlator?: DelegateCorrelator,
+) {
+  return delegateServerWith(sdk, capability.roles, () => ({
+    run: capability.run,
+    ...(correlator ? { correlator } : {}),
+  }))
+}
 
 function fakeSdk() {
   const calls: {
     tool?: {
       name: string
       description: string
-      handler: (args: { role: string; prompt: string }, extra: unknown) => Promise<{
+      handler: (
+        args: { role: string; prompt: string },
+        extra: unknown,
+      ) => Promise<{
         isError?: boolean
         content: Array<{ type: "text"; text: string }>
       }>
@@ -32,7 +54,10 @@ function fakeSdk() {
         name: string,
         description: string,
         _schema: unknown,
-        handler: (args: { role: string; prompt: string }, extra: unknown) => Promise<{
+        handler: (
+          args: { role: string; prompt: string },
+          extra: unknown,
+        ) => Promise<{
           isError?: boolean
           content: Array<{ type: "text"; text: string }>
         }>,
@@ -201,10 +226,7 @@ describe("delegateServer results", () => {
       }),
     )
 
-    const callback = calls.tool!.handler(
-      { role: "Researcher", prompt: "Check it." },
-      { signal: controller.signal },
-    )
+    const callback = calls.tool!.handler({ role: "Researcher", prompt: "Check it." }, { signal: controller.signal })
     await Effect.runPromise(Deferred.await(started))
     controller.abort()
 
@@ -236,10 +258,7 @@ describe("delegateServer results", () => {
     )
 
     expect(
-      await calls.tool!.handler(
-        { role: "Researcher", prompt: "Check it." },
-        { signal: controller.signal },
-      ),
+      await calls.tool!.handler({ role: "Researcher", prompt: "Check it." }, { signal: controller.signal }),
     ).toEqual({
       isError: true,
       content: [{ type: "text", text: "The delegated role was cancelled before it completed." }],
@@ -314,10 +333,15 @@ describe("resolveToolPermission", () => {
       },
     } satisfies TransportOptions
 
-    const result = await resolveToolPermission(options, "Read", { path: "original" }, {
-      toolUseID: "tool-1",
-      signal: controller.signal,
-    })
+    const result = await resolveToolPermission(
+      options,
+      "Read",
+      { path: "original" },
+      {
+        toolUseID: "tool-1",
+        signal: controller.signal,
+      },
+    )
 
     expect(seen).toEqual({ toolUseID: "tool-1", signal: controller.signal })
     expect(result).toEqual({ behavior: "allow", updatedInput: { path: "approved" } })
