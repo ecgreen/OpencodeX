@@ -168,3 +168,17 @@ export function notFound(message: string) {
     data: { message },
   })
 }
+
+/**
+ * A 400 whose body says what was actually wrong. The built-in
+ * HttpApiError.BadRequest is a bare tag, which turned real validation
+ * messages ("A swarm requires the first role to be the Orchestrator")
+ * into an undiagnosable {"_tag":"BadRequest"} for API clients.
+ */
+export class ApiValidationError extends Schema.TaggedErrorClass<ApiValidationError>()(
+  "ValidationError",
+  {
+    message: Schema.String,
+  },
+  { httpApiStatus: 400 },
+) {}

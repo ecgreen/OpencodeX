@@ -113,7 +113,15 @@ export const rpc = {
     return result
   },
   server(input: { port: number; hostname: string; mdns?: boolean; mdnsDomain?: string; cors?: string[] }) {
-    return gate.run(() => startServer(input))
+    return gate.run(() =>
+      startServer(input).catch((error: unknown) => {
+        // OpencodeX-l1v layer 1: on Windows CI this rejects with a bare
+        // "Failed to execute statement" and takes the whole TUI down; the
+        // cause chain (statement, SQLite error code) is the diagnosis.
+        Log.Default.error("worker backend authority start failed", { error: causeChain(error) })
+        throw error
+      }),
+    )
   },
   async checkUpgrade(input: { directory: string }) {
     // Only the instance load races disposal; the upgrade check is network I/O
@@ -225,6 +233,17 @@ async function startServer(input: {
     await ownerLock.release().catch(() => {})
     throw error
   }
+}
+
+/** The full error ancestry, since wrapped SqlErrors bury the real failure. */
+function causeChain(error: unknown): string {
+  const parts: string[] = []
+  let current: unknown = error
+  for (let depth = 0; current !== undefined && current !== null && depth < 6; depth++) {
+    parts.push(errorMessage(current))
+    current = typeof current === "object" && "cause" in current ? current.cause : undefined
+  }
+  return parts.join(" <- ")
 }
 
 function collidingAuthorityError(manifest: TuiCoordinatorManifest) {

@@ -6,7 +6,7 @@ import { OpencodeXView } from "@/opencodex/view"
 import { Project } from "@/project/project"
 import { Effect } from "effect"
 import { HttpApiError } from "effect/unstable/httpapi"
-import { ConflictError, notFound, ProjectNotFoundError } from "../errors"
+import { ApiValidationError, ConflictError, notFound, ProjectNotFoundError } from "../errors"
 import { UpdateJobPayload, UpdateTerminalSessionPayload, UpdateViewPayload } from "../groups/opencodex"
 
 export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeOperationsHandlers")(function* () {
@@ -28,7 +28,11 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     return yield* jobs.list()
   })
   const createJob = Effect.fn("OpencodeXHttpApi.createJob")(function* (ctx: { payload: OpencodeXJob.CreateInput }) {
-    if (ctx.payload.source === "swarm" || ctx.payload.kind.startsWith("swarm.") || ctx.payload.kind.startsWith("goal.")) {
+    if (
+      ctx.payload.source === "swarm" ||
+      ctx.payload.kind.startsWith("swarm.") ||
+      ctx.payload.kind.startsWith("goal.")
+    ) {
       return yield* new HttpApiError.BadRequest({})
     }
     return yield* jobs.create(ctx.payload)
@@ -104,7 +108,7 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
   }) {
     return yield* mapSwarmErrors(swarms.update(ctx.params.swarmID, ctx.payload))
   })
-  const cancelSwarm =Effect.fn("OpencodeXHttpApi.cancelSwarm")(function* (ctx: { params: { swarmID: string } }) {
+  const cancelSwarm = Effect.fn("OpencodeXHttpApi.cancelSwarm")(function* (ctx: { params: { swarmID: string } }) {
     return yield* mapSwarmErrors(swarms.cancel(ctx.params.swarmID))
   })
   const removeSwarm = Effect.fn("OpencodeXHttpApi.removeSwarm")(function* (ctx: { params: { swarmID: string } }) {
@@ -128,9 +132,7 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
   }) {
     return yield* goals.list({ projectID: ctx.query.projectID, sessionID: ctx.query.sessionID })
   })
-  const createGoal = Effect.fn("OpencodeXHttpApi.createGoal")(function* (ctx: {
-    payload: OpencodeXGoal.CreateInput
-  }) {
+  const createGoal = Effect.fn("OpencodeXHttpApi.createGoal")(function* (ctx: { payload: OpencodeXGoal.CreateInput }) {
     return yield* goals.create(ctx.payload).pipe(
       Effect.catchTag("Project.NotFoundError", (error) =>
         Effect.fail(
@@ -214,7 +216,9 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
   })
   const createView = Effect.fn("OpencodeXHttpApi.createView")(function* (ctx: { payload: OpencodeXView.CreateInput }) {
     return yield* views.create(ctx.payload).pipe(
-      Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." }))),
+      Effect.catchTag("NotFoundError", () =>
+        Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." })),
+      ),
       Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", () =>
         Effect.fail(new OpencodeXView.ValidationError({ message: "Terminal session not found." })),
       ),
@@ -234,14 +238,14 @@ export const makeOpencodeXOperationsHandlers = Effect.fn("OpencodeXHttpApi.makeO
     payload: typeof UpdateViewPayload.Type
   }) {
     return yield* mapViewUpdateErrors(
-      views
-        .update({ ...ctx.payload, id: ctx.params.viewID })
-        .pipe(
-          Effect.catchTag("NotFoundError", () => Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." }))),
-          Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", () =>
-            Effect.fail(new OpencodeXView.ValidationError({ message: "Terminal session not found." })),
-          ),
+      views.update({ ...ctx.payload, id: ctx.params.viewID }).pipe(
+        Effect.catchTag("NotFoundError", () =>
+          Effect.fail(new OpencodeXView.ValidationError({ message: "Session not found." })),
         ),
+        Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", () =>
+          Effect.fail(new OpencodeXView.ValidationError({ message: "Terminal session not found." })),
+        ),
+      ),
     )
   })
   const removeView = Effect.fn("OpencodeXHttpApi.removeView")(function* (ctx: { params: { viewID: string } }) {
@@ -299,12 +303,18 @@ function mapJobErrors<A, R>(effect: Effect.Effect<A, OpencodeXJob.NotFoundError 
   )
 }
 
-function mapSwarmCreateErrors<A, R>(effect: Effect.Effect<A, Project.NotFoundError | OpencodeXSwarm.ValidationError, R>) {
+function mapSwarmCreateErrors<A, R>(
+  effect: Effect.Effect<A, Project.NotFoundError | OpencodeXSwarm.ValidationError, R>,
+) {
   return effect.pipe(
     Effect.catchTag("Project.NotFoundError", (error) =>
-      Effect.fail(new ProjectNotFoundError({ projectID: error.projectID, message: `Project not found: ${error.projectID}` })),
+      Effect.fail(
+        new ProjectNotFoundError({ projectID: error.projectID, message: `Project not found: ${error.projectID}` }),
+      ),
     ),
-    Effect.catchTag("OpencodeX.Swarm.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+    Effect.catchTag("OpencodeX.Swarm.ValidationError", (error) =>
+      Effect.fail(new ApiValidationError({ message: error.message })),
+    ),
   )
 }
 
@@ -316,9 +326,15 @@ function mapSwarmErrors<A, R>(
   >,
 ) {
   return effect.pipe(
-    Effect.catchTag("OpencodeX.Swarm.NotFoundError", (error) => Effect.fail(notFound(`Swarm not found: ${error.swarmID}`))),
-    Effect.catchTag("OpencodeX.Swarm.RoleNotFoundError", (error) => Effect.fail(notFound(`Swarm role not found: ${error.roleID}`))),
-    Effect.catchTag("OpencodeX.Swarm.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
+    Effect.catchTag("OpencodeX.Swarm.NotFoundError", (error) =>
+      Effect.fail(notFound(`Swarm not found: ${error.swarmID}`)),
+    ),
+    Effect.catchTag("OpencodeX.Swarm.RoleNotFoundError", (error) =>
+      Effect.fail(notFound(`Swarm role not found: ${error.roleID}`)),
+    ),
+    Effect.catchTag("OpencodeX.Swarm.ValidationError", (error) =>
+      Effect.fail(new ApiValidationError({ message: error.message })),
+    ),
   )
 }
 
@@ -330,7 +346,9 @@ function mapGoalErrors<A, R>(
   >,
 ) {
   return effect.pipe(
-    Effect.catchTag("OpencodeX.Goal.NotFoundError", (error) => Effect.fail(notFound(`Goal not found: ${error.goalID}`))),
+    Effect.catchTag("OpencodeX.Goal.NotFoundError", (error) =>
+      Effect.fail(notFound(`Goal not found: ${error.goalID}`)),
+    ),
     Effect.catchTag("OpencodeX.Goal.NodeNotFoundError", (error) =>
       Effect.fail(notFound(`Goal node not found: ${error.nodeID}`)),
     ),
@@ -339,11 +357,7 @@ function mapGoalErrors<A, R>(
 }
 
 function mapTerminalSessionErrors<A, R>(
-  effect: Effect.Effect<
-    A,
-    OpencodeXTerminalSession.NotFoundError | OpencodeXTerminalSession.ValidationError,
-    R
-  >,
+  effect: Effect.Effect<A, OpencodeXTerminalSession.NotFoundError | OpencodeXTerminalSession.ValidationError, R>,
 ) {
   return effect.pipe(
     Effect.catchTag("OpencodeX.TerminalSession.NotFoundError", (error) =>
@@ -386,7 +400,9 @@ function mapViewUpdateErrors<A, R>(
   >,
 ) {
   return effect.pipe(
-    Effect.catchTag("OpencodeX.View.NotFoundError", (error) => Effect.fail(notFound(`View not found: ${error.viewID}`))),
+    Effect.catchTag("OpencodeX.View.NotFoundError", (error) =>
+      Effect.fail(notFound(`View not found: ${error.viewID}`)),
+    ),
     Effect.catchTag("OpencodeX.View.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
     Effect.catchTag("OpencodeX.View.ConflictError", (error) =>
       Effect.fail(
@@ -398,7 +414,9 @@ function mapViewUpdateErrors<A, R>(
 
 function mapViewErrors<A, R>(effect: Effect.Effect<A, OpencodeXView.NotFoundError | OpencodeXView.ValidationError, R>) {
   return effect.pipe(
-    Effect.catchTag("OpencodeX.View.NotFoundError", (error) => Effect.fail(notFound(`View not found: ${error.viewID}`))),
+    Effect.catchTag("OpencodeX.View.NotFoundError", (error) =>
+      Effect.fail(notFound(`View not found: ${error.viewID}`)),
+    ),
     Effect.catchTag("OpencodeX.View.ValidationError", () => Effect.fail(new HttpApiError.BadRequest({}))),
   )
 }

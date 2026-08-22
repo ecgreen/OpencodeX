@@ -274,6 +274,10 @@ export function makeLayer(options: LayerOptions = {}) {
           sessionID: input.sessionID,
           ...(resumeID ? { resumeID } : {}),
           model: input.claudeModelID ?? input.modelID,
+          // OpencodeX-e2e image-drop triage: whether native attachments made
+          // it to the driver at all, and whether this turn is delegating.
+          images: input.images?.length ?? 0,
+          delegating: input.delegate !== undefined,
         })
         const logPermission = bridge.bind((toolName: string, toolUseID?: string) => {
           log.info("claude permission request received", { sessionID: input.sessionID, toolName, callID: toolUseID })

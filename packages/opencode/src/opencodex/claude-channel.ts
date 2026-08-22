@@ -133,7 +133,13 @@ export class Channel<H> {
       failure = { failure: error }
     }
     this.dead = true
-    log.info("claude channel pump ended", { channel: this.key, failed: failure !== undefined })
+    log.info("claude channel pump ended", {
+      channel: this.key,
+      failed: failure !== undefined,
+      ...(failure
+        ? { error: failure.failure instanceof Error ? failure.failure.message : String(failure.failure) }
+        : {}),
+    })
     const sink = this.sink
     this.sink = undefined
     sink?.end(failure)
