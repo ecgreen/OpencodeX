@@ -309,7 +309,7 @@ export const RunCommand = effectCmd({
       ]
 
       function title() {
-        if (args.title === undefined) return
+        if (args.title === undefined) return undefined
         if (args.title !== "") return args.title
         return message.slice(0, 50) + (message.length > 50 ? "..." : "")
       }
@@ -333,7 +333,7 @@ export const RunCommand = effectCmd({
             })
             const id = forked.data?.id
             if (!id) {
-              return
+              return undefined
             }
 
             return {
@@ -358,7 +358,7 @@ export const RunCommand = effectCmd({
           })
           const id = forked.data?.id
           if (!id) {
-            return
+            return undefined
           }
 
           return {
@@ -383,7 +383,7 @@ export const RunCommand = effectCmd({
         })
         const id = result.data?.id
         if (!id) {
-          return
+          return undefined
         }
 
         return {
