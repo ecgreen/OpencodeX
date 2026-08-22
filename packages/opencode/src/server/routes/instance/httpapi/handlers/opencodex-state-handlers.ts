@@ -6,6 +6,7 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { OpencodeXCapabilities } from "@/opencodex/capabilities"
 import { OpencodeXState } from "@/opencodex/state"
+import { AUTHORITY_EPOCH } from "@/opencodex/state-epoch"
 import { OpencodeXSessionCard } from "@/opencodex/session-card"
 import { ProviderCatalog } from "@/provider/catalog"
 import { SessionID } from "@/session/schema"
@@ -68,7 +69,7 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
         const digest = Bun.hash(JSON.stringify(payload)).toString(36)
         return {
           scope: yield* state.scope(),
-          epoch: OpencodeXState.EPOCH,
+          epoch: AUTHORITY_EPOCH,
           revision: digest,
           digest,
           payload,
@@ -142,14 +143,14 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
     const ready: OpencodeXState.OpencodeXStateStreamFrame = {
       type: "ready",
       scope,
-      epoch: OpencodeXState.EPOCH,
+      epoch: AUTHORITY_EPOCH,
       cursor: replay.cursor,
     }
     const resetFrame = (cursor: OpencodeXState.OpencodeXStateCursor, reason: string) =>
       ({
         type: "reset_required",
         scope,
-        epoch: OpencodeXState.EPOCH,
+        epoch: AUTHORITY_EPOCH,
         cursor,
         reason,
       }) satisfies OpencodeXState.OpencodeXStateStreamFrame
@@ -175,7 +176,7 @@ export const makeOpencodeXStateHandlers = Effect.fn("OpencodeXHttpApi.makeStateH
     )
     const heartbeat = Stream.tick("10 seconds").pipe(
       Stream.drop(1),
-      Stream.map((): OpencodeXState.OpencodeXStateStreamFrame => ({ type: "heartbeat", epoch: OpencodeXState.EPOCH })),
+      Stream.map((): OpencodeXState.OpencodeXStateStreamFrame => ({ type: "heartbeat", epoch: AUTHORITY_EPOCH })),
     )
     return HttpServerResponse.stream(
       Stream.fromIterable(initial).pipe(

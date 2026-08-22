@@ -103,3 +103,53 @@ it.instance(
     }).pipe(Effect.provide(Observability.layer)),
   { git: true },
 )
+
+it.instance(
+  "EffectBridge interrupts a pending callback effect when its signal aborts",
+  () =>
+    Effect.gen(function* () {
+      const bridge = yield* EffectBridge.make()
+      const started = yield* Deferred.make<void>()
+      const interrupted = yield* Deferred.make<void>()
+      const controller = new AbortController()
+      const result = bridge
+        .promise(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined)
+            yield* Effect.never
+          }).pipe(Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))),
+          { signal: controller.signal },
+        )
+        .then(
+          () => "resolved" as const,
+          () => "rejected" as const,
+        )
+
+      yield* Deferred.await(started)
+      controller.abort()
+
+      expect(yield* Effect.promise(() => result)).toBe("rejected")
+      yield* Deferred.await(interrupted)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "EffectBridge rejects an effect given an already-aborted signal",
+  () =>
+    Effect.gen(function* () {
+      const bridge = yield* EffectBridge.make()
+      const controller = new AbortController()
+      controller.abort()
+
+      const result = yield* Effect.promise(() =>
+        bridge.promise(Effect.never, { signal: controller.signal }).then(
+          () => "resolved" as const,
+          () => "rejected" as const,
+        ),
+      )
+
+      expect(result).toBe("rejected")
+    }),
+  { git: true },
+)

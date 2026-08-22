@@ -70,6 +70,7 @@ export function createAuthoritativeStateController(input: {
   const [sessionDataSessionID, setSessionDataSessionID] = createSignal("")
   const [loading, setLoading] = createSignal("Starting sidecar")
   const [error, setError] = createSignal<string>()
+  const [connectionError, setConnectionError] = createSignal<unknown>()
   const [state, setState] = createSignal<ClientStateSyncState>()
   const [loadingSessionID, setLoadingSessionID] = createSignal("")
   const sessionPresentation = createSessionPresentationController({ inactiveLimit: 16 })
@@ -348,6 +349,7 @@ export function createAuthoritativeStateController(input: {
         ])
         setLoading("")
       } catch (cause) {
+        setConnectionError(cause)
         setError(cause instanceof Error ? cause.message : String(cause))
       }
     })()
@@ -366,6 +368,7 @@ export function createAuthoritativeStateController(input: {
     sessionDataSessionID,
     loading,
     error,
+    connectionError,
     state,
     workItems,
     attentionItems,

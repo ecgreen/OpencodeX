@@ -299,6 +299,7 @@ export const OpencodeXSwarmRoleTable = sqliteTable(
     model_id: text(),
     /** The model variant (effort level) this role runs at, when one is chosen. */
     variant: text(),
+    fallback_models: text().notNull().default("[]"),
     model_profile: text(),
     status: text().notNull(),
     instructions: text().notNull(),

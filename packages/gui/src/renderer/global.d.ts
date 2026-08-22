@@ -4,7 +4,7 @@ import type {
   BrowserState,
   ClaudeCodeStatus,
   ContextPath,
-  GuiConnection,
+  GuiConnectionResult,
   NotificationActivateEvent,
   NotificationRequest,
   TerminalDataEvent,
@@ -16,7 +16,8 @@ import type {
 declare global {
   interface Window {
     opencodex?: {
-      connection(): Promise<GuiConnection>
+      connection(): Promise<GuiConnectionResult>
+      attachVersionMismatch(): Promise<void>
       installationID(): Promise<string>
       claude: {
         status(): Promise<ClaudeCodeStatus>

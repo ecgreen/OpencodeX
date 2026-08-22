@@ -16,7 +16,13 @@ import {
   type UpdateInput,
   type UpdateRoleInput,
 } from "./swarm-schema"
-import { serializeMetadata, validateRoles } from "./swarm-model"
+import {
+  mergeRoleFallbacks,
+  normalizeRole,
+  serializeFallbackModels,
+  serializeMetadata,
+  validateRoles,
+} from "./swarm-model"
 import { SwarmStatus } from "./swarm-status"
 
 export type Interface = Pick<
@@ -48,8 +54,11 @@ const updateUnlocked = Effect.fnUntraced(function* (swarmID: string, input: Upda
   if (["queued", "running", "cancelling"].includes(swarm.status)) {
     return yield* new ValidationError({ message: "Wait for the active swarm run before editing its configuration." })
   }
-  if (input.roles) {
-    const invalid = validateRoles(input.roles)
+  const merged = input.roles ? mergeRoleFallbacks(input.roles, swarm.roles) : undefined
+  if (merged && "error" in merged && merged.error) return yield* new ValidationError({ message: merged.error })
+  const roles = merged?.roles
+  if (roles) {
+    const invalid = validateRoles(roles)
     if (invalid) return yield* new ValidationError({ message: invalid })
   }
   const now = Date.now()
@@ -73,10 +82,10 @@ const updateUnlocked = Effect.fnUntraced(function* (swarmID: string, input: Upda
             .returning({ id: OpencodeXSwarmTable.id })
             .get()
           if (!updated) return undefined
-          if (input.roles) {
+          if (roles) {
             yield* transaction.delete(OpencodeXSwarmRoleTable).where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID)).run()
             yield* Effect.forEach(
-              input.roles,
+              roles,
               (role, index) =>
                 transaction
                   .insert(OpencodeXSwarmRoleTable)
@@ -89,6 +98,7 @@ const updateUnlocked = Effect.fnUntraced(function* (swarmID: string, input: Upda
                     provider_id: role.providerID,
                     model_id: role.modelID,
                     variant: role.variant,
+                    fallback_models: serializeFallbackModels(role.fallbackModels),
                     model_profile: role.modelProfile,
                     status: "planned",
                     instructions: role.instructions,
@@ -181,6 +191,7 @@ const remove = Effect.fn("OpencodeXSwarm.remove")(function* (swarmID: string) {
 })
 
 const addRoleUnlocked = Effect.fnUntraced(function* (swarmID: string, input: AddRoleInput) {
+  input = { role: normalizeRole(input.role) }
   const swarm = yield* reader.get(swarmID)
   if (["queued", "running", "cancelling"].includes(swarm.status)) {
     return yield* new ValidationError({ message: "Wait for the active swarm run before adding a role." })
@@ -203,6 +214,7 @@ const addRoleUnlocked = Effect.fnUntraced(function* (swarmID: string, input: Add
               provider_id: input.role.providerID,
               model_id: input.role.modelID,
               variant: input.role.variant,
+              fallback_models: serializeFallbackModels(input.role.fallbackModels),
               model_profile: input.role.modelProfile,
               status: "planned",
               instructions: input.role.instructions,
@@ -238,12 +250,14 @@ const updateRoleUnlocked = Effect.fnUntraced(function* (
     return yield* new ValidationError({ message: "Wait for the active swarm run before editing a role." })
   }
   if (!swarm.roles.some((role) => role.id === roleID)) return yield* new RoleNotFoundError({ swarmID, roleID })
+  const current = swarm.roles.find((role) => role.id === roleID)!
+  const updated = normalizeRole({
+    ...current,
+    ...input,
+    fallbackModels: input.fallbackModels ?? current.fallbackModels,
+  })
   const invalid = validateRoles(
-    swarm.roles.map((role) =>
-      role.id === roleID
-        ? { ...role, name: input.name ?? role.name, instructions: input.instructions ?? role.instructions }
-        : role,
-    ),
+    swarm.roles.map((role) => (role.id === roleID ? updated : role)),
   )
   if (invalid) return yield* new ValidationError({ message: invalid })
   const afterCommit = yield* db
@@ -258,7 +272,9 @@ const updateRoleUnlocked = Effect.fnUntraced(function* (
               skill: input.skill,
               provider_id: input.providerID,
               model_id: input.modelID,
-              variant: input.variant,
+              variant: input.variant === undefined ? undefined : (updated.variant ?? null),
+              fallback_models:
+                input.fallbackModels === undefined ? undefined : serializeFallbackModels(updated.fallbackModels),
               model_profile: input.modelProfile,
               instructions: input.instructions,
               metadata_json: serializeMetadata(input.metadata),

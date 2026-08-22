@@ -48,7 +48,7 @@ describe("local coordinator database selection", () => {
     }))
     const server = Bun.serve({
       port: 0,
-      fetch: () => Response.json({ healthy: true }),
+      fetch: () => Response.json({ healthy: true, coordinatorKey: key }),
     })
     await Bun.write(path.join(tmp.path, `${key}.json`), JSON.stringify({
       version: 2,
@@ -65,6 +65,41 @@ describe("local coordinator database selection", () => {
 
     try {
       expect(await discoverActiveGuiCoordinatorDatabase(tmp.path)).toBe(coordinatorDatabaseIdentity(database))
+    } finally {
+      await server.stop(true)
+    }
+  })
+
+  test("ignores an active GUI manifest answered by another database", async () => {
+    await using tmp = await tmpdir()
+    const database = path.join(tmp.path, "gui.db")
+    const key = "gui-authority"
+    await Bun.write(database, "")
+    await Bun.write(path.join(tmp.path, `${key}.clients`, `${process.pid}.gui.json`), JSON.stringify({
+      version: 1,
+      key,
+      pid: process.pid,
+      updatedAt: Date.now(),
+    }))
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => Response.json({ healthy: true, coordinatorKey: "other-authority" }),
+    })
+    await Bun.write(path.join(tmp.path, `${key}.json`), JSON.stringify({
+      version: 2,
+      key,
+      directory: tmp.path,
+      database,
+      pid: process.pid,
+      url: server.url.href,
+      username: "gui",
+      password: "secret",
+      token: "token",
+      createdAt: new Date().toISOString(),
+    }))
+
+    try {
+      expect(await discoverActiveGuiCoordinatorDatabase(tmp.path)).toBeUndefined()
     } finally {
       await server.stop(true)
     }

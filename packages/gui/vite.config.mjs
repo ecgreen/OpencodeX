@@ -3,6 +3,27 @@ import solid from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 
 const rendererPort = Number(process.env.OPENCODEX_GUI_RENDERER_PORT ?? "5173")
+const backendOrigin = process.env.VITE_OPENCODEX_SERVER_URL
+  ? new URL(process.env.VITE_OPENCODEX_SERVER_URL).origin
+  : undefined
+const rendererCsp = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "media-src 'self' data:",
+  "worker-src 'self' blob:",
+  [
+    "connect-src 'self'",
+    "http://127.0.0.1:*",
+    "ws://127.0.0.1:*",
+    "http://localhost:*",
+    "ws://localhost:*",
+    ...(backendOrigin ? [backendOrigin] : []),
+    "data:",
+  ].join(" "),
+].join("; ")
 
 function rendererVendorChunk(id) {
   const path = id.replaceAll("\\", "/")
@@ -47,5 +68,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: rendererPort,
     strictPort: true,
+    headers: { "Content-Security-Policy": rendererCsp },
   },
+  preview: { headers: { "Content-Security-Policy": rendererCsp } },
 }))

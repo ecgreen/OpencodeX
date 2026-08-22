@@ -20,6 +20,7 @@ export const cliSubprocessSuites = [
   "test/cli/acp/skills.test.ts",
   "test/cli/help/help-snapshots.test.ts",
   "test/cli/run/run-process.test.ts",
+  "test/cli/serve/authority-attach.test.ts",
   "test/cli/serve/serve-process.test.ts",
   "test/cli/smokes/read-only.test.ts",
 ]

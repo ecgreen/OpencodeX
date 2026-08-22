@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit } from "effect"
+import { Deferred, Effect, Exit, Option } from "effect"
+import { SessionLegacy } from "@opencode-ai/core/session/legacy"
+import { EffectBridge } from "../../src/effect/bridge"
+import { ClaudeDelegate } from "../../src/opencodex/claude-delegate"
 import * as PromptSwarm from "../../src/session/prompt-swarm"
 import type { DelegationRecord } from "../../src/session/delegation-outcome"
 import { SessionID } from "../../src/session/schema"
@@ -26,7 +29,7 @@ describe("swarm role delegation prompt", () => {
       }),
     )
 
-    expect(report).toBe("done")
+    expect(report).toEqual({ ok: true, text: "done" })
     expect(prompts).toHaveLength(1)
     expect(prompts[0]).toBe(
       "You are the designer role. Review flows and states.\n\nPrefer boring layouts.\n\nReview the settings page.",
@@ -76,6 +79,91 @@ describe("swarm role delegation prompt", () => {
   })
 })
 
+describe("swarm role model fallback", () => {
+  test("tries configured models in order and stops on success", async () => {
+    const { runSwarmRole, models, prompts, loops, userMessages } = harness({
+      skills: {},
+      promptResults: [failure("insufficient_quota"), success("fallback worked")],
+    })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, {
+        roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })],
+      }),
+    )
+    expect(report).toEqual({ ok: true, text: "fallback worked" })
+    expect(models).toEqual(["anthropic/claude-sonnet-5", "openai/gpt-5"])
+    expect(prompts).toHaveLength(1)
+    expect(loops()).toBe(1)
+    expect(userMessages()).toBe(1)
+  })
+
+  test("stops on partial text and returns the primary failure", async () => {
+    const partial = failure("quota_exceeded")
+    partial.parts = [{ type: "text", text: "partial", synthetic: false }] as never
+    const { runSwarmRole, models } = harness({ skills: {}, promptResults: [partial, success("unused")] })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, { roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })] }),
+    )
+    expect(report).toEqual({ ok: false, reason: "errored" })
+    expect(models).toEqual(["anthropic/claude-sonnet-5"])
+  })
+
+  test("returns the final error after exhausting the ordered chain", async () => {
+    const { runSwarmRole, models } = harness({
+      skills: {},
+      promptResults: [failure("quota_exceeded"), failure("usage_limit_reached")],
+    })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, { roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })] }),
+    )
+    expect(report).toEqual({ ok: false, reason: "errored" })
+    expect(models).toHaveLength(2)
+  })
+
+  test("a prior tool part in the same persisted turn permanently blocks fallback", async () => {
+    const { runSwarmRole, models, prompts, loops, userMessages } = harness({
+      skills: {},
+      priorAssistantParts: [[{ type: "tool", state: { status: "completed" } }]],
+      promptResults: [failure("insufficient_quota"), success("must not run")],
+    })
+    const report = await Effect.runPromise(
+      run(runSwarmRole, { roles: [role({ name: "Specialist", skill: null, instructions: "", fallbacks: true })] }),
+    )
+    expect(report).toEqual({ ok: false, reason: "errored" })
+    expect(models).toEqual(["anthropic/claude-sonnet-5"])
+    expect(prompts).toHaveLength(1)
+    expect(loops()).toBe(0)
+    expect(userMessages()).toBe(1)
+  })
+})
+
+describe("swarm role delegation validation", () => {
+  test("rejects an unknown role without creating or stamping child work", async () => {
+    const { runSwarmRole, prompts, stamps } = harness({ skills: {} })
+
+    expect(await Effect.runPromise(run(runSwarmRole, { role: "Unknown" }))).toEqual({
+      ok: false,
+      reason: "rejected",
+    })
+    expect(prompts).toHaveLength(0)
+    expect(stamps).toHaveLength(0)
+  })
+
+  test.each([
+    ["provider", role({ name: "Specialist", skill: null, instructions: "", providerID: null })],
+    ["model", role({ name: "Specialist", skill: null, instructions: "", modelID: null })],
+  ])("rejects a role missing its %s configuration", async (_field, configuredRole) => {
+    const { runSwarmRole, prompts, stamps } = harness({ skills: {} })
+
+    expect(await Effect.runPromise(run(runSwarmRole, { roles: [configuredRole] }))).toEqual({
+      ok: false,
+      reason: "rejected",
+    })
+    expect(prompts).toHaveLength(0)
+    expect(stamps).toHaveLength(0)
+  })
+})
+
 /**
  * The stamp is the graph's only witness to how a role run ended, so every
  * exit shape must settle it: assistant error, typed failure, defect, and
@@ -92,8 +180,64 @@ describe("swarm role delegation stamping", () => {
     })
 
     const report = await Effect.runPromise(run(runSwarmRole))
-    expect(report).toContain('Role "Specialist" failed')
+    expect(report).toEqual({ ok: false, reason: "errored" })
     expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "errored" } })
+  })
+
+  test("synthetic-only output becomes a structured error", async () => {
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.succeed({
+        info: { role: "assistant", error: undefined },
+        parts: [{ type: "text", text: "generated placeholder", synthetic: true }],
+      }),
+    })
+
+    expect(await Effect.runPromise(run(runSwarmRole))).toEqual({ ok: false, reason: "empty-output" })
+    expect(stamps[1]).toMatchObject({
+      record: {
+        phase: "settled",
+        outcome: "errored",
+        summary: "The delegated role completed without a usable report.",
+      },
+    })
+  })
+
+  test("literal empty and whitespace output becomes a structured error", async () => {
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.succeed({
+        info: { role: "assistant", error: undefined },
+        parts: [
+          { type: "text", text: "", synthetic: false },
+          { type: "text", text: "  \n\t", synthetic: false },
+        ],
+      }),
+    })
+
+    expect(await Effect.runPromise(run(runSwarmRole))).toEqual({ ok: false, reason: "empty-output" })
+    expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "errored" } })
+  })
+
+  test("assistant errors expose and persist only a generic message", async () => {
+    const secret = "sk-live-provider-secret"
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.succeed({
+        info: {
+          role: "assistant",
+          error: { data: { message: `provider failed with ${secret}` } },
+        },
+        parts: [],
+      }),
+    })
+
+    const result = await Effect.runPromise(run(runSwarmRole))
+    expect(result).toEqual({ ok: false, reason: "errored" })
+    expect(stamps[1]).toMatchObject({
+      record: { phase: "settled", outcome: "errored", summary: "The delegated role failed." },
+    })
+    expect(JSON.stringify({ result, stamp: stamps[1] })).not.toContain(secret)
   })
 
   test("a typed prompt failure settles the run as errored and still dies", async () => {
@@ -129,6 +273,63 @@ describe("swarm role delegation stamping", () => {
     expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "cancelled" } })
   })
 
+  test("request abort waits for the cancelled stamp before resolving", async () => {
+    const ready = await Effect.runPromise(Deferred.make<void>())
+    const controller = new AbortController()
+    const { runSwarmRole, stamps } = harness({
+      skills: {},
+      promptResult: Effect.gen(function* () {
+        yield* Deferred.succeed(ready, undefined)
+        return yield* Effect.never
+      }),
+    })
+    const capability = ClaudeDelegate.capability(await Effect.runPromise(EffectBridge.make()), {
+      roles: [{ name: "Specialist" }],
+      run: (input) =>
+        runSwarmRole({
+          sessionID: SessionID.make("ses_parent"),
+          swarmID: "swm_1",
+          roles: [role({ name: "Specialist", skill: null, instructions: "" })],
+          role: input.role,
+          prompt: input.prompt,
+        }),
+    })
+
+    const callback = capability.run({ role: "Specialist", prompt: "Do the task.", signal: controller.signal })
+    await Effect.runPromise(Deferred.await(ready))
+    controller.abort()
+
+    expect(await callback).toEqual({ ok: false, reason: "cancelled" })
+    expect(stamps[1]).toMatchObject({ record: { phase: "settled", outcome: "cancelled" } })
+  })
+
+  test("pre-aborted capability does not create child work, finalizers, or stamps", async () => {
+    const controller = new AbortController()
+    const events: string[] = []
+    controller.abort()
+    const { runSwarmRole, prompts, stamps } = harness({ skills: {} })
+    const capability = ClaudeDelegate.capability(await Effect.runPromise(EffectBridge.make()), {
+      roles: [{ name: "Specialist" }],
+      run: (input) => {
+        events.push("created")
+        return runSwarmRole({
+          sessionID: SessionID.make("ses_parent"),
+          swarmID: "swm_1",
+          roles: [role({ name: "Specialist", skill: null, instructions: "" })],
+          role: input.role,
+          prompt: input.prompt,
+        }).pipe(Effect.ensuring(Effect.sync(() => events.push("finalized"))))
+      },
+    })
+
+    expect(
+      await capability.run({ role: "Specialist", prompt: "Do the task.", signal: controller.signal }),
+    ).toEqual({ ok: false, reason: "cancelled" })
+    expect(events).toEqual([])
+    expect(prompts).toHaveLength(0)
+    expect(stamps).toHaveLength(0)
+  })
+
   test("a failure before the prompt begins still settles the created child", async () => {
     const { runSwarmRole, prompts, stamps } = harness({
       skills: {},
@@ -145,28 +346,117 @@ describe("swarm role delegation stamping", () => {
   })
 })
 
+/**
+ * The GUI's transcript link reads `metadata.sessionId` off the parent's tool
+ * part - the same stamp the native task tool writes. Without it a delegation
+ * row is a dead end: the child session exists in the graph but nothing on the
+ * orchestrator's transcript points at it.
+ */
+describe("swarm role delegation drill-down", () => {
+  test("stamps the child session onto the orchestrator's own tool part", async () => {
+    const { runSwarmRole, parts } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_1" })],
+    })
+
+    await Effect.runPromise(run(runSwarmRole, { toolUseID: "toolu_1" }))
+
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toMatchObject({
+      id: "prt_1",
+      callID: "toolu_1",
+      state: {
+        status: "running",
+        // Preserved alongside the stamp, not replaced by it.
+        metadata: { seen: true, parentSessionId: "ses_parent", sessionId: "ses_child", swarmRole: "Specialist" },
+      },
+    })
+  })
+
+  test("stamps before the role's prompt runs, so a running delegation already links", async () => {
+    const order: string[] = []
+    const { runSwarmRole } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_1" })],
+      onUpdatePart: () => order.push("stamp"),
+      onPrompt: () => order.push("prompt"),
+    })
+
+    await Effect.runPromise(run(runSwarmRole, { toolUseID: "toolu_1" }))
+
+    expect(order).toEqual(["stamp", "prompt"])
+  })
+
+  test("delegates unstamped rather than failing when the call cannot be found", async () => {
+    const { runSwarmRole, parts, prompts } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_other" })],
+    })
+
+    const report = await Effect.runPromise(run(runSwarmRole, { toolUseID: "toolu_1" }))
+
+    expect(report).toEqual({ ok: true, text: "done" })
+    expect(prompts).toHaveLength(1)
+    expect(parts).toHaveLength(0)
+  })
+
+  test("leaves the part alone when the driver could not correlate a call id", async () => {
+    const { runSwarmRole, parts } = harness({
+      skills: {},
+      parentParts: [toolPart({ id: "prt_1", callID: "toolu_1" })],
+    })
+
+    await Effect.runPromise(run(runSwarmRole))
+
+    expect(parts).toHaveLength(0)
+  })
+})
+
+function toolPart(input: { id: string; callID: string }) {
+  return {
+    id: input.id,
+    sessionID: "ses_parent",
+    messageID: "msg_1",
+    type: "tool",
+    callID: input.callID,
+    tool: "task",
+    state: { status: "running", input: { role: "Specialist", prompt: "Do the task." }, metadata: { seen: true } },
+  }
+}
+
 function run(
   runSwarmRole: ReturnType<typeof PromptSwarm.make>["runSwarmRole"],
-  overrides: { roles?: PromptSwarm.SwarmRoleRow[] } = {},
+  overrides: { roles?: PromptSwarm.SwarmRoleRow[]; role?: string; toolUseID?: string } = {},
 ) {
   return runSwarmRole({
     sessionID: SessionID.make("ses_parent"),
     swarmID: "swm_1",
     roles: overrides.roles ?? [role({ name: "Specialist", skill: null, instructions: "" })],
-    role: "Specialist",
+    role: overrides.role ?? "Specialist",
     prompt: "Do the task.",
+    ...(overrides.toolUseID ? { toolUseID: overrides.toolUseID } : {}),
   })
 }
 
-function role(input: { name: string; skill: string | null; instructions: string }): PromptSwarm.SwarmRoleRow {
+function role(input: {
+  name: string
+  skill: string | null
+  instructions: string
+  providerID?: string | null
+  modelID?: string | null
+  fallbacks?: boolean
+}): PromptSwarm.SwarmRoleRow {
   return {
     name: input.name,
     agent: null,
     skill: input.skill,
     instructions: input.instructions,
-    provider_id: "anthropic",
-    model_id: "claude-sonnet-5",
+    provider_id: input.providerID === undefined ? "anthropic" : input.providerID,
+    model_id: input.modelID === undefined ? "claude-sonnet-5" : input.modelID,
     variant: null,
+    fallback_models: input.fallbacks
+      ? JSON.stringify([{ providerID: "openai", modelID: "gpt-5" }])
+      : "[]",
   }
 }
 
@@ -178,21 +468,55 @@ function harness(input: {
   skills: Record<string, string>
   /** Overrides what the child prompt resolves to, for exit-shape tests. */
   promptResult?: Effect.Effect<unknown, unknown>
+  promptResults?: SessionLegacy.WithParts[]
+  priorAssistantParts?: Array<Array<Record<string, unknown>>>
   /** Overrides the skill lookup, for pre-prompt failure tests. */
   skillFailure?: Effect.Effect<never>
+  /** The parent transcript the delegate call's tool part is looked up in. */
+  parentParts?: Array<Record<string, unknown>>
+  onUpdatePart?: () => void
+  onPrompt?: () => void
 }) {
   const prompts: string[] = []
+  const models: string[] = []
   const stamps: Array<{ record: DelegationRecord; expectRunID?: string }> = []
+  const parts: Array<Record<string, unknown>> = []
+  const parentMessage = { info: { id: "msg_1", role: "assistant" }, parts: input.parentParts ?? [] }
+  const turn: SessionLegacy.WithParts[] = []
+  let loopCount = 0
+  const record = (result: SessionLegacy.WithParts, parentID: string) => {
+    const message = {
+      ...result,
+      info: { ...result.info, id: `msg_assistant_${turn.length}`, parentID },
+    } as SessionLegacy.WithParts
+    turn.push(message)
+    return message
+  }
   const deps = {
     claudeDriver: {} as never,
     database: {} as never,
     sessions: {
       get: () => Effect.succeed({ permission: undefined, metadata: { opencodex: { swarmID: "swm_1" } } }),
       create: () => Effect.succeed({ id: "ses_child" }),
+      messageWithChildren: () => Effect.succeed([...turn]),
+      updateMessage: (message: SessionLegacy.Info) => {
+        const index = turn.findIndex((item) => item.info.id === message.id)
+        if (index >= 0) turn[index] = { ...turn[index]!, info: message }
+        if (message.role === "user") models.push(`${message.model.providerID}/${message.model.modelID}`)
+        return Effect.succeed(message)
+      },
       stampDelegation: (write: { sessionID: string; record: DelegationRecord; expectRunID?: string }) => {
         stamps.push({ record: write.record, ...(write.expectRunID ? { expectRunID: write.expectRunID } : {}) })
         return Effect.succeed(true)
       },
+      findMessage: (_sessionID: string, predicate: (message: typeof parentMessage) => boolean) =>
+        Effect.succeed(predicate(parentMessage) ? Option.some(parentMessage) : Option.none()),
+      updatePart: (part: Record<string, unknown>) =>
+        Effect.sync(() => {
+          input.onUpdatePart?.()
+          parts.push(part)
+          return part
+        }),
     } as never,
     skills: {
       get: (name: string) =>
@@ -203,16 +527,55 @@ function harness(input: {
             : undefined,
         ),
     } as never,
-    prompt: (promptInput: { parts: Array<{ type: string; text?: string }> }) => {
-      if (input.promptResult) return input.promptResult
+    prompt: (promptInput: { messageID?: string; model?: { providerID: string; modelID: string }; parts: Array<{ type: string; text?: string }> }) => {
+      input.onPrompt?.()
+      if (promptInput.model) models.push(`${promptInput.model.providerID}/${promptInput.model.modelID}`)
+      const messageID = promptInput.messageID ?? "msg_user"
+      turn.push({
+        info: { id: messageID, role: "user", model: promptInput.model },
+        parts: promptInput.parts,
+      } as unknown as SessionLegacy.WithParts)
       const text = promptInput.parts.flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n")
       prompts.push(text)
+      for (const parts of input.priorAssistantParts ?? []) record(failure("insufficient_quota", parts), messageID)
+      if (input.promptResults?.length) return Effect.succeed(record(input.promptResults.shift()!, messageID))
+      if (input.promptResult) return input.promptResult
       return Effect.succeed({
         info: { role: "assistant", error: undefined },
         parts: [{ type: "text", text: "done", synthetic: false }],
       })
     },
+    loop: (loopInput: { messageID?: string }) => {
+      loopCount++
+      return Effect.succeed(record(input.promptResults?.shift() ?? success("done"), loopInput.messageID ?? "msg_user"))
+    },
   }
   const { runSwarmRole } = PromptSwarm.make(deps as never)
-  return { runSwarmRole, prompts, stamps }
+  return {
+    runSwarmRole,
+    prompts,
+    models,
+    stamps,
+    parts,
+    loops: () => loopCount,
+    userMessages: () => turn.filter((message) => message.info.role === "user").length,
+  }
+}
+
+function failure(code: string, parts: Array<Record<string, unknown>> = []): SessionLegacy.WithParts {
+  return {
+    info: {
+      role: "assistant",
+      error: new SessionLegacy.APIError({
+        message: "request failed",
+        responseBody: JSON.stringify({ error: { code } }),
+        isRetryable: false,
+      }),
+    },
+    parts,
+  } as unknown as SessionLegacy.WithParts
+}
+
+function success(text: string): SessionLegacy.WithParts {
+  return { info: { role: "assistant", error: undefined }, parts: [{ type: "text", text, synthetic: false }] } as SessionLegacy.WithParts
 }

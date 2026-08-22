@@ -126,7 +126,7 @@ export function metadataWithPendingSessions(
   metadata: Record<string, unknown> | undefined,
   pending: PendingViewSession[],
 ) {
-  const next = { ...(metadata ?? {}) }
+  const next = { ...metadata }
   const opencodex = isRecord(next.opencodex) ? { ...next.opencodex } : {}
   if (pending.length) {
     opencodex.pendingSessions = pending
@@ -175,13 +175,40 @@ function toolTitle(part: Extract<SyncPart, { type: "tool" }>) {
     const count = Array.isArray(input.todos) ? input.todos.length : 0
     return count ? `Todo update: ${count} item${count === 1 ? "" : "s"}` : stateTitle || "Todo update"
   }
-  if (part.tool === "task") return value("description") ? `Task: ${value("description")}` : stateTitle || "Task"
+  if (part.tool === "task") return taskToolTitle(value) || stateTitle || "Task"
   if (part.tool === "skill") return value("name") ? `Loaded skill: ${value("name")}` : stateTitle || "Loaded skill"
   if (part.tool === "question") return questionTitle(input) || stateTitle || "Question"
   if (part.tool === "webfetch") return value("url") ? `Fetch: ${value("url")}` : stateTitle || "Web fetch"
   if (part.tool === "websearch") return value("query") ? `Web search: ${value("query")}` : stateTitle || "Web search"
   if (part.tool === "list") return value("path") ? `List: ${compactPath(value("path"))}` : stateTitle || "List files"
   return stateTitle || `${part.tool} ${Object.values(input).map(stringValue).find(Boolean) ?? ""}`.trim()
+}
+
+/** The longest a delegated prompt's opening line may run inside a title. */
+const TASK_PROMPT_TITLE_LENGTH = 60
+
+/**
+ * Native task calls carry `{subagent_type, description}`. The swarm delegation
+ * tool normalizes onto `task` too (claude-mapper.ts) but carries `{role,
+ * prompt}` - which read as a bare "Task" until the role and prompt were given
+ * their own shape.
+ */
+function taskToolTitle(value: (name: string) => string) {
+  const role = value("role")
+  if (role && !value("description"))
+    return `Task ${role}: ${truncateViewText(firstLine(value("prompt")), TASK_PROMPT_TITLE_LENGTH) || "delegation"}`
+  return value("description") ? `Task: ${value("description")}` : ""
+}
+
+/** The opening non-empty line of a multi-line value, collapsed to one row. */
+function firstLine(value: string) {
+  return (
+    value
+      .split("\n")
+      .find((candidate) => candidate.trim())
+      ?.replace(/\s+/g, " ")
+      .trim() ?? ""
+  )
 }
 
 function questionTitle(input: Record<string, unknown>) {

@@ -9,6 +9,7 @@ import {
 import type { SwarmRoleTemplate } from "../lib/swarm-role-templates"
 import { Icon } from "./icon"
 import { Button, IconButton, Select, TextArea, TextInput } from "./ui"
+import { SwarmRoleFallbackModels } from "./swarm-role-fallback-models"
 
 type SkillChoice = { id: string; label: string }
 
@@ -31,6 +32,7 @@ export function SwarmEditorTeam(props: {
   editTemplate: (template: SwarmRoleTemplate) => void
   saveRoleAsTemplate: (index: number) => void
   openModelPicker: (index: number) => void
+  openFallbackModelPicker: (index: number, fallbackIndex: number | "new") => void
 }) {
   const selected = createMemo(() => props.roles[props.selectedIndex])
   // One array per state: Kobalte's Select requires `current` to be an element
@@ -201,7 +203,7 @@ export function SwarmEditorTeam(props: {
                 onSelect={(choice) => choice && choice.id !== role().skill && updateSkill(props.selectedIndex, choice.id)}
               />
               <div class="swarm-role-model">
-                <span>Model</span>
+                <span>Primary model</span>
                 <Button
                   appearance="ghost"
                   class="swarm-model-button"
@@ -239,6 +241,19 @@ export function SwarmEditorTeam(props: {
                   <small class="swarm-model-warning">Provider not connected - prompts will fail until credentials are added.</small>
                 </Show>
               </div>
+              <Show when={props.selectedIndex > 0}>
+                <SwarmRoleFallbackModels
+                  role={role()}
+                  providers={props.providers}
+                  connectedProviderIDs={props.connectedProviderIDs}
+                  update={(fallbackModels) =>
+                    props.update(props.selectedIndex, (current) => ({ ...current, fallbackModels }))
+                  }
+                  openModelPicker={(fallbackIndex) =>
+                    props.openFallbackModelPicker(props.selectedIndex, fallbackIndex)
+                  }
+                />
+              </Show>
               <label class="swarm-role-instructions">
                 <span>Instructions <em>optional</em></span>
                 <TextArea

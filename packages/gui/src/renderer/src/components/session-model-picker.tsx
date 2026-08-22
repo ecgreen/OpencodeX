@@ -5,7 +5,7 @@ import { providerSectionExpanded, providerSectionLimit } from "../lib/model-pick
 import { isFreeOpencodeModel, modelValue } from "../lib/model-selection"
 import { Icon } from "./icon"
 import { ModalFrame } from "./modal-frame"
-import { Button, TextInput } from "./ui"
+import { Button, InlineNotice, TextInput } from "./ui"
 
 export type ModelPickerProviderGroup = { provider: Provider; models: Provider["models"][string][] }
 export type ModelPickerSwarmOption = { id: string; title: string; roleCount: number }
@@ -15,6 +15,7 @@ export function SessionModelPicker(props: {
   searching: boolean
   favorites: string[]
   selectedModel: string
+  error?: string
   swarmOptions: ModelPickerSwarmOption[]
   favoriteOptions: ModelPickerOption[]
   recentOptions: ModelPickerOption[]
@@ -49,6 +50,7 @@ export function SessionModelPicker(props: {
     >
       <>
         <TextInput value={props.query} onInput={(event) => props.setQuery(event.currentTarget.value)} placeholder="Search models, providers, or swarms" autofocus />
+        <Show when={props.error}>{(error) => <InlineNotice tone="danger">{error()}</InlineNotice>}</Show>
         <div class="model-picker-list">
           <Show when={props.swarmOptions.length > 0}>
             <section class="model-picker-section model-picker-swarms">

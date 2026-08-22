@@ -21,6 +21,7 @@ import { resetDatabase } from "../fixture/db"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer } from "./httpapi-layer"
 import { makeReader as makeSessionCardReader, MAX_RETAINED_IDS } from "../../src/opencodex/session-card"
+import { AUTHORITY_EPOCH } from "../../src/opencodex/state-epoch"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const it = testEffect(
@@ -116,7 +117,7 @@ describe("OpencodeX state HTTP API", () => {
           }),
         ]),
       )
-      expect(responses.map((response) => response.status).toSorted()).toEqual([200, 200, 409])
+      expect(responses.map((response) => response.status).toSorted((a, b) => a - b)).toEqual([200, 200, 409])
       const snapshot = record(
         yield* Effect.promise(() =>
           request("/experimental/opencodex/state").then((response) => response.json()),
@@ -170,7 +171,7 @@ describe("OpencodeX state HTTP API", () => {
           ),
         ),
       )
-      expect(responses.map((response) => response.status).toSorted()).toEqual([200, 409])
+      expect(responses.map((response) => response.status).toSorted((a, b) => a - b)).toEqual([200, 409])
       const successful = responses.find((response) => response.ok)
       if (!successful) return yield* Effect.die(new Error("Concurrent view update had no winner"))
       const winner = record(yield* Effect.promise(() => successful.json()))
@@ -274,6 +275,7 @@ describe("OpencodeX state HTTP API", () => {
         ),
       )
       expect(record(snapshot.scope).directory).toBe(firstDirectory)
+      expect(snapshot.epoch).toBe(AUTHORITY_EPOCH)
       expect(typeof record(snapshot.scope).projectID).toBe("string")
       expect(typeof snapshot.cursor).toBe("string")
       expect(typeof record(record(snapshot.domains).catalog).digest).toBe("string")
@@ -317,6 +319,7 @@ describe("OpencodeX state HTTP API", () => {
         ),
       )
       expect(capabilities.scope).toEqual(snapshot.scope)
+      expect(capabilities.epoch).toBe(AUTHORITY_EPOCH)
       expect(capabilities.revision).toBe(capabilities.digest)
       expect(typeof capabilities.revision).toBe("string")
       expect(Array.isArray(record(record(capabilities.payload).provider).all)).toBe(true)
@@ -336,6 +339,7 @@ describe("OpencodeX state HTTP API", () => {
         ),
       )
       expect(record(session.session).id).toBe(sessionID)
+      expect(session.epoch).toBe(AUTHORITY_EPOCH)
       expect(Array.isArray(record(session.messages).items)).toBe(true)
       expect(record(session.messages).coverage).toEqual({})
       expect(typeof record(record(session.messages).boundary).hasMore).toBe("boolean")
@@ -379,6 +383,7 @@ describe("OpencodeX state HTTP API", () => {
       yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()))
       const ready = record(yield* Effect.promise(() => events.next()))
       expect(ready.type).toBe("ready")
+      expect(ready.epoch).toBe(AUTHORITY_EPOCH)
 
       yield* Effect.promise(() =>
         request(firstDirectory, `/session/${sessionID}`, {
@@ -388,6 +393,7 @@ describe("OpencodeX state HTTP API", () => {
       )
       const live = record(yield* Effect.promise(() => events.next()))
       expect(live.type).toBe("event")
+      expect(record(live.event).epoch).toBe(AUTHORITY_EPOCH)
       expect(record(live.event).scope).toEqual(snapshot.scope)
       expect(record(live.event).domain).toBe("catalog")
       expect(record(record(live.event).payload).aggregateID).toBe(sessionID)

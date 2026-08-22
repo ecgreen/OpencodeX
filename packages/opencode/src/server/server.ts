@@ -36,6 +36,12 @@ type ListenOptions = CorsOptions & {
   hostname: string
   mdns?: boolean
   mdnsDomain?: string
+  /**
+   * Internal: when `port` is 0, prefer 4096 before falling back to an
+   * OS-assigned port (legacy behavior). Disabled for companion listeners that
+   * should take a quiet ephemeral port instead of shadowing 4096.
+   */
+  prefer4096?: boolean
 }
 type ListenerState = {
   scope: Scope.Scope
@@ -70,10 +76,33 @@ export async function openapi() {
   return OpenApi.fromApi(PublicApi)
 }
 
+// The URL of the primary listener started in this process. Kept in sync for
+// legacy consumers (`plugin/index.ts`) that read it without getting a handle.
 export let url: URL
 
 export async function listen(opts: ListenOptions): Promise<Listener> {
   const listener = await Effect.runPromise(listenEffect(opts))
+  return toListenerHandle(listener)
+}
+
+/**
+ * Starts several HTTP listeners that share one application state — a single
+ * event bus, one database layer, one WebSocket tracker — instead of the
+ * per-listener memo map `listen` uses. Serving the same app through two
+ * sockets from one process (e.g. a LAN endpoint alongside a loopback
+ * companion) must expose the same in-process bus or subscribers on each
+ * endpoint would silently see different events.
+ *
+ * All listeners close together: they share one scope, and stopping any of them
+ * closes it (application disposal runs once). Call the handles' `stop` in the
+ * same order as the return value if ordering matters on shutdown.
+ */
+export async function listenShared(optsList: ListenOptions[]): Promise<Listener[]> {
+  const listeners = await Effect.runPromise(listenSharedEffect(optsList))
+  return listeners.map(toListenerHandle)
+}
+
+function toListenerHandle(listener: EffectListener): Listener {
   return {
     hostname: listener.hostname,
     port: listener.port,
@@ -100,8 +129,44 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
   },
 )
 
-function listenerLayer(opts: ListenOptions, port: number) {
-  return HttpRouter.serve(HttpApiApp.createRoutes(opts), {
+function listenSharedEffect(optsList: ListenOptions[]): Effect.Effect<Array<EffectListener>, unknown> {
+  if (optsList.length === 0) return Effect.succeed([])
+  // A single scope plus a single app layer means every socket serves the same
+  // application build: one event bus, one database layer, one WebSocket
+  // tracker. Failing to share them would give loopback and LAN subscribers
+  // process-local buses that see different events.
+  const scope = Scope.makeUnsafe()
+  const memoMap = Layer.makeMemoMapUnsafe()
+  // CORS comes from the first listener; the loopback companion is used by
+  // local clients and does not need its own origin policy.
+  const sharedApp = HttpApiApp.createRoutes(optsList[0])
+  return Effect.gen(function* () {
+    const listeners: EffectListener[] = []
+    for (const opts of optsList) {
+      const state = yield* startInSharedScope(opts, memoMap, scope, sharedApp)
+      const address = yield* tcpAddress(state)
+      const listenerUrl = makeURL(opts.hostname, address.port)
+      // The legacy `Server.url` points at the primary (first) listener. A
+      // companion socket is a second bind for the same authority, not a URL
+      // legacy consumers should attach to.
+      if (listeners.length === 0) url = listenerUrl
+      const unpublishMdns = yield* setupMdns(opts, address.port, scope)
+      listeners.push({
+        hostname: opts.hostname,
+        port: address.port,
+        url: listenerUrl,
+        stop: yield* makeStop(state, unpublishMdns),
+      })
+    }
+    return listeners
+  }).pipe(
+    Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
+    Effect.withSpan("Server.listenShared.build"),
+  )
+}
+
+function listenerLayer(opts: ListenOptions, port: number, app?: ReturnType<typeof HttpApiApp.createRoutes>) {
+  return HttpRouter.serve(app ?? HttpApiApp.createRoutes(opts), {
     middleware: disposeMiddleware,
     disableLogger: true,
     disableListenLog: true,
@@ -118,17 +183,57 @@ function listenerLayer(opts: ListenOptions, port: number) {
 }
 
 function startWithPortFallback(opts: ListenOptions) {
-  if (opts.port !== 0) return startListener(opts, opts.port)
-  // Match the legacy listener port-resolution behavior: explicit `0` prefers
-  // 4096 first, then any free port.
-  return startListener(opts, 4096).pipe(Effect.catch(() => startListener(opts, 0)))
+  const scope = Scope.makeUnsafe()
+  const memoMap = Layer.makeMemoMapUnsafe()
+  return startWithPortFallbackIn(opts, memoMap, scope).pipe(
+    Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
+  )
 }
 
-function startListener(opts: ListenOptions, port: number) {
-  const scope = Scope.makeUnsafe()
-  return Layer.buildWithMemoMap(listenerLayer(opts, port), Layer.makeMemoMapUnsafe(), scope).pipe(
+function startWithPortFallbackIn(
+  opts: ListenOptions,
+  memoMap: Layer.MemoMap,
+  scope: Scope.Scope,
+  app?: ReturnType<typeof HttpApiApp.createRoutes>,
+) {
+  // Both attempts run on the caller's scope, so neither may close it on its own
+  // failure; the caller owns scope cleanup when every attempt fails.
+  if (opts.port !== 0) return startListenerIn(opts, opts.port, memoMap, scope, app)
+  if (opts.prefer4096 === false) return startListenerIn(opts, 0, memoMap, scope, app)
+  // Match the legacy listener port-resolution behavior: explicit `0` prefers
+  // 4096 first, then any free port.
+  return startListenerIn(opts, 4096, memoMap, scope, app).pipe(
+    Effect.catch(() => startListenerIn(opts, 0, memoMap, scope, app)),
+  )
+}
+
+function startInSharedScope(
+  opts: ListenOptions,
+  memoMap: Layer.MemoMap,
+  scope: Scope.Scope,
+  app: ReturnType<typeof HttpApiApp.createRoutes>,
+) {
+  if (opts.port !== 0) return startListenerIn(opts, opts.port, memoMap, scope, app)
+  if (opts.prefer4096 === false) return startListenerIn(opts, 0, memoMap, scope, app)
+  // Try the legacy 4096 preference first. A failed attempt must NOT close the
+  // shared scope (that would tear down peers built into it), so the retry runs
+  // on the same scope and only the builder's own outer error path closes it.
+  return startListenerIn(opts, 4096, memoMap, scope, app).pipe(
+    Effect.catch(() => startListenerIn(opts, 0, memoMap, scope, app)),
+  )
+}
+
+function startListenerIn(
+  opts: ListenOptions,
+  port: number,
+  memoMap: Layer.MemoMap,
+  scope: Scope.Scope,
+  app?: ReturnType<typeof HttpApiApp.createRoutes>,
+) {
+  // Does not close `scope` on failure: callers reuse the scope across the
+  // port-fallback retry or share it between listeners, so they own cleanup.
+  return Layer.buildWithMemoMap(listenerLayer(opts, port, app), memoMap, scope).pipe(
     Effect.provide(HttpApiApp.context),
-    Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
     Effect.map(
       (ctx): ListenerState => ({
         scope,

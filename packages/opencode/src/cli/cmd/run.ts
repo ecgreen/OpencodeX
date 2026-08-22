@@ -2,8 +2,9 @@
 //
 // Non-interactive only: sends a single prompt (or slash command) to a session,
 // streams the resulting events to stdout, and exits when the session goes idle.
-// By default the prompt runs against an in-process server; `--attach` targets a
-// running opencode server instead.
+// By default the prompt attaches to an existing authority (the TUI coordinator,
+// the GUI sidecar, or `opencode serve`) and only falls back to an in-process
+// server when none is available; `--attach` targets a specific running server.
 //
 // Also supports `--command` for slash-command execution, `--format json` for
 // raw event streaming, `--continue` / `--session` for session resumption,
@@ -13,7 +14,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect } from "effect"
 import { UI } from "../ui"
-import { effectCmd } from "../effect-cmd"
+import { CliError, effectCmd } from "../effect-cmd"
 import { ServerAuth } from "@/server/auth"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
@@ -22,6 +23,13 @@ import { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { InstanceRef } from "@/effect/instance-ref"
 import { FormatError, FormatUnknownError } from "../error"
+import {
+  acquirePreferredCoordinatorAccess,
+  coordinatorHeaders,
+  readPreferredCoordinator,
+  startCoordinatorClientLease,
+} from "./tui/coordinator-registry"
+import { createCoordinatorTransport } from "./tui/coordinator-transport"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -301,7 +309,7 @@ export const RunCommand = effectCmd({
       ]
 
       function title() {
-        if (args.title === undefined) return
+        if (args.title === undefined) return undefined
         if (args.title !== "") return args.title
         return message.slice(0, 50) + (message.length > 50 ? "..." : "")
       }
@@ -325,7 +333,7 @@ export const RunCommand = effectCmd({
             })
             const id = forked.data?.id
             if (!id) {
-              return
+              return undefined
             }
 
             return {
@@ -350,7 +358,7 @@ export const RunCommand = effectCmd({
           })
           const id = forked.data?.id
           if (!id) {
-            return
+            return undefined
           }
 
           return {
@@ -375,7 +383,7 @@ export const RunCommand = effectCmd({
         })
         const id = result.data?.id
         if (!id) {
-          return
+          return undefined
         }
 
         return {
@@ -441,7 +449,7 @@ export const RunCommand = effectCmd({
           UI.println(
             UI.Style.TEXT_WARNING_BOLD + "!",
             UI.Style.TEXT_NORMAL,
-            `failed to list agents from ${args.attach}. Falling back to default agent`,
+            `failed to list agents from ${args.attach ?? "the local authority"}. Falling back to default agent`,
           )
           return undefined
         }
@@ -468,16 +476,16 @@ export const RunCommand = effectCmd({
         return name
       }
 
-      async function pickAgent(sdk: OpencodeClient) {
+      async function pickAgent(sdk: OpencodeClient, remote = false) {
         if (!args.agent) return undefined
-        if (args.attach) {
+        if (args.attach || remote) {
           return attachAgent(sdk)
         }
 
         return localAgent()
       }
 
-      async function execute(sdk: OpencodeClient) {
+      async function execute(sdk: OpencodeClient, remote = false) {
         const sess = await session(sdk)
         if (!sess?.id) {
           UI.error("Session not found")
@@ -586,13 +594,12 @@ export const RunCommand = effectCmd({
             if (event.type === "session.error") {
               const props = event.properties
               if (props.sessionID !== sessionID || !props.error) continue
-              let err = String(props.error.name)
+              let err: string = props.error.name
               if ("data" in props.error && props.error.data && "message" in props.error.data) {
                 err = String(props.error.data.message)
               }
               error = error ? error + EOL + err : err
               if (emit("error", { error: props.error })) continue
-              UI.error(err)
             }
 
             if (
@@ -631,56 +638,118 @@ export const RunCommand = effectCmd({
         const client = args.attach ? attachSDK(cwd) : sdk
 
         // Validate agent if specified
-        const agent = await pickAgent(client)
+        const agent = await pickAgent(client, remote)
 
-        const events = await client.event.subscribe()
-        const completed = loop(client, events).catch((e) => {
-          console.error(e)
+        const eventController = new AbortController()
+        const events = await client.event.subscribe(undefined, { signal: eventController.signal })
+        const completed = loop(client, events).catch((error) => {
+          if (eventController.signal.aborted) return
+          console.error(error)
           process.exitCode = 1
         })
+
+        async function cancelEventLoop() {
+          eventController.abort()
+          await completed
+        }
+
         async function finish() {
-          if (args.attach) return
           const error = await completed
-          if (error) process.exitCode = 1
+          if (error) throw new CliError({ message: error })
         }
 
         if (args.command) {
-          const result = await client.session.command({
-            sessionID,
-            agent,
-            model: args.model,
-            command: args.command,
-            arguments: message,
-            variant: args.variant,
-          })
+          const result = await client.session
+            .command({
+              sessionID,
+              agent,
+              model: args.model,
+              command: args.command,
+              arguments: message,
+              variant: args.variant,
+            })
+            .catch(async (error) => {
+              await cancelEventLoop()
+              throw error
+            })
           if (result.error) {
+            await cancelEventLoop()
             if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
             process.exitCode = 1
             return
           }
           await finish()
-          return
+          const responseError = result.data?.info.error
+          if (!responseError) return
+          if (args.format === "json") emit("error", { error: responseError })
+          throw new CliError({ message: formatRunError(responseError) })
         }
 
         const model = pick(args.model)
-        const result = await client.session.prompt({
-          sessionID,
-          agent,
-          model,
-          variant: args.variant,
-          parts: [...files, { type: "text", text: message }],
-        })
+        const result = await client.session
+          .prompt({
+            sessionID,
+            agent,
+            model,
+            variant: args.variant,
+            parts: [...files, { type: "text", text: message }],
+          })
+          .catch(async (error) => {
+            await cancelEventLoop()
+            throw error
+          })
         if (result.error) {
+          await cancelEventLoop()
           if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
           process.exitCode = 1
           return
         }
         await finish()
+        const responseError = result.data?.info.error
+        if (!responseError) return
+        if (args.format === "json") emit("error", { error: responseError })
+        throw new CliError({ message: formatRunError(responseError) })
       }
 
       if (args.attach) {
         const sdk = attachSDK(directory)
-        return await execute(sdk)
+        return await execute(sdk, true)
+      }
+
+      // Attach to an existing healthy authority (the TUI coordinator, the GUI
+      // sidecar, or `opencode serve`) instead of starting a second backend.
+      // When none is present, fall back to the in-process ephemeral server.
+      const access = await acquirePreferredCoordinatorAccess()
+      const coordinator = access.coordinator
+      if (coordinator) {
+        const lease = startCoordinatorClientLease(coordinator.key)
+        try {
+          await lease.ready
+        } catch (error) {
+          lease.dispose()
+          throw error
+        }
+        const reattaching = createCoordinatorTransport({
+          manifest: coordinator,
+          resolve: async () => {
+            const next = await readPreferredCoordinator()
+            if (!next) throw new Error("No local authority available to recover")
+            return next
+          },
+        })
+        try {
+          const sdk = createOpencodeClient({
+            baseUrl: coordinator.url,
+            headers: coordinatorHeaders(coordinator),
+            directory,
+            fetch: reattaching.fetch,
+          })
+          await execute(sdk, true)
+        } finally {
+          lease.dispose()
+          await access.release()
+        }
+        return
       }
 
       const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -693,7 +762,11 @@ export const RunCommand = effectCmd({
         fetch: fetchFn,
         directory,
       })
-      await execute(sdk)
+      try {
+        await execute(sdk)
+      } finally {
+        await access.release()
+      }
     })
   }),
 })

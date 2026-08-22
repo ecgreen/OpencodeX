@@ -197,6 +197,7 @@ export const layer = Layer.effect(
         cancel: (sessionID: SessionID) => cancel(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
+        loop: (input: LoopInput) => loop(input),
       } satisfies TaskPromptOps
     })
 
@@ -412,7 +413,7 @@ export const layer = Layer.effect(
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
+      const match = yield* sessions.findMessage(sessionID, (message) => message.info.role !== "user").pipe(Effect.orDie)
       if (Option.isSome(match)) return match.value
       const msgs = yield* sessions.messages({ sessionID, limit: 1 }).pipe(Effect.orDie)
       if (msgs.length > 0) return msgs[0]
@@ -455,7 +456,7 @@ export const layer = Layer.effect(
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
-            lastUser.id < lastAssistant.id
+            lastAssistant.parentID === lastUser.id
           ) {
             const orphan = lastAssistantMsg?.parts.find(
               (part): part is SessionLegacy.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
@@ -650,7 +651,7 @@ export const layer = Layer.effect(
 
             if (step > 1 && lastFinished) {
               for (const m of msgs) {
-                if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
+                if (m.info.role !== "user" || !MessageV2.isAfter(m.info, lastFinished)) continue
                 for (const p of m.parts) {
                   if (p.type !== "text" || p.ignored || p.synthetic) continue
                   if (!p.text.trim()) continue
@@ -737,6 +738,7 @@ export const layer = Layer.effect(
       sessions,
       skills,
       prompt: (input) => prompt(input),
+      loop: (input) => loop(input),
     })
 
     const loop: (input: LoopInput) => Effect.Effect<SessionLegacy.WithParts> = Effect.fn("SessionPrompt.loop")(
@@ -751,7 +753,7 @@ export const layer = Layer.effect(
       },
     )
 
-    const { launchCommand, recover } = yield* PromptClaim.make({
+    const { wakeSession, recover } = yield* PromptClaim.make({
       database,
       events,
       scope,
@@ -772,7 +774,7 @@ export const layer = Layer.effect(
           .get()
           .pipe(Effect.orDie)
         if (existing) {
-          if (!["succeeded", "failed", "cancelled"].includes(existing.status)) yield* launchCommand(existing.id)
+          if (!["succeeded", "failed", "cancelled"].includes(existing.status)) yield* wakeSession(input.sessionID)
           return
         }
       }
@@ -780,7 +782,7 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       const now = Date.now()
       const commandID = `sec_${Identifier.ascending()}`
-      const acceptedCommandID = yield* db
+      yield* db
         .transaction(
           (transaction) =>
             Effect.gen(function* () {
@@ -861,7 +863,7 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie)
       const steering = input.delivery === "immediate" && (yield* state.interrupt(input.sessionID))
       if (steering) yield* markSteering(message)
-      if (input.noReply !== true) yield* launchCommand(acceptedCommandID)
+      if (input.noReply !== true) yield* wakeSession(input.sessionID)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {

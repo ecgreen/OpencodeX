@@ -3,6 +3,8 @@ import path from "node:path"
 import z from "zod"
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { ClaudeEvent } from "./claude-mapper"
+import { ClaudeDelegate } from "./claude-delegate"
+import { createChannelRegistry, type CreateQuery } from "./claude-channel"
 
 /**
  * The process boundary for headless Claude Code. Everything SDK-specific lives
@@ -29,7 +31,12 @@ export type TransportOptions = {
   model?: string
   /** Reasoning effort, surfaced in OpencodeX as the model's variant chip. */
   effort?: string
-  canUseTool: (toolName: string, input: Record<string, unknown>, toolUseID?: string) => Promise<PermissionDecision>
+  canUseTool: (
+    toolName: string,
+    input: Record<string, unknown>,
+    toolUseID?: string,
+    signal?: AbortSignal,
+  ) => Promise<PermissionDecision>
   /**
    * Swarm delegation. When present the CLI is given an in-process tool that
    * hands work back to OpencodeX, so specialists run as OpencodeX sessions on
@@ -37,12 +44,87 @@ export type TransportOptions = {
    */
   delegate?: DelegateCapability
   signal?: AbortSignal
+  /**
+   * Keys a persistent per-session query channel (normally the daemon session
+   * id). Present, the transport keeps one CLI child alive across the
+   * session's turns instead of spawning one per turn with `--resume` — the
+   * fix for the stale close-out result a resume spawn can emit
+   * (OpencodeX-div). Absent, each run is its own query (the historical
+   * behavior, kept for one-shot callers and as the
+   * OPENCODE_CLAUDE_PER_TURN_QUERY=1 escape hatch).
+   */
+  channelKey?: string
+}
+
+/** The per-turn callbacks a persistent channel's fixed SDK query reads. */
+export type TurnHandlers = {
+  canUseTool: (
+    toolName: string,
+    input: Record<string, unknown>,
+    extra?: { toolUseID?: string; signal?: AbortSignal },
+  ) => Promise<{ behavior: "allow"; updatedInput: Record<string, unknown> } | { behavior: "deny"; message: string }>
+  delegate?: DelegateCapability
+  correlator: DelegateCorrelator
 }
 
 export type DelegateCapability = {
   roles: Array<{ name: string; description?: string }>
-  run: (input: { role: string; prompt: string }) => Promise<string>
+  /**
+   * `toolUseID` is the orchestrator's own tool call id for this delegation,
+   * present whenever the permission gate saw the call. It is what the parent
+   * transcript keys its tool part by, so it is what lets a delegation link to
+   * the session it spawned. `signal` is the SDK request's abort signal.
+   */
+  run: (input: {
+    role: string
+    prompt: string
+    toolUseID?: string
+    signal?: AbortSignal
+  }) => Promise<ClaudeDelegate.Result>
 }
+
+/** The delegate tool's arguments, as both the gate and the handler see them. */
+export type DelegateArgs = { role: string; prompt: string }
+
+/**
+ * The CLI hands an in-process MCP tool its arguments but not the tool call id
+ * the transcript is keyed by. `canUseTool` sees both, and always resolves
+ * before the CLI executes the tool (the same ordering `decidedInputs` in
+ * claude-driver.ts relies on), so the id is recorded there and claimed here.
+ *
+ * Identical arguments queue FIFO, so an orchestrator that fans the same role
+ * and prompt out twice in one turn still gives each call a distinct id rather
+ * than pointing both at the first.
+ *
+ * Known, accepted limit: the correlator lives for one turn (created per
+ * `run`), so staleness cannot cross turns - but within a turn, an allowed
+ * call that never executes leaves its id queued, and a later byte-identical
+ * retry claims the stale id first. Worst case is a wrong drill-down link,
+ * never a broken delegation; FIFO stays because the common case is parallel
+ * fan-out, where it is the only correct order.
+ */
+export function createDelegateCorrelator() {
+  const pending = new Map<string, string[]>()
+  const key = (args: DelegateArgs) => JSON.stringify([args.role, args.prompt])
+  return {
+    record(input: Record<string, unknown>, toolUseID?: string) {
+      if (!toolUseID) return
+      const { role, prompt } = input
+      if (typeof role !== "string" || typeof prompt !== "string") return
+      const queue = pending.get(key({ role, prompt }))
+      if (queue) queue.push(toolUseID)
+      else pending.set(key({ role, prompt }), [toolUseID])
+    },
+    claim(args: DelegateArgs) {
+      const queue = pending.get(key(args))
+      const toolUseID = queue?.shift()
+      if (queue && queue.length === 0) pending.delete(key(args))
+      return toolUseID
+    },
+  }
+}
+
+export type DelegateCorrelator = ReturnType<typeof createDelegateCorrelator>
 
 /** Namespaced by the CLI as `mcp__<server>__<tool>`. */
 export const DELEGATE_SERVER = "opencodex_swarm"
@@ -131,9 +213,132 @@ async function* idlePrompt(): AsyncGenerator<never> {
   await new Promise(() => undefined)
 }
 
+/**
+ * Module-scoped: the driver layer (and with it `createSdkTransport`) is
+ * rebuilt per prompt-runtime scope, and a registry created per transport
+ * instance would start every turn empty — respawning a CLI child per turn and
+ * abandoning the previous one, which is exactly the lifecycle the persistent
+ * channels exist to end. Session ids are globally unique, so one process-wide
+ * registry is safe across instances.
+ */
+const persistentChannels = createChannelRegistry<TurnHandlers>()
+
 export function createSdkTransport(): ClaudeTransport {
+  const registry = persistentChannels
+
+  function turnHandlers(options: TransportOptions): TurnHandlers {
+    const correlator = createDelegateCorrelator()
+    return {
+      canUseTool: (toolName, input, extra) => resolveToolPermission(options, toolName, input, extra, correlator),
+      ...(options.delegate ? { delegate: options.delegate } : {}),
+      correlator,
+    }
+  }
+
+  function runPersistent(prompt: ClaudePrompt, options: TransportOptions, channelKey: string): TransportTurn {
+    let active: ReturnType<import("./claude-channel").Channel<TurnHandlers>["turn"]> | undefined
+    // An interrupt can land while the generator is still importing the SDK or
+    // acquiring the channel; the flag makes it stick so the cancelled prompt
+    // is never pushed into the persistent child as a headless turn.
+    let cancelled = false
+
+    async function* events(): AsyncGenerator<ClaudeEvent> {
+      const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
+      if (!sdk?.query) throw new ClaudeNotInstalledError("The Claude Code SDK is unavailable.")
+      const executable = options.executable ?? (await resolveClaudeExecutable())
+
+      const createQuery: CreateQuery<TurnHandlers> = async (input) => {
+        const controller = new AbortController()
+        const delegation = options.delegate
+          ? delegateServer(sdk, options.delegate.roles, () => {
+              const handlers = input.handlers()
+              return handlers?.delegate ? { run: handlers.delegate.run, correlator: handlers.correlator } : undefined
+            })
+          : undefined
+        const running = sdk.query({
+          prompt: input.prompt,
+          options: {
+            cwd: options.cwd,
+            abortController: controller,
+            includePartialMessages: true,
+            forwardSubagentText: true,
+            permissionMode: "default",
+            canUseTool: (
+              toolName: string,
+              toolInput: Record<string, unknown>,
+              extra: { toolUseID?: string; signal?: AbortSignal },
+            ) => {
+              const handlers = input.handlers()
+              if (!handlers)
+                return Promise.resolve({ behavior: "deny" as const, message: "No turn is active for this session." })
+              return handlers.canUseTool(toolName, toolInput, extra)
+            },
+            ...(input.resumeID ? { resume: input.resumeID } : {}),
+            ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
+            ...(options.model && options.model !== DEFAULT_MODEL_VALUE ? { model: options.model } : {}),
+            ...(options.effort && EFFORT_LEVELS.includes(options.effort) ? { effort: options.effort } : {}),
+            ...(delegation ? { mcpServers: { [DELEGATE_SERVER]: delegation } } : {}),
+          },
+        } as Parameters<typeof sdk.query>[0]) as AsyncIterable<ClaudeEvent> & { interrupt?: () => Promise<unknown> }
+        return {
+          events: running,
+          interrupt: async () => {
+            await running.interrupt?.()
+          },
+          abort: () => controller.abort(),
+        }
+      }
+
+      // Everything the spawned child is pinned to; a change recycles the
+      // channel so the next child resumes the conversation with the new shape.
+      const config = JSON.stringify([
+        options.cwd,
+        options.model ?? "",
+        options.effort ?? "",
+        executable ?? "",
+        options.delegate?.roles ?? null,
+      ])
+      const channel = await registry.acquire(
+        channelKey,
+        config,
+        createQuery,
+        options.resumeID ? { resumeID: options.resumeID } : undefined,
+      )
+      if (cancelled || options.signal?.aborted) return
+      active = channel.turn([userMessage(prompt)], turnHandlers(options))
+      if (cancelled) {
+        // The interrupt raced the turn start: unwind what was just attached.
+        await active.interrupt()
+      }
+      yield* active.events
+    }
+
+    if (options.signal) {
+      if (options.signal.aborted) cancelled = true
+      else
+        options.signal.addEventListener(
+          "abort",
+          () => {
+            cancelled = true
+            void active?.interrupt()
+          },
+          { once: true },
+        )
+    }
+
+    return {
+      events: events(),
+      interrupt: async () => {
+        cancelled = true
+        await active?.interrupt()
+      },
+    }
+  }
+
   return {
     run(prompt, options) {
+      if (options.channelKey && process.env.OPENCODE_CLAUDE_PER_TURN_QUERY !== "1")
+        return runPersistent(prompt, options, options.channelKey)
       const controller = new AbortController()
       if (options.signal) {
         if (options.signal.aborted) controller.abort()
@@ -141,12 +346,17 @@ export function createSdkTransport(): ClaudeTransport {
       }
       // Only `interrupt` is used here, and its result is discarded.
       let query: { interrupt?: () => Promise<unknown> } | undefined
+      // Shared by the permission gate (which sees the tool call id) and the
+      // delegate tool handler (which does not).
+      const correlator = createDelegateCorrelator()
 
       async function* events(): AsyncIterable<ClaudeEvent> {
         const sdk = await import("@anthropic-ai/claude-agent-sdk").catch(() => undefined)
         if (!sdk?.query) throw new ClaudeNotInstalledError("The Claude Code SDK is unavailable.")
         const executable = options.executable ?? (await resolveClaudeExecutable())
-        const delegation = options.delegate ? delegateServer(sdk, options.delegate) : undefined
+        const delegation = options.delegate
+          ? delegateServer(sdk, options.delegate.roles, () => ({ run: options.delegate!.run, correlator }))
+          : undefined
         const running = sdk.query({
           prompt: sdkPrompt(prompt),
           options: {
@@ -164,21 +374,7 @@ export function createSdkTransport(): ClaudeTransport {
             // OpencodeX is the sole permission gate: Claude defers every tool
             // decision to canUseTool, which bridges to OpencodeX permission cards.
             permissionMode: "default",
-            canUseTool: async (toolName, input, extra) => {
-              // Claude's own subagents would run inside the CLI on its models,
-              // bypassing the swarm's per-role routing. Redirect to the tool
-              // that hands work back to OpencodeX.
-              if (options.delegate && toolName === "Task") {
-                return {
-                  behavior: "deny" as const,
-                  message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
-                }
-              }
-              const decision = await options.canUseTool(toolName, input, extra?.toolUseID)
-              return decision.allow
-                ? { behavior: "allow", updatedInput: decision.input ?? input }
-                : { behavior: "deny", message: decision.message }
-            },
+            canUseTool: (toolName, input, extra) => resolveToolPermission(options, toolName, input, extra, correlator),
             ...(options.resumeID ? { resume: options.resumeID } : {}),
             ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
             ...(options.model && options.model !== DEFAULT_MODEL_VALUE ? { model: options.model } : {}),
@@ -207,12 +403,47 @@ export function sdkPrompt(prompt: ClaudePrompt): string | AsyncIterable<SDKUserM
   return userPrompt(prompt)
 }
 
+/** One turn's prompt as the streaming user message a persistent channel pushes. */
+export function userMessage(prompt: ClaudePrompt): SDKUserMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: typeof prompt === "string" ? prompt : [...prompt] },
+    parent_tool_use_id: null,
+  } as SDKUserMessage
+}
+
 async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerator<SDKUserMessage> {
   yield {
     type: "user",
     message: { role: "user", content: [...content] },
     parent_tool_use_id: null,
   }
+}
+
+export async function resolveToolPermission(
+  options: TransportOptions,
+  toolName: string,
+  input: Record<string, unknown>,
+  extra?: { toolUseID?: string; signal?: AbortSignal },
+  correlator?: DelegateCorrelator,
+) {
+  // Claude's own subagents would run inside the CLI on its models,
+  // bypassing the swarm's per-role routing. Redirect to the tool that hands
+  // work back to OpencodeX.
+  if (options.delegate && toolName === "Task") {
+    return {
+      behavior: "deny" as const,
+      message: `Use ${DELEGATE_TOOL_NAME} to delegate swarm roles; the Task tool is unavailable in a swarm session.`,
+    }
+  }
+  const decision = await options.canUseTool(toolName, input, extra?.toolUseID, extra?.signal)
+  if (!decision.allow) return { behavior: "deny" as const, message: decision.message }
+  const updatedInput = decision.input ?? input
+  // Recorded only once the call is going to run, and against the input the
+  // tool will actually receive, so the handler's own arguments are what it
+  // looks the id up by.
+  if (toolName === DELEGATE_TOOL_NAME) correlator?.record(updatedInput, extra?.toolUseID)
+  return { behavior: "allow" as const, updatedInput }
 }
 
 /**
@@ -223,11 +454,17 @@ async function* userPrompt(content: Exclude<ClaudePrompt, string>): AsyncGenerat
  */
 export function delegateServer(
   sdk: typeof import("@anthropic-ai/claude-agent-sdk"),
-  delegate: DelegateCapability,
+  roles: DelegateCapability["roles"],
+  /**
+   * The current turn's delegate run + correlator. The MCP server is fixed at
+   * query spawn, but on a persistent channel each turn brings a fresh bridge
+   * and correlator, so the handler reads them through this accessor; between
+   * turns (or on a turn without delegation) it returns undefined and the call
+   * fails as an errored delegation instead of crossing turn boundaries.
+   */
+  current: () => { run: DelegateCapability["run"]; correlator?: DelegateCorrelator } | undefined,
 ) {
-  const roster = delegate.roles
-    .map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`)
-    .join("\n")
+  const roster = roles.map((role) => `- ${role.name}${role.description ? `: ${role.description}` : ""}`).join("\n")
   return sdk.createSdkMcpServer({
     name: DELEGATE_SERVER,
     version: "1.0.0",
@@ -251,14 +488,36 @@ export function delegateServer(
             .string()
             .describe("Self-contained instructions: scope, expected output, and whether files may be edited."),
         },
-        async (args) => {
+        async (args, extra) => {
           try {
-            const text = await delegate.run({ role: args.role, prompt: args.prompt })
-            return { content: [{ type: "text" as const, text }] }
-          } catch (cause) {
+            const turn = current()
+            if (!turn) {
+              return {
+                isError: true,
+                content: [
+                  { type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) },
+                ],
+              }
+            }
+            const toolUseID = turn.correlator?.claim(args)
+            const signal = requestSignal(extra)
+            const result = await turn.run({
+              role: args.role,
+              prompt: args.prompt,
+              ...(toolUseID ? { toolUseID } : {}),
+              ...(signal ? { signal } : {}),
+            })
+            if (result.ok) return { content: [{ type: "text" as const, text: result.text }] }
             return {
               isError: true,
-              content: [{ type: "text" as const, text: cause instanceof Error ? cause.message : String(cause) }],
+              content: [{ type: "text" as const, text: ClaudeDelegate.failureMessage(result) }],
+            }
+          } catch {
+            return {
+              isError: true,
+              content: [
+                { type: "text" as const, text: ClaudeDelegate.failureMessage(ClaudeDelegate.failure("errored")) },
+              ],
             }
           }
         },
@@ -278,6 +537,11 @@ export function delegateServer(
       ),
     ],
   })
+}
+
+function requestSignal(extra: unknown): AbortSignal | undefined {
+  if (typeof extra !== "object" || extra === null || !("signal" in extra)) return undefined
+  return extra.signal instanceof AbortSignal ? extra.signal : undefined
 }
 
 /**

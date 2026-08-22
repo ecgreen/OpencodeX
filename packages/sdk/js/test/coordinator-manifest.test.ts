@@ -10,6 +10,7 @@ import {
   coordinatorKey,
   coordinatorManifestPath,
   fetchCoordinatorHealth,
+  isCoordinatorHealthForManifest,
   isCoordinatorManifest,
   readCoordinatorManifest,
   removeCoordinatorManifest,
@@ -70,7 +71,7 @@ describe("coordinator manifest validation", () => {
     expect(isCoordinatorManifest(manifest({ url: "http://example.com/" }))).toBe(false)
     expect(isCoordinatorManifest({ ...manifest(), version: 3 })).toBe(false)
     expect(isCoordinatorManifest({ ...manifest(), serverVersion: 3 })).toBe(false)
-    expect(isCoordinatorManifest(manifest({ pid: "1" as unknown as number }))).toBe(false)
+    expect(isCoordinatorManifest({ ...manifest(), pid: "1" })).toBe(false)
   })
 
   test("readCoordinatorManifest rejects a corrupt file instead of returning it", async () => {
@@ -241,11 +242,11 @@ describe("health probe", () => {
   test("returns the parsed version alongside the health flag", async () => {
     const health = await fetchCoordinatorHealth(manifest(), {
       fetch: async () =>
-        new Response(JSON.stringify({ healthy: true, version: "1.2.3", active: false }), {
+        new Response(JSON.stringify({ healthy: true, version: "1.2.3", active: false, coordinatorKey: "abc123" }), {
           headers: { "content-type": "application/json" },
         }),
     })
-    expect(health).toEqual({ healthy: true, version: "1.2.3", active: false })
+    expect(health).toEqual({ healthy: true, version: "1.2.3", active: false, coordinatorKey: "abc123" })
   })
 
   test("returns undefined for an unreachable or failing coordinator", async () => {
@@ -265,11 +266,17 @@ describe("health probe", () => {
     let authorization: string | undefined
     await fetchCoordinatorHealth(manifest(), {
       fetch: async (_url, init) => {
-        authorization = (init?.headers as Record<string, string>).authorization
+        authorization = new Headers(init?.headers).get("authorization") ?? undefined
         return new Response(JSON.stringify({ healthy: true, version: "1.2.3", active: true }))
       },
     })
     expect(authorization).toBe(`Basic ${Buffer.from("opencodex-local:password").toString("base64")}`)
+  })
+
+  test("matches health to the manifest database key", () => {
+    expect(isCoordinatorHealthForManifest(manifest(), { healthy: true, coordinatorKey: "abc123" })).toBe(true)
+    expect(isCoordinatorHealthForManifest(manifest(), { healthy: true, coordinatorKey: "different" })).toBe(false)
+    expect(isCoordinatorHealthForManifest(manifest(), { healthy: true })).toBe(false)
   })
 })
 

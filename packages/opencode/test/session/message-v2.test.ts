@@ -1670,4 +1670,52 @@ describe("session.message-v2.latest", () => {
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
   })
+
+  test("uses creation time when ascending IDs wrap", () => {
+    const wrappedUser = {
+      info: { ...userInfo(MessageID.make("msg_fff")), time: { created: 1 } },
+      parts: [],
+    } satisfies SessionLegacy.WithParts
+    const wrappedAssistant = {
+      info: {
+        ...assistantInfo(MessageID.make("msg_000"), wrappedUser.info.id),
+        time: { created: 2 },
+        finish: "stop" as const,
+      },
+      parts: [],
+    } satisfies SessionLegacy.WithParts
+
+    const state = MessageV2.latest([wrappedUser, wrappedAssistant])
+
+    expect(state.user?.id).toBe(wrappedUser.info.id)
+    expect(state.assistant?.id).toBe(wrappedAssistant.info.id)
+    expect(state.finished?.id).toBe(wrappedAssistant.info.id)
+  })
+
+  test("surfaces post-wrap tasks created after the latest finished assistant", () => {
+    const finished = {
+      info: {
+        ...assistantInfo(MessageID.make("msg_fff"), TAIL_USER),
+        time: { created: 1 },
+        finish: "stop" as const,
+      },
+      parts: [],
+    } satisfies SessionLegacy.WithParts
+    const next = {
+      info: { ...userInfo(MessageID.make("msg_000")), time: { created: 2 } },
+      parts: [
+        {
+          ...basePart(MessageID.make("msg_000"), "wrapped-task"),
+          type: "compaction" as const,
+          auto: true,
+        },
+      ],
+    } satisfies SessionLegacy.WithParts
+
+    const state = MessageV2.latest([finished, next])
+
+    expect(state.finished?.id).toBe(finished.info.id)
+    expect(state.user?.id).toBe(next.info.id)
+    expect(state.tasks).toEqual(next.parts)
+  })
 })

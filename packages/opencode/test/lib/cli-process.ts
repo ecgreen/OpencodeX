@@ -372,7 +372,7 @@ export function withCliFixture<A, E>(
         kill: () => {
           proc.kill()
         },
-        exited: proc.exited as Promise<number>,
+        exited: proc.exited,
       } satisfies ServeHandle
     })
 
@@ -451,7 +451,7 @@ export function withCliFixture<A, E>(
         receive: Queue.take(responses),
         // proc.stdin.end() is idempotent in Bun; no try/catch needed.
         close: () => proc.stdin.end(),
-        exited: proc.exited as Promise<number>,
+        exited: proc.exited,
         stderr: () => stderrChunks.join(""),
       } satisfies AcpHandle
     })
@@ -510,5 +510,8 @@ export const cliIt = {
     name: string,
     body: (input: CliFixture) => Effect.Effect<A, E, Scope.Scope | HttpClient.HttpClient>,
     opts?: number | TestOptions,
-  ) => test.concurrent(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
+  ) =>
+    process.platform === "win32"
+      ? it.live(name, () => withCliFixture(body), opts)
+      : test.concurrent(name, () => Effect.runPromise(Effect.scoped(withCliFixture(body))), opts),
 }

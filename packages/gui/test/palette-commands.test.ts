@@ -26,6 +26,7 @@ describe("GUI palette command catalog", () => {
     expect(command(commands, "settings.open")?.description).toBe(
       "Appearance, security, transcript, and connection preferences",
     )
+    expect(command(commands, "backend.restart")).toBeUndefined()
   })
 
   test("routes commands through injected app actions", async () => {

@@ -12,6 +12,11 @@ const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
   active: Schema.Boolean,
+  processRole: Schema.String,
+  runID: Schema.String,
+  databaseID: Schema.String,
+  coordinatorKey: Schema.String,
+  eventBusID: Schema.String,
 })
 
 const SyncEventSchemas = EventV2.registry

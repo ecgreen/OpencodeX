@@ -4,6 +4,7 @@ import type { GuiAppModel } from "../controllers/app-model"
 import { terminalSessionRoute } from "../controllers/claude-terminal-controller"
 import { NAV_ITEMS } from "../controllers/navigation-controller"
 import { guiPluginThemeCss } from "../lib/gui-plugins"
+import { canAttachCoordinatorAnyway } from "../lib/coordinator-version-mismatch"
 import { projectSessions } from "../lib/app-session-lists"
 import { title } from "../lib/format"
 import {
@@ -293,6 +294,20 @@ export function AppShell(props: { model: GuiAppModel }) {
               >
                 Retry now
               </Button>
+              <Show when={window.opencodex && canAttachCoordinatorAnyway(model.authoritative.connectionError())}>
+                <Button
+                  appearance="outline"
+                  type="button"
+                  onClick={() =>
+                    void model.notices.run(async () => {
+                      await window.opencodex!.attachVersionMismatch()
+                      window.location.reload()
+                    })
+                  }
+                >
+                  Attach anyway
+                </Button>
+              </Show>
             </div>
           </Show>
           <Show when={!model.authoritative.loading() && !model.authoritative.error()}>

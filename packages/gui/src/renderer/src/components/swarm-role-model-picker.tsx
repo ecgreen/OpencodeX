@@ -12,7 +12,8 @@ export function SwarmRoleModelPicker(props: {
   connectedProviderIDs: string[]
   recentModels: string[]
   selectedModel: string
-  select: (providerID: string, modelID: string) => void
+  error?: string
+  select: (providerID: string, modelID: string) => boolean | void
   close: () => void
   connectProvider?: (providerID?: string) => void
 }) {
@@ -47,11 +48,11 @@ export function SwarmRoleModelPicker(props: {
       recentOptions={models.filteredRecentOptions()}
       providerGroups={models.filteredProviderGroups()}
       connectedProviderIDs={props.connectedProviderIDs}
+      error={props.error}
       close={props.close}
       setQuery={models.setQuery}
       select={(providerID, modelID) => {
-        props.select(providerID, modelID)
-        props.close()
+        if (props.select(providerID, modelID) !== false) props.close()
       }}
       toggleFavorite={models.toggleFavorite}
       connectProvider={props.connectProvider}

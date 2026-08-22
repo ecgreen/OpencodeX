@@ -232,9 +232,27 @@ export const opencodexOperationScenarios: Scenario[] = [
       const roles = body.roles
       array(roles)
       const engineer = roles.find((role) => isRecord(role) && role.name === "Engineer")
+      check(isRecord(engineer) && engineer.variant === "high", "a role's effort level should round-trip through create")
+    }),
+  http.protected
+    .post("/experimental/opencodex/swarm", "opencodex.swarm.create.invalid-roster")
+    .mutating()
+    .at((ctx) => ({
+      path: "/experimental/opencodex/swarm",
+      headers: ctx.headers(),
+      // A roster without an Orchestrator is schema-valid but fails the
+      // business rules; the 400 must say WHY, not just {"_tag":"BadRequest"}
+      // (clients read the message to distinguish this from a malformed body).
+      body: {
+        title: "HTTP API invalid roster",
+        roles: [{ name: "Solo", instructions: "work alone" }],
+      },
+    }))
+    .json(400, (body) => {
+      object(body)
       check(
-        isRecord(engineer) && engineer.variant === "high",
-        "a role's effort level should round-trip through create",
+        typeof body.message === "string" && body.message.includes("Orchestrator"),
+        `a roster validation 400 should carry the validation message, got ${JSON.stringify(body)}`,
       )
     }),
   http.protected

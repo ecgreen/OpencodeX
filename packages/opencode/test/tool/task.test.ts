@@ -113,6 +113,7 @@ function stubOps(opts?: { onPrompt?: (input: SessionPrompt.PromptInput) => void;
         opts?.onPrompt?.(input)
         return reply(input, opts?.text ?? "done")
       }),
+    loop: () => Effect.die("unexpected task loop"),
   }
 }
 
@@ -144,6 +145,65 @@ function reply(input: SessionPrompt.PromptInput, text: string): SessionLegacy.Wi
       },
     ],
   }
+}
+
+function failedReply(input: SessionPrompt.PromptInput, code: string): SessionLegacy.WithParts {
+  const failed = reply(input, "")
+  return {
+    ...failed,
+    info: {
+      ...failed.info,
+      error: new SessionLegacy.APIError({
+        message: "request failed",
+        responseBody: JSON.stringify({ error: { code } }),
+        isRetryable: false,
+      }),
+    },
+    parts: [],
+  } as unknown as SessionLegacy.WithParts
+}
+
+function persistPromptResult(
+  sessions: Pick<Session.Interface, "updateMessage" | "updatePart">,
+  input: SessionPrompt.PromptInput,
+  result: SessionLegacy.WithParts,
+) {
+  return Effect.gen(function* () {
+    const user: SessionLegacy.User = {
+      id: input.messageID!,
+      role: "user",
+      sessionID: input.sessionID,
+      agent: input.agent ?? "general",
+      model: {
+        providerID: input.model!.providerID,
+        modelID: input.model!.modelID,
+        ...(input.variant ? { variant: input.variant } : {}),
+      },
+      time: { created: Date.now() },
+    }
+    yield* sessions.updateMessage(user)
+    yield* Effect.forEach(
+      input.parts.filter((part): part is SessionLegacy.TextPartInput => part.type === "text"),
+      (part) => sessions.updatePart({
+        ...part,
+        id: PartID.ascending(),
+        messageID: user.id,
+        sessionID: user.sessionID,
+      }),
+      { discard: true },
+    )
+    return yield* persistAssistantResult(sessions, result)
+  })
+}
+
+function persistAssistantResult(
+  sessions: Pick<Session.Interface, "updateMessage" | "updatePart">,
+  result: SessionLegacy.WithParts,
+) {
+  return sessions.updateMessage(result.info).pipe(
+    Effect.andThen(Effect.forEach(result.parts, (part) => sessions.updatePart(part), { discard: true })),
+    Effect.as(result),
+  )
 }
 
 describe("tool.task", () => {
@@ -329,6 +389,7 @@ describe("tool.task", () => {
             ready.resolve(input)
             return cancelled.promise
           }).pipe(Effect.as(reply(input, "cancelled"))),
+        loop: () => Effect.die("unexpected task loop"),
       }
 
       const fiber = yield* def
@@ -381,6 +442,7 @@ describe("tool.task", () => {
             prompted = true
             return reply(input, "unexpected")
           }),
+        loop: () => Effect.die("unexpected task loop"),
       }
 
       const fiber = yield* def
@@ -631,6 +693,10 @@ describe("tool.task", () => {
           sort_order: 1,
           provider_id: "anthropic",
           model_id: "claude-fable-5",
+          fallback_models: JSON.stringify([
+            { providerID: "openai", modelID: "gpt-5" },
+            { providerID: "google", modelID: "gemini-3" },
+          ]),
         },
       ])
       const { chat, assistant } = yield* seed("Swarm chat", {
@@ -680,6 +746,129 @@ describe("tool.task", () => {
         "anthropic/claude-fable-5",
         "anthropic/claude-fable-5",
       ])
+
+      const attempts: SessionPrompt.PromptInput[] = []
+      const fallbackResult = yield* def.execute(
+        {
+          description: "build module D",
+          prompt: "do the work",
+          subagent_type: "general",
+          swarm_role: "Senior Engineer",
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: {
+              ...stubOps(),
+              prompt: (input: SessionPrompt.PromptInput) =>
+                Effect.gen(function* () {
+                  attempts.push(input)
+                  return yield* persistPromptResult(sessions, input, failedReply(input, "insufficient_quota"))
+                }),
+              loop: (input: SessionPrompt.LoopInput) =>
+                Effect.gen(function* () {
+                  const turn = yield* sessions.messageWithChildren({ sessionID: input.sessionID, messageID: input.messageID! })
+                  const user = turn.find((message): message is SessionLegacy.WithParts & { info: SessionLegacy.User } => message.info.role === "user")!
+                  const nextInput = {
+                    sessionID: input.sessionID,
+                    messageID: user.info.id,
+                    model: user.info.model,
+                    agent: user.info.agent,
+                    parts: [],
+                  } satisfies SessionPrompt.PromptInput
+                  attempts.push(nextInput)
+                  return yield* persistAssistantResult(sessions, reply(nextInput, "fallback done"))
+                }),
+            },
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(attempts.map((input) => `${input.model?.providerID}/${input.model?.modelID}`)).toEqual([
+        "anthropic/claude-fable-5",
+        "openai/gpt-5",
+      ])
+      expect(fallbackResult.output).toContain("fallback done")
+      expect(fallbackResult.metadata.model).toMatchObject({ providerID: "openai", modelID: "gpt-5" })
+      expect((yield* sessions.messages({ sessionID: fallbackResult.metadata.sessionId })).filter((message) => message.info.role === "user")).toHaveLength(1)
+
+      let blockedLoops = 0
+      const blocked = yield* def.execute(
+        { description: "build module safety", prompt: "do the work", subagent_type: "general", swarm_role: "Senior Engineer" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: {
+              ...stubOps(),
+              prompt: (input: SessionPrompt.PromptInput) =>
+                Effect.gen(function* () {
+                  yield* persistPromptResult(sessions, input, reply(input, "visible work from an earlier step"))
+                  return yield* persistAssistantResult(sessions, failedReply(input, "quota_exceeded"))
+                }),
+              loop: () => {
+                blockedLoops++
+                return Effect.die("fallback must remain blocked")
+              },
+            },
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(blocked.output).toContain("failed")
+      expect(blockedLoops).toBe(0)
+      expect((yield* sessions.messages({ sessionID: blocked.metadata.sessionId })).filter((message) => message.info.role === "user")).toHaveLength(1)
+
+      const overrides: SessionPrompt.PromptInput[] = []
+      yield* def.execute(
+        {
+          description: "build module E",
+          prompt: "do the work",
+          subagent_type: "general",
+          swarm_role: "Senior Engineer",
+          model: "other/custom",
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          directory: chat.directory,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: {
+              ...stubOps(),
+              prompt: (input: SessionPrompt.PromptInput) => {
+                overrides.push(input)
+                const failed = reply(input, "")
+                return Effect.succeed({
+                  ...failed,
+                  info: {
+                    ...failed.info,
+                    error: new SessionLegacy.APIError({ message: "quota exceeded", isRetryable: false }),
+                  },
+                  parts: [],
+                })
+              },
+            },
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      expect(overrides).toHaveLength(1)
+      expect(overrides[0]?.model).toMatchObject({ providerID: "other", modelID: "custom" })
     }),
   )
 
@@ -1288,6 +1477,7 @@ describe("tool.task", () => {
             ready.resolve(input)
             return cancelled.promise
           }).pipe(Effect.as(reply(input, "finished anyway"))),
+        loop: () => Effect.die("unexpected task loop"),
       }
 
       const fiber = yield* def

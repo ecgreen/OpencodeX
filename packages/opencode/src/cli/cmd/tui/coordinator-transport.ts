@@ -59,6 +59,11 @@ export function isCoordinatorConnectionError(error: unknown): boolean {
   )
 }
 
+function canRetryAfterConnectionError(request: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) {
+  const method = (init?.method ?? (request instanceof Request ? request.method : "GET")).toUpperCase()
+  return ["GET", "HEAD", "OPTIONS"].includes(method)
+}
+
 export function createCoordinatorTransport(input: {
   manifest: CoordinatorManifest
   resolve: () => Promise<CoordinatorManifest>
@@ -144,7 +149,7 @@ export function createCoordinatorTransport(input: {
       } catch (error) {
         if (init?.signal?.aborted || !isCoordinatorConnectionError(error)) throw error
         const recovered = await recover().catch(() => false)
-        if (!recovered) throw error
+        if (!recovered || !canRetryAfterConnectionError(request, init)) throw error
         return send(request, init)
       }
     },

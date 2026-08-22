@@ -12,14 +12,28 @@ import {
   type MessageBoxOptions,
 } from "electron"
 import { isCoordinatorHealthy } from "@opencode-ai/sdk/coordinator"
-import { type SidecarConnection, startSidecar, stopSidecar } from "./sidecar.js"
+import {
+  allowCoordinatorVersionMismatch,
+  pendingCoordinatorVersionMismatch,
+  type SidecarConnection,
+  startSidecar,
+  stopSidecar,
+} from "./sidecar.js"
 import { editorCommand } from "./editor-command.js"
 import { registerBrowserIpc, secureSession } from "./browser-ipc.js"
 import { registerNotificationIpc } from "./notification-ipc.js"
 import { registerTerminalIpc } from "./terminal-ipc.js"
 import { validString } from "./ipc-validation.js"
 import { MAIN_PERFORMANCE_MILESTONES, markMainPerformance } from "./performance.js"
-import { loopbackSidecarURL } from "./sidecar-connection.js"
+import {
+  configuredBackendConnection,
+  configuredBackendConnectSource,
+  type ConfiguredBackendConnection,
+  loopbackSidecarURL,
+} from "./sidecar-connection.js"
+import type { GuiConnectionResult } from "../shared/connection.js"
+import { failedGuiConnection } from "./connection-result.js"
+import { confirmCoordinatorVersionMismatch } from "./version-mismatch-confirmation.js"
 import { createSidecarLifecycle } from "./sidecar-lifecycle.js"
 import { attachEditContextMenu } from "./context-menu.js"
 import { nextZoomLevel, zoomShortcutAction } from "./zoom-shortcuts.js"
@@ -27,17 +41,10 @@ import { nextZoomLevel, zoomShortcutAction } from "./zoom-shortcuts.js"
 markMainPerformance(MAIN_PERFORMANCE_MILESTONES.bootstrap)
 const isDev = !app.isPackaged
 const rendererURL = isDev ? developmentRendererURL() : undefined
-const RENDERER_CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "font-src 'self' data:",
-  "media-src 'self' data:",
-  "worker-src 'self' blob:",
-  "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* data:",
-].join("; ")
-let authorizedSidecar: { origin: string; header: string } | undefined
+let configuredBackend: ConfiguredBackendConnection | undefined
+let configuredBackendError: unknown
+let configuredBackendLoaded = false
+let authorizedSidecar: { origin: string; header?: string } | undefined
 const sidecarLifecycle = createSidecarLifecycle({
   start: startSidecar,
   health: isCoordinatorHealthy,
@@ -75,26 +82,77 @@ function registerAppIcon() {
   if (process.platform === "darwin") app.dock?.setIcon(appIconPath())
 }
 
-function authorizeSidecar(connection: SidecarConnection) {
-  const url = loopbackSidecarURL(connection.url)
+function loadConfiguredBackend() {
+  if (!configuredBackendLoaded) {
+    configuredBackendLoaded = true
+    try {
+      configuredBackend = configuredBackendConnection()
+    } catch (error) {
+      configuredBackendError = error
+    }
+  }
+  if (configuredBackendError) throw configuredBackendError
+  return configuredBackend
+}
+
+function authorizeSidecar(connection: SidecarConnection, configured = false) {
+  const url = configured ? new URL(connection.url) : loopbackSidecarURL(connection.url)
   if (!url) throw new Error("OpencodeX sidecar URL must use HTTP on a loopback host")
+  if (configured && url.origin !== connection.url) {
+    throw new Error("OpencodeX backend URL does not match OPENCODEX_GUI_SERVER_URL")
+  }
   authorizedSidecar = {
     origin: url.origin,
-    header: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
+    ...(connection.password
+      ? { header: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}` }
+      : {}),
   }
 }
 
 function ensureSidecar() {
+  const backend = loadConfiguredBackend()
+  if (backend) {
+    authorizeSidecar(backend, true)
+    return Promise.resolve(backend)
+  }
   return sidecarLifecycle.ensure()
 }
 
 function stopOwnedSidecar() {
+  if (process.env.OPENCODEX_GUI_SERVER_URL) return Promise.resolve()
   return sidecarLifecycle.stop()
+}
+
+function rendererContentSecurityPolicy() {
+  let remote: string | undefined
+  try {
+    remote = configuredBackendConnectSource(loadConfiguredBackend())
+  } catch {
+    // Connection IPC surfaces malformed configuration; CSP stays fail-closed.
+  }
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    "media-src 'self' data:",
+    "worker-src 'self' blob:",
+    [
+      "connect-src 'self'",
+      "http://127.0.0.1:*",
+      "ws://127.0.0.1:*",
+      "http://localhost:*",
+      "ws://localhost:*",
+      ...(remote ? [remote] : []),
+      "data:",
+    ].join(" "),
+  ].join("; ")
 }
 
 function registerSidecarAuthorization() {
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    if (authorizedSidecar) {
+    if (authorizedSidecar?.header) {
       try {
         if (new URL(details.url).origin === authorizedSidecar.origin) {
           details.requestHeaders.authorization = authorizedSidecar.header
@@ -112,7 +170,7 @@ function registerContentSecurityPolicy() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        "Content-Security-Policy": [RENDERER_CSP],
+        "Content-Security-Policy": [rendererContentSecurityPolicy()],
       },
     })
   })
@@ -214,9 +272,33 @@ async function createWindow() {
 
 ipcMain.handle("opencodex:connection", async () => {
   markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarRequestStarted)
-  const connection = await ensureSidecar()
-  markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
-  return { url: connection.url, directory: connection.directory }
+  try {
+    const connection = await ensureSidecar()
+    markMainPerformance(MAIN_PERFORMANCE_MILESTONES.sidecarReady)
+    return {
+      ok: true,
+      value: {
+        url: connection.url,
+        directory: connection.directory,
+      },
+    } satisfies GuiConnectionResult
+  } catch (error) {
+    console.error("Failed to connect to the OpencodeX backend", error)
+    return failedGuiConnection(error)
+  }
+})
+
+ipcMain.handle("opencodex:attach-version-mismatch", async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Coordinator version override is only available from the main OpencodeX window.")
+  }
+  await confirmCoordinatorVersionMismatch({
+    window,
+    pending: pendingCoordinatorVersionMismatch,
+    approve: allowCoordinatorVersionMismatch,
+    showMessageBox: (owner, options) => dialog.showMessageBox(owner, options),
+  })
 })
 
 ipcMain.handle("opencodex:window", (event, action: unknown) => {

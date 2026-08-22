@@ -74,7 +74,7 @@ describe("sidecar lifecycle", () => {
     await first
   })
 
-  test("waits for shutdown cleanup before restarting", async () => {
+  test("waits for shutdown cleanup before starting again", async () => {
     const cleanup = Promise.withResolvers<void>()
     let starts = 0
     const lifecycle = createSidecarLifecycle({
@@ -86,12 +86,12 @@ describe("sidecar lifecycle", () => {
     expect(await lifecycle.ensure()).toBe("connection-1")
 
     const stopping = lifecycle.stop()
-    const restarting = lifecycle.ensure()
+    const nextStart = lifecycle.ensure()
     expect(starts).toBe(1)
     cleanup.resolve()
 
     await stopping
-    expect(await restarting).toBe("connection-2")
+    expect(await nextStart).toBe("connection-2")
   })
 
   test("aborts and rejects stale completion after stop", async () => {

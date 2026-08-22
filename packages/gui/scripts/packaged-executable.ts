@@ -5,18 +5,19 @@ export function packagedExecutable(root: string) {
   return packagedExecutableCandidates(root).find((candidate) => fs.existsSync(candidate))
 }
 
-export function packagedExecutableCandidates(root: string) {
-  if (process.platform === "win32") {
+export function packagedExecutableCandidates(root: string, platform: NodeJS.Platform = process.platform) {
+  if (platform === "win32") {
     return [
       path.join(root, "release", "win-unpacked", "opencodex-gui.exe"),
       path.join(root, "release", "win-unpacked", "OpencodeX.exe"),
     ]
   }
-  if (process.platform === "darwin") {
-    return [
-      path.join(root, "release", "mac", "OpencodeX.app", "Contents", "MacOS", "opencodex-gui"),
-      path.join(root, "release", "mac-arm64", "OpencodeX.app", "Contents", "MacOS", "opencodex-gui"),
-    ]
+  if (platform === "darwin") {
+    return ["mac", "mac-arm64"].flatMap((arch) =>
+      ["OpencodeX.app", "opencodex-gui.app"].map((bundle) =>
+        path.join(root, "release", arch, bundle, "Contents", "MacOS", "opencodex-gui"),
+      ),
+    )
   }
   return [path.join(root, "release", "linux-unpacked", "opencodex-gui")]
 }

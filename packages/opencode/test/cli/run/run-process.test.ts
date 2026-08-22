@@ -6,6 +6,7 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { cliIt } from "../../lib/cli-process"
+import { reply } from "../../lib/llm-server"
 
 describe("opencode run (non-interactive subprocess)", () => {
   // Happy path: prompt completes, output reaches stdout, process exits 0.
@@ -14,8 +15,11 @@ describe("opencode run (non-interactive subprocess)", () => {
     "exits 0 and writes the response to stdout on a successful prompt",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.text("hello from the test llm")
-        const result = yield* opencode.run("say hi")
+        yield* llm.textMatch(
+          (hit) => JSON.stringify(hit.body).includes("successful prompt"),
+          "hello from the test llm",
+        )
+        const result = yield* opencode.run("successful prompt")
         opencode.expectExit(result, 0)
         expect(result.stdout).toContain("hello from the test llm")
       }),
@@ -41,19 +45,40 @@ describe("opencode run (non-interactive subprocess)", () => {
     30_000,
   )
 
-  // Locks in the current behavior: when the LLM stream errors mid-response
-  // (the prompt was accepted, then the upstream provider failed), opencode
-  // emits a session.error event and the process exits 0 today.
-  //
-  // This is debatable — a future cleanup might flip it to exit 1. If you're
-  // changing this expectation, do it deliberately and say so in the PR.
+  // When the prompt is accepted but the provider fails mid-stream, preserve
+  // the emitted error for callers and report the failed run through its exit.
   cliIt.concurrent(
-    "mid-stream LLM error still exits 0 today (contract lock-in)",
+    "mid-stream LLM error emits its message and exits nonzero",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.fail("upstream provider exploded mid-stream")
+        yield* llm.pushMatch(
+          (hit) => JSON.stringify(hit.body).includes("trigger midstream error"),
+          ...Array.from({ length: 5 }, () => reply().text("partial response").reset()),
+        )
         const result = yield* opencode.run("trigger midstream error")
-        expect(result.exitCode).toBe(0)
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr.trim()).not.toBe("")
+      }),
+    60_000,
+  )
+
+  cliIt.live(
+    "attached --command reports its session error and exits nonzero",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        const server = yield* opencode.serve()
+        yield* llm.pushMatch(
+          () => true,
+          ...Array.from({ length: 5 }, () => reply().text("partial attached command response").reset()),
+        )
+        const result = yield* opencode.run("", {
+          command: "init",
+          extraArgs: ["--attach", server.url],
+          timeoutMs: 30_000,
+        })
+
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr.trim()).not.toBe("")
       }),
     60_000,
   )
@@ -65,8 +90,8 @@ describe("opencode run (non-interactive subprocess)", () => {
     "--format json emits parseable line-delimited JSON to stdout",
     ({ llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.text("structured output")
-        const result = yield* opencode.run("say hi", { format: "json" })
+        yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("json prompt"), "structured output")
+        const result = yield* opencode.run("json prompt", { format: "json" })
         opencode.expectExit(result, 0)
 
         const events = opencode.parseJsonEvents(result.stdout)

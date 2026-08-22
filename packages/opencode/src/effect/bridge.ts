@@ -5,7 +5,8 @@ import { InstanceRef, WorkspaceRef } from "./instance-ref"
 import { attachWith } from "./run-service"
 
 export interface Shape {
-  readonly promise: <A, E, R>(effect: Effect.Effect<A, E, R>) => Promise<A>
+  readonly promise: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions) => Promise<A>
+  readonly promiseExit: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions) => Promise<Exit.Exit<A, E>>
   readonly fork: <A, E, R>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>
   readonly run: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E>
   readonly bind: <Args extends readonly unknown[], Result>(fn: (...args: Args) => Result) => (...args: Args) => Result
@@ -58,11 +59,13 @@ export function make(): Effect.Effect<Shape> {
     const instance = (yield* InstanceRef) ?? captured.instance
     const workspace = (yield* WorkspaceRef) ?? captured.workspace
     const wrap = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      attachWith(effect.pipe(Effect.provide(ctx)) as Effect.Effect<A, E, never>, { instance, workspace })
+      attachWith(effect.pipe(Effect.provide(ctx)) as Effect.Effect<A, E>, { instance, workspace })
 
     return {
-      promise: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-        restoreWorkspace(workspace, () => Effect.runPromise(wrap(effect))),
+      promise: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions) =>
+        restoreWorkspace(workspace, () => Effect.runPromise(wrap(effect), options)),
+      promiseExit: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions) =>
+        restoreWorkspace(workspace, () => Effect.runPromiseExit(wrap(effect), options)),
       fork: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         restoreWorkspace(workspace, () => Effect.runFork(wrap(effect))),
       run: <A, E, R>(effect: Effect.Effect<A, E, R>) =>

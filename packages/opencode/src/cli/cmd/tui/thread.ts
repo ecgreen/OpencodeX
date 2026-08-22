@@ -19,8 +19,17 @@ import {
   sanitizedProcessEnv,
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
-import { coordinatorHeaders, resolveLocalCoordinator, startCoordinatorClientLease } from "./coordinator-registry"
+import {
+  coordinatorHeaders,
+  coordinatorKey,
+  preferredCoordinatorDatabase,
+  readActiveCoordinator,
+  resolveLocalCoordinator,
+  startCoordinatorClientLease,
+  type TuiCoordinatorManifest,
+} from "./coordinator-registry"
 import { createCoordinatorTransport } from "./coordinator-transport"
+import { randomBytes } from "crypto"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -44,6 +53,16 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
   const root = Filesystem.resolve(envPWD ?? cwd)
   if (project) return Filesystem.resolve(path.isAbsolute(project) ? project : path.join(root, project))
   return Filesystem.resolve(cwd)
+}
+
+export async function initializeTuiTransport<T>(initialize: () => Promise<T>, cleanup: () => Promise<void>) {
+  try {
+    return await initialize()
+  } catch (error) {
+    Log.Default.warn("tui stopping: transport initialization failed", { error: errorMessage(error) })
+    await cleanup()
+    throw error
+  }
 }
 
 export const TuiThreadCommand = cmd({
@@ -122,15 +141,79 @@ export const TuiThreadCommand = cmd({
       let stop = async () => {}
       let onSnapshot = async () => [writeHeapSnapshot("tui.heapsnapshot")]
 
+      // Attach to an existing healthy authority (the default coordinator or a
+      // serve-published one). The transport re-resolves the manifest on
+      // connection loss and follows the replacement's url and credentials, so
+      // the TUI heals instead of hammering a dead port forever.
+      const attachToCoordinator = async (coordinator: TuiCoordinatorManifest) => {
+        let lease = startCoordinatorClientLease(coordinator.key)
+        try {
+          await lease.ready
+        } catch (error) {
+          lease.dispose()
+          throw error
+        }
+        let leaseKey = coordinator.key
+        const reattaching = createCoordinatorTransport({
+          manifest: coordinator,
+          resolve: () => resolveLocalCoordinator(cwd),
+          onManifest: (manifest) => {
+            Log.Default.info("tui coordinator reattached", { url: manifest.url, pid: manifest.pid })
+            if (manifest.key === leaseKey) return
+            lease.dispose()
+            leaseKey = manifest.key
+            lease = startCoordinatorClientLease(manifest.key)
+            lease.ready.catch((error) => {
+              Log.Default.warn("tui coordinator lease failed after reattach", { error: errorMessage(error) })
+            })
+          },
+        })
+        stop = async () => {
+          lease.dispose()
+        }
+        return {
+          url: coordinator.url,
+          headers: coordinatorHeaders(coordinator),
+          fetch: reattaching.fetch,
+        }
+      }
+
       const transport: {
         url: string
         fetch?: typeof fetch
         headers?: RequestInit["headers"]
       } = external
         ? await (async () => {
+            // Explicit network listeners are advisory: the database may already
+            // have an authority (a TUI coordinator, the GUI sidecar, or serve).
+            // Resolve the same preferred database the rest of the CLI uses and
+            // attach instead of opening a second writer.
+            const database = await preferredCoordinatorDatabase()
+            const existing = await readActiveCoordinator(coordinatorKey(database), database)
+            if (existing) {
+              UI.println(
+                UI.Style.TEXT_WARNING_BOLD + "!",
+                UI.Style.TEXT_NORMAL,
+                `requested network listener options were not used: this database already has an authority (pid ${existing.pid}, url ${existing.url})`,
+              )
+              return await attachToCoordinator(existing)
+            }
+            // No authority: the worker serves the requested network options and
+            // participates in the same authority protocol (owner lock, manifest,
+            // token-matched teardown), so a racing client attaches instead of
+            // starting a second writer.
+            const username = process.env.OPENCODE_SERVER_USERNAME ?? "opencodex-local"
+            const password = process.env.OPENCODE_SERVER_PASSWORD ?? randomBytes(32).toString("base64url")
+            const token = randomBytes(32).toString("base64url")
             const env = sanitizedProcessEnv({
               [OPENCODE_PROCESS_ROLE]: "worker",
               [OPENCODE_RUN_ID]: ensureRunID(),
+              OPENCODE_TUI_COORDINATOR_USERNAME: username,
+              OPENCODE_TUI_COORDINATOR_PASSWORD: password,
+              OPENCODE_TUI_COORDINATOR_TOKEN: token,
+              OPENCODE_SERVER_USERNAME: username,
+              OPENCODE_SERVER_PASSWORD: password,
+              OPENCODE_DB: database,
             })
 
             const file = await target()
@@ -185,45 +268,18 @@ export const TuiThreadCommand = cmd({
             }, 1000).unref?.()
 
             return {
-              url: (await client.call("server", network)).url,
+              url: (
+                await initializeTuiTransport(
+                  () => client.call("server", network),
+                  () => stop(),
+                )
+              ).url,
+              headers: { authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` },
             }
           })()
         : await (async () => {
             const coordinator = await resolveLocalCoordinator(cwd)
-            let lease = startCoordinatorClientLease(coordinator.key)
-            try {
-              await lease.ready
-            } catch (error) {
-              lease.dispose()
-              throw error
-            }
-            // The coordinator can die mid-session (a GUI dev restart used to be
-            // enough). This transport re-resolves the manifest on connection
-            // loss and follows it to the replacement's url and credentials, so
-            // the TUI heals instead of hammering a dead port forever.
-            let leaseKey = coordinator.key
-            const reattaching = createCoordinatorTransport({
-              manifest: coordinator,
-              resolve: () => resolveLocalCoordinator(cwd),
-              onManifest: (manifest) => {
-                Log.Default.info("tui coordinator reattached", { url: manifest.url, pid: manifest.pid })
-                if (manifest.key === leaseKey) return
-                lease.dispose()
-                leaseKey = manifest.key
-                lease = startCoordinatorClientLease(manifest.key)
-                lease.ready.catch((error) => {
-                  Log.Default.warn("tui coordinator lease failed after reattach", { error: errorMessage(error) })
-                })
-              },
-            })
-            stop = async () => {
-              lease.dispose()
-            }
-            return {
-              url: coordinator.url,
-              headers: coordinatorHeaders(coordinator),
-              fetch: reattaching.fetch,
-            }
+            return await attachToCoordinator(coordinator)
           })()
 
       try {
@@ -235,6 +291,10 @@ export const TuiThreadCommand = cmd({
           headers: transport.headers,
         })
       } catch (error) {
+        // OpencodeX-l1v layer 1: name every shutdown trigger, so a CI worker
+        // log can say WHY the headless TUI stopped instead of leaving only
+        // the disposal fallout as evidence.
+        Log.Default.warn("tui stopping: session validation failed", { error: errorMessage(error) })
         UI.error(errorMessage(error))
         process.exitCode = 1
         await stop()
@@ -262,6 +322,10 @@ export const TuiThreadCommand = cmd({
           },
         })
         await handle.done
+        Log.Default.info("tui stopping: renderer handle completed", {
+          tty: process.stdout.isTTY === true,
+          platform: process.platform,
+        })
       } finally {
         await stop()
       }

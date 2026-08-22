@@ -6,6 +6,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { OpencodeXSwarmRoleTable, OpencodeXSwarmTable } from "@opencode-ai/core/opencodex/sql"
 import { Image } from "@/image/image"
 import { OpencodeXClaudeDriver } from "@/opencodex/claude-driver"
+import { ClaudeDelegate } from "@/opencodex/claude-delegate"
 import { SwarmBriefing } from "@/opencodex/swarm-briefing"
 import { Skill } from "@/skill"
 import { CLAUDE_CODE_DEFAULT_MODEL_ID, isClaudeCodeProvider } from "@/provider/claude-code-provider"
@@ -23,6 +24,8 @@ import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
 import { prepareImages } from "./swarm-attachments"
 import { SessionStatus } from "./status"
+import { hydrateFallbackModels } from "@/opencodex/swarm-model"
+import { shouldAdvanceModelFallback } from "./model-fallback"
 
 const log = Log.create({ service: "session.prompt-swarm" })
 
@@ -36,6 +39,7 @@ export type SwarmRoleRow = {
   model_id: string | null
   /** The model variant (effort level) the role runs at, when one is chosen. */
   variant: string | null
+  fallback_models: string
 }
 
 export interface Deps {
@@ -44,6 +48,7 @@ export interface Deps {
   readonly sessions: Context.Service.Shape<typeof Session.Service>
   readonly skills: Context.Service.Shape<typeof Skill.Service>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionLegacy.WithParts, Image.Error>
+  readonly loop: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<SessionLegacy.WithParts>
 }
 
 /**
@@ -129,6 +134,7 @@ export function make(deps: Deps) {
         provider_id: OpencodeXSwarmRoleTable.provider_id,
         model_id: OpencodeXSwarmRoleTable.model_id,
         variant: OpencodeXSwarmRoleTable.variant,
+        fallback_models: OpencodeXSwarmRoleTable.fallback_models,
       })
       .from(OpencodeXSwarmRoleTable)
       .where(eq(OpencodeXSwarmRoleTable.swarm_id, swarmID))
@@ -147,6 +153,49 @@ export function make(deps: Deps) {
   })
 
   /**
+   * Records the delegated child on the orchestrator's own tool part, the way
+   * the task tool does for a native subagent (src/tool/task.ts): the GUI's
+   * transcript link reads `metadata.sessionId` off that part, so this stamp is
+   * what turns a delegation row into a drill-down. Failing to stamp only costs
+   * the link, never the delegation, so every outcome is swallowed.
+   */
+  const stampDelegateToolPart = Effect.fnUntraced(function* (input: {
+    sessionID: SessionID
+    toolUseID: string
+    childSessionID: string
+    role: string
+  }) {
+    const isCall = (part: SessionLegacy.Part) => part.type === "tool" && part.callID === input.toolUseID
+    const match = yield* sessions
+      .findMessage(input.sessionID, (message) => message.parts.some(isCall))
+      // catchCause, not orElseSucceed: a defect here must also cost only the
+      // link, never the delegation - "every outcome is swallowed" means it.
+      .pipe(Effect.catchCause(() => Effect.succeed(Option.none<SessionLegacy.WithParts>())))
+    const part = Option.getOrUndefined(match)?.parts.find(isCall)
+    // A pending part has no metadata to hang the link on; by the time a
+    // delegation runs the call is always running, so this is only a guard.
+    if (part?.type !== "tool" || part.state.status === "pending") return
+    yield* sessions
+      .updatePart({
+        ...part,
+        state: {
+          ...part.state,
+          metadata: {
+            ...part.state.metadata,
+            parentSessionId: input.sessionID,
+            sessionId: input.childSessionID,
+            swarmRole: input.role,
+          },
+        },
+      })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.error("swarm delegate stamp failed", { sessionID: input.sessionID, cause })),
+        ),
+      )
+  })
+
+  /**
    * Runs one specialist role as its own OpencodeX session on the model
    * configured for it, and returns its report. This is what the Claude Code
    * orchestrator's delegation tool calls, so specialists stay OpencodeX
@@ -158,12 +207,19 @@ export function make(deps: Deps) {
     roles: SwarmRoleRow[]
     role: string
     prompt: string
+    /**
+     * The orchestrator's tool call id for this delegation, when the driver
+     * could correlate one. It is what links the parent's transcript row to the
+     * session this role runs in.
+     */
+    toolUseID?: string
   }) {
     const role = SwarmBriefing.matchSwarmRole(input.roles, input.role)
-    if (!role) {
-      return `Unknown role "${input.role}". Available roles: ${input.roles.map((item) => item.name).join(", ")}.`
-    }
-    if (!role.provider_id || !role.model_id) return `Role "${role.name}" has no model configured.`
+    if (!role) return ClaudeDelegate.failure("rejected")
+    if (!role.provider_id || !role.model_id) return ClaudeDelegate.failure("rejected")
+    // A role stored on the swarm facade has no concrete model to run: a child
+    // prompted on the facade would take the swarm route itself and recurse.
+    if (isSwarmProvider(role.provider_id)) return ClaudeDelegate.failure("rejected")
     const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     const child = yield* sessions
       .create({
@@ -175,6 +231,15 @@ export function make(deps: Deps) {
         ...(parent.permission ? { permission: parent.permission } : {}),
       })
       .pipe(Effect.orDie)
+    // Written before the role starts, so the orchestrator's transcript row
+    // drills into a running delegation and not only a finished one.
+    if (input.toolUseID)
+      yield* stampDelegateToolPart({
+        sessionID: input.sessionID,
+        toolUseID: input.toolUseID,
+        childSessionID: child.id,
+        role: role.name,
+      })
     // The role's skill is its base definition; the built-in role skills carry
     // the full role prompt. The task-tool path gets it through the specialist
     // loading the skill itself, but a delegated specialist never sees the
@@ -208,7 +273,7 @@ export function make(deps: Deps) {
     const settle = (outcome: DelegationOutcome, summary?: string) =>
       stamp(settleDelegation(started, { outcome, summary }), runID).pipe(Effect.asVoid)
     yield* stamp(started)
-    const outcome: { state: "completed" | "error"; text: string } = yield* Effect.gen(function* () {
+    const outcome: ClaudeDelegate.Result = yield* Effect.gen(function* () {
       // The role's skill is its base definition; the built-in role skills carry
       // the full role prompt. The task-tool path gets it through the specialist
       // loading the skill itself, but a delegated specialist never sees the
@@ -218,38 +283,85 @@ export function make(deps: Deps) {
       const text = [roleSkill?.content.trim(), role.instructions?.trim(), input.prompt.trim()]
         .filter(Boolean)
         .join("\n\n")
-      const result = yield* prompt({
+      const models = [
+        { providerID: role.provider_id!, modelID: role.model_id!, variant: role.variant ?? undefined },
+        ...(role.skill === "orchestrator" || role.name.trim().toLowerCase() === "orchestrator"
+          ? []
+          : hydrateFallbackModels(role.fallback_models, {
+              providerID: role.provider_id!,
+              modelID: role.model_id!,
+            })),
+      ]
+      const userMessageID = MessageID.ascending()
+      const primary = models[0]
+      const initial = yield* prompt({
+        messageID: userMessageID,
         sessionID: child.id,
         model: {
-          providerID: ProviderV2.ID.make(role.provider_id!),
-          modelID: ProviderV2.ModelID.make(role.model_id!),
+          providerID: ProviderV2.ID.make(primary.providerID),
+          modelID: ProviderV2.ModelID.make(primary.modelID),
         },
         ...(role.agent ? { agent: role.agent } : {}),
-        // "default" is the sentinel for "no variant" everywhere in the loop.
-        ...(role.variant && role.variant !== "default" ? { variant: role.variant } : {}),
+        ...(primary.variant && primary.variant !== "default" ? { variant: primary.variant } : {}),
         parts: [{ type: "text", text }],
       })
+      // `undefined` marks a turn that completed as something other than this
+      // role's assistant reply; a bare throw here would become an unhandled
+      // defect and kill the fiber past the role-failure handling below.
+      const advance = (
+        result: SessionLegacy.WithParts,
+        index: number,
+      ): Effect.Effect<SessionLegacy.WithParts | undefined> =>
+        Effect.gen(function* () {
+          const model = models[index]
+          if (!model) return result
+          const turn = yield* sessions.messageWithChildren({ sessionID: child.id, messageID: userMessageID })
+          if (!shouldAdvanceModelFallback(turn, userMessageID)) return result
+          const user = turn.find(
+            (message): message is SessionLegacy.WithParts & { info: SessionLegacy.User } =>
+              message.info.role === "user" && message.info.id === userMessageID,
+          )
+          if (!user) return result
+          yield* sessions.updateMessage({
+            ...user.info,
+            model: {
+              providerID: ProviderV2.ID.make(model.providerID),
+              modelID: ProviderV2.ModelID.make(model.modelID),
+              ...(model.variant && model.variant !== "default" ? { variant: model.variant } : {}),
+            },
+          })
+          const next = yield* deps.loop({ sessionID: child.id, messageID: userMessageID })
+          if (next.info.role !== "assistant" || next.info.parentID !== userMessageID) {
+            return undefined
+          }
+          return yield* advance(next, index + 1)
+        })
+      const result = yield* advance(initial, 1)
+      if (!result) return ClaudeDelegate.failure("errored")
       if (result.info.role === "assistant" && result.info.error) {
-        return { state: "error" as const, text: `Role "${role.name}" failed: ${JSON.stringify(result.info.error)}` }
+        return ClaudeDelegate.failure("errored")
       }
       const report = result.parts
         .flatMap((part) => (part.type === "text" && !part.synthetic && part.text.trim() ? [part.text.trim()] : []))
         .join("\n")
-      return { state: "completed" as const, text: report }
+      if (!report) return { ok: false as const, reason: "empty-output" as const }
+      return { ok: true as const, text: report }
     }).pipe(
       // Every exit settles the record: clean return, subagent error, typed
       // failure, defect, and interruption alike.
       Effect.onExit((exit) =>
         Exit.isSuccess(exit)
-          ? settle(exit.value.state === "error" ? "errored" : "completed", exit.value.text)
+          ? settle(
+              exit.value.ok ? "completed" : "errored",
+              exit.value.ok ? exit.value.text : ClaudeDelegate.failureMessage(exit.value),
+            )
           : Cause.hasInterruptsOnly(exit.cause)
             ? settle("cancelled")
             : settle("errored"),
       ),
       Effect.catch(Effect.die),
     )
-    if (outcome.state === "error") return outcome.text
-    return outcome.text || `Role "${role.name}" produced no output.`
+    return outcome
   })
 
   /**
@@ -326,6 +438,7 @@ export function make(deps: Deps) {
                   roles: swarm!.roles,
                   role: delegated.role,
                   prompt: delegated.prompt,
+                  ...(delegated.toolUseID ? { toolUseID: delegated.toolUseID } : {}),
                 }),
             },
           }

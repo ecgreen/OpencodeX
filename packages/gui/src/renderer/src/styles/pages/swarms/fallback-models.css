@@ -1,0 +1,57 @@
+.swarm-role-fallbacks {
+  display: grid;
+  gap: var(--ds-space-2);
+  grid-column: 1 / -1;
+  padding-top: var(--ds-space-1);
+}
+
+.swarm-role-fallbacks>header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+}
+
+.swarm-role-fallbacks>header>div {
+  display: grid;
+  gap: var(--ds-space-0);
+}
+
+.swarm-role-fallbacks>header strong {
+  color: var(--text);
+}
+
+.swarm-role-fallbacks>header span,
+.swarm-role-fallbacks>p {
+  color: var(--muted);
+  font-weight: var(--ds-weight-regular);
+}
+
+.swarm-role-fallback-list {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.swarm-role-fallback-row {
+  display: grid;
+  align-items: center;
+  gap: var(--ds-space-2);
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  padding: var(--ds-space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ds-radius-card);
+}
+
+.swarm-role-fallback-order {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.swarm-role-fallback-actions {
+  display: flex;
+  gap: var(--ds-space-0);
+}
+
+.swarm-role-fallback-row>.swarm-model-warning {
+  grid-column: 2 / -1;
+}

@@ -147,8 +147,12 @@ export async function inspectPackage(input: { appDir: string; platform: string; 
   const key = `${input.platform}-${input.arch}` as keyof typeof packageLimits.unpacked
   const unpackedLimit = packageLimits.unpacked[key]
   if (!unpackedLimit) throw new Error(`No unpacked package limit is defined for ${key}`)
-  const resources = input.platform === "darwin"
-    ? path.join(input.appDir, "OpencodeX.app", "Contents", "Resources")
+  const darwinBundle = input.platform === "darwin"
+    ? ["OpencodeX.app", "opencodex-gui.app"].map((name) => path.join(input.appDir, name)).find(existsSync)
+    : undefined
+  if (input.platform === "darwin" && !darwinBundle) throw new Error(`Packaged app bundle is missing: ${input.appDir}`)
+  const resources = darwinBundle
+    ? path.join(darwinBundle, "Contents", "Resources")
     : path.join(input.appDir, "resources")
   const archive = path.join(resources, "app.asar")
   if (!existsSync(archive)) throw new Error(`Packaged app.asar is missing: ${archive}`)

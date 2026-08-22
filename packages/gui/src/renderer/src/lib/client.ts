@@ -1,4 +1,23 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import {
+  type COORDINATOR_VERSION_MISMATCH,
+  type GuiConnectionResult,
+} from "../../../shared/connection"
+
+export class GuiConnectionError extends Error {
+  readonly code?: typeof COORDINATOR_VERSION_MISMATCH
+
+  constructor(error: { message: string; code?: typeof COORDINATOR_VERSION_MISMATCH }) {
+    super(error.message)
+    this.name = "GuiConnectionError"
+    this.code = error.code
+  }
+}
+
+export function unwrapGuiConnection(result: GuiConnectionResult) {
+  if (result.ok) return result.value
+  throw new GuiConnectionError(result.error)
+}
 
 export type GuiClient = {
   client: OpencodeClient
@@ -20,7 +39,7 @@ function encodeBasic(username: string, password: string) {
 
 export async function connectGuiClient(): Promise<GuiClient> {
   let connection: BackendConnection = window.opencodex
-    ? await window.opencodex.connection()
+    ? unwrapGuiConnection(await window.opencodex.connection())
     : {
         url: import.meta.env.VITE_OPENCODEX_SERVER_URL ?? "http://127.0.0.1:4096",
         directory: import.meta.env.VITE_OPENCODEX_DIRECTORY ?? import.meta.env.PWD ?? "",
@@ -36,7 +55,7 @@ export async function connectGuiClient(): Promise<GuiClient> {
     recovery ??= window.opencodex
       .connection()
       .then((next) => {
-        connection = next
+        connection = unwrapGuiConnection(next)
         generation += 1
       })
       .finally(() => {
@@ -55,6 +74,9 @@ export async function connectGuiClient(): Promise<GuiClient> {
         await response.body?.cancel().catch(() => undefined)
       } catch (cause) {
         if (request.signal.aborted || !window.opencodex) throw cause
+        await recover(failedGeneration)
+        if (!["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) throw cause
+        return rawFetch(routeRequest(request, connection, body))
       }
       await recover(failedGeneration)
       return rawFetch(routeRequest(request, connection, body))
