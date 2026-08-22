@@ -39,9 +39,18 @@ function user(text: string): SDKUserMessage {
   return { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null } as SDKUserMessage
 }
 
-const assistant = { type: "assistant", message: { content: [] } } as unknown as ClaudeEvent
-const result = { type: "result", subtype: "success" } as unknown as ClaudeEvent
-const init = { type: "system", subtype: "init", session_id: "conv-1" } as unknown as ClaudeEvent
+/** Test fixtures cross the same untyped stream-json boundary the SDK does. */
+function event(value: Record<string, unknown>): ClaudeEvent {
+  return value as unknown as ClaudeEvent
+}
+
+function typeOf(value: ClaudeEvent) {
+  return (value as unknown as { type?: string }).type
+}
+
+const assistant = event({ type: "assistant", message: { content: [] } })
+const result = event({ type: "result", subtype: "success" })
+const init = event({ type: "system", subtype: "init", session_id: "conv-1" })
 
 async function collect(events: AsyncIterable<ClaudeEvent>, count: number) {
   const seen: ClaudeEvent[] = []
@@ -73,7 +82,7 @@ describe("claude channel", () => {
     emit(result) // the real completion
 
     const seen = await collect(turn.events, 3)
-    expect(seen.map((event) => (event as { type: string }).type)).toEqual(["system", "assistant", "result"])
+    expect(seen.map(typeOf)).toEqual(["system", "assistant", "result"])
   })
 
   test("forwards a pre-init result so a rejected resume still reaches the mapper", async () => {
@@ -83,9 +92,9 @@ describe("claude channel", () => {
     const { create, emit } = fakeQuery()
     const channel = new Channel<Handlers>("s1", create, { resumeID: "conv-gone" })
     const turn = channel.turn([user("wake")], { name: "t1" })
-    emit({ type: "result", subtype: "error_during_execution", is_error: true } as unknown as ClaudeEvent)
+    emit(event({ type: "result", subtype: "error_during_execution", is_error: true }))
     const seen = await collect(turn.events, 1)
-    expect((seen[0] as { type: string }).type).toBe("result")
+    expect(typeOf(seen[0]!)).toBe("result")
   })
 
   test("forwards results normally on a channel that did not resume", async () => {
@@ -94,7 +103,7 @@ describe("claude channel", () => {
     const turn = channel.turn([user("hi")], { name: "t1" })
     emit(result)
     const seen = await collect(turn.events, 1)
-    expect((seen[0] as { type: string }).type).toBe("result")
+    expect(typeOf(seen[0]!)).toBe("result")
   })
 
   test("drops results that arrive between turns", async () => {
@@ -108,13 +117,13 @@ describe("claude channel", () => {
     // Nobody is consuming: background chatter and stray results must not leak
     // into the next turn.
     emit(result)
-    emit({ type: "system", subtype: "task_done" } as unknown as ClaudeEvent)
+    emit(event({ type: "system", subtype: "task_done" }))
     await settled()
 
     const second = channel.turn([user("two")], { name: "t2" })
     emit(assistant)
     const seen = await collect(second.events, 1)
-    expect((seen[0] as { type: string }).type).toBe("assistant")
+    expect(typeOf(seen[0]!)).toBe("assistant")
   })
 
   test("runs consecutive turns over one query and swaps handlers per turn", async () => {
@@ -161,7 +170,7 @@ describe("claude channel", () => {
     const channel = new Channel<Handlers>("s1", create)
 
     const first = channel.turn([user("one")], { name: "t1" })
-    const iterator = (first.events as AsyncGenerator<ClaudeEvent>)[Symbol.asyncIterator]()
+    const iterator = first.events[Symbol.asyncIterator]()
     emit(assistant)
     emit(result)
     await iterator.next()
@@ -173,7 +182,7 @@ describe("claude channel", () => {
     const second = channel.turn([user("two")], { name: "t2" })
     emit(assistant)
     const seen = await collect(second.events, 1)
-    expect((seen[0] as { type: string }).type).toBe("assistant")
+    expect(typeOf(seen[0]!)).toBe("assistant")
   })
 
   test("closes a channel whose child ignores an interrupt", async () => {

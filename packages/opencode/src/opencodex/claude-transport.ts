@@ -213,8 +213,18 @@ async function* idlePrompt(): AsyncGenerator<never> {
   await new Promise(() => undefined)
 }
 
+/**
+ * Module-scoped: the driver layer (and with it `createSdkTransport`) is
+ * rebuilt per prompt-runtime scope, and a registry created per transport
+ * instance would start every turn empty — respawning a CLI child per turn and
+ * abandoning the previous one, which is exactly the lifecycle the persistent
+ * channels exist to end. Session ids are globally unique, so one process-wide
+ * registry is safe across instances.
+ */
+const persistentChannels = createChannelRegistry<TurnHandlers>()
+
 export function createSdkTransport(): ClaudeTransport {
-  const registry = createChannelRegistry<TurnHandlers>()
+  const registry = persistentChannels
 
   function turnHandlers(options: TransportOptions): TurnHandlers {
     const correlator = createDelegateCorrelator()
@@ -300,7 +310,7 @@ export function createSdkTransport(): ClaudeTransport {
         // The interrupt raced the turn start: unwind what was just attached.
         await active.interrupt()
       }
-      yield* active.events as AsyncGenerator<ClaudeEvent>
+      yield* active.events
     }
 
     if (options.signal) {

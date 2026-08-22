@@ -72,7 +72,7 @@ export function createPushable<T>() {
           }
         })
       }
-    })() as AsyncIterable<T>,
+    })(),
   }
 }
 
@@ -115,6 +115,7 @@ export class Channel<H> {
   ) {
     this.interruptGraceMs = options?.interruptGraceMs ?? INTERRUPT_GRACE_MS
     this.settling = options?.resumeID !== undefined
+    log.info("claude channel created", { channel: key, resumed: this.settling })
     this.queryPromise = createQuery({
       prompt: this.input.iterable,
       handlers: () => this.handlers,
@@ -132,6 +133,7 @@ export class Channel<H> {
       failure = { failure: error }
     }
     this.dead = true
+    log.info("claude channel pump ended", { channel: this.key, failed: failure !== undefined })
     const sink = this.sink
     this.sink = undefined
     sink?.end(failure)
@@ -199,29 +201,24 @@ export class Channel<H> {
       }
     }
 
-    const channel = this
-    async function* events(): AsyncGenerator<ClaudeEvent> {
-      try {
-        while (true) {
-          while (buffered.length > 0) yield buffered.shift()!
-          if (ended) {
-            if ("failure" in ended) throw ended.failure
-            return
+    const state: TurnState = {
+      next: () => {
+        const value = buffered.shift()
+        if (value !== undefined) return { value }
+        return ended ?? undefined
+      },
+      wait: () =>
+        new Promise<void>((resolve) => {
+          notify = () => {
+            notify = undefined
+            resolve()
           }
-          await new Promise<void>((resolve) => {
-            notify = () => {
-              notify = undefined
-              resolve()
-            }
-          })
-        }
-      } finally {
-        detach()
-      }
+        }),
+      detach,
     }
 
     return {
-      events: events() as AsyncIterable<ClaudeEvent>,
+      events: turnEvents(state),
       interrupt: async () => {
         // Interrupt the turn, not the channel: the child survives for the
         // session's next turn. But a child too wedged to acknowledge the
@@ -229,14 +226,14 @@ export class Channel<H> {
         // the session hostage: if the turn is still attached after the grace
         // window, the whole channel is torn down and the next turn respawns
         // with resume.
-        const query = await channel.queryPromise.catch(() => undefined)
+        const query = await this.queryPromise.catch(() => undefined)
         await query?.interrupt().catch(() => undefined)
         setTimeout(() => {
-          if (channel.sink === sink && !channel.dead) {
-            log.warn("claude channel unresponsive to interrupt; closing", { channel: channel.key })
-            void channel.close()
+          if (this.sink === sink && !this.dead) {
+            log.warn("claude channel unresponsive to interrupt; closing", { channel: this.key })
+            void this.close()
           }
-        }, channel.interruptGraceMs).unref?.()
+        }, this.interruptGraceMs).unref?.()
       },
     }
   }
@@ -254,6 +251,34 @@ export class Channel<H> {
 }
 
 const INTERRUPT_GRACE_MS = 10_000
+
+/** One live turn's consumption surface, closed over by {@link turnEvents}. */
+type TurnState = {
+  /** A buffered event, the end marker (`{failure?}`), or nothing yet. */
+  next: () => { value: ClaudeEvent } | { failure?: unknown } | undefined
+  wait: () => Promise<void>
+  detach: () => void
+}
+
+async function* turnEvents(state: TurnState): AsyncGenerator<ClaudeEvent> {
+  try {
+    while (true) {
+      const step = state.next()
+      if (step === undefined) {
+        await state.wait()
+        continue
+      }
+      if ("value" in step) {
+        yield step.value
+        continue
+      }
+      if ("failure" in step) throw step.failure
+      return
+    }
+  } finally {
+    state.detach()
+  }
+}
 
 /**
  * Session-keyed registry. A turn whose config no longer matches the session's

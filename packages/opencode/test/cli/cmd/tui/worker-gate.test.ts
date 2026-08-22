@@ -11,6 +11,14 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+/** The rejection message of a promise expected to fail. */
+async function failure(work: Promise<unknown>) {
+  return work.then(
+    () => undefined,
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  )
+}
+
 /** Resolves after a couple of macrotasks, letting any early settle win first. */
 function delayed<T>(value: T) {
   return new Promise<T>((resolve) => setTimeout(() => resolve(value), 20))
@@ -45,7 +53,13 @@ describe("worker gate", () => {
     const gate = createWorkerGate()
     const drain = gate.drain()
     expect(gate.draining).toBe(true)
-    await expect(gate.run(async () => "late")).rejects.toBeInstanceOf(WorkerShuttingDownError)
+    const rejection = await gate
+      .run(async () => "late")
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+    expect(rejection).toBeInstanceOf(WorkerShuttingDownError)
     expect(await drain).toBe(true)
   })
 
@@ -55,7 +69,7 @@ describe("worker gate", () => {
     const work = gate.run(() => hung.promise)
     expect(await gate.drain(10)).toBe(false)
     hung.reject(new Error("cleanup"))
-    await expect(work).rejects.toThrow("cleanup")
+    expect(await failure(work)).toBe("cleanup")
   })
 
   test("failed work still settles the gate and keeps its own rejection", async () => {
@@ -63,7 +77,7 @@ describe("worker gate", () => {
     const work = gate.run(async () => {
       throw new Error("bootstrap failed")
     })
-    await expect(work).rejects.toThrow("bootstrap failed")
+    expect(await failure(work)).toBe("bootstrap failed")
     expect(await gate.drain(5_000)).toBe(true)
   })
 
@@ -72,7 +86,7 @@ describe("worker gate", () => {
     const work = gate.run(() => {
       throw new Error("sync")
     })
-    await expect(work).rejects.toThrow("sync")
+    expect(await failure(work)).toBe("sync")
     expect(await gate.drain(5_000)).toBe(true)
   })
 })
