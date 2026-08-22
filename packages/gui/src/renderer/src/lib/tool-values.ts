@@ -39,5 +39,7 @@ export function formatElapsed(ms: number) {
 
 export function collapseWhitespace(value: string, max: number) {
   const text = value.replace(/\s+/g, " ").trim()
-  return text.length > max ? `${text.slice(0, max)}…` : text
+  // The ellipsis counts toward the budget, so a truncated value is exactly
+  // `max` visible characters - the same contract as the TUI's truncateViewText.
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }

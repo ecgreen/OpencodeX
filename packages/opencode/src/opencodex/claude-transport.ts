@@ -68,6 +68,13 @@ export type DelegateArgs = { role: string; prompt: string }
  * Identical arguments queue FIFO, so an orchestrator that fans the same role
  * and prompt out twice in one turn still gives each call a distinct id rather
  * than pointing both at the first.
+ *
+ * Known, accepted limit: the correlator lives for one turn (created per
+ * `run`), so staleness cannot cross turns - but within a turn, an allowed
+ * call that never executes leaves its id queued, and a later byte-identical
+ * retry claims the stale id first. Worst case is a wrong drill-down link,
+ * never a broken delegation; FIFO stays because the common case is parallel
+ * fan-out, where it is the only correct order.
  */
 export function createDelegateCorrelator() {
   const pending = new Map<string, string[]>()

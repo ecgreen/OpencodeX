@@ -16,6 +16,15 @@ describe("model fallback error classification", () => {
     expect(isModelFallbackError(apiError({ responseBody: JSON.stringify({ error: { type: code } }) }))).toBe(true)
   })
 
+  test.each(["model_not_found", "model_not_available", "model_decommissioned", "unknown_model", "invalid_model"])(
+    // A fallback entry naming a model the provider no longer serves must not
+    // dead-end the chain: unavailability advances to the next entry.
+    "accepts structured model-unavailability code: %s",
+    (code) => {
+      expect(isModelFallbackError(apiError({ responseBody: JSON.stringify({ error: { code } }) }))).toBe(true)
+    },
+  )
+
   test.each([
     apiError({ message: "insufficient_quota" }),
     apiError({ responseBody: "insufficient_quota" }),

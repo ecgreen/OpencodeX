@@ -168,7 +168,9 @@ export function make(deps: Deps) {
     const isCall = (part: SessionLegacy.Part) => part.type === "tool" && part.callID === input.toolUseID
     const match = yield* sessions
       .findMessage(input.sessionID, (message) => message.parts.some(isCall))
-      .pipe(Effect.orElseSucceed(() => Option.none<SessionLegacy.WithParts>()))
+      // catchCause, not orElseSucceed: a defect here must also cost only the
+      // link, never the delegation - "every outcome is swallowed" means it.
+      .pipe(Effect.catchCause(() => Effect.succeed(Option.none<SessionLegacy.WithParts>())))
     const part = Option.getOrUndefined(match)?.parts.find(isCall)
     // A pending part has no metadata to hang the link on; by the time a
     // delegation runs the call is always running, so this is only a guard.

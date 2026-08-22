@@ -42,8 +42,9 @@ describe("GUI tool display helpers", () => {
     expect(
       toolDisplayTitle("task", { role: "Reviewer", prompt: "  Review the diff  \n\nThen report back" }, {}),
     ).toBe("Task Reviewer: Review the diff")
+    // 60 visible characters including the ellipsis - the TUI's exact budget.
     expect(toolDisplayTitle("task", { role: "Reviewer", prompt: `${"x".repeat(80)} tail` }, {})).toBe(
-      `Task Reviewer: ${"x".repeat(60)}…`,
+      `Task Reviewer: ${"x".repeat(59)}…`,
     )
     expect(toolDisplayTitle("task", { role: "Reviewer" }, {})).toBe("Task Reviewer: delegation")
     // A native task call keeps its own shape even when both are somehow present.
@@ -94,7 +95,7 @@ describe("GUI tool display helpers", () => {
 
   test("summarizes tool errors onto a single line", () => {
     expect(toolErrorSummary(errorState("  boom \n\n  happened  "))).toBe("boom happened")
-    expect(toolErrorSummary(errorState("x".repeat(200)), 10)).toBe(`${"x".repeat(10)}…`)
+    expect(toolErrorSummary(errorState("x".repeat(200)), 10)).toBe(`${"x".repeat(9)}…`)
     expect(toolErrorSummary(completedState("fine"))).toBe("")
   })
 

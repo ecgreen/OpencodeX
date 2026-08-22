@@ -6,9 +6,17 @@ const exhaustionCodes = new Set([
   "usage_limit_reached",
   "usage_not_included",
   "billing_hard_limit_reached",
+  // Model-unavailability codes advance the chain too: a fallback entry that
+  // names a model the provider no longer serves would otherwise dead-end the
+  // whole chain on an error the next entry could sidestep entirely.
+  "model_not_found",
+  "model_not_available",
+  "model_decommissioned",
+  "unknown_model",
+  "invalid_model",
 ])
 
-/** Only explicit structured usage/quota exhaustion codes may advance a role fallback. */
+/** Only explicit structured usage/quota-exhaustion or model-unavailability codes may advance a role fallback. */
 export function isModelFallbackError(error: SessionLegacy.Assistant["error"] | undefined) {
   if (!error || !SessionLegacy.APIError.isInstance(error) || !error.data.responseBody) return false
   const parsed = parseResponse(error.data.responseBody)

@@ -137,7 +137,7 @@ describe("GUI thinking preview", () => {
 
   test("strips markdown decoration and truncates long lines", () => {
     expect(thinkingPreview("## **Heading** with `code`", false)).toBe("Heading with code")
-    expect(thinkingPreview("x".repeat(200), false)).toBe(`${"x".repeat(96)}…`)
+    expect(thinkingPreview("x".repeat(200), false)).toBe(`${"x".repeat(95)}…`)
     expect(thinkingPreview("   \n\n  ", false)).toBe("")
   })
 
@@ -175,7 +175,7 @@ describe("GUI thinking preview", () => {
   test("derives a short commentary title without consuming its body", () => {
     const text = "The working tree contains a coordinated feature set across the GUI, runtime, transport, and generated SDK types."
     expect(thinkingSegmentContent({ type: "text", text }, 3, 4)).toEqual({
-      title: "The working tree contains a coordinated feature set across the G…",
+      title: "The working tree contains a coordinated feature set across the …",
       body: text,
     })
   })
