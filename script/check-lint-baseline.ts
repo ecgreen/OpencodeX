@@ -1,13 +1,15 @@
+// Oxlint's JSON report is several megabytes; reading it through a stdout pipe
+// has truncated mid-string on large reports (unterminated-JSON failures in CI
+// and locally). Buffering through a file sidesteps the pipe entirely.
+const reportPath = `${import.meta.dir}/../.artifacts/oxlint-report.json`
+await Bun.write(reportPath, "")
 const process = Bun.spawn(["bunx", "oxlint", "--format", "json"], {
   cwd: import.meta.dir + "/..",
-  stdout: "pipe",
+  stdout: Bun.file(reportPath),
   stderr: "pipe",
 })
-const [stdout, stderr, exitCode] = await Promise.all([
-  new Response(process.stdout).text(),
-  new Response(process.stderr).text(),
-  process.exited,
-])
+const [stderr, exitCode] = await Promise.all([new Response(process.stderr).text(), process.exited])
+const stdout = await Bun.file(reportPath).text()
 
 const result = JSON.parse(stdout)
 if (!record(result) || !Array.isArray(result.diagnostics)) {
