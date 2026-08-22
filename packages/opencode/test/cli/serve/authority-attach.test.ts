@@ -62,6 +62,29 @@ function manifestFiles(home: string) {
   }).pipe(Effect.catch(() => Effect.succeed([])))
 }
 
+/**
+ * The newest worker log's tail. The worker summarizes fatal errors to stderr
+ * as "check log file at ..." - on CI that temp file dies with the runner, so
+ * failures fold the tail into the assertion message instead.
+ */
+function workerLogTail(home: string, lines = 30) {
+  return Effect.tryPromise(async () => {
+    const dir = path.join(home, ".local/share", "opencode", "log")
+    const entries = await Promise.all(
+      (await fs.readdir(dir))
+        .filter((file) => file.endsWith(".log"))
+        .map(async (file) => {
+          const full = path.join(dir, file)
+          return { full, mtime: (await fs.stat(full)).mtimeMs }
+        }),
+    )
+    const newest = entries.sort((a, b) => b.mtime - a.mtime)[0]
+    if (!newest) return ""
+    const content = await fs.readFile(newest.full, "utf8")
+    return content.split("\n").slice(-lines).join("\n").trim()
+  }).pipe(Effect.catch(() => Effect.succeed("")))
+}
+
 function coordinatorHeaders(manifest: Manifest) {
   return { authorization: `Basic ${Buffer.from(`${manifest.username}:${manifest.password}`).toString("base64")}` }
 }
@@ -186,8 +209,19 @@ describe("clients attach-first against a running serve authority", () => {
           "tui worker did not publish a coordinator manifest",
           "45 seconds",
         ).pipe(
-          Effect.mapError(
-            (error) => new Error(`${error.message}${tui.stderr ? `\ntui stderr:\n${tui.stderr}` : ""}`, { cause: error }),
+          // The worker's own log carries the failure detail its stderr
+          // summarizes away ("Unexpected error, check log file at ..."), and
+          // on CI the temp home vanishes with the runner - so a timeout here
+          // is the last chance to surface it.
+          Effect.catch((error: Error) =>
+            Effect.flatMap(workerLogTail(home), (logTail) =>
+              Effect.fail(
+                new Error(
+                  `${error.message}${tui.stderr ? `\ntui stderr:\n${tui.stderr}` : ""}${logTail ? `\nworker log tail:\n${logTail}` : ""}`,
+                  { cause: error },
+                ),
+              ),
+            ),
           ),
         )
         const health = yield* Effect.promise(() =>
