@@ -22,7 +22,11 @@ import {
   type DelegateCapability,
 } from "./claude-transport"
 
+import * as Log from "@opencode-ai/core/util/log"
+
 type SessionID = typeof SessionSchema.ID.Type
+
+const log = Log.create({ service: "claude-driver" })
 
 /**
  * Tools that are Claude's own control flow rather than actions the permission
@@ -262,6 +266,18 @@ export function makeLayer(options: LayerOptions = {}) {
       // Captured here so a permission prompt raised inside Claude's callback
       // still carries this request's instance and workspace context.
       const bridge = yield* EffectBridge.make()
+      // Turn lifecycle breadcrumbs for OpencodeX-div: the CLI aborts control
+      // requests with "Stream closed" when its channel to this query dies, and
+      // without these entries the daemon's log cannot say whether a live query
+      // even existed for the session at that moment.
+      log.info("claude turn starting", {
+        sessionID: input.sessionID,
+        ...(resumeID ? { resumeID } : {}),
+        model: input.claudeModelID ?? input.modelID,
+      })
+      const logPermission = bridge.bind((toolName: string, toolUseID?: string) => {
+        log.info("claude permission request received", { sessionID: input.sessionID, toolName, callID: toolUseID })
+      })
       const turn = transport.run(prompt, {
         cwd: input.directory,
         ...(resumeID ? { resumeID } : {}),
@@ -273,8 +289,9 @@ export function makeLayer(options: LayerOptions = {}) {
               delegate: delegateCapability(bridge, input.delegate, delegatedCallIDs) satisfies DelegateCapability,
             }
           : {}),
-        canUseTool: (toolName, toolInput, toolUseID, signal) =>
-          bridge
+        canUseTool: (toolName, toolInput, toolUseID, signal) => {
+          logPermission(toolName, toolUseID)
+          return bridge
             .promise(
               decide({
                 sessionID: input.sessionID,
@@ -293,7 +310,8 @@ export function makeLayer(options: LayerOptions = {}) {
               if (decision.allow && decision.input && toolUseID) decidedInputs.set(toolUseID, decision.input)
               return decision
             })
-            .catch(() => ({ allow: false as const, message: "The permission request failed." })),
+            .catch(() => ({ allow: false as const, message: "The permission request failed." }))
+        },
       })
 
       const finalize = Effect.fn("OpencodeXClaudeDriver.finalize")(function* (reason: string, error?: string) {
@@ -322,6 +340,7 @@ export function makeLayer(options: LayerOptions = {}) {
       })
 
       const interruptTurn = Effect.sync(() => {
+        log.info("claude turn interrupt requested", { sessionID: input.sessionID })
         void turn.interrupt().catch(() => undefined)
       })
 
@@ -346,6 +365,11 @@ export function makeLayer(options: LayerOptions = {}) {
           yield* applyWrites(mapped.writes, input.sessionID, { delegatedCallIDs })
           if (live.finished) break
         }
+        log.info("claude turn events ended", {
+          sessionID: input.sessionID,
+          finished: live.finished,
+          deliveryFailed,
+        })
       })
       // Stopping the session interrupts this fiber, and interruption must reach
       // the CLI subprocess: without the explicit `interrupt` the child keeps
