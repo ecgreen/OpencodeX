@@ -22,8 +22,8 @@ import {
 import { Identifier } from "@/id/id"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Session from "./session"
-import { SessionStatus } from "./status"
 import { prepareImages } from "./swarm-attachments"
+import { SessionStatus } from "./status"
 import { hydrateFallbackModels } from "@/opencodex/swarm-model"
 import { shouldAdvanceModelFallback } from "./model-fallback"
 
@@ -452,9 +452,7 @@ export function make(deps: Deps) {
             // Avoid doubling up when the subagent's own title already says
             // "subagent" (e.g. "code-reviewer subagent"), which would otherwise
             // render as "code-reviewer subagent (@claude subagent)".
-            const title = /subagent/i.test(spawnInput.title)
-              ? spawnInput.title
-              : `${spawnInput.title} (@claude subagent)`
+            const title = /subagent/i.test(spawnInput.title) ? spawnInput.title : `${spawnInput.title} (@claude subagent)`
             const child = yield* sessions
               .create({
                 parentID: sessionID,

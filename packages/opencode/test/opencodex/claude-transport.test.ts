@@ -335,3 +335,35 @@ describe("resolveToolPermission", () => {
     })
   })
 })
+
+describe("sdkPrompt", () => {
+  test("leaves text-only prompts unchanged", () => {
+    expect(sdkPrompt("hello")).toBe("hello")
+  })
+
+  test("wraps native image content in an SDK user message", async () => {
+    const prompt = sdkPrompt([
+      { type: "text", text: "describe this" },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "AAA=" },
+      },
+    ])
+    expect(typeof prompt).not.toBe("string")
+    const messages = []
+    if (typeof prompt !== "string") for await (const message of prompt) messages.push(message)
+    expect(messages).toEqual([
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "describe this" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA=" } },
+          ],
+        },
+        parent_tool_use_id: null,
+      },
+    ])
+  })
+})
